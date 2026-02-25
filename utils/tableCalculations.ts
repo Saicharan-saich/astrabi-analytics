@@ -1,0 +1,250 @@
+export type TableCalculation =
+    | 'none'
+    | 'percent_of_total'
+    | 'rank_asc'
+    | 'rank_desc'
+    | 'running_total'
+    | 'moving_avg'
+    | 'pct_diff_from_prev'
+    | 'diff_from_prev'
+    | 'percentile';
+
+export interface CalculationResult {
+    transformedData: any[];
+    yLabel: string;
+    suggestedNumberFormat: 'raw' | 'currency_usd' | 'currency_eur' | 'percent' | 'compact';
+}
+
+/**
+ * Apply a table calculation to transform chart data
+ */
+export function applyTableCalculation(
+    data: any[],
+    yKey: string,
+    calculation: TableCalculation,
+    originalYLabel: string,
+    originalNumberFormat: string = 'raw',
+    outputKey?: string,
+    movingAvgWindow: number = 3
+): CalculationResult {
+
+    if (!data || data.length === 0 || calculation === 'none') {
+        return {
+            transformedData: data,
+            yLabel: originalYLabel,
+            suggestedNumberFormat: originalNumberFormat as any
+        };
+    }
+
+    let transformedData: any[];
+    let yLabel: string;
+    let suggestedNumberFormat: 'raw' | 'currency_usd' | 'currency_eur' | 'percent' | 'compact';
+
+    const targetKey = outputKey || yKey;
+
+    switch (calculation) {
+        case 'percent_of_total': {
+            const total = data.reduce((sum, row) => sum + (Number(row[yKey]) || 0), 0);
+            transformedData = data.map(row => ({
+                ...row,
+                [targetKey]: total !== 0 ? (Number(row[yKey]) / total) * 100 : 0
+            }));
+            yLabel = `% of Total (${originalYLabel})`;
+            suggestedNumberFormat = 'percent';
+            break;
+        }
+
+        case 'rank_asc': {
+            const sorted = [...data].sort((a, b) => (Number(a[yKey]) || 0) - (Number(b[yKey]) || 0));
+            transformedData = data.map(row => ({
+                ...row,
+                [targetKey]: sorted.findIndex(r => r === row) + 1
+            }));
+            yLabel = `Rank (Ascending) of ${originalYLabel}`;
+            suggestedNumberFormat = 'raw';
+            break;
+        }
+
+        case 'rank_desc': {
+            const sorted = [...data].sort((a, b) => (Number(b[yKey]) || 0) - (Number(a[yKey]) || 0));
+            transformedData = data.map(row => ({
+                ...row,
+                [targetKey]: sorted.findIndex(r => r === row) + 1
+            }));
+            yLabel = `Rank (Descending) of ${originalYLabel}`;
+            suggestedNumberFormat = 'raw';
+            break;
+        }
+
+        case 'running_total': {
+            let cumulative = 0;
+            transformedData = data.map(row => {
+                cumulative += Number(row[yKey]) || 0;
+                return { ...row, [targetKey]: cumulative };
+            });
+            yLabel = `Running Total of ${originalYLabel}`;
+            suggestedNumberFormat = originalNumberFormat as any;
+            break;
+        }
+
+        case 'moving_avg': {
+            const w = Math.max(1, movingAvgWindow); // Ensure at least 1
+            transformedData = data.map((row, idx) => {
+                const start = Math.max(0, idx - (w - 1));
+                const window = data.slice(start, idx + 1);
+                const avg = window.reduce((s, r) => s + (Number(r[yKey]) || 0), 0) / window.length;
+                return { ...row, [targetKey]: avg };
+            });
+            yLabel = `${w}-Period Moving Avg of ${originalYLabel}`;
+            suggestedNumberFormat = originalNumberFormat as any;
+            break;
+        }
+
+        case 'pct_diff_from_prev': {
+            transformedData = data.map((row, idx) => {
+                if (idx === 0) {
+                    return { ...row, [targetKey]: 0 };
+                }
+                const current = Number(row[yKey]) || 0;
+                const prev = Number(data[idx - 1][yKey]) || 0;
+                const pctChange = prev !== 0 ? ((current - prev) / prev) * 100 : 0;
+                return { ...row, [targetKey]: pctChange };
+            });
+            yLabel = `% Change from Previous (${originalYLabel})`;
+            suggestedNumberFormat = 'percent';
+            break;
+        }
+
+        case 'diff_from_prev': {
+            transformedData = data.map((row, idx) => {
+                if (idx === 0) {
+                    return { ...row, [targetKey]: 0 };
+                }
+                const current = Number(row[yKey]) || 0;
+                const prev = Number(data[idx - 1][yKey]) || 0;
+                return { ...row, [targetKey]: current - prev };
+            });
+            yLabel = `Difference from Previous (${originalYLabel})`;
+            suggestedNumberFormat = originalNumberFormat as any;
+            break;
+        }
+
+        case 'percentile': {
+            const sorted = data.map(row => Number(row[yKey]) || 0).sort((a, b) => a - b);
+            transformedData = data.map(row => {
+                const value = Number(row[yKey]) || 0;
+                const rank = sorted.filter(v => v <= value).length;
+                const percentile = (rank / sorted.length) * 100;
+                return { ...row, [targetKey]: percentile };
+            });
+            yLabel = `Percentile of ${originalYLabel}`;
+            suggestedNumberFormat = 'percent';
+            break;
+        }
+
+        default:
+            transformedData = data;
+            yLabel = originalYLabel;
+            suggestedNumberFormat = originalNumberFormat as any;
+    }
+
+    return {
+        transformedData,
+        yLabel,
+        suggestedNumberFormat
+    };
+}
+
+/**
+ * Get display name for a table calculation
+ */
+export function getCalculationDisplayName(calculation: TableCalculation): string {
+    const names: Record<TableCalculation, string> = {
+        'none': 'None (Raw Values)',
+        'percent_of_total': '% of Total',
+        'rank_asc': 'Rank (Ascending)',
+        'rank_desc': 'Rank (Descending)',
+        'running_total': 'Running Total',
+        'moving_avg': 'Moving Average',
+        'pct_diff_from_prev': '% Difference from Previous',
+        'diff_from_prev': 'Difference from Previous',
+        'percentile': 'Percentile'
+    };
+    return names[calculation] || 'Unknown';
+}
+
+/**
+ * Get description for a table calculation
+ */
+export function getCalculationDescription(calculation: TableCalculation): string {
+    const descriptions: Record<TableCalculation, string> = {
+        'none': 'Show raw values without transformation',
+        'percent_of_total': 'Show each value as % of grand total',
+        'rank_asc': 'Show position from lowest to highest',
+        'rank_desc': 'Show position from highest to lowest',
+        'running_total': 'Show cumulative sum over time',
+        'moving_avg': 'Smooth values with N-period average',
+        'pct_diff_from_prev': 'Show % change from previous value',
+        'diff_from_prev': 'Show absolute change from previous value',
+        'percentile': 'Show statistical percentile ranking'
+    };
+    return descriptions[calculation] || '';
+}
+
+/**
+ * Column metadata returned by applyMultipleCalculations
+ */
+export interface CalculatedColumn {
+    key: string;           // e.g., 'calc_percent_of_total'
+    label: string;         // e.g., '% of Total (Sales)'
+    format: string;        // e.g., 'percent'
+    calculation: TableCalculation;
+}
+
+/**
+ * Apply multiple table calculations, each producing a separate output column.
+ * The original yKey column is preserved untouched.
+ */
+export function applyMultipleCalculations(
+    data: any[],
+    yKey: string,
+    calculations: TableCalculation[],
+    originalYLabel: string,
+    originalNumberFormat: string = 'raw',
+    movingAvgWindow: number = 3
+): { transformedData: any[]; columns: CalculatedColumn[] } {
+    // Filter out 'none'
+    const activeCalcs = calculations.filter(c => c !== 'none');
+
+    if (!data || data.length === 0 || activeCalcs.length === 0) {
+        return { transformedData: data, columns: [] };
+    }
+
+    let mergedData = data.map(row => ({ ...row }));
+    const columns: CalculatedColumn[] = [];
+
+    for (const calc of activeCalcs) {
+        const outputKey = `calc_${calc}`;
+        const { transformedData: calcData, yLabel, suggestedNumberFormat } = applyTableCalculation(
+            mergedData,
+            yKey,
+            calc,
+            originalYLabel,
+            originalNumberFormat,
+            outputKey,
+            movingAvgWindow
+        );
+
+        // Merge the calculated column into mergedData
+        mergedData = calcData;
+
+        columns.push({
+            key: outputKey,
+            label: yLabel,
+            format: suggestedNumberFormat,
+            calculation: calc,
+        });
+    }
+
+    return { transformedData: mergedData, columns };
+}

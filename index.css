@@ -1,0 +1,940 @@
+/* ═══════════════════════════════════════════════════════
+   Astrabi Analytics — Modern Theme System
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Design Tokens ──────────────────────────────────── */
+:root {
+  /* Primary palette — Violet */
+  --color-primary: #7c3aed;
+  --color-primary-light: #a78bfa;
+  --color-primary-lighter: #ede9fe;
+  --color-primary-dark: #5b21b6;
+
+  /* Secondary palette — Warm Orange */
+  --color-secondary: #f97316;
+  --color-secondary-light: #fdba74;
+  --color-secondary-lighter: #fff7ed;
+
+  /* Accent — Teal */
+  --color-accent: #14b8a6;
+  --color-accent-light: #5eead4;
+
+  /* Surfaces — Dark theme (default) */
+  --bg-app: #0c0f1a;
+  --bg-surface: #141825;
+  --bg-elevated: #1c2033;
+  --bg-hover: #252a3e;
+  --bg-sidebar: #111422;
+
+  /* Text */
+  --text-primary: #f1f5f9;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --text-muted: #475569;
+
+  /* Borders */
+  --border-default: rgba(255, 255, 255, 0.08);
+  --border-hover: rgba(255, 255, 255, 0.14);
+  --border-strong: rgba(255, 255, 255, 0.2);
+
+  /* Shadows */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.35);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
+
+  /* Radii */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+}
+
+/* ── Light Theme Overrides ──────────────────────────── */
+html.light {
+  --bg-app: #f5f6fa;
+  --bg-surface: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-hover: #f1f2f6;
+  --bg-sidebar: #ffffff;
+
+  --text-primary: #0a0a0a;
+  --text-secondary: #1a1a2e;
+  --text-tertiary: #3a3a4a;
+  --text-muted: #6b7280;
+
+  --border-default: rgba(0, 0, 0, 0.10);
+  --border-hover: rgba(0, 0, 0, 0.16);
+  --border-strong: rgba(0, 0, 0, 0.22);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.1);
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+/* Light mode: comprehensive overrides for dark-only classes */
+html.light body {
+  color: #0a0a0a;
+  font-weight: 500;
+}
+
+html.light h1,
+html.light h2,
+html.light h3,
+html.light h4,
+html.light h5,
+html.light h6 {
+  font-weight: 800;
+  color: #000000;
+}
+
+/* ── Text color overrides ── */
+html.light .text-white {
+  color: #000000 !important;
+}
+
+html.light .text-slate-100 {
+  color: #111827 !important;
+}
+
+html.light .text-slate-200 {
+  color: #1f2937 !important;
+}
+
+html.light .text-slate-300 {
+  color: #374151 !important;
+}
+
+html.light .text-slate-400 {
+  color: #4b5563 !important;
+}
+
+html.light .text-slate-500 {
+  color: #374151 !important;
+}
+
+html.light .text-slate-600 {
+  color: #1f2937 !important;
+}
+
+html.light .text-gray-100 {
+  color: #111827 !important;
+}
+
+html.light .text-gray-200 {
+  color: #1f2937 !important;
+}
+
+html.light .text-gray-300 {
+  color: #374151 !important;
+}
+
+html.light .text-gray-400 {
+  color: #4b5563 !important;
+}
+
+html.light .text-gray-500 {
+  color: #374151 !important;
+}
+
+html.light .text-gray-600 {
+  color: #1f2937 !important;
+}
+
+html.light .text-gray-700 {
+  color: #111827 !important;
+}
+
+html.light .text-gray-900 {
+  color: #000000 !important;
+}
+
+/* ── Background overrides ── */
+html.light [class*="bg-slate-800"] {
+  background-color: #ffffff !important;
+  border: 1px solid #e5e7eb !important;
+}
+
+html.light [class*="bg-slate-900"] {
+  background-color: #f9fafb !important;
+}
+
+html.light [class*="bg-slate-950"] {
+  background-color: #f3f4f6 !important;
+}
+
+html.light [class*="bg-slate-700"] {
+  background-color: #f3f4f6 !important;
+  border-color: #e5e7eb !important;
+}
+
+/* ── Border overrides ── */
+html.light [class*="border-white/5"],
+html.light [class*="border-white/10"],
+html.light [class*="border-white/[0."] {
+  border-color: #e5e7eb !important;
+}
+
+html.light .border-slate-600,
+html.light .border-slate-700 {
+  border-color: #d1d5db !important;
+}
+
+/* ── Input overrides ── */
+html.light input[class*="bg-slate"],
+html.light select[class*="bg-slate"],
+html.light textarea[class*="bg-slate"] {
+  background-color: #f9fafb !important;
+  color: #111827 !important;
+  border-color: #d1d5db !important;
+}
+
+html.light input::placeholder,
+html.light textarea::placeholder {
+  color: #9ca3af !important;
+}
+
+/* ── Gradient text override ── */
+html.light .text-transparent.bg-clip-text {
+  -webkit-text-fill-color: #000000;
+  color: #000000 !important;
+}
+
+/* ── Accent text colors stay vibrant in light mode ── */
+html.light .text-indigo-300 {
+  color: #4338ca !important;
+}
+
+html.light .text-indigo-400 {
+  color: #4f46e5 !important;
+}
+
+html.light .text-purple-300 {
+  color: #7e22ce !important;
+}
+
+html.light .text-cyan-300 {
+  color: #0891b2 !important;
+}
+
+html.light .text-violet-300 {
+  color: #6d28d9 !important;
+}
+
+html.light .text-violet-400 {
+  color: #7c3aed !important;
+}
+
+html.light .text-emerald-300 {
+  color: #059669 !important;
+}
+
+html.light .text-emerald-400 {
+  color: #10b981 !important;
+}
+
+html.light .text-amber-300 {
+  color: #d97706 !important;
+}
+
+html.light .text-amber-400 {
+  color: #f59e0b !important;
+}
+
+html.light .text-red-300 {
+  color: #dc2626 !important;
+}
+
+html.light .text-red-400 {
+  color: #ef4444 !important;
+}
+
+/* ── Backdrop blur removal in light mode ── */
+html.light .backdrop-blur-xl,
+html.light .backdrop-blur-sm {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ══════════════════════════════════════════════════════════
+   COMPREHENSIVE LIGHT MODE OVERRIDES
+   Fix ALL dark-themed utility classes when user toggles light
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Custom hex backgrounds → white ── */
+html.light [class*="bg-[#1c2033]"],
+html.light [class*="bg-[#0c0f1a]"],
+html.light [class*="bg-[#111422]"],
+html.light [class*="bg-[#141825]"] {
+  background-color: #ffffff !important;
+}
+
+/* ── Slate/gray background variants → light grays ── */
+html.light [class*="bg-slate-600"] {
+  background-color: #e5e7eb !important;
+}
+
+html.light [class*="bg-gray-700"],
+html.light [class*="bg-gray-800"],
+html.light [class*="bg-gray-900"] {
+  background-color: #f3f4f6 !important;
+}
+
+/* ── Opacity-based backgrounds → solid light ── */
+html.light [class*="bg-white/"] {
+  background-color: rgba(255, 255, 255, 0.9) !important;
+}
+
+html.light [class*="bg-slate-800/"],
+html.light [class*="bg-slate-700/"],
+html.light [class*="bg-slate-900/"] {
+  background-color: rgba(243, 244, 246, 0.8) !important;
+}
+
+/* ── Indigo/violet accent backgrounds with opacity ── */
+html.light [class*="bg-indigo-500/20"],
+html.light [class*="bg-indigo-500/10"] {
+  background-color: rgba(99, 102, 241, 0.1) !important;
+}
+
+html.light [class*="bg-violet-500/20"],
+html.light [class*="bg-violet-500/10"] {
+  background-color: rgba(139, 92, 246, 0.1) !important;
+}
+
+html.light [class*="bg-emerald-500/20"],
+html.light [class*="bg-emerald-500/10"] {
+  background-color: rgba(16, 185, 129, 0.1) !important;
+}
+
+html.light [class*="bg-red-500/10"],
+html.light [class*="bg-red-500/20"] {
+  background-color: rgba(239, 68, 68, 0.08) !important;
+}
+
+html.light [class*="bg-amber-900/20"],
+html.light [class*="bg-amber-500/20"] {
+  background-color: rgba(245, 158, 11, 0.08) !important;
+}
+
+/* ── Ring/outline overrides ── */
+html.light [class*="ring-indigo-500/30"] {
+  --tw-ring-color: rgba(99, 102, 241, 0.25) !important;
+}
+
+html.light [class*="ring-emerald-500/20"] {
+  --tw-ring-color: rgba(16, 185, 129, 0.2) !important;
+}
+
+/* ── Hover state overrides ── */
+html.light [class*="hover:bg-slate-700"]:hover,
+html.light [class*="hover:bg-slate-600"]:hover {
+  background-color: #e5e7eb !important;
+}
+
+html.light [class*="hover:bg-white/"] :hover {
+  background-color: rgba(243, 244, 246, 0.9) !important;
+}
+
+html.light [class*="hover:text-white"]:hover {
+  color: #111827 !important;
+}
+
+/* ── Divider/separator overrides ── */
+html.light [class*="bg-white/10"],
+html.light [class*="bg-white/5"] {
+  background-color: #e5e7eb !important;
+}
+
+/* ── Question Bank / sidebar question item text ── */
+html.light [class*="text-slate-100"],
+html.light [class*="text-slate-200"],
+html.light [class*="text-slate-300"] {
+  color: #374151 !important;
+}
+
+/* ── Shadow overrides ── */
+html.light [class*="shadow-2xl"] {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+}
+
+/* ── Ensure dark gradient overlays are visible ── */
+html.light [class*="from-slate-800"],
+html.light [class*="from-slate-900"] {
+  --tw-gradient-from: #f9fafb !important;
+}
+
+html.light [class*="to-slate-800"],
+html.light [class*="to-slate-900"] {
+  --tw-gradient-to: #f3f4f6 !important;
+}
+
+/* ── Keep white text on colored backgrounds ── */
+html.light .bg-violet-600 .text-white,
+html.light .bg-violet-700 .text-white,
+html.light .bg-indigo-600 .text-white,
+html.light .bg-indigo-700 .text-white,
+html.light .bg-emerald-500 .text-white,
+html.light .bg-gradient-to-r .text-white,
+html.light .bg-gradient-to-br .text-white,
+html.light button.bg-violet-600,
+html.light button.bg-indigo-600,
+html.light [class*="bg-gradient-to"] button.text-white {
+  color: #ffffff !important;
+}
+
+html.light button.bg-violet-600,
+html.light button.bg-violet-700,
+html.light button.bg-violet-500 {
+  color: #ffffff !important;
+}
+
+html.light button.bg-indigo-600,
+html.light button.bg-indigo-700,
+html.light button.bg-indigo-500 {
+  color: #ffffff !important;
+}
+
+html.light button.bg-emerald-500,
+html.light button.bg-emerald-600 {
+  color: #ffffff !important;
+}
+
+html.light button[class*="bg-gradient-to-br"][class*="from-violet"] {
+  color: #ffffff !important;
+}
+
+html.light button[class*="bg-gradient-to-r"][class*="from-indigo"] {
+  color: #ffffff !important;
+}
+
+/* ── Body & Globals ─────────────────────────────────── */
+body {
+  background-color: var(--bg-app) !important;
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+html.light body {
+  background-image:
+    radial-gradient(ellipse at 0% 0%, hsla(250, 50%, 96%, 0.8) 0%, transparent 50%),
+    radial-gradient(ellipse at 100% 0%, hsla(30, 70%, 96%, 0.6) 0%, transparent 50%);
+}
+
+/* ── Scrollbar ──────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.2);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
+}
+
+html.light ::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.25);
+}
+
+html.light ::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.45);
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-none {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ── Transitions ────────────────────────────────────── */
+body,
+.surface-card,
+.glass-panel,
+.glass-input,
+.btn-primary {
+  transition: background-color 0.25s ease, color 0.25s ease, border-color 0.25s ease, box-shadow 0.25s ease;
+}
+
+/* ── Surface Utilities ──────────────────────────────── */
+.surface-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+}
+
+.surface-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.surface-elevated {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-md);
+}
+
+/* Legacy glassmorphism compatibility — mapped to modern surfaces */
+.glass-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-card);
+}
+
+.glass-panel-hover:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+}
+
+.glass-input {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+  transition: all 0.2s;
+}
+
+.glass-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15);
+  outline: none;
+}
+
+html.light .glass-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-card);
+}
+
+html.light .glass-panel-hover:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-md);
+}
+
+html.light .glass-input {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-default);
+  color: var(--text-primary);
+}
+
+html.light .glass-input:focus {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+}
+
+/* Glass/Frost utilities (legacy compat) */
+.glass {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+}
+
+.glass-frost {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-md);
+}
+
+.glass-frost:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow-lg);
+}
+
+/* ── Animations ─────────────────────────────────────── */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fadeIn {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-slideIn {
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.animate-shimmer {
+  background: linear-gradient(90deg,
+      rgba(124, 58, 237, 0.04) 25%,
+      rgba(124, 58, 237, 0.08) 50%,
+      rgba(124, 58, 237, 0.04) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.animate-pulse {
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* ── Stagger In ─────────────────────────────────────── */
+.stagger-in>* {
+  opacity: 0;
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+.stagger-in>*:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.stagger-in>*:nth-child(2) {
+  animation-delay: 30ms;
+}
+
+.stagger-in>*:nth-child(3) {
+  animation-delay: 60ms;
+}
+
+.stagger-in>*:nth-child(4) {
+  animation-delay: 90ms;
+}
+
+.stagger-in>*:nth-child(5) {
+  animation-delay: 120ms;
+}
+
+.stagger-in>*:nth-child(6) {
+  animation-delay: 150ms;
+}
+
+.stagger-in>*:nth-child(7) {
+  animation-delay: 180ms;
+}
+
+.stagger-in>*:nth-child(8) {
+  animation-delay: 210ms;
+}
+
+.stagger-in>*:nth-child(9) {
+  animation-delay: 240ms;
+}
+
+.stagger-in>*:nth-child(10) {
+  animation-delay: 270ms;
+}
+
+/* ── Card Entrance (Dashboard) ──────────────────────── */
+@keyframes card-entrance {
+  0% {
+    opacity: 0;
+    filter: blur(3px);
+  }
+
+  100% {
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+.animate-card-entrance {
+  animation: card-entrance 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-card-entrance:nth-child(1) {
+  animation-delay: 0ms;
+}
+
+.animate-card-entrance:nth-child(2) {
+  animation-delay: 60ms;
+}
+
+.animate-card-entrance:nth-child(3) {
+  animation-delay: 120ms;
+}
+
+.animate-card-entrance:nth-child(4) {
+  animation-delay: 180ms;
+}
+
+.animate-card-entrance:nth-child(5) {
+  animation-delay: 240ms;
+}
+
+.animate-card-entrance:nth-child(6) {
+  animation-delay: 300ms;
+}
+
+/* ── Dashboard Card Glow (subtle on hover) ──────────── */
+.card-glow-wrapper {
+  position: relative;
+  border-radius: var(--radius-lg);
+}
+
+/* When inside react-grid-layout, don't fight positioning */
+.react-grid-item.card-glow-wrapper {
+  overflow: visible;
+}
+
+/* ── NLQ Input Focus Glow ───────────────────────────── */
+@keyframes nlq-focus-pulse {
+
+  0%,
+  100% {
+    box-shadow:
+      0 0 0 1px rgba(124, 58, 237, 0.25),
+      0 0 16px -4px rgba(124, 58, 237, 0.15);
+  }
+
+  50% {
+    box-shadow:
+      0 0 0 1px rgba(124, 58, 237, 0.4),
+      0 0 24px -2px rgba(124, 58, 237, 0.2);
+  }
+}
+
+.nlq-input-active {
+  animation: nlq-focus-pulse 2.5s ease-in-out infinite;
+}
+
+/* ── Typing Cursor ──────────────────────────────────── */
+@keyframes cursor-blink {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0;
+  }
+}
+
+.typing-cursor::after {
+  content: '|';
+  color: var(--color-primary-light);
+  animation: cursor-blink 1s step-end infinite;
+  margin-left: 2px;
+  font-weight: 300;
+}
+
+/* ── Chart Skeleton ─────────────────────────────────── */
+@keyframes chart-skeleton-wave {
+  0% {
+    transform: translateX(-100%);
+  }
+
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.chart-skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--bg-hover);
+  border-radius: var(--radius-md);
+}
+
+.chart-skeleton::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg,
+      transparent 0%,
+      rgba(124, 58, 237, 0.05) 30%,
+      rgba(124, 58, 237, 0.1) 50%,
+      rgba(124, 58, 237, 0.05) 70%,
+      transparent 100%);
+  animation: chart-skeleton-wave 2s ease-in-out infinite;
+}
+
+.chart-skeleton-bars {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 12px;
+  height: 100%;
+  padding: 20px 30px;
+}
+
+.chart-skeleton-bar {
+  width: 24px;
+  border-radius: 4px 4px 0 0;
+  background: rgba(124, 58, 237, 0.1);
+}
+
+/* ── Tab Content Transition ─────────────────────────── */
+.tab-content-enter {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+/* ── Content Transition ─────────────────────────────── */
+@keyframes float-glow {
+
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+
+  50% {
+    transform: translateY(-6px);
+    opacity: 0.7;
+  }
+}
+
+.float-glow {
+  animation: float-glow 4s ease-in-out infinite;
+}
+
+/* ── Premium Button Hover ───────────────────────────── */
+.btn-premium {
+  position: relative;
+  overflow: hidden;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.btn-premium:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px -4px rgba(124, 58, 237, 0.3);
+}
+
+.btn-premium::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.08), transparent);
+  transition: left 0.5s ease;
+}
+
+.btn-premium:hover::before {
+  left: 100%;
+}
+
+/* ── Astrabi Logo ───────────────────────────────────── */
+.astrabi-logo-glow {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+}
+
+.astrabi-logo-glow-lg {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16px;
+}
+
+/* ── Print Styles ───────────────────────────────────── */
+@media print {
+  body {
+    background: white !important;
+    background-image: none !important;
+    color: black !important;
+    overflow: visible !important;
+  }
+
+  .print\\:hidden,
+  nav,
+  aside,
+  [data-sidebar],
+  button:not(.print\\:visible) {
+    display: none !important;
+  }
+
+  .print\\:static {
+    position: static !important;
+  }
+
+  .print\\:break-inside-avoid {
+    break-inside: avoid;
+  }
+
+  .react-grid-layout {
+    height: auto !important;
+  }
+
+  .react-grid-item {
+    position: static !important;
+    transform: none !important;
+    width: 100% !important;
+    margin-bottom: 24px !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .presentation-slide {
+    position: static !important;
+    background: white !important;
+  }
+}

@@ -1,0 +1,167 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { X, ChevronDown, Search } from 'lucide-react';
+
+interface FilterItemProps {
+    id: number;
+    filter: any;
+    dims: string[];
+    metrics: string[];
+    getColumnValues: (col: string) => string[];
+    onUpdate: (id: number, field: string, value: any) => void;
+    onRemove: (id: number) => void;
+}
+
+export const FilterItem: React.FC<FilterItemProps> = ({
+    id, filter, dims, metrics, getColumnValues, onUpdate, onRemove
+}) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const selectedValues = Array.isArray(filter.value) ? filter.value : (filter.value ? [filter.value] : []);
+    const [searchTerm, setSearchTerm] = useState('');
+
+    const toggleValue = (val: string) => {
+        const newValues = selectedValues.includes(val)
+            ? selectedValues.filter((v: string) => v !== val)
+            : [...selectedValues, val];
+        onUpdate(id, 'value', newValues);
+    };
+
+    const availableValues = filter.type === 'dimension' && filter.column ? getColumnValues(filter.column) : [];
+    const columnOptions = filter.type === 'dimension' ? dims : metrics;
+
+    return (
+        <React.Fragment>
+            <span className="text-purple-600 font-semibold self-center">and</span>
+
+            {filter.type === 'dimension' ? (
+                <>
+                    {/* Dimension Filter with Multi-Select */}
+                    <div className="relative group inline-block">
+                        <select
+                            value={filter.column}
+                            onChange={e => onUpdate(id, 'column', e.target.value)}
+                            className="appearance-none bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold border-b-2 border-purple-300 rounded px-3 py-1 pr-8 cursor-pointer text-base focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        >
+                            {columnOptions.map(d => <option key={d} value={d}>{d.replace(/_/g, ' ')}</option>)}
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-purple-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+
+                    <span className="text-slate-500 self-center">is</span>
+
+                    <div className="relative inline-block" ref={dropdownRef}>
+                        <button
+                            type="button"
+                            onClick={() => setIsOpen(!isOpen)}
+                            className="appearance-none bg-white hover:bg-slate-50 text-slate-800 font-bold border-2 border-purple-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 min-w-[140px] text-left flex items-center justify-between"
+                        >
+                            <span className="truncate">
+                                {selectedValues.length === 0 ? 'Select...' :
+                                    selectedValues.length === 1 ? selectedValues[0] :
+                                        `${selectedValues.length} selected`}
+                            </span>
+                            <ChevronDown className="w-4 h-4 text-slate-500 ml-2" />
+                        </button>
+
+                        {isOpen && (
+                            <div className="absolute z-50 mt-1 w-full max-w-xs bg-white border-2 border-purple-300 rounded-md shadow-lg">
+                                {/* Search */}
+                                <div className="px-2 pt-2 pb-1">
+                                    <div className="relative">
+                                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-1/2 -translate-y-1/2" />
+                                        <input
+                                            type="text"
+                                            placeholder="Search..."
+                                            value={searchTerm}
+                                            onChange={e => setSearchTerm(e.target.value)}
+                                            className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                            onClick={e => e.stopPropagation()}
+                                        />
+                                    </div>
+                                </div>
+                                <div className="max-h-52 overflow-auto">
+                                    {availableValues.filter(v => v.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
+                                        <div className="px-3 py-2 text-sm text-slate-500">No values</div>
+                                    ) : (
+                                        availableValues.filter(v => v.toLowerCase().includes(searchTerm.toLowerCase())).map(val => (
+                                            <label
+                                                key={val}
+                                                className="flex items-center px-3 py-2 hover:bg-purple-50 cursor-pointer text-sm"
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedValues.includes(val)}
+                                                    onChange={() => toggleValue(val)}
+                                                    className="mr-2 rounded border-purple-300 text-purple-600 focus:ring-purple-500"
+                                                />
+                                                <span>{val}</span>
+                                            </label>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </>
+            ) : (
+                <>
+                    {/* Measure Filter */}
+                    <div className="relative group inline-block">
+                        <select
+                            value={filter.column}
+                            onChange={e => onUpdate(id, 'column', e.target.value)}
+                            className="appearance-none bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold border-b-2 border-blue-300 rounded px-3 py-1 pr-8 cursor-pointer text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                            {columnOptions.map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-blue-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+
+                    <div className="relative group inline-block">
+                        <select
+                            value={filter.operator}
+                            onChange={e => onUpdate(id, 'operator', e.target.value)}
+                            className="appearance-none bg-white hover:bg-slate-50 text-slate-700 font-bold border-2 border-blue-300 rounded px-2 py-1 pr-6 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        >
+                            <option value=">=">&gt;=</option>
+                            <option value="<=">&lt;=</option>
+                            <option value="=">=</option>
+                            <option value="!=">!=</option>
+                            <option value=">">&gt;</option>
+                            <option value="<">&lt;</option>
+                        </select>
+                        <ChevronDown className="w-4 h-4 text-slate-500 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    </div>
+
+                    <input
+                        type="number"
+                        value={filter.value}
+                        onChange={e => onUpdate(id, 'value', parseFloat(e.target.value) || 0)}
+                        className="bg-white text-slate-800 font-bold border-2 border-blue-300 rounded px-3 py-1 w-28 focus:ring-2 focus:ring-blue-500 outline-none"
+                        placeholder="0"
+                    />
+                </>
+            )}
+
+            <button
+                onClick={() => onRemove(id)}
+                className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded p-1 transition-colors self-center"
+                title="Remove filter"
+            >
+                <X className="w-4 h-4" />
+            </button>
+        </React.Fragment>
+    );
+};
