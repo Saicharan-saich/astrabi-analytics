@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { X, ChevronDown, Search } from 'lucide-react';
 
 interface FilterItemProps {
@@ -16,17 +17,32 @@ export const FilterItem: React.FC<FilterItemProps> = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 200 });
 
     // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) &&
+                buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Compute position when dropdown opens
+    useEffect(() => {
+        if (isOpen && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setDropdownPos({
+                top: rect.bottom + 4,
+                left: rect.left,
+                width: Math.max(rect.width, 220)
+            });
+        }
+    }, [isOpen]);
 
     const selectedValues = Array.isArray(filter.value) ? filter.value : (filter.value ? [filter.value] : []);
     const [searchTerm, setSearchTerm] = useState('');
@@ -61,8 +77,9 @@ export const FilterItem: React.FC<FilterItemProps> = ({
 
                     <span className="text-slate-500 self-center">is</span>
 
-                    <div className="relative inline-block" ref={dropdownRef}>
+                    <div className="relative inline-block">
                         <button
+                            ref={buttonRef}
                             type="button"
                             onClick={() => setIsOpen(!isOpen)}
                             className="appearance-none bg-white hover:bg-slate-50 text-slate-800 font-bold border-2 border-purple-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 min-w-[140px] text-left flex items-center justify-between"
@@ -75,8 +92,17 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                             <ChevronDown className="w-4 h-4 text-slate-500 ml-2" />
                         </button>
 
-                        {isOpen && (
-                            <div className="absolute z-50 mt-1 w-full max-w-xs bg-white border-2 border-purple-300 rounded-md shadow-lg">
+                        {isOpen && ReactDOM.createPortal(
+                            <div
+                                ref={dropdownRef}
+                                className="fixed z-[9999] bg-white border-2 border-purple-300 rounded-md shadow-xl"
+                                style={{
+                                    top: dropdownPos.top,
+                                    left: dropdownPos.left,
+                                    width: dropdownPos.width,
+                                    maxWidth: 320
+                                }}
+                            >
                                 {/* Search */}
                                 <div className="px-2 pt-2 pb-1">
                                     <div className="relative">
@@ -98,7 +124,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                                         availableValues.filter(v => v.toLowerCase().includes(searchTerm.toLowerCase())).map(val => (
                                             <label
                                                 key={val}
-                                                className="flex items-center px-3 py-2 hover:bg-purple-50 cursor-pointer text-sm"
+                                                className="flex items-center px-3 py-2 hover:bg-purple-50 cursor-pointer text-sm text-slate-800"
                                             >
                                                 <input
                                                     type="checkbox"
@@ -106,13 +132,13 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                                                     onChange={() => toggleValue(val)}
                                                     className="mr-2 rounded border-purple-300 text-purple-600 focus:ring-purple-500"
                                                 />
-                                                <span>{val}</span>
+                                                <span className="text-slate-800">{val}</span>
                                             </label>
                                         ))
                                     )}
                                 </div>
                             </div>
-                        )}
+                            , document.body)}
                     </div>
                 </>
             ) : (
@@ -142,7 +168,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                             <option value=">">&gt;</option>
                             <option value="<">&lt;</option>
                         </select>
-                        <ChevronDown className="w-4 h-4 text-slate-500 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <ChevronDown className="w-3 h-3 text-slate-500 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
 
                     <input
@@ -165,3 +191,4 @@ export const FilterItem: React.FC<FilterItemProps> = ({
         </React.Fragment>
     );
 };
+

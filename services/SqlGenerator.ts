@@ -6,6 +6,7 @@ export interface SqlQueryConfig {
     aggregation: string;
     dimension?: string;
     table: string;
+    dateColumn?: string; // Actual date column name from dataset (e.g., 'sale_date')
     timeFilter?: string;
     filters?: Record<string, string[]>;
     measureFilters?: Array<{ column: string; operator: string; value: number }>;
@@ -88,26 +89,28 @@ export class SqlGenerator {
 
     private buildWhere(): string {
         const clauses: string[] = [];
-        const { timeFilter, filters, measureFilters, dates } = this.config;
+        const { timeFilter, filters, measureFilters, dates, dateColumn } = this.config;
+        // Use actual date column name from dataset, fallback to 'date'
+        const dateRef = safeId(dateColumn || 'date');
 
         // 1. Time Filter — all dates go through safeDate()
         if (timeFilter && timeFilter !== 'all_time') {
             if (timeFilter === 'today') {
-                clauses.push(`date = ${safeDate(dates.today)}`);
+                clauses.push(`${dateRef} = ${safeDate(dates.today)}`);
             } else if (timeFilter === 'yesterday') {
-                clauses.push(`date = ${safeDate(dates.yesterday)}`);
+                clauses.push(`${dateRef} = ${safeDate(dates.yesterday)}`);
             } else if (timeFilter === 'this_week') {
-                clauses.push(`date >= ${safeDate(dates.this_week_start)}`);
+                clauses.push(`${dateRef} >= ${safeDate(dates.this_week_start)}`);
             } else if (timeFilter === 'this_month') {
-                clauses.push(`date >= ${safeDate(dates.this_month_start)}`);
+                clauses.push(`${dateRef} >= ${safeDate(dates.this_month_start)}`);
             } else if (timeFilter === 'this_quarter') {
-                clauses.push(`date >= ${safeDate(dates.this_quarter_start)}`);
+                clauses.push(`${dateRef} >= ${safeDate(dates.this_quarter_start)}`);
             } else if (timeFilter === 'this_year') {
-                clauses.push(`date >= ${safeDate(dates.year_start)}`);
+                clauses.push(`${dateRef} >= ${safeDate(dates.year_start)}`);
             } else if (timeFilter === 'last_30_days') {
-                clauses.push(`date >= ${safeDate(dates.last_30_days)}`);
+                clauses.push(`${dateRef} >= ${safeDate(dates.last_30_days)}`);
             } else if (timeFilter === 'last_90_days') {
-                clauses.push(`date >= ${safeDate(dates.last_90_days)}`);
+                clauses.push(`${dateRef} >= ${safeDate(dates.last_90_days)}`);
             } else if (timeFilter.startsWith('last_')) {
                 // Dynamic parsing for last_N_days/weeks/months/years/cyears
                 const match = timeFilter.match(/^last_(\d+)_(c?[a-z]+)$/);
@@ -121,7 +124,7 @@ export class SqlGenerator {
                         const asOfYear = today.getUTCFullYear();
                         const startDate = new Date(Date.UTC(asOfYear - n, 0, 1)).toISOString().split('T')[0];
                         const endDate = new Date(Date.UTC(asOfYear - 1, 11, 31)).toISOString().split('T')[0];
-                        clauses.push(`date BETWEEN ${safeDate(startDate)} AND ${safeDate(endDate)}`);
+                        clauses.push(`${dateRef} BETWEEN ${safeDate(startDate)} AND ${safeDate(endDate)}`);
                     } else {
                         const targetDate = new Date(today);
                         if (unit === 'days') {
@@ -134,10 +137,10 @@ export class SqlGenerator {
                             targetDate.setUTCFullYear(today.getUTCFullYear() - n);
                         }
                         const startDate = targetDate.toISOString().split('T')[0];
-                        clauses.push(`date >= ${safeDate(startDate)}`);
+                        clauses.push(`${dateRef} >= ${safeDate(startDate)}`);
                     }
                 } else {
-                    clauses.push(`date >= ${safeDate(dates.last_30_days)}`); // Fallback
+                    clauses.push(`${dateRef} >= ${safeDate(dates.last_30_days)}`); // Fallback
                 }
             }
         }

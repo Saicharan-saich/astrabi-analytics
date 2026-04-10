@@ -9,7 +9,7 @@ import {
   Trash2, Plus, Edit, AlertTriangle, X, FileDown, Presentation,
   ChevronLeft, ChevronRight, Maximize2, LayoutDashboard, GripVertical,
   TrendingUp, TrendingDown, BarChart3, PieChart, LineChart, Activity,
-  Sparkles, Eye, Clock, ArrowUpRight, Filter, ChevronDown
+  Sparkles, Eye, Clock, ArrowUpRight, Filter, ChevronDown, RefreshCw
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Dataset, DashboardItem } from '../types';
@@ -49,6 +49,52 @@ const CARD_ACCENTS = [
   { border: 'hover:border-rose-500/30', glow: 'shadow-rose-500/5', accent: '#f43f5e' },
 ];
 
+// Inline editable title component
+const EditableTitle: React.FC<{
+  value: string;
+  onSave: (newTitle: string) => void;
+  className?: string;
+  inputClassName?: string;
+}> = ({ value, onSave, className = '', inputClassName = '' }) => {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { setDraft(value); }, [value]);
+  useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
+
+  const commit = () => {
+    const trimmed = draft.trim();
+    if (trimmed && trimmed !== value) onSave(trimmed);
+    else setDraft(value);
+    setEditing(false);
+  };
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setDraft(value); setEditing(false); } }}
+        className={`bg-transparent border-b-2 border-indigo-400 outline-none font-bold ${inputClassName}`}
+        style={{ width: `${Math.max(draft.length, 8)}ch` }}
+      />
+    );
+  }
+
+  return (
+    <span
+      className={`cursor-pointer hover:opacity-70 transition-opacity ${className}`}
+      onClick={e => { e.stopPropagation(); setEditing(true); }}
+      title="Click to edit title"
+    >
+      {value}
+    </span>
+  );
+};
+
 export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit }) => {
   const { items, removeItem, updateItem, formatting, clearAllItems, dashboardLayout, setDashboardLayout, dashboardFilters, setDashboardFilters } = useAppStore();
   const [showClearModal, setShowClearModal] = useState(false);
@@ -58,6 +104,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterColumn, setFilterColumn] = useState<string>('');
+  const [refreshingCards, setRefreshingCards] = useState<Set<string>>(new Set());
+
+  // Fix #8: Re-evaluate a dashboard card by re-running its stored query config
+  const handleRefreshCard = useCallback(async (item: DashboardItem) => {
+    if (!dataset || !item.result?.queryConfig) return;
+    setRefreshingCards(prev => new Set(prev).add(item.id));
+    try {
+      // Dynamically import the analysis engine to avoid circular deps
+      const { runAnalysis } = await import('../services/analysisEngine');
+      const config = item.result.queryConfig;
+      const freshResult = runAnalysis(dataset, {
+        ...config,
+        asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || new Date().toISOString().split('T')[0],
+      });
+      updateItem({ ...item, result: { ...freshResult, queryConfig: config } });
+    } catch (err) {
+      console.warn('[Dashboard] Refresh failed for card:', item.id, err);
+    } finally {
+      setRefreshingCards(prev => { const next = new Set(prev); next.delete(item.id); return next; });
+    }
+  }, [dataset, updateItem]);
 
   // Measure container width for ResponsiveGridLayout
   const containerRef = useRef<HTMLDivElement>(null);
@@ -218,7 +285,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
         <div className="flex items-center justify-between px-8 py-4 bg-slate-900/80 border-b border-white/5 print:hidden">
           <div className="flex items-center gap-4">
             <Presentation className="w-5 h-5 text-indigo-400" />
-            <span className="text-white font-bold text-lg">{item.title}</span>
+            <EditableTitle
+              value={item.title}
+              onSave={(t) => updateItem({ ...item, title: t })}
+              className="text-white font-bold text-lg"
+              inputClassName="text-white text-lg"
+            />
           </div>
           <div className="flex items-center gap-4">
             <span className="text-slate-400 text-sm">{currentSlide + 1} / {items.length}</span>
@@ -235,7 +307,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
         <div className="flex-1 flex items-center justify-center p-12 min-h-0">
           <div className="w-full max-w-5xl h-full bg-white rounded-2xl shadow-2xl overflow-hidden">
             <div className="p-3 border-b border-slate-100 bg-slate-50">
-              <h3 className="text-lg font-bold text-slate-800 text-center">{item.title}</h3>
+              <h3 className="text-lg font-bold text-slate-800 text-center">
+                <EditableTitle
+                  value={item.title}
+                  onSave={(t) => updateItem({ ...item, title: t })}
+                  className=""
+                  inputClassName="text-slate-800 text-lg text-center"
+                />
+              </h3>
             </div>
             <div className="h-[calc(100%-52px)]">
               <ChartVisualization
@@ -372,14 +451,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             <button
               onClick={() => setFilterOpen(!filterOpen)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border ${dashboardFilters.length > 0
-                ? 'bg-amber-500/10 text-amber-300 border-amber-500/30 hover:bg-amber-500/20'
-                : 'bg-slate-800/50 text-slate-400 border-white/5 hover:bg-slate-800 hover:text-slate-300'
+                ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
+                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-700'
                 }`}
             >
               <Filter className="w-4 h-4" />
               Global Filters
               {dashboardFilters.length > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold">
+                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">
                   {dashboardFilters.length}
                 </span>
               )}
@@ -413,7 +492,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               const activeFilter = dashboardFilters.find(f => f.column === filterColumn);
 
               return (
-                <div className="mt-2 bg-slate-800/70 backdrop-blur-sm border border-white/5 rounded-xl p-4 animate-in fade-in slide-in-from-top-2">
+                <div className="mt-2 bg-white border border-slate-200 rounded-xl p-4 shadow-lg">
                   <div className="flex flex-wrap items-start gap-4">
                     {/* Column Selector */}
                     <div className="flex flex-col gap-1.5">
@@ -421,7 +500,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       <select
                         value={filterColumn}
                         onChange={e => setFilterColumn(e.target.value)}
-                        className="bg-slate-900 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none min-w-[180px]"
+                        className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none min-w-[180px]"
                       >
                         <option value="">Select column...</option>
                         {columnList.map(col => (
@@ -462,8 +541,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                                   }
                                 }}
                                 className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${isActive
-                                  ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/40'
-                                  : 'bg-slate-900/50 text-slate-400 border-white/5 hover:border-white/15 hover:text-slate-300'
+                                  ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
+                                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300 hover:text-slate-700'
                                   }`}
                               >
                                 {val}
@@ -478,7 +557,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     {dashboardFilters.length > 0 && (
                       <button
                         onClick={() => { setDashboardFilters([]); setFilterColumn(''); }}
-                        className="self-end px-3 py-2 text-xs font-semibold text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 rounded-lg transition-all"
+                        className="self-end px-3 py-2 text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-all"
                       >
                         Clear Filters
                       </button>
@@ -487,15 +566,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
 
                   {/* Active Filters Summary */}
                   {dashboardFilters.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-white/5 flex flex-wrap gap-2">
+                    <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap gap-2">
                       {dashboardFilters.map(f => (
-                        <div key={f.column} className="flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 rounded-lg px-2.5 py-1.5 text-xs">
-                          <span className="text-amber-400 font-bold">{f.column}</span>
+                        <div key={f.column} className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 text-xs">
+                          <span className="text-amber-700 font-bold">{f.column}</span>
                           <span className="text-slate-500">=</span>
-                          <span className="text-amber-300">{f.values.join(', ')}</span>
+                          <span className="text-amber-600">{f.values.join(', ')}</span>
                           <button
                             onClick={() => setDashboardFilters(dashboardFilters.filter(df => df.column !== f.column))}
-                            className="ml-1 text-slate-500 hover:text-red-400 transition-colors"
+                            className="ml-1 text-slate-400 hover:text-red-500 transition-colors"
                           >
                             <X className="w-3 h-3" />
                           </button>
@@ -596,7 +675,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                         {getChartIcon(vis)}
                       </div>
 
-                      <h3 className="font-semibold text-gray-900 dark:text-white text-sm truncate">{item.title}</h3>
+                      <h3 className="font-semibold text-gray-900 dark:text-white text-sm truncate">
+                        <EditableTitle
+                          value={item.title}
+                          onSave={(t) => updateItem({ ...item, title: t })}
+                          className=""
+                          inputClassName="text-gray-900 dark:text-white text-sm"
+                        />
+                      </h3>
                     </div>
 
                     {/* Actions */}
@@ -608,6 +694,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       >
                         <Edit className="w-3.5 h-3.5" />
                       </button>
+                      {/* Fix #8: Refresh card with current dataset */}
+                      {dataset && item.result?.queryConfig && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRefreshCard(item); }}
+                          className={`p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-300 transition-all ${refreshingCards.has(item.id) ? 'animate-spin' : ''}`}
+                          title="Refresh with current data"
+                          disabled={refreshingCards.has(item.id)}
+                        >
+                          <RefreshCw className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => { e.stopPropagation(); removeItem(item.id); }}
                         className="p-1.5 rounded-lg bg-red-50 dark:bg-red-500/15 hover:bg-red-100 dark:hover:bg-red-500/25 text-red-500 dark:text-red-300 transition-all"
@@ -666,23 +763,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
 
         {/* ─── Clear All Confirmation Modal ─── */}
         {showClearModal && (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm print:hidden">
-            <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 backdrop-blur-sm print:hidden">
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl">
               <div className="flex items-start gap-4 mb-6">
-                <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 shrink-0">
-                  <AlertTriangle className="w-6 h-6 text-red-400" />
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 shrink-0">
+                  <AlertTriangle className="w-6 h-6 text-red-500" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-bold text-white">Clear All Visuals?</h3>
-                  <p className="text-sm text-slate-400 mt-1 leading-relaxed">
-                    This will permanently remove all <span className="text-white font-semibold">{items.length}</span> pinned visuals from your dashboard. This action cannot be undone.
+                  <h3 className="text-lg font-bold text-slate-900">Clear All Visuals?</h3>
+                  <p className="text-sm text-slate-500 mt-1 leading-relaxed">
+                    This will permanently remove all <span className="text-slate-900 font-semibold">{items.length}</span> pinned visuals from your dashboard. This action cannot be undone.
                   </p>
                 </div>
               </div>
               <div className="flex justify-end gap-3">
                 <button
                   onClick={() => setShowClearModal(false)}
-                  className="px-5 py-2.5 text-sm font-medium text-slate-300 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition-colors"
+                  className="px-5 py-2.5 text-sm font-medium text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
                 >
                   Cancel
                 </button>

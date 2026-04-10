@@ -6,7 +6,8 @@
  */
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { DashboardItem, FormattingConfig } from '../types';
+import { DashboardItem, FormattingConfig, AnalysisResult } from '../types';
+import { indexedDBStorage } from '../services/indexedDBStorage';
 
 export interface DashboardFilter {
     column: string;
@@ -21,6 +22,8 @@ interface DashboardState {
     updateItem: (item: DashboardItem) => void;
     setItems: (items: DashboardItem[]) => void;
     clearAllItems: () => void;
+    // Fix #8: Re-evaluate a dashboard card with fresh data
+    refreshItem: (id: string, newResult: AnalysisResult) => void;
 
     // Dashboard layout (react-grid-layout)
     dashboardLayout: any[] | null;
@@ -70,6 +73,12 @@ export const useDashboardStore = create<DashboardState>()(
             })),
             setItems: (items) => set({ items }),
             clearAllItems: () => set({ items: [] }),
+            // Fix #8: Re-evaluate dashboard card with fresh result data
+            refreshItem: (id, newResult) => set((state) => ({
+                items: state.items.map((i) => (
+                    i.id === id ? { ...i, result: newResult, pinnedAt: Date.now() } : i
+                ))
+            })),
 
             // Dashboard layout
             dashboardLayout: null,
@@ -108,8 +117,8 @@ export const useDashboardStore = create<DashboardState>()(
             clearHistory: () => set({ queryHistory: [] }),
         }),
         {
-            name: 'astrabi-dashboard-v1',
-            storage: createJSONStorage(() => localStorage),
+            name: 'astrabi-dashboard-v2',
+            storage: createJSONStorage(() => indexedDBStorage), // Fix #13: IndexedDB
         }
     )
 );

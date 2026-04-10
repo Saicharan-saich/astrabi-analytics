@@ -8,7 +8,7 @@ import {
     Search, FileDown, Clipboard, CheckCircle2, MousePointerClick, Sliders, Hash, ArrowUpDown, Calendar
 } from 'lucide-react';
 import { Dataset, ColumnType, AggregationType, QueryConfig, AnalysisResult, TimeGrain, AnalysisType, ChartConfig, FormattingConfig } from '../types';
-import { runAnalysis, QUESTION_BANK, autoPickConfig, resolveMapping, QUESTION_REGISTRY, getFullQuestionBank, getFullRegistry } from '../services/analysisEngine';
+import { runAnalysis, QUESTION_BANK, autoPickConfig, resolveMapping, QUESTION_REGISTRY, getFullQuestionBank, getFullRegistry, getFullQuestionBankForDomain } from '../services/analysisEngine';
 import { QuestionBuilder } from './QuestionBuilder';
 import { ChartVisualization } from './ChartVisualization';
 import { QuestionCustomizer } from './QuestionCustomizer';
@@ -17,6 +17,7 @@ import { Tooltip as InfoTooltip } from './Tooltip';
 import { getCalculationDisplayName, applyMultipleCalculations, type TableCalculation, type CalculatedColumn } from '../utils/tableCalculations';
 import { AIInsightPanel } from './AIInsightPanel';
 import { AISQLChat } from './AISQLChat';
+import { generateDynamicLabel } from '../services/workbenchLogic'; // Fix #6: Use extracted pure function
 
 
 interface WorkbenchProps {
@@ -36,6 +37,29 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [activeCategory, setActiveCategory] = useState<string | null>(getFullQuestionBank()[0]?.category);
     const [questionSearch, setQuestionSearch] = useState('');
+    const [showAllQuestions, setShowAllQuestions] = useState(false);
+
+    // 10 curated default questions — adapts to detected domain
+    const DEFAULT_QUESTION_IDS = useMemo(() => {
+        const detectedDomain = dataset?.domainProfile?.domain;
+        if (!detectedDomain || detectedDomain === 'Sales' || detectedDomain === 'Retail') {
+            // Sales defaults
+            return new Set([
+                'd_ma_7_rev', 'd_run_total_month', 'd_pct_chg_rev', 'w_vs_lw_rev',
+                'w_pct_growth_rev', 'd_pct_total_prod', 'd_top_5_prod',
+                'd_vs_y_rev', 'w_pct_growth_orders', 'd_pct_total_channel',
+            ]);
+        }
+        // Non-Sales domain: use the first 10 questions from the domain question bank
+        const domainBank = getFullQuestionBankForDomain(detectedDomain);
+        const domainQIds: string[] = [];
+        for (const cat of domainBank) {
+            for (const q of cat.questions) {
+                if (domainQIds.length < 10) domainQIds.push(q.intent.questionId);
+            }
+        }
+        return new Set(domainQIds);
+    }, [dataset?.domainProfile?.domain]);
     const [copiedSql, setCopiedSql] = useState(false);
     const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
     const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);
@@ -72,6 +96,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
 
     // ── DYNAMIC CONTROLS ──
     const [topN, setTopN] = useState<number>(0); // 0 = use question default
+    const [secondaryMetric, setSecondaryMetric] = useState<string>(''); // For multi-metric overlay
     const [periodScope, setPeriodScope] = useState<string>(''); // '' = use question default, or WTD/MTD/QTD/YTD
     const [periodGrain, setPeriodGrain] = useState<string>(''); // '' = default for scope, or day/week/month/quarter/year
     const [whatIfPct, setWhatIfPct] = useState<number>(0); // -50 to +100 percent offset
@@ -84,19 +109,33 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
     // Semantic Mapping for Mad-lib
     const defaultMapping = useMemo(() => resolveMapping(dataset).fields, [dataset]);
 
+
     // Builder Control State
     const [builderState, setBuilderState] = useState({
         metric: initialConfig?.questionId === 'custom_builder' ? initialConfig?.metric || '' : '',
         aggregation: initialConfig?.aggregation || AggregationType.SUM,
         dimension: initialConfig?.questionId === 'custom_builder' ? initialConfig?.dimension || '' : '',
-        timeFilter: initialConfig?.questionId === 'custom_builder' ? initialConfig?.timeFilter || 'all_time' : 'all_time',
+        timeFilter: initialConfig?.questionId === 'custom_builder' ? initialConfig?.timeFilter || '' : '',
         limit: initialConfig?.questionId === 'custom_builder' ? initialConfig?.limit || 0 : 0,
         sort: (initialConfig?.questionId === 'custom_builder' ? initialConfig?.sort || 'desc' : 'desc') as 'desc' | 'asc'
     });
 
+    // Date filters from AI-saved custom questions (preserved across customizer re-runs)
+    const [customDateFilters, setCustomDateFilters] = useState<any[]>([]);
+    // AI SQL from saved custom questions (preserved across customizer re-runs)
+    const [customAiSql, setCustomAiSql] = useState<string | null>(null);
+
     // Current Question
     const [currentQuestionLabel, setCurrentQuestionLabel] = useState<string>(initialConfig?.questionLabel || 'Select a question');
     const [currentQuestionId, setCurrentQuestionId] = useState<string | null>(initialConfig?.questionId || null);
+
+    // Active question's required roles for column override
+    const activeQuestionReq = useMemo(() => {
+        if (!currentQuestionId) return [];
+        const registry = getFullRegistry();
+        const qDef = registry.find(q => q.id === currentQuestionId);
+        return qDef?.req || [];
+    }, [currentQuestionId]);
 
     // Chart Type Selection
     const [chartType, setChartType] = useState<any>(initialConfig?.chartType || 'bar');
@@ -104,7 +143,9 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
     // Helper: determine if question is a Top/Bottom N question (MUST come after currentQuestionId)
     const isTopNQuestion = useMemo(() => {
         if (!currentQuestionId) return false;
-        return currentQuestionId.includes('top') || currentQuestionId.includes('best');
+        return currentQuestionId.includes('top') || currentQuestionId.includes('best') ||
+            currentQuestionId.includes('bottom') || currentQuestionId.includes('worst') ||
+            currentQuestionId.includes('_pct_total_') || currentQuestionId.includes('pct_rev');
     }, [currentQuestionId]);
 
     // Helper: determine if question is a running total question
@@ -128,7 +169,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                     metric: initialConfig.metric || '',
                     aggregation: initialConfig.aggregation || AggregationType.SUM,
                     dimension: initialConfig.dimension || '',
-                    timeFilter: initialConfig.timeFilter || 'all_time',
+                    timeFilter: initialConfig.timeFilter || '',
                     limit: initialConfig.limit || 0,
                     sort: (initialConfig.sort || 'desc') as 'desc' | 'asc'
                 });
@@ -140,15 +181,27 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             setTimeout(() => handleRunAnalysis(initialConfig), 0);
         }
 
-        // Set anchor column; only reset AS OF date if user hasn't manually overridden
+        // Always reset AS OF date when dataset changes — user override only persists within the same dataset
         const tc = dataset.timeContext;
         if (tc) {
             setAnchorColumn(tc.anchorDateColumn || '');
-            if (!isUserOverride) {
-                setAsOfDate(tc.defaultAnchorDate || tc.maxDate);
-            }
+            setAsOfDate(tc.defaultAnchorDate || tc.maxDate || new Date().toISOString().split('T')[0]);
+            setIsUserOverride(false); // Reset override on dataset change
         }
     }, [dataset.id, initialConfig]); // Track initialConfig to fire on Edit Mode entry
+
+    // Dedicated effect: sync asOfDate when ETL populates timeContext (async)
+    // This fires AFTER the dataset useEffect above, when timeContext becomes available
+    useEffect(() => {
+        const tc = dataset.timeContext;
+        if (tc && !isUserOverride) {
+            const newDate = tc.defaultAnchorDate || tc.maxDate || '';
+            if (newDate) {
+                setAnchorColumn(tc.anchorDateColumn || '');
+                setAsOfDate(newDate);
+            }
+        }
+    }, [dataset.timeContext]);
 
     // User manually changes AS OF date
     const handleAsOfDateChange = (date: string) => {
@@ -214,11 +267,14 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
         setConfig(fullConfig);
         console.log('[Workbench handleRunAnalysis] FINAL config:', JSON.stringify({
             questionId: fullConfig.questionId,
+            metric: fullConfig.metric,
             dimension: fullConfig.dimension,
             timeFilter: fullConfig.timeFilter,
             sort: fullConfig.sort,
             limit: fullConfig.limit,
-            periodScope: (fullConfig as any).periodScope
+            comparison: fullConfig.comparison,
+            periodScope: (fullConfig as any).periodScope,
+            dateFilters: fullConfig.dateFilters
         }));
         try {
             let analysisResult = runAnalysis(dataset, {
@@ -296,6 +352,8 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             sort: builderConfig.sort
         });
 
+        console.log('[handleBuilderRun] comparison from builder:', builderConfig.comparison, '| comparisonGrain:', builderConfig.comparisonGrain);
+
         // Convert builder config to proper QueryConfig with custom_builder ID
         const queryConfig: QueryConfig = {
             questionId: 'custom_builder',
@@ -310,7 +368,18 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             dateFilters: builderConfig.dateFilters || [],
             timeFilter: builderConfig.timeFilter,
             limit: builderConfig.limit,
-            sort: builderConfig.sort
+            sort: builderConfig.sort,
+            // CRITICAL: Forward comparison fields from builder (or explicitly clear them)
+            comparison: builderConfig.comparison || undefined,
+            comparisonGrain: builderConfig.comparison ? builderConfig.comparisonGrain : undefined,
+            comparisonOffset: builderConfig.comparison ? builderConfig.comparisonOffset : undefined,
+            ...(secondaryMetric ? { secondaryMetrics: [secondaryMetric], axisMode: 'auto' as const } : {}),
+            // Also forward secondary metrics from builder if present
+            ...(builderConfig.secondaryMetrics?.length > 0 ? {
+                secondaryMetrics: builderConfig.secondaryMetrics,
+                axisMode: builderConfig.axisMode || 'auto',
+                secondaryMetricVisuals: builderConfig.secondaryMetricVisuals
+            } : {})
         };
 
         handleRunAnalysis(queryConfig);
@@ -327,18 +396,43 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             setCurrentQuestionLabel(q.label);
             setOriginalQuestionTemplate(q.label); // Store the original for smart substitution
             setCurrentQuestionId(q.intent.questionId);
+            setPeriodScope(''); // Reset period scope when switching questions
+            setPeriodGrain('');
             setError('');
             setResult(undefined);
 
             // Find the actual question template to extract its requirements
-            const questionDef = QUESTION_REGISTRY.find(qt => qt.id === q.intent.questionId);
+            const questionDef = getFullRegistry().find(qt => qt.id === q.intent.questionId);
+            // Also check custom questions from localStorage (AI-saved questions)
+            const customQuestions = JSON.parse(localStorage.getItem('astrabi_custom_questions') || '[]');
+            const customDef = customQuestions.find((cq: any) =>
+                cq.question === q.label || cq.questionId === q.intent.questionId
+            );
+            console.log('[Workbench] Custom question lookup:', { label: q.label, found: !!customDef, metric: customDef?.metric, dim: customDef?.dimension });
+
+            // Set custom date filters from AI-saved question (preserved across customizer re-runs)
+            const savedDateFilters = (customDef && customDef.dateFilters && customDef.dateFilters.length > 0)
+                ? customDef.dateFilters.map((df: any) => ({ column: df.column, timeGrain: 'day', values: df.values }))
+                : [];
+            setCustomDateFilters(savedDateFilters);
+
+            // Store AI SQL for direct execution (preserved across customizer re-runs)
+            setCustomAiSql(customDef?.aiSql || null);
 
             // Extract metric and dimension from the question's requirements
             let inferredMetric = '';
             let inferredDim = '';
             let inferredAgg = AggregationType.SUM;
 
-            if (questionDef && questionDef.req) {
+            // For AI-saved custom questions, use stored metric/dimension directly
+            if (customDef && customDef.metric) {
+                inferredMetric = customDef.metric;
+                inferredDim = customDef.dimension || '';
+                if (customDef.aggregation === 'avg') inferredAgg = AggregationType.AVG;
+                else if (customDef.aggregation === 'count_distinct') inferredAgg = AggregationType.COUNT_DISTINCT;
+                else if (customDef.aggregation === 'count') inferredAgg = AggregationType.COUNT;
+                else inferredAgg = AggregationType.SUM;
+            } else if (questionDef && questionDef.req) {
                 // Find metric requirement (revenue, quantity, stock, etc.)
                 // Also check for ID columns if the question implies counting entities (orders, customers)
                 const metricReq = questionDef.req.find(r =>
@@ -383,7 +477,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                     const dimReq = questionDef.req.find(r => ['product_name', 'source', 'campaign'].includes(r));
                     if (dimReq) {
                         const aliases: Record<string, string[]> = {
-                            product_name: ['product', 'item', 'sku', 'name'],
+                            product_name: ['product_name', 'product', 'item', 'sku'],
                             source: ['source', 'channel', 'medium', 'referrer'],
                             campaign: ['campaign', 'promo', 'ad']
                         };
@@ -414,15 +508,11 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
 
 
             // Helper to infer time filter for Builder
-            const inferTimeFilter = (id: string) => {
-                if (id.includes('today') || id.startsWith('d_') || id === 'op_track_vs_y' || id === 'op_target') return 'today';
-                if (id.includes('week') || id.startsWith('w_') || id === 'op_losing_mo' || id === 'op_gaining_share') return 'last_7_days'; // or 'this_week'
-                if (id.includes('month') || id.startsWith('m_')) return 'this_month';
-                if (id.includes('quarter') || id.startsWith('q_')) return 'this_quarter';
-                if (id.includes('year') || id.startsWith('y_') || id.startsWith('ytd')) return 'this_year';
-                if (id.includes('30d')) return 'last_30_days';
-                if (id.includes('7d')) return 'last_7_days';
-                return 'all_time';
+            const inferTimeFilter = (_id: string) => {
+                // Questions have their own built-in time scoping (e.g., d_ = today, w_ = this week).
+                // The time period dropdown should start as "Default" (empty) so the question
+                // runs with its natural behavior first. User can then manually override.
+                return '';
             };
 
 
@@ -430,10 +520,10 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             const builderConfig = {
                 metric: inferredMetric,
                 aggregation: inferredAgg,
-                dimension: inferredDim, // Keep inferred dimension (likely 'product' or 'source') as slice-and-dice default
+                dimension: inferredDim,
                 timeFilter: inferTimeFilter(q.intent.questionId),
-                limit: 0,
-                sort: 'desc'
+                limit: (customDef && customDef.limit) || 0,
+                sort: (customDef && customDef.sort) || 'desc'
             };
             setBuilderState(builderConfig as any);
 
@@ -443,7 +533,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             // For scalar questions (no dimension): only metric and time
             // For grouped questions: metric, time, dimension, sort, limit
 
-            const allowed: string[] = ['metric', 'time']; // Always allowed for all questions
+            const allowed: string[] = ['metric', 'time', 'filters']; // Always allowed for all questions
 
             // If the question inherently has a dimension (Group By), allow modifying it, plus Sort/Limit
             // But NEVER show aggregation - it's implicit in the question
@@ -453,9 +543,8 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                 allowed.push('limit');
             }
 
-            // Note: We deliberately exclude 'aggregation' and 'filters' to keep it simple
+            // Note: We deliberately exclude 'aggregation' to keep it simple
             // Aggregation is implicit in the question ("How much" = SUM)
-            // Filters are not allowed to prevent scope creep
 
             setAllowedCustomizerControls(allowed);
 
@@ -467,90 +556,26 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                 onUpdateFormatting({ ...formatting, numberFormat: 'auto' });
             }
 
-            // Run the actual CLICKED question logic (might be complex SQL not fully represented by Builder state, but this gives a starting point)
-            handleRunAnalysis(config);
+            // Run the actual CLICKED question logic
+            // If custom question has aiSql, pass it directly for alasql execution
+            const runConfig = {
+                ...config,
+                metric: inferredMetric || config.metric,
+                dimension: inferredDim || config.dimension,
+                aggregation: inferredAgg || config.aggregation,
+                limit: (customDef && customDef.limit) || config.limit,
+                sort: (customDef && customDef.sort) || config.sort,
+                ...(customDef && customDef.aiSql ? { aiSql: customDef.aiSql } : {}),
+            };
+            console.log('[Workbench] Running with config:', { metric: runConfig.metric, dimension: runConfig.dimension, aiSql: !!(runConfig as any).aiSql });
+            handleRunAnalysis(runConfig);
         } catch (err: any) {
             setError(err.message);
         }
     };
 
 
-    // Helper to generate a question label from the current config
-    const generateDynamicLabel = (cfg: any, originalQuestion?: string) => {
-        if (!originalQuestion) {
-            // Fallback to builder-style if no template
-            const metricName = cfg.metric ? cfg.metric.replace(/_/g, ' ') : 'Records';
-            const dimName = cfg.dimension ? ` by ${cfg.dimension.replace(/_/g, ' ')}` : '';
-            const timeName = cfg.timeFilter && cfg.timeFilter !== 'all_time'
-                ? ` ${cfg.timeFilter.replace(/^last_/, 'Last ').replace(/^this_/, 'This ').replace(/_/g, ' ')}`
-                : '';
-
-            let aggName = cfg.aggregation || 'Total';
-            if (aggName === 'SUM') aggName = 'Total';
-            if (aggName === 'COUNT') aggName = 'Count of';
-            if (aggName === 'AVG') aggName = 'Average';
-
-            const capitalize = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
-            return `${capitalize(aggName)} ${capitalize(metricName)}${dimName}${timeName}`;
-        }
-
-        // Smart substitution: preserve the question structure but swap out the values
-        let result = originalQuestion;
-
-        // Replace time filters (case insensitive)
-        const timeMap: Record<string, string> = {
-            'today': 'today',
-            'yesterday': 'yesterday',
-            'this_week': 'this week',
-            'this_month': 'this month',
-            'this_quarter': 'this quarter',
-            'this_year': 'this year',
-            'last_7_days': 'in the last 7 days',
-            'last_30_days': 'in the last 30 days',
-            'last_90_days': 'in the last 90 days',
-            'all_time': 'of all time'
-        };
-
-        // Handle custom "last_N_days/weeks" etc.
-        let timePhrase = timeMap[cfg.timeFilter] || cfg.timeFilter;
-        if (cfg.timeFilter && cfg.timeFilter.startsWith('last_') && !timeMap[cfg.timeFilter]) {
-            const parts = cfg.timeFilter.split('_');
-            const num = parts[1];
-            const unit = parts[2];
-            timePhrase = `in the last ${num} ${unit}`;
-        }
-
-        // Find and replace time references in the original question
-        const timePatterns = [
-            'today', 'yesterday', 'this week', 'this month', 'this quarter', 'this year',
-            'in the last \\d+ days?', 'in the last \\d+ weeks?', 'in the last \\d+ months?', 'in the last \\d+ years?',
-            'last \\d+ days?', 'last \\d+ weeks?', 'last \\d+ months?', 'last \\d+ years?',
-            'of all time'
-        ];
-
-        for (const pattern of timePatterns) {
-            const regex = new RegExp(pattern, 'i');
-            if (regex.test(result) && timePhrase) {
-                result = result.replace(regex, timePhrase);
-                break;
-            }
-        }
-
-        // Replace metric names (e.g., revenue → profit)
-        if (cfg.metric) {
-            const metricName = cfg.metric.replace(/_/g, ' ').toLowerCase();
-            // Common metric patterns in questions
-            const metricPatterns = ['revenue', 'sales', 'profit', 'orders', 'units', 'quantity', 'cost', 'discount'];
-            for (const oldMetric of metricPatterns) {
-                if (result.toLowerCase().includes(oldMetric) && oldMetric !== metricName) {
-                    result = result.replace(new RegExp(oldMetric, 'i'), metricName);
-                    break;
-                }
-            }
-        }
-
-        return result;
-    };
+    // generateDynamicLabel — Fix #6: now imported from ../services/workbenchLogic
 
     // Handler for Question Customizer updates (keeps Simplified View but runs dynamic logic)
     const handleCustomizerRun = (customConfig: any) => {
@@ -570,14 +595,16 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
         const newLabel = generateDynamicLabel(customConfig, originalQuestionTemplate);
         setCurrentQuestionLabel(newLabel);
 
-        // ALWAYS use 'custom_builder' when the customizer fires.
-        // The customizer dynamically changes metric/dimension/timeFilter/sort —
-        // the deterministic handler for specific questions (d_rev, d_orders, etc.)
-        // applies its own time filtering (e.g. isToday) which OVERRIDES the user's
-        // time filter selection. Using custom_builder ensures ALL user overrides
-        // (time filter, dimension, sort, limit) are respected.
-        const preservedQuestionId = 'custom_builder';
-        console.log('[Workbench] ROUTING → custom_builder (customizer always uses generic handler)');
+        // Preserve the original questionId for specialized question types that have
+        // dedicated logic in evaluateLocally (moving averages, running totals,
+        // comparisons, percent-of-total, trends, operational).
+        // These handlers compute results that custom_builder cannot replicate
+        // (e.g., windowed averages, cumulative sums, period-vs-period diffs).
+        // Only fall back to custom_builder for simple KPI/scalar questions.
+        const specialPatterns = ['_ma_', '_run_', '_vs_', '_pct_', 'trend', 'op_', '_mtd_', '_py_', '_growth_', '_aov'];
+        const isSpecialized = currentQuestionId && specialPatterns.some(p => currentQuestionId.includes(p));
+        const preservedQuestionId = isSpecialized ? currentQuestionId : 'custom_builder';
+        console.log(`[Workbench] ROUTING → ${preservedQuestionId} (${isSpecialized ? 'specialized handler' : 'generic handler'})`);
 
         // Update Builder State so switching to Full Builder works seamlessly
         setBuilderState({
@@ -602,16 +629,27 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             asOfDate: asOfDate,
             filters: customConfig.filters || {},
             measureFilters: customConfig.measureFilters || [],
-            dateFilters: customConfig.dateFilters || [],
+            dateFilters: (customConfig.dateFilters && customConfig.dateFilters.length > 0) ? customConfig.dateFilters : customDateFilters,
+            // Only inject AI SQL for custom_builder questions, NOT for specialized handlers
+            ...(customAiSql && preservedQuestionId === 'custom_builder' ? { aiSql: customAiSql } : {}),
             timeFilter: customConfig.timeFilter,
             limit: hasDimension ? customConfig.limit : 0, // No limit for scalar
             sort: hasDimension ? customConfig.sort : 'desc', // Sort doesn't matter for scalar
             // Carry forward analytics settings (comparison, etc.) from current config
             comparison: (config as any)?.comparison || 'none',
+            // Moving average window size from customizer
+            maWindow: customConfig.maWindow,
+            // Secondary metric for multi-metric overlay
+            ...(secondaryMetric ? { secondaryMetrics: [secondaryMetric], axisMode: 'auto' as const } : {}),
         } as any;
 
         // Propagate periodScope so WTD/MTD/QTD/YTD buttons aren't overridden
-        if (periodScope) {
+        // BUT if the user explicitly set a timeFilter from the dropdown, clear periodScope
+        // to prevent double-filtering (e.g., 'This Quarter' + stale 'WTD' = only 1 week)
+        if (customConfig.timeFilter && customConfig.timeFilter !== '') {
+            setPeriodScope('');
+            setPeriodGrain('');
+        } else if (periodScope) {
             (queryConfig as any).periodScope = periodScope;
         }
 
@@ -723,7 +761,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                             value={questionSearch}
                             onChange={(e) => setQuestionSearch(e.target.value)}
                             placeholder="Search questions..."
-                            className="w-full pl-8 pr-7 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 transition-colors placeholder:text-slate-400"
+                            className="w-full pl-8 pr-7 py-2 text-xs text-slate-800 border border-slate-200 rounded-lg bg-white focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-400 transition-colors placeholder:text-slate-400"
                         />
                         {questionSearch && (
                             <button onClick={() => setQuestionSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
@@ -731,13 +769,40 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                             </button>
                         )}
                     </div>
+                    {/* Default / All Toggle */}
+                    <div className="flex items-center mt-2">
+                        <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 w-full">
+                            <button
+                                onClick={() => setShowAllQuestions(false)}
+                                className={`flex-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${!showAllQuestions
+                                    ? 'bg-white text-indigo-700 shadow-sm'
+                                    : 'text-slate-400 hover:text-slate-600'
+                                    }`}
+                            >
+                                Default (10)
+                            </button>
+                            <button
+                                onClick={() => setShowAllQuestions(true)}
+                                className={`flex-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${showAllQuestions
+                                    ? 'bg-white text-indigo-700 shadow-sm'
+                                    : 'text-slate-400 hover:text-slate-600'
+                                    }`}
+                            >
+                                All
+                            </button>
+                        </div>
+                    </div>
                 </div>
                 <div className="p-2 space-y-1 min-w-[16rem]">
-                    {getFullQuestionBank().map((cat) => {
+                    {getFullQuestionBankForDomain(dataset?.domainProfile?.domain).map((cat) => {
                         const searchLower = questionSearch.toLowerCase();
-                        const filteredQs = questionSearch
+                        let filteredQs = questionSearch
                             ? cat.questions.filter(q => q.label.toLowerCase().includes(searchLower))
                             : cat.questions;
+                        // Apply default filter when not showing all
+                        if (!showAllQuestions && !questionSearch) {
+                            filteredQs = filteredQs.filter(q => DEFAULT_QUESTION_IDS.has(q.intent.questionId));
+                        }
                         if (filteredQs.length === 0) return null;
                         const isExpanded = questionSearch ? true : activeCategory === cat.category;
                         return (
@@ -772,7 +837,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             <div className="flex-1 flex flex-col h-full overflow-hidden relative min-w-0">
 
                 {/* MAD-LIB BUILDER — Collapsible */}
-                <div className={`z-10 bg-white border-b border-slate-200 transition-all duration-300 overflow-hidden ${isBuilderCollapsed ? 'max-h-0 border-b-0' : 'max-h-[500px]'}`}>
+                <div className={`z-10 bg-white border-b border-slate-200 transition-all duration-300 ${isBuilderCollapsed ? 'max-h-0 overflow-hidden border-b-0' : 'max-h-[500px] overflow-visible'}`}>
                     <div className="flex items-start">
                         <div className="flex-1 ml-4 sm:ml-0 transition-all">
                             {viewMode === 'customizer' ? (
@@ -791,6 +856,10 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                     onAnchorColumnChange={handleAnchorColumnChange}
                                     questionLabel={currentQuestionLabel}
                                     allowedControls={allowedCustomizerControls}
+                                    questionReq={activeQuestionReq}
+                                    columnMapping={defaultMapping}
+                                    semanticOverrides={semanticOverrides}
+                                    onColumnOverrideChange={handleOverrideChange}
                                 />
                             ) : (
                                 <QuestionBuilder
@@ -816,31 +885,31 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                     </div>
                 </div>
 
-                <div className="bg-white border-b border-slate-200 px-3 py-1 shrink-0">
+                <div className="bg-white border-b border-slate-200 px-3 py-1.5 shrink-0">
                     {/* Controls (wrapping) */}
                     <div className="flex items-center gap-2 flex-wrap">
                         <button
                             onClick={() => setIsBuilderCollapsed(!isBuilderCollapsed)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${isBuilderCollapsed
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold transition-all shrink-0 ${isBuilderCollapsed
                                 ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 hover:bg-indigo-100'
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                                 }`}
                             title={isBuilderCollapsed ? 'Show Query Builder' : 'Hide Query Builder'}
                         >
-                            {isBuilderCollapsed ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                            {isBuilderCollapsed ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                             {isBuilderCollapsed ? 'Show Builder' : 'Hide Builder'}
                         </button>
 
                         {/* AI SQL Generator Toggle */}
                         <button
                             onClick={() => setIsAISQLOpen(!isAISQLOpen)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${isAISQLOpen
+                            className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold transition-all shrink-0 ${isAISQLOpen
                                 ? 'bg-violet-500 text-white shadow-sm hover:bg-violet-600'
                                 : 'bg-violet-50 text-violet-600 ring-1 ring-violet-200 hover:bg-violet-100'
                                 }`}
                             title="AI SQL Generator — generate SQL from natural language"
                         >
-                            <Sparkles className="w-3.5 h-3.5" />
+                            <Sparkles className="w-4 h-4" />
                             AI SQL
                         </button>
 
@@ -853,40 +922,84 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                     <button
                                         key={tab}
                                         onClick={() => setContentTab(tab)}
-                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${contentTab === tab
+                                        className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-bold transition-all shrink-0 ${contentTab === tab
                                             ? 'bg-slate-800 text-white shadow-sm'
                                             : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700'
                                             }`}
                                     >
-                                        {tab === 'visual' && <BarChart2 className="w-3.5 h-3.5" />}
-                                        {tab === 'sql' && <Code className="w-3.5 h-3.5" />}
-                                        {tab === 'data' && <Table2 className="w-3.5 h-3.5" />}
+                                        {tab === 'visual' && <BarChart2 className="w-4 h-4" />}
+                                        {tab === 'sql' && <Code className="w-4 h-4" />}
+                                        {tab === 'data' && <Table2 className="w-4 h-4" />}
                                         {tab === 'visual' ? 'Visual' : tab === 'sql' ? 'SQL' : 'Data'}
                                     </button>
                                 ))}
                             </>
                         )}
 
-                        {/* X/Y Axis Toggles */}
+                        {/* X/Y Axis Toggles + Y-Axis Format */}
                         {result && !error && contentTab === 'visual' && formatting && onUpdateFormatting && (
-                            <div className="flex items-center gap-1.5 ml-2 shrink-0">
-                                <span className="text-xs text-slate-400 font-semibold mr-0.5">Axis:</span>
+                            <div className="flex items-center gap-1.5 ml-2 shrink-0 border border-slate-300 rounded-lg px-2 py-0.5 bg-white">
+                                <span className="text-xs text-slate-900 font-bold mr-0.5">Axis:</span>
                                 <button
                                     onClick={() => onUpdateFormatting({ ...formatting, showXAxis: !(formatting.showXAxis ?? formatting.showAxis ?? false) })}
-                                    className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all border ${(formatting.showXAxis ?? formatting.showAxis ?? false)
+                                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${(formatting.showXAxis ?? formatting.showAxis ?? false)
                                         ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                                        : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
+                                        : 'bg-white text-slate-900 border-slate-300 hover:bg-slate-100'
                                         }`}
                                     title="Toggle X-Axis visibility"
                                 >X</button>
                                 <button
                                     onClick={() => onUpdateFormatting({ ...formatting, showYAxis: !(formatting.showYAxis ?? formatting.showAxis ?? false) })}
-                                    className={`px-2 py-0.5 rounded-md text-[11px] font-bold transition-all border ${(formatting.showYAxis ?? formatting.showAxis ?? false)
+                                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${(formatting.showYAxis ?? formatting.showAxis ?? false)
                                         ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                                        : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
+                                        : 'bg-white text-slate-900 border-slate-300 hover:bg-slate-100'
                                         }`}
                                     title="Toggle Y-Axis visibility"
                                 >Y</button>
+                                <select
+                                    value={formatting.yAxisFormat || 'compact'}
+                                    onChange={(e) => onUpdateFormatting({ ...formatting, yAxisFormat: e.target.value as any })}
+                                    className="px-2 py-1 rounded-md text-xs font-bold border border-slate-300 bg-white text-slate-900 hover:bg-slate-100 transition-all cursor-pointer"
+                                    title="Y-axis number format"
+                                >
+                                    <option value="compact">K/M/B</option>
+                                    <option value="full">Full</option>
+                                    <option value="short_currency">$K/$M</option>
+                                </select>
+                            </div>
+                        )}
+
+                        {/* ── SECONDARY METRIC (+ Metric) ── */}
+                        {result && !error && contentTab === 'visual' && (
+                            <div className="flex items-center gap-1 ml-2 shrink-0">
+                                <select
+                                    value={secondaryMetric}
+                                    onChange={(e) => {
+                                        setSecondaryMetric(e.target.value);
+                                        // Re-run analysis with the new secondary metric
+                                        if (result?.config) {
+                                            const updatedConfig = {
+                                                ...result.config,
+                                                secondaryMetrics: e.target.value ? [e.target.value] : undefined,
+                                                axisMode: e.target.value ? 'auto' as const : undefined,
+                                            };
+                                            console.log('[Workbench] Adding secondary metric:', e.target.value, 'config:', JSON.stringify({ metric: updatedConfig.metric, dimension: updatedConfig.dimension, secondaryMetrics: updatedConfig.secondaryMetrics }));
+                                            handleRunAnalysis(updatedConfig);
+                                        } else {
+                                            console.warn('[Workbench] Cannot add secondary metric: result.config is null');
+                                        }
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg text-xs font-bold border border-slate-300 bg-white text-slate-900 hover:bg-slate-100 transition-all cursor-pointer max-w-[130px]"
+                                    title="Add a secondary metric to overlay on chart"
+                                >
+                                    <option value="">+ Metric</option>
+                                    {availableMetrics
+                                        .filter(m => m !== (result?.config?.metric || builderState.metric))
+                                        .map(m => (
+                                            <option key={m} value={m}>{m}</option>
+                                        ))
+                                    }
+                                </select>
                             </div>
                         )}
 
@@ -908,7 +1021,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                             setTimeout(() => handleRunAnalysis({ ...config, limit: v }), 100);
                                         }
                                     }}
-                                    className="w-10 px-1.5 py-0.5 text-xs font-bold text-center rounded border border-amber-300 bg-white focus:ring-1 focus:ring-amber-400 focus:outline-none"
+                                    className="w-10 px-1.5 py-0.5 text-xs font-bold text-center rounded border border-amber-300 bg-white text-slate-800 focus:ring-1 focus:ring-amber-400 focus:outline-none"
                                 />
                                 <button
                                     onClick={() => {
@@ -986,13 +1099,13 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                             if (config) setTimeout(() => handleRunAnalysis(config), 100);
                                         }
                                     }}
-                                    className={`flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-bold transition-all border ${isWhatIfActive
+                                    className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-bold transition-all border ${isWhatIfActive
                                         ? 'bg-purple-100 text-purple-700 border-purple-300'
-                                        : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
+                                        : 'bg-white text-slate-900 border-slate-300 hover:bg-slate-100'
                                         }`}
                                     title="What-If Analysis: adjust metric by a percentage"
                                 >
-                                    <Sliders className="w-3 h-3" />
+                                    <Sliders className="w-3.5 h-3.5" />
                                     What-If
                                 </button>
                                 {isWhatIfActive && (
@@ -1022,8 +1135,8 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
 
                     {/* Row 2: KPI + Action Buttons (always visible) */}
                     {result && !error && (
-                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-                            <div className="flex items-center gap-2 text-sm">
+                        <div className="flex items-center gap-2 mt-1.5 overflow-x-auto">
+                            <div className="flex items-center gap-2 text-sm min-w-0 shrink">
                                 <span className="text-slate-400 font-medium hidden xl:inline truncate max-w-[200px]">{result.yLabel}</span>
                                 <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-teal-500 text-base whitespace-nowrap">
                                     {showGrowthPct && result.growth
@@ -1040,24 +1153,23 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                     </button>
                                 )}
                             </div>
-                            <div className="flex-1" />
-                            <div className="flex items-center gap-1.5 shrink-0">
-                                <button onClick={() => onPin(currentQuestionLabel, { ...result, vis: chartType })} className={`flex items-center text-xs font-bold text-white ${pinLabel ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'} px-2.5 py-1 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap`}>
-                                    <Pin className="w-3.5 h-3.5 mr-1" /> {pinLabel || 'Pin'}
+                            <div className="ml-auto flex items-center gap-1.5 shrink-0">
+                                <button onClick={() => onPin(currentQuestionLabel, { ...result, vis: chartType })} className={`flex items-center text-sm font-bold text-white ${pinLabel ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'} px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap`} title={pinLabel || 'Pin to Dashboard'}>
+                                    <Pin className="w-4 h-4 mr-1" /> Pin
                                 </button>
                                 <button
                                     onClick={() => { if (config) handleRunAnalysis(config); }}
-                                    className="flex items-center text-xs font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 px-2.5 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
+                                    className="flex items-center text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap"
                                     title="Refresh — re-run current query"
                                 >
-                                    <RefreshCw className="w-3.5 h-3.5 mr-1" /> Refresh
+                                    <RefreshCw className="w-4 h-4 mr-1" /> Refresh
                                 </button>
                                 <button
                                     onClick={() => { setResult(undefined); setConfig(undefined); setError(null); setCurrentQuestionLabel('Select a question'); setCurrentQuestionId(null); setViewMode('bank'); onStateChange?.(undefined, undefined); }}
-                                    className="flex items-center text-xs font-bold text-red-500 hover:text-red-600 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 px-2.5 py-1 rounded-lg transition-all active:scale-95 whitespace-nowrap"
+                                    className="flex items-center text-sm font-bold text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap"
                                     title="Reset — clear all results and start fresh"
                                 >
-                                    <RotateCcw className="w-3.5 h-3.5 mr-1" /> Reset
+                                    <RotateCcw className="w-4 h-4 mr-1" /> Reset
                                 </button>
                             </div>
                         </div>
@@ -1338,10 +1450,10 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                 <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Period Comparison</span>
                                                             </div>
                                                             <div className="space-y-1.5">
-                                                                <label className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-all border ${!config?.comparison ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'
+                                                                <label className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-all border ${!config?.comparison || config?.comparison === 'none' ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'
                                                                     }`}>
-                                                                    <input type="radio" name="comparison" checked={!config?.comparison} onChange={() => {
-                                                                        if (config) handleRunAnalysis({ ...config, comparison: undefined });
+                                                                    <input type="radio" name="comparison" checked={!config?.comparison || config?.comparison === 'none'} onChange={() => {
+                                                                        if (config) handleRunAnalysis({ ...config, comparison: undefined, comparisonMode: undefined, comparisonGrain: undefined });
                                                                     }} className="mt-0.5 text-indigo-600" />
                                                                     <div>
                                                                         <span className="text-xs font-bold text-slate-700 leading-tight">Single Period (Default)</span>
@@ -1355,19 +1467,89 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                     }} className="mt-0.5 text-indigo-600" />
                                                                     <div>
                                                                         <span className="text-xs font-bold text-slate-700 leading-tight">Previous Period</span>
-                                                                        <span className="text-[10px] text-slate-500 leading-tight mt-0.5 block">Side-by-side bars with growth % labels</span>
+                                                                        <span className="text-[10px] text-slate-500 leading-tight mt-0.5 block">Compare with the immediately preceding period</span>
                                                                     </div>
                                                                 </label>
-                                                                {config?.comparison === 'previous_period' && (
-                                                                    <div className="mt-2 p-2.5 bg-indigo-50/60 rounded-lg border border-indigo-100 flex items-start gap-2">
-                                                                        <div className="flex gap-1 mt-0.5 shrink-0">
-                                                                            <div className="w-2.5 h-6 bg-indigo-500 rounded-sm" />
-                                                                            <div className="w-2.5 h-4 bg-slate-300 rounded-sm self-end" />
+                                                                <label className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-all border ${config?.comparison === 'same_period_last_year' ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'
+                                                                    }`}>
+                                                                    <input type="radio" name="comparison" checked={config?.comparison === 'same_period_last_year'} onChange={() => {
+                                                                        if (config) handleRunAnalysis({ ...config, comparison: 'same_period_last_year' });
+                                                                    }} className="mt-0.5 text-indigo-600" />
+                                                                    <div>
+                                                                        <span className="text-xs font-bold text-slate-700 leading-tight">Same Period Last Year</span>
+                                                                        <span className="text-[10px] text-slate-500 leading-tight mt-0.5 block">Year-over-year comparison</span>
+                                                                    </div>
+                                                                </label>
+
+                                                                {/* Same Period Last N */}
+                                                                <label className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-all border ${config?.comparison === 'same_period_last_n' ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'
+                                                                    }`}>
+                                                                    <input type="radio" name="comparison" checked={config?.comparison === 'same_period_last_n'} onChange={() => {
+                                                                        if (config) handleRunAnalysis({ ...config, comparison: 'same_period_last_n' as any, comparisonGrain: config.comparisonGrain || 'month', comparisonOffset: config.comparisonOffset || 1 });
+                                                                    }} className="mt-0.5 text-indigo-600" />
+                                                                    <div>
+                                                                        <span className="text-xs font-bold text-slate-700 leading-tight">Same Period Last N</span>
+                                                                        <span className="text-[10px] text-slate-500 leading-tight mt-0.5 block">Flexible: pick grain &amp; offset</span>
+                                                                    </div>
+                                                                </label>
+
+                                                                {/* Grain + Offset controls (only when Same Period Last N is active) */}
+                                                                {config?.comparison === 'same_period_last_n' && (
+                                                                    <div className="ml-7 mt-1 p-3 bg-indigo-50/60 rounded-lg border border-indigo-100 space-y-3">
+                                                                        {/* Grain selector pills */}
+                                                                        <div>
+                                                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Grain</span>
+                                                                            <div className="flex gap-1">
+                                                                                {(['day', 'week', 'month', 'quarter', 'year'] as const).map(g => {
+                                                                                    const labels: Record<string, string> = { day: 'D', week: 'W', month: 'M', quarter: 'Q', year: 'Y' };
+                                                                                    const active = (config.comparisonGrain || 'month') === g;
+                                                                                    return (
+                                                                                        <button key={g} onClick={() => handleRunAnalysis({ ...config, comparisonGrain: g })}
+                                                                                            className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${active ? 'bg-indigo-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:border-indigo-400 hover:text-indigo-700'}`}>
+                                                                                            {labels[g]}
+                                                                                        </button>
+                                                                                    );
+                                                                                })}
+                                                                            </div>
                                                                         </div>
-                                                                        <p className="text-[10px] text-indigo-700 leading-snug">
-                                                                            Current values shown as solid bars with previous period in gray.
-                                                                            <span className="font-bold text-emerald-600"> +12%</span> / <span className="font-bold text-red-500">-5%</span> growth labels appear above each bar.
-                                                                        </p>
+                                                                        {/* Offset stepper */}
+                                                                        <div>
+                                                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Offset</span>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <button onClick={() => { const n = Math.max(1, (config.comparisonOffset || 1) - 1); handleRunAnalysis({ ...config, comparisonOffset: n }); }}
+                                                                                    className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 font-bold text-sm transition-all">−</button>
+                                                                                <span className="w-8 text-center text-sm font-bold text-indigo-800">{config.comparisonOffset || 1}</span>
+                                                                                <button onClick={() => { const n = Math.min(24, (config.comparisonOffset || 1) + 1); handleRunAnalysis({ ...config, comparisonOffset: n }); }}
+                                                                                    className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 font-bold text-sm transition-all">+</button>
+                                                                            </div>
+                                                                            <span className="text-[10px] text-indigo-700 mt-1.5 block font-medium">
+                                                                                vs {config.comparisonOffset || 1} {(config.comparisonGrain || 'month') + ((config.comparisonOffset || 1) > 1 ? 's' : '')} ago
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Comparison visual hint */}
+                                                                {(config?.comparison === 'previous_period' || config?.comparison === 'same_period_last_year' || config?.comparison === 'same_period_last_n') && (
+                                                                    <div className="mt-2 p-2.5 bg-indigo-50/60 rounded-lg border border-indigo-100 space-y-1.5">
+                                                                        <div className="flex items-start gap-2">
+                                                                            <div className="flex gap-1 mt-0.5 shrink-0">
+                                                                                <div className="w-2.5 h-6 bg-indigo-500 rounded-sm" />
+                                                                                <div className={`w-2.5 h-4 ${config?.comparison === 'same_period_last_year' ? 'bg-amber-300' : 'bg-slate-300'} rounded-sm self-end`} />
+                                                                            </div>
+                                                                            <p className="text-[10px] text-indigo-700 leading-snug">
+                                                                                <span className="font-bold">Total:</span> Side-by-side bars with <span className="font-bold text-emerald-600">growth %</span> labels.
+                                                                            </p>
+                                                                        </div>
+                                                                        <div className="flex items-start gap-2">
+                                                                            <div className="flex gap-1 mt-0.5 shrink-0">
+                                                                                <div className="w-6 h-0.5 bg-indigo-500 mt-2" />
+                                                                                <div className={`w-6 mt-2 ${config?.comparison === 'same_period_last_year' ? 'border-amber-400' : 'border-slate-400'}`} style={{ borderTop: '2px dashed' }} />
+                                                                            </div>
+                                                                            <p className="text-[10px] text-indigo-700 leading-snug">
+                                                                                <span className="font-bold">Trend:</span> Switch to <span className="font-bold text-emerald-600">Trend</span> in the top bar to see dual-line overlay at D / W / M / Q / Y grain.
+                                                                            </p>
+                                                                        </div>
                                                                     </div>
                                                                 )}
                                                             </div>
@@ -1581,6 +1763,6 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                     )}
                 </div>
             </div>
-        </div>
+        </div >
     );
 };

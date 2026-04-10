@@ -5,10 +5,10 @@ import { AnalysisResult, Dataset, QueryConfig, FormattingConfig, AggregationType
 import { runAnalysis } from '../services/analysisEngine';
 import { getCalculationDisplayName, applyMultipleCalculations, type TableCalculation, type CalculatedColumn } from '../utils/tableCalculations';
 import { Tooltip } from './Tooltip';
-import { useAppStore } from '../store/useAppStore';
+
 import { AIInsightPanel } from './AIInsightPanel';
 
-import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Clock, Trash2, Save, FolderOpen, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw } from 'lucide-react';
 
 interface BuilderViewProps {
     dataset: Dataset;
@@ -25,18 +25,11 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);
     const [showGrowthChart, setShowGrowthChart] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-    const [showHistory, setShowHistory] = useState(false);
     const [lastRunConfig, setLastRunConfig] = useState<any>(null);
-    const [showSaveModal, setShowSaveModal] = useState(false);
-    const [saveName, setSaveName] = useState('');
-    const [showSavedDrawer, setShowSavedDrawer] = useState(false);
-    const [saveSuccess, setSaveSuccess] = useState(false);
     const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
     const [isBuilderCollapsed, setIsBuilderCollapsed] = useState(false);
     const [contentTab, setContentTab] = useState<'visual' | 'sql' | 'data'>('visual');
     const chartContainerRef = useRef<HTMLDivElement>(null);
-
-    const { queryHistory, addToHistory, clearHistory, savedQuestions, saveQuestion, deleteQuestion } = useAppStore();
 
     // Export CSV helper
     const exportToCSV = () => {
@@ -75,11 +68,22 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         const tc = dataset.timeContext;
         if (tc) {
             setAnchorColumn(tc.anchorDateColumn || '');
-            if (!isUserOverride) {
-                setAsOfDate(tc.defaultAnchorDate || tc.maxDate);
-            }
+            setAsOfDate(tc.defaultAnchorDate || tc.maxDate || '');
+            setIsUserOverride(false); // Reset override on dataset change
         }
     }, [dataset.id]);
+
+    // Dedicated effect: sync asOfDate when ETL populates timeContext (async)
+    React.useEffect(() => {
+        const tc = dataset.timeContext;
+        if (tc && !isUserOverride) {
+            const newDate = tc.defaultAnchorDate || tc.maxDate || '';
+            if (newDate) {
+                setAnchorColumn(tc.anchorDateColumn || '');
+                setAsOfDate(newDate);
+            }
+        }
+    }, [dataset.timeContext]);
 
     // User manually changes AS OF date
     const handleAsOfDateChange = (date: string) => {
@@ -115,26 +119,44 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 sort: config.sort,
                 chartType: chartType,
                 asOfDate: asOfDate,
-                comparison: config.comparison || result?.config?.comparison
+                comparison: ('comparison' in config) ? (config.comparison || '') : (result?.config?.comparison || ''),
+                comparisonGrain: ('comparisonGrain' in config) ? config.comparisonGrain : (result?.config?.comparisonGrain),
+                comparisonOffset: ('comparisonOffset' in config) ? config.comparisonOffset : (result?.config?.comparisonOffset),
+                ...(config.secondaryMetrics?.length > 0 ? { secondaryMetrics: config.secondaryMetrics, axisMode: config.axisMode || 'auto', secondaryMetricVisuals: config.secondaryMetricVisuals || {} } : {})
             };
 
             const res = runAnalysis(dataset, query);
 
             // Apply the recommended chart type from the question/registry
-            if (res.vis) {
-                setChartType(res.vis);
+            // Override: when comparison is active with few data points, force bar chart
+            // (line chart with 1-4 points looks like dots, not a useful visualization)
+            const hasComp = config.comparison && config.comparison !== 'none' && config.comparison !== '';
+            const hasSecondary = config.secondaryMetrics?.length > 0;
+
+            if (hasSecondary) {
+                // Combo chart: primary metric as BAR, secondary overlays as line/bar/area
+                // Force the primary chart to 'bar' for a clean combo look
+                setChartType('bar');
+            } else if (res.vis) {
+                const fewPts = (res.data?.length || 0) <= 4;
+                const isLineType = ['line', 'area', 'steppedLine', 'curvedLine', 'stackedArea'].includes(res.vis);
+                if (hasComp && fewPts && isLineType) {
+                    setChartType('bar');
+                } else {
+                    setChartType(res.vis);
+                }
+            } else {
+                // When no vis recommendation and comparison is removed, revert to kpiCard
+                // if the result is a single aggregated row (Total mode)
+                if (!hasComp && (res.data?.length || 0) <= 1) {
+                    setChartType('kpiCard');
+                }
             }
 
             setResult(res);
             setLastRunConfig(config);
             setIsLoading(false);
 
-            // Push to query history
-            addToHistory({
-                label: res.yLabel || `${config.metric} by ${config.dimension || 'Total'}`,
-                config: config,
-                timestamp: Date.now()
-            });
         } catch (err: any) {
             console.error(err);
             setError(err.message || 'An error occurred during analysis');
@@ -142,19 +164,6 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             setIsLoading(false);
         }
     };
-
-    // --- Save Question ---
-    const handleSaveQuestion = useCallback(() => {
-        if (!saveName.trim() || !lastRunConfig) return;
-        const id = typeof crypto !== 'undefined' && crypto.randomUUID
-            ? crypto.randomUUID()
-            : Math.random().toString(36).slice(2) + Date.now().toString(36);
-        saveQuestion({ id, name: saveName.trim(), config: lastRunConfig, createdAt: Date.now() });
-        setSaveName('');
-        setShowSaveModal(false);
-        setSaveSuccess(true);
-        setTimeout(() => setSaveSuccess(false), 2000);
-    }, [saveName, lastRunConfig, saveQuestion]);
 
     // --- Click-to-Drill ---
     const handleDrillDown = useCallback((dimensionValue: string) => {
@@ -169,23 +178,22 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const tableData = useMemo(() => {
         if (!result) return { data: [], columns: [] as CalculatedColumn[] };
 
-        // Build active calcs: comparison auto-adds pct_diff_from_prev
-        let activeCalcs: TableCalculation[] = [];
-        if (result?.config?.comparison === 'previous_period') {
-            activeCalcs.push('pct_diff_from_prev');
-        }
-        // Add user-selected calculations
-        const userCalcs = (formatting?.tableCalculations || []).filter(c => c !== 'none');
-        for (const c of userCalcs) {
-            if (!activeCalcs.includes(c)) activeCalcs.push(c);
-        }
+        // Only user-selected table calculations go to the Calculated tab
+        // Comparison (previous_period) stays in Original tab — handled by ChartVisualization natively
+        const activeCalcs: TableCalculation[] = (formatting?.tableCalculations || []).filter(c => c !== 'none');
 
         if (activeCalcs.length === 0) {
             return { data: result.data || [], columns: [] as CalculatedColumn[] };
         }
 
+        // Strip comparison fields BEFORE calculations so they don't leak through { ...row } spreads
+        const cleanRows = (result.data || []).map((r: any) => {
+            const { previous_value, growth_pct, previous_period_label, difference, ...rest } = r;
+            return rest;
+        });
+
         const { transformedData, columns } = applyMultipleCalculations(
-            result.data,
+            cleanRows,
             result.yKey,
             activeCalcs,
             result.yLabel,
@@ -199,7 +207,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
 
             {/* â”€â”€â”€ COLLAPSIBLE BUILDER â”€â”€â”€ */}
-            <div className={`bg-white border-b border-slate-200 shadow-sm z-10 shrink-0 overflow-hidden transition-all duration-300 ease-in-out ${isBuilderCollapsed ? 'max-h-0 border-b-0' : 'max-h-[500px]'}`}>
+            <div className={`bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible'}`}>
                 <QuestionBuilder
                     dataset={dataset}
                     onRun={handleRun}
@@ -230,9 +238,9 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                             <button
                                 key={tab}
                                 onClick={() => setContentTab(tab)}
-                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${contentTab === tab
-                                    ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
-                                    : 'text-slate-400 hover:text-slate-600 hover:bg-slate-100'
+                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${contentTab === tab
+                                    ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300 border-indigo-300'
+                                    : 'text-slate-700 hover:text-indigo-700 bg-white hover:bg-indigo-50 border-slate-300 shadow-sm'
                                     }`}
                             >
                                 {tab === 'visual' ? <><BarChart2 className="w-3 h-3" /> Visual</> :
@@ -245,21 +253,21 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
                 {/* X/Y Axis Toggles */}
                 {result && !error && contentTab === 'visual' && formatting && onUpdateFormatting && (
-                    <div className="flex items-center gap-1 ml-1">
-                        <span className="text-[10px] text-slate-400 font-medium mr-0.5">Axis:</span>
+                    <div className="flex items-center gap-1.5 ml-1 border border-slate-300 rounded-lg px-2 py-0.5 bg-white">
+                        <span className="text-xs text-slate-900 font-bold mr-0.5">Axis:</span>
                         <button
                             onClick={() => onUpdateFormatting({ ...formatting, showXAxis: !(formatting.showXAxis ?? formatting.showAxis ?? false) })}
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${(formatting.showXAxis ?? formatting.showAxis ?? false)
+                            className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border shadow-sm ${(formatting.showXAxis ?? formatting.showAxis ?? false)
                                 ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                                : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
+                                : 'bg-white text-slate-900 border-slate-300 hover:bg-indigo-50 hover:text-indigo-700'
                                 }`}
                             title="Toggle X-Axis visibility"
                         >X</button>
                         <button
                             onClick={() => onUpdateFormatting({ ...formatting, showYAxis: !(formatting.showYAxis ?? formatting.showAxis ?? false) })}
-                            className={`px-2 py-0.5 rounded text-[10px] font-bold transition-all border ${(formatting.showYAxis ?? formatting.showAxis ?? false)
+                            className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border shadow-sm ${(formatting.showYAxis ?? formatting.showAxis ?? false)
                                 ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                                : 'bg-slate-50 text-slate-400 border-slate-200 hover:bg-slate-100'
+                                : 'bg-white text-slate-900 border-slate-300 hover:bg-indigo-50 hover:text-indigo-700'
                                 }`}
                             title="Toggle Y-Axis visibility"
                         >Y</button>
@@ -270,10 +278,11 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
                 {/* Compact KPI + Actions */}
                 {result && !error && (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                         {/* KPI Summary */}
                         <div className="flex items-center gap-2 text-xs">
-                            <span className="text-slate-400 font-medium">{result.yLabel}</span>
+                            <span className="text-slate-500 font-semibold">Analysis</span>
+                            <span className="text-slate-600 font-medium">of {result.yLabel}</span>
                             <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-teal-500 text-lg">
                                 {result.kpi
                                     ? (typeof result.kpi === 'number' ? result.kpi.toLocaleString() : result.kpi)
@@ -285,110 +294,28 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         </div>
 
                         {/* Export */}
-                        <button onClick={exportToCSV} className="flex items-center text-[11px] font-bold text-slate-500 hover:text-indigo-700 bg-slate-100 hover:bg-indigo-50 px-2 py-1 rounded-lg transition-all border border-slate-200" title="Export CSV">
-                            <Download className="w-3 h-3 mr-1" /> Export
+                        <button onClick={exportToCSV} className="flex items-center text-sm font-bold text-slate-700 hover:text-indigo-700 bg-white hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all border border-slate-300 shadow-sm whitespace-nowrap" title="Export CSV">
+                            <Download className="w-4 h-4 mr-1" /> Export
                         </button>
 
-                        {/* Save */}
-                        <div className="relative">
-                            <button
-                                onClick={() => { setShowSaveModal(!showSaveModal); setShowSavedDrawer(false); setShowHistory(false); }}
-                                className={`flex items-center text-[11px] font-bold px-2 py-1 rounded-lg transition-all border ${saveSuccess
-                                    ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
-                                    : showSaveModal
-                                        ? 'text-indigo-700 bg-indigo-50 border-indigo-200'
-                                        : 'text-slate-500 bg-slate-100 hover:text-indigo-700 hover:bg-indigo-50 border-slate-200'
-                                    }`}
-                                disabled={!lastRunConfig}
-                            >
-                                {saveSuccess ? <CheckCircle2 className="w-3 h-3 mr-1" /> : <Save className="w-3 h-3 mr-1" />}
-                                {saveSuccess ? 'Saved!' : 'Save'}
-                            </button>
-                            {showSaveModal && (
-                                <div className="absolute right-0 top-full mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-xl z-30 p-4">
-                                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Save Question</h4>
-                                    <input type="text" value={saveName} onChange={e => setSaveName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSaveQuestion()} placeholder="Enter a name..." className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 mb-3 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none" autoFocus />
-                                    <div className="flex justify-end gap-2">
-                                        <button onClick={() => setShowSaveModal(false)} className="text-xs text-slate-500 hover:text-slate-700 px-3 py-1.5 rounded-lg">Cancel</button>
-                                        <button onClick={handleSaveQuestion} disabled={!saveName.trim()} className="text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 px-3 py-1.5 rounded-lg transition-colors">Save</button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
-                        {/* Saved Queries */}
-                        <div className="relative">
-                            <button onClick={() => { setShowSavedDrawer(!showSavedDrawer); setShowHistory(false); setShowSaveModal(false); }} className={`flex items-center text-[11px] font-bold px-2 py-1 rounded-lg transition-all border ${showSavedDrawer ? 'text-indigo-700 bg-indigo-50 border-indigo-200' : 'text-slate-500 bg-slate-100 hover:text-indigo-700 hover:bg-indigo-50 border-slate-200'}`}>
-                                <FolderOpen className="w-3 h-3 mr-1" /> Saved
-                                {savedQuestions.length > 0 && (<span className="ml-1 bg-indigo-100 text-indigo-700 text-[9px] font-bold px-1 py-0.5 rounded-full">{savedQuestions.length}</span>)}
-                            </button>
-                            {showSavedDrawer && (
-                                <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-30 overflow-hidden">
-                                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
-                                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Saved Questions</span>
-                                    </div>
-                                    {savedQuestions.length === 0 ? (
-                                        <div className="px-4 py-6 text-center text-sm text-slate-400">No saved questions yet</div>
-                                    ) : (
-                                        <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
-                                            {savedQuestions.map(sq => (
-                                                <div key={sq.id} className="flex items-center justify-between px-4 py-2.5 hover:bg-indigo-50 transition-colors group">
-                                                    <button onClick={() => { handleRun(sq.config); setShowSavedDrawer(false); }} className="flex-1 text-left truncate">
-                                                        <span className="text-sm text-slate-700 font-medium">{sq.name}</span>
-                                                        <span className="block text-[10px] text-slate-400">{new Date(sq.createdAt).toLocaleDateString()}</span>
-                                                    </button>
-                                                    <button onClick={(e) => { e.stopPropagation(); deleteQuestion(sq.id); }} className="p-1 rounded text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all" title="Delete">
-                                                        <Trash2 className="w-3.5 h-3.5" />
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-
-                        {/* History */}
-                        <div className="relative">
-                            <button onClick={() => { setShowHistory(!showHistory); setShowSavedDrawer(false); setShowSaveModal(false); }} className={`flex items-center text-[11px] font-bold px-2 py-1 rounded-lg transition-all border ${showHistory ? 'text-indigo-700 bg-indigo-50 border-indigo-200' : 'text-slate-500 bg-slate-100 hover:text-indigo-700 hover:bg-indigo-50 border-slate-200'}`}>
-                                <Clock className="w-3 h-3 mr-1" /> History
-                            </button>
-                            {showHistory && queryHistory.length > 0 && (
-                                <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl z-30 overflow-hidden">
-                                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100 bg-slate-50">
-                                        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Recent Queries</span>
-                                        <button onClick={() => { clearHistory(); setShowHistory(false); }} className="text-xs text-red-400 hover:text-red-600 flex items-center gap-1"><Trash2 className="w-3 h-3" /> Clear</button>
-                                    </div>
-                                    <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
-                                        {queryHistory.map((entry, i) => (
-                                            <button key={i} onClick={() => { handleRun(entry.config); setShowHistory(false); }} className="w-full text-left px-4 py-2.5 hover:bg-indigo-50 transition-colors flex justify-between items-center">
-                                                <span className="text-sm text-slate-700 font-medium truncate">{entry.label}</span>
-                                                <span className="text-[10px] text-slate-400 shrink-0 ml-2">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                            </button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-
                         {onPin && (
-                            <button onClick={() => onPin(result.yLabel, { ...result, vis: chartType })} className="flex items-center text-[11px] font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-95">
-                                <Pin className="w-3 h-3 mr-1.5" /> Pin to Dashboard
+                            <button onClick={() => onPin(result.yLabel, { ...result, vis: chartType })} className="flex items-center text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap" title="Pin to Dashboard">
+                                <Pin className="w-4 h-4 mr-1" /> Pin
                             </button>
                         )}
                         <button
                             onClick={() => { if (lastRunConfig) handleRun(lastRunConfig); }}
-                            className="flex items-center text-[11px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 px-2.5 py-1.5 rounded-lg transition-all active:scale-95"
+                            className="flex items-center text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap"
                             title="Refresh — re-run current query"
                         >
-                            <RefreshCw className="w-3 h-3 mr-1" /> Refresh
+                            <RefreshCw className="w-4 h-4 mr-1" /> Refresh
                         </button>
                         <button
                             onClick={() => { setResult(null); setError(null); setLastRunConfig(null); }}
-                            className="flex items-center text-[11px] font-bold text-red-500 hover:text-red-600 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 px-2.5 py-1.5 rounded-lg transition-all active:scale-95"
+                            className="flex items-center text-sm font-bold text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap"
                             title="Reset — clear all results and start fresh"
                         >
-                            <RotateCcw className="w-3 h-3 mr-1" /> Reset
+                            <RotateCcw className="w-4 h-4 mr-1" /> Reset
                         </button>
                     </div>
                 )}
@@ -432,21 +359,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         <p className="text-lg font-medium">Configure your question above to see results</p>
                         <p className="text-sm mt-1 text-slate-300">Press <kbd className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-xs font-mono border border-slate-200">Ctrl+Enter</kbd> to run</p>
 
-                        {queryHistory.length > 0 && (
-                            <div className="mt-8 w-full max-w-md">
-                                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-1">
-                                    <Clock className="w-3.5 h-3.5" /> Recent Queries
-                                </h4>
-                                <div className="space-y-1">
-                                    {queryHistory.slice(0, 5).map((entry, i) => (
-                                        <button key={i} onClick={() => handleRun(entry.config)} className="w-full text-left px-3 py-2 bg-white hover:bg-indigo-50 border border-slate-200 rounded-lg text-sm text-slate-700 font-medium transition-colors flex justify-between items-center">
-                                            <span className="truncate">{entry.label}</span>
-                                            <span className="text-[10px] text-slate-400 shrink-0 ml-2">{new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+
                     </div>
                 )}
 
@@ -454,7 +367,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     <>
                         {/* â”€â”€â”€ VISUAL TAB â”€â”€â”€ */}
                         {contentTab === 'visual' && (
-                            <div className="relative bg-white flex-1 min-h-[350px] rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+                            <div className="relative bg-white flex-1 min-h-[350px] rounded-xl border border-slate-200 shadow-sm overflow-visible">
                                 {/* Growth toggle */}
                                 {tableData.columns.length > 0 && (
                                     <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 shadow-sm">
@@ -470,10 +383,25 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                 {(() => {
                                     const firstCol = tableData.columns[0];
                                     if (firstCol && showGrowthChart) {
+                                        // tableData.data is already clean (comparison fields stripped in useMemo above)
+                                        // Also strip the original metric column (e.g. 'sales') so ChartVisualization
+                                        // doesn't auto-detect it as a secondary series and render a ghost line chart
+                                        const calcColumnKeys = new Set([result.xKey, ...tableData.columns.map(c => c.key)]);
+                                        const calcCleanData = tableData.data.map((d: any) => {
+                                            const clean: any = {};
+                                            for (const k of Object.keys(d)) {
+                                                if (calcColumnKeys.has(k) || typeof d[k] !== 'number') {
+                                                    clean[k] = d[k];
+                                                }
+                                            }
+                                            return clean;
+                                        });
+                                        const calcConfig = result.config ? { ...result.config, comparison: 'none' as const } : undefined;
                                         return (
                                             <ChartVisualization
                                                 key={`growth-${firstCol.key}`}
-                                                data={tableData.data}
+                                                data={calcCleanData}
+                                                config={calcConfig}
                                                 xKey={result.xKey}
                                                 yKey={firstCol.key}
                                                 yLabel={firstCol.label}
@@ -495,12 +423,13 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                     return (
                                         <ChartVisualization
                                             data={result.data}
+                                            config={result.config}
                                             xKey={result.xKey}
                                             yKey={result.yKey}
                                             yLabel={result.yLabel}
                                             chartType={chartType}
                                             onChartTypeChange={setChartType}
-                                            formatting={formatting}
+                                            formatting={{ ...formatting, tableCalculations: [] }}
                                             onToggleFormat={onUpdateFormatting ? () => setIsFormatPanelOpen(!isFormatPanelOpen) : undefined}
                                             isFormatOpen={isFormatPanelOpen}
                                             onToggleAnalytics={onUpdateFormatting ? () => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen) : undefined}
@@ -600,24 +529,83 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
                                 {/* FLOATING ANALYTICS PANEL */}
                                 {isAnalyticsPanelOpen && formatting && onUpdateFormatting && (
-                                    <div className="absolute top-4 left-4 w-72 bg-white shadow-2xl border border-emerald-200 rounded-xl p-5 z-20 animate-in fade-in slide-in-from-left-4 ring-1 ring-black/5">
+                                    <div className="absolute top-4 left-4 w-72 max-h-[calc(100%-2rem)] overflow-y-auto bg-white shadow-2xl border border-emerald-200 rounded-xl p-5 z-20 animate-in fade-in slide-in-from-left-4 ring-1 ring-black/5">
                                         <div className="flex justify-between items-center mb-4 pb-3 border-b border-emerald-100">
                                             <h3 className="font-bold text-slate-800 flex items-center gap-2"><Activity className="w-5 h-5 text-emerald-600" /> Analytics</h3>
                                             <button onClick={() => setIsAnalyticsPanelOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors p-1 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5" /></button>
                                         </div>
                                         <div className="space-y-4">
                                             <div className="pb-4 border-b border-emerald-100">
-                                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">Data Comparison</label>
-                                                <label className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all ${result?.config?.comparison === 'previous_period' ? 'bg-emerald-100 border border-emerald-500 ring-1 ring-emerald-500 shadow-sm' : 'hover:bg-slate-50 border border-transparent hover:border-slate-200'}`}>
-                                                    <div className="relative flex items-center shrink-0">
-                                                        <input type="checkbox" checked={result?.config?.comparison === 'previous_period'} onChange={(e) => { if (result) { const newConfig = { ...result.config, comparison: e.target.checked ? 'previous_period' : 'none' }; handleRun(newConfig); } }} className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-slate-400 checked:border-emerald-700 checked:bg-emerald-600 transition-all" />
-                                                        <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 transition-opacity"><svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg></div>
-                                                    </div>
-                                                    <div className="flex flex-col">
-                                                        <span className={`text-sm ${result?.config?.comparison === 'previous_period' ? 'font-bold text-emerald-900' : 'text-slate-700 font-medium'}`}>Compare Previous Period</span>
-                                                        <span className="text-[10px] text-slate-500 leading-tight">vs Same Period (Last N)</span>
-                                                    </div>
-                                                </label>
+                                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">Period Comparison</label>
+                                                <div className="space-y-1.5">
+                                                    {/* None */}
+                                                    <label className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all border ${!result?.config?.comparison || result?.config?.comparison === 'none' ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'}`}>
+                                                        <input type="radio" name="builder-comparison" checked={!result?.config?.comparison || result?.config?.comparison === 'none'} onChange={() => { if (result) handleRun({ ...result.config, comparison: 'none' as any }); }} className="text-emerald-600" />
+                                                        <div>
+                                                            <span className="text-sm font-bold text-slate-700">Single Period</span>
+                                                            <span className="text-[10px] text-slate-500 block leading-tight">No comparison</span>
+                                                        </div>
+                                                    </label>
+                                                    {/* Previous Period */}
+                                                    <label className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all border ${result?.config?.comparison === 'previous_period' ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'}`}>
+                                                        <input type="radio" name="builder-comparison" checked={result?.config?.comparison === 'previous_period'} onChange={() => { if (result) handleRun({ ...result.config, comparison: 'previous_period' as any }); }} className="text-emerald-600" />
+                                                        <div>
+                                                            <span className="text-sm font-bold text-slate-700">Previous Period</span>
+                                                            <span className="text-[10px] text-slate-500 block leading-tight">Compare with preceding period</span>
+                                                        </div>
+                                                    </label>
+                                                    {/* Same Period Last Year */}
+                                                    <label className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all border ${result?.config?.comparison === 'same_period_last_year' ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'}`}>
+                                                        <input type="radio" name="builder-comparison" checked={result?.config?.comparison === 'same_period_last_year'} onChange={() => { if (result) handleRun({ ...result.config, comparison: 'same_period_last_year' as any }); }} className="text-emerald-600" />
+                                                        <div>
+                                                            <span className="text-sm font-bold text-slate-700">Same Period Last Year</span>
+                                                            <span className="text-[10px] text-slate-500 block leading-tight">Year-over-year comparison</span>
+                                                        </div>
+                                                    </label>
+                                                    {/* Same Period Last N */}
+                                                    <label className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all border ${result?.config?.comparison === 'same_period_last_n' ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'}`}>
+                                                        <input type="radio" name="builder-comparison" checked={result?.config?.comparison === 'same_period_last_n'} onChange={() => { if (result) handleRun({ ...result.config, comparison: 'same_period_last_n' as any, comparisonGrain: result.config.comparisonGrain || 'month', comparisonOffset: result.config.comparisonOffset || 1 }); }} className="text-emerald-600" />
+                                                        <div>
+                                                            <span className="text-sm font-bold text-slate-700">Same Period Last N</span>
+                                                            <span className="text-[10px] text-slate-500 block leading-tight">Flexible: pick grain &amp; offset</span>
+                                                        </div>
+                                                    </label>
+                                                    {/* Grain + Offset controls (only when Same Period Last N is active) */}
+                                                    {result?.config?.comparison === 'same_period_last_n' && (
+                                                        <div className="ml-7 mt-2 p-3 bg-emerald-50/60 rounded-lg border border-emerald-200 space-y-3">
+                                                            {/* Grain selector pills */}
+                                                            <div>
+                                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Grain</span>
+                                                                <div className="flex gap-1">
+                                                                    {(['day', 'week', 'month', 'quarter', 'year'] as const).map(g => {
+                                                                        const labels: Record<string, string> = { day: 'D', week: 'W', month: 'M', quarter: 'Q', year: 'Y' };
+                                                                        const active = (result.config.comparisonGrain || 'month') === g;
+                                                                        return (
+                                                                            <button key={g} onClick={() => handleRun({ ...result.config, comparisonGrain: g })}
+                                                                                className={`px-2.5 py-1 text-xs font-bold rounded-md transition-all ${active ? 'bg-emerald-600 text-white shadow-sm' : 'bg-white text-slate-600 border border-slate-200 hover:border-emerald-400 hover:text-emerald-700'}`}>
+                                                                                {labels[g]}
+                                                                            </button>
+                                                                        );
+                                                                    })}
+                                                                </div>
+                                                            </div>
+                                                            {/* Offset stepper */}
+                                                            <div>
+                                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Offset</span>
+                                                                <div className="flex items-center gap-2">
+                                                                    <button onClick={() => { const n = Math.max(1, (result.config.comparisonOffset || 1) - 1); handleRun({ ...result.config, comparisonOffset: n }); }}
+                                                                        className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700 font-bold text-sm transition-all">−</button>
+                                                                    <span className="w-8 text-center text-sm font-bold text-emerald-800">{result.config.comparisonOffset || 1}</span>
+                                                                    <button onClick={() => { const n = Math.min(24, (result.config.comparisonOffset || 1) + 1); handleRun({ ...result.config, comparisonOffset: n }); }}
+                                                                        className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700 font-bold text-sm transition-all">+</button>
+                                                                </div>
+                                                                <span className="text-[10px] text-emerald-700 mt-1.5 block font-medium">
+                                                                    vs {result.config.comparisonOffset || 1} {(result.config.comparisonGrain || 'month') + ((result.config.comparisonOffset || 1) > 1 ? 's' : '')} ago
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                             <div>
                                                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">Table Calculation</label>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, ChevronDown, Calendar, Search } from 'lucide-react';
+import ReactDOM from 'react-dom';
+import { X, ChevronDown, Calendar, Search, ArrowDown } from 'lucide-react';
 
 interface DateFilterItemProps {
     id: number;
@@ -17,17 +18,32 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 200 });
 
     // Close dropdown when clicking outside
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node) &&
+                buttonRef.current && !buttonRef.current.contains(event.target as Node)) {
                 setIsOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
+
+    // Compute position when dropdown opens
+    useEffect(() => {
+        if (isOpen && buttonRef.current) {
+            const rect = buttonRef.current.getBoundingClientRect();
+            setDropdownPos({
+                top: rect.bottom + 4,
+                left: rect.left,
+                width: Math.max(rect.width, 220)
+            });
+        }
+    }, [isOpen]);
 
     const selectedValues = Array.isArray(filter.values) ? filter.values : (filter.values ? [filter.values] : []);
     const timeGrain = filter.timeGrain || 'year';
@@ -84,8 +100,9 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
             </div>
 
             {/* Value Multi-Select */}
-            <div className="relative inline-block" ref={dropdownRef}>
+            <div className="relative inline-block">
                 <button
+                    ref={buttonRef}
                     type="button"
                     onClick={() => setIsOpen(!isOpen)}
                     className="appearance-none bg-white hover:bg-slate-50 text-slate-800 font-bold border-2 border-teal-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-teal-500 min-w-[140px] text-left flex items-center justify-between"
@@ -99,8 +116,17 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
                     <ChevronDown className="w-4 h-4 text-slate-500 ml-2" />
                 </button>
 
-                {isOpen && (
-                    <div className="absolute z-50 mt-1 w-full max-w-xs bg-white border-2 border-teal-300 rounded-md shadow-lg">
+                {isOpen && ReactDOM.createPortal(
+                    <div
+                        ref={dropdownRef}
+                        className="fixed z-[9999] bg-white border-2 border-teal-300 rounded-md shadow-xl"
+                        style={{
+                            top: dropdownPos.top,
+                            left: dropdownPos.left,
+                            width: dropdownPos.width,
+                            maxWidth: 320
+                        }}
+                    >
                         {/* Search */}
                         <div className="px-2 pt-2 pb-1">
                             <div className="relative">
@@ -122,7 +148,7 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
                                 availableValues.filter(v => v.toLowerCase().includes(searchTerm.toLowerCase())).map(val => (
                                     <label
                                         key={val}
-                                        className="flex items-center px-3 py-2 hover:bg-teal-50 cursor-pointer text-sm"
+                                        className="flex items-center px-3 py-2 hover:bg-teal-50 cursor-pointer text-sm text-slate-800"
                                     >
                                         <input
                                             type="checkbox"
@@ -130,14 +156,34 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
                                             onChange={() => toggleValue(val)}
                                             className="mr-2 rounded border-teal-300 text-teal-600 focus:ring-teal-500"
                                         />
-                                        <span>{val}</span>
+                                        <span className="text-slate-800">{val}</span>
                                     </label>
                                 ))
                             )}
                         </div>
                     </div>
-                )}
+                    , document.body)}
             </div>
+
+            {/* Fix #10: Drill‑down button — adds a child filter at next finer grain */}
+            {(() => {
+                const grainOrder = ['year', 'quarter', 'month', 'week', 'day'];
+                const currentIdx = grainOrder.indexOf(timeGrain);
+                const nextGrain = currentIdx >= 0 && currentIdx < grainOrder.length - 1 ? grainOrder[currentIdx + 1] : null;
+                if (nextGrain && selectedValues.length > 0 && onAddFilter) {
+                    return (
+                        <button
+                            onClick={() => onAddFilter('date', filter.column, nextGrain)}
+                            className="flex items-center gap-1 text-xs font-bold text-teal-600 bg-teal-50 hover:bg-teal-100 px-2 py-1 rounded-lg border border-teal-200 transition-colors self-center"
+                            title={`Drill down to ${nextGrain}`}
+                        >
+                            <ArrowDown className="w-3 h-3" />
+                            {nextGrain.charAt(0).toUpperCase() + nextGrain.slice(1)}
+                        </button>
+                    );
+                }
+                return null;
+            })()}
 
             <button
                 onClick={() => onRemove(id)}
@@ -149,3 +195,4 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
         </React.Fragment>
     );
 };
+

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, Copy, Save, Check, Sparkles, AlertCircle, Loader2, Database, X } from 'lucide-react';
-import { Dataset, QuestionTemplate } from '../types';
+import { Dataset, QuestionTemplate, ColumnType } from '../types';
 import { generateSQL, ChatMessage, extractMetadata } from '../services/aiSQLService';
 import { saveCustomQuestion, getFullRegistry } from '../services/questionRegistry';
 
@@ -80,18 +80,22 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
     const handleSave = () => {
         if (!showSaveModal || !saveQuestionText.trim()) return;
 
-        const id = `custom_ai_${Date.now()}`;
+        const uniqueQuestionId = `ai_sql_${Date.now()}`;
 
+        // Just save the exact AI SQL — it will be executed directly via alasql
         const newQuestion: QuestionTemplate = {
-            id,
+            id: uniqueQuestionId,  // MUST be unique — never use 'custom_builder' (that's the Question Builder's ID)
             category: saveCategory || 'Custom Questions',
             question: saveQuestionText.trim(),
             req: [],
             grain: 'any',
-            vis: 'table',
+            vis: 'bar',
             sql: showSaveModal,
-            evalType: 'custom' as any
-        };
+            aiSql: showSaveModal, // The exact AI-generated SQL to execute directly
+            questionId: uniqueQuestionId,
+        } as any;
+
+        console.log('[AI SQL Save] Saving with direct SQL:', showSaveModal);
 
         saveCustomQuestion(newQuestion);
         setSaveSuccess(true);
@@ -105,7 +109,7 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
     const existingCategories = [...new Set(getFullRegistry().map(q => q.category))];
 
     return (
-        <div className="flex flex-col h-full bg-gradient-to-b from-slate-50 to-white">
+        <div className="flex flex-col h-full bg-gradient-to-b from-slate-50 to-white" style={{ color: '#1e293b' }}>
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-violet-600 to-indigo-600 text-white">
                 <div className="flex items-center gap-2">
@@ -137,8 +141,8 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                         <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-100 to-indigo-100 flex items-center justify-center mb-3">
                             <Sparkles className="w-6 h-6 text-violet-500" />
                         </div>
-                        <p className="text-sm font-semibold text-slate-700 mb-1">Ask anything about your data</p>
-                        <p className="text-xs text-slate-400 max-w-xs">
+                        <p className="text-sm font-semibold mb-1" style={{ color: '#334155' }}>Ask anything about your data</p>
+                        <p className="text-xs max-w-xs" style={{ color: '#94a3b8' }}>
                             I'll generate SQL queries using your columns: {dataset.columns.slice(0, 3).map(c => c.name).join(', ')}{dataset.columns.length > 3 ? ` +${dataset.columns.length - 3} more` : ''}
                         </p>
                         <div className="flex flex-wrap gap-1.5 mt-4 justify-center">
@@ -150,7 +154,8 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                                 <button
                                     key={q}
                                     onClick={() => { setInput(q); }}
-                                    className="px-2.5 py-1 text-[11px] bg-white border border-slate-200 rounded-full text-slate-600 hover:border-violet-300 hover:text-violet-600 transition-colors"
+                                    className="px-2.5 py-1 text-[11px] bg-white border border-slate-200 rounded-full hover:border-violet-300 transition-colors"
+                                    style={{ color: '#475569' }}
                                 >{q}</button>
                             ))}
                         </div>
@@ -168,7 +173,7 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                             ) : (
                                 <div className="space-y-2">
                                     {msg.explanation && (
-                                        <p className="text-xs text-slate-600">{msg.explanation}</p>
+                                        <p className="text-xs" style={{ color: '#475569' }}>{msg.explanation}</p>
                                     )}
 
                                     {msg.sql && (
@@ -214,7 +219,7 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                                     {!msg.sql && msg.content.includes('error') && (
                                         <div className="flex items-center gap-1.5 text-amber-600">
                                             <AlertCircle className="w-3 h-3" />
-                                            <p className="text-xs">{msg.content}</p>
+                                            <p className="text-xs" style={{ color: '#d97706' }}>{msg.content}</p>
                                         </div>
                                     )}
                                 </div>
@@ -228,7 +233,7 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                         <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm">
                             <div className="flex items-center gap-2">
                                 <Loader2 className="w-4 h-4 text-violet-500 animate-spin" />
-                                <span className="text-xs text-slate-500">Generating SQL...</span>
+                                <span className="text-xs" style={{ color: '#64748b' }}>Generating SQL...</span>
                             </div>
                         </div>
                     </div>
@@ -247,7 +252,8 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
                         placeholder="Ask a question about your data..."
-                        className="flex-1 text-sm text-slate-900 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none placeholder:text-slate-400"
+                        className="flex-1 text-sm border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none"
+                        style={{ color: '#0f172a', backgroundColor: '#f8fafc', caretColor: '#0f172a' }}
                         disabled={isLoading}
                     />
                     <button
@@ -284,7 +290,8 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                                             value={saveQuestionText}
                                             onChange={e => setSaveQuestionText(e.target.value)}
                                             placeholder="e.g., Top 10 products by revenue"
-                                            className="w-full text-sm text-slate-900 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-violet-100"
+                                            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none focus:ring-2 focus:ring-violet-100"
+                                            style={{ color: '#0f172a', backgroundColor: '#f8fafc' }}
                                         />
                                     </div>
                                     <div>
@@ -292,7 +299,8 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                                         <select
                                             value={saveCategory}
                                             onChange={e => setSaveCategory(e.target.value)}
-                                            className="w-full text-sm text-slate-900 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 outline-none"
+                                            className="w-full text-sm border border-slate-200 rounded-lg px-3 py-2 outline-none"
+                                            style={{ color: '#0f172a', backgroundColor: '#f8fafc' }}
                                         >
                                             <option value="Custom Questions">Custom Questions</option>
                                             {existingCategories.filter(c => c !== 'Custom Questions').map(c => (

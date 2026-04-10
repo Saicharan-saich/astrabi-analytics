@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash } from 'lucide-react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
 import { FilterItem } from './FilterItem';
 import { DateFilterItem } from './DateFilterItem';
@@ -89,6 +89,102 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const [filters, setFilters] = useState<Filter[]>([]);
     const [nextFilterId, setNextFilterId] = useState(1);
 
+    // Secondary metrics for combo/dual-axis charts
+    const [secondaryMetrics, setSecondaryMetrics] = useState<string[]>([]);
+    const [secondaryMetricVisuals, setSecondaryMetricVisuals] = useState<Record<string, string>>({});
+
+    // Comparison state
+    const [comparison, setComparison] = useState<string>('');
+    const [comparisonGrain, setComparisonGrain] = useState<string>('month');
+    const [comparisonOffset, setComparisonOffset] = useState<number>(1);
+
+    // UI Enhancement states
+    const [showOptions, setShowOptions] = useState(false);
+    const [showFilterMenu, setShowFilterMenu] = useState(false);
+    const filterMenuRef = useRef<HTMLDivElement>(null);
+
+    // Computed: is the current dimension a time grain?
+    const isTimeDimension = ['day', 'week', 'month', 'quarter', 'year'].includes(dimension);
+
+    // Auto-expand options row when any refinement is active
+    useEffect(() => {
+        if (comparison || (limit > 0) || (isTimeDimension && sort !== 'oldest') || (!isTimeDimension && sort !== 'desc')) {
+            setShowOptions(true);
+        }
+    }, [comparison, limit, sort, isTimeDimension]);
+
+    // Close filter menu on outside click
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+                setShowFilterMenu(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    // Generate plain English summary
+    const summaryText = useMemo(() => {
+        if (!metric) return '';
+        const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+        const aggLabel = aggregation === 'SUM' ? 'total' : aggregation === 'AVG' ? 'average' : aggregation === 'COUNT' ? 'count of' : aggregation === 'COUNT_DISTINCT' ? 'unique count of' : aggregation === 'MAX' ? 'maximum' : aggregation === 'MIN' ? 'minimum' : aggregation.toLowerCase();
+        const metricLabel = titleCase(metric);
+        let text = `Showing the ${aggLabel} of ${metricLabel}`;
+        if (dimension && dimension !== '(Total)') {
+            text += ` by ${titleCase(dimension)}`;
+        } else {
+            text += ' (overall total)';
+        }
+        if (timeFilter && timeFilter !== 'all_time') {
+            const timeLabels: Record<string, string> = {
+                'today': 'for today', 'yesterday': 'for yesterday',
+                'this_week': 'for this week', 'this_month': 'for this month',
+                'this_quarter': 'for this quarter', 'this_year': 'for this year',
+                'last_7_days': 'over the last 7 days', 'last_30_days': 'over the last 30 days',
+                'last_90_days': 'over the last 90 days'
+            };
+            const timeLabel = timeLabels[timeFilter] || (timeFilter.startsWith('last_') ? `over the last ${timeFilter.split('_')[1]} ${timeFilter.split('_')[2] || 'days'}` : `for ${timeFilter.replace(/_/g, ' ')}`);
+            text += ` ${timeLabel}`;
+        } else {
+            text += ' across all time';
+        }
+        if (comparison === 'previous_period') text += ', compared to the previous period';
+        else if (comparison === 'same_period_last_year') text += ', compared to the same period last year';
+        else if (comparison === 'same_period_last_n') text += `, compared to the last ${comparisonOffset} ${comparisonGrain}${comparisonOffset > 1 ? 's' : ''}`;
+        text += '.';
+        return text;
+    }, [metric, aggregation, dimension, timeFilter, comparison, comparisonGrain, comparisonOffset]);
+
+    // Auto-sync comparison grain with time filter
+    useEffect(() => {
+        const grainMap: Record<string, string> = {
+            'today': 'day',
+            'yesterday': 'day',
+            'this_week': 'week',
+            'this_month': 'month',
+            'this_quarter': 'quarter',
+            'this_year': 'year',
+            'last_7_days': 'day',
+            'last_30_days': 'day',
+            'last_90_days': 'day'
+        };
+        let grain = grainMap[timeFilter];
+        // Handle dynamic last_N_unit patterns (e.g. last_5_days, last_2_weeks, last_3_months)
+        if (!grain && timeFilter.startsWith('last_')) {
+            const parts = timeFilter.split('_');
+            const unit = parts[2] || 'days';
+            const unitGrainMap: Record<string, string> = {
+                'days': 'day', 'weeks': 'week', 'months': 'month',
+                'quarters': 'quarter', 'years': 'year', 'cyears': 'year'
+            };
+            grain = unitGrainMap[unit] || 'day';
+        }
+        if (grain) {
+            setComparisonGrain(grain);
+        }
+    }, [timeFilter]);
+
     // Ref to prevent auto-run when syncing from props
     const ignoreNextRun = useRef(false);
 
@@ -125,10 +221,21 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         ignoreNextRun.current = true;
     }, [initialMetric, initialDimension, initialTimeFilter, initialLimit, initialSort]);
 
-    // Extract columns
-    const metrics = dataset.columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
-    const dims = dataset.columns.filter(c => c.type === ColumnType.DIMENSION).map(c => c.name);
-    const dateColumns = dataset.columns.filter(c => c.type === ColumnType.DATE).map(c => c.name);
+    // Extract columns — filter out AI-hidden junk columns
+    const visibleColumns = dataset.columns.filter(c => {
+        if (!dataset.domainProfile?.columnSemantics) return true;
+        const sem = dataset.domainProfile.columnSemantics[c.name];
+        return !sem?.isHidden;
+    });
+    const metrics = visibleColumns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
+    const dims = visibleColumns.filter(c => c.type === ColumnType.DIMENSION).map(c => c.name);
+    const dateColumns = visibleColumns.filter(c => c.type === ColumnType.DATE).map(c => c.name);
+
+    // Helper: get human-readable label for a column
+    const getLabel = (colName: string): string => {
+        const sem = dataset.domainProfile?.columnSemantics?.[colName];
+        return sem?.humanLabel || colName;
+    };
 
 
     // Auto-select defaults if empty
@@ -305,7 +412,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             }
         });
 
-        const config = {
+        const config: any = {
             metric,
             aggregation,
             dimension,
@@ -314,7 +421,11 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             measureFilters,
             dateFilters,
             sort,
-            limit
+            limit,
+            comparison: comparison,
+            comparisonGrain: comparison ? comparisonGrain : undefined,
+            comparisonOffset: comparison ? comparisonOffset : undefined,
+            ...(secondaryMetrics.length > 0 ? { secondaryMetrics, axisMode: 'auto', secondaryMetricVisuals } : {})
         };
 
         onRunRef.current(config);
@@ -335,35 +446,43 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             const timer = setTimeout(() => handleRun(), 400);
             return () => clearTimeout(timer);
         }
-    }, [metric, aggregation, dimension, timeFilter, filters, sort, limit]);
+    }, [metric, aggregation, dimension, timeFilter, filters, sort, limit, comparison, comparisonGrain, comparisonOffset, secondaryMetrics, secondaryMetricVisuals]);
 
-    // AUTO-DRILL DOWN EFFECT
+    // AUTO-DRILL CASCADE: When a date filter has values selected, auto-add a child filter
     useEffect(() => {
-        filters.forEach(f => {
-            if (f.type === 'date' && f.values && f.values.length === 1 && f.column) {
-                const nextGrain = getNextGrain(f.timeGrain);
-                if (nextGrain) {
-                    // Check if ANY child (next grain or deeper) exists
-                    // If we are at Year, and Month exists, we should NOT add Quarter.
-                    const hierarchy = ['year', 'quarter', 'month', 'week', 'day'];
-                    const nextIdx = hierarchy.indexOf(nextGrain);
+        const dateFilters = filters.filter((f): f is DateFilter => f.type === 'date');
+        if (dateFilters.length === 0) return;
 
-                    if (nextIdx !== -1) {
-                        const hasDescendant = filters.some(c =>
-                            c.type === 'date' &&
-                            c.column === f.column &&
-                            hierarchy.indexOf(c.timeGrain) >= nextIdx // exists at next level or deeper
-                        );
+        const grainOrder = ['year', 'quarter', 'month', 'week', 'day'];
+        let newFilters: Filter[] | null = null;
 
-                        if (!hasDescendant) {
-                            console.log('[QuestionBuilder] Auto-adding drilldown filter:', nextGrain);
-                            addFilter('date', f.column, nextGrain);
-                        }
-                    }
-                }
-            }
-        });
-    }, [filters]);
+        for (const df of dateFilters) {
+            if (!df.values || df.values.length === 0) continue;
+            const nextGrain = getNextGrain(df.timeGrain);
+            if (!nextGrain) continue; // Already at 'day'
+
+            // Check if a child filter already exists for this column + next grain
+            const childExists = filters.some(
+                f => f.type === 'date' && f.column === df.column && f.timeGrain === nextGrain
+            );
+            if (childExists) continue;
+
+            // Auto-add child filter
+            if (!newFilters) newFilters = [...filters];
+            newFilters.push({
+                id: nextFilterId + (newFilters.length - filters.length),
+                type: 'date',
+                column: df.column,
+                timeGrain: nextGrain as any,
+                values: []
+            });
+        }
+
+        if (newFilters) {
+            setFilters(newFilters);
+            setNextFilterId(prev => prev + (newFilters!.length - filters.length));
+        }
+    }, [filters.filter(f => f.type === 'date').map(f => `${f.id}:${(f as DateFilter).timeGrain}:${(f as DateFilter).values?.join(',')}`).join('|')]);
 
     // Filter Handlers
     const addFilter = (type: 'dimension' | 'measure' | 'date', column?: string, grain?: string) => {
@@ -379,8 +498,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             setFilters([...filters, {
                 id: nextFilterId,
                 type: 'dimension',
-                column: '',
-                value: ''
+                column: dims.length ? dims[0] : '',
+                value: []
             }]);
         } else {
             setFilters([...filters, {
@@ -413,13 +532,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             if (field === 'values') {
                 const parent = updatedFilters.find(f => f.id === id);
                 if (parent && parent.type === 'date' && parent.column) {
-                    // AUTO-SWITCH TO TREND: If user selects multiple dates and we are in Total mode, switch to Trend.
-                    if (value && value.length > 1 && !dimension) {
-                        const grain = (parent.timeGrain as string) || 'day';
-                        console.log('[QuestionBuilder] Auto-switching to Trend:', grain);
-                        setDimension(grain);
-                        setSort('oldest');
-                    }
+                    // NOTE: Auto-switch to Trend was removed.
+                    // The user should explicitly choose Trend vs Total — selecting multiple
+                    // date values in a filter should NOT change the visualization mode.
 
                     const grainOrder = ['year', 'quarter', 'month', 'week', 'day'];
                     const parentGrainIdx = grainOrder.indexOf(parent.timeGrain);
@@ -442,7 +557,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     };
 
     return (
-        <div className="max-w-7xl mx-auto px-4 py-0 bg-slate-50 border-b border-slate-200">
+        <div className="max-w-7xl mx-auto px-4 py-0 bg-slate-50 border-b border-slate-200 overflow-visible relative">
             {/* Header / Context */}
             <div className="flex justify-end mb-1">
                 <div className="flex items-center gap-2 bg-white px-2 py-1 bg-opacity-80 rounded-b-lg shadow-sm border border-t-0 border-slate-200">
@@ -477,6 +592,16 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                 </div>
             </div>
 
+            {/* ═══ Enhancement 4: Plain English Summary ═══ */}
+            {metric && summaryText && (
+                <div className="mb-1.5 px-1">
+                    <p className="text-xs text-slate-400 italic tracking-wide leading-relaxed">
+                        {summaryText}
+                    </p>
+                </div>
+            )}
+
+            {/* ═══════════════ ROW 1: THE CORE QUESTION ═══════════════ */}
             <div className="flex flex-wrap items-center gap-2 text-base font-medium text-slate-700 leading-snug">
                 <img src="/logo.jpg" alt="Astrabi" className="w-5 h-5 rounded mr-1 shadow-sm" />
                 <span>Show me</span>
@@ -487,7 +612,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <select
                             value={metric}
                             onChange={e => setMetric(e.target.value)}
-                            className="appearance-none bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border-b-2 border-indigo-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            className="appearance-none bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border border-indigo-300 rounded-lg px-3 py-1.5 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
                         >
                             {metrics.map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
                         </select>
@@ -501,7 +626,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <select
                             value={aggregation}
                             onChange={e => setAggregation(e.target.value)}
-                            className="appearance-none bg-transparent hover:bg-slate-100 text-slate-500 font-medium border-b border-slate-300 rounded px-1 py-0.5 pr-4 text-sm cursor-pointer focus:outline-none"
+                            className="appearance-none bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold border border-slate-300 rounded-lg px-2 py-1 pr-5 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-400 shadow-sm"
                         >
                             <option value="SUM">Sum</option>
                             <option value="AVG">Average</option>
@@ -510,38 +635,38 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             <option value="COUNT">Count</option>
                             <option value="COUNT_DISTINCT">Unique Count</option>
                         </select>
-                        <ChevronDown className="w-3 h-3 text-slate-400 absolute right-0 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <ChevronDown className="w-3 h-3 text-slate-500 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
                 </Tooltip>
                 <span>)</span>
 
-                <span>by</span>
+                {/* Secondary Metric Chips (display only — add button moved to Options row) */}
+                {secondaryMetrics.map((sm, i) => (
+                    <span key={sm} className="inline-flex items-center gap-1.5 bg-teal-50 text-teal-700 font-bold text-sm border border-teal-300 rounded-lg px-2.5 py-1 shadow-sm">
+                        <span className="text-teal-500 font-normal text-xs">+</span>
+                        <span>{sm.replace(/_/g, ' ')}</span>
+                        <span className="text-teal-400 mx-0.5">│</span>
+                        <select
+                            value={secondaryMetricVisuals[sm] || 'line'}
+                            onChange={e => setSecondaryMetricVisuals(prev => ({ ...prev, [sm]: e.target.value }))}
+                            className="bg-white text-teal-800 text-xs font-bold rounded border border-teal-200 px-1.5 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400 hover:bg-teal-50 transition-colors"
+                            title="Choose visual type for this metric"
+                        >
+                            <option value="line">📈 Line</option>
+                            <option value="bar">📊 Bar</option>
+                            <option value="area">📉 Area</option>
+                        </select>
+                        <button onClick={() => {
+                            setSecondaryMetrics(prev => prev.filter((_, idx) => idx !== i));
+                            setSecondaryMetricVisuals(prev => { const next = { ...prev }; delete next[sm]; return next; });
+                        }}
+                            className="text-teal-400 hover:text-red-500 transition-colors ml-0.5">
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </span>
+                ))}
 
-                {/* Total / Trend Shortcut */}
-                <Tooltip text="Total shows a single aggregate number. Trend shows data over time (day/week/month/quarter/year)." position="bottom">
-                    <div className="flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 mx-1">
-                        <button
-                            onClick={() => setDimension('')}
-                            title="View Total (Scalar)"
-                            className={`px-3 py-1 text-sm font-bold rounded-md transition-colors ${!dimension ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'}`}
-                        >
-                            Total
-                        </button>
-                        <button
-                            onClick={() => {
-                                if (!['day', 'week', 'month', 'quarter', 'year'].includes(dimension)) {
-                                    setDimension('day');
-                                }
-                                setSort('oldest');
-                            }}
-                            title="View Trend (Time Series)"
-                            className={`flex items-center gap-1 px-3 py-1 text-sm font-bold rounded-md transition-colors ${['day', 'week', 'month', 'quarter', 'year'].includes(dimension) ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-200'}`}
-                        >
-                            <TrendingUp className="w-3.5 h-3.5" />
-                            Trend
-                        </button>
-                    </div>
-                </Tooltip>
+                <span>by</span>
 
                 {/* Dimension Selector */}
                 <Tooltip text="How to group or break down the metric. Choose a time grain (day/month/year) for trends, or a column (product, region) for comparisons." position="bottom">
@@ -557,7 +682,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     setSort('desc');
                                 }
                             }}
-                            className={`appearance-none font-bold border-b-2 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 ${!dimension
+                            className={`appearance-none font-bold border rounded-lg px-3 py-1.5 pr-8 cursor-pointer focus:outline-none focus:ring-2 shadow-sm ${!dimension
                                 ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300 focus:ring-indigo-500'
                                 : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300 focus:ring-emerald-500'
                                 }`}
@@ -574,6 +699,32 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     </div>
                 </Tooltip>
 
+                {/* Total / Trend Shortcut */}
+                <Tooltip text="Total shows a single aggregate number. Trend shows data over time (day/week/month/quarter/year)." position="bottom">
+                    <div className="flex bg-white rounded-lg p-0.5 border border-slate-300 mx-1 shadow-sm">
+                        <button
+                            onClick={() => setDimension('')}
+                            title="View Total (Scalar)"
+                            className={`px-3 py-1.5 text-sm font-bold rounded-md transition-colors ${!dimension ? 'bg-indigo-100 text-indigo-800 border border-indigo-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+                        >
+                            Total
+                        </button>
+                        <button
+                            onClick={() => {
+                                if (!isTimeDimension) {
+                                    setDimension('day');
+                                }
+                                setSort('oldest');
+                            }}
+                            title="View Trend (Time Series)"
+                            className={`flex items-center gap-1 px-3 py-1.5 text-sm font-bold rounded-md transition-colors ${isTimeDimension ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+                        >
+                            <TrendingUp className="w-3.5 h-3.5" />
+                            Trend
+                        </button>
+                    </div>
+                </Tooltip>
+
                 <span>where</span>
 
                 {/* Time Filter */}
@@ -587,11 +738,16 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     if (val === 'custom') setTimeFilter('last_7_days');
                                     else setTimeFilter(val);
                                 }}
-                                className="appearance-none bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold border-b-2 border-orange-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                className="appearance-none bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold border border-orange-300 rounded-lg px-3 py-1.5 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500 shadow-sm"
                             >
                                 <option value="all_time">Time is Anything</option>
+                                <option value="today">Today</option>
+                                <option value="yesterday">Yesterday</option>
                                 <option value="last_30_days">Last 30 Days</option>
                                 <option value="last_90_days">Last 90 Days</option>
+                                <option value="this_week">This Week</option>
+                                <option value="this_month">This Month</option>
+                                <option value="this_quarter">This Quarter</option>
                                 <option value="this_year">This Year</option>
                                 <option value="custom">Last...</option>
                             </select>
@@ -634,148 +790,266 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     )}
                 </div>
 
-                <span>and</span>
+                {/* ═══ Options Toggle Button ═══ */}
+                <button
+                    onClick={() => setShowOptions(!showOptions)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-lg border transition-all shadow-sm ${showOptions
+                        ? 'bg-indigo-100 text-indigo-800 border-indigo-400'
+                        : comparison || limit > 0 || secondaryMetrics.length > 0
+                            ? 'bg-indigo-100 text-indigo-700 border-indigo-400 ring-2 ring-indigo-200'
+                            : 'bg-white text-indigo-600 border-indigo-300 hover:bg-indigo-50 hover:border-indigo-400'
+                        }`}
+                    title="Toggle analysis options (comparison, sort, limit, additional metrics)"
+                >
+                    <SlidersHorizontal className="w-4 h-4" />
+                    Options
+                    {(comparison || limit > 0 || secondaryMetrics.length > 0) && !showOptions && (
+                        <span className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse"></span>
+                    )}
+                </button>
 
-                {/* Limit Input */}
-                <Tooltip text="Limit how many results to show. 'Show All' returns every row. 'Top N' keeps only the highest or lowest values." position="bottom">
-                    <div className="flex items-center gap-1">
-                        <div className="relative inline-block">
-                            <select
-                                value={limit > 0 && ![5, 10, 20, 50].includes(limit) ? 'custom' : (limit <= 0 ? -1 : limit)}
-                                onChange={e => {
-                                    const val = e.target.value;
-                                    if (val === 'custom') setLimit(15);
-                                    else setLimit(Number(val));
-                                }}
-                                className="appearance-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border-b-2 border-slate-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-500"
+                {/* ═══ Enhancement 3: Consolidated Filter Button ═══ */}
+                <div className="relative" ref={filterMenuRef}>
+                    <button
+                        onClick={() => setShowFilterMenu(!showFilterMenu)}
+                        className={`flex items-center gap-1.5 text-sm font-bold border rounded-lg px-3 py-1.5 transition-all shadow-sm ${filters.length > 0
+                            ? 'text-purple-800 border-purple-400 bg-purple-100 hover:bg-purple-200 ring-2 ring-purple-200'
+                            : 'text-purple-600 border-purple-300 bg-white hover:bg-purple-50 hover:border-purple-400'
+                            }`}
+                    >
+                        <Filter className="w-4 h-4" />
+                        {filters.length > 0 ? `Filters (${filters.length})` : '+ Add Filter'}
+                    </button>
+
+                    {showFilterMenu && (
+                        <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-50 min-w-[180px] animate-in fade-in slide-in-from-top-2 duration-200">
+                            <button
+                                onClick={() => { addFilter('dimension'); setShowFilterMenu(false); }}
+                                className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
                             >
-                                <option value={-1}>Show All</option>
-                                <option value={5}>Top 5</option>
-                                <option value={10}>Top 10</option>
-                                <option value={20}>Top 20</option>
-                                <option value={50}>Top 50</option>
-                                <option value="custom">Custom...</option>
-                            </select>
-                            <ChevronDown className="w-4 h-4 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                <span className="text-base">🏷️</span> By Dimension
+                                <span className="text-[10px] text-slate-400 ml-auto">category, region...</span>
+                            </button>
+                            <button
+                                onClick={() => { addFilter('measure'); setShowFilterMenu(false); }}
+                                className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2 transition-colors"
+                            >
+                                <span className="text-base">📊</span> By Metric Value
+                                <span className="text-[10px] text-slate-400 ml-auto">sales &gt; 1000...</span>
+                            </button>
+                            {dateColumns.length > 0 && (
+                                <button
+                                    onClick={() => { addFilter('date'); setShowFilterMenu(false); }}
+                                    className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:bg-teal-50 hover:text-teal-700 flex items-center gap-2 transition-colors"
+                                >
+                                    <span className="text-base">📅</span> By Date
+                                    <span className="text-[10px] text-slate-400 ml-auto">year, quarter...</span>
+                                </button>
+                            )}
                         </div>
+                    )}
+                </div>
+            </div>
 
-                        {/* Custom Top N Input */}
-                        {(limit > 0 && ![5, 10, 20, 50].includes(limit)) && (
-                            <input
-                                type="number"
-                                min="1"
-                                value={limit}
-                                onChange={e => setLimit(parseInt(e.target.value) || 1)}
-                                className="w-16 bg-white border-b-2 border-slate-300 rounded px-2 py-1 text-center font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                            />
+            {/* ═══════════════ ROW 2: REFINEMENTS (Collapsible) ═══════════════ */}
+            {showOptions && (
+                <div className="flex flex-wrap items-center gap-3 mt-2 pt-2 border-t border-slate-200 text-sm font-medium text-slate-600 animate-in fade-in slide-in-from-top-1 duration-300">
+                    {/* Additional Metric */}
+                    {metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).length > 0 && (
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Metric:</span>
+                            <div className="relative inline-block">
+                                <select
+                                    value=""
+                                    onChange={e => { if (e.target.value) setSecondaryMetrics(prev => [...prev, e.target.value]); }}
+                                    className="appearance-none bg-teal-50 hover:bg-teal-100 text-teal-700 font-bold border border-teal-300 rounded-lg px-3 py-1 pr-7 cursor-pointer focus:outline-none focus:ring-2 focus:ring-teal-400 text-sm shadow-sm"
+                                >
+                                    <option value="">+ Add Metric</option>
+                                    {metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).map(m => (
+                                        <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>
+                                    ))}
+                                </select>
+                                <Plus className="w-3 h-3 text-teal-600 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            </div>
+                        </div>
+                    )}
+
+                    <span className="text-slate-300">•</span>
+
+                    {/* Compare With */}
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Compare:</span>
+                        <Tooltip text="Compare current period with a previous period to see growth or decline." position="bottom">
+                            <div className="relative group inline-block">
+                                <select
+                                    value={comparison}
+                                    onChange={e => setComparison(e.target.value)}
+                                    className={`appearance-none font-bold border-b-2 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 text-sm ${comparison
+                                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300 focus:ring-emerald-500'
+                                        : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border-slate-300 focus:ring-slate-500'
+                                        }`}
+                                >
+                                    <option value="">No Comparison</option>
+                                    <option value="previous_period">vs Previous Period</option>
+                                    <option value="same_period_last_year">vs Same Period Last Year</option>
+                                    <option value="same_period_last_n">vs Last N...</option>
+                                </select>
+                                <ChevronDown className={`w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none ${comparison ? 'text-emerald-500' : 'text-slate-400'}`} />
+                            </div>
+                        </Tooltip>
+
+                        {/* Grain + Offset for Same Period Last N */}
+                        {comparison === 'same_period_last_n' && (
+                            <div className="flex items-center gap-1 animate-in fade-in slide-in-from-left-2 duration-300">
+                                {(['day', 'week', 'month', 'quarter', 'year'] as const).map(g => (
+                                    <button
+                                        key={g}
+                                        onClick={() => setComparisonGrain(g)}
+                                        className={`px-2 py-0.5 rounded-md text-xs font-bold transition-all border ${comparisonGrain === g
+                                            ? 'bg-emerald-500 text-white border-emerald-600'
+                                            : 'bg-white text-emerald-600 border-emerald-200 hover:bg-emerald-50'
+                                            }`}
+                                    >
+                                        {g[0].toUpperCase()}
+                                    </button>
+                                ))}
+                                <div className="flex items-center gap-0.5 ml-1">
+                                    <button
+                                        onClick={() => setComparisonOffset(Math.max(1, comparisonOffset - 1))}
+                                        className="w-5 h-5 rounded bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center hover:bg-emerald-200 transition-all"
+                                    >−</button>
+                                    <span className="text-xs font-bold text-emerald-700 min-w-[1.2rem] text-center">{comparisonOffset}</span>
+                                    <button
+                                        onClick={() => setComparisonOffset(comparisonOffset + 1)}
+                                        className="w-5 h-5 rounded bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center hover:bg-emerald-200 transition-all"
+                                    >+</button>
+                                </div>
+                                <span className="text-[10px] font-semibold text-emerald-600 ml-1 whitespace-nowrap">
+                                    (Last {comparisonOffset} {comparisonGrain}{comparisonOffset > 1 ? 's' : ''})
+                                </span>
+                            </div>
+                        )}
+
+                        {/* Quick comparison hint based on time filter */}
+                        {comparison === 'previous_period' && timeFilter.startsWith('this_') && (
+                            <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                                {timeFilter === 'this_week' ? 'This Week vs Last Week'
+                                    : timeFilter === 'this_month' ? 'This Month vs Last Month'
+                                        : timeFilter === 'this_quarter' ? 'This Quarter vs Last Quarter'
+                                            : timeFilter === 'this_year' ? 'This Year vs Last Year'
+                                                : 'Current vs Previous'}
+                            </span>
                         )}
                     </div>
-                </Tooltip>
 
-                <span>sorted</span>
+                    {/* ═══ Enhancement 2: Smart Auto-Defaults — Hide Sort/Limit for time dimensions ═══ */}
+                    {!isTimeDimension && (
+                        <>
+                            <span className="text-slate-300">•</span>
 
-                {/* Sort Selector */}
-                <Tooltip text="Control how results are ordered. For trends, use Oldest/Newest. For rankings, use High to Low or Low to High." position="bottom">
-                    <div className="relative group inline-block">
-                        <select
-                            value={sort}
-                            onChange={e => setSort(e.target.value as 'asc' | 'desc')}
-                            className="appearance-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border-b-2 border-slate-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-500"
-                        >
-                            <option value="desc">High to Low (Value)</option>
-                            <option value="asc">Low to High (Value)</option>
-                            <option value="oldest">Oldest First</option>
-                            <option value="newest">Newest First</option>
-                        </select>
-                        <ChevronDown className="w-4 h-4 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                </Tooltip>
+                            {/* Limit */}
+                            <div className="flex items-center gap-1">
+                                <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Limit:</span>
+                                <div className="relative inline-block">
+                                    <select
+                                        value={limit > 0 && ![5, 10, 20, 50].includes(limit) ? 'custom' : (limit <= 0 ? -1 : limit)}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            if (val === 'custom') setLimit(15);
+                                            else setLimit(Number(val));
+                                        }}
+                                        className="appearance-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border-b-2 border-slate-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
+                                    >
+                                        <option value={-1}>Show All</option>
+                                        <option value={5}>Top 5</option>
+                                        <option value={10}>Top 10</option>
+                                        <option value={20}>Top 20</option>
+                                        <option value={50}>Top 50</option>
+                                        <option value="custom">Custom...</option>
+                                    </select>
+                                    <ChevronDown className="w-4 h-4 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                </div>
 
-                {/* Iterate Filters */}
-                {filters.map(filter => {
-                    if (filter.type === 'date') {
-                        // FIND PARENT VALUES
-                        const priorGrain = getPriorGrain(filter.timeGrain);
-                        const parentFilter = priorGrain ? filters.find(p =>
-                            p.type === 'date' &&
-                            p.column === filter.column &&
-                            p.timeGrain === priorGrain
-                        ) as DateFilter : undefined;
+                                {/* Custom Top N Input */}
+                                {(limit > 0 && ![5, 10, 20, 50].includes(limit)) && (
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={limit}
+                                        onChange={e => setLimit(parseInt(e.target.value) || 1)}
+                                        className="w-16 bg-white border-b-2 border-slate-300 rounded px-2 py-1 text-center font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
+                                    />
+                                )}
+                            </div>
 
-                        const selectedParentValues = parentFilter?.values;
+                            <span className="text-slate-300">•</span>
 
+                            {/* Sort */}
+                            <div className="flex items-center gap-1">
+                                <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Sort:</span>
+                                <div className="relative inline-block">
+                                    <select
+                                        value={sort}
+                                        onChange={e => setSort(e.target.value as 'asc' | 'desc')}
+                                        className="appearance-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border-b-2 border-slate-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
+                                    >
+                                        <option value="desc">High to Low</option>
+                                        <option value="asc">Low to High</option>
+                                        <option value="oldest">Oldest First</option>
+                                        <option value="newest">Newest First</option>
+                                    </select>
+                                    <ChevronDown className="w-4 h-4 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
+            )}
+
+            {/* ═══ Active Filters Row ═══ */}
+            {filters.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-slate-100">
+                    {filters.map(filter => {
+                        if (filter.type === 'date') {
+                            // FIND PARENT VALUES
+                            const priorGrain = getPriorGrain(filter.timeGrain);
+                            const parentFilter = priorGrain ? filters.find(p =>
+                                p.type === 'date' &&
+                                p.column === filter.column &&
+                                p.timeGrain === priorGrain
+                            ) as DateFilter : undefined;
+
+                            const selectedParentValues = parentFilter?.values;
+
+                            return (
+                                <DateFilterItem
+                                    key={filter.id}
+                                    id={filter.id}
+                                    filter={filter}
+                                    dateColumns={dateColumns}
+                                    getDateValues={getDateValues}
+                                    onUpdate={updateFilter}
+                                    onRemove={removeFilter}
+                                    onAddFilter={addFilter}
+                                    selectedParentValues={selectedParentValues}
+                                />
+                            );
+                        }
                         return (
-                            <DateFilterItem
+                            <FilterItem
                                 key={filter.id}
                                 id={filter.id}
                                 filter={filter}
-                                dateColumns={dateColumns}
-                                getDateValues={getDateValues}
+                                dims={dims}
+                                metrics={metrics}
+                                getColumnValues={getColumnValues}
                                 onUpdate={updateFilter}
                                 onRemove={removeFilter}
-                                onAddFilter={addFilter}
-                                selectedParentValues={selectedParentValues}
                             />
                         );
-                    }
-                    return (
-                        <FilterItem
-                            key={filter.id}
-                            id={filter.id}
-                            filter={filter}
-                            dims={dims}
-                            metrics={metrics}
-                            getColumnValues={getColumnValues}
-                            onUpdate={updateFilter}
-                            onRemove={removeFilter}
-                        />
-                    );
-                })}
-
-                {/* Add Filter Buttons */}
-                <div className="flex items-center gap-2">
-                    <Tooltip text="Add a dimension filter to narrow results by category, region, or other text/ID columns." position="top">
-                        <button
-                            onClick={() => addFilter('dimension')}
-                            className="text-purple-600 hover:text-purple-700 text-sm font-medium border border-dashed border-purple-300 hover:border-purple-400 rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1"
-                        >
-                            <Plus className="w-3.5 h-3.5" />
-                            Filter Check
-                        </button>
-                    </Tooltip>
-                    <Tooltip text="Add a value filter to include only rows where a metric meets a condition (e.g. revenue > 1000)." position="top">
-                        <button
-                            onClick={() => addFilter('measure')}
-                            className="text-blue-600 hover:text-blue-700 text-sm font-medium border border-dashed border-blue-300 hover:border-blue-400 rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1"
-                        >
-                            <Plus className="w-3.5 h-3.5" />
-                            Value Filter
-                        </button>
-                    </Tooltip>
-
-                    {dateColumns.length > 0 && (
-                        <Tooltip text="Add a date-based drill filter to narrow results by year, quarter, month, or specific date range." position="top">
-                            <button
-                                onClick={() => addFilter('date')}
-                                className="text-teal-600 hover:text-teal-700 text-sm font-medium border border-dashed border-teal-300 hover:border-teal-400 rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1"
-                            >
-                                <Calendar className="w-3.5 h-3.5" />
-                                Date Filter
-                            </button>
-                        </Tooltip>
-                    )}
-
-                    <Tooltip text="Add an extra metric to compare alongside the primary one." position="top">
-                        <button
-                            onClick={() => addFilter('measure')}
-                            className="text-blue-600 hover:text-blue-700 text-sm font-medium border border-dashed border-blue-300 hover:border-blue-400 rounded-lg px-3 py-1.5 transition-colors flex items-center gap-1"
-                        >
-                            <Plus className="w-3.5 h-3.5" />
-                            Measure
-                        </button>
-                    </Tooltip>
+                    })}
                 </div>
-            </div>
+            )}
         </div>
     );
 };

@@ -32,6 +32,7 @@ ChartJS.register(
     BarElement,
     ArcElement,
     Title,
+    Tooltip,
     Legend,
     Filler,
     RadialLinearScale,
@@ -152,6 +153,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     // Chart ref for PNG export
     const chartRef = useRef<any>(null);
     const localChartRef = useRef<HTMLDivElement>(null);
+    const transformedDataRef = useRef<any[]>([]);
     const resolvedRef = (chartContainerRef || localChartRef) as React.RefObject<HTMLDivElement>;
     const [zoom, setZoom] = useState(1);
     const [chartSelectorOpen, setChartSelectorOpen] = useState(false);
@@ -236,19 +238,21 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 effectiveFormat = 'compact'; // Use compact for counts (1.2k, 5M) or raw if small
                 if (value < 1000) effectiveFormat = 'raw';
             }
-            // Check for Currency indicators BEFORE percentage — currency is far more common
-            // and prevents false-positive % detection (e.g., "generate" matching "rate")
-            else if (metricName.includes('sales') || metricName.includes('revenue') || metricName.includes('price') || metricName.includes('cost') || metricName.includes('amount') || metricName.includes('profit') || metricName.includes('margin')) {
-                effectiveFormat = 'currency_usd';
-            }
-            // Check for Percentage indicators — use word-boundary regex to avoid
-            // false positives like "generate" matching "rate"
+            // Check for %-of-total labels FIRST — before currency grabs "revenue"
+            // Catches questions like "% Revenue by Product Today" where rawLabel starts with %
+            // BUT EXCLUDE change/growth questions like "% Revenue Change vs Yesterday"
+            // where bars show actual revenue values, not percentages
             else if (
-                (rawLabel.startsWith('%') && (rawLabel.includes(' by ') || rawLabel.includes(' of ') || rawLabel.includes(' from '))) ||
-                metricName.includes('percent of') || /\bshare\b/.test(metricName) ||
+                (rawLabel.startsWith('%') && !rawLabel.includes('change') && !rawLabel.includes('growth') && !rawLabel.includes('vs')) ||
+                rawLabel.includes('% of') || rawLabel.includes('percent of') ||
+                /\bshare\b/.test(metricName) ||
                 /\brate\b/.test(metricName) || /\bconversion\b/.test(metricName) || /\bratio\b/.test(metricName)
             ) {
                 effectiveFormat = 'percent';
+            }
+            // Check for Currency indicators
+            else if (metricName.includes('sales') || metricName.includes('revenue') || metricName.includes('price') || metricName.includes('cost') || metricName.includes('amount') || metricName.includes('profit') || metricName.includes('margin')) {
+                effectiveFormat = 'currency_usd';
             }
             // Default fallbacks
             else {
@@ -296,9 +300,84 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         }
     };
 
+    // Per-metric format resolver — given a column name, returns formatted value
+    const formatForMetricName = (value: number, metricName: string): string => {
+        const name = metricName.toLowerCase();
+        let fmt: string;
+        if (name.includes('count') || name.includes('quantity') || name.includes('units') || name.includes('volume') || name.includes('orders') || name.includes('users') || name.includes('sessions')) {
+            fmt = value < 1000 ? 'raw' : 'compact';
+        } else if (name.includes('discount') || name.includes('rate') || name.includes('ratio') || name.includes('percent') || name.includes('share') || name.includes('conversion') || name.includes('margin_pct')) {
+            fmt = 'percent';
+        } else if (name.includes('sales') || name.includes('revenue') || name.includes('price') || name.includes('cost') || name.includes('amount') || name.includes('profit') || name.includes('margin')) {
+            fmt = 'currency_usd';
+        } else {
+            fmt = value < 1000 ? 'raw' : 'compact';
+        }
+        const fd = fmt === 'currency_usd' || fmt === 'percent' ? 2 : 0;
+        try {
+            switch (fmt) {
+                case 'currency_usd': return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
+                case 'percent': {
+                    // If the raw value is a fraction (0–1), multiply by 100 to get the actual percentage
+                    // e.g., 0.1 → 10%, 0.8 → 80%. Values > 1 are already in percent form (e.g., 10 → 10%)
+                    const pctVal = (Math.abs(value) <= 1 && Math.abs(value) > 0) ? value * 100 : value;
+                    return pctVal.toFixed(fd) + '%';
+                }
+                case 'compact': return new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short' }).format(value);
+                default: return new Intl.NumberFormat('en-US', { minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
+            }
+        } catch { return value.toLocaleString(); }
+    };
+
+    // Compact axis formatter — uses K/M/B by default for axis ticks to save space
+    const formatAxisNumber = (value: number | undefined | null) => {
+        if (value === undefined || value === null || isNaN(value)) return '0';
+        if (value === 0) return '0';
+
+        const axisFormat = formatting?.yAxisFormat || 'compact';
+
+        if (axisFormat === 'full') {
+            return formatNumber(value);
+        }
+
+        // Detect if this is a currency metric
+        const metricRef = (config?.metric || yLabel || yKey || '').toLowerCase();
+        const isCurrency = metricRef.includes('sales') || metricRef.includes('revenue') ||
+            metricRef.includes('price') || metricRef.includes('cost') ||
+            metricRef.includes('amount') || metricRef.includes('profit');
+        const isPercent = metricRef.includes('percent') || metricRef.includes('rate') ||
+            metricRef.includes('ratio') || metricRef.includes('share');
+
+        if (isPercent) {
+            return value.toFixed(1) + '%';
+        }
+
+        if (axisFormat === 'short_currency' && isCurrency) {
+            // $800K, $1.2M format
+            const abs = Math.abs(value);
+            const sign = value < 0 ? '-' : '';
+            if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(1)}B`;
+            if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(1)}M`;
+            if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(1)}K`;
+            return `$${value.toFixed(0)}`;
+        }
+
+        // Default compact: $800K / 1.2M / 500
+        const abs = Math.abs(value);
+        const sign = value < 0 ? '-' : '';
+        const prefix = isCurrency ? '$' : '';
+        if (abs >= 1e9) return `${sign}${prefix}${(abs / 1e9).toFixed(1)}B`;
+        if (abs >= 1e6) return `${sign}${prefix}${(abs / 1e6).toFixed(1)}M`;
+        if (abs >= 1e3) return `${sign}${prefix}${(abs / 1e3).toFixed(1)}K`;
+        if (isCurrency) return `$${value.toFixed(0)}`;
+        return value.toLocaleString();
+    };
+
     // Prepare chart data
     const chartData = useMemo(() => {
         if (!transformedData || transformedData.length === 0) return null;
+        // Keep ref in sync so Chart.js plugins always read the latest data
+        transformedDataRef.current = transformedData;
 
         const formatDate = (val: string) => {
             const format = formatting?.dateFormat || 'auto';
@@ -367,8 +446,18 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const values = transformedData.map(d => Number(d[yKey]) || 0);
 
         const isPieChart = chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea' || chartType === 'radar' || chartType === 'gauge';
-        const isBarVariant = chartType === 'bar' || chartType === 'horizontalBar' || chartType === 'stackedBar' || chartType === 'groupedBar' || chartType === 'waterfall' || chartType === 'funnel' || chartType === 'lollipop';
-        const isLineVariant = chartType === 'line' || chartType === 'area' || chartType === 'stackedArea' || chartType === 'steppedLine' || chartType === 'curvedLine';
+
+        // Override chartType for dataset styling when comparison exists with few data points
+        // This ensures bar-appropriate styling (solid fill, no points, rounded corners)
+        const compOff = !config?.comparison || config?.comparison === 'none';
+        const hasCompData = !compOff && transformedData.some(d => d.previous_value !== undefined);
+        const fewPoints = transformedData.length <= 4;
+        const lineTypes = ['line', 'area', 'steppedLine', 'curvedLine', 'stackedArea'];
+        const effectiveType = (hasCompData && fewPoints && lineTypes.includes(chartType))
+            ? 'bar' : chartType;
+
+        const isBarVariant = effectiveType === 'bar' || effectiveType === 'horizontalBar' || effectiveType === 'stackedBar' || effectiveType === 'groupedBar' || effectiveType === 'waterfall' || effectiveType === 'funnel' || effectiveType === 'lollipop';
+        const isLineVariant = effectiveType === 'line' || effectiveType === 'area' || effectiveType === 'stackedArea' || effectiveType === 'steppedLine' || effectiveType === 'curvedLine';
 
         // TREEMAP DATA TRANSFORMATION
         if (chartType === 'treemap') {
@@ -473,7 +562,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             }
         };
 
-        // KPI Card: no Chart.js dataset needed
+        // KPI Card: no Chart.js dataset needed (comparison handled in renderChart inline)
         if (chartType === 'kpiCard') {
             return { labels: [], datasets: [] };
         }
@@ -565,7 +654,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             borderColor: isPieChart
                 ? (generateColors(values.length) as string[]).map((c) => lightenColor(c, -10))
                 : borderColor,
-            borderWidth: isPieChart ? 2 : isLineVariant ? 3 : isBarVariant ? 0 : 2,
+            borderWidth: isPieChart ? 2 : isLineVariant ? 3 : isBarVariant ? 1.5 : 2,
             fill: isFillChart,
             tension: isCurved ? 0.4 : isStepped ? 0 : (chartType === 'line' ? 0.35 : 0),
             stepped: isStepped ? 'middle' as const : false,
@@ -582,25 +671,98 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             yAxisID: 'y',
         }];
 
-        // Add Comparison Dataset ONLY when comparison is explicitly enabled
-        if (config?.comparison === 'previous_period' && transformedData.some(d => d.previous_value !== undefined)) {
+        // When trend comparison is detected from data, override primary dataset for line rendering
+        // (the original chartType might be 'groupedBar' etc. which sets borderWidth=0 and pointRadius=0)
+        // GUARD: If config explicitly says comparison='none', skip all comparison logic
+        const comparisonExplicitlyOff = !config?.comparison || config?.comparison === 'none';
+        const hasTrendData = !comparisonExplicitlyOff && transformedData.length > 2 && transformedData.some(d => d.previous_value !== undefined);
+        const hasAnyComparisonData = !comparisonExplicitlyOff && transformedData.some(d => d.previous_value !== undefined);
+        if (hasTrendData) {
+            // Check if primary chart is a bar type — keep it as bars, just style for comparison
+            const primaryIsBarType = ['bar', 'groupedBar', 'stackedBar', 'horizontalBar', 'waterfall'].includes(chartType);
+            if (primaryIsBarType) {
+                // Keep bars but add comparison styling
+                datasets[0].label = 'Current Period';
+                datasets[0].borderWidth = 1.5;
+                datasets[0].borderRadius = 6;
+                datasets[0].maxBarThickness = 80;
+                datasets[0].barPercentage = 0.7;
+                datasets[0].categoryPercentage = 0.8;
+            } else {
+                // Line-type charts: style for trend overlay
+                datasets[0].label = 'Current Period';
+                datasets[0].borderWidth = 3;
+                datasets[0].pointRadius = 4;
+                datasets[0].pointHoverRadius = 6;
+                datasets[0].pointBackgroundColor = '#fff';
+                datasets[0].pointBorderColor = borderColor;
+                datasets[0].pointBorderWidth = 2;
+                datasets[0].fill = false;
+                datasets[0].tension = 0.35;
+                datasets[0].backgroundColor = `${baseColor}DD`;
+                datasets[0].borderDash = undefined;
+            }
+        } else if (hasAnyComparisonData) {
+            // Few-point comparison → render as solid bars
+            datasets[0].label = 'Current Period';
+            datasets[0].backgroundColor = '#6366f1';
+            datasets[0].borderColor = '#4338ca';
+            datasets[0].borderWidth = 1.5;
+            datasets[0].borderRadius = 6;
+            datasets[0].maxBarThickness = 80;
+            datasets[0].barPercentage = 0.7;
+            datasets[0].categoryPercentage = 0.8;
+        }
+        // Add Comparison Dataset when comparison is enabled OR data contains previous_value (trend mode)
+        const hasConfigComparison = !comparisonExplicitlyOff && (config?.comparison === 'previous_period' || config?.comparison === 'same_period_last_year' || config?.comparison === 'same_period_last_n');
+        const hasDataComparison = !comparisonExplicitlyOff && transformedData.some(d => d.previous_value !== undefined);
+        if ((hasConfigComparison || hasDataComparison) && hasDataComparison) {
             const prevValues = transformedData.map(d => d.previous_value !== undefined ? Number(d.previous_value) || 0 : null);
 
-            // Derive a clearly visible complementary color for comparison bars
-            const comparisonColor = useSequential
-                ? '#f59e0b' // Amber-500 — warm contrast against blue sequential palette
-                : '#6366f1'; // Indigo-500 — distinct secondary color for vibrant palettes
+            const isSPLY = config?.comparison === 'same_period_last_year';
+            // Derive a clearly visible complementary color for comparison line/bars
+            const comparisonColor = isSPLY
+                ? '#f59e0b' // Amber-500 for SPLY
+                : useSequential
+                    ? '#f59e0b' // Amber-500 — warm contrast against blue sequential palette
+                    : '#6366f1'; // Indigo-500 — distinct secondary color for vibrant palettes
+
+            // Decision: bar-type charts → always use grouped bars for comparison
+            // Line/area charts → use line overlay for comparison
+            const primaryIsBar = ['bar', 'groupedBar', 'stackedBar', 'horizontalBar', 'waterfall'].includes(chartType);
+            const primaryIsLine = ['line', 'area', 'stackedArea', 'steppedLine', 'curvedLine'].includes(chartType);
+            const cjsType = primaryIsLine ? 'line' as const : 'bar' as const;
+            const isLineType = cjsType === 'line';
+
+            // For grouped bars: set bar sizing to allow side-by-side
+            if (!isLineType && datasets.length > 0) {
+                datasets[0].barPercentage = 0.7;
+                datasets[0].categoryPercentage = 0.8;
+            }
+
+            // Build descriptive label
+            const compLabel = config?.comparison === 'same_period_last_n'
+                ? `${config.comparisonOffset || 1} ${config.comparisonGrain || 'month'}${(config.comparisonOffset || 1) > 1 ? 's' : ''} ago`
+                : isSPLY ? 'Same Period Last Year' : 'Previous Period';
 
             datasets.push({
-                label: 'Previous Period',
+                label: compLabel,
                 data: prevValues,
-                backgroundColor: comparisonColor,
-                borderColor: useSequential ? '#d97706' : '#4f46e5',
-                borderWidth: chartType === 'line' ? 2 : 1,
-                borderDash: chartType === 'line' ? [5, 5] : undefined,
-                borderRadius: chartType === 'bar' ? 4 : 0,
+                backgroundColor: isLineType ? 'transparent' : '#f97316',
+                borderColor: isLineType ? (isSPLY ? '#d97706' : '#4f46e5') : '#ea580c',
+                borderWidth: isLineType ? 2.5 : 1.5,
+                borderDash: isLineType ? [6, 4] : undefined,
+                borderRadius: isLineType ? 0 : 6,
                 maxBarThickness: 80,
-                type: chartType,
+                barPercentage: isLineType ? undefined : 0.7,
+                categoryPercentage: isLineType ? undefined : 0.8,
+                type: cjsType,
+                fill: isLineType ? false : undefined,
+                tension: isLineType ? 0.3 : undefined,
+                pointRadius: isLineType ? 3 : undefined,
+                pointBackgroundColor: isLineType ? (isSPLY ? '#d97706' : '#4f46e5') : undefined,
+                pointBorderColor: isLineType ? '#fff' : undefined,
+                pointBorderWidth: isLineType ? 1.5 : undefined,
                 yAxisID: 'y'
             });
         }
@@ -623,11 +785,87 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             });
         }
 
+        // Add Raw Daily Values for Moving Average questions
+        // Shows daily bars behind the smooth MA line so users can see the smoothing effect
+        if (transformedData.some(d => d.raw_value !== undefined)) {
+            const rawValues = transformedData.map(d => d.raw_value !== undefined ? Number(d.raw_value) || 0 : null);
+            datasets.unshift({
+                label: 'Daily Revenue',
+                data: rawValues,
+                type: 'bar' as const,
+                backgroundColor: 'rgba(148, 163, 184, 0.25)',
+                borderColor: 'rgba(148, 163, 184, 0.4)',
+                borderWidth: 1,
+                borderRadius: 3,
+                maxBarThickness: 20,
+                yAxisID: 'y',
+                order: 1, // Draw behind the MA line
+            } as any);
+        }
+
+        // ── SECONDARY METRIC DATASETS (multi-metric overlay) ──
+        // Auto-detect additional numeric keys in data beyond xKey, yKey, and known metadata keys
+        const knownKeys = new Set([xKey, yKey, 'previous_value', 'previous_period_label', 'growth_pct', 'difference', 'raw_value', 'rawValue', '__original_value', '_original', 'x', 'value', 'period', 'metric']);
+        const secondaryKeys = data.length > 0
+            ? Object.keys(data[0]).filter(k => !knownKeys.has(k) && typeof data[0][k] === 'number')
+            : [];
+
+        const SECONDARY_COLORS = [
+            { border: '#f59e0b', bg: '#f59e0b40' }, // Amber
+            { border: '#10b981', bg: '#10b98140' }, // Emerald
+            { border: '#f43f5e', bg: '#f43f5e40' }, // Rose
+        ];
+
+        // Determine axis mode: compare primary vs secondary max values
+        let autoAxisMode: 'single' | 'dual' | 'blended' = 'blended';
+        if (secondaryKeys.length > 0 && values.length > 0) {
+            const primaryMax = Math.max(...values.map(v => Math.abs(Number(v) || 0)));
+            const secMaxes = secondaryKeys.map(sk => Math.max(...transformedData.map(d => Math.abs(Number(d[sk]) || 0))));
+            const overallSecMax = Math.max(...secMaxes);
+            const ratio = primaryMax > 0 && overallSecMax > 0
+                ? Math.max(primaryMax / overallSecMax, overallSecMax / primaryMax)
+                : 1;
+            autoAxisMode = ratio > 5 ? 'dual' : 'blended';
+        }
+        const useDualAxis = autoAxisMode === 'dual';
+
+        // Read secondary metric visual types from config (default: line)
+        const secVisuals: Record<string, string> = config?.secondaryMetricVisuals || {};
+
+        secondaryKeys.forEach((secKey, idx) => {
+            const colorSet = SECONDARY_COLORS[idx % SECONDARY_COLORS.length];
+            const secValues = transformedData.map(d => Number(d[secKey]) || 0);
+            const visType = secVisuals[secKey] || 'line';
+            const isBarType = visType === 'bar';
+            const isAreaType = visType === 'area';
+
+            // Human-readable label: "discount" → "Discount", "unit_price" → "Unit Price"
+            const humanLabel = secKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
+            datasets.push({
+                label: humanLabel,
+                data: secValues,
+                type: isBarType ? 'bar' as const : 'line' as const,
+                borderColor: colorSet.border,
+                backgroundColor: isBarType ? colorSet.bg : (isAreaType ? colorSet.bg : 'transparent'),
+                borderWidth: isBarType ? 1.5 : 2.5,
+                pointRadius: isBarType ? 0 : 4,
+                pointHoverRadius: isBarType ? 0 : 6,
+                pointBackgroundColor: '#fff',
+                pointBorderColor: colorSet.border,
+                pointBorderWidth: 2,
+                fill: isAreaType,
+                tension: 0.35,
+                yAxisID: useDualAxis ? 'y1' : 'y',
+                order: isBarType ? 1 : -2,
+            });
+        });
+
         return {
             labels,
             datasets
         };
-    }, [transformedData, xKey, yKey, chartType, calculatedYLabel, formatting]);
+    }, [transformedData, xKey, yKey, chartType, calculatedYLabel, formatting, data, config]);
 
     const options = useMemo(() => {
         const isPieChart = chartType === 'pie' || chartType === 'gauge';
@@ -652,6 +890,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     formatter: (val: number) => {
                         return formatNumber(val);
                     },
+                    secondaryFormatter: (val: number, metricName: string) => {
+                        return formatForMetricName(val, metricName);
+                    },
+                    primaryLabel: yLabel || yKey || '',
                     color: '#334155', // Slate 700
                     font: {
                         weight: 'bold',
@@ -705,33 +947,102 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     },
                     displayColors: true,
                     boxPadding: 6,
+                    mode: 'index' as const,
+                    intersect: false,
                     callbacks: {
+                        title: function (contexts: any[]) {
+                            const label = contexts[0]?.label || '';
+                            const latestData = transformedDataRef.current;
+                            const idx = contexts[0]?.dataIndex;
+                            const dp = idx !== undefined ? latestData[idx] : null;
+                            if (dp && dp.previous_period_label) {
+                                return [label, `vs ${dp.previous_period_label}`];
+                            }
+                            return label;
+                        },
                         label: function (context: any) {
-                            let label = context.dataset.label || '';
-                            if (label) {
-                                label += ': ';
+                            const latestData = transformedDataRef.current;
+                            const idx = context.dataIndex;
+                            const isTrend = latestData.length > 0 && latestData[idx]?.previous_value !== undefined;
+
+                            if (isTrend) {
+                                if (context.datasetIndex === 0) {
+                                    // Use chart's parsed value (always correct regardless of data key name)
+                                    const currVal = context.parsed?.y ?? context.parsed?.x ?? (Number(latestData[idx].value || latestData[idx][yKey]) || 0);
+                                    return `  Current Period: ${formatNumber(currVal)}`;
+                                } else if (context.datasetIndex === 1) {
+                                    const prevVal = Number(latestData[idx].previous_value) || 0;
+                                    return `  Previous Period: ${formatNumber(prevVal)}`;
+                                } else {
+                                    // Secondary metric dataset — show with proper label and formatting
+                                    const dsLabel = context.dataset.label || '';
+                                    const val = context.parsed?.y ?? context.parsed?.x ?? 0;
+                                    if (val !== null && val !== undefined) {
+                                        return `  ${dsLabel.replace(/_/g, ' ')}: ${formatForMetricName(val, dsLabel)}`;
+                                    }
+                                    return `  ${dsLabel}: ${val}`;
+                                }
                             }
 
+                            // Default tooltip for non-trend charts
+                            let label = context.dataset.label || '';
+                            const val = isHorizontal ? context.parsed.x : context.parsed.y;
+
+                            // Use per-metric formatting for secondary datasets
+                            if (label && label !== yKey && label !== calculatedYLabel) {
+                                // This is a secondary metric — format based on its column name
+                                if (val !== null && val !== undefined) {
+                                    return `  ${label.replace(/_/g, ' ')}: ${formatForMetricName(val, label)}`;
+                                }
+                            }
+
+                            if (label) label += ': ';
                             if (context.parsed.y !== null || context.parsed.x !== null) {
-                                // For horizontal bars, value is in parsed.x; for vertical, it's in parsed.y
-                                const val = isHorizontal ? context.parsed.x : context.parsed.y;
                                 if (val !== null && val !== undefined) {
                                     label += formatNumber(val);
                                 }
                             } else if (context.parsed !== null) {
-                                label += formatNumber(context.parsed); // For Pie charts
+                                label += formatNumber(context.parsed);
                             }
 
-                            // If comparison data exists, show growth in tooltip
-                            if (context.datasetIndex === 0 && transformedData[context.dataIndex]?.growth_pct !== undefined) {
-                                const growth = transformedData[context.dataIndex].growth_pct;
-                                const sign = growth >= 0 ? '+' : '';
-                                label += ` (${sign}${growth.toFixed(1)}%)`;
-                            }
                             return label;
+                        },
+                        afterBody: function (contexts: any[]) {
+                            const latestData = transformedDataRef.current;
+                            if (!contexts || contexts.length === 0) return '';
+                            const idx = contexts[0].dataIndex;
+                            const dp = latestData[idx];
+                            if (!dp) return '';
+
+                            const isTrend = dp.previous_value !== undefined;
+                            const lines: string[] = [];
+
+                            // Growth % for trend mode
+                            if (isTrend) {
+                                const growthPct = dp.growth_pct;
+                                if (growthPct !== undefined && !isNaN(growthPct)) {
+                                    const sign = growthPct >= 0 ? '+' : '';
+                                    const arrow = growthPct >= 0 ? '▲' : '▼';
+                                    lines.push(`  ${arrow} Growth: ${sign}${Number(growthPct).toFixed(1)}%`);
+                                }
+                            }
+
+                            // Always show secondary metric values from the data row
+                            const metaKeys = new Set([xKey, yKey, 'previous_value', 'previous_period_label', 'growth_pct',
+                                'difference', 'raw_value', 'rawValue', '__original_value', '_original',
+                                'x', 'value', 'period', 'metric']);
+                            Object.keys(dp).forEach(k => {
+                                if (!metaKeys.has(k) && typeof dp[k] === 'number') {
+                                    const humanName = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                                    const formatted = formatForMetricName(dp[k], k);
+                                    lines.push(`  ● ${humanName}: ${formatted}`);
+                                }
+                            });
+
+                            return lines.length > 0 ? lines.join('\n') : '';
                         }
                     }
-                },
+                }
             },
             scales: isPieChart ? undefined : {
                 x: {
@@ -757,7 +1068,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         // For vertical bars, X-axis is the CATEGORY axis — no callback needed
                         ...(isHorizontal ? {
                             callback: function (value: any) {
-                                return formatNumber(value);
+                                return formatAxisNumber(value);
                             }
                         } : {}),
                     },
@@ -779,15 +1090,47 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             weight: formatting?.axisBold ? 'bold' as const : 'normal' as const
                         },
                         color: formatting?.axisColor || '#475569',
-                        // For vertical bars, Y-axis is the VALUE axis — format numbers
-                        // For horizontal bars, Y-axis is the CATEGORY axis — let Chart.js show labels natively
                         ...(!isHorizontal ? {
                             callback: function (value: any) {
-                                return formatNumber(value);
+                                return formatAxisNumber(value);
                             }
                         } : {}),
                     }
-                }
+                },
+                // Dynamic y1 axis for dual-axis multi-metric charts
+                ...((() => {
+                    // Detect if we have secondary metric datasets targeting y1
+                    const hasY1 = chartData?.datasets?.some((ds: any) => ds.yAxisID === 'y1');
+                    if (!hasY1) return {};
+                    return {
+                        y1: {
+                            display: yVisible,
+                            position: 'right' as const,
+                            beginAtZero: true,
+                            grid: {
+                                display: false, // Don't show dual grid lines
+                                drawBorder: false,
+                            },
+                            ticks: {
+                                display: yVisible,
+                                font: {
+                                    size: fontSize + 2,
+                                    weight: formatting?.axisBold ? 'bold' as const : 'normal' as const
+                                },
+                                color: '#f59e0b', // Match secondary color
+                                callback: function (this: any, value: any) {
+                                    // Detect secondary metric name from datasets on this axis
+                                    const chart = this.chart;
+                                    const secDs = chart?.data?.datasets?.find((ds: any) => ds.yAxisID === 'y1');
+                                    if (secDs?.label) {
+                                        return formatForMetricName(Number(value) || 0, secDs.label);
+                                    }
+                                    return formatAxisNumber(value);
+                                }
+                            }
+                        }
+                    };
+                })())
             },
             // SMOOTH ANIMATIONS
             animation: {
@@ -806,13 +1149,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         } as any; // Cast to any to allow custom scale ID 'y1'
     }, [chartType, formatting, transformedData, chartData, calculatedYLabel, xKey, yKey]);
 
-    if (!data || data.length === 0 || !chartData) {
-        return (
-            <div className="flex items-center justify-center h-full min-h-[300px] text-slate-400">
-                No data to display
-            </div>
-        );
-    }
+
 
     const dataLabelsPlugin = useMemo<any>(() => ({
         id: 'customDataLabels',
@@ -821,28 +1158,139 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
             const { ctx } = chart;
             ctx.save();
-            ctx.font = `${options.font.weight} ${options.font.size}px "Inter", sans-serif`;
-            ctx.fillStyle = options.color;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
 
-            chart.data.datasets.forEach((dataset: any, i: number) => {
-                const meta = chart.getDatasetMeta(i);
-                if (meta.hidden) return;
+            const isPie = chart.config.type === 'pie' || chart.config.type === 'doughnut';
 
-                meta.data.forEach((element: any, index: number) => {
+            if (isPie) {
+                // ── OUTSIDE LABELS WITH LEADER LINES ──
+                const meta = chart.getDatasetMeta(0);
+                if (!meta || meta.hidden) return;
+
+                const dataset = chart.data.datasets[0];
+                const total = dataset.data.reduce((sum: number, v: number) => sum + (v || 0), 0);
+                if (total === 0) return;
+
+                const chartArea = chart.chartArea;
+                const centerX = (chartArea.left + chartArea.right) / 2;
+                const centerY = (chartArea.top + chartArea.bottom) / 2;
+
+                // Collect label positions first for collision avoidance
+                const labelInfos: { angle: number; text: string; pctText: string; outerX: number; outerY: number; side: 'left' | 'right' }[] = [];
+
+                meta.data.forEach((arc: any, index: number) => {
                     const value = dataset.data[index];
-                    const text = options.formatter ? options.formatter(value, { dataset }) : value;
+                    if (!value || value === 0) return;
 
-                    let x = element.x;
-                    let y = element.y;
+                    const pct = ((value / total) * 100);
+                    // Skip truly tiny slices (< 0.5%) to avoid clutter
+                    if (pct < 0.5) return;
 
-                    if (chart.config.type === 'pie' || chart.config.type === 'doughnut') {
-                        const { x: cx, y: cy } = element.tooltipPosition();
-                        x = cx;
-                        y = cy;
-                        ctx.textBaseline = 'middle';
-                    } else {
+                    const startAngle = arc.startAngle;
+                    const endAngle = arc.endAngle;
+                    const midAngle = (startAngle + endAngle) / 2;
+
+                    const outerRadius = arc.outerRadius;
+                    const labelRadius = outerRadius + 20;
+
+                    const outerX = centerX + Math.cos(midAngle) * labelRadius;
+                    const outerY = centerY + Math.sin(midAngle) * labelRadius;
+
+                    const formattedVal = options.formatter ? options.formatter(value, { dataset }) : value;
+                    const pctText = `(${pct.toFixed(1)}%)`;
+                    const side = outerX >= centerX ? 'right' : 'left';
+
+                    labelInfos.push({ angle: midAngle, text: formattedVal, pctText, outerX, outerY, side });
+                });
+
+                // Simple collision avoidance: push overlapping labels apart vertically
+                const sortedLabels = [...labelInfos].sort((a, b) => a.outerY - b.outerY);
+                const minGap = 16;
+                for (let i = 1; i < sortedLabels.length; i++) {
+                    const prev = sortedLabels[i - 1];
+                    const curr = sortedLabels[i];
+                    if (curr.outerY - prev.outerY < minGap) {
+                        curr.outerY = prev.outerY + minGap;
+                    }
+                }
+
+                // Draw each label with leader line
+                sortedLabels.forEach(info => {
+                    const { angle, text, pctText, outerX, outerY, side } = info;
+
+                    const outerRadius = meta.data[0]?.outerRadius || 100;
+
+                    // Start point: on the edge of the pie
+                    const edgeX = centerX + Math.cos(angle) * (outerRadius + 4);
+                    const edgeY = centerY + Math.sin(angle) * (outerRadius + 4);
+
+                    // Elbow: horizontal extension
+                    const elbowExtend = side === 'right' ? 16 : -16;
+                    const elbowX = outerX + elbowExtend;
+
+                    // Draw leader line
+                    ctx.strokeStyle = '#94a3b8'; // slate-400
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(edgeX, edgeY);
+                    ctx.lineTo(outerX, outerY);
+                    ctx.lineTo(elbowX, outerY);
+                    ctx.stroke();
+
+                    // Draw label text
+                    ctx.textAlign = side === 'right' ? 'left' : 'right';
+                    ctx.textBaseline = 'middle';
+                    const labelX = elbowX + (side === 'right' ? 4 : -4);
+
+                    ctx.font = 'bold 11px "Inter", sans-serif';
+                    ctx.fillStyle = '#334155'; // slate-700
+                    ctx.fillText(`${text} ${pctText}`, labelX, outerY);
+                });
+            } else {
+                // ── BAR / LINE / OTHER CHARTS — show data point labels ──
+                const latestData = transformedDataRef.current;
+
+                chart.data.datasets.forEach((dataset: any, i: number) => {
+                    const meta = chart.getDatasetMeta(i);
+                    if (meta.hidden) return;
+
+                    meta.data.forEach((element: any, index: number) => {
+                        const value = dataset.data[index];
+                        if (value === null || value === undefined) return;
+
+                        // Determine dataset type first
+                        const isComparisonDs = i === 1 && latestData.some((d: any) => d.previous_value !== undefined);
+                        const isSecondaryDs = i >= 2;
+
+                        // Skip near-zero values for primary/comparison datasets only
+                        // Secondary metrics (like discount) always show labels even for 0
+                        if (!isSecondaryDs && Math.abs(Number(value)) < 0.01) return;
+
+                        // Format the label text based on dataset type
+                        let text: string;
+                        if (options.secondaryFormatter && dataset.label && dataset.label !== options.primaryLabel) {
+                            text = options.secondaryFormatter(value, dataset.label);
+                        } else if (options.formatter) {
+                            text = options.formatter(value, { dataset });
+                        } else {
+                            text = String(value);
+                        }
+
+                        // Style per dataset: primary = bold, comparison = italic, secondary = colored
+                        if (isComparisonDs) {
+                            ctx.font = `italic ${options.font.size - 1}px "Inter", sans-serif`;
+                            ctx.fillStyle = '#64748b'; // slate-500 for comparison
+                        } else if (isSecondaryDs) {
+                            ctx.font = `bold ${options.font.size - 1}px "Inter", sans-serif`;
+                            ctx.fillStyle = dataset.borderColor || options.color;
+                        } else {
+                            ctx.font = `${options.font.weight} ${options.font.size}px "Inter", sans-serif`;
+                            ctx.fillStyle = options.color;
+                        }
+                        ctx.textAlign = 'center';
+
+                        let x = element.x;
+                        let y = element.y;
+
                         if (value < 0) {
                             y = element.y + 10;
                             ctx.textBaseline = 'top';
@@ -850,82 +1298,102 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             y = element.y - 10;
                             ctx.textBaseline = 'bottom';
                         }
-                    }
 
-                    if (y > 10) {
-                        ctx.fillText(text, x, y);
-                    }
+                        if (y > 10) {
+                            ctx.fillText(text, x, y);
+                        }
+                    });
                 });
-            });
+            }
             ctx.restore();
         }
     }), []);
 
-    // Growth % labels plugin — draws colored growth text above bar pairs
+    // Growth % badge — compact box at top-center of the chart canvas
     const growthLabelsPlugin = useMemo<any>(() => ({
         id: 'growthLabels',
         afterDatasetsDraw(chart: any) {
-            const hasComparison = transformedData.some(d => d.growth_pct !== undefined);
+            const latestData = transformedDataRef.current;
+            const hasComparison = latestData.some((d: any) => d.growth_pct !== undefined);
             if (!hasComparison) return;
 
-            const { ctx } = chart;
+            const { ctx, chartArea } = chart;
             const mainMeta = chart.getDatasetMeta(0);
             if (!mainMeta || mainMeta.hidden) return;
 
-            ctx.save();
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'bottom';
+            // Use growth_pct directly from data if available, otherwise compute from previous_value
+            const withGrowth = latestData.filter((d: any) => d.growth_pct !== undefined && !isNaN(d.growth_pct));
+            if (withGrowth.length === 0) return;
 
-            mainMeta.data.forEach((element: any, index: number) => {
-                const row = transformedData[index];
-                if (!row || row.growth_pct === undefined) return;
-
-                const growth = Number(row.growth_pct);
-                const isPositive = growth >= 0;
-                const sign = isPositive ? '+' : '';
-                const text = `${sign}${growth.toFixed(1)}%`;
-
-                // Color: green for positive, red for negative
-                ctx.fillStyle = isPositive ? '#059669' : '#dc2626';
-                ctx.font = 'bold 11px "Inter", sans-serif';
-
-                // Position above the main bar
-                const x = element.x;
-                const y = element.y - 16;
-
-                if (y > 8) {
-                    // Draw a small rounded pill background
-                    const textWidth = ctx.measureText(text).width;
-                    const pillPad = 4;
-                    const pillH = 16;
-                    const pillW = textWidth + pillPad * 2;
-                    const pillX = x - pillW / 2;
-                    const pillY = y - pillH + 2;
-                    const radius = 4;
-
-                    ctx.fillStyle = isPositive ? 'rgba(5,150,105,0.12)' : 'rgba(220,38,38,0.12)';
-                    ctx.beginPath();
-                    ctx.moveTo(pillX + radius, pillY);
-                    ctx.lineTo(pillX + pillW - radius, pillY);
-                    ctx.quadraticCurveTo(pillX + pillW, pillY, pillX + pillW, pillY + radius);
-                    ctx.lineTo(pillX + pillW, pillY + pillH - radius);
-                    ctx.quadraticCurveTo(pillX + pillW, pillY + pillH, pillX + pillW - radius, pillY + pillH);
-                    ctx.lineTo(pillX + radius, pillY + pillH);
-                    ctx.quadraticCurveTo(pillX, pillY + pillH, pillX, pillY + pillH - radius);
-                    ctx.lineTo(pillX, pillY + radius);
-                    ctx.quadraticCurveTo(pillX, pillY, pillX + radius, pillY);
-                    ctx.closePath();
-                    ctx.fill();
-
-                    // Draw text
-                    ctx.fillStyle = isPositive ? '#059669' : '#dc2626';
-                    ctx.textBaseline = 'middle';
-                    ctx.fillText(text, x, pillY + pillH / 2);
+            let growth = 0;
+            const firstWithGrowth = withGrowth[0];
+            if (firstWithGrowth && firstWithGrowth.growth_pct !== undefined && !isNaN(firstWithGrowth.growth_pct)) {
+                // For 2-bar comparisons, use the growth_pct from the current period bar
+                growth = Number(firstWithGrowth.growth_pct);
+            } else {
+                // Fallback: compute from previous_value fields (trend/time-series charts)
+                let totalCurr = 0, totalPrev = 0;
+                for (const d of latestData) {
+                    if (d.previous_value !== undefined) {
+                        totalCurr += Number(d.value) || 0;
+                        totalPrev += Number(d.previous_value) || 0;
+                    }
                 }
-            });
+                growth = totalPrev !== 0 ? ((totalCurr - totalPrev) / Math.abs(totalPrev)) * 100 : 0;
+            }
+            const isPositive = growth >= 0;
+            const sign = isPositive ? '+' : '';
+            const text = `${sign}${growth.toFixed(1)}%`;
+            const icon = isPositive ? '▲' : '▼';
+
+            ctx.save();
+
+            // Position: top-center of chart area
+            const centerX = (chartArea.left + chartArea.right) / 2;
+            const boxY = chartArea.top - 2;
+
+            // Measure text for box sizing
+            const font = 'bold 12px "Inter", sans-serif';
+            ctx.font = font;
+            const iconWidth = ctx.measureText(icon + ' ').width;
+            const textWidth = ctx.measureText(text).width;
+            const totalWidth = iconWidth + textWidth;
+
+            const padH = 10;
+            const padV = 6;
+            const boxW = totalWidth + padH * 2;
+            const boxH = 24;
+            const boxX = centerX - boxW / 2;
+            const radius = 6;
+
+            // Draw rounded rectangle background
+            ctx.fillStyle = isPositive ? 'rgba(5, 150, 105, 0.08)' : 'rgba(220, 38, 38, 0.08)';
+            ctx.strokeStyle = isPositive ? 'rgba(5, 150, 105, 0.25)' : 'rgba(220, 38, 38, 0.25)';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(boxX + radius, boxY);
+            ctx.lineTo(boxX + boxW - radius, boxY);
+            ctx.quadraticCurveTo(boxX + boxW, boxY, boxX + boxW, boxY + radius);
+            ctx.lineTo(boxX + boxW, boxY + boxH - radius);
+            ctx.quadraticCurveTo(boxX + boxW, boxY + boxH, boxX + boxW - radius, boxY + boxH);
+            ctx.lineTo(boxX + radius, boxY + boxH);
+            ctx.quadraticCurveTo(boxX, boxY + boxH, boxX, boxY + boxH - radius);
+            ctx.lineTo(boxX, boxY + radius);
+            ctx.quadraticCurveTo(boxX, boxY, boxX + radius, boxY);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            // Draw icon + text
+            ctx.fillStyle = isPositive ? '#059669' : '#dc2626';
+            ctx.font = font;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${icon} ${text}`, centerX, boxY + boxH / 2);
+
             ctx.restore();
         }
-    }), [transformedData]);
+    }), []); // Empty deps — uses ref internally for latest data
 
     const plugins = useMemo(() => [dataLabelsPlugin, growthLabelsPlugin], [dataLabelsPlugin, growthLabelsPlugin]);
 
@@ -965,9 +1433,71 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         onClick: handleClick,
     }), [options, handleClick]);
 
+    // ── EARLY RETURN — must be AFTER all hooks to avoid "fewer hooks" crash ──
+    if (!data || data.length === 0 || !chartData) {
+        return (
+            <div className="flex items-center justify-center h-full min-h-[300px] text-slate-400">
+                No data to display
+            </div>
+        );
+    }
+
+
     const renderChart = () => {
         // KPI Card — pure HTML, no Chart.js
         if (chartType === 'kpiCard') {
+            const hasComparisonData = transformedData?.some((d: any) => d.previous_value !== undefined);
+            if (hasComparisonData) {
+                // Comparison KPI: show current vs previous with proportional bars + growth badge
+                const currentVal = transformedData?.reduce((a: number, d: any) => a + (Number(d[yKey]) || 0), 0) ?? 0;
+                const prevVal = transformedData?.reduce((a: number, d: any) => a + (Number(d.previous_value) || 0), 0) ?? 0;
+                const growthPct = prevVal !== 0 ? ((currentVal - prevVal) / Math.abs(prevVal)) * 100 : (currentVal !== 0 ? 100 : 0);
+                const isPositive = growthPct >= 0;
+                const maxVal = Math.max(currentVal, prevVal) || 1;
+
+                // Build period labels from config
+                const compLabel = config?.comparison === 'same_period_last_n'
+                    ? `Last ${config.comparisonOffset || 1} ${config.comparisonGrain || 'day'}${(config.comparisonOffset || 1) > 1 ? 's' : ''}`
+                    : config?.comparison === 'same_period_last_year' ? 'Last Year' : 'Previous Period';
+
+                return (
+                    <div className="flex flex-col items-center justify-center h-full gap-5 p-6">
+                        {/* Growth Badge */}
+                        <div className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold ${isPositive ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                            <span>{isPositive ? '▲' : '▼'}</span>
+                            <span>{isPositive ? '+' : ''}{growthPct.toFixed(1)}%</span>
+                        </div>
+
+                        {/* Two-column comparison */}
+                        <div className="flex gap-8 items-end">
+                            {/* Current Period */}
+                            <div className="flex flex-col items-center gap-2">
+                                <div className="text-3xl font-black text-indigo-600">{formatNumber(currentVal)}</div>
+                                <div className="w-24 bg-slate-100 rounded-full overflow-hidden h-3">
+                                    <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${(currentVal / maxVal) * 100}%` }}></div>
+                                </div>
+                                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Current Period</div>
+                            </div>
+
+                            {/* VS divider */}
+                            <div className="text-lg font-bold text-slate-300 pb-6">vs</div>
+
+                            {/* Previous Period */}
+                            <div className="flex flex-col items-center gap-2">
+                                <div className="text-3xl font-black text-amber-600">{formatNumber(prevVal)}</div>
+                                <div className="w-24 bg-slate-100 rounded-full overflow-hidden h-3">
+                                    <div className="h-full bg-amber-500 rounded-full transition-all" style={{ width: `${(prevVal / maxVal) * 100}%` }}></div>
+                                </div>
+                                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{compLabel}</div>
+                            </div>
+                        </div>
+
+                        <div className="text-sm font-medium text-slate-400 uppercase tracking-wider">{calculatedYLabel || 'Comparison'}</div>
+                    </div>
+                );
+            }
+
+            // Standard KPI card (no comparison)
             const total = transformedData?.reduce((a: number, d: any) => a + (Number(d[yKey]) || 0), 0) ?? 0;
             const count = transformedData?.length ?? 0;
             const avg = count > 0 ? total / count : 0;
@@ -986,7 +1516,22 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         }
 
         let ChartComponent: any;
-        switch (chartType) {
+        // Override chart type to Line when in trend comparison mode (dual-line overlay)
+        // But ONLY when there are enough data points — otherwise keep bar for grouped comparison
+        const compExplicitlyOff = !config?.comparison || config?.comparison === 'none';
+        const hasAnyCompData = !compExplicitlyOff && data.some((d: any) => d.previous_value !== undefined);
+        const hasManyPoints = data.length > 4;
+        const isTrendFromConfig = !compExplicitlyOff && (config?.comparison === 'previous_period' || config?.comparison === 'same_period_last_year' || config?.comparison === 'same_period_last_n')
+            && ['day', 'week', 'month', 'quarter', 'year'].includes(config?.dimension || '');
+        const isTrendFromData = !compExplicitlyOff && data.length > 2 && data.some((d: any) => d.previous_value !== undefined);
+        // Only override to line for multi-point trends — few points stay as bar for grouped comparison
+        const isTrendComparison = hasManyPoints && (isTrendFromConfig || isTrendFromData);
+        let effectiveChartType = isTrendComparison ? 'line' : chartType;
+        // Force bar chart when comparison exists with few data points (grouped bars look better than dots/lines)
+        if (hasAnyCompData && !hasManyPoints && ['line', 'area', 'steppedLine', 'curvedLine', 'pie', 'doughnut'].includes(effectiveChartType)) {
+            effectiveChartType = 'bar';
+        }
+        switch (effectiveChartType) {
             case 'bar':
             case 'horizontalBar':
             case 'stackedBar':

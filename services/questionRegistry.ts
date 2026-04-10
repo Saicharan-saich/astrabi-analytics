@@ -1,6 +1,8 @@
 import { QuestionTemplate } from "../types";
+import { DOMAIN_QUESTIONS, getQuestionsForDomain } from './domainQuestions';
 
 // --- DETERMINISTIC QUESTION REGISTRY (HARDENED) ---
+// These are the SALES domain questions (legacy, kept for backward compatibility)
 export const QUESTION_REGISTRY: QuestionTemplate[] = [
 
     // ╔══════════════════════════════════════════════╗
@@ -13,13 +15,10 @@ export const QUESTION_REGISTRY: QuestionTemplate[] = [
     { id: 'd_aov', category: 'Daily Performance', question: 'What is today\'s AOV?', req: ['revenue', 'order_id', 'order_date'], grain: 'day', vis: 'kpiCard', sql: `SELECT SUM(revenue) / COUNT(DISTINCT order_id) FROM orders WHERE order_date = CURRENT_DATE` },
     { id: 'd_units', category: 'Daily Performance', question: 'How many units were sold today?', req: ['quantity', 'order_date'], grain: 'day', vis: 'kpiCard', sql: `SELECT SUM(quantity) FROM line_items WHERE order_date = CURRENT_DATE` },
 
-    // Day over Day Comparisons — two bars (Current vs Previous) → bar
-    { id: 'd_vs_y_rev', category: 'Daily Performance', question: 'Revenue vs Yesterday', req: ['revenue', 'order_date'], grain: 'day', vis: 'groupedBar', sql: `...` },
-    { id: 'd_vs_y_orders', category: 'Daily Performance', question: 'Orders vs Yesterday', req: ['order_id', 'order_date'], grain: 'day', vis: 'groupedBar', sql: `...` },
-    { id: 'd_vs_y_aov', category: 'Daily Performance', question: 'AOV vs Yesterday', req: ['revenue', 'order_id', 'order_date'], grain: 'day', vis: 'groupedBar', sql: `...` },
-
-    // Percent Change — two bars (Current vs Previous) + KPI badge shows % → bar
-    { id: 'd_pct_chg_rev', category: 'Daily Performance', question: '% Revenue Change vs Yesterday', req: ['revenue', 'order_date'], grain: 'day', vis: 'bar', sql: `...` },
+    // Day over Day Comparisons — two bars (Current vs Previous) with Growth % → bar
+    { id: 'd_vs_y_rev', category: 'Daily Performance', question: 'Revenue vs Yesterday (with Growth %)', req: ['revenue', 'order_date'], grain: 'day', vis: 'groupedBar', sql: `...` },
+    { id: 'd_vs_y_orders', category: 'Daily Performance', question: 'Orders vs Yesterday (with Growth %)', req: ['order_id', 'order_date'], grain: 'day', vis: 'groupedBar', sql: `...` },
+    { id: 'd_vs_y_aov', category: 'Daily Performance', question: 'AOV vs Yesterday (with Growth %)', req: ['revenue', 'order_id', 'order_date'], grain: 'day', vis: 'groupedBar', sql: `...` },
 
     // Percent of Total — shares/slices → doughnut/pie
     { id: 'd_pct_total_prod', category: 'Daily Performance', question: '% Revenue by Product Today', req: ['revenue', 'product_name', 'order_date'], grain: 'item', vis: 'doughnut', sql: `...` },
@@ -43,13 +42,9 @@ export const QUESTION_REGISTRY: QuestionTemplate[] = [
     { id: 'w_orders', category: 'Weekly Performance', question: 'Orders this week', req: ['order_id', 'order_date'], grain: 'week', vis: 'kpiCard', sql: `...` },
     { id: 'w_aov', category: 'Weekly Performance', question: 'AOV this week', req: ['revenue', 'order_id', 'order_date'], grain: 'week', vis: 'kpiCard', sql: `...` },
 
-    // Week over Week Comparisons — two bars → groupedBar
-    { id: 'w_vs_lw_rev', category: 'Weekly Performance', question: 'Revenue vs Last Week', req: ['revenue', 'order_date'], grain: 'week', vis: 'groupedBar', sql: `...` },
-    { id: 'w_vs_lw_orders', category: 'Weekly Performance', question: 'Orders vs Last Week', req: ['order_id', 'order_date'], grain: 'week', vis: 'groupedBar', sql: `...` },
-
-    // Growth % — two bars (Current vs Previous) + KPI badge shows % → bar
-    { id: 'w_pct_growth_rev', category: 'Weekly Performance', question: 'Weekly Revenue Growth %', req: ['revenue', 'order_date'], grain: 'week', vis: 'bar', sql: `...` },
-    { id: 'w_pct_growth_orders', category: 'Weekly Performance', question: 'Weekly Order Growth %', req: ['order_id', 'order_date'], grain: 'week', vis: 'bar', sql: `...` },
+    // Week over Week Comparisons — two bars with Growth % → groupedBar
+    { id: 'w_vs_lw_rev', category: 'Weekly Performance', question: 'Revenue vs Last Week (with Growth %)', req: ['revenue', 'order_date'], grain: 'week', vis: 'groupedBar', sql: `...` },
+    { id: 'w_vs_lw_orders', category: 'Weekly Performance', question: 'Orders vs Last Week (with Growth %)', req: ['order_id', 'order_date'], grain: 'week', vis: 'groupedBar', sql: `...` },
 
     // Percent of Total — shares → doughnut
     { id: 'w_pct_total_channel', category: 'Weekly Performance', question: '% Revenue by Channel (Week)', req: ['source', 'revenue', 'order_date'], grain: 'week', vis: 'doughnut', sql: `...` },
@@ -70,9 +65,9 @@ export const QUESTION_REGISTRY: QuestionTemplate[] = [
     { id: 'm_orders', category: 'Monthly Performance', question: 'Orders this month', req: ['order_id', 'order_date'], grain: 'month', vis: 'kpiCard', sql: `SELECT COUNT(DISTINCT order_id) FROM orders WHERE order_date >= DATE_TRUNC('month', CURRENT_DATE)` },
     { id: 'm_aov', category: 'Monthly Performance', question: 'AOV this month', req: ['revenue', 'order_id', 'order_date'], grain: 'month', vis: 'kpiCard', sql: `...` },
 
-    // Month over Month Comparisons — two bars → groupedBar
-    { id: 'm_vs_lm_rev', category: 'Monthly Performance', question: 'Revenue vs Last Month', req: ['revenue', 'order_date'], grain: 'month', vis: 'groupedBar', sql: `...` },
-    { id: 'm_vs_lm_orders', category: 'Monthly Performance', question: 'Orders vs Last Month', req: ['order_id', 'order_date'], grain: 'month', vis: 'groupedBar', sql: `...` },
+    // Month over Month Comparisons — two bars with Growth % → groupedBar
+    { id: 'm_vs_lm_rev', category: 'Monthly Performance', question: 'Revenue vs Last Month (with Growth %)', req: ['revenue', 'order_date'], grain: 'month', vis: 'groupedBar', sql: `...` },
+    { id: 'm_vs_lm_orders', category: 'Monthly Performance', question: 'Orders vs Last Month (with Growth %)', req: ['order_id', 'order_date'], grain: 'month', vis: 'bar', sql: `...` },
 
     // ⏰ Time Intelligence — MTD / PY MTD — single scalar → kpiCard, comparison → groupedBar
     { id: 'm_mtd_rev', category: 'Monthly Performance', question: 'Month-to-Date Revenue', req: ['revenue', 'order_date'], grain: 'month', vis: 'kpiCard', sql: `SELECT SUM(revenue) FROM orders WHERE order_date >= DATE_TRUNC('month', CURRENT_DATE) AND order_date <= CURRENT_DATE` },
@@ -81,10 +76,6 @@ export const QUESTION_REGISTRY: QuestionTemplate[] = [
     { id: 'm_py_mtd_orders', category: 'Monthly Performance', question: 'Same Month Last Year Orders (PY MTD)', req: ['order_id', 'order_date'], grain: 'month', vis: 'kpiCard', sql: `...` },
     { id: 'm_vs_py_mtd_rev', category: 'Monthly Performance', question: 'MTD Revenue vs Same Period Last Year', req: ['revenue', 'order_date'], grain: 'month', vis: 'groupedBar', sql: `...` },
     { id: 'm_vs_py_mtd_orders', category: 'Monthly Performance', question: 'MTD Orders vs Same Period Last Year', req: ['order_id', 'order_date'], grain: 'month', vis: 'groupedBar', sql: `...` },
-
-    // Growth % — two bars + KPI badge → bar
-    { id: 'm_pct_growth_rev', category: 'Monthly Performance', question: 'MoM Revenue Growth %', req: ['revenue', 'order_date'], grain: 'month', vis: 'bar', sql: `...` },
-    { id: 'm_pct_growth_aov', category: 'Monthly Performance', question: 'MoM AOV Growth %', req: ['revenue', 'order_id', 'order_date'], grain: 'month', vis: 'bar', sql: `...` },
 
     // Percent of Total — shares → treemap
     { id: 'm_pct_total_cat', category: 'Monthly Performance', question: '% Revenue by Category (Month)', req: ['revenue', 'product_name', 'order_date'], grain: 'month', vis: 'treemap', sql: `...` },
@@ -108,9 +99,9 @@ export const QUESTION_REGISTRY: QuestionTemplate[] = [
     { id: 'q_orders', category: 'Quarterly Performance', question: 'Orders this quarter', req: ['order_id', 'order_date'], grain: 'quarter', vis: 'kpiCard', sql: `SELECT COUNT(DISTINCT order_id) FROM orders WHERE order_date >= DATE_TRUNC('quarter', CURRENT_DATE)` },
     { id: 'q_aov', category: 'Quarterly Performance', question: 'AOV this quarter', req: ['revenue', 'order_id', 'order_date'], grain: 'quarter', vis: 'kpiCard', sql: `...` },
 
-    // Quarter over Quarter Comparisons
-    { id: 'q_vs_lq_rev', category: 'Quarterly Performance', question: 'Revenue vs Last Quarter', req: ['revenue', 'order_date'], grain: 'quarter', vis: 'groupedBar', sql: `...` },
-    { id: 'q_vs_lq_orders', category: 'Quarterly Performance', question: 'Orders vs Last Quarter', req: ['order_id', 'order_date'], grain: 'quarter', vis: 'groupedBar', sql: `...` },
+    // Quarter over Quarter Comparisons with Growth %
+    { id: 'q_vs_lq_rev', category: 'Quarterly Performance', question: 'Revenue vs Last Quarter (with Growth %)', req: ['revenue', 'order_date'], grain: 'quarter', vis: 'groupedBar', sql: `...` },
+    { id: 'q_vs_lq_orders', category: 'Quarterly Performance', question: 'Orders vs Last Quarter (with Growth %)', req: ['order_id', 'order_date'], grain: 'quarter', vis: 'groupedBar', sql: `...` },
 
     // ⏰ Time Intelligence — QTD / PY QTD
     { id: 'q_qtd_rev', category: 'Quarterly Performance', question: 'Quarter-to-Date Revenue', req: ['revenue', 'order_date'], grain: 'quarter', vis: 'kpiCard', sql: `...` },
@@ -118,9 +109,6 @@ export const QUESTION_REGISTRY: QuestionTemplate[] = [
     { id: 'q_py_qtd_orders', category: 'Quarterly Performance', question: 'Same Quarter Last Year Orders (PY QTD)', req: ['order_id', 'order_date'], grain: 'quarter', vis: 'kpiCard', sql: `...` },
     { id: 'q_vs_py_qtd_rev', category: 'Quarterly Performance', question: 'QTD Revenue vs Same Quarter Last Year', req: ['revenue', 'order_date'], grain: 'quarter', vis: 'groupedBar', sql: `...` },
     { id: 'q_vs_py_qtd_orders', category: 'Quarterly Performance', question: 'QTD Orders vs Same Quarter Last Year', req: ['order_id', 'order_date'], grain: 'quarter', vis: 'groupedBar', sql: `...` },
-
-    // Growth %
-    { id: 'q_pct_growth_rev', category: 'Quarterly Performance', question: 'QoQ Revenue Growth %', req: ['revenue', 'order_date'], grain: 'quarter', vis: 'bar', sql: `...` },
 
     // Rankings
     { id: 'q_top_prod', category: 'Quarterly Performance', question: 'Top Products this Quarter', req: ['product_name', 'revenue', 'order_date'], grain: 'item', vis: 'horizontalBar', sql: `...` },
@@ -148,9 +136,7 @@ export const QUESTION_REGISTRY: QuestionTemplate[] = [
     { id: 'ytd_vs_py_ytd_rev', category: 'Yearly Performance', question: 'YTD Revenue vs Prior Year YTD', req: ['revenue', 'order_date'], grain: 'year', vis: 'groupedBar', sql: `...` },
     { id: 'ytd_vs_py_ytd_orders', category: 'Yearly Performance', question: 'YTD Orders vs Prior Year YTD', req: ['order_id', 'order_date'], grain: 'year', vis: 'groupedBar', sql: `...` },
 
-    // Growth %
-    { id: 'ytd_pct_growth', category: 'Yearly Performance', question: 'YTD Revenue Growth %', req: ['revenue', 'order_date'], grain: 'year', vis: 'bar', sql: `...` },
-    { id: 'ytd_pct_growth_orders', category: 'Yearly Performance', question: 'YTD Order Growth %', req: ['order_id', 'order_date'], grain: 'year', vis: 'bar', sql: `...` },
+    // Growth % — consolidated into _vs_ questions; YTD comparison already has growth badge
 
     // Percent of Total
     { id: 'all_pct_top_10', category: 'Yearly Performance', question: '% Lifetime Revenue from Top 10 Products', req: ['revenue', 'product_name'], grain: 'item', vis: 'treemap', sql: `...` },
@@ -163,9 +149,37 @@ export const QUESTION_REGISTRY: QuestionTemplate[] = [
     { id: 'all_ma_12_rev', category: 'Yearly Performance', question: '12-Month Rolling Revenue', req: ['revenue', 'order_date'], grain: 'month', vis: 'curvedLine', sql: `...` },
     { id: 'all_run_total', category: 'Yearly Performance', question: 'Lifetime Revenue Running Total', req: ['revenue', 'order_date'], grain: 'any', vis: 'area', sql: `...` },
 
+    // ╔══════════════════════════════════════════════╗
+    // ║  6. PERIOD TOTALS (WTD / MTD / QTD / YTD)    ║
+    // ╚══════════════════════════════════════════════╝
+
+    // Week-to-Date
+    { id: 'w_wtd_rev', category: 'Period Totals', question: 'Revenue WTD', req: ['revenue', 'order_date'], grain: 'week', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(revenue) FROM orders WHERE order_date >= DATE_TRUNC('week', CURRENT_DATE)` },
+    { id: 'w_wtd_orders', category: 'Period Totals', question: 'Orders WTD', req: ['order_id', 'order_date'], grain: 'week', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT COUNT(DISTINCT order_id) FROM orders WHERE order_date >= DATE_TRUNC('week', CURRENT_DATE)` },
+    { id: 'w_wtd_aov', category: 'Period Totals', question: 'AOV WTD', req: ['revenue', 'order_id', 'order_date'], grain: 'week', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(revenue) / COUNT(DISTINCT order_id) FROM orders WHERE order_date >= DATE_TRUNC('week', CURRENT_DATE)` },
+    { id: 'w_wtd_units', category: 'Period Totals', question: 'Units Sold WTD', req: ['quantity', 'order_date'], grain: 'week', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(quantity) FROM orders WHERE order_date >= DATE_TRUNC('week', CURRENT_DATE)` },
+
+    // Month-to-Date
+    { id: 'm_mtd_rev', category: 'Period Totals', question: 'Revenue MTD', req: ['revenue', 'order_date'], grain: 'month', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(revenue) FROM orders WHERE order_date >= DATE_TRUNC('month', CURRENT_DATE)` },
+    { id: 'm_mtd_orders', category: 'Period Totals', question: 'Orders MTD', req: ['order_id', 'order_date'], grain: 'month', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT COUNT(DISTINCT order_id) FROM orders WHERE order_date >= DATE_TRUNC('month', CURRENT_DATE)` },
+    { id: 'm_mtd_aov', category: 'Period Totals', question: 'AOV MTD', req: ['revenue', 'order_id', 'order_date'], grain: 'month', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(revenue) / COUNT(DISTINCT order_id) FROM orders WHERE order_date >= DATE_TRUNC('month', CURRENT_DATE)` },
+    { id: 'm_mtd_units', category: 'Period Totals', question: 'Units Sold MTD', req: ['quantity', 'order_date'], grain: 'month', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(quantity) FROM orders WHERE order_date >= DATE_TRUNC('month', CURRENT_DATE)` },
+
+    // Quarter-to-Date
+    { id: 'q_qtd_rev', category: 'Period Totals', question: 'Revenue QTD', req: ['revenue', 'order_date'], grain: 'quarter', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(revenue) FROM orders WHERE order_date >= DATE_TRUNC('quarter', CURRENT_DATE)` },
+    { id: 'q_qtd_orders', category: 'Period Totals', question: 'Orders QTD', req: ['order_id', 'order_date'], grain: 'quarter', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT COUNT(DISTINCT order_id) FROM orders WHERE order_date >= DATE_TRUNC('quarter', CURRENT_DATE)` },
+    { id: 'q_qtd_aov', category: 'Period Totals', question: 'AOV QTD', req: ['revenue', 'order_id', 'order_date'], grain: 'quarter', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(revenue) / COUNT(DISTINCT order_id) FROM orders WHERE order_date >= DATE_TRUNC('quarter', CURRENT_DATE)` },
+    { id: 'q_qtd_units', category: 'Period Totals', question: 'Units Sold QTD', req: ['quantity', 'order_date'], grain: 'quarter', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(quantity) FROM orders WHERE order_date >= DATE_TRUNC('quarter', CURRENT_DATE)` },
+
+    // Year-to-Date
+    { id: 'y_ytd_rev', category: 'Period Totals', question: 'Revenue YTD', req: ['revenue', 'order_date'], grain: 'year', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(revenue) FROM orders WHERE order_date >= DATE_TRUNC('year', CURRENT_DATE)` },
+    { id: 'y_ytd_orders', category: 'Period Totals', question: 'Orders YTD', req: ['order_id', 'order_date'], grain: 'year', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT COUNT(DISTINCT order_id) FROM orders WHERE order_date >= DATE_TRUNC('year', CURRENT_DATE)` },
+    { id: 'y_ytd_aov', category: 'Period Totals', question: 'AOV YTD', req: ['revenue', 'order_id', 'order_date'], grain: 'year', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(revenue) / COUNT(DISTINCT order_id) FROM orders WHERE order_date >= DATE_TRUNC('year', CURRENT_DATE)` },
+    { id: 'y_ytd_units', category: 'Period Totals', question: 'Units Sold YTD', req: ['quantity', 'order_date'], grain: 'year', vis: 'kpiCard', evalType: 'kpi', sql: `SELECT SUM(quantity) FROM orders WHERE order_date >= DATE_TRUNC('year', CURRENT_DATE)` },
+
 
     // ╔══════════════════════════════════════════════╗
-    // ║  6. OPERATIONAL                              ║
+    // ║  7. OPERATIONAL                              ║
     // ╚══════════════════════════════════════════════╝
 
     { id: 'op_track_vs_y', category: 'Operational', question: 'On Track vs Yesterday?', req: ['revenue', 'order_date'], grain: 'day', vis: 'kpiCard', sql: `SELECT CASE WHEN (SELECT SUM(revenue) FROM orders WHERE order_date = CURRENT_DATE) > (SELECT SUM(revenue) FROM orders WHERE order_date = CURRENT_DATE - 1) THEN 'Ahead' ELSE 'Behind' END` },
@@ -341,7 +355,7 @@ export const importCustomQuestions = (json: string): { success: boolean; count: 
 
 // --- Build the full merged registry ---
 export const getFullRegistry = (): QuestionTemplate[] => {
-    return [...QUESTION_REGISTRY, ...loadCustomQuestions()];
+    return [...QUESTION_REGISTRY, ...DOMAIN_QUESTIONS, ...loadCustomQuestions()];
 };
 
 export const QUESTION_BANK = CATEGORY_ORDER.map(cat => {
@@ -362,6 +376,32 @@ export const getFullQuestionBank = () => {
     ];
     return orderedCategories.map(cat => {
         const questions = allQuestions
+            .filter(q => q.category === cat)
+            .map(q => ({ label: q.question, intent: { questionId: q.id } }));
+        return { category: cat, questions };
+    }).filter(c => c.questions.length > 0);
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// DOMAIN-AWARE QUESTION BANK — Filters by detected domain
+// ═══════════════════════════════════════════════════════════════════
+export const getFullQuestionBankForDomain = (domain?: string) => {
+    let domainQuestions: QuestionTemplate[];
+
+    if (!domain || domain === 'Sales' || domain === 'Retail') {
+        // Sales domain: show original Sales questions (QUESTION_REGISTRY)
+        domainQuestions = [...QUESTION_REGISTRY, ...loadCustomQuestions()];
+    } else {
+        // Non-Sales domain: show domain-specific + custom questions
+        domainQuestions = [
+            ...getQuestionsForDomain(domain),
+            ...loadCustomQuestions()
+        ];
+    }
+
+    const allCategories = [...new Set(domainQuestions.map(q => q.category))];
+    return allCategories.map(cat => {
+        const questions = domainQuestions
             .filter(q => q.category === cat)
             .map(q => ({ label: q.question, intent: { questionId: q.id } }));
         return { category: cat, questions };

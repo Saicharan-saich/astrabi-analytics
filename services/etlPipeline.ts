@@ -1,921 +1,1278 @@
 /**
- * etlPipeline.ts — Robust 20-Step Auto-Detecting ETL Pipeline
+ * etlPipeline.ts — 7-Layer Deterministic ETL Pipeline
  *
- * Each step:
- *  1. Detects whether it is needed for the data
- *  2. Applies the transformation only if needed
- *  3. Logs applied/skipped status with detailed reasons
+ * Architecture:
+ *   Layer 1: Structural Normalization
+ *   Layer 2: Canonical Value Prep
+ *   Layer 3: Column Profiling
+ *   Layer 4: Rule Planner (Classification Gates)
+ *   Layer 5: Transformation Engine
+ *   Layer 6: Data Contract Validation
+ *   Layer 7: Column Lineage Graph
+ *   Post:    TimeContext + DimDate + Quality Score
  */
 
-import { ColumnDefinition, ColumnType, ETLLog, TimeContext } from '../types';
-import { inferColumnType } from './analysisEngine';
+import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, TimeContext } from '../types';
+import { generateDimDate } from './dimDateGenerator';
 
-// ─── Helpers ───────────────────────────────────────────────────────────────────
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  TYPES                                                          ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+export interface LineageNode {
+    column: string;
+    step: string;
+    rowsChanged: number;
+    rowsFailed: number;
+    inputSamples: string[];
+    outputSamples: string[];
+}
+
+export interface ColumnLineage {
+    column: string;
+    chain: LineageNode[];
+}
+
+export interface ColumnProfileData {
+    name: string;
+    nullRate: number;
+    distinctCount: number;
+    totalValues: number;
+    numericParseRate: number;
+    dateParseRate: number;
+    booleanTokenRate: number;
+    min?: number;
+    max?: number;
+    dateFormatCandidate: string | null;
+    currencyDetected: boolean;
+    percentageDetected: boolean;
+    wordNumberRate: number;
+}
+
+export interface TransformStep {
+    name: string;
+    fn: (v: any) => any;
+}
+
+export interface TransformPlan {
+    column: string;
+    type: ColumnType;
+    steps: TransformStep[];
+}
+
+export interface ContractViolation {
+    column: string;
+    rule: string;
+    severity: 'hard' | 'soft';
+    message: string;
+}
+
+export interface DataContract {
+    status: 'safe' | 'warning' | 'unsafe';
+    violations: ContractViolation[];
+}
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  CONSTANTS                                                      ║
+// ╚══════════════════════════════════════════════════════════════════╝
 
 const NULL_TOKENS = new Set([
-    '', 'null', 'none', 'n/a', 'na', 'nan', '-', '--', 'undefined', 'missing',
-    '#n/a', '#ref!', '#value!', '#null!', '#name?', '#div/0!',
+    'null', 'nil', 'none', 'na', 'n/a', 'n.a.', 'n.a', '#n/a', '#na',
+    'nan', '#nan', 'undefined', 'missing', '-', '--', '—', '.',
+    'not available', 'not applicable', 'unknown', 'blank', 'empty',
+    '#value!', '#ref!', '#div/0!', '#name?', 'err', '#error'
 ]);
+
+const BOOLEAN_TOKENS: Record<string, boolean> = {
+    'true': true, 'false': false, 'yes': true, 'no': false,
+    't': true, 'f': false, 'y': true, 'n': false, '1': true, '0': false
+};
+
+const WORD_NUMBERS: Record<string, number> = {
+    zero: 0, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6,
+    seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12,
+    thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+    eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40,
+    fifty: 50, sixty: 60, seventy: 70, eighty: 80, ninety: 90,
+    hundred: 100, thousand: 1000, million: 1000000
+};
+
+const CURRENCY_REGEX = /[$€£¥₹₩₫₽¢]/;
+
+// Product/value synonym normalization dictionary
+const CATEGORY_SYNONYMS: Record<string, Record<string, string>> = {
+    // Product name synonyms (applied after Title Case)
+    product_name: {
+        'Tab': 'Tablet',
+        'Tabs': 'Tablet',
+        'Cell Phone': 'Phone',
+        'Cellphone': 'Phone',
+        'Smartphone': 'Phone',
+        'Mobile': 'Phone',
+        'Mobile Phone': 'Phone',
+        'Phone': 'Smart Phone',
+        'Notebook': 'Laptop',
+        'Pc': 'Desktop',
+        'Personal Computer': 'Desktop',
+        'Console': 'Gaming Console',
+        'Ultra-Laptop': 'Ultra Laptop',
+        'Earbuds': 'Wireless Earbuds',
+    },
+    // Channel synonyms
+    channel: {
+        'Web': 'Online',
+        'Website': 'Online',
+        'Ecommerce': 'Online',
+        'E-Commerce': 'Online',
+        'In-Store': 'Store',
+        'In Store': 'Store',
+        'Brick And Mortar': 'Store',
+        'Wholesale': 'Retail',
+    },
+    // Region synonyms
+    region: {
+        'No': 'North',
+        'So': 'South',
+        'Ea': 'East',
+        'We': 'West',
+        'N': 'North',
+        'S': 'South',
+        'E': 'East',
+        'W': 'West',
+        'Ne': 'Northeast',
+        'Nw': 'Northwest',
+        'Se': 'Southeast',
+        'Sw': 'Southwest',
+    },
+};
+const CURRENCY_STRIP_REGEX = /[$€£¥₹₩₫₽¢,\s]/g;
+
+// Date formats ordered by specificity
+const DATE_FORMATS: { id: string; regex: RegExp; parse: (m: RegExpMatchArray) => { y: number; m: number; d: number } | null }[] = [
+    // ISO: 2023-06-08, 2023/06/08
+    { id: 'YYYY-MM-DD', regex: /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/, parse: (m) => ({ y: +m[1], m: +m[2], d: +m[3] }) },
+    // ISO with dots: 2023.06.08
+    { id: 'YYYY.MM.DD', regex: /^(\d{4})\.(\d{1,2})\.(\d{1,2})$/, parse: (m) => ({ y: +m[1], m: +m[2], d: +m[3] }) },
+    // US: 06/08/2023, 6/8/2023
+    { id: 'MM/DD/YYYY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/, parse: (m) => ({ y: +m[3], m: +m[1], d: +m[2] }) },
+    // EU: 08-06-2023
+    { id: 'DD/MM/YYYY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/, parse: (m) => ({ y: +m[3], m: +m[2], d: +m[1] }) },
+    // Short year: 06/08/23, 6/8/23
+    { id: 'MM/DD/YY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{2})$/, parse: (m) => ({ y: 2000 + +m[3], m: +m[1], d: +m[2] }) },
+    { id: 'DD/MM/YY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{2})$/, parse: (m) => ({ y: 2000 + +m[3], m: +m[2], d: +m[1] }) },
+    // Text with spaces: "Jan 5, 2023", "5 Jan 2023", "January 5 2023"
+    { id: 'MON_DD_YYYY', regex: /^([A-Za-z]+)[\s\-/]+(\d{1,2}),?[\s\-/]+(\d{4})$/, parse: (m) => { const mo = monthFromText(m[1]); return mo ? { y: +m[3], m: mo, d: +m[2] } : null; } },
+    { id: 'DD_MON_YYYY', regex: /^(\d{1,2})[\s\-/]+([A-Za-z]+)[\s\-/]+(\d{4})$/, parse: (m) => { const mo = monthFromText(m[2]); return mo ? { y: +m[3], m: mo, d: +m[1] } : null; } },
+    // Text with hyphens and short year: "21-May-25", "7-Mar-23", "1-Sep-24"
+    { id: 'DD_MON_YY', regex: /^(\d{1,2})[\s\-/]+([A-Za-z]+)[\s\-/]+(\d{2})$/, parse: (m) => { const mo = monthFromText(m[2]); return mo ? { y: 2000 + +m[3], m: mo, d: +m[1] } : null; } },
+    { id: 'MON_DD_YY', regex: /^([A-Za-z]+)[\s\-/]+(\d{1,2}),?[\s\-/]+(\d{2})$/, parse: (m) => { const mo = monthFromText(m[1]); return mo ? { y: 2000 + +m[3], m: mo, d: +m[2] } : null; } },
+    // YYYYMMDD
+    { id: 'YYYYMMDD', regex: /^(\d{4})(\d{2})(\d{2})$/, parse: (m) => ({ y: +m[1], m: +m[2], d: +m[3] }) },
+];
+
+const MONTH_MAP: Record<string, number> = {
+    jan: 1, january: 1, feb: 2, february: 2, mar: 3, march: 3,
+    apr: 4, april: 4, may: 5, jun: 6, june: 6,
+    jul: 7, july: 7, aug: 8, august: 8, sep: 9, september: 9,
+    oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
+};
+
+// ID column name patterns
+const ID_PATTERNS = /(?:^id$|_id$|^id_|order_?id|cust(?:omer)?_?id|product_?id|trans(?:action)?_?id|invoice_?id|sku|code$|_code$|_no$|_num$|number$|_key$|^pk_|^fk_)/i;
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  HELPER FUNCTIONS                                               ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+function monthFromText(s: string): number | null {
+    return MONTH_MAP[s.toLowerCase().slice(0, 3)] || null;
+}
 
 function isNullish(v: any): boolean {
     if (v === null || v === undefined) return true;
-    if (typeof v === 'string' && NULL_TOKENS.has(v.trim().toLowerCase())) return true;
+    if (typeof v === 'string' && v.trim() === '') return true;
     return false;
 }
 
-function excelDateToJSDate(serial: number): Date {
+function excelDateToISO(serial: number): string | null {
+    if (serial < 1 || serial > 2958465) return null; // Excel valid range
     const utcDays = Math.floor(serial - 25569);
-    return new Date(utcDays * 86400 * 1000);
+    const ms = utcDays * 86400 * 1000;
+    const d = new Date(ms);
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    const day = d.getUTCDate();
+    if (y < 1900 || y > 2100 || m < 1 || m > 12 || day < 1 || day > 31) return null;
+    return `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
 }
 
-function log(
-    step: string,
-    stepNumber: number,
-    status: 'applied' | 'skipped' | 'info',
-    details: string,
-    extras?: Partial<ETLLog>
-): ETLLog {
-    return { step, stepNumber, status, details, timestamp: Date.now(), ...extras };
+function wordToNumber(s: string): number | null {
+    const lower = s.toLowerCase().trim();
+    if (WORD_NUMBERS[lower] !== undefined) return WORD_NUMBERS[lower];
+    // Handle compound: "twenty-three", "twenty three"
+    const parts = lower.split(/[-\s]+/);
+    if (parts.length === 2) {
+        const a = WORD_NUMBERS[parts[0]];
+        const b = WORD_NUMBERS[parts[1]];
+        if (a !== undefined && b !== undefined) {
+            if (a >= 20 && b < 10) return a + b; // twenty-three = 23
+            if (b === 100) return a * b; // two hundred = 200
+            if (b === 1000) return a * b; // three thousand = 3000
+        }
+    }
+    if (parts.length === 3) {
+        const a = WORD_NUMBERS[parts[0]];
+        const b = WORD_NUMBERS[parts[1]];
+        const c = WORD_NUMBERS[parts[2]];
+        if (a !== undefined && b === 100 && c !== undefined) return a * 100 + c; // five hundred three
+    }
+    return null;
 }
 
-// ─── Pipeline Context ──────────────────────────────────────────────────────────
+function toTitleCase(s: string): string {
+    return s.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+}
 
-export interface ETLResult {
-    rows: any[];
+function toISO(y: number, m: number, d: number): string {
+    return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+}
+
+function isValidDate(y: number, m: number, d: number): boolean {
+    if (y < 1900 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return false;
+    const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    return d <= daysInMonth;
+}
+
+/** Try parsing a single value as a date using a specific format ID */
+function tryParseDateWithFormat(raw: any, formatId: string): string | null {
+    if (raw === null || raw === undefined) return null;
+    // JS Date object (from Excel parsing)
+    if (raw instanceof Date) {
+        const y = raw.getFullYear();
+        const m = raw.getMonth() + 1;
+        const d = raw.getDate();
+        return isValidDate(y, m, d) ? toISO(y, m, d) : null;
+    }
+    // Excel serial number
+    if (typeof raw === 'number' && raw > 30000 && raw < 60000) return excelDateToISO(raw);
+    const s = String(raw).trim();
+    if (!s) return null;
+    // Already ISO
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        const [y, m, d] = s.split('-').map(Number);
+        return isValidDate(y, m, d) ? s : null;
+    }
+    // ISO datetime
+    if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+        const [y, m, d] = s.split('T')[0].split('-').map(Number);
+        return isValidDate(y, m, d) ? toISO(y, m, d) : null;
+    }
+    // Find matching format
+    for (const fmt of DATE_FORMATS) {
+        if (fmt.id !== formatId) continue;
+        const match = s.match(fmt.regex);
+        if (!match) continue;
+        const parsed = fmt.parse(match);
+        if (parsed && isValidDate(parsed.y, parsed.m, parsed.d)) {
+            return toISO(parsed.y, parsed.m, parsed.d);
+        }
+    }
+    return null;
+}
+
+/** Try parsing a value as a date using ANY format (for profiling) */
+function tryParseDateAny(raw: any): { iso: string; formatId: string } | null {
+    if (raw === null || raw === undefined) return null;
+    // JS Date object (from Excel/XLSX parsing — this is the most common case!)
+    if (raw instanceof Date) {
+        if (!isNaN(raw.getTime())) {
+            const y = raw.getFullYear();
+            const m = raw.getMonth() + 1;
+            const d = raw.getDate();
+            if (isValidDate(y, m, d)) {
+                return { iso: toISO(y, m, d), formatId: 'JS_DATE' };
+            }
+        }
+        return null;
+    }
+    // Excel serial numbers
+    if (typeof raw === 'number' && raw >= 30000 && raw <= 60000) {
+        const iso = excelDateToISO(raw);
+        return iso ? { iso, formatId: 'EXCEL_SERIAL' } : null;
+    }
+    const s = String(raw).trim();
+    if (!s) return null;
+    // ISO YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+        const [y, m, d] = s.split('-').map(Number);
+        return isValidDate(y, m, d) ? { iso: s, formatId: 'YYYY-MM-DD' } : null;
+    }
+    // ISO datetime
+    if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
+        const [y, m, d] = s.split('T')[0].split('-').map(Number);
+        return isValidDate(y, m, d) ? { iso: toISO(y, m, d), formatId: 'YYYY-MM-DD' } : null;
+    }
+    // Try native JS Date parsing for long strings like "Tue Nov 08 2016 00:00:00 GMT..."
+    // Only for strings that look like they might be dates (not pure numbers or short text)
+    if (s.length > 10 && /[a-zA-Z]/.test(s)) {
+        const nativeDate = new Date(s);
+        if (!isNaN(nativeDate.getTime())) {
+            const y = nativeDate.getFullYear();
+            const m = nativeDate.getMonth() + 1;
+            const d = nativeDate.getDate();
+            if (isValidDate(y, m, d)) {
+                return { iso: toISO(y, m, d), formatId: 'NATIVE_JS' };
+            }
+        }
+    }
+    for (const fmt of DATE_FORMATS) {
+        const match = s.match(fmt.regex);
+        if (!match) continue;
+        const parsed = fmt.parse(match);
+        if (parsed && isValidDate(parsed.y, parsed.m, parsed.d)) {
+            return { iso: toISO(parsed.y, parsed.m, parsed.d), formatId: fmt.id };
+        }
+    }
+    return null;
+}
+
+function log(step: string, layer: number, status: ETLLog['status'], details: string, extra?: Partial<ETLLog>): ETLLog {
+    return { step, stepNumber: layer, details, status, timestamp: Date.now(), ...extra };
+}
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  LAYER 1: STRUCTURAL NORMALIZATION                              ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+function layer1_structuralNormalization(
+    rawRows: Record<string, any>[]
+): { rows: Record<string, any>[]; logs: ETLLog[]; columnsRemoved: number; duplicatesRemoved: number } {
+    const logs: ETLLog[] = [];
+    let columnsRemoved = 0;
+    let duplicatesRemoved = 0;
+    let rows = rawRows.map(r => ({ ...r }));
+
+    // ── 1a: Header Normalization ──
+    {
+        const headerMap: Record<string, string> = {};
+        let renamedCount = 0;
+        Object.keys(rows[0]).forEach(h => {
+            // Insert underscore before camelCase boundaries: SaleDate → Sale_Date, OrderID → Order_ID
+            const camelSplit = h.replace(/([a-z])([A-Z])/g, '$1_$2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2');
+            const normalized = camelSplit.trim().toLowerCase().replace(/[\s\W]+/g, '_').replace(/^_+|_+$/g, '') || `col_${Math.random().toString(36).substr(2, 5)}`;
+            headerMap[h] = normalized;
+            if (h !== normalized) renamedCount++;
+        });
+        rows = rows.map(row => {
+            const newRow: any = {};
+            Object.keys(row).forEach(k => newRow[headerMap[k] || k] = row[k]);
+            return newRow;
+        });
+        logs.push(log('Header Normalization', 1, 'applied',
+            `Normalized ${Object.keys(headerMap).length} headers to snake_case. ${renamedCount} renamed.`,
+            { affectedColumns: Object.values(headerMap) }
+        ));
+    }
+
+    // ── 1b: Auto-Merge Name Columns ──
+    {
+        const keys = Object.keys(rows[0] || {});
+        const lk = keys.map(k => k.toLowerCase());
+        const firstCol = keys.find((_, i) => ['first_name', 'firstname', 'first', 'given_name'].includes(lk[i]));
+        const lastCol = keys.find((_, i) => ['last_name', 'lastname', 'last', 'surname', 'family_name'].includes(lk[i]));
+        const middleCol = keys.find((_, i) => ['middle_name', 'middlename', 'middle', 'middle_initial'].includes(lk[i]));
+
+        if (firstCol && lastCol) {
+            const isCust = firstCol.toLowerCase().includes('customer') || lastCol.toLowerCase().includes('customer');
+            const mergedName = isCust ? 'customer_name' : 'full_name';
+            rows = rows.map(row => {
+                const first = (row[firstCol] || '').toString().trim();
+                const last = (row[lastCol] || '').toString().trim();
+                const mid = middleCol ? (row[middleCol] || '').toString().trim() : '';
+                const parts = [first, mid, last].filter(p => p.length > 0);
+                const newRow: any = {};
+                for (const [k, v] of Object.entries(row)) {
+                    if (k === firstCol || k === lastCol || (middleCol && k === middleCol)) continue;
+                    newRow[k] = v;
+                }
+                newRow[mergedName] = parts.join(' ') || 'Unknown';
+                return newRow;
+            });
+            logs.push(log('Auto-Merge Name Columns', 1, 'applied',
+                `Merged ${firstCol} + ${lastCol} → ${mergedName}.`,
+                { affectedColumns: [firstCol, lastCol, mergedName] }
+            ));
+        } else {
+            logs.push(log('Auto-Merge Name Columns', 1, 'skipped', 'No first/last name pair detected.'));
+        }
+    }
+
+    // ── 1c: Duplicate Column Removal ──
+    {
+        const keys = Object.keys(rows[0]);
+        const seen = new Set<string>();
+        const dupes: string[] = [];
+        keys.forEach(k => { if (seen.has(k)) dupes.push(k); else seen.add(k); });
+        if (dupes.length > 0) {
+            rows = rows.map(row => {
+                const nr: any = {}; const added = new Set<string>();
+                Object.keys(row).forEach(k => { if (!added.has(k)) { nr[k] = row[k]; added.add(k); } });
+                return nr;
+            });
+            columnsRemoved += dupes.length;
+            logs.push(log('Duplicate Column Removal', 1, 'applied', `Removed ${dupes.length} duplicate column(s).`, { affectedColumns: dupes }));
+        } else {
+            logs.push(log('Duplicate Column Removal', 1, 'skipped', 'No duplicate columns.'));
+        }
+    }
+
+    // ── 1d: Empty Column Removal ──
+    {
+        const allKeys = Object.keys(rows[0]);
+        const emptyCols = allKeys.filter(key => {
+            const filled = rows.filter(r => !isNullish(r[key])).length;
+            return filled / rows.length < 0.05;
+        });
+        if (emptyCols.length > 0) {
+            rows = rows.map(row => {
+                const nr: any = {};
+                Object.keys(row).forEach(k => { if (!emptyCols.includes(k)) nr[k] = row[k]; });
+                return nr;
+            });
+            columnsRemoved += emptyCols.length;
+            logs.push(log('Empty Column Removal', 1, 'applied', `Removed ${emptyCols.length} column(s) with >95% empty.`, { affectedColumns: emptyCols }));
+        } else {
+            logs.push(log('Empty Column Removal', 1, 'skipped', 'All columns have >5% fill rate.'));
+        }
+    }
+
+    // ── 1e: Empty Row Removal ──
+    {
+        const before = rows.length;
+        const activeKeys = Object.keys(rows[0] || {});
+        const emptyRows: Record<string, any>[] = [];
+        const keptRows: Record<string, any>[] = [];
+        for (const row of rows) {
+            if (activeKeys.some(k => !isNullish(row[k]))) {
+                keptRows.push(row);
+            } else {
+                if (emptyRows.length < 10) emptyRows.push(row);
+            }
+        }
+        rows = keptRows;
+        const removed = before - rows.length;
+        if (removed > 0) {
+            logs.push(log('Empty Row Removal', 1, 'applied', `Removed ${removed} empty row(s).`, { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: emptyRows }));
+        } else {
+            logs.push(log('Empty Row Removal', 1, 'skipped', 'No empty rows.'));
+        }
+    }
+
+    // ── 1f: Duplicate Row Removal (using ID/PK columns when available) ──
+    {
+        const before = rows.length;
+        const allCols = Object.keys(rows[0] || {});
+
+        // Find ID/PK columns for smarter dedup
+        const idCols = allCols.filter(col => ID_PATTERNS.test(col));
+        const dedupCols = idCols.length > 0 ? idCols : allCols;
+        const strategy = idCols.length > 0
+            ? `primary key match on ${idCols.length} ID column(s): ${idCols.join(', ')}`
+            : `exact match across all ${allCols.length} columns`;
+
+        const seen = new Set<string>();
+        const duplicateRows: Record<string, any>[] = [];
+        const uniqueRows: Record<string, any>[] = [];
+        for (const row of rows) {
+            // Build key from dedup columns only
+            const key = dedupCols.map(c => JSON.stringify(row[c])).join('|');
+            if (seen.has(key)) {
+                if (duplicateRows.length < 10) duplicateRows.push(row);
+            } else {
+                seen.add(key);
+                uniqueRows.push(row);
+            }
+        }
+        rows = uniqueRows;
+        duplicatesRemoved = before - rows.length;
+        if (duplicatesRemoved > 0) {
+            logs.push(log('Duplicate Row Removal', 1, 'applied',
+                `Removed ${duplicatesRemoved} duplicate row(s). Strategy: ${strategy}.`,
+                { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: duplicateRows, affectedColumns: dedupCols }));
+        } else {
+            logs.push(log('Duplicate Row Removal', 1, 'skipped', `No duplicate rows found (strategy: ${strategy}).`));
+        }
+    }
+
+    return { rows, logs, columnsRemoved, duplicatesRemoved };
+}
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  LAYER 2: CANONICAL VALUE PREP                                  ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+function layer2_canonicalValuePrep(
+    rows: Record<string, any>[]
+): { rows: Record<string, any>[]; logs: ETLLog[]; nullsFixed: number } {
+    const logs: ETLLog[] = [];
+    let trimCount = 0;
+    let nullTokenCount = 0;
+    const trimCols = new Set<string>();
+    const nullCols = new Set<string>();
+
+    rows = rows.map(row => {
+        const nr: any = {};
+        Object.keys(row).forEach(k => {
+            let v = row[k];
+            if (typeof v === 'string') {
+                // Trim + collapse spaces
+                const trimmed = v.trim().replace(/\s+/g, ' ');
+                if (trimmed !== v) { trimCount++; trimCols.add(k); }
+                v = trimmed;
+                // Null token check (on lowered version, but keep original)
+                if (v !== '' && NULL_TOKENS.has(v.toLowerCase())) {
+                    v = null;
+                    nullTokenCount++;
+                    nullCols.add(k);
+                }
+            }
+            nr[k] = v;
+        });
+        return nr;
+    });
+
+    if (trimCount > 0) {
+        logs.push(log('Whitespace Normalization', 2, 'applied',
+            `Trimmed/collapsed whitespace in ${trimCount} cell(s) across ${trimCols.size} column(s).`,
+            { affectedColumns: [...trimCols], affectedRows: trimCount }
+        ));
+    } else {
+        logs.push(log('Whitespace Normalization', 2, 'skipped', 'No whitespace issues.'));
+    }
+
+    if (nullTokenCount > 0) {
+        logs.push(log('Null Token Standardization', 2, 'applied',
+            `Converted ${nullTokenCount} null token(s) (N/A, null, -, etc.) to NULL in ${nullCols.size} column(s).`,
+            { affectedColumns: [...nullCols], affectedRows: nullTokenCount }
+        ));
+    } else {
+        logs.push(log('Null Token Standardization', 2, 'skipped', 'No null tokens detected.'));
+    }
+
+    return { rows, logs, nullsFixed: nullTokenCount };
+}
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  LAYER 3: COLUMN PROFILING                                      ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: ColumnProfileData[]; logs: ETLLog[] } {
+    const logs: ETLLog[] = [];
+    const keys = Object.keys(rows[0] || {});
+    const profiles: ColumnProfileData[] = [];
+
+    for (const col of keys) {
+        const values = rows.map(r => r[col]);
+        const total = values.length;
+        const nonNull = values.filter(v => v !== null && v !== undefined);
+        const nullRate = total > 0 ? (total - nonNull.length) / total : 0;
+        const strValues = nonNull.map(v => String(v).trim()).filter(s => s !== '');
+        const distinctCount = new Set(strValues.map(s => s.toLowerCase())).size;
+
+        // Numeric parse rate (after stripping currency/commas)
+        let numericCount = 0;
+        let min = Infinity;
+        let max = -Infinity;
+        let currencyDetected = false;
+        let percentageDetected = false;
+        let wordNumberCount = 0;
+
+        for (const v of nonNull) {
+            const s = String(v);
+            if (CURRENCY_REGEX.test(s)) currencyDetected = true;
+            if (s.includes('%')) percentageDetected = true;
+            // Word number check
+            if (typeof v === 'string' && wordToNumber(v) !== null) {
+                wordNumberCount++;
+                numericCount++;
+                continue;
+            }
+            const stripped = s.replace(CURRENCY_STRIP_REGEX, '').replace(/%/g, '').trim();
+            // Use Number() instead of parseFloat() to prevent partial parsing
+            // parseFloat("9/17/2024") returns 9 (wrong!), Number("9/17/2024") returns NaN (correct)
+            if (stripped === '') continue;
+            const num = Number(stripped);
+            if (!isNaN(num)) {
+                numericCount++;
+                if (num < min) min = num;
+                if (num > max) max = num;
+            }
+        }
+
+        // Date parse rate — count TOTAL parseable values across ALL formats
+        let bestDateFormat: string | null = null;
+        let totalDateParseable = 0;
+        const formatCounts: Record<string, number> = {};
+
+        for (const v of nonNull) {
+            // Check for Excel serial date numbers (30000-60000 range)
+            if (typeof v === 'number' && v >= 30000 && v <= 60000) {
+                const isoDate = excelDateToISO(v);
+                if (isoDate) {
+                    totalDateParseable++;
+                    formatCounts['EXCEL_SERIAL'] = (formatCounts['EXCEL_SERIAL'] || 0) + 1;
+                    continue;
+                }
+            }
+            const result = tryParseDateAny(v);
+            if (result) {
+                totalDateParseable++;
+                formatCounts[result.formatId] = (formatCounts[result.formatId] || 0) + 1;
+            }
+        }
+
+        // Disambiguate MM/DD vs DD/MM using evidence
+        let hasDayOver12 = false;
+        let hasMonthOver12 = false;
+        for (const v of nonNull) {
+            const s = String(v).trim();
+            const match = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
+            if (match) {
+                const first = +match[1];
+                const second = +match[2];
+                if (first > 12) hasDayOver12 = true; // First num > 12 → must be day → DD/MM
+                if (second > 12) hasMonthOver12 = true; // Second num > 12 → must be day → MM/DD
+            }
+        }
+        // Resolve ambiguity
+        if (hasDayOver12 && !hasMonthOver12) {
+            delete formatCounts['MM/DD/YYYY'];
+            delete formatCounts['MM/DD/YY'];
+        } else if (hasMonthOver12 && !hasDayOver12) {
+            delete formatCounts['DD/MM/YYYY'];
+            delete formatCounts['DD/MM/YY'];
+        }
+        // Pick format with most matches (for actual parsing later)
+        let bestDateRate = 0;
+        for (const [fmt, count] of Object.entries(formatCounts)) {
+            if (count > bestDateRate) { bestDateRate = count; bestDateFormat = fmt; }
+        }
+        // dateParseRate = total parseable / total non-null (across ALL formats combined)
+        const dateParseRate = nonNull.length > 0 ? totalDateParseable / nonNull.length : 0;
+
+        // Boolean token rate
+        const boolCount = nonNull.filter(v => typeof v === 'string' && BOOLEAN_TOKENS[v.toLowerCase().trim()] !== undefined).length;
+
+        const profile: ColumnProfileData = {
+            name: col,
+            nullRate,
+            distinctCount,
+            totalValues: nonNull.length,
+            numericParseRate: nonNull.length > 0 ? numericCount / nonNull.length : 0,
+            dateParseRate,
+            booleanTokenRate: nonNull.length > 0 ? boolCount / nonNull.length : 0,
+            min: min === Infinity ? undefined : min,
+            max: max === -Infinity ? undefined : max,
+            dateFormatCandidate: bestDateFormat,
+            currencyDetected,
+            percentageDetected,
+            wordNumberRate: nonNull.length > 0 ? wordNumberCount / nonNull.length : 0,
+        };
+
+        profiles.push(profile);
+    }
+
+    // Log profiling results
+    const summary = profiles.map(p =>
+        `${p.name}: num=${(p.numericParseRate * 100).toFixed(0)}% date=${(p.dateParseRate * 100).toFixed(0)}% bool=${(p.booleanTokenRate * 100).toFixed(0)}% null=${(p.nullRate * 100).toFixed(0)}% distinct=${p.distinctCount}` +
+        (p.dateFormatCandidate ? ` fmt=${p.dateFormatCandidate}` : '') +
+        (p.currencyDetected ? ' $' : '') +
+        (p.percentageDetected ? ' %' : '')
+    ).join('\n');
+    logs.push(log('Column Profiling', 3, 'applied',
+        `Profiled ${profiles.length} columns.\n${summary}`,
+        { affectedColumns: profiles.map(p => p.name) }
+    ));
+
+    return { profiles, logs };
+}
+
+// Continued in Layers 4-7 and main pipeline below...
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  LAYER 4: RULE PLANNER (Classification Gates)                   ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+function layer4_rulePlanner(
+    profiles: ColumnProfileData[],
+    columnTypeOverrides?: Record<string, ColumnType>
+): { columns: ColumnDefinition[]; plans: TransformPlan[]; logs: ETLLog[] } {
+    const logs: ETLLog[] = [];
+    const columns: ColumnDefinition[] = [];
+    const plans: TransformPlan[] = [];
+
+    // Metric name patterns (strong signal for metric classification)
+    const METRIC_NAME_PATTERNS = /^(quantity|qty|amount|amt|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|avg|average|num|number)$/i;
+
+    // Date name patterns (strong signal for date classification)
+    const DATE_NAME_PATTERNS = /^(date|sale_?date|order_?date|purchase_?date|created_?at|updated_?at|ship_?date|delivery_?date|birth_?date|dob|start_?date|end_?date|due_?date|invoice_?date|payment_?date|registration_?date|timestamp|datetime|created|modified|posted|expired|effective)$/i;
+
+    for (const p of profiles) {
+        let type: ColumnType;
+        const steps: TransformStep[] = [];
+
+        // Apply user override if present
+        if (columnTypeOverrides && columnTypeOverrides[p.name]) {
+            type = columnTypeOverrides[p.name];
+            logs.push(log('User Override', 4, 'info', `Column '${p.name}' set to ${type} (manual override).`, { affectedColumns: [p.name] }));
+        } else {
+            const isMetricName = METRIC_NAME_PATTERNS.test(p.name);
+            const isDateName = DATE_NAME_PATTERNS.test(p.name);
+            const effectiveNumericRate = p.numericParseRate + (p.wordNumberRate || 0);
+
+            // ── Gate 1: ID detection (by name pattern) ──
+            if (ID_PATTERNS.test(p.name)) {
+                type = ColumnType.ID;
+            }
+            // ── Gate 2: Date gate (>50% parse rate) ──
+            else if (p.dateParseRate >= 0.5) {
+                type = ColumnType.DATE;
+            }
+            // ── Gate 2b: Date by name — trust the column name pattern ──
+            // If the column is named order_date, ship_date, etc., it IS a date column
+            else if (isDateName) {
+                type = ColumnType.DATE;
+            }
+            // ── Gate 3: Boolean gate (≥60% boolean tokens) ──
+            else if (p.booleanTokenRate >= 0.6) {
+                type = ColumnType.DIMENSION; // Booleans are dimensions with bool normalization
+            }
+            // ── Gate 4: Metric gate (high cardinality or metric name pattern) ──
+            else if (effectiveNumericRate >= 0.7 && (p.distinctCount >= 10 || isMetricName) && !ID_PATTERNS.test(p.name)) {
+                type = ColumnType.METRIC;
+            }
+            // ── Gate 4b: Metric by name + moderate numeric ──
+            else if (isMetricName && effectiveNumericRate >= 0.3) {
+                type = ColumnType.METRIC;
+            }
+            // ── Gate 5: Low-cardinality numeric = ID ──
+            else if (p.numericParseRate >= 0.9 && p.distinctCount < 10 && p.totalValues > 0 && p.distinctCount / p.totalValues < 0.05) {
+                type = ColumnType.ID;
+            }
+            // ── Default: Dimension ──
+            else {
+                type = ColumnType.DIMENSION;
+            }
+        }
+
+        // Build transform plan based on type
+        if (type === ColumnType.METRIC) {
+            if (p.currencyDetected) steps.push({ name: 'REMOVE_CURRENCY', fn: (v: any) => typeof v === 'string' ? v.replace(CURRENCY_STRIP_REGEX, '') : v });
+            if (p.percentageDetected) steps.push({ name: 'REMOVE_PERCENTAGE', fn: (v: any) => typeof v === 'string' ? v.replace(/%/g, '').trim() : v });
+            if (p.wordNumberRate > 0) steps.push({ name: 'WORD_TO_NUMBER', fn: (v: any) => { if (typeof v !== 'string') return v; const n = wordToNumber(v); return n !== null ? n : v; } });
+            steps.push({ name: 'PARSE_NUMBER', fn: (v: any) => { if (typeof v === 'number') return v; const s = String(v).replace(/[,\s]/g, ''); const n = parseFloat(s); return isNaN(n) ? null : n; } });
+            steps.push({ name: 'IMPUTE_NULL', fn: (v: any) => (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) ? null : v });
+        } else if (type === ColumnType.DATE) {
+            const fmt = p.dateFormatCandidate || 'YYYY-MM-DD';
+            steps.push({ name: `PARSE_DATE(${fmt})`, fn: (v: any) => tryParseDateWithFormat(v, fmt) || tryParseDateAny(v)?.iso || null });
+        } else if (type === ColumnType.DIMENSION) {
+            if (p.booleanTokenRate >= 0.6) {
+                steps.push({
+                    name: 'NORMALIZE_BOOLEAN', fn: (v: any) => {
+                        if (v === true) return 'True';
+                        if (v === false) return 'False';
+                        if (typeof v === 'number') return v === 1 ? 'True' : v === 0 ? 'False' : String(v);
+                        if (typeof v !== 'string') return v;
+                        const b = BOOLEAN_TOKENS[v.toLowerCase().trim()];
+                        return b !== undefined ? (b ? 'True' : 'False') : v;
+                    }
+                });
+            } else {
+                steps.push({ name: 'TITLE_CASE', fn: (v: any) => typeof v === 'string' && v.trim() !== '' ? toTitleCase(v) : v });
+                // Add synonym normalization step
+                steps.push({
+                    name: 'SYNONYM_MAP', fn: (v: any) => {
+                        if (typeof v !== 'string' || v.trim() === '') return v;
+                        // Try column-specific synonyms first, then try all synonym groups
+                        const colSynonyms = CATEGORY_SYNONYMS[p.name];
+                        if (colSynonyms && colSynonyms[v]) return colSynonyms[v];
+                        // Also try all categories if column name doesn't match
+                        for (const group of Object.values(CATEGORY_SYNONYMS)) {
+                            if (group[v]) return group[v];
+                        }
+                        return v;
+                    }
+                });
+            }
+            steps.push({ name: 'IMPUTE_UNKNOWN', fn: (v: any) => (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) ? 'Unknown' : v });
+        } else if (type === ColumnType.ID) {
+            // Cast IDs to clean integer strings (1.0 → "1", not "1.0")
+            steps.push({
+                name: 'CAST_ID', fn: (v: any) => {
+                    if (v === null || v === undefined || v === '') return v;
+                    const n = Number(v);
+                    if (!isNaN(n) && Number.isFinite(n)) return String(Math.round(n));
+                    return String(v).trim();
+                }
+            });
+        }
+
+        columns.push({ name: p.name, type, originalType: 'string' });
+        plans.push({ column: p.name, type, steps });
+    }
+
+    const metrics = columns.filter(c => c.type === ColumnType.METRIC).length;
+    const dates = columns.filter(c => c.type === ColumnType.DATE).length;
+    const dims = columns.filter(c => c.type === ColumnType.DIMENSION).length;
+    const ids = columns.filter(c => c.type === ColumnType.ID).length;
+
+    logs.push(log('Column Classification', 4, 'applied',
+        `Classified ${columns.length} columns: ${metrics} metric(s), ${dates} date(s), ${dims} dimension(s), ${ids} ID(s).`,
+        { affectedColumns: columns.map(c => c.name) }
+    ));
+
+    // Log transform plans
+    const planSummary = plans.filter(p => p.steps.length > 0).map(p =>
+        `${p.column} (${p.type}): ${p.steps.map(s => s.name).join(' → ')}`
+    ).join('\n');
+    logs.push(log('Transform Plans', 4, 'info', `Generated ${plans.length} transform plans:\n${planSummary}`));
+
+    return { columns, plans, logs };
+}
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  LAYER 5: TRANSFORMATION ENGINE                                 ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+function layer5_transformationEngine(
+    rows: Record<string, any>[],
+    plans: TransformPlan[]
+): { rows: Record<string, any>[]; lineage: ColumnLineage[]; logs: ETLLog[]; typeCastCount: number } {
+    const logs: ETLLog[] = [];
+    const lineage: ColumnLineage[] = [];
+    let typeCastCount = 0;
+
+    for (const plan of plans) {
+        if (plan.steps.length === 0) {
+            lineage.push({ column: plan.column, chain: [] });
+            continue;
+        }
+
+        const chain: LineageNode[] = [];
+
+        for (const step of plan.steps) {
+            let changed = 0;
+            let failed = 0;
+            const inputSamples: string[] = [];
+            const outputSamples: string[] = [];
+            let samplesCollected = 0;
+
+            for (let i = 0; i < rows.length; i++) {
+                const oldVal = rows[i][plan.column];
+                try {
+                    const newVal = step.fn(oldVal);
+                    if (newVal !== oldVal && !(oldVal === undefined && newVal === undefined)) {
+                        changed++;
+                        typeCastCount++;
+                        if (samplesCollected < 5) {
+                            inputSamples.push(String(oldVal ?? 'null'));
+                            outputSamples.push(String(newVal ?? 'null'));
+                            samplesCollected++;
+                        }
+                    }
+                    rows[i][plan.column] = newVal;
+                } catch {
+                    failed++;
+                }
+            }
+
+            chain.push({ column: plan.column, step: step.name, rowsChanged: changed, rowsFailed: failed, inputSamples, outputSamples });
+
+            if (changed > 0 || failed > 0) {
+                const sampleStr = inputSamples.slice(0, 3).map((inp, i) => `"${inp}" → "${outputSamples[i]}"`).join(', ');
+                const tSamples = inputSamples.slice(0, 5).map((inp, i) => ({ column: plan.column, before: inp, after: outputSamples[i] }));
+                logs.push(log(`Transform: ${step.name}`, 5, 'applied',
+                    `Column '${plan.column}': ${changed} changed, ${failed} failed. Samples: ${sampleStr}`,
+                    { affectedColumns: [plan.column], affectedRows: changed, transformSamples: tSamples }
+                ));
+            }
+        }
+
+        lineage.push({ column: plan.column, chain });
+    }
+
+    logs.push(log('Transformation Engine', 5, 'applied',
+        `Executed ${plans.reduce((s, p) => s + p.steps.length, 0)} transform steps across ${plans.length} columns. ${typeCastCount} total cell changes.`
+    ));
+
+    return { rows, lineage, logs, typeCastCount };
+}
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  LAYER 6: DATA CONTRACT VALIDATION                              ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+function layer6_dataContractValidation(
+    rows: Record<string, any>[],
+    columns: ColumnDefinition[]
+): { contract: DataContract; logs: ETLLog[] } {
+    const logs: ETLLog[] = [];
+    const violations: ContractViolation[] = [];
+
+    // ── Hard contracts ──
+    if (rows.length === 0) {
+        violations.push({ column: '*', rule: 'MIN_ROWS', severity: 'hard', message: 'Dataset has 0 rows after cleaning.' });
+    }
+    if (columns.length === 0) {
+        violations.push({ column: '*', rule: 'MIN_COLUMNS', severity: 'hard', message: 'Dataset has 0 columns after cleaning.' });
+    }
+    const metricCols = columns.filter(c => c.type === ColumnType.METRIC);
+    if (metricCols.length === 0 && columns.length > 0) {
+        violations.push({ column: '*', rule: 'NO_METRICS', severity: 'soft', message: 'No metric columns detected. Analytics may be limited.' });
+    }
+
+    // ── Soft contracts per column ──
+    const allKeys = Object.keys(rows[0] || {});
+    for (const col of allKeys) {
+        const colDef = columns.find(c => c.name === col);
+        const values = rows.map(r => r[col]);
+        const nullCount = values.filter(v => v === null || v === undefined || v === '').length;
+        const nullRate = rows.length > 0 ? nullCount / rows.length : 0;
+
+        // Completeness check
+        if (nullRate > 0.2) {
+            violations.push({ column: col, rule: 'COMPLETENESS', severity: 'soft', message: `${col}: ${(nullRate * 100).toFixed(0)}% null (>20% threshold).` });
+        }
+
+        // Metric-specific
+        if (colDef?.type === ColumnType.METRIC) {
+            const lc = col.toLowerCase();
+            const shouldBePositive = ['price', 'revenue', 'sales', 'quantity', 'qty', 'units', 'count', 'amount', 'total'].some(k => lc.includes(k));
+            if (shouldBePositive) {
+                const negCount = values.filter(v => typeof v === 'number' && v < 0).length;
+                if (negCount > 0) {
+                    violations.push({ column: col, rule: 'NON_NEGATIVE', severity: 'soft', message: `${col}: ${negCount} negative value(s) in typically positive column.` });
+                }
+            }
+
+            // Outlier detection (IQR)
+            const numVals = values.filter(v => typeof v === 'number' && !isNaN(v)).sort((a, b) => a - b) as number[];
+            if (numVals.length >= 10) {
+                const q1 = numVals[Math.floor(numVals.length * 0.25)];
+                const q3 = numVals[Math.floor(numVals.length * 0.75)];
+                const iqr = q3 - q1;
+                if (iqr > 0) {
+                    const lower = q1 - 1.5 * iqr;
+                    const upper = q3 + 1.5 * iqr;
+                    const outliers = numVals.filter(v => v < lower || v > upper);
+                    const outlierCount = outliers.length;
+                    if (outlierCount > 0) {
+                        const examples = outliers.slice(0, 5).map(v => v.toLocaleString(undefined, { maximumFractionDigits: 2 })).join(', ');
+                        violations.push({ column: col, rule: 'OUTLIER', severity: 'soft', message: `${col}: ${outlierCount} outlier(s) outside [${lower.toFixed(1)}, ${upper.toFixed(1)}]. Examples: ${examples}` });
+                    }
+                }
+            }
+        }
+
+        // Date-specific
+        if (colDef?.type === ColumnType.DATE) {
+            const today = new Date().toISOString().split('T')[0];
+            const futureCount = values.filter(v => typeof v === 'string' && v > today).length;
+            if (futureCount > 0) {
+                violations.push({ column: col, rule: 'FUTURE_DATE', severity: 'soft', message: `${col}: ${futureCount} future date(s) detected.` });
+            }
+        }
+    }
+
+    const hardCount = violations.filter(v => v.severity === 'hard').length;
+    const softCount = violations.filter(v => v.severity === 'soft').length;
+    const status: DataContract['status'] = hardCount > 0 ? 'unsafe' : softCount > 0 ? 'warning' : 'safe';
+
+    const contract: DataContract = { status, violations };
+
+    if (violations.length > 0) {
+        const details = violations.map(v => `[${v.severity.toUpperCase()}] ${v.message}`).join('\n');
+        logs.push(log('Data Contract Validation', 6, hardCount > 0 ? 'info' : 'applied',
+            `Contract: ${status.toUpperCase()}. ${hardCount} hard, ${softCount} soft violation(s).\n${details}`,
+            { affectedColumns: [...new Set(violations.map(v => v.column))] }
+        ));
+    } else {
+        logs.push(log('Data Contract Validation', 6, 'applied', 'All data contracts passed. Dataset is safe for analytics.'));
+    }
+
+    return { contract, logs };
+}
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  POST-PIPELINE: TimeContext + DimDate + Quality Score            ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+function buildTimeContext(rows: Record<string, any>[], columns: ColumnDefinition[]): { timeContext?: TimeContext; logs: ETLLog[] } {
+    const logs: ETLLog[] = [];
+    let dateCols = columns.filter(c => c.type === ColumnType.DATE).map(c => c.name);
+
+    // Helper: try to parse any date string to ISO (YYYY-MM-DD)
+    const tryParseToISO = (v: any): string | null => {
+        if (v == null) return null;
+        const s = String(v).trim();
+        // Already ISO
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+        // M/D/YYYY or MM/DD/YYYY
+        const slashMatch = s.match(/^(\d{1,2})[/\-](\d{1,2})[/\-](\d{4})$/);
+        if (slashMatch) {
+            const [, p1, p2, yr] = slashMatch;
+            const m = p1.padStart(2, '0');
+            const d = p2.padStart(2, '0');
+            if (+m <= 12 && +d <= 31) return `${yr}-${m}-${d}`;
+            // Try D/M/YYYY
+            if (+p2 <= 12 && +p1 <= 31) return `${yr}-${p2.padStart(2, '0')}-${p1.padStart(2, '0')}`;
+        }
+        // YYYY/MM/DD
+        const ymdSlash = s.match(/^(\d{4})[/\-](\d{1,2})[/\-](\d{1,2})$/);
+        if (ymdSlash) {
+            const [, yr, m, d] = ymdSlash;
+            if (+m <= 12 && +d <= 31) return `${yr}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
+        }
+        // Try JS Date parse for other formats (e.g., "Jan 3, 2017")
+        const d = new Date(s);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 1900 && d.getFullYear() < 2100) {
+            return d.toISOString().split('T')[0];
+        }
+        return null;
+    };
+
+    // Fallback 1: if no DATE-typed columns, check columns with date-like NAMES
+    if (dateCols.length === 0 && rows.length > 0) {
+        const DATE_NAME_HINTS = /(?:date|_dt$|_date$|created|updated|timestamp|order_date|ship_date|sale_date|invoice_date|purchase_date)/i;
+        const allKeys = Object.keys(rows[0] || {});
+
+        // First priority: columns whose names look like dates
+        for (const col of allKeys) {
+            if (!DATE_NAME_HINTS.test(col)) continue;
+            const sample = rows.slice(0, Math.min(30, rows.length));
+            const dateCount = sample.filter(r => tryParseToISO(r[col]) !== null).length;
+            if (dateCount >= sample.length * 0.4) {
+                dateCols.push(col);
+            }
+        }
+
+        // Second priority: any column with >50% parseable date values
+        if (dateCols.length === 0) {
+            for (const col of allKeys) {
+                const sample = rows.slice(0, Math.min(20, rows.length));
+                const dateCount = sample.filter(r => tryParseToISO(r[col]) !== null).length;
+                if (dateCount >= sample.length * 0.5) {
+                    dateCols.push(col);
+                }
+            }
+        }
+
+        if (dateCols.length > 0) {
+            logs.push(log('TimeContext', 7, 'info', `No DATE-typed columns found. Detected date values in: ${dateCols.join(', ')}.`));
+        }
+    }
+
+    if (dateCols.length === 0) {
+        logs.push(log('TimeContext', 7, 'skipped', 'No date columns detected.'));
+        return { logs };
+    }
+
+    let gMin = '';
+    let gMax = '';
+    const perColMax: Record<string, string> = {};
+
+    rows.forEach(row => {
+        dateCols.forEach(col => {
+            const iso = tryParseToISO(row[col]);
+            if (iso) {
+                if (!gMin || iso < gMin) gMin = iso;
+                if (!gMax || iso > gMax) gMax = iso;
+                if (!perColMax[col] || iso > perColMax[col]) perColMax[col] = iso;
+            }
+        });
+    });
+
+    if (!gMin || !gMax) {
+        logs.push(log('TimeContext', 7, 'skipped', 'No valid date values found.'));
+        return { logs };
+    }
+
+    // Auto-detect anchor column by priority
+    const priorityTests: ((lc: string) => boolean)[] = [
+        lc => lc.includes('order') && !lc.includes('ship'),
+        lc => lc.includes('transaction'),
+        lc => lc.includes('invoice'),
+        lc => lc === 'sale_date' || lc === 'sales_date' || lc === 'saledate',
+        lc => lc === 'date',
+    ];
+    let anchorCol = '';
+    for (const test of priorityTests) {
+        const match = dateCols.find(c => test(c.toLowerCase()));
+        if (match && perColMax[match]) { anchorCol = match; break; }
+    }
+    if (!anchorCol) anchorCol = dateCols.find(c => perColMax[c]) || dateCols[0];
+
+    const timeContext: TimeContext = {
+        minDate: gMin,
+        maxDate: gMax,
+        defaultAnchorDate: perColMax[anchorCol] || gMax,
+        anchorDateColumn: anchorCol,
+        dateColumnMaxDates: perColMax,
+    };
+
+    logs.push(log('TimeContext', 7, 'applied',
+        `Built TimeContext: anchor="${anchorCol}" (${timeContext.defaultAnchorDate}), range ${gMin} → ${gMax}.`
+    ));
+
+    return { timeContext, logs };
+}
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  MAIN PIPELINE: runETLPipeline                                  ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+export function runETLPipeline(
+    rawData: Record<string, any>[],
+    _fileName: string,
+    columnTypeOverrides?: Record<string, ColumnType>
+): {
+    rows: Record<string, any>[];
     columns: ColumnDefinition[];
     logs: ETLLog[];
     timeContext?: TimeContext;
-    qualityScore: number;  // 0–100
+    dimDate?: DimDateRow[];
+    qualityScore: number;
+    lineage?: ColumnLineage[];
+    contract?: DataContract;
     summary: {
-        totalRowsBefore: number;
-        totalRowsAfter: number;
-        totalColumnsOriginal: number;
-        totalColumnsFinal: number;
-        rowsRemoved: number;
-        columnsRemoved: number;
-        nullsFixed: number;
-        duplicatesRemoved: number;
+        totalRowsBefore: number; totalRowsAfter: number;
+        totalColumnsOriginal: number; totalColumnsFinal: number;
+        rowsRemoved: number; columnsRemoved: number;
+        nullsFixed: number; duplicatesRemoved: number;
         typeCastCount: number;
     };
-}
-
-// ─── The Pipeline ──────────────────────────────────────────────────────────────
-
-export function runETLPipeline(
-    rawData: any[],
-    fileName: string,
-    columnTypeOverrides?: Record<string, ColumnType>
-): ETLResult {
-    const logs: ETLLog[] = [];
+} {
+    const allLogs: ETLLog[] = [];
     const totalRowsBefore = rawData.length;
-    let rows = rawData.map(r => ({ ...r })); // shallow clone
-    let columns: ColumnDefinition[] = [];
+    const totalColumnsOriginal = rawData.length > 0 ? Object.keys(rawData[0]).length : 0;
 
-    if (!rows || rows.length === 0) {
+    if (!rawData || rawData.length === 0) {
         return {
             rows: [], columns: [], logs: [], qualityScore: 0,
             summary: { totalRowsBefore: 0, totalRowsAfter: 0, totalColumnsOriginal: 0, totalColumnsFinal: 0, rowsRemoved: 0, columnsRemoved: 0, nullsFixed: 0, duplicatesRemoved: 0, typeCastCount: 0 }
         };
     }
 
-    const totalColumnsOriginal = Object.keys(rows[0]).length;
-    let nullsFixed = 0;
-    let duplicatesRemoved = 0;
-    let typeCastCount = 0;
-    let columnsRemoved = 0;
+    console.log(`[ETL] Starting 7-Layer Pipeline on ${totalRowsBefore} rows, ${totalColumnsOriginal} columns`);
 
-    // ─── STEP 1: Header Normalization ─────────────────────────────────────────
-    {
-        const headerMap: Record<string, string> = {};
-        let renamedCount = 0;
-        Object.keys(rows[0]).forEach(h => {
-            const normalized = h.trim().toLowerCase().replace(/[\s\W]+/g, '_').replace(/^_+|_+$/g, '') || `col_${Math.random().toString(36).substr(2, 5)}`;
-            headerMap[h] = normalized;
-            if (h !== normalized) renamedCount++;
-        });
+    // ── LAYER 1: Structural Normalization ──
+    const l1 = layer1_structuralNormalization(rawData);
+    let rows = l1.rows;
+    allLogs.push(...l1.logs);
+    console.log(`[ETL L1] Structural: ${rows.length} rows, ${Object.keys(rows[0] || {}).length} cols`);
 
-        rows = rows.map(row => {
-            const newRow: any = {};
-            Object.keys(row).forEach(k => newRow[headerMap[k] || k] = row[k]);
-            return newRow;
-        });
+    // ── LAYER 2: Canonical Value Prep ──
+    const l2 = layer2_canonicalValuePrep(rows);
+    rows = l2.rows;
+    allLogs.push(...l2.logs);
+    console.log(`[ETL L2] Canonical: ${l2.nullsFixed} null tokens fixed`);
 
-        logs.push(log('Header Normalization', 1, 'applied',
-            `Normalized ${Object.keys(headerMap).length} column headers to snake_case. ${renamedCount} renamed.`,
-            { affectedColumns: Object.values(headerMap) }
+    // ── LAYER 3: Column Profiling ──
+    const l3 = layer3_columnProfiling(rows);
+    allLogs.push(...l3.logs);
+    console.log(`[ETL L3] Profiled ${l3.profiles.length} columns`);
+
+    // ── LAYER 4: Rule Planner ──
+    const l4 = layer4_rulePlanner(l3.profiles, columnTypeOverrides);
+    allLogs.push(...l4.logs);
+    console.log(`[ETL L4] Classified: ${l4.columns.map(c => `${c.name}=${c.type}`).join(', ')}`);
+
+    // ── LAYER 5: Transformation Engine ──
+    const l5 = layer5_transformationEngine(rows, l4.plans);
+    rows = l5.rows;
+    allLogs.push(...l5.logs);
+    console.log(`[ETL L5] Transformed: ${l5.typeCastCount} cell changes`);
+
+    // ── LAYER 6: Data Contract Validation ──
+    const l6 = layer6_dataContractValidation(rows, l4.columns);
+    allLogs.push(...l6.logs);
+    console.log(`[ETL L6] Contract: ${l6.contract.status} (${l6.contract.violations.length} violations)`);
+
+    // ── POST: TimeContext ──
+    const tc = buildTimeContext(rows, l4.columns);
+    allLogs.push(...tc.logs);
+
+    // ── POST: DimDate ──
+    let dimDate: DimDateRow[] | undefined;
+    if (tc.timeContext?.minDate && tc.timeContext?.maxDate) {
+        dimDate = generateDimDate(tc.timeContext.minDate, tc.timeContext.maxDate);
+        allLogs.push(log('DimDate Generation', 7, 'applied',
+            `Generated ${dimDate.length} date rows: ${tc.timeContext.minDate} → ${tc.timeContext.maxDate}.`
         ));
+    } else {
+        allLogs.push(log('DimDate Generation', 7, 'skipped', 'No date range available.'));
     }
 
-    // ─── STEP 1.5: Auto-Merge Name Columns ────────────────────────────────────
-    {
-        const keys = Object.keys(rows[0] || {});
-        const lowerKeys = keys.map(k => k.toLowerCase());
-
-        // Detect first_name / last_name patterns
-        const firstNameCol = keys.find((k, i) =>
-            ['first_name', 'firstname', 'first', 'given_name', 'givenname'].includes(lowerKeys[i])
-        );
-        const lastNameCol = keys.find((k, i) =>
-            ['last_name', 'lastname', 'last', 'surname', 'family_name', 'familyname'].includes(lowerKeys[i])
-        );
-        const middleNameCol = keys.find((k, i) =>
-            ['middle_name', 'middlename', 'middle', 'middle_initial'].includes(lowerKeys[i])
-        );
-
-        if (firstNameCol && lastNameCol) {
-            // Determine merged column name
-            // If columns are like "customer_first_name" → merge to "customer_name"
-            // Otherwise default to "full_name"
-            const isCustomer = firstNameCol.toLowerCase().includes('customer') || lastNameCol.toLowerCase().includes('customer');
-            const mergedColName = isCustomer ? 'customer_name' : 'full_name';
-
-            rows = rows.map(row => {
-                const first = (row[firstNameCol] || '').toString().trim();
-                const last = (row[lastNameCol] || '').toString().trim();
-                const middle = middleNameCol ? (row[middleNameCol] || '').toString().trim() : '';
-
-                // Build full name: "First Middle Last" or "First Last"
-                const parts = [first, middle, last].filter(p => p.length > 0);
-                const fullName = parts.join(' ');
-
-                // Create new row without the original name-part columns
-                const newRow: any = {};
-                for (const [k, v] of Object.entries(row)) {
-                    if (k === firstNameCol || k === lastNameCol || (middleNameCol && k === middleNameCol)) continue;
-                    newRow[k] = v;
-                }
-                newRow[mergedColName] = fullName || 'Unknown';
-                return newRow;
-            });
-
-            const removedCols = middleNameCol
-                ? `${firstNameCol}, ${middleNameCol}, ${lastNameCol}`
-                : `${firstNameCol}, ${lastNameCol}`;
-
-            logs.push(log('Auto-Merge Name Columns', 1, 'applied',
-                `Merged ${removedCols} → '${mergedColName}' (${rows.length} rows). Original columns removed.`,
-                { affectedColumns: [firstNameCol, lastNameCol, ...(middleNameCol ? [middleNameCol] : []), mergedColName] }
-            ));
-        } else {
-            logs.push(log('Auto-Merge Name Columns', 1, 'skipped',
-                'No first_name + last_name column pair detected.'
-            ));
-        }
-    }
-
-    // ─── STEP 2: Duplicate Column Removal ─────────────────────────────────────
-    {
-        const keys = Object.keys(rows[0]);
-        const seen = new Set<string>();
-        const dupes: string[] = [];
-        keys.forEach(k => {
-            if (seen.has(k)) dupes.push(k);
-            else seen.add(k);
-        });
-
-        if (dupes.length > 0) {
-            // Keep first occurrence, drop subsequent
-            rows = rows.map(row => {
-                const newRow: any = {};
-                const added = new Set<string>();
-                Object.keys(row).forEach(k => {
-                    if (!added.has(k)) { newRow[k] = row[k]; added.add(k); }
-                });
-                return newRow;
-            });
-            columnsRemoved += dupes.length;
-            logs.push(log('Duplicate Column Removal', 2, 'applied',
-                `Removed ${dupes.length} duplicate column(s): ${dupes.join(', ')}`,
-                { affectedColumns: dupes }
-            ));
-        } else {
-            logs.push(log('Duplicate Column Removal', 2, 'skipped',
-                'No duplicate column names found.'
-            ));
-        }
-    }
-
-    // ─── STEP 3: Empty Column Removal ─────────────────────────────────────────
-    {
-        const allKeys = Object.keys(rows[0]);
-        const emptyCols: string[] = [];
-        allKeys.forEach(key => {
-            const filledCount = rows.filter(r => !isNullish(r[key])).length;
-            if (filledCount / rows.length < 0.05) emptyCols.push(key);
-        });
-
-        if (emptyCols.length > 0) {
-            rows = rows.map(row => {
-                const newRow: any = {};
-                Object.keys(row).forEach(k => { if (!emptyCols.includes(k)) newRow[k] = row[k]; });
-                return newRow;
-            });
-            columnsRemoved += emptyCols.length;
-            logs.push(log('Empty Column Removal', 3, 'applied',
-                `Removed ${emptyCols.length} column(s) with >95% empty values: ${emptyCols.join(', ')}`,
-                { affectedColumns: emptyCols }
-            ));
-        } else {
-            logs.push(log('Empty Column Removal', 3, 'skipped',
-                'All columns have sufficient data (>5% fill rate).'
-            ));
-        }
-    }
-
-    // ─── STEP 4: Empty Row Removal ────────────────────────────────────────────
-    {
-        const before = rows.length;
-        const activeKeys = Object.keys(rows[0]);
-        rows = rows.filter(row => activeKeys.some(k => !isNullish(row[k])));
-        const removed = before - rows.length;
-
-        if (removed > 0) {
-            logs.push(log('Empty Row Removal', 4, 'applied',
-                `Removed ${removed} completely empty row(s).`,
-                { rowsBefore: before, rowsAfter: rows.length, affectedRows: removed }
-            ));
-        } else {
-            logs.push(log('Empty Row Removal', 4, 'skipped',
-                'No completely empty rows found.'
-            ));
-        }
-    }
-
-    // ─── STEP 5: Whitespace Trimming ──────────────────────────────────────────
-    {
-        let trimCount = 0;
-        const trimmedCols = new Set<string>();
-        rows = rows.map(row => {
-            const newRow: any = {};
-            Object.keys(row).forEach(k => {
-                const v = row[k];
-                if (typeof v === 'string') {
-                    const trimmed = v.trim();
-                    if (trimmed !== v) { trimCount++; trimmedCols.add(k); }
-                    newRow[k] = trimmed;
-                } else {
-                    newRow[k] = v;
-                }
-            });
-            return newRow;
-        });
-
-        if (trimCount > 0) {
-            logs.push(log('Whitespace Trimming', 5, 'applied',
-                `Trimmed whitespace in ${trimCount} cell(s) across ${trimmedCols.size} column(s).`,
-                { affectedColumns: [...trimmedCols], affectedRows: trimCount }
-            ));
-        } else {
-            logs.push(log('Whitespace Trimming', 5, 'skipped',
-                'No leading/trailing whitespace detected in string values.'
-            ));
-        }
-    }
-
-    // ─── STEP 6: Null/NA Standardization ──────────────────────────────────────
-    {
-        let standardized = 0;
-        const affectedCols = new Set<string>();
-        rows = rows.map(row => {
-            const newRow: any = {};
-            Object.keys(row).forEach(k => {
-                const v = row[k];
-                if (typeof v === 'string' && NULL_TOKENS.has(v.toLowerCase().trim()) && v.trim() !== '') {
-                    newRow[k] = null;
-                    standardized++;
-                    nullsFixed++;
-                    affectedCols.add(k);
-                } else {
-                    newRow[k] = row[k];
-                }
-            });
-            return newRow;
-        });
-
-        if (standardized > 0) {
-            logs.push(log('Null/NA Standardization', 6, 'applied',
-                `Converted ${standardized} placeholder value(s) (N/A, null, -, etc.) to null across ${affectedCols.size} column(s).`,
-                { affectedColumns: [...affectedCols], affectedRows: standardized }
-            ));
-        } else {
-            logs.push(log('Null/NA Standardization', 6, 'skipped',
-                'No placeholder null values (N/A, null, -, etc.) detected.'
-            ));
-        }
-    }
-
-    // ─── STEP 7: Exact Duplicate Row Removal ──────────────────────────────────
-    {
-        const before = rows.length;
-        const seen = new Set<string>();
-        rows = rows.filter(row => {
-            const key = JSON.stringify(row);
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-        });
-        const removed = before - rows.length;
-        duplicatesRemoved = removed;
-
-        if (removed > 0) {
-            logs.push(log('Exact Duplicate Row Removal', 7, 'applied',
-                `Removed ${removed} exact duplicate row(s).`,
-                { rowsBefore: before, rowsAfter: rows.length, affectedRows: removed }
-            ));
-        } else {
-            logs.push(log('Exact Duplicate Row Removal', 7, 'skipped',
-                'No exact duplicate rows found.'
-            ));
-        }
-    }
-
-    // ─── STEP 8: Type Inference ───────────────────────────────────────────────
-    {
-        const sample = rows.slice(0, 100);
-        const activeKeys = Object.keys(rows[0] || {});
-        columns = activeKeys.map(key => {
-            let detectedType = inferColumnType(key, sample.map(r => r[key]));
-
-            // Apply user overrides
-            if (columnTypeOverrides && columnTypeOverrides[key]) {
-                const override = columnTypeOverrides[key];
-                if (detectedType !== override) {
-                    logs.push(log('User Override', 8, 'info',
-                        `Column '${key}' changed from ${detectedType} to ${override} (manual override).`,
-                        { affectedColumns: [key] }
-                    ));
-                }
-                detectedType = override;
-            }
-
-            return { name: key, type: detectedType, originalType: 'string' };
-        });
-
-        const metrics = columns.filter(c => c.type === ColumnType.METRIC).length;
-        const dates = columns.filter(c => c.type === ColumnType.DATE).length;
-        const dims = columns.filter(c => c.type === ColumnType.DIMENSION).length;
-        const ids = columns.filter(c => c.type === ColumnType.ID).length;
-
-        logs.push(log('Type Inference', 8, 'applied',
-            `Classified ${columns.length} columns: ${metrics} metric(s), ${dates} date(s), ${dims} dimension(s), ${ids} ID(s).`,
-            { affectedColumns: columns.map(c => c.name) }
-        ));
-    }
-
-    // ─── STEP 9: Currency Symbol Removal ──────────────────────────────────────
-    {
-        const metricCols = columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
-        let cleaned = 0;
-        const affectedCols = new Set<string>();
-
-        rows = rows.map(row => {
-            const newRow: any = { ...row };
-            metricCols.forEach(col => {
-                const v = newRow[col];
-                if (typeof v === 'string' && /[$€£¥₹₩₫₽¢]/.test(v)) {
-                    const stripped = v.replace(/[$€£¥₹₩₫₽¢,\s]/g, '');
-                    const num = parseFloat(stripped);
-                    newRow[col] = isNaN(num) ? 0 : num;
-                    cleaned++;
-                    affectedCols.add(col);
-                    typeCastCount++;
-                }
-            });
-            return newRow;
-        });
-
-        if (cleaned > 0) {
-            logs.push(log('Currency Symbol Removal', 9, 'applied',
-                `Stripped currency symbols from ${cleaned} cell(s) in ${affectedCols.size} column(s).`,
-                { affectedColumns: [...affectedCols], affectedRows: cleaned }
-            ));
-        } else {
-            logs.push(log('Currency Symbol Removal', 9, 'skipped',
-                'No currency symbols ($, €, £, etc.) found in metric columns.'
-            ));
-        }
-    }
-
-    // ─── STEP 10: Percentage Symbol Handling ──────────────────────────────────
-    {
-        const metricCols = columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
-        let converted = 0;
-        const affectedCols = new Set<string>();
-
-        rows = rows.map(row => {
-            const newRow: any = { ...row };
-            metricCols.forEach(col => {
-                const v = newRow[col];
-                if (typeof v === 'string' && v.includes('%')) {
-                    const num = parseFloat(v.replace(/%/g, '').trim());
-                    if (!isNaN(num)) {
-                        newRow[col] = num; // Keep as percentage number (e.g., 45.3 for "45.3%")
-                        converted++;
-                        affectedCols.add(col);
-                        typeCastCount++;
-                    }
-                }
-            });
-            return newRow;
-        });
-
-        if (converted > 0) {
-            logs.push(log('Percentage Symbol Handling', 10, 'applied',
-                `Removed % symbol and converted ${converted} value(s) to numeric in ${affectedCols.size} column(s).`,
-                { affectedColumns: [...affectedCols], affectedRows: converted }
-            ));
-        } else {
-            logs.push(log('Percentage Symbol Handling', 10, 'skipped',
-                'No percentage symbols (%) found in metric columns.'
-            ));
-        }
-    }
-
-    // ─── STEP 11: Numeric String Casting ──────────────────────────────────────
-    {
-        const metricCols = columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
-        let casted = 0;
-
-        rows = rows.map(row => {
-            const newRow: any = { ...row };
-            metricCols.forEach(col => {
-                const v = newRow[col];
-                if (typeof v === 'string') {
-                    const stripped = v.replace(/[,\s]/g, '');
-                    const num = parseFloat(stripped);
-                    newRow[col] = isNaN(num) ? 0 : num;
-                    casted++;
-                    typeCastCount++;
-                } else if (typeof v !== 'number') {
-                    newRow[col] = 0;
-                }
-            });
-            return newRow;
-        });
-
-        if (casted > 0) {
-            logs.push(log('Numeric String Casting', 11, 'applied',
-                `Cast ${casted} string value(s) to numbers in ${metricCols.length} metric column(s).`,
-                { affectedColumns: metricCols, affectedRows: casted }
-            ));
-        } else {
-            logs.push(log('Numeric String Casting', 11, 'skipped',
-                'All metric columns already contain numeric values.'
-            ));
-        }
-    }
-
-    // ─── STEP 12: Date Standardization ────────────────────────────────────────
-    {
-        const dateCols = columns.filter(c => c.type === ColumnType.DATE).map(c => c.name);
-        let converted = 0;
-        let minDate = '';
-        let maxDate = '';
-        let maxOrderDate = '';
-
-        if (dateCols.length > 0) {
-            // DEBUG: Log raw date values BEFORE any conversion
-            dateCols.forEach(col => {
-                const rawSamples = rows.slice(0, 5).map(r => r[col]);
-                console.log(`[ETL Step12 DEBUG] Column "${col}" — first 5 raw values: ${JSON.stringify(rawSamples)}`);
-            });
-            rows = rows.map(row => {
-                const newRow: any = { ...row };
-                dateCols.forEach(col => {
-                    const v = newRow[col];
-                    let isoDate: string | null = null;
-
-                    if (v === null || v === undefined || v === '') {
-                        newRow[col] = null;
-                        return;
-                    }
-
-                    // 1. JS Date object (most common with cellDates: true)
-                    if (v instanceof Date) {
-                        if (!isNaN(v.getTime())) {
-                            const year = v.getUTCFullYear();
-                            if (year >= 1900 && year <= 2100) {
-                                isoDate = v.toISOString().split('T')[0];
-                            }
-                        }
-                    }
-                    // 2. String values (ISO, US format, etc.)
-                    else if (typeof v === 'string') {
-                        if (/^\d{4}-\d{2}-\d{2}/.test(v)) {
-                            isoDate = v.substring(0, 10);
-                        } else {
-                            const d = new Date(v);
-                            if (!isNaN(d.getTime())) {
-                                const year = d.getUTCFullYear();
-                                if (year >= 1900 && year <= 2100) {
-                                    isoDate = d.toISOString().split('T')[0];
-                                }
-                            }
-                        }
-                    }
-                    // 3. Excel serial number (fallback only — cellDates should handle this)
-                    else if (typeof v === 'number' && v > 1 && v < 100000) {
-                        try {
-                            const jsDate = excelDateToJSDate(v);
-                            const year = jsDate.getUTCFullYear();
-                            if (year >= 1900 && year <= 2100) {
-                                isoDate = jsDate.toISOString().split('T')[0];
-                            }
-                        } catch { isoDate = null; }
-                    }
-
-                    if (isoDate) {
-                        if (String(v) !== isoDate) converted++;
-                        newRow[col] = isoDate;
-
-                        if (!minDate || isoDate < minDate) minDate = isoDate;
-                        if (!maxDate || isoDate > maxDate) maxDate = isoDate;
-                        if (col.includes('order_date') || col === 'date') {
-                            if (!maxOrderDate || isoDate > maxOrderDate) maxOrderDate = isoDate;
-                        }
-                    } else {
-                        newRow[col] = null;
-                    }
-                });
-                return newRow;
-            });
-
-            // DEBUG: Log converted dates — last 5 values + computed range
-            dateCols.forEach(col => {
-                const last5 = rows.slice(-5).map(r => r[col]);
-                console.log(`[ETL Step12 AFTER] Column "${col}" — last 5 converted: ${JSON.stringify(last5)}`);
-            });
-            console.log(`[ETL Step12 RESULT] minDate="${minDate}", maxDate="${maxDate}", maxOrderDate="${maxOrderDate}"`);
-
-            logs.push(log('Date Standardization', 12, 'applied',
-                `Standardized ${converted} date value(s) to ISO format (YYYY-MM-DD) across ${dateCols.length} column(s).` +
-                (minDate ? ` Range: ${minDate} → ${maxDate}` : ''),
-                { affectedColumns: dateCols, affectedRows: converted }
-            ));
-        } else {
-            logs.push(log('Date Standardization', 12, 'skipped',
-                'No date columns detected in dataset.'
-            ));
-        }
-    }
-
-    // ─── STEP 13: Boolean Normalization ───────────────────────────────────────
-    {
-        let normalized = 0;
-        const affectedCols = new Set<string>();
-        const boolMap: Record<string, boolean> = {
-            'true': true, 'false': false, 'yes': true, 'no': false,
-            't': true, 'f': false, 'y': true, 'n': false,
-            '1': true, '0': false
-        };
-
-        const dimCols = columns.filter(c => c.type === ColumnType.DIMENSION).map(c => c.name);
-
-        dimCols.forEach(col => {
-            // Detect if this column is boolean-like (>80% of values are bool tokens)
-            const vals = rows.map(r => r[col]).filter(v => v !== null && v !== undefined);
-            const boolCount = vals.filter(v => typeof v === 'string' && boolMap[v.toLowerCase().trim()] !== undefined).length;
-            if (vals.length > 0 && boolCount / vals.length > 0.8) {
-                rows.forEach(row => {
-                    const v = row[col];
-                    if (typeof v === 'string' && boolMap[v.toLowerCase().trim()] !== undefined) {
-                        row[col] = boolMap[v.toLowerCase().trim()];
-                        normalized++;
-                        affectedCols.add(col);
-                    }
-                });
-            }
-        });
-
-        if (normalized > 0) {
-            logs.push(log('Boolean Normalization', 13, 'applied',
-                `Normalized ${normalized} boolean value(s) (Yes/No/TRUE/FALSE → true/false) in ${affectedCols.size} column(s).`,
-                { affectedColumns: [...affectedCols], affectedRows: normalized }
-            ));
-        } else {
-            logs.push(log('Boolean Normalization', 13, 'skipped',
-                'No boolean-like text columns detected (requires >80% boolean values).'
-            ));
-        }
-    }
-
-    // ─── STEP 14: Metric Null Imputation ──────────────────────────────────────
-    {
-        const metricCols = columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
-        let imputed = 0;
-        const affectedCols = new Set<string>();
-
-        rows.forEach(row => {
-            metricCols.forEach(col => {
-                if (row[col] === null || row[col] === undefined || isNaN(row[col])) {
-                    row[col] = 0;
-                    imputed++;
-                    nullsFixed++;
-                    affectedCols.add(col);
-                }
-            });
-        });
-
-        if (imputed > 0) {
-            logs.push(log('Metric Null Imputation', 14, 'applied',
-                `Imputed ${imputed} null/NaN metric value(s) to 0 in ${affectedCols.size} column(s).`,
-                { affectedColumns: [...affectedCols], affectedRows: imputed }
-            ));
-        } else {
-            logs.push(log('Metric Null Imputation', 14, 'skipped',
-                'No null or NaN values found in metric columns.'
-            ));
-        }
-    }
-
-    // ─── STEP 15: Outlier Detection (Flag Only) ──────────────────────────────
-    {
-        const metricCols = columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
-        const outlierReport: string[] = [];
-
-        metricCols.forEach(col => {
-            const values = rows.map(r => r[col]).filter(v => typeof v === 'number' && !isNaN(v)).sort((a, b) => a - b);
-            if (values.length < 10) return; // Too few values for meaningful IQR
-
-            const q1 = values[Math.floor(values.length * 0.25)];
-            const q3 = values[Math.floor(values.length * 0.75)];
-            const iqr = q3 - q1;
-            if (iqr === 0) return;
-
-            const lower = q1 - 1.5 * iqr;
-            const upper = q3 + 1.5 * iqr;
-            const outlierCount = values.filter(v => v < lower || v > upper).length;
-
-            if (outlierCount > 0) {
-                outlierReport.push(`${col}: ${outlierCount} outlier(s) outside [${lower.toFixed(1)}, ${upper.toFixed(1)}]`);
-            }
-        });
-
-        if (outlierReport.length > 0) {
-            logs.push(log('Outlier Detection', 15, 'info',
-                `Flagged outliers (not removed) in ${outlierReport.length} column(s): ${outlierReport.join('; ')}`,
-                { affectedColumns: outlierReport.map(r => r.split(':')[0]) }
-            ));
-        } else {
-            logs.push(log('Outlier Detection', 15, 'skipped',
-                'No significant outliers detected using IQR method (or too few data points).'
-            ));
-        }
-    }
-
-    // ─── STEP 16: Categorical Consistency ─────────────────────────────────────
-    {
-        const dimCols = columns.filter(c => c.type === ColumnType.DIMENSION).map(c => c.name);
-        let fixedCount = 0;
-        const affectedCols = new Set<string>();
-
-        rows.forEach(row => {
-            dimCols.forEach(col => {
-                const v = row[col];
-                if (typeof v === 'string') {
-                    const cleaned = v.trim().replace(/\s+/g, ' ');
-                    if (cleaned !== v) {
-                        row[col] = cleaned;
-                        fixedCount++;
-                        affectedCols.add(col);
-                    }
-                }
-            });
-        });
-
-        if (fixedCount > 0) {
-            logs.push(log('Categorical Consistency', 16, 'applied',
-                `Standardized whitespace in ${fixedCount} dimension value(s) across ${affectedCols.size} column(s).`,
-                { affectedColumns: [...affectedCols], affectedRows: fixedCount }
-            ));
-        } else {
-            logs.push(log('Categorical Consistency', 16, 'skipped',
-                'All dimension values already have consistent formatting.'
-            ));
-        }
-    }
-
-    // ─── STEP 17: Leading Zero Preservation ───────────────────────────────────
-    {
-        const idCols = columns.filter(c => c.type === ColumnType.ID).map(c => c.name);
-        let preserved = 0;
-
-        if (idCols.length > 0) {
-            rows.forEach(row => {
-                idCols.forEach(col => {
-                    const v = row[col];
-                    // Convert numbers back to strings for ID columns to preserve format
-                    if (typeof v === 'number') {
-                        row[col] = String(v);
-                        preserved++;
-                    }
-                });
-            });
-        }
-
-        if (preserved > 0) {
-            logs.push(log('Leading Zero Preservation', 17, 'applied',
-                `Preserved ${preserved} ID value(s) as strings to prevent numeric coercion.`,
-                { affectedColumns: idCols, affectedRows: preserved }
-            ));
-        } else {
-            logs.push(log('Leading Zero Preservation', 17, 'skipped',
-                idCols.length === 0 ? 'No ID columns detected.' : 'All ID values already stored as strings.'
-            ));
-        }
-    }
-
-    // ─── STEP 18: Negative Value Audit ────────────────────────────────────────
-    {
-        const metricCols = columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
-        // Revenue/sales/price columns that typically should not be negative
-        const positiveExpected = metricCols.filter(c => {
-            const l = c.toLowerCase();
-            return ['price', 'revenue', 'sales', 'quantity', 'qty', 'units', 'count'].some(k => l.includes(k));
-        });
-
-        const negReport: string[] = [];
-        positiveExpected.forEach(col => {
-            const negCount = rows.filter(r => typeof r[col] === 'number' && r[col] < 0).length;
-            if (negCount > 0) negReport.push(`${col}: ${negCount} negative value(s)`);
-        });
-
-        if (negReport.length > 0) {
-            logs.push(log('Negative Value Audit', 18, 'info',
-                `Found unexpected negatives (flagged only, not removed): ${negReport.join('; ')}`,
-                { affectedColumns: positiveExpected }
-            ));
-        } else {
-            logs.push(log('Negative Value Audit', 18, 'skipped',
-                positiveExpected.length === 0
-                    ? 'No typically-positive metric columns (price, revenue, qty) detected.'
-                    : 'No unexpected negative values found in revenue/price/quantity columns.'
-            ));
-        }
-    }
-
-    // ─── STEP 19: Data Completeness Audit ─────────────────────────────────────
-    {
-        const allKeys = Object.keys(rows[0] || {});
-        const completeness: { col: string; pct: number }[] = [];
-        const lowCompleteness: string[] = [];
-
-        allKeys.forEach(key => {
-            const filled = rows.filter(r => r[key] !== null && r[key] !== undefined && r[key] !== '').length;
-            const pct = rows.length > 0 ? Math.round((filled / rows.length) * 100) : 0;
-            completeness.push({ col: key, pct });
-            if (pct < 70) lowCompleteness.push(`${key} (${pct}%)`);
-        });
-
-        const avgCompleteness = completeness.reduce((s, c) => s + c.pct, 0) / (completeness.length || 1);
-
-        if (lowCompleteness.length > 0) {
-            logs.push(log('Data Completeness Audit', 19, 'info',
-                `Average completeness: ${avgCompleteness.toFixed(1)}%. Low completeness columns: ${lowCompleteness.join(', ')}`,
-                { affectedColumns: lowCompleteness.map(l => l.split(' (')[0]) }
-            ));
-        } else {
-            logs.push(log('Data Completeness Audit', 19, 'applied',
-                `All columns have ≥70% completeness. Average: ${avgCompleteness.toFixed(1)}%.`
-            ));
-        }
-    }
-
-    // ─── STEP 20: Final Summary ───────────────────────────────────────────────
-    const totalRowsAfter = rows.length;
-    const totalColumnsFinal = Object.keys(rows[0] || {}).length;
-    const rowsRemoved = totalRowsBefore - totalRowsAfter;
-
-    // Calculate quality score
+    // ── POST: Quality Score ──
     const allKeys = Object.keys(rows[0] || {});
-    let completenessScore = 0;
+    let completenessSum = 0;
     allKeys.forEach(key => {
         const filled = rows.filter(r => r[key] !== null && r[key] !== undefined && r[key] !== '').length;
-        completenessScore += rows.length > 0 ? filled / rows.length : 0;
+        completenessSum += rows.length > 0 ? filled / rows.length : 0;
     });
-    completenessScore = allKeys.length > 0 ? (completenessScore / allKeys.length) * 100 : 0;
+    const avgCompleteness = allKeys.length > 0 ? (completenessSum / allKeys.length) * 100 : 0;
+    const dupePenalty = l1.duplicatesRemoved > 0 ? Math.min(10, (l1.duplicatesRemoved / totalRowsBefore) * 100) : 0;
+    const nullPenalty = l2.nullsFixed > 0 ? Math.min(10, (l2.nullsFixed / (totalRowsBefore * allKeys.length)) * 100) : 0;
+    const qualityScore = Math.round(Math.max(0, Math.min(100, avgCompleteness - dupePenalty - nullPenalty)));
 
-    const dupePenalty = duplicatesRemoved > 0 ? Math.min(10, (duplicatesRemoved / totalRowsBefore) * 100) : 0;
-    const nullPenalty = nullsFixed > 0 ? Math.min(10, (nullsFixed / (totalRowsBefore * allKeys.length)) * 100) : 0;
-    const qualityScore = Math.round(Math.max(0, Math.min(100, completenessScore - dupePenalty - nullPenalty)));
+    // Final summary log
+    const totalRowsAfter = rows.length;
+    const totalColumnsFinal = allKeys.length;
+    const applied = allLogs.filter(l => l.status === 'applied').length;
+    const skipped = allLogs.filter(l => l.status === 'skipped').length;
+    const flagged = allLogs.filter(l => l.status === 'info').length;
 
-    // Build TimeContext from date step data
-    // IMPORTANT: defaultAnchorDate MUST be the MAX date of the primary/anchor date column.
-    // This is the "Dataset Time Anchor" — defines what "today" means for time-based analysis.
-    let timeContext: TimeContext | undefined;
-    const dateCols = columns.filter(c => c.type === ColumnType.DATE).map(c => c.name);
-    if (dateCols.length > 0) {
-        let gMinDate = '';
-        let gMaxDate = '';
-        // Track max date per individual date column
-        const perColumnMax: Record<string, string> = {};
-
-        // Helper: normalize any date value to ISO string (YYYY-MM-DD)
-        const toISO = (v: any): string | null => {
-            if (!v) return null;
-            // 1. JS Date object (from cellDates: true)
-            if (v instanceof Date) {
-                return isNaN(v.getTime()) ? null : v.toISOString().split('T')[0];
-            }
-            // 2. Already ISO format string
-            if (typeof v === 'string') {
-                if (/^\d{4}-\d{2}-\d{2}/.test(v)) return v.substring(0, 10);
-                // Try parsing common date formats
-                const d = new Date(v);
-                if (!isNaN(d.getTime())) {
-                    const year = d.getUTCFullYear();
-                    if (year >= 1900 && year <= 2100) {
-                        return d.toISOString().split('T')[0];
-                    }
-                }
-                return null;
-            }
-            // 3. Skip raw numbers — cellDates: true should have converted serials to Date objects
-            if (typeof v === 'number') {
-                console.warn(`[ETL TimeContext] Unexpected number in date column: ${v} — skipping`);
-                return null;
-            }
-            return null;
-        };
-
-        rows.forEach(row => {
-            dateCols.forEach(col => {
-                const iso = toISO(row[col]);
-                if (iso) {
-                    if (!gMinDate || iso < gMinDate) gMinDate = iso;
-                    if (!gMaxDate || iso > gMaxDate) gMaxDate = iso;
-                    // Track per-column max
-                    if (!perColumnMax[col] || iso > perColumnMax[col]) {
-                        perColumnMax[col] = iso;
-                    }
-                }
-            });
-        });
-
-        if (gMinDate && gMaxDate) {
-            // Auto-detect best anchor column by priority
-            // Priority: order_date > transaction > invoice > sale_date > date > first date column
-            const priorityPatterns = [
-                (lc: string) => lc.includes('order') && !lc.includes('ship'),
-                (lc: string) => lc.includes('transaction'),
-                (lc: string) => lc.includes('invoice'),
-                (lc: string) => lc === 'sale_date' || lc === 'sales_date',
-                (lc: string) => lc === 'date',
-            ];
-
-            let anchorCol = '';
-            for (const test of priorityPatterns) {
-                const match = dateCols.find(c => test(c.toLowerCase()));
-                if (match && perColumnMax[match]) {
-                    anchorCol = match;
-                    break;
-                }
-            }
-            // Fallback: use the first date column that has data
-            if (!anchorCol) {
-                anchorCol = dateCols.find(c => perColumnMax[c]) || dateCols[0];
-            }
-
-            const anchorDate = perColumnMax[anchorCol] || gMaxDate;
-
-            console.log(`[ETL TimeContext] anchor_column="${anchorCol}", anchor_date="${anchorDate}", all_maxes=`, perColumnMax);
-
-            timeContext = {
-                minDate: gMinDate,
-                maxDate: gMaxDate,
-                defaultAnchorDate: anchorDate,
-                anchorDateColumn: anchorCol,
-                dateColumnMaxDates: perColumnMax,
-            };
-        }
-    }
-
-    const applied = logs.filter(l => l.status === 'applied').length;
-    const skipped = logs.filter(l => l.status === 'skipped').length;
-    const flagged = logs.filter(l => l.status === 'info').length;
-
-    logs.push(log('Final Summary', 20, 'applied',
-        `Pipeline complete. ${applied} step(s) applied, ${skipped} skipped, ${flagged} flagged. ` +
-        `${totalRowsAfter} clean rows from ${totalRowsBefore} original. Data quality: ${qualityScore}/100.`,
+    allLogs.push(log('Final Summary', 7, 'applied',
+        `7-Layer Pipeline complete. ${applied} step(s) applied, ${skipped} skipped, ${flagged} flagged. ` +
+        `${totalRowsAfter} clean rows from ${totalRowsBefore} original. Data quality: ${qualityScore}/100. Contract: ${l6.contract.status}.`,
         { rowsBefore: totalRowsBefore, rowsAfter: totalRowsAfter }
+    ));
+
+    console.log(`[ETL] Complete: ${totalRowsAfter} rows, quality=${qualityScore}, contract=${l6.contract.status}`);
+
+    // ── POST: Column Ordering (ID → Date → Dimension → Metric) ──
+    const typeOrder: Record<string, number> = { ID: 0, DATE: 1, DIMENSION: 2, METRIC: 3 };
+    const sortedColumns = [...l4.columns].sort((a, b) => (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99));
+    const columnOrder = sortedColumns.map(c => c.name);
+    rows = rows.map(row => {
+        const ordered: Record<string, any> = {};
+        for (const key of columnOrder) ordered[key] = row[key];
+        return ordered;
+    });
+    allLogs.push(log('Column Ordering', 7, 'applied',
+        `Reordered columns: ${columnOrder.join(', ')}`,
+        { affectedColumns: columnOrder }
     ));
 
     return {
         rows,
-        columns,
-        logs,
-        timeContext,
+        columns: sortedColumns,
+        logs: allLogs,
+        timeContext: tc.timeContext,
+        dimDate,
         qualityScore,
+        lineage: l5.lineage,
+        contract: l6.contract,
         summary: {
             totalRowsBefore,
             totalRowsAfter,
             totalColumnsOriginal,
             totalColumnsFinal,
-            rowsRemoved,
-            columnsRemoved,
-            nullsFixed,
-            duplicatesRemoved,
-            typeCastCount,
+            rowsRemoved: totalRowsBefore - totalRowsAfter,
+            columnsRemoved: l1.columnsRemoved,
+            nullsFixed: l2.nullsFixed,
+            duplicatesRemoved: l1.duplicatesRemoved,
+            typeCastCount: l5.typeCastCount,
         }
     };
 }

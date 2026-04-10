@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Database, Settings, Play, Layout, Plus, Search, FileText, BarChart2, Shield, Menu, LogOut, Users } from 'lucide-react';
+import { Upload, Database, Settings, Play, Layout, Plus, Search, FileText, BarChart2, Shield, Menu, LogOut, Users, Brain } from 'lucide-react';
 import {
   Dataset,
   AnalysisResult,
@@ -8,6 +8,7 @@ import {
   UserRole
 } from './types';
 import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, getSampleData } from './services/analysisEngine';
+import { profileDatasetWithAI } from './services/aiSemanticProfiler';
 import { Sidebar } from './components/Sidebar';
 import { UploadView } from './components/UploadView';
 import { ETLView } from './components/ETLView';
@@ -15,6 +16,7 @@ import { DataExplorerView } from './components/DataExplorerView';
 import { WorkbenchView } from './components/WorkbenchView';
 import { BuilderView } from './components/BuilderView';
 import { NLQView } from './components/NLQView';
+import { AISQLView } from './components/AISQLView';
 import { Dashboard } from './components/Dashboard';
 import { SchemaView } from './components/SchemaView';
 import { QuestionBuilder } from './components/QuestionBuilder';
@@ -30,6 +32,7 @@ import { ThemeProvider } from './components/ThemeProvider';
 import { OnboardingTour } from './components/OnboardingTour';
 import { DatasetSwitcher } from './components/DatasetSwitcher';
 import { saveDatasetToDB, loadAllDatasetsFromDB, deleteDatasetFromDB } from './services/datasetDB';
+import { DomainReviewModal } from './components/DomainReviewModal';
 
 // Safer ID generator that works in non-secure contexts
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -105,6 +108,9 @@ function App() {
   // Auth State
   const { isAuthenticated, currentUser, logout } = useAuthStore();
   const [showUserMgmt, setShowUserMgmt] = useState(false);
+  const [isAIProfiling, setIsAIProfiling] = useState(false);
+  const [showDomainReview, setShowDomainReview] = useState(false);
+  const [pendingProfile, setPendingProfile] = useState<any>(null);
 
   // Hydrate datasets from IndexedDB on mount
   useEffect(() => {
@@ -140,15 +146,17 @@ function App() {
     worker.onmessage = (event) => {
       const { type, result, error } = event.data;
       if (type === 'SUCCESS') {
-        const { rows, logs, columns, timeContext, sourceSchema } = result;
+        const { rows, logs, columns, timeContext, sourceSchema, dimDate, rawRows } = result;
         const newDataset: Dataset = {
           id: generateId(),
           name: file.name,
           rows,
+          rawRows,
           columns,
           totalRows: rows.length,
           etlLogs: logs,
           timeContext,
+          dimDate,
           sourceSchema
         };
 
@@ -157,6 +165,23 @@ function App() {
         setActiveTab(Tab.ETL);
         setProcessing(false);
         worker.terminate();
+
+        // ── AI SEMANTIC PROFILING (async, non-blocking) ──
+        setIsAIProfiling(true);
+        profileDatasetWithAI(rows, columns, file.name).then(profile => {
+          setIsAIProfiling(false);
+          if (profile) {
+            const profiled: Dataset = { ...newDataset, domainProfile: profile };
+            setDataset(profiled);
+            saveDatasetToDB(profiled);
+            setPendingProfile(profile);
+            setShowDomainReview(true);
+            console.log(`[App] AI Profile: ${profile.domain} (${(profile.confidence * 100).toFixed(0)}% confidence)`);
+          }
+        }).catch(err => {
+          setIsAIProfiling(false);
+          console.warn('[App] AI profiling failed (graceful fallback):', err);
+        });
       } else if (type === 'ERROR') {
         setError(error);
         setProcessing(false);
@@ -181,7 +206,7 @@ function App() {
 
     worker.onmessage = (event: MessageEvent) => {
       if (event.data.type === 'SUCCESS') {
-        const { rows, logs, columns, timeContext } = event.data.result;
+        const { rows, logs, columns, timeContext, dimDate } = event.data.result;
         const updated: Dataset = {
           ...dataset,
           rows,
@@ -189,6 +214,7 @@ function App() {
           totalRows: rows.length,
           etlLogs: logs,
           timeContext,
+          dimDate,
         };
         setDataset(updated);
         saveDatasetToDB(updated);
@@ -198,7 +224,7 @@ function App() {
 
     worker.postMessage({
       type: 'PROCESS_FILE',
-      rawData: dataset.rows,
+      rawData: dataset.rawRows || dataset.rows,
       fileName: dataset.name,
       columnTypeOverrides: overrides,
     });
@@ -216,15 +242,17 @@ function App() {
 
     worker.onmessage = (event) => {
       if (event.data.type === 'SUCCESS') {
-        const { rows, logs, columns, timeContext } = event.data.result;
+        const { rows, logs, columns, timeContext, dimDate, rawRows } = event.data.result;
         const sampleDs: Dataset = {
           id: generateId(),
           name: "sample_sales_data.csv",
           rows,
+          rawRows,
           columns,
           totalRows: rows.length,
           etlLogs: logs,
-          timeContext
+          timeContext,
+          dimDate
         };
         setDataset(sampleDs);
         saveDatasetToDB(sampleDs);
@@ -243,15 +271,17 @@ function App() {
 
     worker.onmessage = (event) => {
       if (event.data.type === 'SUCCESS') {
-        const { rows, logs, columns, timeContext, sourceSchema: resultSchema } = event.data.result;
+        const { rows, logs, columns, timeContext, sourceSchema: resultSchema, dimDate, rawRows } = event.data.result;
         const connDs: Dataset = {
           id: generateId(),
           name: name,
           rows,
+          rawRows,
           columns,
           totalRows: rows.length,
           etlLogs: logs,
           timeContext,
+          dimDate,
           sourceSchema: resultSchema
         };
         setDataset(connDs);
@@ -357,7 +387,7 @@ function App() {
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
               {/* Header */}
-              <header className={`h-14 flex items-center justify-between px-5 z-10 relative border-b ${theme === 'dark' ? 'bg-[#141825] border-white/[0.06]' : 'bg-white border-gray-200 shadow-sm'
+              <header className={`h-14 flex items-center justify-between px-5 z-30 relative border-b ${theme === 'dark' ? 'bg-[#141825] border-white/[0.06]' : 'bg-white border-gray-200 shadow-sm'
                 }`}>
                 <div className="flex items-center gap-3">
                   {!isSidebarOpen && (
@@ -385,6 +415,16 @@ function App() {
                       <span className={`text-[11px] font-medium ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
                         }`}>
                         {dataset.totalRows?.toLocaleString()} rows
+                      </span>
+                    )}
+                    {isAIProfiling && (
+                      <span className="text-[11px] font-medium text-violet-400 flex items-center gap-1 animate-pulse">
+                        <Brain className="w-3 h-3" /> Profiling...
+                      </span>
+                    )}
+                    {dataset?.domainProfile && !isAIProfiling && (
+                      <span className="text-[11px] font-semibold text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded-full">
+                        {dataset.domainProfile.domain}
                       </span>
                     )}
                   </div>
@@ -467,6 +507,18 @@ function App() {
                   <ETLView
                     dataset={dataset}
                     onSchemaOverride={handleSchemaOverride}
+                    onRowsRecovered={(recoveredRows) => {
+                      if (!dataset) return;
+                      const updatedRows = [...dataset.rows, ...recoveredRows];
+                      const updated: Dataset = {
+                        ...dataset,
+                        rows: updatedRows,
+                        totalRows: updatedRows.length,
+                      };
+                      setDataset(updated);
+                      saveDatasetToDB(updated);
+                      console.log(`[App] Recovered ${recoveredRows.length} rows. New total: ${updatedRows.length}`);
+                    }}
                   />
                 </div>
 
@@ -480,6 +532,13 @@ function App() {
 
                 <div className={`h-full w-full ${activeTab === Tab.NLQ ? '' : 'hidden'}`}>
                   <NLQView
+                    dataset={dataset}
+                    onPin={(title, result) => handlePin({ ...result, insight: title })}
+                  />
+                </div>
+
+                <div className={`h-full w-full ${activeTab === Tab.AI_SQL ? '' : 'hidden'}`}>
+                  <AISQLView
                     dataset={dataset}
                     onPin={(title, result) => handlePin({ ...result, insight: title })}
                   />
@@ -624,6 +683,30 @@ function App() {
             {/* User Management Modal (Admin only) */}
             {showUserMgmt && currentUser?.role === UserRole.ADMIN && (
               <UserManagement onClose={() => setShowUserMgmt(false)} />
+            )}
+
+            {/* Domain Review Modal */}
+            {showDomainReview && pendingProfile && (
+              <DomainReviewModal
+                profile={pendingProfile}
+                isOpen={showDomainReview}
+                onAccept={() => {
+                  setShowDomainReview(false);
+                  setPendingProfile(null);
+                  showToast(`Domain detected: ${pendingProfile.domain}`);
+                }}
+                onDismiss={() => {
+                  // Dismiss = remove the profile from dataset
+                  if (dataset) {
+                    const { domainProfile, ...rest } = dataset as any;
+                    const stripped: Dataset = { ...rest };
+                    setDataset(stripped);
+                    saveDatasetToDB(stripped);
+                  }
+                  setShowDomainReview(false);
+                  setPendingProfile(null);
+                }}
+              />
             )}
 
             {/* Onboarding Tour */}

@@ -9,9 +9,63 @@ const rawSql = require('msnodesqlv8');
 const { Pool: PgPool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const fs = require('fs');
+const path = require('path');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'astrabi-dev-secret-change-in-production';
 const BCRYPT_ROUNDS = 12;
+
+// ═══════════════════════════════════════════
+// Fix #4: FILE-BASED USER PERSISTENCE
+// ═══════════════════════════════════════════
+const USERS_FILE = path.join(__dirname, 'users.json');
+
+function loadUsersFromDisk() {
+    try {
+        if (fs.existsSync(USERS_FILE)) {
+            const raw = fs.readFileSync(USERS_FILE, 'utf-8');
+            const arr = JSON.parse(raw);
+            const map = new Map();
+            arr.forEach(u => map.set(u.email, u));
+            console.log(`[Auth] Loaded ${map.size} user(s) from disk`);
+            return map;
+        }
+    } catch (err) {
+        console.warn('[Auth] Failed to load users from disk:', err.message);
+    }
+    return null;
+}
+
+function saveUsersToDisk(usersMap) {
+    try {
+        const arr = Array.from(usersMap.values());
+        fs.writeFileSync(USERS_FILE, JSON.stringify(arr, null, 2), 'utf-8');
+        console.log(`[Auth] Saved ${arr.length} user(s) to disk`);
+    } catch (err) {
+        console.warn('[Auth] Failed to save users to disk:', err.message);
+    }
+}
+
+async function initializeUsers() {
+    const loaded = loadUsersFromDisk();
+    if (loaded && loaded.size > 0) return loaded;
+
+    // Seed admin user on first run
+    const map = new Map();
+    const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
+    const admin = {
+        id: 'admin_001',
+        email: 'saicharan@astrabi.co.uk',
+        name: 'Sai Charan',
+        role: 'admin',
+        passwordHash: adminHash,
+        createdAt: new Date().toISOString()
+    };
+    map.set(admin.email, admin);
+    saveUsersToDisk(map);
+    console.log('[Auth] Created seed admin user');
+    return map;
+}
 
 const app = express();
 const PORT = process.env.PORT || 5002;
@@ -75,8 +129,13 @@ app.use('/api/', apiKeyMiddleware);
 // JWT AUTHENTICATION ENDPOINTS
 // ═══════════════════════════════════════════
 
-// In-memory user store (swap for a database in production)
-const users = new Map();
+// File-backed user store (Fix #4: persists across server restarts)
+let users = new Map();
+
+// Initialize users asynchronously
+(async () => {
+    users = await initializeUsers();
+})();
 
 // Register a new user
 app.post('/api/auth/register', async (req, res) => {
@@ -101,6 +160,7 @@ app.post('/api/auth/register', async (req, res) => {
         };
 
         users.set(email, user);
+        saveUsersToDisk(users); // Fix #4: persist new user
 
         const token = jwt.sign(
             { userId: user.id, email: user.email, role: user.role },
@@ -611,9 +671,290 @@ app.post('/api/pg/foreign-keys', async (req, res) => {
     }
 });
 
+// ═══════════════════════════════════════════
+// LLM PROXY ENDPOINT (Fix #5: API key security)
+// ═══════════════════════════════════════════
+// Routes OpenRouter API calls through the backend so the API key
+// never appears in the frontend bundle.
+
+const LLM_RATE_LIMIT = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 20, // 20 LLM calls per minute per IP
+    message: { success: false, error: 'Too many AI requests. Please wait a moment.' }
+});
+
+app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
+    const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
+    if (!OPENROUTER_KEY) {
+        return res.status(500).json({
+            success: false,
+            error: 'LLM service not configured. Set OPENROUTER_API_KEY in backend .env'
+        });
+    }
+
+    try {
+        const { model, messages, max_tokens, temperature } = req.body;
+
+        // Validate input
+        if (!messages || !Array.isArray(messages)) {
+            return res.status(400).json({ success: false, error: 'messages array is required' });
+        }
+
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${OPENROUTER_KEY}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:5173',
+                'X-Title': 'Astrabi Analytics'
+            },
+            body: JSON.stringify({
+                model: model || 'google/gemini-2.0-flash-001',
+                messages,
+                max_tokens: Math.min(max_tokens || 2000, 4000), // Cap at 4000
+                temperature: temperature ?? 0.1
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            console.error('[LLM Proxy] API error:', response.status, errorText);
+            return res.status(response.status).json({
+                success: false,
+                error: `LLM service error (${response.status})`
+            });
+        }
+
+        const data = await response.json();
+        res.json(data);
+    } catch (error) {
+        console.error('[LLM Proxy] Request failed:', error);
+        res.status(500).json({ success: false, error: 'LLM request failed' });
+    }
+});
+
+// ═══════════════════════════════════════════
+// AI SEMANTIC PROFILER ENDPOINT
+// ═══════════════════════════════════════════
+// Accepts a profiling prompt (with MASKED data only, no PII),
+// calls the LLM, parses the JSON response, and returns the domain profile.
+
+const PROFILER_RATE_LIMIT = rateLimit({
+    windowMs: 60 * 1000,
+    max: 5, // 5 profiling calls per minute (expensive operation)
+    message: { success: false, error: 'Too many profiling requests. Please wait.' }
+});
+
+app.post('/api/ai/profile-dataset', PROFILER_RATE_LIMIT, async (req, res) => {
+    const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
+    if (!OPENROUTER_KEY) {
+        return res.status(500).json({
+            success: false,
+            error: 'LLM service not configured. Set OPENROUTER_API_KEY in backend .env'
+        });
+    }
+
+    try {
+        const { prompt } = req.body;
+
+        if (!prompt || typeof prompt !== 'string') {
+            return res.status(400).json({ success: false, error: 'prompt (string) is required' });
+        }
+
+        console.log(`[AI Profiler] Received profiling request (${prompt.length} chars)`);
+
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${OPENROUTER_KEY}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:5173',
+                'X-Title': 'Astrabi Analytics — Dataset Profiler'
+            },
+            body: JSON.stringify({
+                model: 'google/gemini-2.0-flash-001',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are an expert Data Architect. You analyze dataset metadata (column names, types, statistics) to identify the industry domain and semantic meaning of each column. You ALWAYS respond with valid JSON only — no markdown fences, no explanations, no extra text. The data you receive is MASKED statistical profiles only — no raw PII is ever sent to you.'
+                    },
+                    {
+                        role: 'user',
+                        content: prompt
+                    }
+                ],
+                max_tokens: 4000,
+                temperature: 0.1 // Low temperature for consistent, deterministic output
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text().catch(() => 'Unknown error');
+            console.error('[AI Profiler] LLM API error:', response.status, errorText);
+            return res.status(response.status).json({
+                success: false,
+                error: `LLM service error (${response.status})`
+            });
+        }
+
+        const data = await response.json();
+
+        // Extract the LLM's text response
+        const llmText = data?.choices?.[0]?.message?.content || '';
+        console.log(`[AI Profiler] LLM response received (${llmText.length} chars)`);
+
+        // Try to parse the JSON from the LLM response
+        try {
+            // Strip markdown fences if the LLM wrapped it (despite our instructions)
+            const cleanJson = llmText.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '').trim();
+            const parsed = JSON.parse(cleanJson);
+            console.log(`[AI Profiler] ✅ Successfully parsed domain: ${parsed.domain || 'unknown'}`);
+            res.json(parsed);
+        } catch (parseErr) {
+            console.error('[AI Profiler] Failed to parse LLM response as JSON:', parseErr.message);
+            console.error('[AI Profiler] Raw response:', llmText.substring(0, 500));
+            // Return the raw text so the frontend can attempt its own parsing
+            res.json({ rawText: llmText, parseError: true });
+        }
+
+    } catch (error) {
+        console.error('[AI Profiler] Request failed:', error);
+        res.status(500).json({ success: false, error: 'Dataset profiling failed' });
+    }
+});
+
+// ═══════════════════════════════════════════
+// CLEANUP: Stale connection reaper (Fix #17)
+// ═══════════════════════════════════════════
+setInterval(() => {
+    const MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
+    const now = Date.now();
+    for (const [id, conn] of connections) {
+        const age = now - parseInt(id.replace('pg_', ''));
+        if (age > MAX_AGE_MS) {
+            console.log(`[Cleanup] Closing stale connection ${id}`);
+            if (conn.type === 'mssql' && conn.pool) conn.pool.close().catch(() => { });
+            if (conn.type === 'raw' && conn.rawConn) try { conn.rawConn.close(); } catch { }
+            if (conn.type === 'pg' && conn.pool) conn.pool.end().catch(() => { });
+            connections.delete(id);
+        }
+    }
+}, 5 * 60 * 1000); // Run every 5 minutes
+
 // Health check
 app.get('/api/health', (req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+    // Fix #15: Warn about missing FRONTEND_URL
+    const warnings = [];
+    if (!process.env.FRONTEND_URL) {
+        warnings.push('FRONTEND_URL not set — CORS will only allow localhost origins');
+    }
+    if (!process.env.OPENROUTER_API_KEY) {
+        warnings.push('OPENROUTER_API_KEY not set — LLM proxy will not work');
+    }
+    res.json({
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        activeConnections: connections.size,
+        warnings: warnings.length > 0 ? warnings : undefined
+    });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// AI SEMANTIC PROFILING ENDPOINT
+// Proxies AI profiling requests to OpenRouter LLM API
+// ═══════════════════════════════════════════════════════════════════
+
+const aiProfileLimiter = rateLimit({
+    windowMs: 5 * 60 * 1000,   // 5 min window
+    max: 20,                    // 20 requests per window
+    message: { error: 'AI profiling rate limit exceeded. Please wait.' }
+});
+
+app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
+    try {
+        const apiKey = process.env.OPENROUTER_API_KEY;
+        if (!apiKey) {
+            console.error('[AI Profile] OPENROUTER_API_KEY not set');
+            return res.status(500).json({ error: 'LLM API key not configured. Set OPENROUTER_API_KEY in backend/.env' });
+        }
+
+        const { prompt } = req.body;
+        if (!prompt || typeof prompt !== 'string') {
+            return res.status(400).json({ error: 'Missing or invalid prompt' });
+        }
+
+        console.log(`[AI Profile] Sending prompt (${prompt.length} chars) to OpenRouter...`);
+
+        // Sanitize prompt: Node.js 20 undici fetch rejects non-ASCII in ByteString
+        const sanitizedPrompt = prompt.replace(/[^\x00-\x7F]/g, c => {
+            // Replace common Unicode chars with ASCII equivalents
+            if (c === '\u2014' || c === '\u2013') return '-';  // em-dash, en-dash
+            if (c === '\u201C' || c === '\u201D') return '"';  // smart quotes
+            if (c === '\u2018' || c === '\u2019') return "'";  // smart single quotes
+            if (c === '\u2026') return '...';                  // ellipsis
+            return '';  // strip other non-ASCII
+        });
+
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${apiKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:3000',
+                'X-Title': 'Astrabi Analytics'
+            },
+            body: JSON.stringify({
+                model: 'google/gemini-2.0-flash-001',
+                messages: [
+                    {
+                        role: 'system',
+                        content: 'You are an expert Data Architect. Respond with ONLY valid JSON - no markdown fences, no explanations, no commentary. Just the raw JSON object.'
+                    },
+                    {
+                        role: 'user',
+                        content: sanitizedPrompt
+                    }
+                ],
+                temperature: 0.1,
+                max_tokens: 4096
+            })
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[AI Profile] OpenRouter error ${response.status}:`, errorText);
+            return res.status(502).json({ error: `LLM API returned ${response.status}`, details: errorText });
+        }
+
+        const data = await response.json();
+        const content = data?.choices?.[0]?.message?.content;
+
+        if (!content) {
+            console.warn('[AI Profile] Empty LLM response');
+            return res.status(502).json({ error: 'Empty response from LLM' });
+        }
+
+        // Try to parse JSON from the response (strip markdown fences if present)
+        let jsonStr = content.trim();
+        // Remove ```json ... ``` wrapper if present
+        const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (fenceMatch) {
+            jsonStr = fenceMatch[1].trim();
+        }
+
+        try {
+            const parsed = JSON.parse(jsonStr);
+            console.log(`[AI Profile] ✅ Successfully parsed LLM response (domain: ${parsed.domain || 'unknown'})`);
+            return res.json(parsed);
+        } catch (parseErr) {
+            console.warn('[AI Profile] Failed to parse LLM JSON, returning raw text');
+            return res.json({ rawText: jsonStr, parseError: true });
+        }
+
+    } catch (error) {
+        console.error('[AI Profile] Unexpected error:', error.message);
+        res.status(500).json({ error: 'Internal profiling error', details: error.message });
+    }
 });
 
 app.listen(PORT, () => {

@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Secrets & sensitive data
+.env
+backend/.env
+backend/users.json

@@ -9,18 +9,18 @@ import { FormattingConfig, QueryConfig } from '../types';
 
 export const PALETTES = {
     // Discrete Multi-Color Palettes (for categorical/dimension analysis)
-    vibrant: ['#4f46e5', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#a855f7', '#ec4899', '#14b8a6'],
-    electric: ['#6366f1', '#06b6d4', '#22c55e', '#f97316', '#e11d48', '#8b5cf6', '#0891b2', '#d946ef'],
-    neon: ['#00d4ff', '#00ff88', '#ff6b6b', '#ffd93d', '#c084fc', '#fb7185', '#2dd4bf', '#a3e635'],
-    sunset: ['#ff6b35', '#ff8c42', '#ffb347', '#ffd166', '#ef476f', '#f72585', '#b5179e', '#7209b7'],
-    ocean: ['#0077b6', '#00b4d8', '#48cae4', '#90e0ef', '#023e8a', '#0096c7', '#ade8f4', '#caf0f8'],
+    vibrant: ['#4338ca', '#0284c7', '#059669', '#d97706', '#dc2626', '#9333ea', '#db2777', '#0d9488'],
+    electric: ['#4f46e5', '#0891b2', '#16a34a', '#ea580c', '#be123c', '#7c3aed', '#0e7490', '#c026d3'],
+    neon: ['#00b4d8', '#00cc6a', '#e63946', '#e6b800', '#a855f7', '#e11d48', '#14b8a6', '#84cc16'],
+    sunset: ['#e63300', '#e6590a', '#e68a00', '#d4a012', '#c0392b', '#d63384', '#9b2226', '#6a0572'],
+    ocean: ['#005f8c', '#0088b2', '#2da8d4', '#60c0dd', '#003d6b', '#007bad', '#74c9e0', '#9ddcf0'],
 
-    // Sequential Single-Hue Palettes (for measure/time-series analysis)
-    blueSequential: ['#dbeafe', '#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8', '#1e40af'],
-    greenSequential: ['#d1fae5', '#a7f3d0', '#6ee7b7', '#34d399', '#10b981', '#059669', '#047857', '#065f46'],
-    purpleSequential: ['#ede9fe', '#ddd6fe', '#c4b5fd', '#a78bfa', '#8b5cf6', '#7c3aed', '#6d28d9', '#5b21b6'],
-    orangeSequential: ['#fed7aa', '#fdba74', '#fb923c', '#f97316', '#ea580c', '#c2410c', '#9a3412', '#7c2d12'],
-    tealSequential: ['#ccfbf1', '#99f6e4', '#5eead4', '#2dd4bf', '#14b8a6', '#0d9488', '#0f766e', '#115e59']
+    // Sequential Single-Hue Palettes (richer saturation — no washed-out tones)
+    blueSequential: ['#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8', '#1e40af', '#1e3a8a', '#172554'],
+    greenSequential: ['#6ee7b7', '#34d399', '#10b981', '#059669', '#047857', '#065f46', '#064e3b', '#022c22'],
+    purpleSequential: ['#c4b5fd', '#a78bfa', '#8b5cf6', '#7c3aed', '#6d28d9', '#5b21b6', '#4c1d95', '#3b0764'],
+    orangeSequential: ['#fdba74', '#fb923c', '#f97316', '#ea580c', '#c2410c', '#9a3412', '#7c2d12', '#431407'],
+    tealSequential: ['#5eead4', '#2dd4bf', '#14b8a6', '#0d9488', '#0f766e', '#115e59', '#134e4a', '#042f2e']
 };
 
 export type PaletteName = keyof typeof PALETTES;

@@ -52,7 +52,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
             {children}
             {visible && (
                 <span
-                    className={`absolute z-[100] ${positionClasses[position]} pointer-events-none animate-in fade-in duration-150`}
+                    className={`absolute z-[9999] ${positionClasses[position]} pointer-events-none animate-in fade-in duration-150`}
                     style={{ maxWidth }}
                 >
                     <span className="block bg-slate-800 text-white text-xs font-medium px-3 py-2 rounded-lg shadow-xl border border-white/10 leading-relaxed whitespace-normal">

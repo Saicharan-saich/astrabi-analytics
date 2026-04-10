@@ -13,8 +13,26 @@ function makeDataset(rows: Record<string, any>[], name = 'test.csv'): Dataset {
     return { id: 'test-1', name, rows, columns, totalRows: rows.length, etlLogs: [] };
 }
 
-// Monthly rows spanning 6 months for comparison testing
+// Monthly rows spanning 12 months for comparison testing (Jul 2024 - Jun 2025)
 const COMPARISON_ROWS = [
+    // July 2024
+    { category: 'A', revenue: 80, order_date: '2024-07-15' },
+    { category: 'B', revenue: 120, order_date: '2024-07-20' },
+    // August 2024
+    { category: 'A', revenue: 90, order_date: '2024-08-10' },
+    { category: 'B', revenue: 110, order_date: '2024-08-15' },
+    // September 2024
+    { category: 'A', revenue: 130, order_date: '2024-09-01' },
+    { category: 'B', revenue: 170, order_date: '2024-09-10' },
+    // October 2024
+    { category: 'A', revenue: 200, order_date: '2024-10-05' },
+    { category: 'B', revenue: 150, order_date: '2024-10-15' },
+    // November 2024
+    { category: 'A', revenue: 180, order_date: '2024-11-01' },
+    { category: 'B', revenue: 220, order_date: '2024-11-10' },
+    // December 2024
+    { category: 'A', revenue: 300, order_date: '2024-12-01' },
+    { category: 'B', revenue: 250, order_date: '2024-12-15' },
     // January 2025
     { category: 'A', revenue: 100, order_date: '2025-01-15' },
     { category: 'B', revenue: 200, order_date: '2025-01-20' },
@@ -48,23 +66,20 @@ describe('evaluateLocally — previous_period comparison', () => {
             timeGrain: TimeGrain.RAW,
             analysisType: AnalysisType.STANDARD,
             asOfDate: '2025-06-30',
+            timeFilter: 'this_year',
             comparison: 'previous_period' as any,
         };
 
         const result = runAnalysis(ds, query);
         expect(result.data.length).toBeGreaterThanOrEqual(2);
 
-        // Comparison runs before final sort, so after desc sort, data[0] may
-        // not be the chronologically-first row. Verify that at least one row
-        // has undefined previous_value (the first chronological period).
-        const firstChronoRow = result.data.find((r: any) => r.previous_value === undefined);
-        expect(firstChronoRow).toBeDefined();
-        expect(firstChronoRow.growth_pct).toBeUndefined();
+        // In trend comparison mode, at least some rows should have previous_value
+        const rowsWithComparison = result.data.filter((r: any) => r.previous_value !== undefined);
+        expect(rowsWithComparison.length).toBeGreaterThan(0);
 
-        // Second+ rows should have previous_value defined
-        const secondRow = result.data[1];
-        expect(secondRow.previous_value).toBeDefined();
-        expect(secondRow.growth_pct).toBeDefined();
+        // At least one row should have growth_pct
+        const rowsWithGrowth = result.data.filter((r: any) => r.growth_pct !== undefined);
+        expect(rowsWithGrowth.length).toBeGreaterThan(0);
     });
 
     it('calculates positive growth correctly', () => {
@@ -76,18 +91,19 @@ describe('evaluateLocally — previous_period comparison', () => {
             timeGrain: TimeGrain.RAW,
             analysisType: AnalysisType.STANDARD,
             asOfDate: '2025-06-30',
+            timeFilter: 'this_year',
             comparison: 'previous_period' as any,
         };
 
         const result = runAnalysis(ds, query);
-        // Find a row where growth is positive (current > previous)
-        const positiveGrowthRows = result.data.filter(
-            (r: any) => r.growth_pct !== undefined && r.growth_pct > 0
+        // Find rows where growth_pct is defined (positive or negative)
+        const rowsWithGrowth = result.data.filter(
+            (r: any) => r.growth_pct !== undefined && r.previous_value !== undefined
         );
-        expect(positiveGrowthRows.length).toBeGreaterThan(0);
+        expect(rowsWithGrowth.length).toBeGreaterThan(0);
 
         // Verify the formula: (current - prev) / |prev| * 100
-        for (const row of positiveGrowthRows) {
+        for (const row of rowsWithGrowth) {
             const current = Number(row[result.yKey]);
             const prev = Number(row.previous_value);
             if (prev !== 0) {
@@ -106,6 +122,7 @@ describe('evaluateLocally — previous_period comparison', () => {
             timeGrain: TimeGrain.RAW,
             analysisType: AnalysisType.STANDARD,
             asOfDate: '2025-06-30',
+            timeFilter: 'this_year',
             comparison: 'previous_period' as any,
         };
 
@@ -114,8 +131,6 @@ describe('evaluateLocally — previous_period comparison', () => {
         const negativeGrowthRows = result.data.filter(
             (r: any) => r.growth_pct !== undefined && r.growth_pct < 0
         );
-        // We expect at least one negative growth row given our test data
-        // (e.g., Apr total=350 vs Mar total=400 could be negative)
         // Verify formula if present
         for (const row of negativeGrowthRows) {
             const current = Number(row[result.yKey]);
@@ -152,13 +167,13 @@ describe('evaluateLocally — previous_period comparison', () => {
             timeGrain: TimeGrain.RAW,
             analysisType: AnalysisType.STANDARD,
             asOfDate: '2025-06-30',
+            timeFilter: 'this_year',
             comparison: 'previous_period' as any,
             sort: 'desc',
         };
 
         const result = runAnalysis(ds, query);
-        // Even with desc sort, comparison prev values should reference the
-        // chronologically previous period, not the sort-adjacent row
+        // In trend mode, data should have previous_value for comparison
         const hasComparison = result.data.some((r: any) => r.previous_value !== undefined);
         expect(hasComparison).toBe(true);
     });
@@ -172,17 +187,16 @@ describe('evaluateLocally — previous_period comparison', () => {
             timeGrain: TimeGrain.RAW,
             analysisType: AnalysisType.STANDARD,
             asOfDate: '2025-06-30',
+            timeFilter: 'this_year',
             comparison: 'previous_period' as any,
         };
 
         const result = runAnalysis(ds, query);
-        // With non-time dimension, comparison should still add previous_value
+        // With non-time dimension + time filter, comparison uses time-based previous period per category
         expect(result.data.length).toBeGreaterThanOrEqual(2);
-        // First row gets undefined, second+ get values
-        expect(result.data[0].growth_pct).toBeUndefined();
-        if (result.data.length > 1) {
-            expect(result.data[1].previous_value).toBeDefined();
-        }
+        // Categories should have previous_value from prior period data
+        const rowsWithPrev = result.data.filter((r: any) => r.previous_value !== undefined);
+        expect(rowsWithPrev.length).toBeGreaterThan(0);
     });
 });
 

@@ -126,11 +126,13 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
         setActiveResultTab('chart');
 
         try {
+            console.log('[NLQ DEBUG] handleParseAndRun called with query:', query);
             // ─── ALWAYS RUN NLQ PARSER FIRST ─────────────────────
             // The parser maps user words directly to dataset columns
             // using synonym expansion + fuzzy matching. This handles
             // ANY freeform question like "show me region wise sales".
             const parsed = parseNLQ(query, dataset);
+            console.log('[NLQ DEBUG] parseNLQ result:', JSON.stringify({ metric: parsed.metric, dimension: parsed.dimension, filters: parsed.filters, dateFilters: parsed.dateFilters, tableCalculations: parsed.tableCalculations, confidence: parsed.confidence }, null, 2));
             setParseResult(parsed);
 
             // Apply detected table calculations to formatting
@@ -166,6 +168,8 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                 questionId: 'nlq_generated_' + Date.now(),
                 questionLabel: query,
                 asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || new Date().toISOString().split('T')[0],
+                ...(parsed.secondaryMetrics && parsed.secondaryMetrics.length > 0 ? { secondaryMetrics: parsed.secondaryMetrics, axisMode: 'auto' as const } : {}),
+                ...(parsed.tableCalculations && parsed.tableCalculations.length > 0 ? { tableCalculations: parsed.tableCalculations } : {}),
             };
 
             // ─── COMPARISON: Dual-period analysis ─────────────────
@@ -207,7 +211,16 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                 }
             } else {
                 // ─── STANDARD: Single analysis ────────────────────────
-                const res = runAnalysis(dataset, config);
+                // For dimension-based comparisons (e.g., state=[Arizona, Alabama] + pct_change),
+                // strip tableCalculations so the engine does a plain group-by aggregation.
+                // We compute the % difference ourselves from the aggregated result.
+                const isDimComparison = parsed.tableCalculations?.includes('pct_change') &&
+                    Object.values(parsed.filters).some((vals: any) => vals.length > 1);
+                const runConfig = isDimComparison
+                    ? { ...config, tableCalculations: undefined }
+                    : config;
+
+                const res = runAnalysis(dataset, runConfig);
 
                 if (res.error) {
                     setError(res.error);
@@ -217,8 +230,29 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                         setShowSuggestions(true);
                     }
                 } else if (res.data && res.data.length > 0) {
-                    // Auto-switch to pie chart when percent_of_total calculation is detected
-                    if (parsed.tableCalculations && parsed.tableCalculations.some((tc: any) => tc.calc === 'percent_of_total')) {
+                    // For dimension comparisons, compute the % difference between values
+                    if (isDimComparison && res.data.length >= 2) {
+                        const metricKey = res.yKey || parsed.metric || 'value';
+                        const val1 = Number(res.data[0]?.[metricKey]) || 0;
+                        const val2 = Number(res.data[1]?.[metricKey]) || 0;
+                        const diff = val2 - val1;
+                        const pct = val1 !== 0 ? ((val2 - val1) / Math.abs(val1)) * 100 : (val2 > 0 ? 100 : 0);
+                        const dim1 = String(res.data[0]?.[res.xKey || parsed.dimension] || 'A');
+                        const dim2 = String(res.data[1]?.[res.xKey || parsed.dimension] || 'B');
+
+                        // Add growth_pct to second row so chart plugin renders the badge
+                        const enrichedData = res.data.map((row: any, i: number) => {
+                            if (i === 1) return { ...row, growth_pct: pct };
+                            return row;
+                        });
+
+                        setAnalysisResult({
+                            ...res,
+                            data: enrichedData,
+                            growth: { diff, pct },
+                            insight: `${dim1}: ${val1.toLocaleString(undefined, { maximumFractionDigits: 2 })} | ${dim2}: ${val2.toLocaleString(undefined, { maximumFractionDigits: 2 })} | Difference: ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`,
+                        });
+                    } else if (parsed.tableCalculations && parsed.tableCalculations.some((tc: any) => tc.calc === 'percent_of_total')) {
                         setAnalysisResult({ ...res, vis: 'pie' });
                     } else {
                         setAnalysisResult(res);
@@ -233,6 +267,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                 }
             }
         } catch (err: any) {
+            console.error('[NLQ ERROR] handleParseAndRun crashed:', err);
             setError(err.message || "Failed to parse query.");
             // On crash, try to show suggestions
             try {
@@ -282,29 +317,38 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                 {/* Collapsible Input + Suggestions */}
                 <div className={`shrink-0 overflow-hidden transition-all duration-300 ease-in-out ${isInputCollapsed ? 'max-h-0' : 'max-h-[400px]'}`}>
                     {/* Input Area */}
-                    <Tooltip text="Type a natural-language question like 'revenue by product last 30 days' or 'top 5 regions by profit'. Press Enter or click Run." position="bottom">
-                        <div className="relative group">
-                            <div className="absolute inset-0 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-xl blur opacity-25 group-hover:opacity-40 transition-opacity pointer-events-none" />
-                            <div className={`relative bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/10 rounded-xl p-2 flex items-center shadow-lg dark:shadow-2xl transition-all duration-300 ${query.trim() ? 'nlq-input-active' : 'hover:border-indigo-500/30'}`}>
-                                <Search className="w-5 h-5 text-gray-400 dark:text-slate-400 ml-3" />
-                                <input
-                                    className="flex-1 bg-transparent border-none outline-none text-gray-900 dark:text-white px-4 py-3 placeholder:text-gray-400 dark:placeholder:text-slate-500 font-medium"
-                                    placeholder="e.g. Total sales by region for last 7 days..."
-                                    value={query}
-                                    onChange={(e) => setQuery(e.target.value)}
-                                    onKeyDown={handleKeyDown}
-                                />
+                    <div className="relative group">
+                        <div className="absolute inset-0 bg-gradient-to-r from-indigo-500/30 to-purple-500/30 rounded-2xl blur-lg opacity-0 group-hover:opacity-40 transition-opacity pointer-events-none" />
+                        <div className={`relative bg-white dark:bg-slate-800 border-2 rounded-2xl shadow-lg dark:shadow-2xl transition-all duration-300 ${query.trim() ? 'border-indigo-400/50 dark:border-indigo-500/40 nlq-input-active' : 'border-gray-200 dark:border-white/10 hover:border-indigo-400/30 dark:hover:border-indigo-500/30'}`}>
+                            <textarea
+                                className="w-full bg-transparent border-none outline-none text-gray-900 dark:text-white px-5 pt-4 pb-2 placeholder:text-gray-400 dark:placeholder:text-slate-500 font-medium resize-none min-h-[56px] max-h-[160px]"
+                                placeholder="Ask a question about your data... e.g. &quot;Total sales by region for last 7 days&quot;"
+                                value={query}
+                                onChange={(e) => setQuery(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                        e.preventDefault();
+                                        handleParseAndRun();
+                                    }
+                                }}
+                                rows={2}
+                            />
+                            <div className="flex items-center justify-between px-4 pb-3">
+                                <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
+                                    <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
+                                    <span>Deterministic parsing &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[10px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
+                                </div>
                                 <button
                                     onClick={handleParseAndRun}
                                     disabled={!query.trim() || isParsing}
-                                    className="btn-premium bg-indigo-600 hover:bg-indigo-500 text-white px-6 py-2.5 rounded-lg font-bold flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-md hover:shadow-lg active:scale-95"
                                 >
                                     {isParsing ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
-                                    Run
+                                    Send
                                 </button>
                             </div>
                         </div>
-                    </Tooltip>
+                    </div>
 
                     {/* Empty State / Suggestions */}
                     {!analysisResult && !parseResult && !error && !showSuggestions && (
@@ -535,15 +579,15 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                                         {/* X/Y Axis Toggles */}
                                         {activeResultTab === 'chart' && (
                                             <div className="flex items-center gap-1.5 ml-2">
-                                                <span className="text-xs text-slate-500 font-semibold mr-0.5">Axis:</span>
+                                                <span className="text-xs text-white font-bold mr-0.5">Axis:</span>
                                                 <button
                                                     onClick={() => setFormatting(f => ({ ...f, showXAxis: !f.showXAxis }))}
-                                                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${formatting.showXAxis ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-slate-700/50 text-slate-500 border-white/10 hover:bg-slate-700'}`}
+                                                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${formatting.showXAxis ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-slate-700/50 text-white/80 border-white/20 hover:bg-slate-700'}`}
                                                     title="Toggle X-Axis"
                                                 >X</button>
                                                 <button
                                                     onClick={() => setFormatting(f => ({ ...f, showYAxis: !f.showYAxis }))}
-                                                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${formatting.showYAxis ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-slate-700/50 text-slate-500 border-white/10 hover:bg-slate-700'}`}
+                                                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${formatting.showYAxis ? 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30' : 'bg-slate-700/50 text-white/80 border-white/20 hover:bg-slate-700'}`}
                                                     title="Toggle Y-Axis"
                                                 >Y</button>
                                             </div>

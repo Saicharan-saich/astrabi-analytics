@@ -23,6 +23,10 @@ export interface ETLLog {
   rowsAfter?: number;
   affectedColumns?: string[];
   affectedRows?: number;
+  /** Sample rows that were removed (for duplicate/empty row removal) */
+  removedRowSamples?: Record<string, any>[];
+  /** Before/after value samples for column transforms */
+  transformSamples?: { column: string; before: any; after: any }[];
 }
 
 export interface TimeContext {
@@ -33,15 +37,71 @@ export interface TimeContext {
   dateColumnMaxDates: Record<string, string>; // Per-column max dates: { "order_date": "2018-12-31", "ship_date": "2019-01-05" }
 }
 
+export interface DimDateRow {
+  date_key: string;       // YYYY-MM-DD
+  year: number;
+  quarter: number;
+  quarter_label: string;  // "Q4 2017"
+  month: number;
+  month_name: string;     // "December"
+  month_short: string;    // "Dec"
+  week_of_year: number;
+  day_of_month: number;
+  day_of_week: number;    // Mon=1 .. Sun=7 (ISO)
+  day_name: string;       // "Monday"
+  is_weekend: boolean;
+  fiscal_year: number;    // April start
+  fiscal_quarter: number;
+}
+
+// ─── AI Semantic Profiling Types ─────────────────────────────────
+export interface ColumnSemantic {
+  role: ColumnType;
+  aggregation: 'SUM' | 'AVG' | 'COUNT' | 'COUNT_DISTINCT' | 'MIN' | 'MAX' | 'NONE';
+  format: 'currency_usd' | 'currency_eur' | 'percent' | 'raw' | 'count' | 'date_iso';
+  humanLabel: string;
+  description: string;
+  semanticRole?: string;         // Canonical role: "primary_metric", "primary_dimension", "primary_date", etc.
+  isHidden: boolean;             // Auto-hide junk/system columns
+}
+
+export interface MaskedColumnProfile {
+  name: string;
+  inferredType: 'string' | 'number' | 'date' | 'boolean';
+  nullRate: number;              // 0.02 = 2% null
+  distinctCount: number;
+  totalRows: number;
+  numericStats?: { min: number; max: number; mean: number; median: number };
+  dateRange?: { min: string; max: string };
+  patternHint?: string;          // "email", "uuid", "phone", "ssn_format", "currency", "date_iso", "url", etc.
+  topPatterns?: string[];        // ["3-letter code", "Full sentence", etc.]
+  currencyDetected?: boolean;
+  percentageDetected?: boolean;
+}
+
+export interface DatasetDomainProfile {
+  domain: string;                // "Sales", "HR", "Finance", "Healthcare", etc.
+  subDomain?: string;            // "E-Commerce", "Payroll", "SaaS", etc.
+  summary: string;               // "This dataset contains employee payroll records..."
+  confidence: number;            // 0-1 confidence score
+  themeColor?: string;           // Domain-specific accent color
+  columnSemantics: Record<string, ColumnSemantic>;
+  suggestedQuestionCategories?: string[];
+  detectedAt: number;            // Timestamp
+}
+
 export interface Dataset {
   id: string;
   name: string;
   rows: Record<string, any>[];
+  rawRows?: Record<string, any>[];
   columns: ColumnDefinition[];
   totalRows: number;
   etlLogs: ETLLog[];
   timeContext?: TimeContext;
+  dimDate?: DimDateRow[];
   sourceSchema?: SourceSchema;
+  domainProfile?: DatasetDomainProfile;  // AI-generated domain context
 }
 
 export interface SourceSchema {
@@ -116,6 +176,7 @@ export type FormattingConfig = {
   showAxis?: boolean; // Default to false (hidden) — legacy combined toggle
   showXAxis?: boolean; // Individual X-axis toggle (overrides showAxis when set)
   showYAxis?: boolean; // Individual Y-axis toggle (overrides showAxis when set)
+  yAxisFormat?: 'compact' | 'full' | 'short_currency'; // Y-axis tick format: compact ($2.5K), full ($2,500.00), short_currency ($2.5K)
 };
 
 export interface ChartConfig {
@@ -165,8 +226,15 @@ export interface QueryConfig {
   chart?: ChartConfig;
   asOfDate?: string; // ISO Date YYYY-MM-DD - Universal Time Anchor
   includeZeroValues?: boolean; // For finding "unsold" items
-  comparison?: 'none' | 'previous_period';
+  comparison?: 'none' | 'previous_period' | 'same_period_last_year' | 'same_period_last_n';
+  comparisonMode?: 'total' | 'trend'; // total = side-by-side bars, trend = dual-line overlay
+  comparisonGrain?: 'day' | 'week' | 'month' | 'quarter' | 'year'; // grain for trend mode
+  comparisonOffset?: number; // For same_period_last_n: how many grains back (default 1)
   chartStyle?: 'vertical' | 'horizontal' | 'stacked' | 'normalized'; // Style variations for Bar/Area/Line
+  secondaryMetrics?: string[]; // Additional metrics to overlay (e.g., profit alongside revenue)
+  axisMode?: 'auto' | 'single' | 'dual' | 'blended'; // How to handle Y axes for multi-metric
+  secondaryMetricVisuals?: Record<string, string>; // Per-metric visual type: { 'quantity': 'bar', 'discount': 'area' }
+  tableCalculations?: string[]; // Table calculations to apply post-aggregation (e.g., pct_change, diff_from_prev)
 
   // Deterministic Engine
   questionId?: string;
@@ -186,11 +254,14 @@ export interface AnalysisResult {
   kpi?: number | string; // Optional override for the main KPI number
   vis?: ChartConfig['type']; // Recommended visualization
   growth?: { diff: number; pct: number }; // Metadata for toggle
+  secondaryYKeys?: string[]; // Additional metric keys in data rows (e.g., ['profit', 'quantity'])
+  axisMode?: 'single' | 'dual' | 'blended'; // Recommended axis mode for multi-metric
   validation?: {
     pre: { status: 'valid' | 'warning' | 'error'; summary: string; checks: { name: string; status: 'pass' | 'warn' | 'fail'; message: string }[] };
     sql: { status: 'valid' | 'warning' | 'error'; summary: string; checks: { name: string; status: 'pass' | 'warn' | 'fail'; message: string }[] };
     post: { status: 'valid' | 'warning' | 'error'; summary: string; checks: { name: string; status: 'pass' | 'warn' | 'fail'; message: string }[] };
   };
+  queryConfig?: any; // Fix #8: Original query config for dashboard re-evaluation
 }
 
 export interface DashboardItem {
@@ -198,6 +269,7 @@ export interface DashboardItem {
   title: string;
   result: AnalysisResult;
   width: 'full' | 'half';
+  pinnedAt?: number; // Fix #8: Timestamp of last pin/refresh
 }
 
 export interface Connector {
@@ -224,6 +296,8 @@ export interface QuestionTemplate {
   evalType?: EvalType;
   // Is this a custom (user-created) question?
   isCustom?: boolean;
+  // Domain tag — "Sales", "HR", "Finance", "Healthcare", etc. (undefined = universal/Sales)
+  domain?: string;
 }
 
 export interface ColumnProfile {
@@ -263,6 +337,7 @@ export enum Tab {
   SCHEMA = 'SCHEMA',
   CONNECTORS = 'CONNECTORS',
   NLQ = 'NLQ',
+  AI_SQL = 'AI_SQL',
   CUSTOM_QUESTIONS = 'CUSTOM_QUESTIONS'
 }
 

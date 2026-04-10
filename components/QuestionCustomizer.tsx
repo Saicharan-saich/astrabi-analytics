@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter as FilterIcon, X } from 'lucide-react';
+import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter as FilterIcon, X, Columns3 } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
 import { FilterItem } from './FilterItem';
 import { DateFilterItem } from './DateFilterItem';
@@ -20,6 +20,11 @@ interface QuestionCustomizerProps {
     onAnchorColumnChange?: (col: string) => void;
     questionLabel: string;
     allowedControls?: string[];
+    // Column override props
+    questionReq?: string[];               // Required roles for this question (e.g. ['revenue', 'product_name', 'order_date'])
+    columnMapping?: Record<string, string>; // Auto-resolved role → column mapping
+    semanticOverrides?: Record<string, string>; // Current user overrides
+    onColumnOverrideChange?: (role: string, column: string) => void;
 }
 
 interface DimensionFilter {
@@ -75,7 +80,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
     initialMetric = '',
     initialAggregation = 'SUM',
     initialDimension = '',
-    initialTimeFilter = 'all_time',
+    initialTimeFilter = '',
     initialLimit = 0,
     initialSort = 'desc',
     asOfDate,
@@ -83,14 +88,20 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
     anchorColumn,
     onAnchorColumnChange,
     questionLabel,
-    allowedControls = ['metric', 'aggregation', 'dimension', 'time', 'sort', 'limit', 'filters']
+    allowedControls = ['metric', 'aggregation', 'dimension', 'time', 'sort', 'limit', 'filters'],
+    questionReq,
+    columnMapping,
+    semanticOverrides: parentOverrides,
+    onColumnOverrideChange
 }) => {
+    const [showColumnOverrides, setShowColumnOverrides] = useState(false);
     const [metric, setMetric] = useState<string>(initialMetric);
     const [aggregation, setAggregation] = useState<string>(initialAggregation);
     const [dimension, setDimension] = useState<string>(initialDimension);
     const [timeFilter, setTimeFilter] = useState(initialTimeFilter);
     const [sort, setSort] = useState<'desc' | 'asc' | 'oldest' | 'newest'>(initialSort as any || 'desc');
     const [limit, setLimit] = useState<number>(initialLimit);
+    const [maWindow, setMaWindow] = useState<number>(7); // Moving average window size
     const [filters, setFilters] = useState<Filter[]>([]);
     const [nextFilterId, setNextFilterId] = useState(1);
 
@@ -237,7 +248,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
         });
 
 
-        console.log('[QC handleRun] FIRING:', { metric, aggregation, dimension, timeFilter, sort, limit });
+        console.log('[QC handleRun] FIRING:', { metric, aggregation, dimension, timeFilter, sort, limit, maWindow });
         onRunRef.current({
             metric,
             aggregation,
@@ -247,7 +258,8 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
             measureFilters,
             dateFilters,
             sort,
-            limit
+            limit,
+            maWindow
         });
     };
 
@@ -262,13 +274,13 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
             const timer = setTimeout(() => handleRun(), 400);
             return () => clearTimeout(timer);
         }
-    }, [metric, aggregation, dimension, timeFilter, filters, sort, limit, runCounter]);
+    }, [metric, aggregation, dimension, timeFilter, filters, sort, limit, maWindow, runCounter]);
 
     // Filter Handlers
     const addFilter = (type: 'dimension' | 'measure' | 'date', column?: string, grain?: string) => {
         if (type === 'date') setFilters([...filters, { id: nextFilterId, type: 'date', column: column || dateColumns[0] || '', timeGrain: (grain as any) || 'year', values: [] }]);
-        else if (type === 'dimension') setFilters([...filters, { id: nextFilterId, type: 'dimension', column: '', value: '' }]);
-        else setFilters([...filters, { id: nextFilterId, type: 'measure', column: '', operator: '>', value: 0 }]);
+        else if (type === 'dimension') setFilters([...filters, { id: nextFilterId, type: 'dimension', column: dims.length ? dims[0] : '', value: [] }]);
+        else setFilters([...filters, { id: nextFilterId, type: 'measure', column: metric || (metrics.length ? metrics[0] : ''), operator: '>', value: 0 }]);
         setNextFilterId(nextFilterId + 1);
     };
 
@@ -290,6 +302,26 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                     <div className="flex items-center justify-between flex-wrap gap-2">
                         <h2 className="text-base font-bold text-slate-800">{questionLabel}</h2>
                         <div className="flex items-center gap-2">
+                            {/* Column Override Toggle */}
+                            {questionReq && questionReq.length > 0 && onColumnOverrideChange && (
+                                <Tooltip text="Override the auto-detected columns used by this question" position="bottom">
+                                    <button
+                                        onClick={() => setShowColumnOverrides(!showColumnOverrides)}
+                                        className={`flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-lg border transition-all ${showColumnOverrides
+                                            ? 'bg-amber-50 text-amber-700 border-amber-300 shadow-sm'
+                                            : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                                            }`}
+                                    >
+                                        <Columns3 className="w-3.5 h-3.5" />
+                                        Columns
+                                        {parentOverrides && Object.keys(parentOverrides).length > 0 && (
+                                            <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-1">
+                                                {Object.keys(parentOverrides).length}
+                                            </span>
+                                        )}
+                                    </button>
+                                </Tooltip>
+                            )}
                             {/* Date Column Picker */}
                             {dataset.timeContext?.dateColumnMaxDates && Object.keys(dataset.timeContext.dateColumnMaxDates).length > 1 && (
                                 <Tooltip text="Choose which date column drives the time anchor." position="bottom">
@@ -321,8 +353,72 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                         </div>
                     </div>
 
+                    {/* Column Override Panel */}
+                    {showColumnOverrides && questionReq && columnMapping && onColumnOverrideChange && (
+                        <div className="bg-amber-50/50 border border-amber-200 rounded-lg p-2.5 animate-in slide-in-from-top-1 duration-200">
+                            <div className="flex items-center justify-between mb-2">
+                                <span className="text-[10px] uppercase font-bold text-amber-600 tracking-wider flex items-center gap-1">
+                                    <Columns3 className="w-3 h-3" /> Column Mapping Override
+                                </span>
+                                <span className="text-[10px] text-amber-500">Auto-detected → Override</span>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2">
+                                {questionReq.filter(role => role !== 'order_date').map(role => {
+                                    const autoCol = columnMapping[role] || '—';
+                                    const overrideVal = parentOverrides?.[role] || '';
+                                    const isOverridden = overrideVal && overrideVal !== autoCol;
+
+                                    // Determine compatible columns based on role type
+                                    const isMetricRole = ['revenue', 'quantity', 'cost', 'discount', 'profit', 'price', 'sales'].includes(role);
+                                    const isIdRole = ['order_id', 'customer_id'].includes(role);
+                                    const options = isMetricRole
+                                        ? dataset.columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name)
+                                        : isIdRole
+                                            ? dataset.columns.filter(c => c.type === ColumnType.ID || c.type === ColumnType.DIMENSION).map(c => c.name)
+                                            : dataset.columns.filter(c => c.type === ColumnType.DIMENSION || c.type === ColumnType.ID).map(c => c.name);
+
+                                    const roleLabel = role.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
+
+                                    return (
+                                        <div key={role} className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 border transition-all ${isOverridden
+                                            ? 'bg-amber-100 border-amber-300'
+                                            : 'bg-white border-slate-200'
+                                            }`}>
+                                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider whitespace-nowrap">{roleLabel}</span>
+                                            <div className="relative">
+                                                <select
+                                                    value={overrideVal || autoCol}
+                                                    onChange={(e) => onColumnOverrideChange(role, e.target.value)}
+                                                    className={`appearance-none text-xs font-semibold rounded-md px-2 py-1 pr-6 outline-none cursor-pointer transition-colors ${isOverridden
+                                                        ? 'bg-amber-200/50 text-amber-800 border border-amber-300'
+                                                        : 'bg-slate-50 text-slate-700 border border-slate-200 hover:border-slate-300'
+                                                        }`}
+                                                >
+                                                    <option value={autoCol}>{autoCol} (auto)</option>
+                                                    {options.filter(o => o !== autoCol).map(o => (
+                                                        <option key={o} value={o}>{o}</option>
+                                                    ))}
+                                                </select>
+                                                <ChevronDown className="w-3 h-3 text-slate-400 absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                            </div>
+                                            {isOverridden && (
+                                                <button
+                                                    onClick={() => onColumnOverrideChange(role, autoCol)}
+                                                    className="text-amber-500 hover:text-amber-700 transition-colors"
+                                                    title="Reset to auto-detected column"
+                                                >
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Controls Row */}
-                    <div className="flex flex-wrap items-end gap-3 p-2 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="flex flex-wrap items-start gap-3 p-2 bg-slate-50 rounded-lg border border-slate-100">
                         {/* Metric */}
                         {allowedControls.includes('metric') && (
                             <div className="flex flex-col gap-1">
@@ -390,7 +486,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                                 <div className="flex items-center gap-2">
                                     <div className="relative">
                                         <select
-                                            value={timeFilter.startsWith('last_') && !['last_7_days', 'last_30_days', 'last_90_days', 'last_year'].includes(timeFilter) ? 'custom' : timeFilter}
+                                            value={timeFilter.startsWith('last_') && !['last_7_days', 'last_30_days', 'last_90_days', 'last_year'].includes(timeFilter) ? 'custom' : (timeFilter || '')}
                                             onChange={e => {
                                                 const val = e.target.value;
                                                 if (val === 'custom') setTimeFilter('last_10_days');
@@ -398,6 +494,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                                             }}
                                             className="appearance-none bg-white border border-slate-200 hover:border-orange-300 text-orange-900 text-sm font-semibold rounded-lg px-3 py-1.5 pr-8 transition-colors focus:ring-2 focus:ring-orange-100 focus:border-orange-400 outline-none w-[150px]"
                                         >
+                                            <option value="">Default</option>
                                             <option value="all_time">All Time</option>
                                             <option value="today">Today</option>
                                             <option value="yesterday">Yesterday</option>
@@ -436,8 +533,10 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                                                     onChange={e => {
                                                         const n = timeFilter.split('_')[1] || '7';
                                                         let unit = e.target.value;
-                                                        // Preserve calendar year mode when switching from years
-                                                        if (unit === 'years' && (timeFilter.split('_')[2] || '').includes('cyears')) unit = 'cyears';
+                                                        // Default to calendar year mode when switching TO years
+                                                        if (unit === 'years') unit = 'cyears';
+                                                        // Unless user explicitly picked trailing before
+                                                        if (unit === 'cyears' && (timeFilter.split('_')[2] || '') === 'years') unit = 'years';
                                                         setTimeFilter(`last_${n}_${unit}`);
                                                     }}
                                                     className="appearance-none bg-white border border-slate-200 text-slate-700 text-sm font-medium rounded-lg px-2 py-1.5 pr-6 outline-none"
@@ -478,12 +577,19 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                                             )}
                                         </div>
                                     )}
-                                    {/* View Toggle (Total vs Trend) */}
-                                    <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 ml-2">
+                                </div>
+                            </div>
+                        )}
+
+                        {/* View Toggle (Total vs Trend) — separate column for alignment */}
+                        {allowedControls.includes('time') && (
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">View</label>
+                                <div className="flex items-center gap-2">
+                                    <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
                                         <button
                                             onClick={() => {
                                                 setDimension('');
-                                                // Increment runCounter to force update
                                                 setRunCounter(prev => prev + 1);
                                             }}
                                             className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${!dimension || !['day', 'week', 'month', 'year'].includes(dimension)
@@ -495,17 +601,14 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                                         </button>
                                         <button
                                             onClick={() => {
-                                                // SMART DEFAULT LOGIC
                                                 let defaultGrain = 'day';
                                                 if (timeFilter.includes('year') || timeFilter === 'all_time') {
                                                     defaultGrain = 'month';
                                                 } else if (timeFilter.includes('quarter') || timeFilter.includes('90_days')) {
                                                     defaultGrain = 'week';
                                                 }
-                                                // Keep 'day' for month/week views to show detail unless user wants otherwise
-                                                if (!dimension) setSort('oldest'); // Ensure time series
+                                                if (!dimension) setSort('oldest');
                                                 setDimension(defaultGrain);
-                                                // Increment runCounter to force update
                                                 setRunCounter(prev => prev + 1);
                                             }}
                                             className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${['day', 'week', 'month', 'year'].includes(dimension)
@@ -519,14 +622,14 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
 
                                     {/* Time Grain Selector (Visible only in Trend Mode) */}
                                     {['day', 'week', 'month', 'year'].includes(dimension) && (
-                                        <div className="relative ml-2">
+                                        <div className="relative">
                                             <select
                                                 value={dimension}
                                                 onChange={(e) => {
                                                     setDimension(e.target.value);
                                                     setRunCounter(prev => prev + 1);
                                                 }}
-                                                className="appearance-none bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold rounded-lg pl-3 pr-6 py-1 outline-none hover:border-emerald-300 focus:ring-1 focus:ring-emerald-200"
+                                                className="appearance-none bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold rounded-lg pl-3 pr-6 py-1.5 outline-none hover:border-emerald-300 focus:ring-1 focus:ring-emerald-200"
                                             >
                                                 <option value="day">Day</option>
                                                 <option value="week">Week</option>
@@ -538,13 +641,42 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                                         </div>
                                     )}
                                 </div>
-                                <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
-                                    <span>
-                                        {!dimension || !['day', 'week', 'month', 'year'].includes(dimension)
-                                            ? 'Showing single total value'
-                                            : `Grouped by ${dimension || 'day'}`}
-                                    </span>
+                            </div>
+                        )}
+
+                        {/* Moving Average Window Selector — visible only for MA questions */}
+                        {questionLabel.toLowerCase().includes('moving average') && (
+                            <div className="flex flex-col gap-1">
+                                <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Window</label>
+                                <div className="relative">
+                                    <select
+                                        value={[3, 5, 7, 14, 30].includes(maWindow) ? maWindow : 'custom'}
+                                        onChange={e => {
+                                            const val = e.target.value;
+                                            if (val === 'custom') setMaWindow(10);
+                                            else setMaWindow(Number(val));
+                                        }}
+                                        className="appearance-none bg-white border border-slate-200 hover:border-violet-300 text-violet-900 text-sm font-semibold rounded-lg px-3 py-1.5 pr-8 transition-colors focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none w-[110px]"
+                                    >
+                                        <option value={3}>3-Day</option>
+                                        <option value={5}>5-Day</option>
+                                        <option value={7}>7-Day</option>
+                                        <option value={14}>14-Day</option>
+                                        <option value={30}>30-Day</option>
+                                        <option value="custom">Custom</option>
+                                    </select>
+                                    <ChevronDown className="w-3 h-3 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 </div>
+                                {(![3, 5, 7, 14, 30].includes(maWindow)) && (
+                                    <input
+                                        type="number"
+                                        min="2"
+                                        max="365"
+                                        value={maWindow}
+                                        onChange={e => setMaWindow(Math.max(2, parseInt(e.target.value) || 7))}
+                                        className="w-16 text-sm text-center text-slate-900 bg-white border border-slate-200 rounded-lg py-1.5 focus:ring-2 focus:ring-violet-100 outline-none mt-1"
+                                    />
+                                )}
                             </div>
                         )}
 
@@ -628,12 +760,14 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                                 <button className="flex items-center gap-1 text-xs font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-lg border border-indigo-200 transition-colors">
                                     <Plus className="w-3 h-3" /> Add Filter
                                 </button>
-                                <div className="absolute top-full left-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-slate-100 p-1 hidden group-hover:block z-50">
-                                    <button onClick={() => addFilter('dimension')} className="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded">Dimension Filter</button>
-                                    <button onClick={() => addFilter('measure')} className="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded">Value Filter</button>
-                                    {dateColumns.length > 0 && (
-                                        <button onClick={() => addFilter('date')} className="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded">Date Filter</button>
-                                    )}
+                                <div className="absolute top-full left-0 pt-1 w-48 hidden group-hover:block z-50">
+                                    <div className="bg-white rounded-lg shadow-xl border border-slate-100 p-1">
+                                        <button onClick={() => addFilter('dimension')} className="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded">Dimension Filter</button>
+                                        <button onClick={() => addFilter('measure')} className="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded">Value Filter</button>
+                                        {dateColumns.length > 0 && (
+                                            <button onClick={() => addFilter('date')} className="w-full text-left px-3 py-2 text-sm text-slate-600 hover:bg-slate-50 rounded">Date Filter</button>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         )}

@@ -16,6 +16,13 @@ const TIMEOUT_MS = 20000;
 const insightCache = new Map<string, string>();
 const MAX_CACHE_SIZE = 50;
 
+// Rate limiting (Fix #18: prevent rapid API credit burn)
+let lastRequestTime = 0;
+let requestCount = 0;
+let requestWindowStart = 0;
+const MIN_INTERVAL_MS = 2000;  // 2 second debounce
+const MAX_REQUESTS_PER_MINUTE = 10;
+
 /**
  * Generate a short hash for cache keying (from base64 image)
  */
@@ -68,6 +75,22 @@ export async function interpretChartVisual(
     if (!chartImageBase64) {
         return '⚠️ No chart visual available to interpret. Please generate a chart first.';
     }
+
+    // Rate limiting enforcement
+    const now = Date.now();
+    if (now - lastRequestTime < MIN_INTERVAL_MS) {
+        return '⏳ Please wait a moment before requesting another insight.';
+    }
+    // Reset window every minute
+    if (now - requestWindowStart > 60000) {
+        requestCount = 0;
+        requestWindowStart = now;
+    }
+    if (requestCount >= MAX_REQUESTS_PER_MINUTE) {
+        return '⚠️ Insight rate limit reached. Please wait a minute before trying again.';
+    }
+    lastRequestTime = now;
+    requestCount++;
 
     // Check cache
     const cacheKey = quickHash(chartImageBase64 + (chartTitle || ''));

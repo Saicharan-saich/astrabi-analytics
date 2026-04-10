@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { User, UserRole } from '../types';
+import { indexedDBStorage } from '../services/indexedDBStorage';
 
 /**
  * Secure synchronous hash using iterative mixing (SHA-256 style strength).
@@ -190,8 +191,8 @@ export const useAuthStore = create<AuthState>()(
             },
         }),
         {
-            name: 'astrabi-auth-v1',
-            storage: createJSONStorage(() => localStorage),
+            name: 'astrabi-auth-v2',
+            storage: createJSONStorage(() => indexedDBStorage), // Fix #13: IndexedDB
             partialize: (state) => ({
                 currentUser: state.currentUser,
                 users: state.users,

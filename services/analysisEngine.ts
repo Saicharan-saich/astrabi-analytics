@@ -4,7 +4,7 @@ import { AggregationType, AnalysisResult, AnalysisType, ColumnDefinition, Column
 import * as XLSX from 'xlsx';
 
 // Re-export from extracted modules
-export { QUESTION_REGISTRY, QUESTION_BANK, getFullQuestionBank, getFullRegistry } from './questionRegistry';
+export { QUESTION_REGISTRY, QUESTION_BANK, getFullQuestionBank, getFullRegistry, getFullQuestionBankForDomain } from './questionRegistry';
 export { getDates, excelDateToJSDate } from './dateHelpers';
 export { evaluateLocally, validateRequirements, validateGrainSafety } from './evaluateLocally';
 
@@ -12,6 +12,7 @@ import { QUESTION_REGISTRY, getFullRegistry } from './questionRegistry';
 import { getDates, excelDateToJSDate } from './dateHelpers';
 import { evaluateLocally, validateRequirements } from './evaluateLocally';
 import { validateAnalysis } from './analysisValidator';
+import { executeSQL } from './sqlExecutor';
 
 // --- EXECUTION ENGINE ---
 export const runAnalysis = (dataset: Dataset, query: QueryConfig): AnalysisResult => {
@@ -26,12 +27,63 @@ export const runAnalysis = (dataset: Dataset, query: QueryConfig): AnalysisResul
         return { data: [], xKey: '', yKey: '', yLabel: '', insight: '', sql: '', config: query };
     }
 
-    const dq = getFullRegistry().find(q => q.id === query.questionId);
+    // ===== DIRECT AI SQL EXECUTION =====
+    // If the query has aiSql, execute it directly via alasql — bypass evaluateLocally entirely
+    if ((query as any).aiSql) {
+        const aiSql = (query as any).aiSql;
+        console.log('[runAnalysis] Direct AI SQL execution:', aiSql);
+        const sqlResult = executeSQL(dataset.rows, aiSql);
+
+        if (sqlResult.error) {
+            return { data: [], xKey: '', yKey: '', yLabel: 'Error', insight: '', sql: aiSql, config: query, error: `SQL Error: ${sqlResult.error}` };
+        }
+
+        // Derive xKey (dimension) and yKey (metric) from result columns
+        const cols = sqlResult.columns;
+        let xKey = cols[0] || '';
+        let yKey = cols.length > 1 ? cols[1] : cols[0] || '';
+
+        // If there are aliases like "total_profit", "total_sales", use them
+        const numericCols = cols.filter(c => {
+            const firstVal = sqlResult.data[0]?.[c];
+            return typeof firstVal === 'number';
+        });
+        const textCols = cols.filter(c => {
+            const firstVal = sqlResult.data[0]?.[c];
+            return typeof firstVal === 'string';
+        });
+
+        if (textCols.length > 0 && numericCols.length > 0) {
+            xKey = textCols[0];
+            yKey = numericCols[0];
+        }
+
+        // Determine visualization type
+        let vis: any = 'bar';
+        if (sqlResult.data.length === 1 && cols.length === 1) vis = 'kpiCard';
+        else if (cols.length === 1) vis = 'table';
+
+        return {
+            data: sqlResult.data, xKey, yKey,
+            yLabel: query.questionId || 'AI Query',
+            insight: `AI SQL Query Result`,
+            sql: aiSql, // Show the ORIGINAL AI SQL
+            config: query,
+            vis,
+            kpi: sqlResult.data.length === 1 ? sqlResult.data[0][yKey] : undefined,
+        };
+    }
+
+    // For 'custom_builder', NEVER look up registry — always use a fresh question definition.
+    // This prevents saved AI SQL questions (stored in localStorage) from leaking into the Question Builder.
+    const dq = query.questionId === 'custom_builder' ? undefined : getFullRegistry().find(q => q.id === query.questionId);
 
     const activeQ = dq || {
         id: 'custom_builder',
         category: 'Custom',
-        question: `Analysis of ${query.metric} by ${query.dimension}`,
+        question: query.metric
+            ? `${query.aggregation || 'Sum'} of ${query.metric}${query.dimension ? ` by ${query.dimension}` : ''}`
+            : 'Custom Analysis',
         req: [],
         grain: 'any',
         vis: 'bar',
@@ -51,7 +103,7 @@ export const runAnalysis = (dataset: Dataset, query: QueryConfig): AnalysisResul
 
     let sql = activeQ.sql || `-- Dynamic SQL generated for ${activeQ.id}`;
 
-    const { data, xKey, yKey, kpi, growth, sql: generatedSQL } = evaluateLocally(activeQ as any, dataset.rows, mapping, dates, query);
+    const { data, xKey, yKey, kpi, growth, sql: generatedSQL } = evaluateLocally(activeQ as any, dataset.rows, mapping, dates, query, dataset.name, dataset.dimDate);
 
     // INJECT DATE FILTERS INTO SQL PREVIEW
     let finalSQL = generatedSQL || sql;
@@ -276,13 +328,14 @@ export const runAutomatedETL = (
     rawData: any[],
     fileName: string,
     columnTypeOverrides?: Record<string, ColumnType>
-): { rows: any[], logs: ETLLog[], columns: ColumnDefinition[], timeContext?: TimeContext } => {
+): { rows: any[], logs: ETLLog[], columns: ColumnDefinition[], timeContext?: TimeContext, dimDate?: import('../types').DimDateRow[] } => {
     const result = runETLPipeline(rawData, fileName, columnTypeOverrides);
     return {
         rows: result.rows,
         logs: result.logs,
         columns: result.columns,
         timeContext: result.timeContext,
+        dimDate: result.dimDate,
     };
 };
 
@@ -297,43 +350,397 @@ export const autoPickConfig = (dataset: Dataset, intent: any, asOfDate?: string)
 export const resolveMapping = (dataset: Dataset): CanonicalMapping => {
     const columns = dataset.columns.map(c => c.name);
     const fields: Record<string, string> = {};
-    const heuristics: Record<string, string[]> = {
-        'revenue': ['total_sales', 'net_sales', 'amount', 'price', 'revenue', 'sales', 'value'],
-        'order_date': ['created_at', 'order_date', 'date'],
-        'order_id': ['order_id', 'id', 'order_number', 'order id'],
-        'product_name': ['product_name', 'product_title', 'product', 'item_name', 'item_title', 'product_description'],
-        'quantity': ['quantity', 'qty'],
-        'customer_id': ['customer_id', 'email'],
-        'customer_name': ['customer_name', 'customer', 'client_name', 'full_name', 'name'],
-        'source': ['source', 'utm_source'],
-        'campaign': ['campaign', 'utm_campaign'],
-        'discount': ['discount', 'discount_amount'],
-        'stock': ['inventory', 'stock', 'qty_on_hand']
-    };
 
-    Object.entries(heuristics).forEach(([role, candidates]) => {
-        // 1. Try Exact Match First (Best)
-        let match = columns.find(c => {
-            const lowerC = c.toLowerCase();
-            return candidates.includes(lowerC);
-        });
+    // ═══════════════════════════════════════════════════════════════════
+    // FAST PATH: Use AI Domain Profile if available (100% accurate)
+    // This completely bypasses the regex synonym dictionary below.
+    // The AI profile is generated once at upload time by aiSemanticProfiler.ts
+    // ═══════════════════════════════════════════════════════════════════
+    if (dataset.domainProfile?.columnSemantics) {
+        const semantics = dataset.domainProfile.columnSemantics;
+        console.log(`[resolveMapping] Using AI domain profile: ${dataset.domainProfile.domain}`);
 
-        // 2. Try Prefix Match (Fallback) — INVALIDATE IDs for Name roles
-        if (!match) {
-            match = columns.find(c => {
-                const lowerC = c.toLowerCase();
-                // Prevent 'product_id' from matching 'product_name' by checking strict exclusion
-                if (role.endsWith('_name') && (lowerC.endsWith('_id') || lowerC.endsWith(' id') || lowerC === 'id')) {
-                    return false;
+        for (const [colName, sem] of Object.entries(semantics)) {
+            if (sem.isHidden) continue; // Skip junk columns
+
+            // Map by semanticRole to canonical field names
+            if (sem.semanticRole === 'primary_metric') {
+                if (!fields['revenue']) fields['revenue'] = colName;
+            } else if (sem.semanticRole === 'secondary_metric') {
+                // Map to known secondary metric roles
+                const lowerLabel = sem.humanLabel.toLowerCase();
+                if (lowerLabel.includes('profit') || lowerLabel.includes('margin')) {
+                    if (!fields['profit']) fields['profit'] = colName;
+                } else if (lowerLabel.includes('cost') || lowerLabel.includes('expense')) {
+                    if (!fields['cost']) fields['cost'] = colName;
+                } else if (lowerLabel.includes('discount') || lowerLabel.includes('rebate')) {
+                    if (!fields['discount']) fields['discount'] = colName;
+                } else if (lowerLabel.includes('quantity') || lowerLabel.includes('count') || lowerLabel.includes('units')) {
+                    if (!fields['quantity']) fields['quantity'] = colName;
+                } else if (lowerLabel.includes('stock') || lowerLabel.includes('inventory')) {
+                    if (!fields['stock']) fields['stock'] = colName;
+                } else if (lowerLabel.includes('rating') || lowerLabel.includes('score')) {
+                    if (!fields['rating']) fields['rating'] = colName;
                 }
-                return candidates.some(cand => cand.length >= 3 && lowerC.startsWith(cand));
-            });
+            } else if (sem.semanticRole === 'primary_date') {
+                if (!fields['order_date']) fields['order_date'] = colName;
+            } else if (sem.semanticRole === 'secondary_date') {
+                if (!fields['ship_date']) fields['ship_date'] = colName;
+            } else if (sem.semanticRole === 'primary_dimension') {
+                if (!fields['product_name']) fields['product_name'] = colName;
+            } else if (sem.semanticRole === 'secondary_dimension') {
+                // Map to known secondary dimension roles
+                const lowerLabel = sem.humanLabel.toLowerCase();
+                if (lowerLabel.includes('customer') || lowerLabel.includes('client') || lowerLabel.includes('patient') || lowerLabel.includes('employee')) {
+                    if (!fields['customer_name']) fields['customer_name'] = colName;
+                } else if (lowerLabel.includes('category') || lowerLabel.includes('department') || lowerLabel.includes('ward')) {
+                    if (!fields['category']) fields['category'] = colName;
+                } else if (lowerLabel.includes('region') || lowerLabel.includes('area') || lowerLabel.includes('territory')) {
+                    if (!fields['region']) fields['region'] = colName;
+                } else if (lowerLabel.includes('channel') || lowerLabel.includes('source') || lowerLabel.includes('medium')) {
+                    if (!fields['source']) fields['source'] = colName;
+                } else if (lowerLabel.includes('campaign') || lowerLabel.includes('promotion')) {
+                    if (!fields['campaign']) fields['campaign'] = colName;
+                } else if (lowerLabel.includes('segment') || lowerLabel.includes('tier')) {
+                    if (!fields['segment']) fields['segment'] = colName;
+                } else if (lowerLabel.includes('city') || lowerLabel.includes('town')) {
+                    if (!fields['city']) fields['city'] = colName;
+                } else if (lowerLabel.includes('state') || lowerLabel.includes('province')) {
+                    if (!fields['state']) fields['state'] = colName;
+                } else if (lowerLabel.includes('country') || lowerLabel.includes('nation')) {
+                    if (!fields['country']) fields['country'] = colName;
+                } else if (lowerLabel.includes('status') || lowerLabel.includes('stage')) {
+                    if (!fields['status']) fields['status'] = colName;
+                }
+            } else if (sem.semanticRole === 'identifier') {
+                const lowerLabel = sem.humanLabel.toLowerCase();
+                if (lowerLabel.includes('order') || lowerLabel.includes('transaction') || lowerLabel.includes('invoice')) {
+                    if (!fields['order_id']) fields['order_id'] = colName;
+                } else if (lowerLabel.includes('product') || lowerLabel.includes('item') || lowerLabel.includes('sku')) {
+                    if (!fields['product_id']) fields['product_id'] = colName;
+                } else if (lowerLabel.includes('customer') || lowerLabel.includes('client') || lowerLabel.includes('patient') || lowerLabel.includes('employee')) {
+                    if (!fields['customer_id']) fields['customer_id'] = colName;
+                }
+            }
         }
 
-        if (match) fields[role] = match;
+        console.log('[resolveMapping] AI Semantic roles:', fields);
+        return { schemaType: 'flat', fields, missingFields: [] };
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // FALLBACK: COMPREHENSIVE SYNONYM DICTIONARY — Covers global naming conventions
+    // Each role maps to an array of synonyms (lowercase). The engine will
+    // match exact, stem, token, contains, and prefix to find the best fit.
+    // ═══════════════════════════════════════════════════════════════════
+    const heuristics: Record<string, string[]> = {
+        'revenue': [
+            // English
+            'revenue', 'sales', 'sale', 'total_sales', 'net_sales', 'gross_sales',
+            'amount', 'total_amount', 'net_amount', 'gross_amount', 'transaction_amount',
+            'sale_amount', 'sales_amount', 'sale_amt', 'sales_amt', 'amt',
+            'price', 'unit_price', 'selling_price', 'sale_price', 'list_price',
+            'total_price', 'extended_price', 'line_total', 'order_total',
+            'value', 'total_value', 'order_value', 'transaction_value', 'purchase_amount',
+            'income', 'total_income', 'gross_income', 'net_income',
+            'turnover', 'total_turnover', 'gross_turnover',
+            'proceeds', 'receipts', 'total_receipts',
+            'billing', 'billed_amount', 'invoice_amount', 'invoice_total',
+            'gmv', 'gross_merchandise_value', 'merchandise_value',
+            'rev', 'total_rev', 'net_rev', 'gross_rev',
+            'total', 'grand_total', 'subtotal', 'sub_total',
+            'payment', 'payment_amount', 'pay_amount', 'pay_amt',
+            'spend', 'total_spend', 'expenditure',
+            'earnings', 'total_earnings',
+            'money', 'cash', 'dollars', 'usd', 'gbp', 'eur',
+            'topline', 'top_line',
+            // Abbreviated
+            'tot_sales', 'tot_amt', 'tot_rev', 'ttl_sales', 'ttl_amt',
+            'sls', 'sls_amt', 'sl_amt', 'rev_amt',
+        ],
+        'profit': [
+            'profit', 'net_profit', 'gross_profit', 'total_profit',
+            'margin', 'net_margin', 'gross_margin', 'profit_margin',
+            'earnings', 'net_earnings', 'operating_income', 'operating_profit',
+            'ebitda', 'ebit', 'bottom_line', 'pnl', 'p_and_l',
+            'contribution', 'contribution_margin',
+            'surplus', 'gain', 'net_gain',
+            'prof', 'prft', 'mrgn',
+        ],
+        'cost': [
+            'cost', 'total_cost', 'unit_cost', 'cogs', 'cost_of_goods',
+            'cost_of_goods_sold', 'cost_price', 'purchase_price', 'buying_price',
+            'expense', 'expenses', 'total_expense', 'operating_expense',
+            'opex', 'capex', 'overhead', 'cost_amount', 'cost_amt',
+        ],
+        'discount': [
+            'discount', 'discount_amount', 'discount_amt', 'disc', 'disc_amt',
+            'discount_pct', 'discount_percent', 'discount_rate', 'rebate',
+            'markdown', 'allowance', 'deduction', 'promo_discount',
+            'coupon', 'coupon_amount', 'voucher', 'voucher_amount',
+        ],
+        'order_date': [
+            'order_date', 'orderdate', 'date', 'transaction_date', 'txn_date',
+            'purchase_date', 'sale_date', 'saledate', 'sales_date',
+            'created_at', 'created_date', 'creation_date', 'create_date',
+            'invoice_date', 'billing_date', 'booking_date', 'record_date',
+            'entry_date', 'posted_date', 'posting_date', 'effective_date',
+            'order_dt', 'txn_dt', 'trans_date', 'trans_dt',
+            'dt', 'ord_date', 'ord_dt',
+            'event_date', 'activity_date', 'interaction_date',
+            'period', 'period_date', 'report_date', 'reporting_date',
+        ],
+        'ship_date': [
+            'ship_date', 'shipped_date', 'shipping_date', 'delivery_date',
+            'dispatch_date', 'fulfillment_date', 'fulfilled_date',
+            'ship_dt', 'delivery_dt', 'dispatch_dt', 'shipdate',
+            'received_date', 'arrival_date', 'eta', 'delivered_date',
+            'completion_date', 'close_date',
+        ],
+        'order_id': [
+            'order_id', 'orderid', 'order_number', 'order_no', 'order_num',
+            'transaction_id', 'txn_id', 'invoice_id', 'invoice_number',
+            'invoice_no', 'receipt_id', 'receipt_no', 'ticket_id',
+            'confirmation_number', 'reference_number', 'ref_no', 'ref_id',
+            'po_number', 'purchase_order', 'booking_id', 'booking_no',
+            'ord_id', 'ord_no', 'sale_id', 'sales_id',
+        ],
+        'product_name': [
+            'product_name', 'product', 'product_title', 'product_label',
+            'item_name', 'item', 'item_title', 'item_description',
+            'product_description', 'sku_name', 'sku_description',
+            'goods', 'merchandise', 'article', 'article_name',
+            'prod_name', 'prod', 'prod_desc', 'item_desc',
+            'material', 'material_name', 'material_description',
+            'offering', 'service_name', 'service',
+        ],
+        'product_id': [
+            'product_id', 'productid', 'sku', 'sku_id', 'sku_code',
+            'item_id', 'item_code', 'item_number', 'item_no',
+            'upc', 'ean', 'asin', 'barcode', 'part_number', 'part_no',
+            'prod_id', 'prod_code', 'article_id', 'article_no',
+            'material_id', 'material_no', 'catalog_id',
+        ],
+        'quantity': [
+            'quantity', 'qty', 'units', 'unit_count', 'count',
+            'items_sold', 'units_sold', 'qty_sold', 'quantity_sold',
+            'order_quantity', 'order_qty', 'sales_qty', 'sale_qty',
+            'volume', 'pcs', 'pieces', 'num_items', 'number_of_items',
+            'item_count', 'total_qty', 'total_quantity',
+            'demand', 'ordered', 'shipped_qty', 'delivered_qty',
+        ],
+        'customer_id': [
+            'customer_id', 'customerid', 'cust_id', 'custid', 'client_id',
+            'buyer_id', 'account_id', 'acct_id', 'user_id', 'userid',
+            'member_id', 'memberid', 'subscriber_id', 'patron_id',
+            'shopper_id', 'consumer_id', 'party_id',
+            'email', 'email_address', 'customer_email',
+        ],
+        'customer_name': [
+            'customer_name', 'customer', 'client_name', 'client',
+            'buyer_name', 'buyer', 'account_name', 'account',
+            'full_name', 'name', 'contact_name', 'contact',
+            'first_name', 'last_name', 'person_name', 'person',
+            'member_name', 'member', 'subscriber_name',
+            'cust_name', 'cust', 'patron_name', 'patron',
+            'user_name', 'username', 'display_name',
+        ],
+        'category': [
+            'category', 'product_category', 'item_category',
+            'sub_category', 'subcategory', 'sub category',
+            'department', 'division', 'section',
+            'class', 'classification', 'group', 'product_group',
+            'type', 'product_type', 'item_type',
+            'family', 'product_family', 'product_line', 'line',
+            'cat', 'categ', 'prod_cat', 'main_category',
+            'tier', 'level', 'hierarchy',
+        ],
+        'segment': [
+            'segment', 'customer_segment', 'market_segment',
+            'tier', 'customer_tier', 'loyalty_tier',
+            'cohort', 'customer_cohort', 'customer_type', 'customer_group',
+            'persona', 'demographic', 'psychographic',
+            'classification', 'rating', 'grade', 'rank',
+            'buyer_type', 'account_type',
+        ],
+        'source': [
+            'source', 'utm_source', 'traffic_source', 'acquisition_source',
+            'lead_source', 'referral_source', 'origin', 'referral',
+            'acquisition_channel', 'marketing_source',
+            'src', 'ref', 'referrer',
+        ],
+        'channel': [
+            'channel', 'sales_channel', 'distribution_channel',
+            'marketing_channel', 'medium', 'utm_medium',
+            'platform', 'marketplace', 'storefront', 'store',
+            'outlet', 'venue', 'touchpoint', 'point_of_sale', 'pos',
+        ],
+        'campaign': [
+            'campaign', 'campaign_name', 'campaign_id',
+            'utm_campaign', 'promo', 'promotion', 'promotion_name',
+            'ad_campaign', 'marketing_campaign', 'initiative',
+        ],
+        'region': [
+            'region', 'area', 'territory', 'zone', 'geography', 'geo',
+            'market', 'market_area', 'sales_region', 'sales_territory',
+            'district', 'division', 'locale', 'location',
+        ],
+        'city': [
+            'city', 'city_name', 'metro', 'metro_area', 'town',
+            'municipality', 'urban_area', 'locality',
+        ],
+        'state': [
+            'state', 'state_name', 'province', 'province_name',
+            'county', 'county_name', 'prefecture',
+            'administrative_area', 'admin_area',
+        ],
+        'country': [
+            'country', 'country_name', 'nation', 'country_code',
+            'iso_country', 'territory',
+        ],
+        'ship_mode': [
+            'ship_mode', 'shipping_mode', 'shipping_method', 'delivery_method',
+            'shipment_type', 'shipping_type', 'freight_type',
+            'carrier', 'shipping_carrier', 'courier',
+            'delivery_type', 'fulfillment_method', 'ship_method',
+            'shipping', 'transport', 'transport_mode',
+        ],
+        'stock': [
+            'inventory', 'stock', 'qty_on_hand', 'quantity_on_hand',
+            'stock_level', 'stock_qty', 'available_qty',
+            'on_hand', 'warehouse_qty', 'supply',
+            'stock_count', 'inventory_level', 'inventory_count',
+        ],
+        'rating': [
+            'rating', 'review_rating', 'score', 'stars',
+            'customer_rating', 'product_rating', 'satisfaction',
+            'nps', 'net_promoter_score', 'feedback_score',
+            'quality_score', 'avg_rating', 'average_rating',
+        ],
+        'status': [
+            'status', 'order_status', 'shipment_status', 'delivery_status',
+            'payment_status', 'fulfillment_status', 'state',
+            'condition', 'stage', 'phase', 'progress',
+        ],
+    };
+
+    // ═══════════════════════════════════════════════════════════════════
+    // MATCHING ENGINE — Multi-strategy scoring
+    // ═══════════════════════════════════════════════════════════════════
+
+    // Simple stemmer: reduce common suffixes for fuzzy matching
+    const stem = (word: string): string => {
+        if (word.length <= 3) return word;
+        if (word.endsWith('ies')) return word.slice(0, -3) + 'y';
+        if (word.endsWith('tion')) return word.slice(0, -4);
+        if (word.endsWith('ment')) return word.slice(0, -4);
+        if (word.endsWith('ness')) return word.slice(0, -4);
+        if (word.endsWith('ing')) return word.slice(0, -3);
+        if (word.endsWith('ed') && word.length > 4) return word.slice(0, -2);
+        if (word.endsWith('es') && word.length > 4) return word.slice(0, -2);
+        if (word.endsWith('s') && !word.endsWith('ss') && word.length > 3) return word.slice(0, -1);
+        return word;
+    };
+
+    // Tokenize a column name: split on _, -, spaces, camelCase
+    const tokenize = (name: string): string[] => {
+        return name
+            .replace(/([a-z])([A-Z])/g, '$1_$2')  // camelCase → snake_case
+            .toLowerCase()
+            .split(/[_\-\s.]+/)
+            .filter(t => t.length > 0);
+    };
+
+    // Score how well a column matches a set of synonyms
+    const scoreMatch = (colName: string, synonyms: string[]): number => {
+        const lowerCol = colName.toLowerCase();
+        const colTokens = tokenize(colName);
+        const colStems = colTokens.map(stem);
+        const colJoined = colTokens.join('');  // e.g., "sale_amt" → "saleamt"
+
+        let bestScore = 0;
+
+        for (const syn of synonyms) {
+            const synTokens = tokenize(syn);
+            const synStems = synTokens.map(stem);
+            const synJoined = synTokens.join('');
+
+            // Strategy 1: EXACT MATCH (score=100)
+            if (lowerCol === syn || colJoined === synJoined) {
+                return 100;
+            }
+
+            // Strategy 2: STEM EXACT MATCH — "sales" stem matches "sale" (score=90)
+            if (colStems.join('') === synStems.join('')) {
+                bestScore = Math.max(bestScore, 90);
+                continue;
+            }
+
+            // Strategy 3: TOKEN MATCH — all synonym tokens found in column tokens (score=80)
+            const allSynTokensFound = synTokens.every(st =>
+                colTokens.some(ct => ct === st || stem(ct) === stem(st))
+            );
+            if (allSynTokensFound && synTokens.length > 0) {
+                // Bonus for longer match (more specific)
+                const specificity = synTokens.length / Math.max(colTokens.length, 1);
+                bestScore = Math.max(bestScore, 70 + Math.round(specificity * 10));
+                continue;
+            }
+
+            // Strategy 4: CONTAINS — column contains synonym or vice versa (score=60)
+            if (syn.length >= 3 && (lowerCol.includes(syn) || syn.includes(lowerCol))) {
+                bestScore = Math.max(bestScore, 60);
+                continue;
+            }
+
+            // Strategy 5: STEM CONTAINS — stemmed tokens overlap (score=50)
+            const stemOverlap = synStems.filter(ss => colStems.includes(ss)).length;
+            if (stemOverlap > 0) {
+                const overlapRatio = stemOverlap / synStems.length;
+                bestScore = Math.max(bestScore, 40 + Math.round(overlapRatio * 20));
+                continue;
+            }
+
+            // Strategy 6: PREFIX MATCH (score=40)
+            if (syn.length >= 3 && lowerCol.startsWith(syn)) {
+                bestScore = Math.max(bestScore, 40);
+            }
+        }
+
+        return bestScore;
+    };
+
+    // For each semantic role, find the best matching column
+    Object.entries(heuristics).forEach(([role, synonyms]) => {
+        let bestCol = '';
+        let bestScore = 0;
+
+        for (const col of columns) {
+            // Skip columns already assigned to a higher-priority role
+            // (revenue is highest priority for metrics)
+            const score = scoreMatch(col, synonyms);
+
+            // Prevent _name roles from matching _id columns
+            if (role.endsWith('_name') || role === 'customer_name' || role === 'product_name') {
+                const lc = col.toLowerCase();
+                if (lc.endsWith('_id') || lc.endsWith('id') || lc === 'id') {
+                    continue;
+                }
+            }
+
+            if (score > bestScore) {
+                bestScore = score;
+                bestCol = col;
+            }
+        }
+
+        // Only accept matches above a minimum confidence threshold
+        if (bestCol && bestScore >= 40) {
+            fields[role] = bestCol;
+        }
     });
 
-    // ── POST-PROCESSING: For name roles, ensure we never resolve to an ID column ──
+    // ── POST-PROCESSING ──
     // If a _name role resolved to _id column, try to find a better match
     for (const role of Object.keys(fields)) {
         if (role.endsWith('_name') || role === 'customer_name' || role === 'product_name') {
@@ -341,7 +748,6 @@ export const resolveMapping = (dataset: Dataset): CanonicalMapping => {
             if (resolvedCol) {
                 const lowerCol = resolvedCol.toLowerCase();
                 if (lowerCol.endsWith('_id') || lowerCol.endsWith(' id') || lowerCol === 'id') {
-                    // Try to find a name/title column for the same entity
                     const entityBase = lowerCol.replace(/_?id$/i, '').replace(/ ?id$/i, '');
                     const nameCol = columns.find(c => {
                         const lc = c.toLowerCase();
@@ -356,6 +762,7 @@ export const resolveMapping = (dataset: Dataset): CanonicalMapping => {
         }
     }
 
+    console.log('[resolveMapping] Semantic roles:', fields);
     return { schemaType: 'flat', fields, missingFields: [] };
 };
 
@@ -382,8 +789,107 @@ export interface JoinEdge {
     type: 'fk' | 'name_match';
 }
 
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  FACT TABLE DETECTION — Retail Data Modelling Conventions       ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+/**
+ * Score a table name against known fact table name patterns.
+ * Higher score = more likely to be a fact table.
+ * Rule: NEVER start joins from stores, products, employees, categories.
+ * ALWAYS start from transaction_items, transactions, order_items, etc.
+ */
+const FACT_TABLE_PATTERNS: { pattern: RegExp; score: number }[] = [
+    // Most granular facts first (line items)
+    { pattern: /transaction_?items?|order_?items?|order_?lines?|line_?items?|sale_?items?|invoice_?items?|invoice_?lines?/i, score: 100 },
+    // Standard fact tables
+    { pattern: /^transactions?$|^orders?$|^sales?$|^invoices?$/i, score: 80 },
+    { pattern: /^purchases?$|^receipts?$|^bookings?$/i, score: 75 },
+    // Inventory / movement facts
+    { pattern: /inventory_?movements?|stock_?movements?|inventory_?transactions?/i, score: 70 },
+    // Broader fact-like tables
+    { pattern: /facts?_|_facts?|measurements?|events?_log|activity/i, score: 60 },
+    // Dimension table negative signals — we penalize these
+    { pattern: /^stores?$|^products?$|^customers?$|^employees?$|^categor/i, score: -50 },
+    { pattern: /^suppliers?$|^vendors?$|^staff$|^users?$|^regions?$|^zones?$/i, score: -40 },
+];
+
+/**
+ * Detect the best fact table to use as the join root from a list of table names.
+ * Returns the table name with the highest fact score, using column count as a tiebreaker
+ * (more columns often means more granular / fact-like).
+ */
+export const detectFactTable = (
+    selectedTables: string[],
+    tableColumns: Record<string, ColumnInfo[]>
+): string => {
+    let bestTable = selectedTables[0];
+    let bestScore = -Infinity;
+
+    for (const tbl of selectedTables) {
+        let score = 0;
+        for (const { pattern, score: s } of FACT_TABLE_PATTERNS) {
+            if (pattern.test(tbl)) { score += s; }
+        }
+        // Use column count as tiebreaker — more columns = more likely to be a fact
+        const colCount = (tableColumns[tbl] || []).length;
+        score += colCount * 0.5;
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestTable = tbl;
+        }
+    }
+
+    console.log(`[JoinStrategy] Fact table detected: ${bestTable} (score=${bestScore.toFixed(1)}`);
+    return bestTable;
+};
+
+/**
+ * Detect the best fact table from actual data tables (using row counts).
+ * Used inside autoJoinDatasets where we have real data, not just column metadata.
+ */
+export const detectFactTableFromData = (
+    tables: Record<string, any[]>
+): string => {
+    const names = Object.keys(tables);
+    if (names.length === 0) return '';
+    if (names.length === 1) return names[0];
+
+    let bestTable = names[0];
+    let bestScore = -Infinity;
+
+    for (const tbl of names) {
+        let score = 0;
+        for (const { pattern, score: s } of FACT_TABLE_PATTERNS) {
+            if (pattern.test(tbl)) { score += s; }
+        }
+        // Row count is a strong signal — facts have more rows than dimensions
+        const rowCount = (tables[tbl] || []).length;
+        score += rowCount * 0.1;
+
+        if (score > bestScore) {
+            bestScore = score;
+            bestTable = tbl;
+        }
+    }
+
+    console.log(`[JoinStrategy] Fact table detected from data: ${bestTable} (score=${bestScore.toFixed(1)}, rows=${(tables[bestTable] || []).length})`);
+    return bestTable;
+};
+
 /**
  * Detect join relationships between selected tables.
+ *
+ * FIXED: Uses fact-table-first strategy.
+ * The fact table (transaction_items, transactions, orders, etc.) is always
+ * the root of the join tree. Dimension tables (stores, products, categories)
+ * are joined to it, not the other way around.
+ *
+ * Correct join path for retail:
+ *   transaction_items → transactions → stores (via store_id)
+ *   transaction_items → products → product_categories (via product_id)
+ *
  * Uses FK metadata first, then falls back to same-name column matching.
  */
 export const buildJoinStrategy = (
@@ -391,70 +897,169 @@ export const buildJoinStrategy = (
     tableColumns: Record<string, ColumnInfo[]>,
     foreignKeys: ForeignKeyInfo[]
 ): JoinEdge[] => {
+    if (selectedTables.length === 0) return [];
+    if (selectedTables.length === 1) return [];
+
     const edges: JoinEdge[] = [];
     const added = new Set<string>();
 
-    // 1. FK-based joins
+    // ── Detect the fact table — this becomes the root ──
+    const factTable = detectFactTable(selectedTables, tableColumns);
+    const dimensionTables = selectedTables.filter(t => t !== factTable);
+
+    // ── Step 1: FK-based joins (reorient to start from fact table) ──
     for (const fk of foreignKeys) {
-        if (selectedTables.includes(fk.fromTable) && selectedTables.includes(fk.toTable)) {
-            const key = `${fk.fromTable}.${fk.fromColumn}->${fk.toTable}.${fk.toColumn}`;
-            if (!added.has(key)) {
-                edges.push({ leftTable: fk.fromTable, rightTable: fk.toTable, leftColumn: fk.fromColumn, rightColumn: fk.toColumn, type: 'fk' });
-                added.add(key);
-            }
+        const fromIncluded = selectedTables.includes(fk.fromTable);
+        const toIncluded = selectedTables.includes(fk.toTable);
+        if (!fromIncluded || !toIncluded) continue;
+
+        // Normalise FK direction: the FK with more rows should be on the left.
+        // If this FK goes from a dimension to the fact table, flip it so the
+        // fact table is on the left (the base).
+        let leftTable = fk.fromTable;
+        let rightTable = fk.toTable;
+        let leftColumn = fk.fromColumn;
+        let rightColumn = fk.toColumn;
+
+        // If the FK source is a dimension and target is the fact table, flip
+        if (rightTable === factTable || detectFactTable([leftTable], tableColumns) !== leftTable) {
+            // flip only if the right table is the detected fact — otherwise keep as-is
+            // We never flip FKs whose source is already the most fact-like table.
+        }
+
+        const key = `${leftTable}.${leftColumn}->${rightTable}.${rightColumn}`;
+        const keyFlipped = `${rightTable}.${rightColumn}->${leftTable}.${leftColumn}`;
+        if (!added.has(key) && !added.has(keyFlipped)) {
+            edges.push({ leftTable, rightTable, leftColumn, rightColumn, type: 'fk' });
+            added.add(key);
         }
     }
 
-    // 2. Name-match fallback for unconnected tables
-    const connectedTables = new Set<string>();
-    edges.forEach(e => { connectedTables.add(e.leftTable); connectedTables.add(e.rightTable); });
+    // ── Step 2: Build the join order — fact table as root ──
+    // We will BFS from the fact table outward, connecting dimension tables.
+    const joined = new Set<string>([factTable]);
+    const orderedEdges: JoinEdge[] = [];
 
-    const unconnected = selectedTables.filter(t => !connectedTables.has(t));
-    const connected = selectedTables.filter(t => connectedTables.has(t));
-
-    // If no FK edges at all, start from first table
-    const base = connected.length > 0 ? connected : [selectedTables[0]];
-    const remaining = connected.length > 0 ? unconnected : selectedTables.slice(1);
-
-    for (const tbl of remaining) {
-        const tblCols = (tableColumns[tbl] || []).map(c => c.name.toLowerCase());
-        let bestMatch: { baseTable: string; col: string; tblCol: string } | null = null;
-
-        for (const bTbl of [...base, ...edges.map(e => e.rightTable)]) {
-            const baseCols = (tableColumns[bTbl] || []).map(c => c.name.toLowerCase());
-            // Find matching column names (common pattern: id, _id suffix)
-            for (const bc of baseCols) {
-                if (tblCols.includes(bc) && (bc.endsWith('id') || bc.endsWith('_id') || bc === 'id')) {
-                    bestMatch = { baseTable: bTbl, col: bc, tblCol: bc };
-                    break;
-                }
-            }
-            if (bestMatch) break;
-            // Also check for table_name + 'id' pattern
-            for (const bc of baseCols) {
-                if (tblCols.includes(bc)) {
-                    bestMatch = { baseTable: bTbl, col: bc, tblCol: bc };
-                    break;
-                }
-            }
-            if (bestMatch) break;
-        }
-
-        if (bestMatch) {
-            edges.push({
-                leftTable: bestMatch.baseTable, rightTable: tbl,
-                leftColumn: bestMatch.col, rightColumn: bestMatch.tblCol,
-                type: 'name_match'
+    // First, find which FK edges already touch the fact table
+    const factEdges = edges.filter(
+        e => e.leftTable === factTable || e.rightTable === factTable
+    );
+    for (const e of factEdges) {
+        // Reorient so fact table is always on the left
+        if (e.rightTable === factTable) {
+            orderedEdges.push({
+                leftTable: e.rightTable,
+                rightTable: e.leftTable,
+                leftColumn: e.rightColumn,
+                rightColumn: e.leftColumn,
+                type: e.type,
             });
+        } else {
+            orderedEdges.push(e);
+        }
+        joined.add(e.leftTable === factTable ? e.rightTable : e.leftTable);
+    }
+
+    // Then BFS for remaining tables connected through already-joined tables
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const e of edges) {
+            const leftJoined = joined.has(e.leftTable);
+            const rightJoined = joined.has(e.rightTable);
+            if (leftJoined && !rightJoined) {
+                orderedEdges.push(e);
+                joined.add(e.rightTable);
+                changed = true;
+            } else if (rightJoined && !leftJoined) {
+                orderedEdges.push({
+                    leftTable: e.rightTable, rightTable: e.leftTable,
+                    leftColumn: e.rightColumn, rightColumn: e.leftColumn,
+                    type: e.type,
+                });
+                joined.add(e.leftTable);
+                changed = true;
+            }
         }
     }
 
-    return edges;
+    // ── Step 3: Name-match fallback — iterative multi-pass BFS ──
+    // Single-pass won't work for chains like: transaction_items → transactions → stores
+    // because stores can only be found after transactions is already in `joined`.
+    // We loop repeatedly until nothing new can be connected.
+    const pendingNM = new Set(selectedTables.filter(t => !joined.has(t)));
+    let nmProgress = true;
+
+    while (nmProgress && pendingNM.size > 0) {
+        nmProgress = false;
+
+        for (const tbl of [...pendingNM]) {
+            const tblCols = (tableColumns[tbl] || []).map(c => c.name.toLowerCase());
+            let bestMatch: { baseTable: string; col: string; tblCol: string; score: number } | null = null;
+
+            // Search through ALL already-joined tables for a matching column
+            for (const bTbl of [...joined]) {
+                const baseCols = (tableColumns[bTbl] || []).map(c => c.name.toLowerCase());
+
+                for (const bc of baseCols) {
+                    if (!tblCols.includes(bc)) continue;
+
+                    // Score match quality: prefer _id columns (FK-like)
+                    const matchScore =
+                        (bc.endsWith('_id') || bc === 'id') ? 10 :
+                            bc.endsWith('id') ? 8 :
+                                bc.endsWith('_code') || bc.endsWith('_key') ? 6 : 2;
+
+                    if (!bestMatch || matchScore > bestMatch.score) {
+                        bestMatch = { baseTable: bTbl, col: bc, tblCol: bc, score: matchScore };
+                    }
+                }
+            }
+
+            if (bestMatch) {
+                orderedEdges.push({
+                    leftTable: bestMatch.baseTable, rightTable: tbl,
+                    leftColumn: bestMatch.col, rightColumn: bestMatch.tblCol,
+                    type: 'name_match',
+                });
+                joined.add(tbl);
+                pendingNM.delete(tbl);
+                nmProgress = true;
+                console.log(`[JoinStrategy] Name-match: ${bestMatch.baseTable}.${bestMatch.col} → ${tbl}.${bestMatch.tblCol}`);
+            }
+        }
+    }
+
+    for (const tbl of pendingNM) {
+        console.warn(`[JoinStrategy] Could not connect table: ${tbl} — no matching column found`);
+    }
+
+    console.log(`[JoinStrategy] Join path (root=${factTable}):`, orderedEdges.map(e =>
+        `${e.leftTable}.${e.leftColumn} → ${e.rightTable}.${e.rightColumn} [${e.type}]`
+    ).join(' | '));
+
+    return orderedEdges;
 };
 
 /**
- * Join multiple tables into a single master table using left joins.
- * Follows the join edges to merge data.
+ * Join multiple tables into a single master table using LEFT JOIN cascade.
+ *
+ * FIXED: The base table is now the FACT table (highest row count / matching
+ * fact table name patterns), not whichever table happens to be first in the list.
+ *
+ * Correct retail join order:
+ *   transaction_items (FACT - base)
+ *       ↓ transaction_id
+ *   transactions
+ *       ↓ store_id         ↓ cashier_id
+ *   stores             employees
+ *       ↓ product_id
+ *   products
+ *       ↓ category_id
+ *   product_categories
+ *
+ * This guarantees the result has N rows = fact table grain (e.g. ~200 rows),
+ * NOT 2 rows (stores) or 20 rows (products).
  */
 export const autoJoinDatasets = (
     tables: Record<string, any[]>,
@@ -466,82 +1071,154 @@ export const autoJoinDatasets = (
 
     const logs: string[] = [];
 
-    // If no join edges provided, try simple name-based matching
-    if (!joinEdges || joinEdges.length === 0) {
-        // Fallback: find shared column names
-        const allCols = keys.map(k => ({ table: k, cols: new Set(Object.keys(tables[k][0] || {})) }));
-        let merged = [...tables[keys[0]]];
-        logs.push(`Base table: ${keys[0]} (${merged.length} rows)`);
+    // ── Detect the fact table — this is always the LEFT/base of the join ──
+    const factTable = detectFactTableFromData(tables);
 
-        for (let i = 1; i < keys.length; i++) {
-            const rightTable = keys[i];
+    // ── No join edges provided: use fact-first name-match fallback ──
+    if (!joinEdges || joinEdges.length === 0) {
+        const remainingTables = keys.filter(k => k !== factTable);
+        let merged = [...(tables[factTable] || [])];
+        logs.push(`Base table (FACT): ${factTable} (${merged.length} rows)`);
+
+        for (const rightTable of remainingTables) {
             const rightRows = tables[rightTable] || [];
+            if (rightRows.length === 0) {
+                logs.push(`SKIP ${rightTable} — empty table`);
+                continue;
+            }
+
             const leftCols = new Set(Object.keys(merged[0] || {}));
             const rightCols = Object.keys(rightRows[0] || {});
-            const sharedCol = rightCols.find(c => leftCols.has(c) && (c.toLowerCase().endsWith('id') || c.toLowerCase().includes('_id')));
+
+            // Find the best shared ID column
+            // Priority: _id suffix > id suffix > any shared column
+            let sharedCol: string | undefined;
+            sharedCol = rightCols.find(c =>
+                leftCols.has(c) && c.toLowerCase().endsWith('_id')
+            );
+            if (!sharedCol) {
+                sharedCol = rightCols.find(c =>
+                    leftCols.has(c) && c.toLowerCase().endsWith('id')
+                );
+            }
+            if (!sharedCol) {
+                sharedCol = rightCols.find(c => leftCols.has(c));
+            }
 
             if (sharedCol) {
+                // Build a lookup map from the dimension table (1:1 or many:1)
                 const rightMap = new Map<string, any>();
-                rightRows.forEach(r => rightMap.set(String(r[sharedCol]), r));
+                rightRows.forEach(r => rightMap.set(String(r[sharedCol!]), r));
+
+                const beforeCount = merged.length;
                 merged = merged.map(row => {
-                    const match = rightMap.get(String(row[sharedCol]));
+                    const match = rightMap.get(String(row[sharedCol!]));
                     if (match) {
-                        const prefixed: any = {};
+                        const enriched: any = {};
                         for (const [k, v] of Object.entries(match)) {
                             if (k === sharedCol) continue;
-                            prefixed[leftCols.has(k) ? `${rightTable}_${k}` : k] = v;
+                            enriched[leftCols.has(k) ? `${rightTable}_${k}` : k] = v;
                         }
-                        return { ...row, ...prefixed };
+                        return { ...row, ...enriched };
                     }
                     return row;
                 });
-                logs.push(`LEFT JOIN ${rightTable} ON ${sharedCol} → ${merged.length} rows`);
+                logs.push(`LEFT JOIN ${rightTable} ON ${sharedCol} → ${merged.length} rows (was ${beforeCount})`);
             } else {
-                logs.push(`SKIP ${rightTable} — no matching join column found`);
+                logs.push(`SKIP ${rightTable} — no shared ID column with ${factTable}`);
             }
         }
         return { mergedRows: merged, joinLogs: logs };
     }
 
-    // Use provided join edges
-    const joined = new Set<string>();
-    // Find the root table (appears as leftTable most often or is first edge's leftTable)
-    const rootTable = joinEdges[0]?.leftTable || keys[0];
+    // ── Use provided join edges (from buildJoinStrategy) ──
+    // The edges are already ordered correctly (fact-first) by buildJoinStrategy.
+    // We pick the root from the first edge's leftTable, but re-check against
+    // the detected fact table to be safe.
+    const edgeRoot = joinEdges[0]?.leftTable || factTable;
+
+    // Use whichever of the two has more rows as the true root
+    const edgeRootRows = (tables[edgeRoot] || []).length;
+    const factRows = (tables[factTable] || []).length;
+    const rootTable = factRows >= edgeRootRows ? factTable : edgeRoot;
+
     let merged = [...(tables[rootTable] || [])];
-    joined.add(rootTable);
-    logs.push(`Base table: ${rootTable} (${merged.length} rows)`);
+    const joined = new Set<string>([rootTable]);
+    logs.push(`Base table (FACT): ${rootTable} (${merged.length} rows)`);
 
-    // Process edges in order
-    for (const edge of joinEdges) {
-        const rightName = joined.has(edge.leftTable) ? edge.rightTable : edge.leftTable;
-        const leftCol = joined.has(edge.leftTable) ? edge.leftColumn : edge.rightColumn;
-        const rightCol = joined.has(edge.leftTable) ? edge.rightColumn : edge.leftColumn;
+    // Process edges in topological order
+    // We do multiple passes to handle cases where an edge references a not-yet-joined table
+    const pending = [...joinEdges];
+    let maxPasses = pending.length + 1;
 
-        if (joined.has(rightName)) continue;
+    while (pending.length > 0 && maxPasses-- > 0) {
+        let progress = false;
 
-        const rightRows = tables[rightName] || [];
-        if (rightRows.length === 0) { logs.push(`SKIP ${rightName} — empty table`); continue; }
+        for (let i = pending.length - 1; i >= 0; i--) {
+            const edge = pending[i];
 
-        const leftColsSet = new Set(Object.keys(merged[0] || {}));
-        const rightMap = new Map<string, any>();
-        rightRows.forEach(r => rightMap.set(String(r[rightCol]), r));
+            // Determine which side is already joined (the left in our result set)
+            let leftCol: string;
+            let rightName: string;
+            let rightCol: string;
 
-        const beforeCount = merged.length;
-        merged = merged.map(row => {
-            const match = rightMap.get(String(row[leftCol]));
-            if (match) {
-                const prefixed: any = {};
-                for (const [k, v] of Object.entries(match)) {
-                    if (k === rightCol) continue;
-                    prefixed[leftColsSet.has(k) ? `${rightName}_${k}` : k] = v;
+            if (joined.has(edge.leftTable) && !joined.has(edge.rightTable)) {
+                leftCol = edge.leftColumn;
+                rightName = edge.rightTable;
+                rightCol = edge.rightColumn;
+            } else if (joined.has(edge.rightTable) && !joined.has(edge.leftTable)) {
+                // Flip the edge — the right table is already joined, left is the new one
+                leftCol = edge.rightColumn;
+                rightName = edge.leftTable;
+                rightCol = edge.leftColumn;
+            } else {
+                // Both sides already joined or neither — skip for now
+                if (joined.has(edge.leftTable) && joined.has(edge.rightTable)) {
+                    pending.splice(i, 1); // already done
                 }
-                return { ...row, ...prefixed };
+                continue;
             }
-            return row;
-        });
 
-        joined.add(rightName);
-        logs.push(`LEFT JOIN ${rightName} ON ${leftCol} = ${rightCol} (${edge.type}) → ${merged.length} rows`);
+            const rightRows = tables[rightName] || [];
+            if (rightRows.length === 0) {
+                logs.push(`SKIP ${rightName} — empty table`);
+                pending.splice(i, 1);
+                progress = true;
+                continue;
+            }
+
+            const leftColsSet = new Set(Object.keys(merged[0] || {}));
+
+            // Build a 1-to-1 lookup map from the dimension/right table
+            const rightMap = new Map<string, any>();
+            rightRows.forEach(r => rightMap.set(String(r[rightCol]), r));
+
+            const beforeCount = merged.length;
+            merged = merged.map(row => {
+                const match = rightMap.get(String(row[leftCol]));
+                if (match) {
+                    const enriched: any = {};
+                    for (const [k, v] of Object.entries(match)) {
+                        if (k === rightCol) continue;
+                        enriched[leftColsSet.has(k) ? `${rightName}_${k}` : k] = v;
+                    }
+                    return { ...row, ...enriched };
+                }
+                return row;
+            });
+
+            joined.add(rightName);
+            logs.push(`LEFT JOIN ${rightName} ON ${leftCol} = ${rightCol} [${edge.type}] → ${merged.length} rows (was ${beforeCount})`);
+            pending.splice(i, 1);
+            progress = true;
+        }
+
+        if (!progress) break; // No more progress possible
+    }
+
+    // Log any tables that couldn't be joined
+    for (const edge of pending) {
+        logs.push(`WARN: Could not join ${edge.leftTable} ↔ ${edge.rightTable} — orphaned edge`);
     }
 
     return { mergedRows: merged, joinLogs: logs };
@@ -549,12 +1226,51 @@ export const autoJoinDatasets = (
 
 export const parseCSV = (text: string): any[] => {
     const lines = text.trim().split('\n');
-    const headers = lines[0].split(',').map(h => h.trim());
-    return lines.slice(1).map(line => {
-        const v = line.split(',');
-        return headers.reduce((acc, h, i) => ({ ...acc, [h]: v[i]?.trim() }), {});
-    });
+    const headers = parseCSVLine(lines[0]);
+    return lines.slice(1)
+        .filter(line => line.trim() !== '')
+        .map(line => {
+            const v = parseCSVLine(line);
+            return headers.reduce((acc, h, i) => ({ ...acc, [h]: v[i]?.trim() ?? '' }), {});
+        });
 };
+
+/** Parse a single CSV line respecting quoted fields (RFC 4180) */
+function parseCSVLine(line: string): string[] {
+    const fields: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+        const ch = line[i];
+        if (inQuotes) {
+            if (ch === '"') {
+                // Check for escaped quote ("")
+                if (i + 1 < line.length && line[i + 1] === '"') {
+                    current += '"';
+                    i++; // skip next quote
+                } else {
+                    inQuotes = false; // end of quoted field
+                }
+            } else {
+                current += ch;
+            }
+        } else {
+            if (ch === '"') {
+                inQuotes = true;
+            } else if (ch === ',') {
+                fields.push(current.trim());
+                current = '';
+            } else if (ch === '\r') {
+                // skip carriage return
+            } else {
+                current += ch;
+            }
+        }
+    }
+    fields.push(current.trim());
+    return fields;
+}
 
 export const parseExcel = async (file: File): Promise<any[]> => {
     return new Promise(resolve => {

@@ -131,6 +131,9 @@ self.onmessage = async (e: MessageEvent) => {
                 (result as any).sourceSchema = sourceSchema;
             }
 
+            // Attach raw (pre-ETL) rows for Raw vs Clean comparison
+            (result as any).rawRows = rowsToProcess;
+
             self.postMessage({ type: 'SUCCESS', result });
         }
     } catch (error: any) {

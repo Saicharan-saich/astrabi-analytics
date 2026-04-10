@@ -36,6 +36,7 @@ export interface NLQParseResult {
     };
     excludeFilters: Record<string, string[]>;
     secondDimension?: string;
+    secondaryMetrics?: string[]; // Additional metrics detected (e.g., "sales and profit" → secondary: ['profit'])
 }
 
 // ─── STOP WORDS ──────────────────────────────────────────────
@@ -138,6 +139,9 @@ const expandWithSynonyms = (token: string): string[] => {
 };
 
 // ─── AGGREGATION KEYWORDS ────────────────────────────────────
+// NOTE: 'highest' and 'lowest' are NOT here — they are ranking signals,
+// not aggregation. "Which product has highest sales" = SUM + sort desc + limit 1,
+// NOT MAX(sales). Handling is in Step 10e below.
 const AGG_KEYWORDS: Record<string, AggregationType> = {
     'total': AggregationType.SUM,
     'sum': AggregationType.SUM,
@@ -148,10 +152,8 @@ const AGG_KEYWORDS: Record<string, AggregationType> = {
     'number': AggregationType.COUNT,
     'maximum': AggregationType.MAX,
     'max': AggregationType.MAX,
-    'highest': AggregationType.MAX,
     'minimum': AggregationType.MIN,
     'min': AggregationType.MIN,
-    'lowest': AggregationType.MIN,
 };
 
 // ─── TABLE CALCULATION PATTERNS ──────────────────────────────
@@ -691,6 +693,25 @@ export const parseNLQ = (query: string, dataset: Dataset): NLQParseResult => {
         result.metric = bestMetric.column;
         usedTokenRanges.push([bestMetric.startIdx, bestMetric.endIdx]);
         explanation.push(`Metric: **${bestMetric.column}** (matched "${bestMetric.phrase}")`);
+
+        // ── Capture secondary metrics (e.g., "sales and profit") ──
+        // Continue scanning deduped metric matches for additional unique metrics
+        const secondaryMetrics: string[] = [];
+        for (const m of dedupedMetricMatches) {
+            if (m.column === bestMetric.column) continue; // Skip primary
+            if (secondaryMetrics.includes(m.column)) continue; // Skip duplicates
+            if (isTokenUsed(m.startIdx, m.endIdx)) continue; // Skip already-used tokens
+            // Verify it's an actual METRIC column
+            const colDef = dataset.columns.find(c => c.name === m.column);
+            if (!colDef || colDef.type !== ColumnType.METRIC) continue;
+            secondaryMetrics.push(m.column);
+            usedTokenRanges.push([m.startIdx, m.endIdx]);
+            if (secondaryMetrics.length >= 3) break; // Cap at 3 secondary metrics
+        }
+        if (secondaryMetrics.length > 0) {
+            result.secondaryMetrics = secondaryMetrics;
+            explanation.push(`Secondary metrics: **${secondaryMetrics.join(', ')}**`);
+        }
     } else if (result.aggregation === AggregationType.COUNT) {
         result.metric = 'count';
         explanation.push(`Metric: **count** (record count)`);
@@ -702,7 +723,10 @@ export const parseNLQ = (query: string, dataset: Dataset): NLQParseResult => {
 
     // ── Step 6: Detect Dimension ─────────────────────────────
     // Look for "by [dimension]" pattern first (strongest signal)
-    const byPatternMatch = cleanQuery.match(/\bby\s+(\w[\w\s]*?)(?:\s+(?:for|in|from|where|and|show|with|greater|less|over|above|below|month|week|day|year|quarter|wise|chart|graph|>|<|=)\b|$)/);
+    // Stop at known keywords AND dimension column names to prevent over-capture
+    const dimStopWords = dimCols.map(d => d.toLowerCase().replace(/_/g, ' ')).join('|');
+    const byPatternRegex = new RegExp(`\\bby\\s+(\\w[\\w\\s]*?)(?:\\s+(?:for|in|from|where|and|show|with|greater|less|over|above|below|month|week|day|year|quarter|wise|chart|graph|>|<|=|${dimStopWords})\\b|$)`);
+    const byPatternMatch = cleanQuery.match(byPatternRegex);
 
     // Also detect "[dimension] wise" pattern (e.g., "region wise", "product wise")
     const wisePatternMatch = cleanQuery.match(/\b(\w+)\s+wise\b/);
@@ -749,10 +773,29 @@ export const parseNLQ = (query: string, dataset: Dataset): NLQParseResult => {
     }
 
     // Fallback: search all tokens for dimension columns
+    // BUT skip matches where the next token is a data value for that column
+    // (e.g., "state alabama" = filter intent, not grouping intent)
     if (!bestDim) {
         const dimMatches = findAllColumnMatches(tokens, dimCols);
         for (const m of dimMatches) {
             if (!isTokenUsed(m.startIdx, m.endIdx)) {
+                // Check if this looks like a "[dim] [value]" filter pattern
+                const nextIdx = m.endIdx;
+                if (nextIdx < tokens.length) {
+                    const nextToken = tokens[nextIdx];
+                    // Skip stop words and check if next word is a data value
+                    if (!STOP_WORDS.has(nextToken) && !/^\d+$/.test(nextToken) && !/^(19|20)\d{2}$/.test(nextToken)) {
+                        const colToCheck = m.column;
+                        const isDataValue = findDimensionForValue(nextToken, dataset, [colToCheck]);
+                        // Also check if synonym-resolved column has the value
+                        const allMatchedCols = dimMatches.filter(dm => dm.startIdx === m.startIdx).map(dm => dm.column);
+                        const isValueInAnyMatch = allMatchedCols.some(c => findDimensionForValue(nextToken, dataset, [c]));
+                        if (isDataValue || isValueInAnyMatch) {
+                            // Next token is a data value for this column → filter pattern, skip
+                            continue;
+                        }
+                    }
+                }
                 bestDim = m;
                 break;
             }
@@ -884,68 +927,171 @@ export const parseNLQ = (query: string, dataset: Dataset): NLQParseResult => {
     }
 
     // ── Step 9: Categorical Filters ──────────────────────────
-    // Parse "for [value]" patterns, but skip known date/grain/time words
+    // Enhanced: handles "category Furniture", "segment Consumer",
+    // "for category Furniture and segment Consumer", multi-word values,
+    // and standalone value lookups.
     const DATE_GRAIN_WORDS = new Set([
         'year', 'years', 'month', 'months', 'week', 'weeks', 'day', 'days',
         'quarter', 'quarters', 'daily', 'weekly', 'monthly', 'quarterly', 'yearly',
         'the', 'each', 'every', 'wise', 'last', 'next', 'this', 'all',
-        // Time filter words — must NOT leak into categorical filters
         'today', 'yesterday', 'tomorrow',
     ]);
+    const FILTER_SKIP_WORDS = new Set([
+        'and', 'or', 'the', 'for', 'by', 'in', 'from', 'with', 'where', 'on', 'at',
+        'to', 'of', 'show', 'me', 'give', 'get', 'display', 'total', 'average', 'sum',
+        'count', 'max', 'min', 'sales', 'revenue', 'profit', 'quantity', 'discount',
+    ]);
 
-    // Look for "for [value]" where value isn't a date/number/stop word
-    const forRegex = /\bfor\s+(?:the\s+)?(\w+)/g;
-    let forMatch;
-    while ((forMatch = forRegex.exec(cleanQuery)) !== null) {
-        const candidate = forMatch[1];
-        // Skip if it's a date word, number, or year
-        if (DATE_GRAIN_WORDS.has(candidate)) continue;
-        if (/^\d+$/.test(candidate)) continue;
-        if (/^(19|20)\d{2}$/.test(candidate)) continue;
-        // Skip if this word was already consumed as a timeFilter
-        if (result.timeFilter && candidate === result.timeFilter.replace(/_/g, '')) continue;
+    // Helper: add a filter value to a dimension, avoiding duplicates
+    const addFilter = (dim: string, val: string) => {
+        const normalVal = val.charAt(0).toUpperCase() + val.slice(1).toLowerCase(); // Title case
+        if (!result.filters[dim]) result.filters[dim] = [];
+        // Check both original and title case to avoid duplicates
+        if (!result.filters[dim].some(v => v.toLowerCase() === val.toLowerCase())) {
+            result.filters[dim].push(normalVal);
+            explanation.push(`Filter: **${dim}** = "**${normalVal}**"`);
+        }
+    };
 
-        // Check if candidate is explicitly a dimension name (e.g. "for category furniture")
-        const explicitDim = dimCols.find(d => d.toLowerCase() === candidate.toLowerCase() || d.replace(/_/g, ' ').toLowerCase() === candidate.toLowerCase());
+    // ─── STEP 9: FILTER EXTRACTION ─────────────────────────────────────
+    // Simple approach: scan words, find dimension names, capture following data values.
+    const dimColsLower = dimCols.map(d => ({ name: d, lower: d.toLowerCase().replace(/_/g, ' ') }));
+    const queryWords = cleanQuery.split(/\s+/);
+    const multiValueFilterDims: string[] = [];
 
-        if (explicitDim) {
-            // "for category ..." -> The candidate is the dimension, next word is likely the value
-            const afterMatchOffset = forMatch.index + forMatch[0].length;
-            const afterMatch = cleanQuery.slice(afterMatchOffset);
-            const nextValMatch = afterMatch.match(/^\s+(\w+)/);
+    const singularize = (w: string): string => {
+        if (w.endsWith('ies') && w.length > 4) return w.slice(0, -3) + 'y'; // categories → category
+        if (w.endsWith('sses') && w.length > 5) return w.slice(0, -2);      // addresses → address
+        if (w.endsWith('xes') && w.length > 4) return w.slice(0, -2);       // boxes → box
+        if (w.endsWith('shes') && w.length > 5) return w.slice(0, -2);      // dishes → dish
+        if (w.endsWith('ches') && w.length > 5) return w.slice(0, -2);      // watches → watch
+        if (w.endsWith('zes') && w.length > 4) return w.slice(0, -2);       // quizzes → quiz (after sses)
+        if (w.endsWith('s') && !w.endsWith('ss') && w.length > 3) return w.slice(0, -1); // states → state
+        return w;
+    };
 
-            if (nextValMatch) {
-                const val = nextValMatch[1];
-                // Skip if val is a keyword, stopword, preposition, or another dimension name
-                const SKIP_VALS = new Set(['and', 'or', 'the', 'for', 'by', 'in', 'from', 'with', 'where', 'on', 'at', 'to', 'of', 'show', 'me', 'sales', 'revenue']);
-                const isAnotherDim = dimCols.some(d => d.toLowerCase() === val.toLowerCase());
-                if (!DATE_GRAIN_WORDS.has(val) && !SKIP_VALS.has(val) && !STOP_WORDS.has(val) && !isAnotherDim && !/^\d+$/.test(val)) {
-                    if (!result.filters[explicitDim]) result.filters[explicitDim] = [];
-                    // Avoid duplicates
-                    if (!result.filters[explicitDim].includes(val)) {
-                        result.filters[explicitDim].push(val);
-                        explanation.push(`Filter: **${explicitDim}** = "**${val}**"`);
-                    }
-                }
+    const filterStopWords = new Set(['compare', 'comparison', 'growth', 'difference', 'versus',
+        'vs', 'between', 'by', 'for', 'from', 'with', 'in', 'show', 'both', 'their', 'me']);
+
+    for (let wi = 0; wi < queryWords.length; wi++) {
+        const word = queryWords[wi];
+        const wordSingular = singularize(word);
+
+        // Match to a dimension column
+        const matchedCol = dimColsLower.find(d => d.lower === word || d.lower === wordSingular);
+        if (!matchedCol) continue;
+
+        console.log(`[NLQ Filter] wi=${wi} word="${word}" matched dim="${matchedCol.name}" (lower="${matchedCol.lower}")`);
+
+        // Capture data values after the dimension name
+        const values: string[] = [];
+        let j = wi + 1;
+        while (j < queryWords.length) {
+            let w = queryWords[j].replace(/,$/, '');
+            // Skip connectors
+            if (w === 'and' || w === 'or' || w === 'the') { console.log(`[NLQ Filter]   j=${j} "${w}" → connector skip`); j++; continue; }
+            // Stop at keywords
+            if (filterStopWords.has(w)) { console.log(`[NLQ Filter]   j=${j} "${w}" → stop keyword`); break; }
+            if (/^(19|20)\d{2}$/.test(w)) { console.log(`[NLQ Filter]   j=${j} "${w}" → year stop`); break; }
+            // Stop at other dimension or metric columns
+            if (dimColsLower.some(d => (d.lower === w || singularize(w) === d.lower) && d.name !== matchedCol.name)) { console.log(`[NLQ Filter]   j=${j} "${w}" → other dim stop`); break; }
+            if (metricCols.some(mc => mc.toLowerCase() === w)) { console.log(`[NLQ Filter]   j=${j} "${w}" → metric stop`); break; }
+
+            // Check if it's a real data value
+            const found = findDimensionForValue(w, dataset, [matchedCol.name]);
+            console.log(`[NLQ Filter]   j=${j} "${w}" → findDimensionForValue=${found}`);
+            if (found) {
+                values.push(w);
+                j++;
+                continue;
             }
-            continue; // Skip treating the dimension name as a value
+            break;
         }
 
-        // Try to find which dimension this value belongs to
-        // Heuristic: scan dataset rows for this value in dimension columns
-        const matchedDimCol = findDimensionForValue(candidate, dataset, dimCols);
-        if (matchedDimCol) {
-            if (!result.filters[matchedDimCol]) result.filters[matchedDimCol] = [];
-            result.filters[matchedDimCol].push(candidate);
-            explanation.push(`Filter: **${matchedDimCol}** = "**${candidate}**"`);
-        } else {
-            // If we have a known dimension, assume the value belongs there
-            const targetDim = bestDim?.column || dimCols[0];
-            if (targetDim) {
-                if (!result.filters[targetDim]) result.filters[targetDim] = [];
-                result.filters[targetDim].push(candidate);
-                explanation.push(`Filter: **${targetDim}** = "**${candidate}**" (assumed)`);
-                result.confidence -= 0.05;
+        console.log(`[NLQ Filter] values for "${matchedCol.name}":`, values);
+        if (values.length > 0) {
+            for (const v of values) addFilter(matchedCol.name, v);
+            if (values.length > 1) multiValueFilterDims.push(matchedCol.name);
+            wi = j - 1;
+        }
+    }
+
+    // Strategy B: "for [value]" pattern — catches values without explicit dimension prefix
+    // e.g., "for Furniture", "for West"
+    const forRegex = /\bfor\s+(?:the\s+)?(\w[\w\s]*?)(?:\s+(?:and|or|by|in|for|from|with)\b|$)/g;
+    let forMatch;
+    while ((forMatch = forRegex.exec(cleanQuery)) !== null) {
+        const segment = forMatch[1].trim();
+        const segWords = segment.split(/\s+/);
+
+        for (const candidate of segWords) {
+            const candLower = candidate.toLowerCase();
+            if (DATE_GRAIN_WORDS.has(candLower)) continue;
+            if (FILTER_SKIP_WORDS.has(candLower)) continue;
+            if (STOP_WORDS.has(candLower)) continue;
+            if (/^\d+$/.test(candidate)) continue;
+            if (/^(19|20)\d{2}$/.test(candidate)) continue;
+            // Skip if it's a dimension name (handled in Strategy A)
+            if (dimColsLower.some(d => d.lower === candLower)) continue;
+            // Skip if it was already added as a filter
+            const alreadyFiltered = Object.values(result.filters).some(vals =>
+                vals.some(v => v.toLowerCase() === candLower)
+            );
+            if (alreadyFiltered) continue;
+
+            // Try to find which dimension this value belongs to by scanning data
+            const matchedDimCol = findDimensionForValue(candidate, dataset, dimCols);
+            if (matchedDimCol) {
+                addFilter(matchedDimCol, candidate);
+            }
+        }
+    }
+
+    // Strategy C: Scan for "and [dim] [value]" chains that Strategy A might miss
+    // e.g., "... and category Furniture" after another filter
+    const andChainRegex = /\band\s+(\w+)\s+(\w[\w\s]*?)(?:\s+(?:and|or|by|for|from|with)\b|$)/g;
+    let andMatch;
+    while ((andMatch = andChainRegex.exec(cleanQuery)) !== null) {
+        const possibleDim = andMatch[1].toLowerCase();
+        const possibleVal = andMatch[2].trim().split(/\s+/)[0]; // First word after dim
+
+        const matchedDim = dimColsLower.find(d => d.lower === possibleDim);
+        if (matchedDim && possibleVal && !DATE_GRAIN_WORDS.has(possibleVal.toLowerCase()) && !FILTER_SKIP_WORDS.has(possibleVal.toLowerCase())) {
+            addFilter(matchedDim.name, possibleVal);
+        }
+    }
+
+    // ── Step 9.5: Comparison Intent & Smart Dimension Override ──
+    // Detect: "compare", "growth", "difference", "vs", "versus", "between"
+    // When combined with multi-value filter → group BY that dimension for side-by-side comparison
+    const comparisonIntentRx = /\b(?:compar(?:e|ison|ing)|growth|differ(?:ence|ent)|versus|vs|between|side\s*by\s*side|head\s*to\s*head)\b/;
+    const hasComparisonIntent = comparisonIntentRx.test(cleanQuery);
+
+    // Also detect implicit comparison: multi-value filter on a dim + no explicit dimension set
+    const hasMultiValueFilter = multiValueFilterDims.length > 0 ||
+        Object.values(result.filters).some(vals => vals.length > 1);
+
+    if (hasMultiValueFilter) {
+        // Find the dimension with multiple filter values
+        let multiValDim = multiValueFilterDims[0] ||
+            Object.entries(result.filters).find(([_, vals]) => vals.length > 1)?.[0];
+
+        if (multiValDim) {
+            // Smart dimension override: group BY the multi-value filter dimension
+            // so the chart shows side-by-side bars for each filtered value
+            const oldDim = result.dimension;
+            result.dimension = multiValDim;
+            explanation.push(`Dimension overridden to **${multiValDim}** (multi-value filter → side-by-side comparison)`);
+
+            // If comparison intent detected, add table calculation
+            if (hasComparisonIntent) {
+                if (!result.tableCalculations.includes('diff_from_prev') && !result.tableCalculations.includes('pct_change')) {
+                    // Check if user specifically asked for percentage/growth
+                    const wantsPercent = /\b(?:percent(?:age)?|%|growth|rate)\b/.test(cleanQuery);
+                    const calcType = wantsPercent ? 'pct_change' : 'diff_from_prev';
+                    result.tableCalculations.push(calcType);
+                    explanation.push(`Table calc: **${wantsPercent ? 'Percent Change' : 'Difference'}** (comparison intent detected)`);
+                }
             }
         }
     }
@@ -981,6 +1127,31 @@ export const parseNLQ = (query: string, dataset: Dataset): NLQParseResult => {
         result.sort = 'desc';
     } else if (/\b(?:worst\s+selling|least\s+selling)\b/.test(cleanQuery)) {
         result.sort = 'asc';
+    }
+
+    // ── Step 10e: Ranking Detection (highest/lowest) ─────────
+    // "Which X has the highest/lowest Y?" is a RANKING question, not MIN/MAX.
+    // Correct behavior: SUM(Y) GROUP BY X ORDER BY ASC/DESC LIMIT 1
+    // This was previously broken: "highest" → MAX, "lowest" → MIN
+    const rankingHighPattern = /\b(?:which|what)\b.*\b(?:highest|most|biggest|largest|greatest|best)\b/;
+    const rankingLowPattern = /\b(?:which|what)\b.*\b(?:lowest|least|smallest|fewest|worst)\b/;
+
+    if (rankingHighPattern.test(cleanQuery)) {
+        result.sort = 'desc';
+        if (!result.limit) result.limit = 1;
+        // Override aggregation back to SUM if it was set to MAX by mistake
+        if (result.aggregation === AggregationType.MAX) {
+            result.aggregation = AggregationType.SUM;
+        }
+        explanation.push(`Ranking: **highest** detected → SUM + ORDER DESC LIMIT ${result.limit}`);
+    } else if (rankingLowPattern.test(cleanQuery)) {
+        result.sort = 'asc';
+        if (!result.limit) result.limit = 1;
+        // Override aggregation back to SUM if it was set to MIN by mistake
+        if (result.aggregation === AggregationType.MIN) {
+            result.aggregation = AggregationType.SUM;
+        }
+        explanation.push(`Ranking: **lowest** detected → SUM + ORDER ASC LIMIT ${result.limit}`);
     }
 
     // ── Step 10b: HAVING filter (post-aggregation) ──────────
@@ -1060,7 +1231,9 @@ function findDimensionForValue(
     for (const col of dimCols) {
         for (let i = 0; i < sampleSize; i++) {
             const cellVal = String(dataset.rows[i]?.[col] || '').toLowerCase();
-            if (cellVal === lowerVal || cellVal.includes(lowerVal)) {
+            // Exact match only (case-insensitive) — no substring matching
+            // This prevents "states" from matching "United States" in the country column
+            if (cellVal === lowerVal) {
                 return col;
             }
         }

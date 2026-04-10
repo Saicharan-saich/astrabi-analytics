@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench } from 'lucide-react';
+import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles } from 'lucide-react';
 import { Tab, UserRole } from '../types';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { Tooltip } from './Tooltip';
@@ -31,6 +31,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         { id: Tab.WORKBENCH, label: 'Workbench', icon: Play, requiresCreateVisuals: true, tooltip: 'Pick from the Question Bank or build custom queries with full control over metrics, dimensions, and filters.' },
         { id: Tab.BUILDER, label: 'Question Builder', icon: Search, requiresCreateVisuals: true, tooltip: 'A simplified natural-language-style builder: "Show me [metric] by [dimension]" with intuitive dropdowns.' },
         { id: Tab.NLQ, label: 'Ask Data', icon: MessageSquare, requiresCreateVisuals: true, tooltip: 'Type questions in plain English like "revenue by month" and get instant charts.' },
+        { id: Tab.AI_SQL, label: 'AI SQL', icon: Sparkles, requiresCreateVisuals: true, tooltip: 'Ask questions in natural language — AI generates and executes SQL on your dataset. Powered by Gemini.' },
         { id: Tab.CUSTOM_QUESTIONS, label: 'Custom Questions', icon: Wrench, requiresManageQuestions: true, tooltip: 'Build custom analytical questions with SQL. Admin only.' },
     ];
 

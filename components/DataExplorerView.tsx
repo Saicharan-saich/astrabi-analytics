@@ -1,12 +1,15 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Filter, ArrowUpDown, Download, Table as TableIcon, BarChart2 } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, Download, Table as TableIcon, BarChart2, FileText, Sparkles } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
 
 interface DataExplorerViewProps {
     dataset: Dataset | null;
 }
 
+type ViewMode = 'clean' | 'raw';
+
 export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) => {
+    const [viewMode, setViewMode] = useState<ViewMode>('clean');
     const [searchTerm, setSearchTerm] = useState('');
     const [sortCol, setSortCol] = useState<string | null>(null);
     const [sortAsc, setSortAsc] = useState(true);
@@ -15,12 +18,25 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
     const [filterCol, setFilterCol] = useState<string | null>(null);
     const [filterVal, setFilterVal] = useState('');
 
-    const columns = useMemo(() => dataset ? dataset.columns.map(c => c.name) : [], [dataset]);
+    const hasRawData = !!(dataset?.rawRows && dataset.rawRows.length > 0);
 
-    // Filter & Search — must be called on every render (Rules of Hooks)
-    const filteredRows = useMemo(() => {
+    // Determine which data source to show
+    const activeRows = useMemo(() => {
         if (!dataset) return [];
-        let rows = dataset.rows;
+        if (viewMode === 'raw' && hasRawData) return dataset.rawRows!;
+        return dataset.rows;
+    }, [dataset, viewMode, hasRawData]);
+
+    const columns = useMemo(() => {
+        if (activeRows.length === 0) return [];
+        if (viewMode === 'clean' && dataset) return dataset.columns.map(c => c.name);
+        // Raw mode: use keys from the raw rows
+        return Object.keys(activeRows[0] || {});
+    }, [activeRows, viewMode, dataset]);
+
+    // Filter & Search
+    const filteredRows = useMemo(() => {
+        let rows = activeRows;
 
         if (searchTerm) {
             const lower = searchTerm.toLowerCase();
@@ -52,7 +68,7 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
         }
 
         return rows;
-    }, [dataset, searchTerm, filterCol, filterVal, sortCol, sortAsc, columns]);
+    }, [activeRows, searchTerm, filterCol, filterVal, sortCol, sortAsc, columns]);
 
     if (!dataset) {
         return (
@@ -77,6 +93,7 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
     };
 
     const getColType = (name: string) => {
+        if (viewMode === 'raw') return ColumnType.UNKNOWN;
         const col = dataset.columns.find(c => c.name === name);
         return col?.type || ColumnType.UNKNOWN;
     };
@@ -99,17 +116,77 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
                 return v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v;
             }).join(',')
         ).join('\n');
+        const suffix = viewMode === 'raw' ? '_raw' : '_cleaned';
         const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `${dataset.name.replace(/\.[^.]+$/, '')}_export.csv`;
+        a.download = `${dataset.name.replace(/\.[^.]+$/, '')}${suffix}.csv`;
         a.click();
         URL.revokeObjectURL(url);
     };
 
+    const handleTabSwitch = (mode: ViewMode) => {
+        setViewMode(mode);
+        setCurrentPage(0);
+        setSortCol(null);
+        setFilterCol(null);
+        setFilterVal('');
+        setSearchTerm('');
+    };
+
     return (
         <div className="flex flex-col h-full overflow-hidden p-6 gap-4">
+            {/* Raw / Clean Toggle Tabs */}
+            <div className="flex items-center gap-1 bg-slate-800/60 border border-white/10 rounded-xl p-1 w-fit">
+                <button
+                    onClick={() => handleTabSwitch('clean')}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200
+                        ${viewMode === 'clean'
+                            ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm shadow-emerald-500/10'
+                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                        }`}
+                >
+                    <Sparkles className="w-4 h-4" />
+                    Cleaned Data
+                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${viewMode === 'clean' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-500'}`}>
+                        {dataset.rows.length}
+                    </span>
+                </button>
+                <button
+                    onClick={() => handleTabSwitch('raw')}
+                    disabled={!hasRawData}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200
+                        ${!hasRawData ? 'text-slate-600 cursor-not-allowed opacity-50' :
+                            viewMode === 'raw'
+                                ? 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/30 shadow-sm shadow-amber-500/10'
+                                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
+                        }`}
+                >
+                    <FileText className="w-4 h-4" />
+                    Raw Data
+                    {hasRawData && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${viewMode === 'raw' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-700 text-slate-500'}`}>
+                            {dataset.rawRows!.length}
+                        </span>
+                    )}
+                </button>
+            </div>
+
+            {/* Info Bar */}
+            {viewMode === 'raw' && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-300 text-xs">
+                    <FileText className="w-3.5 h-3.5" />
+                    Showing original uploaded data before ETL cleaning. Column headers are as-uploaded.
+                </div>
+            )}
+            {viewMode === 'clean' && (
+                <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-300 text-xs">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Showing ETL-cleaned data with normalized headers, standardized values, and type-safe columns.
+                </div>
+            )}
+
             {/* Toolbar */}
             <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-2 flex-1 min-w-[200px] bg-slate-800/60 border border-white/10 rounded-xl px-3 py-2">
@@ -149,21 +226,23 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
                     className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl border border-white/10 hover:border-indigo-500/30 bg-slate-800/60 hover:bg-indigo-500/10 text-slate-300 hover:text-indigo-300 transition-all"
                 >
                     <Download className="w-4 h-4" />
-                    Export CSV
+                    Export {viewMode === 'raw' ? 'Raw' : 'Clean'} CSV
                 </button>
 
                 <div className="flex items-center gap-2 text-xs text-slate-500">
                     <BarChart2 className="w-3.5 h-3.5" />
-                    <span>{filteredRows.length.toLocaleString()} of {dataset.totalRows.toLocaleString()} rows</span>
+                    <span>{filteredRows.length.toLocaleString()} of {activeRows.length.toLocaleString()} rows</span>
                 </div>
             </div>
 
-            {/* Column Types Legend */}
-            <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-slate-500">
-                {[ColumnType.METRIC, ColumnType.DATE, ColumnType.DIMENSION, ColumnType.ID].map(t => (
-                    <span key={t} className={`px-2 py-0.5 rounded-full ${typeColor(t)} font-bold`}>{t}</span>
-                ))}
-            </div>
+            {/* Column Types Legend (only in clean mode) */}
+            {viewMode === 'clean' && (
+                <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-slate-500">
+                    {[ColumnType.METRIC, ColumnType.DATE, ColumnType.DIMENSION, ColumnType.ID].map(t => (
+                        <span key={t} className={`px-2 py-0.5 rounded-full ${typeColor(t)} font-bold`}>{t}</span>
+                    ))}
+                </div>
+            )}
 
             {/* Table */}
             <div className="flex-1 overflow-auto rounded-xl border border-white/10 bg-slate-800/30">
@@ -178,9 +257,11 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
                                     className="px-3 py-3 text-left text-[10px] font-bold uppercase tracking-wider border-b border-white/5 cursor-pointer hover:bg-white/5 transition-colors group whitespace-nowrap"
                                 >
                                     <div className="flex items-center gap-1.5">
-                                        <span className={`px-1.5 py-0.5 rounded text-[9px] ${typeColor(getColType(col))}`}>
-                                            {getColType(col).charAt(0)}
-                                        </span>
+                                        {viewMode === 'clean' && (
+                                            <span className={`px-1.5 py-0.5 rounded text-[9px] ${typeColor(getColType(col))}`}>
+                                                {getColType(col).charAt(0)}
+                                            </span>
+                                        )}
                                         <span className="text-slate-400">{col}</span>
                                         <ArrowUpDown className={`w-3 h-3 transition-opacity ${sortCol === col ? 'text-indigo-400 opacity-100' : 'text-slate-600 opacity-0 group-hover:opacity-50'
                                             }`} />
@@ -199,11 +280,21 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
                                 className="hover:bg-white/3 transition-colors"
                             >
                                 <td className="px-3 py-2 text-[10px] text-slate-600 font-mono">{currentPage * pageSize + idx + 1}</td>
-                                {columns.map(col => (
-                                    <td key={col} className="px-3 py-2 text-slate-300 max-w-[200px] truncate font-mono text-xs">
-                                        {String(row[col] ?? '')}
-                                    </td>
-                                ))}
+                                {columns.map(col => {
+                                    const val = row[col];
+                                    const isEmpty = val === null || val === undefined || val === '';
+                                    return (
+                                        <td
+                                            key={col}
+                                            className={`px-3 py-2 max-w-[200px] truncate font-mono text-xs ${isEmpty
+                                                ? 'text-red-400/50 italic'
+                                                : viewMode === 'raw' ? 'text-amber-200/80' : 'text-slate-300'
+                                                }`}
+                                        >
+                                            {isEmpty ? '∅' : String(val)}
+                                        </td>
+                                    );
+                                })}
                             </tr>
                         ))}
                     </tbody>
