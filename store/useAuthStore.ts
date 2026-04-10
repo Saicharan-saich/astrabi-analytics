@@ -64,7 +64,7 @@ export const isSessionExpired = (): boolean => {
 // Seed admin user
 const SEED_ADMIN: User = {
     id: 'admin_001',
-    email: 'saicharan@astrabi.co.uk',
+    email: 'saicharan@QuickInsight.co.uk',
     name: 'Sai Charan',
     role: UserRole.ADMIN,
     passwordHash: secureHash('password'),
@@ -191,7 +191,7 @@ export const useAuthStore = create<AuthState>()(
             },
         }),
         {
-            name: 'astrabi-auth-v2',
+            name: 'QuickInsight-auth-v2',
             storage: createJSONStorage(() => indexedDBStorage), // Fix #13: IndexedDB
             partialize: (state) => ({
                 currentUser: state.currentUser,

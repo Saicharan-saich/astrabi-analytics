@@ -1,5 +1,5 @@
 /* ═══════════════════════════════════════════════════════
-   Astrabi Analytics — Modern Theme System
+   QuickInsight — Modern Theme System
    ═══════════════════════════════════════════════════════ */
 
 /* ── Design Tokens ──────────────────────────────────── */
@@ -878,8 +878,8 @@ html.light .glass-input:focus {
   left: 100%;
 }
 
-/* ── Astrabi Logo ───────────────────────────────────── */
-.astrabi-logo-glow {
+/* ── QuickInsight Logo ───────────────────────────────────── */
+.QuickInsight-logo-glow {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -887,7 +887,7 @@ html.light .glass-input:focus {
   border-radius: 10px;
 }
 
-.astrabi-logo-glow-lg {
+.QuickInsight-logo-glow-lg {
   position: relative;
   display: inline-flex;
   align-items: center;

@@ -1,7 +1,7 @@
 {
-    "name": "astrabi-backend",
+    "name": "QuickInsight-backend",
     "version": "1.0.0",
-    "description": "Backend API for Astrabi Analytics SQL Server connector",
+    "description": "Backend API for QuickInsight SQL Server connector",
     "main": "server.js",
     "scripts": {
         "start": "node server.js",

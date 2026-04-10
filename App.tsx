@@ -660,7 +660,7 @@ function App() {
 
                         <div className={`border-t pt-4 ${theme === 'dark' ? 'border-white/5' : 'border-gray-100'}`}>
                           <p className={`text-xs text-center ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`}>
-                            Astrabi Analytics v3.0.1 · Production Build
+                            QuickInsight v3.0.1 · Production Build
                           </p>
                         </div>
                       </div>

@@ -3,7 +3,7 @@
  * Unlike localStorage (5MB cap), IndexedDB supports 50MB+ and handles large datasets.
  */
 
-const DB_NAME = 'astrabi-datasets';
+const DB_NAME = 'QuickInsight-datasets';
 const DB_VERSION = 1;
 const STORE_NAME = 'datasets';
 

@@ -189,7 +189,7 @@ export const useAppStore = create<AppStore>()(
             setDashboardFilters: (filters) => set({ dashboardFilters: filters }),
         }),
         {
-            name: 'astrabi-storage-v3', // unique name
+            name: 'QuickInsight-storage-v3', // unique name
             storage: createJSONStorage(() => localStorage), // (optional) by default, 'localStorage' is used
             partialize: (state) => ({
                 items: state.items,

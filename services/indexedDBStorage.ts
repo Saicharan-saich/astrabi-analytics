@@ -6,7 +6,7 @@
  * Usage: createJSONStorage(() => indexedDBStorage)
  */
 
-const DB_NAME = 'astrabi-store';
+const DB_NAME = 'QuickInsight-store';
 const DB_VERSION = 1;
 const STORE_NAME = 'zustand';
 

@@ -314,7 +314,7 @@ const CATEGORY_ORDER = [
 ];
 
 // --- Load custom questions from localStorage ---
-const CUSTOM_QUESTIONS_KEY = 'astrabi_custom_questions';
+const CUSTOM_QUESTIONS_KEY = 'QuickInsight_custom_questions';
 
 export const loadCustomQuestions = (): QuestionTemplate[] => {
     try {

@@ -117,7 +117,7 @@ export const useDashboardStore = create<DashboardState>()(
             clearHistory: () => set({ queryHistory: [] }),
         }),
         {
-            name: 'astrabi-dashboard-v2',
+            name: 'QuickInsight-dashboard-v2',
             storage: createJSONStorage(() => indexedDBStorage), // Fix #13: IndexedDB
         }
     )

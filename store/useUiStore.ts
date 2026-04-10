@@ -43,7 +43,7 @@ export const useUiStore = create<UIState>()(
             toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
         }),
         {
-            name: 'astrabi-ui-v1',
+            name: 'QuickInsight-ui-v1',
             storage: createJSONStorage(() => localStorage),
         }
     )

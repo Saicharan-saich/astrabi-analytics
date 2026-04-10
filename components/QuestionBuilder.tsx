@@ -603,7 +603,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
             {/* ═══════════════ ROW 1: THE CORE QUESTION ═══════════════ */}
             <div className="flex flex-wrap items-center gap-2 text-base font-medium text-slate-700 leading-snug">
-                <img src="/logo.jpg" alt="Astrabi" className="w-5 h-5 rounded mr-1 shadow-sm" />
+                <img src="/logo.jpg" alt="QuickInsight" className="w-5 h-5 rounded mr-1 shadow-sm" />
                 <span>Show me</span>
 
                 {/* Metric Selector */}

@@ -8,7 +8,7 @@
 
 import { AuditEntry } from './types';
 
-const STORAGE_KEY = 'astrabi_ai_sql_audit_log';
+const STORAGE_KEY = 'QuickInsight_ai_sql_audit_log';
 const MAX_ENTRIES = 200;
 
 /**

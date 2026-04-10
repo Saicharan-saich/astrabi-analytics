@@ -12,7 +12,7 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'astrabi-dev-secret-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET || 'QuickInsight-dev-secret-change-in-production';
 const BCRYPT_ROUNDS = 12;
 
 // ═══════════════════════════════════════════
@@ -55,7 +55,7 @@ async function initializeUsers() {
     const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
     const admin = {
         id: 'admin_001',
-        email: 'saicharan@astrabi.co.uk',
+        email: 'saicharan@QuickInsight.co.uk',
         name: 'Sai Charan',
         role: 'admin',
         passwordHash: adminHash,
@@ -114,10 +114,10 @@ app.use(express.json());
 // API Key Middleware
 const apiKeyMiddleware = (req, res, next) => {
     // Skip if no key configured (Dev mode), health check, or auth endpoints
-    if (!process.env.ASTRABI_API_KEY || req.path === '/api/health' || req.path.startsWith('/api/auth')) return next();
+    if (!process.env.QuickInsight_API_KEY || req.path === '/api/health' || req.path.startsWith('/api/auth')) return next();
 
     const apiKey = req.headers['x-api-key'];
-    if (apiKey && apiKey === process.env.ASTRABI_API_KEY) {
+    if (apiKey && apiKey === process.env.QuickInsight_API_KEY) {
         next();
     } else {
         res.status(401).json({ success: false, error: 'Unauthorized: Invalid API Key' });
@@ -706,7 +706,7 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
                 'Authorization': `Bearer ${OPENROUTER_KEY}`,
                 'Content-Type': 'application/json',
                 'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:5173',
-                'X-Title': 'Astrabi Analytics'
+                'X-Title': 'QuickInsight'
             },
             body: JSON.stringify({
                 model: model || 'google/gemini-2.0-flash-001',
@@ -769,7 +769,7 @@ app.post('/api/ai/profile-dataset', PROFILER_RATE_LIMIT, async (req, res) => {
                 'Authorization': `Bearer ${OPENROUTER_KEY}`,
                 'Content-Type': 'application/json',
                 'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:5173',
-                'X-Title': 'Astrabi Analytics — Dataset Profiler'
+                'X-Title': 'QuickInsight — Dataset Profiler'
             },
             body: JSON.stringify({
                 model: 'google/gemini-2.0-flash-001',
@@ -901,7 +901,7 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
                 'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json',
                 'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:3000',
-                'X-Title': 'Astrabi Analytics'
+                'X-Title': 'QuickInsight'
             },
             body: JSON.stringify({
                 model: 'google/gemini-2.0-flash-001',
@@ -958,7 +958,7 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`🚀 Astrabi Backend API running on http://localhost:${PORT}`);
+    console.log(`🚀 QuickInsight Backend API running on http://localhost:${PORT}`);
     console.log(`📊 SQL Server connector ready (Hybrid Mode: mssql + raw msnodesqlv8)`);
     console.log(`🐘 PostgreSQL connector ready`);
 });

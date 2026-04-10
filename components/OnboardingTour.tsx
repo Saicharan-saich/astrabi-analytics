@@ -18,7 +18,7 @@ interface TourStep {
 
 const TOUR_STEPS: TourStep[] = [
     {
-        title: 'Welcome to Astrabi Analytics',
+        title: 'Welcome to QuickInsight',
         description: 'Your all-in-one analytics workbench. Upload data, ask questions, and get instant visual insights — no SQL required.',
         position: 'center',
     },
@@ -49,7 +49,7 @@ const TOUR_STEPS: TourStep[] = [
     },
 ];
 
-const STORAGE_KEY = 'astrabi-onboarding-complete';
+const STORAGE_KEY = 'QuickInsight-onboarding-complete';
 
 interface OnboardingTourProps {
     forceShow?: boolean;

@@ -1,4 +1,4 @@
-# Astrabi Backend API
+# QuickInsight Backend API
 
 Backend service for SQL Server connectivity.
 

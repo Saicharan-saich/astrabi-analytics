@@ -128,10 +128,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
             {/* Header */}
             <div className="flex items-center justify-between mb-4 px-1">
                 <div className="flex items-center gap-2.5">
-                    <img src="/logo.jpg" alt="Astrabi" className="w-8 h-8 rounded-lg object-cover shadow-sm" />
+                    <img src="/logo.jpg" alt="QuickInsight" className="w-8 h-8 rounded-lg object-cover shadow-sm" />
                     <div>
                         <span className={`font-bold text-[15px] tracking-tight block leading-tight ${isDark ? 'text-white' : 'text-gray-900'
-                            }`}>Astrabi</span>
+                            }`}>QuickInsight</span>
                         <span className={`text-[10px] font-medium tracking-wide ${isDark ? 'text-gray-500' : 'text-gray-400'
                             }`}>Analytics Platform</span>
                     </div>
@@ -205,7 +205,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                 <div className="mt-2 px-3 py-1.5 text-center">
                     <span className={`text-[10px] font-mono ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>v1.0.0</span>
                     <span className={`text-[10px] mx-1 ${isDark ? 'text-gray-700' : 'text-gray-300'}`}>·</span>
-                    <span className={`text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>Astrabi Analytics</span>
+                    <span className={`text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>QuickInsight</span>
                 </div>
             </div>
         </div>

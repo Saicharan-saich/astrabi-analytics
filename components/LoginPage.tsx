@@ -36,10 +36,10 @@ export const LoginPage: React.FC = () => {
                 {/* Logo & Brand */}
                 <div className="text-center mb-8">
                     <div className="inline-flex items-center justify-center mb-5">
-                        <img src="/logo.jpg" alt="Astrabi" className="w-16 h-16 rounded-2xl object-cover shadow-lg" />
+                        <img src="/logo.jpg" alt="QuickInsight" className="w-16 h-16 rounded-2xl object-cover shadow-lg" />
                     </div>
                     <h1 className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
-                        Astrabi
+                        QuickInsight
                     </h1>
                     <p className="text-gray-500 text-sm flex items-center justify-center gap-1.5">
                         <Sparkles className="w-3.5 h-3.5 text-amber-500" />
@@ -124,7 +124,7 @@ export const LoginPage: React.FC = () => {
                 </div>
 
                 <p className="text-center text-xs text-gray-400 mt-6">
-                    Astrabi Analytics v3.0
+                    QuickInsight v3.0
                 </p>
             </div>
         </div>

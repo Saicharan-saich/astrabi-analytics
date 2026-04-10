@@ -13,11 +13,11 @@
 
 ---
 
-## What is Astrabi?
+## What is QuickInsight?
 
-Astrabi is a **self-service exploratory data analytics (EDA) tool** that lets anyone — analysts, managers, or non-technical users — upload a dataset and instantly explore it through interactive charts, dashboards, and a guided question builder. No SQL, no code, no setup.
+QuickInsight is a **self-service exploratory data analytics (EDA) tool** that lets anyone — analysts, managers, or non-technical users — upload a dataset and instantly explore it through interactive charts, dashboards, and a guided question builder. No SQL, no code, no setup.
 
-Upload a CSV, and Astrabi's **semantic inference engine** automatically classifies every column (metric, dimension, date, ID), cleans and normalizes your data through a 7-layer ETL pipeline, and presents a curated set of analytics questions you can answer with one click.
+Upload a CSV, and QuickInsight's **semantic inference engine** automatically classifies every column (metric, dimension, date, ID), cleans and normalizes your data through a 7-layer ETL pipeline, and presents a curated set of analytics questions you can answer with one click.
 
 ---
 
@@ -43,8 +43,8 @@ Upload a CSV, and Astrabi's **semantic inference engine** automatically classifi
 ### 1. Clone
 
 ```bash
-git clone https://github.com/Saicharan-saich/astrabi-analytics.git
-cd astrabi-analytics
+git clone https://github.com/Saicharan-saich/QuickInsight-analytics.git
+cd QuickInsight-analytics
 ```
 
 ### 2. Install
@@ -129,7 +129,7 @@ CSV Upload
 ## Project Structure
 
 ```
-astrabi-analytics/
+QuickInsight-analytics/
 ├── App.tsx                     # Application entry point
 ├── types.ts                    # TypeScript interfaces
 ├── components/

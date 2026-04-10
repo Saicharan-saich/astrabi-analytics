@@ -131,7 +131,7 @@ export const AdminQuestionBuilder: React.FC<AdminQuestionBuilderProps> = ({ data
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'astrabi-custom-questions.json';
+        a.download = 'QuickInsight-custom-questions.json';
         a.click();
         URL.revokeObjectURL(url);
         showMessage('success', `Exported ${customQuestions.length} questions`);

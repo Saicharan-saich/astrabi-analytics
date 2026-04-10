@@ -171,7 +171,7 @@ export async function generateSQL(
                 'Authorization': `Bearer ${API_KEY}`,
                 'Content-Type': 'application/json',
                 'HTTP-Referer': window.location.origin,
-                'X-Title': 'Astrabi Analytics - SQL Generator'
+                'X-Title': 'QuickInsight - SQL Generator'
             },
             body: JSON.stringify({
                 model: MODEL,
