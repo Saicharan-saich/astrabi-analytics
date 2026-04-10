@@ -1,8 +1,8 @@
 <div align="center">
 
-# Astrabi Analytics
+# Astrabi
 
-**Deterministic Semantic Inference Analytics — Domain Agnostic, Zero-Config**
+### Self-Service Exploratory Data Analytics & Business Intelligence
 
 [![Built with React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -15,18 +15,22 @@
 
 ## What is Astrabi?
 
-Astrabi Analytics is a self-service BI platform that turns any CSV or database into interactive dashboards, charts, and insights — **without writing a single line of SQL**. Upload your data, and Astrabi automatically detects the domain (HR, Finance, Healthcare, Sales, etc.) through deterministic semantic inference, maps columns to canonical roles, and generates relevant analytics questions.
+Astrabi is a **self-service exploratory data analytics (EDA) tool** that lets anyone — analysts, managers, or non-technical users — upload a dataset and instantly explore it through interactive charts, dashboards, and a guided question builder. No SQL, no code, no setup.
 
-### Key Features
+Upload a CSV, and Astrabi's **semantic inference engine** automatically classifies every column (metric, dimension, date, ID), cleans and normalizes your data through a 7-layer ETL pipeline, and presents a curated set of analytics questions you can answer with one click.
 
-- **🧠 AI Domain Detection** — Automatically identifies your data domain (HR, Finance, Healthcare, Inventory, SaaS, Education, Marketing, Sales) and adapts the entire experience.
-- **📊 82+ Pre-Built Questions** — Domain-specific question banks with 210+ questions across 7 industries, plus a universal builder for custom queries.
-- **🔍 Natural Language Querying** — Ask questions in plain English. The AI SQL engine translates them into deterministic queries.
-- **📈 Smart Visualizations** — Auto-selects the best chart type (bar, line, area, doughnut, treemap, combo, KPI cards) based on your data and question.
-- **🧹 7-Layer ETL Pipeline** — Automatic data cleaning, type detection, null handling, date normalization, and quality scoring — all client-side.
-- **📌 Pinnable Dashboards** — Pin any chart to a drag-and-drop dashboard with persistent layout.
-- **🔗 Database Connectors** — Connect directly to SQL Server (Windows Auth + SQL Auth) and PostgreSQL.
-- **🔒 Authentication** — Built-in JWT auth with file-based user persistence.
+---
+
+## Core Capabilities
+
+| Capability | Description |
+|---|---|
+| **Semantic Column Inference** | Automatically classifies columns as metrics, dimensions, dates, or IDs based on statistical profiling — no manual mapping required. |
+| **7-Layer ETL Pipeline** | Client-side data cleaning: structural repair, null handling, type coercion, date normalization, and data quality scoring — all before a single chart is drawn. |
+| **Mad-Lib Question Builder** | Guided query construction: _"Show me **[metric]** (Sum) by **[dimension]** for **[time period]**"_. Eliminates the need to write SQL or understand data schemas. |
+| **Smart Visualizations** | Automatically selects the best chart type (bar, line, area, doughnut, treemap, combo, KPI card) based on data shape, cardinality, and query structure. |
+| **Pinnable Dashboards** | Pin any analysis to a persistent, drag-and-drop dashboard with auto-saving layout. |
+| **Authentication** | Built-in JWT authentication with secure session management. |
 
 ---
 
@@ -34,17 +38,16 @@ Astrabi Analytics is a self-service BI platform that turns any CSV or database i
 
 ### Prerequisites
 
-- [Node.js](https://nodejs.org/) v18 or higher
-- An [OpenRouter API key](https://openrouter.ai/) (for AI domain detection — optional, app works without it)
+- [Node.js](https://nodejs.org/) v18+
 
-### 1. Clone the repository
+### 1. Clone
 
 ```bash
 git clone https://github.com/Saicharan-saich/astrabi-analytics.git
 cd astrabi-analytics
 ```
 
-### 2. Install dependencies
+### 2. Install
 
 ```bash
 # Frontend
@@ -56,18 +59,7 @@ npm install
 cd ..
 ```
 
-### 3. Configure environment
-
-Create a `backend/.env` file:
-
-```env
-OPENROUTER_API_KEY=your_openrouter_api_key_here
-FRONTEND_URL=http://localhost:3000
-```
-
-> **Note:** The app works fully without the API key — AI domain detection will be skipped and the app falls back to heuristic column mapping.
-
-### 4. Start the application
+### 3. Run
 
 ```bash
 # Terminal 1 — Backend API (port 5002)
@@ -80,13 +72,57 @@ npm run dev
 
 Open **http://localhost:3000** in your browser.
 
-### 5. First use
+### 4. First Use
 
-1. **Register** a new account on the login page
-2. **Upload a CSV** file or click "Try Sample Data"
+1. **Register** an account on the sign-in page
+2. **Upload a CSV** or click **Try Sample Data**
 3. The ETL pipeline automatically cleans and profiles your data
-4. If an API key is configured, AI will detect the domain and suggest relevant questions
-5. Navigate to **Workbench** to explore your data with pre-built questions or the custom builder
+4. Navigate to **Workbench** and explore using the Question Builder or pre-built questions
+
+---
+
+## How It Works
+
+```
+CSV Upload
+    │
+    ▼
+┌──────────────────────────────┐
+│  7-Layer ETL Pipeline        │
+│  ┌─────────────────────────┐ │
+│  │ L1  Structural Repair   │ │
+│  │ L2  Null Canonicalization│ │
+│  │ L3  Column Profiling    │ │
+│  │ L4  Semantic Inference  │ │
+│  │ L5  Type Coercion       │ │
+│  │ L6  Contract Validation │ │
+│  │ L7  DimDate Generation  │ │
+│  └─────────────────────────┘ │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│  Semantic Column Map         │
+│  metric ← revenue, qty...   │
+│  dimension ← region, dept...│
+│  date ← order_date...       │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│  Question Builder            │
+│  "Show me [metric] by [dim]" │
+│  + time filters, sorts,      │
+│    aggregations, comparisons │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│  Deterministic SQL Engine    │
+│  → Chart Rendering           │
+│  → Pin to Dashboard          │
+└──────────────────────────────┘
+```
 
 ---
 
@@ -94,31 +130,25 @@ Open **http://localhost:3000** in your browser.
 
 ```
 astrabi-analytics/
-├── App.tsx                    # Main application entry
-├── types.ts                   # All TypeScript interfaces
+├── App.tsx                     # Application entry point
+├── types.ts                    # TypeScript interfaces
 ├── components/
-│   ├── Workbench.tsx          # Main analysis workspace
-│   ├── QuestionBuilder.tsx    # Visual query builder
-│   ├── QuestionCustomizer.tsx # Question refinement panel
-│   ├── ChartVisualization.tsx # Chart rendering (Chart.js)
-│   ├── Dashboard.tsx          # Pinned charts dashboard
-│   ├── DomainReviewModal.tsx  # AI domain detection review
-│   ├── AISQLChat.tsx          # Natural language SQL interface
+│   ├── Workbench.tsx           # Main analysis workspace
+│   ├── QuestionBuilder.tsx     # Guided query builder
+│   ├── ChartVisualization.tsx  # Chart rendering (Chart.js)
+│   ├── Dashboard.tsx           # Pinnable dashboard
 │   └── ...
 ├── services/
-│   ├── analysisEngine.ts      # Core analytics engine
-│   ├── evaluateLocally.ts     # Client-side query execution
-│   ├── etlPipeline.ts         # 7-layer ETL pipeline
-│   ├── questionRegistry.ts    # Question bank management
-│   ├── domainQuestions.ts     # 210+ domain-specific questions
-│   ├── aiSemanticProfiler.ts  # AI domain detection
-│   ├── dataMasker.ts          # PII-safe data profiling
-│   └── ai-sql/               # AI SQL pipeline modules
+│   ├── analysisEngine.ts       # Core analytics engine
+│   ├── evaluateLocally.ts      # Client-side query execution
+│   ├── etlPipeline.ts          # 7-layer ETL pipeline
+│   ├── questionRegistry.ts     # Question bank
+│   └── ...
 ├── backend/
-│   └── server.js              # Express API (auth, DB connectors, AI proxy)
+│   └── server.js               # Express API (auth, connectors)
 ├── workers/
-│   └── etl.worker.ts          # Web Worker for ETL processing
-└── store/                     # Zustand state management
+│   └── etl.worker.ts           # Web Worker for ETL
+└── store/                      # Zustand state management
 ```
 
 ---
@@ -133,26 +163,7 @@ astrabi-analytics/
 | **Styling** | Tailwind CSS |
 | **Animations** | Framer Motion |
 | **Backend** | Node.js, Express |
-| **Database** | SQL Server (mssql), PostgreSQL (pg) |
-| **AI** | OpenRouter API (Gemini 2.0 Flash) |
-| **Storage** | IndexedDB (client-side), file-based (server-side) |
-
----
-
-## Supported Domains
-
-Astrabi automatically detects and adapts to these industry domains:
-
-| Domain | Example Questions |
-|--------|------------------|
-| **Sales** | Revenue vs yesterday, Top 5 products, Sales by channel |
-| **HR** | Headcount by department, Attrition rate, Salary distribution |
-| **Finance** | Revenue trend, Budget vs actual, Profit margin by segment |
-| **Healthcare** | Patient volume, Length of stay, Readmission rate |
-| **Inventory** | Stock levels, Turnover rate, Reorder alerts |
-| **SaaS** | MRR growth, Churn rate, LTV:CAC ratio |
-| **Education** | Enrollment trend, GPA distribution, Graduation rate |
-| **Marketing** | Campaign ROI, Conversion funnel, CAC by channel |
+| **Storage** | IndexedDB (client), file-based (server) |
 
 ---
 
@@ -160,7 +171,7 @@ Astrabi automatically detects and adapts to these industry domains:
 
 ```bash
 npm run dev       # Start development server
-npm run build     # Build for production
+npm run build     # Production build
 npm run preview   # Preview production build
 npm run test      # Run tests
 ```
