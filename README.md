@@ -1,9 +1,8 @@
 <div align="center">
-<img width="1200" height="475" alt="Astrabi Analytics" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 
 # Astrabi Analytics
 
-**AI-Powered Business Intelligence — Domain Agnostic, Zero-Config**
+**Deterministic Semantic Inference Analytics — Domain Agnostic, Zero-Config**
 
 [![Built with React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -16,7 +15,7 @@
 
 ## What is Astrabi?
 
-Astrabi Analytics is a self-service BI platform that turns any CSV or database into interactive dashboards, charts, and insights — **without writing a single line of SQL**. Upload your data, and Astrabi's AI automatically detects the domain (HR, Finance, Healthcare, Sales, etc.), maps columns semantically, and generates relevant analytics questions.
+Astrabi Analytics is a self-service BI platform that turns any CSV or database into interactive dashboards, charts, and insights — **without writing a single line of SQL**. Upload your data, and Astrabi automatically detects the domain (HR, Finance, Healthcare, Sales, etc.) through deterministic semantic inference, maps columns to canonical roles, and generates relevant analytics questions.
 
 ### Key Features
 
