@@ -1,6 +1,6 @@
 <div align="center">
 
-# Astrabi
+# QuickInsight
 
 ### Self-Service Exploratory Data Analytics & Business Intelligence
 
