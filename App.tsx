@@ -9,6 +9,7 @@ import {
 } from './types';
 import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, getSampleData } from './services/analysisEngine';
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
+import { buildSemanticModel } from './services/semanticModel';
 import { Sidebar } from './components/Sidebar';
 import { UploadView } from './components/UploadView';
 import { ETLView } from './components/ETLView';
@@ -33,6 +34,27 @@ import { OnboardingTour } from './components/OnboardingTour';
 import { DatasetSwitcher } from './components/DatasetSwitcher';
 import { saveDatasetToDB, loadAllDatasetsFromDB, deleteDatasetFromDB } from './services/datasetDB';
 import { DomainReviewModal } from './components/DomainReviewModal';
+import { ColumnMappingWizard } from './components/ColumnMappingWizard';
+
+// ── Heuristic domain detection (fallback when AI profiling unavailable) ──
+function detectDomainFromColumns(columns: { name: string }[], fileName: string): string {
+  const allText = [...columns.map(c => c.name.toLowerCase()), fileName.toLowerCase()].join(' ');
+  const patterns: [string, string[]][] = [
+    ['HR', ['employee', 'emp_id', 'hire_date', 'termination', 'salary', 'department', 'position', 'tenure', 'attrition', 'headcount', 'payroll', 'staff', 'resignation', 'term_date', 'performance_rating']],
+    ['Healthcare', ['patient', 'diagnosis', 'treatment', 'hospital', 'medical', 'prescription', 'doctor', 'clinical', 'health', 'procedure', 'admission', 'discharge', 'pharmacy', 'nurse']],
+    ['Education', ['student', 'course', 'grade', 'enrollment', 'gpa', 'semester', 'teacher', 'school', 'university', 'curriculum', 'graduation', 'instructor', 'exam']],
+    ['SaaS', ['subscription', 'mrr', 'arr', 'churn', 'license', 'trial', 'tier', 'plan', 'renewal', 'saas', 'monthly_recurring', 'signup', 'feature_usage']],
+    ['Inventory', ['inventory', 'stock', 'warehouse', 'sku', 'reorder', 'supply', 'stockout', 'safety_stock', 'lead_time', 'replenishment', 'backorder']],
+    ['Marketing', ['campaign', 'impression', 'click', 'ctr', 'conversion', 'ad_spend', 'bounce', 'engagement', 'seo', 'lead', 'cpc', 'cpm', 'roas', 'utm', 'newsletter']],
+    ['Finance', ['revenue', 'expense', 'profit', 'budget', 'invoice', 'accounts', 'ledger', 'debit', 'credit', 'balance', 'tax', 'depreciation', 'cash_flow', 'net_income', 'fiscal']],
+  ];
+  let best = 'Sales', bestN = 0;
+  for (const [domain, kws] of patterns) {
+    const n = kws.filter(kw => allText.includes(kw)).length;
+    if (n >= 2 && n > bestN) { bestN = n; best = domain; }
+  }
+  return best;
+}
 
 // Safer ID generator that works in non-secure contexts
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -157,12 +179,22 @@ function App() {
           etlLogs: logs,
           timeContext,
           dimDate,
-          sourceSchema
+          sourceSchema,
+          version: 1,
+          createdAt: Date.now(),
         };
+
+        // ── BUILD SEMANTIC MODEL (deterministic, from ETL output) ──
+        try {
+          const model = buildSemanticModel(newDataset);
+          (newDataset as any).semanticModel = model;
+          console.log(`[App] Semantic Model built: ${model.measures.length} measures, ${model.dimensions.length} dimensions, warnings: ${model.warnings.length}`);
+        } catch (err) {
+          console.warn('[App] Semantic model build failed (non-blocking):', err);
+        }
 
         setDataset(newDataset);
         saveDatasetToDB(newDataset);
-        setActiveTab(Tab.ETL);
         setProcessing(false);
         worker.terminate();
 
@@ -172,15 +204,81 @@ function App() {
           setIsAIProfiling(false);
           if (profile) {
             const profiled: Dataset = { ...newDataset, domainProfile: profile };
+            // ── REBUILD SEMANTIC MODEL with AI enrichment ──
+            try {
+              const enrichedModel = buildSemanticModel(profiled, newDataset.semanticModel);
+              (profiled as any).semanticModel = enrichedModel;
+              console.log(`[App] Semantic Model enriched with AI: ${enrichedModel.measures.length} measures, source: ${enrichedModel.source}`);
+            } catch (err) {
+              console.warn('[App] Semantic model AI enrichment failed (keeping ETL model):', err);
+            }
             setDataset(profiled);
             saveDatasetToDB(profiled);
             setPendingProfile(profile);
-            setShowDomainReview(true);
+            setActiveTab(Tab.COLUMN_MAPPING);
             console.log(`[App] AI Profile: ${profile.domain} (${(profile.confidence * 100).toFixed(0)}% confidence)`);
+          } else {
+            // ── HEURISTIC DOMAIN FALLBACK (no AI required) ──
+            console.log('[App] AI profiling returned null — using heuristic domain detection');
+            const heuristicDomain = detectDomainFromColumns(columns, file.name);
+            // Build column semantics from ETL column types
+            const colSem: Record<string, any> = {};
+            for (const col of columns) {
+              colSem[col.name] = {
+                role: col.type,
+                aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : 'NONE',
+                format: 'raw',
+                humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+                description: '',
+                semanticRole: col.type === ColumnType.METRIC ? 'primary_metric' : col.type === ColumnType.DATE ? 'primary_date' : col.type === ColumnType.ID ? 'identifier' : 'other',
+                isHidden: false,
+              };
+            }
+            const fallbackProfile: any = {
+              domain: heuristicDomain || 'Sales',
+              summary: `Detected as ${heuristicDomain || 'Sales'} domain (heuristic — please review)`,
+              confidence: 0.4,
+              themeColor: '#6366f1',
+              columnSemantics: colSem,
+              detectedAt: Date.now(),
+            };
+            const profiled: Dataset = { ...newDataset, domainProfile: fallbackProfile };
+            setDataset(profiled);
+            saveDatasetToDB(profiled);
+            setPendingProfile(fallbackProfile);
+            setActiveTab(Tab.COLUMN_MAPPING);
+            console.log(`[App] Heuristic domain: ${heuristicDomain || 'Sales'}`);
           }
         }).catch(err => {
           setIsAIProfiling(false);
           console.warn('[App] AI profiling failed (graceful fallback):', err);
+          // Build heuristic profile and open wizard
+          const heuristicDomain = detectDomainFromColumns(columns, file.name);
+          const colSem: Record<string, any> = {};
+          for (const col of columns) {
+            colSem[col.name] = {
+              role: col.type,
+              aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : 'NONE',
+              format: 'raw',
+              humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+              description: '',
+              semanticRole: col.type === ColumnType.METRIC ? 'primary_metric' : col.type === ColumnType.DATE ? 'primary_date' : col.type === ColumnType.ID ? 'identifier' : 'other',
+              isHidden: false,
+            };
+          }
+          const fallbackProfile: any = {
+            domain: heuristicDomain || 'Sales',
+            summary: `Detected as ${heuristicDomain || 'Sales'} domain (heuristic — please review)`,
+            confidence: 0.4,
+            themeColor: '#6366f1',
+            columnSemantics: colSem,
+            detectedAt: Date.now(),
+          };
+          const profiled: Dataset = { ...newDataset, domainProfile: fallbackProfile };
+          setDataset(profiled);
+          saveDatasetToDB(profiled);
+          setPendingProfile(fallbackProfile);
+          setActiveTab(Tab.COLUMN_MAPPING);
         });
       } else if (type === 'ERROR') {
         setError(error);
@@ -252,11 +350,37 @@ function App() {
           totalRows: rows.length,
           etlLogs: logs,
           timeContext,
-          dimDate
+          dimDate,
+          version: 1,
+          createdAt: Date.now(),
         };
+        // ── BUILD SEMANTIC MODEL ──
+        try {
+          const model = buildSemanticModel(sampleDs);
+          (sampleDs as any).semanticModel = model;
+          console.log(`[App] Sample data semantic model: ${model.measures.length} measures, ${model.dimensions.length} dimensions`);
+        } catch (err) {
+          console.warn('[App] Semantic model build failed for sample data:', err);
+        }
         setDataset(sampleDs);
         saveDatasetToDB(sampleDs);
-        setActiveTab(Tab.ETL);
+        // Open Column Mapping Wizard
+        const colSem: Record<string, any> = {};
+        for (const col of columns) {
+          colSem[col.name] = {
+            role: col.type,
+            aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : 'NONE',
+            format: 'raw',
+            humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+            description: '',
+            semanticRole: col.type === ColumnType.METRIC ? 'primary_metric' : col.type === ColumnType.DATE ? 'primary_date' : col.type === ColumnType.ID ? 'identifier' : 'other',
+            isHidden: false,
+          };
+        }
+        const sampleProfile: any = { domain: 'Sales', summary: 'Sample sales dataset', confidence: 0.9, themeColor: '#6366f1', columnSemantics: colSem, detectedAt: Date.now() };
+        (sampleDs as any).domainProfile = sampleProfile;
+        setPendingProfile(sampleProfile);
+        setActiveTab(Tab.COLUMN_MAPPING);
         setProcessing(false);
         worker.terminate();
       }
@@ -282,11 +406,38 @@ function App() {
           etlLogs: logs,
           timeContext,
           dimDate,
-          sourceSchema: resultSchema
+          sourceSchema: resultSchema,
+          version: 1,
+          createdAt: Date.now(),
         };
+        // ── BUILD SEMANTIC MODEL ──
+        try {
+          const model = buildSemanticModel(connDs);
+          (connDs as any).semanticModel = model;
+          console.log(`[App] Connector semantic model: ${model.measures.length} measures, ${model.dimensions.length} dimensions`);
+        } catch (err) {
+          console.warn('[App] Semantic model build failed for connector:', err);
+        }
         setDataset(connDs);
         saveDatasetToDB(connDs);
-        setActiveTab(Tab.ETL);
+        // Open Column Mapping Wizard
+        const colSem: Record<string, any> = {};
+        for (const col of columns) {
+          colSem[col.name] = {
+            role: col.type,
+            aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : 'NONE',
+            format: 'raw',
+            humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+            description: '',
+            semanticRole: col.type === ColumnType.METRIC ? 'primary_metric' : col.type === ColumnType.DATE ? 'primary_date' : col.type === ColumnType.ID ? 'identifier' : 'other',
+            isHidden: false,
+          };
+        }
+        const hDomain = detectDomainFromColumns(columns, name);
+        const connProfile: any = { domain: hDomain || 'Sales', summary: `Detected as ${hDomain || 'Sales'} domain`, confidence: 0.5, themeColor: '#6366f1', columnSemantics: colSem, detectedAt: Date.now() };
+        (connDs as any).domainProfile = connProfile;
+        setPendingProfile(connProfile);
+        setActiveTab(Tab.COLUMN_MAPPING);
         setProcessing(false);
         worker.terminate();
       }
@@ -310,7 +461,8 @@ function App() {
       id: generateId(),
       title: result.insight || "New Analysis",
       result: result,
-      width: 'half' as 'half' | 'full'
+      width: 'half' as 'half' | 'full',
+      datasetVersion: dataset?.version,
     };
     addItem(newItem);
     showToast("Pinned to Dashboard!");
@@ -320,7 +472,7 @@ function App() {
     setWorkbenchConfig(item.result.config);
     setWorkbenchResult(item.result);
     setEditingDashboardItemId(item.id);
-    setActiveTab(Tab.WORKBENCH);
+    setActiveTab(Tab.BUILDER); // Redirected from WORKBENCH (hidden)
     showToast("Editing: " + item.title);
   };
 
@@ -439,6 +591,21 @@ function App() {
                 </div>
 
                 <div className="flex items-center gap-1.5">
+                  {/* Re-open Column Mapping */}
+                  {dataset?.domainProfile && (
+                    <button
+                      onClick={() => {
+                        setPendingProfile(dataset.domainProfile!);
+                        setActiveTab(Tab.COLUMN_MAPPING);
+                      }}
+                      className={`p-2 rounded-lg transition-all duration-200 ${theme === 'dark' ? 'text-gray-400 hover:text-violet-400 hover:bg-violet-500/10' : 'text-gray-500 hover:text-violet-600 hover:bg-violet-50'
+                        }`}
+                      title="Re-open Column Mapping"
+                    >
+                      <Brain className="w-5 h-5" />
+                    </button>
+                  )}
+
                   <button
                     onClick={toggleTheme}
                     className={`p-2 rounded-lg transition-all duration-200 ${theme === 'dark' ? 'text-gray-400 hover:text-amber-400 hover:bg-amber-500/10' : 'text-gray-500 hover:text-amber-600 hover:bg-amber-50'
@@ -489,6 +656,50 @@ function App() {
                 }`}>
 
                 {/* All tabs stay mounted for state persistence — only the active one is visible */}
+                {/* ── COLUMN MAPPING WIZARD (full-page step) ── */}
+                <div className={`h-full w-full ${activeTab === Tab.COLUMN_MAPPING ? '' : 'hidden'}`}>
+                  {pendingProfile && dataset && (
+                    <ColumnMappingWizard
+                      profile={pendingProfile}
+                      columns={dataset.columns}
+                      fileName={dataset.name}
+                      isAIProfiling={isAIProfiling}
+                      onApply={(updatedProfile, columnTypeOverrides) => {
+                        // SEMANTIC-ONLY: Update profile + column types, rebuild model, NO ETL re-run
+                        let finalDataset = { ...dataset, domainProfile: updatedProfile };
+
+                        // Apply column type overrides directly to columns array (no ETL re-run)
+                        if (Object.keys(columnTypeOverrides).length > 0) {
+                          const updatedColumns = dataset.columns.map(col => {
+                            const override = columnTypeOverrides[col.name];
+                            return override ? { ...col, type: override } : col;
+                          });
+                          finalDataset = { ...finalDataset, columns: updatedColumns };
+                          console.log(`[App] Column types updated: ${Object.keys(columnTypeOverrides).length} overrides (semantic-only, no ETL re-run)`);
+                        }
+
+                        // Rebuild semantic model with user-verified profile
+                        try {
+                          const model = buildSemanticModel(finalDataset);
+                          (finalDataset as any).semanticModel = model;
+                          console.log(`[App] Semantic model rebuilt: ${model.measures.length} measures, ${model.dimensions.length} dimensions`);
+                        } catch (err) {
+                          console.warn('[App] Semantic model rebuild failed:', err);
+                        }
+                        setDataset(finalDataset);
+                        saveDatasetToDB(finalDataset);
+                        setPendingProfile(null);
+                        setActiveTab(Tab.ETL);
+                        showToast(`Mapping applied: ${updatedProfile.domain} domain · Grain: ${updatedProfile.grain || 'unset'}`);
+                      }}
+                      onDismiss={() => {
+                        setPendingProfile(null);
+                        setActiveTab(Tab.ETL);
+                      }}
+                    />
+                  )}
+                </div>
+
                 <div className={`h-full w-full ${activeTab === Tab.UPLOAD ? '' : 'hidden'}`}>
                   <UploadView
                     onFileUpload={handleFileUpload}
@@ -685,29 +896,8 @@ function App() {
               <UserManagement onClose={() => setShowUserMgmt(false)} />
             )}
 
-            {/* Domain Review Modal */}
-            {showDomainReview && pendingProfile && (
-              <DomainReviewModal
-                profile={pendingProfile}
-                isOpen={showDomainReview}
-                onAccept={() => {
-                  setShowDomainReview(false);
-                  setPendingProfile(null);
-                  showToast(`Domain detected: ${pendingProfile.domain}`);
-                }}
-                onDismiss={() => {
-                  // Dismiss = remove the profile from dataset
-                  if (dataset) {
-                    const { domainProfile, ...rest } = dataset as any;
-                    const stripped: Dataset = { ...rest };
-                    setDataset(stripped);
-                    saveDatasetToDB(stripped);
-                  }
-                  setShowDomainReview(false);
-                  setPendingProfile(null);
-                }}
-              />
-            )}
+            {/* Domain Review Modal — replaced by full-page ColumnMappingWizard */}
+            {/* DomainReviewModal kept in code but no longer rendered */}
 
             {/* Onboarding Tour */}
             <OnboardingTour />

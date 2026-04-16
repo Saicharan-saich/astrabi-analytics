@@ -85,6 +85,8 @@ interface AuthState {
 
     // Actions
     login: (email: string, password: string) => { success: boolean; error?: string };
+    loginAsGuest: () => void;
+    register: (email: string, name: string, password: string) => { success: boolean; error?: string };
     logout: () => void;
     addUser: (email: string, name: string, password: string, role: UserRole) => { success: boolean; error?: string };
     removeUser: (id: string) => { success: boolean; error?: string };
@@ -143,6 +145,43 @@ export const useAuthStore = create<AuthState>()(
 
             logout: () => {
                 set({ currentUser: null, isAuthenticated: false });
+            },
+
+            loginAsGuest: () => {
+                const guestUser: User = {
+                    id: 'guest_' + Date.now().toString(36),
+                    email: 'guest@quickinsight.app',
+                    name: 'Guest User',
+                    role: UserRole.VIEWER,
+                    passwordHash: '',
+                    createdAt: Date.now(),
+                    avatar: '#94a3b8',
+                };
+                lastActivityTime = Date.now();
+                set({ currentUser: guestUser, isAuthenticated: true });
+            },
+
+            register: (email: string, name: string, password: string) => {
+                const state = get();
+                if (state.users.some(u => u.email.toLowerCase() === email.toLowerCase())) {
+                    return { success: false, error: 'A user with this email already exists' };
+                }
+                const pwError = validatePassword(password);
+                if (pwError) return { success: false, error: pwError };
+                if (!name.trim()) return { success: false, error: 'Name is required' };
+
+                const newUser: User = {
+                    id: Math.random().toString(36).substring(2, 15) + Date.now().toString(36),
+                    email: email.toLowerCase(),
+                    name,
+                    role: UserRole.CONTRIBUTOR,
+                    passwordHash: secureHash(password),
+                    createdAt: Date.now(),
+                    avatar: AVATAR_COLORS[state.users.length % AVATAR_COLORS.length],
+                };
+                lastActivityTime = Date.now();
+                set({ users: [...state.users, newUser], currentUser: newUser, isAuthenticated: true });
+                return { success: true };
             },
 
             addUser: (email: string, name: string, password: string, role: UserRole) => {

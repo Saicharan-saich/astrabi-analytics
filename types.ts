@@ -84,6 +84,7 @@ export interface DatasetDomainProfile {
   subDomain?: string;            // "E-Commerce", "Payroll", "SaaS", etc.
   summary: string;               // "This dataset contains employee payroll records..."
   confidence: number;            // 0-1 confidence score
+  grain?: string;                // What each row represents: "Order", "Employee", "Transaction", etc.
   themeColor?: string;           // Domain-specific accent color
   columnSemantics: Record<string, ColumnSemantic>;
   suggestedQuestionCategories?: string[];
@@ -102,6 +103,10 @@ export interface Dataset {
   dimDate?: DimDateRow[];
   sourceSchema?: SourceSchema;
   domainProfile?: DatasetDomainProfile;  // AI-generated domain context
+  // ── System Correction Directive additions ──
+  semanticModel?: import('./services/semanticModel').SemanticModel; // Deterministic semantic model (MANDATORY for analysis)
+  version?: number;            // Incremented on every re-upload or re-ETL
+  createdAt?: number;          // Timestamp of dataset creation
 }
 
 export interface SourceSchema {
@@ -262,6 +267,17 @@ export interface AnalysisResult {
     post: { status: 'valid' | 'warning' | 'error'; summary: string; checks: { name: string; status: 'pass' | 'warn' | 'fail'; message: string }[] };
   };
   queryConfig?: any; // Fix #8: Original query config for dashboard re-evaluation
+  // ── System Correction Directive additions ──
+  confidence?: number;         // 0-1 confidence score (reduced for inferred joins, high nulls, etc.)
+  warnings?: string[];         // Human-readable warnings ("Join inferred", "Aggregation defaulted", etc.)
+  explainability?: {           // Traceable computation explanation
+    metric: string;            // e.g., "revenue"
+    aggregation: string;       // e.g., "SUM"
+    sourceColumn: string;      // e.g., "total_sales"
+    dimension: string;         // e.g., "region"
+    filtersApplied: string[];  // e.g., ["year = 2024", "region IN ('North', 'South')"]
+    rowsProcessed: number;     // How many rows were aggregated
+  };
 }
 
 export interface DashboardItem {
@@ -270,6 +286,8 @@ export interface DashboardItem {
   result: AnalysisResult;
   width: 'full' | 'half';
   pinnedAt?: number; // Fix #8: Timestamp of last pin/refresh
+  // ── System Correction Directive additions ──
+  datasetVersion?: number; // Version of dataset when this item was pinned (mismatch → stale warning)
 }
 
 export interface Connector {
@@ -298,6 +316,14 @@ export interface QuestionTemplate {
   isCustom?: boolean;
   // Domain tag — "Sales", "HR", "Finance", "Healthcare", etc. (undefined = universal/Sales)
   domain?: string;
+  // Domain-aware aggregation — tells the engine HOW to aggregate the metric column
+  // e.g., rates/percentages should use AVG, counts should use COUNT_DISTINCT, amounts should use SUM
+  defaultAgg?: 'SUM' | 'AVG' | 'COUNT' | 'COUNT_DISTINCT' | 'MIN' | 'MAX';
+  // Display format hint — tells the renderer how to format the result number
+  numberFormat?: 'currency' | 'percent' | 'raw' | 'count' | 'score' | 'ratio';
+  // Parameterized SQL template with semantic placeholders ({entity_id}, {dept}, {salary}, etc.)
+  // Resolved at runtime by sqlTemplateResolver.ts
+  sqlTemplate?: string;
 }
 
 export interface ColumnProfile {
@@ -329,6 +355,7 @@ export interface QuestionBuilderState {
 
 export enum Tab {
   UPLOAD = 'UPLOAD',
+  COLUMN_MAPPING = 'COLUMN_MAPPING',
   DASHBOARD = 'DASHBOARD',
   BUILDER = 'BUILDER',
   WORKBENCH = 'WORKBENCH',

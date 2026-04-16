@@ -125,10 +125,52 @@ RESPOND WITH ONLY VALID JSON (no markdown fences):
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// BACKEND HEALTH CHECK — Fast pre-flight to avoid slow timeouts
+// ═══════════════════════════════════════════════════════════════════
+
+let _backendAvailable: boolean | null = null; // null = not checked yet
+let _lastHealthCheck = 0;
+const HEALTH_CHECK_INTERVAL = 60_000; // Re-check every 60 seconds
+const HEALTH_CHECK_TIMEOUT = 2000;    // 2-second fast timeout
+
+async function isBackendAvailable(): Promise<boolean> {
+    const now = Date.now();
+    if (_backendAvailable !== null && (now - _lastHealthCheck) < HEALTH_CHECK_INTERVAL) {
+        return _backendAvailable;
+    }
+
+    try {
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
+        const resp = await fetch(API_ENDPOINT.replace('/api/ai/profile-dataset', '/api/ai/health'), {
+            method: 'GET',
+            signal: controller.signal,
+        }).catch(() => null);
+        clearTimeout(tid);
+
+        // Even a 404 means the server IS up (just no /health route)
+        _backendAvailable = resp !== null;
+    } catch {
+        _backendAvailable = false;
+    }
+
+    _lastHealthCheck = now;
+    if (!_backendAvailable) {
+        console.info('[AI Profiler] Backend not available — AI enrichment disabled. Using deterministic classification only.');
+    }
+    return _backendAvailable;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // LLM CALL — with timeout and error handling
 // ═══════════════════════════════════════════════════════════════════
 
 async function callLLM(prompt: string): Promise<any> {
+    // Fast pre-flight: skip if backend is known to be down
+    if (!(await isBackendAvailable())) {
+        return null;
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
@@ -150,10 +192,13 @@ async function callLLM(prompt: string): Promise<any> {
         return data;
     } catch (err: any) {
         clearTimeout(timeoutId);
+        // Mark backend as unavailable so future calls skip instantly
+        _backendAvailable = false;
+        _lastHealthCheck = Date.now();
         if (err.name === 'AbortError') {
-            console.warn('[AI Profiler] LLM call timed out after', TIMEOUT_MS, 'ms');
+            console.info('[AI Profiler] LLM call timed out — using deterministic classification.');
         } else {
-            console.warn('[AI Profiler] LLM call failed:', err.message);
+            console.info('[AI Profiler] LLM unavailable — using deterministic classification.');
         }
         return null;
     }

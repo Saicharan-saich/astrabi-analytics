@@ -451,7 +451,14 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             });
 
             // Convert groups to array based on Aggregation Type
-            const aggType = query.aggregation || 'SUM';
+            let aggType = query.aggregation || 'SUM';
+            // ── ID COLUMN GUARD: Never SUM an ID column ──
+            // If the metric column name indicates an ID, force COUNT_DISTINCT
+            const metricLower = metricCol.toLowerCase();
+            if (aggType === 'SUM' && (metricLower.endsWith('_id') || metricLower.endsWith('id') || metricLower.endsWith('_key') || metricLower === 'id')) {
+                aggType = 'COUNT_DISTINCT';
+                console.warn(`[Engine] Overrode SUM → COUNT_DISTINCT for ID column "${metricCol}"`);
+            }
 
             // Helper to resolve aggregate value
             const resolveAgg = (stats: { sum: number; count: number; min: number; max: number }, agg: string) => {
@@ -2165,7 +2172,10 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 const tbl = datasetName || 'dataset'; // Use actual dataset name
                 const dateCol = dateColKey;
                 const metricCol = cols[metricName] || metricName;
-                const isCountMetric = metricName === 'order_id' || metricName === 'customer_id';
+                // Detect ID columns by: canonical role name, column name pattern
+                const metricColLower = metricCol.toLowerCase();
+                const isCountMetric = metricName === 'order_id' || metricName === 'customer_id' ||
+                    metricColLower.endsWith('_id') || metricColLower.endsWith('_key') || metricColLower === 'id';
                 const aggExpr = isCountMetric ? `COUNT(DISTINCT ${metricCol})` : `SUM(${metricCol})`;
                 const aggLabel = isCountMetric ? `total_${metricName.replace('_id', 's')}` : `total_${metricName}`;
 

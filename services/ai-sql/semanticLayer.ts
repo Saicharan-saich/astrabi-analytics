@@ -15,25 +15,34 @@ import { buildCompositeMetrics, buildDerivedMetrics } from './metricRegistry';
 // ─── Synonym Dictionary ──────────────────────────────────────────
 const SYNONYM_MAP: Record<string, string[]> = {
     // Revenue / Sales
-    sales: ['revenue', 'turnover', 'income', 'earnings', 'total sales'],
-    revenue: ['sales', 'turnover', 'income', 'earnings', 'total revenue'],
+    sales: ['revenue', 'turnover', 'income', 'earnings', 'total sales', 'proceeds', 'receipts'],
+    revenue: ['sales', 'turnover', 'income', 'earnings', 'total revenue', 'proceeds', 'receipts'],
     // Cost
-    cost: ['expense', 'expenditure', 'spending', 'cogs'],
-    discount: ['markdown', 'reduction', 'rebate'],
+    cost: ['expense', 'expenditure', 'spending', 'cogs', 'outlay'],
+    discount: ['markdown', 'reduction', 'rebate', 'deduction'],
+    shipping: ['freight', 'delivery cost', 'shipping cost', 'postage'],
     // Profit
-    profit: ['margin', 'net income', 'net profit', 'earnings'],
+    profit: ['margin', 'net income', 'net profit', 'earnings', 'bottom line', 'net revenue'],
     // Quantity
-    quantity: ['qty', 'units', 'volume', 'count', 'items'],
+    quantity: ['qty', 'units', 'volume', 'count', 'items', 'pieces'],
+    // Price
+    price: ['unit price', 'cost per unit', 'rate', 'unit cost'],
+    // HR / People
+    salary: ['wage', 'pay', 'compensation', 'remuneration', 'base pay'],
+    bonus: ['incentive', 'commission', 'payout'],
+    employee: ['staff', 'worker', 'associate', 'team member', 'headcount'],
     // Geography
-    region: ['area', 'territory', 'zone', 'geo', 'geos'],
+    region: ['area', 'territory', 'zone', 'geo', 'geos', 'district'],
     state: ['province', 'territory'],
-    city: ['town', 'municipality'],
+    city: ['town', 'municipality', 'metro'],
     country: ['nation'],
     // Product
-    category: ['segment', 'group', 'type', 'class'],
-    product: ['item', 'sku', 'article'],
+    category: ['segment', 'group', 'type', 'class', 'division'],
+    product: ['item', 'sku', 'article', 'merchandise'],
     // Customer
-    customer: ['client', 'buyer', 'account', 'user'],
+    customer: ['client', 'buyer', 'account', 'user', 'patron'],
+    // Order / Transaction
+    order: ['transaction', 'purchase', 'sale', 'deal'],
     // Time
     date: ['day', 'order date', 'transaction date'],
     month: ['period', 'month name'],
@@ -41,6 +50,8 @@ const SYNONYM_MAP: Record<string, string[]> = {
     // Rate / Percentage
     margin: ['margin pct', 'profit margin', 'gross margin'],
     rate: ['percentage', 'ratio', 'pct'],
+    // Amount
+    amount: ['value', 'total', 'sum', 'payment'],
 };
 
 // ─── Column Name Pattern Matchers ────────────────────────────────
@@ -269,6 +280,13 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
     // Build derived metrics (two-stage aggregations like avg_daily_sales)
     const derivedMetrics = buildDerivedMetrics(fields);
 
+    // Performance guardrails
+    if (totalRows > 500000) {
+        console.warn(`[SemanticLayer] ⚠️ LARGE DATASET: ${totalRows.toLocaleString()} rows. Performance may be affected. Consider sampling or filtering.`);
+    } else if (totalRows > 100000) {
+        console.warn(`[SemanticLayer] NOTE: ${totalRows.toLocaleString()} rows — performance should be fine for most queries.`);
+    }
+
     return {
         fields,
         compositeMetrics,
@@ -372,6 +390,34 @@ export function serializeSemanticModel(model: SemanticModel): string {
             if (dm.synonyms.length > 0) {
                 lines.push(`    synonyms: ${dm.synonyms.join(', ')}`);
             }
+        }
+    }
+
+    // Null handling policy documentation (for audit/review)
+    lines.push('');
+    lines.push('Null Handling Policy:');
+    lines.push('  - Metric columns: NULLs are KEPT in the data but excluded from aggregation (SQL standard)');
+    lines.push('    → SUM, AVG, COUNT skip NULLs. Totals are not inflated or deflated.');
+    lines.push('  - Dimension columns: NULLs are allowed as a distinct category (displayed as "[Unknown]")');
+    lines.push('    → No rows are dropped. NULL dimensions appear in GROUP BY results.');
+    lines.push('  - Rows are NEVER deleted from the source data due to NULLs.');
+
+    // Add null rate info for fields that have nulls
+    const fieldsWithNulls = model.fields.filter(f => f.hasNulls);
+    if (fieldsWithNulls.length > 0) {
+        lines.push('');
+        lines.push('Fields with NULL values:');
+        for (const f of fieldsWithNulls) {
+            lines.push(`  ${f.name} (${f.role}) — has NULLs, handling: ${f.role === 'metric' ? 'excluded from aggregation' : 'kept as [Unknown] category'}`);
+        }
+    }
+
+    // Performance note
+    if (model.rowCount > 100000) {
+        lines.push('');
+        lines.push(`Performance note: Dataset has ${model.rowCount.toLocaleString()} rows.`);
+        if (model.rowCount > 500000) {
+            lines.push('  ⚠️ Large dataset — queries may take longer. Consider applying date filters to reduce scope.');
         }
     }
 

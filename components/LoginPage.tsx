@@ -1,27 +1,42 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
-import { Eye, EyeOff, LogIn, Sparkles, AlertCircle } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Sparkles, AlertCircle, UserPlus, Users } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [name, setName] = useState('');
     const [showPassword, setShowPassword] = useState(false);
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
+    const [mode, setMode] = useState<'login' | 'register'>('login');
     const login = useAuthStore(s => s.login);
+    const register = useAuthStore(s => s.register);
+    const loginAsGuest = useAuthStore(s => s.loginAsGuest);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         setIsLoading(true);
 
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 400));
 
-        const result = login(email, password);
-        if (!result.success) {
-            setError(result.error || 'Login failed');
+        if (mode === 'login') {
+            const result = login(email, password);
+            if (!result.success) {
+                setError(result.error || 'Login failed');
+            }
+        } else {
+            const result = register(email, name, password);
+            if (!result.success) {
+                setError(result.error || 'Registration failed');
+            }
         }
         setIsLoading(false);
+    };
+
+    const handleGuestLogin = () => {
+        loginAsGuest();
     };
 
     return (
@@ -34,26 +49,47 @@ export const LoginPage: React.FC = () => {
 
             <div className="relative z-10 w-full max-w-sm px-6">
                 {/* Logo & Brand */}
-                <div className="text-center mb-8">
-                    <div className="inline-flex items-center justify-center mb-5">
-                        <img src="/logo.jpg" alt="QuickInsight" className="w-16 h-16 rounded-2xl object-cover shadow-lg" />
+                <div className="text-center mb-4">
+                    <div className="inline-flex items-center justify-center mb-3">
+                        <img src="/logo.jpg" alt="QuickInsight" className="w-12 h-12 rounded-2xl object-cover shadow-lg" />
                     </div>
-                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight mb-1">
+                    <h1 className="text-2xl font-bold text-gray-900 tracking-tight mb-0.5">
                         QuickInsight
                     </h1>
-                    <p className="text-gray-500 text-sm flex items-center justify-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-amber-500" />
+                    <p className="text-gray-500 text-xs flex items-center justify-center gap-1.5">
+                        <Sparkles className="w-3 h-3 text-amber-500" />
                         Analytics Platform
                     </p>
                 </div>
 
-                {/* Login Card */}
+                {/* Login/Register Card */}
                 <div className="bg-white border border-gray-200 rounded-2xl shadow-lg overflow-hidden">
-                    <div className="p-7">
-                        <h2 className="text-lg font-bold text-gray-900 mb-0.5">Welcome back</h2>
-                        <p className="text-gray-500 text-sm mb-6">Sign in to your workspace</p>
+                    <div className="px-6 pt-5 pb-4">
+                        <h2 className="text-base font-bold text-gray-900 mb-0.5">
+                            {mode === 'login' ? 'Welcome back' : 'Create your account'}
+                        </h2>
+                        <p className="text-gray-500 text-xs mb-4">
+                            {mode === 'login' ? 'Sign in to your workspace' : 'Get started with QuickInsight'}
+                        </p>
 
-                        <form onSubmit={handleSubmit} className="space-y-4">
+                        <form onSubmit={handleSubmit} className="space-y-3">
+                            {mode === 'register' && (
+                                <div>
+                                    <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                                        Full Name
+                                    </label>
+                                    <input
+                                        type="text"
+                                        value={name}
+                                        onChange={e => setName(e.target.value)}
+                                        placeholder="John Doe"
+                                        required
+                                        autoFocus
+                                        className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition-all text-sm"
+                                    />
+                                </div>
+                            )}
+
                             <div>
                                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
                                     Email Address
@@ -64,7 +100,7 @@ export const LoginPage: React.FC = () => {
                                     onChange={e => setEmail(e.target.value)}
                                     placeholder="you@company.com"
                                     required
-                                    autoFocus
+                                    autoFocus={mode === 'login'}
                                     className="w-full px-3.5 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-400 transition-all text-sm"
                                 />
                             </div>
@@ -90,6 +126,9 @@ export const LoginPage: React.FC = () => {
                                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                     </button>
                                 </div>
+                                {mode === 'register' && (
+                                    <p className="text-xs text-gray-400 mt-1.5">Min 8 chars, 1 uppercase, 1 number</p>
+                                )}
                             </div>
 
                             {error && (
@@ -101,24 +140,56 @@ export const LoginPage: React.FC = () => {
 
                             <button
                                 type="submit"
-                                disabled={isLoading || !email.trim() || !password.trim()}
+                                disabled={isLoading || !email.trim() || !password.trim() || (mode === 'register' && !name.trim())}
                                 className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-semibold rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 shadow-md mt-2"
                             >
                                 {isLoading ? (
                                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                                ) : (
+                                ) : mode === 'login' ? (
                                     <>
                                         <LogIn className="w-4 h-4" />
                                         Sign In
                                     </>
+                                ) : (
+                                    <>
+                                        <UserPlus className="w-4 h-4" />
+                                        Create Account
+                                    </>
                                 )}
                             </button>
                         </form>
+
+                        {/* Toggle login/register */}
+                        <div className="mt-4 text-center">
+                            <button
+                                onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}
+                                className="text-sm text-violet-600 hover:text-violet-800 font-medium transition-colors"
+                            >
+                                {mode === 'login' ? "Don't have an account? Register" : 'Already have an account? Sign In'}
+                            </button>
+                        </div>
                     </div>
 
-                    <div className="border-t border-gray-100 px-7 py-3 bg-gray-50">
-                        <p className="text-xs text-gray-400 text-center">
-                            Contact your administrator for access
+                    {/* Divider */}
+                    <div className="px-6">
+                        <div className="flex items-center gap-3">
+                            <div className="flex-1 h-px bg-gray-200" />
+                            <span className="text-xs text-gray-400 font-medium">or</span>
+                            <div className="flex-1 h-px bg-gray-200" />
+                        </div>
+                    </div>
+
+                    {/* Guest Login */}
+                    <div className="px-6 py-3">
+                        <button
+                            onClick={handleGuestLogin}
+                            className="w-full py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 border border-gray-200"
+                        >
+                            <Users className="w-4 h-4" />
+                            Continue as Guest
+                        </button>
+                        <p className="text-xs text-gray-400 text-center mt-1.5">
+                            View-only access — no account needed
                         </p>
                     </div>
                 </div>

@@ -125,6 +125,12 @@ function detectExplicitAggregation(question: string): 'avg' | 'sum' | 'count' | 
 
     // Order matters: check specific patterns first
     if (/\b(average|avg|mean)\b/.test(q)) return 'avg';
+
+    // "total orders", "total customers", "total transactions" → COUNT, not SUM
+    // These are count-like nouns where "total" means "how many" not "sum of"
+    if (/\b(total|number of)\s+(orders|customers|products|items|transactions|records|employees|users|entries|shipments|returns|invoices|tickets|accounts|contracts|deals|leads|contacts)\b/.test(q)) return 'count';
+
+    // "total sales", "total revenue", "total profit" → SUM
     if (/\b(total|sum|overall|combined|aggregate)\b/.test(q)) return 'sum';
     if (/\b(count of|how many|number of|count distinct)\b/.test(q)) return 'count';
 
@@ -542,6 +548,10 @@ export async function generatePlan(
         enforceTimeContext(plan, question, model);
         enforceComparison(plan, question, model); // Fix: detect comparison patterns
 
+        // ── STEP 3: SEMANTIC VALIDATION ──
+        // Catch nonsensical queries: AVG(customer_id), COUNT(revenue), revenue by revenue
+        validateSemantics(plan, model);
+
         console.log('[Intent Planner] Generated plan:', JSON.stringify(plan, null, 2));
         return plan;
 
@@ -569,6 +579,110 @@ function validateIntent(intent: string): AnalysisIntent {
 }
 
 /**
+ * Semantic validation — catches nonsensical queries that would produce
+ * misleading results. Marks the plan as ambiguous with a clear message.
+ *
+ * Rules:
+ * 1. AVG/SUM on identifier fields → nonsensical (e.g., AVG(customer_id))
+ * 2. COUNT on currency/quantity fields → likely wrong (e.g., COUNT(revenue))
+ * 3. Same field as both dimension and metric → invalid (e.g., "revenue by revenue")
+ * 4. Metric field doesn't exist in the dataset
+ * 5. Dimension field doesn't exist in the dataset
+ */
+function validateSemantics(plan: AnalysisPlan, model: SemanticModel): void {
+    const fieldMap = new Map(model.fields.map(f => [f.name.toLowerCase(), f]));
+    const warnings: string[] = [];
+
+    // ── Rule 1: Numeric aggregation on identifiers ──────────────────
+    for (const met of plan.metrics) {
+        if (met.compositeId) continue;
+        const field = fieldMap.get(met.field.toLowerCase());
+        if (field && field.semanticType === 'identifier') {
+            if (['avg', 'sum'].includes(met.agg)) {
+                warnings.push(
+                    `"${field.displayLabel}" is an identifier (like an ID), not a measure. ` +
+                    `${met.agg.toUpperCase()}(${field.name}) is mathematically meaningless. ` +
+                    `Did you mean COUNT(${field.name}) or COUNT(DISTINCT ${field.name})?`
+                );
+            }
+        }
+    }
+
+    // ── Rule 2: COUNT on currency/quantity fields → auto-swap to ID column ──
+    // e.g., "count of transactions" + LLM uses sales → swap to COUNT(order_id)
+    for (const met of plan.metrics) {
+        if (met.compositeId) continue;
+        const field = fieldMap.get(met.field.toLowerCase());
+        if (field && (field.semanticType === 'currency' || field.semanticType === 'quantity')) {
+            if (met.agg === 'count') {
+                // Find the best ID/identifier column for COUNT
+                const idField = model.fields.find(f => f.semanticType === 'identifier')
+                    || model.fields.find(f => f.name.toLowerCase().endsWith('_id'));
+                if (idField) {
+                    console.log(`[Intent Planner] AUTO-SWAP: COUNT(${field.name}) → COUNT(${idField.name}) — ${field.name} is a ${field.semanticType}, using grain ID instead`);
+                    met.field = idField.name;
+                } else {
+                    // No ID field → warn but allow (it will still count rows)
+                    warnings.push(
+                        `"${field.displayLabel}" is a ${field.semanticType} field. ` +
+                        `COUNT(${field.name}) just counts non-null rows — it ignores the actual values. ` +
+                        `Did you mean SUM(${field.name}) or AVG(${field.name})?`
+                    );
+                }
+            }
+        }
+    }
+
+    // ── Rule 3: Same field as both dimension and metric ──────────────
+    const dimFields = new Set(plan.dimensions.map(d => d.field.toLowerCase()));
+    for (const met of plan.metrics) {
+        if (dimFields.has(met.field.toLowerCase())) {
+            const field = fieldMap.get(met.field.toLowerCase());
+            warnings.push(
+                `"${field?.displayLabel || met.field}" is used as both a dimension and a metric. ` +
+                `You can't group by and aggregate the same column. ` +
+                `Try using a different dimension (e.g., category, region) or a different metric.`
+            );
+        }
+    }
+
+    // ── Rule 4: Metric field doesn't exist ───────────────────────────
+    const compositeIds = new Set(model.compositeMetrics.map(m => m.id.toLowerCase()));
+    for (const met of plan.metrics) {
+        if (met.compositeId) continue;
+        const lower = met.field.toLowerCase();
+        if (!fieldMap.has(lower) && !compositeIds.has(lower)) {
+            warnings.push(
+                `Column "${met.field}" does not exist in this dataset. ` +
+                `Available metrics: ${model.fields.filter(f => f.role === 'metric').map(f => f.displayLabel).join(', ')}.`
+            );
+        }
+    }
+
+    // ── Rule 5: Dimension field doesn't exist ────────────────────────
+    for (const dim of plan.dimensions) {
+        if (!fieldMap.has(dim.field.toLowerCase())) {
+            warnings.push(
+                `Dimension "${dim.field}" does not exist in this dataset. ` +
+                `Available dimensions: ${model.fields.filter(f => f.role === 'dimension').map(f => f.displayLabel).join(', ')}.`
+            );
+        }
+    }
+
+    // If any warnings, mark plan as ambiguous
+    if (warnings.length > 0) {
+        console.warn(`[Intent Planner] SEMANTIC VALIDATION FAILED (${warnings.length} issue(s)):`);
+        warnings.forEach((w, i) => console.warn(`  ${i + 1}. ${w}`));
+
+        plan.ambiguous = true;
+        plan.clarificationQuestion =
+            `⚠️ This query has semantic issues:\n\n` +
+            warnings.map((w, i) => `${i + 1}. ${w}`).join('\n\n') +
+            `\n\nPlease rephrase your question with the correct field names and aggregations.`;
+    }
+}
+
+/**
  * Validate that all field references in the plan exist in the semantic model.
  * If a field is a synonym, attempt to resolve it to the actual field name.
  */
@@ -590,6 +704,35 @@ function validateFieldReferences(plan: AnalysisPlan, model: SemanticModel): void
         }
     }
 
+    // Helper: fuzzy-find the best matching field by substring
+    const fuzzyResolveMetric = (fieldName: string): string | null => {
+        const lower = fieldName.toLowerCase().replace(/_/g, ' ');
+        // Try partial matches against field names and labels
+        for (const f of model.fields) {
+            if (f.role === 'metric') {
+                const nameLower = f.name.toLowerCase();
+                const labelLower = f.displayLabel.toLowerCase();
+                // e.g., 'total_orders' contains 'order' → match 'order_id'
+                if (lower.includes(nameLower.replace(/_id$/, '')) || nameLower.includes(lower.replace(/total_|count_|num_/g, ''))) {
+                    return f.name;
+                }
+                if (lower.includes(labelLower) || labelLower.includes(lower.replace(/total |count |num /g, ''))) {
+                    return f.name;
+                }
+            }
+        }
+        // Fallback: for count-like terms (total_orders, num_customers), find the ID field
+        // by looking for columns whose name contains the root noun
+        const rootNoun = lower.replace(/total_|count_|num_|number_of_/g, '').replace(/s$/, '');
+        for (const f of model.fields) {
+            const fn = f.name.toLowerCase();
+            if (fn.includes(rootNoun) && (fn.endsWith('_id') || f.semanticType === 'identifier' || f.role === 'metric')) {
+                return f.name;
+            }
+        }
+        return null;
+    };
+
     // Resolve dimensions
     for (const dim of plan.dimensions) {
         if (!fieldNames.has(dim.field.toLowerCase())) {
@@ -602,10 +745,11 @@ function validateFieldReferences(plan: AnalysisPlan, model: SemanticModel): void
         }
     }
 
-    // Resolve metrics
+    // Resolve metrics — with fuzzy fallback for fabricated field names
     for (const met of plan.metrics) {
         const lower = met.field.toLowerCase();
         if (!fieldNames.has(lower) && !compositeIds.has(lower)) {
+            // Try exact synonym match first
             const resolved = synonymLookup.get(lower);
             if (resolved) {
                 met.field = resolved;
@@ -614,7 +758,19 @@ function validateFieldReferences(plan: AnalysisPlan, model: SemanticModel): void
                     met.agg = 'none' as any;
                 }
             } else {
-                console.warn(`[Intent Planner] Unknown metric field: ${met.field}`);
+                // Fuzzy fallback: try to find a matching field
+                const fuzzy = fuzzyResolveMetric(met.field);
+                if (fuzzy) {
+                    console.log(`[Intent Planner] RESOLVED: fabricated field "${met.field}" → real field "${fuzzy}"`);
+                    met.field = fuzzy;
+                    // If the fabricated name contains 'total_' + count-noun, force count agg
+                    if (/^(total|num|number)_/.test(lower) && (fuzzy.endsWith('_id') || model.fields.find(f => f.name === fuzzy)?.defaultAgg === 'count_distinct')) {
+                        met.agg = 'count' as any;
+                        console.log(`[Intent Planner] OVERRIDE: "${fuzzy}" agg → count (inferred from "${met.field}")`);
+                    }
+                } else {
+                    console.warn(`[Intent Planner] Unknown metric field: ${met.field} — no fuzzy match found`);
+                }
             }
         }
     }

@@ -38,6 +38,11 @@ export function profileResult(
         const firstVal = data[0][col];
         const colLower = col.toLowerCase();
 
+        // Skip computed growth/time-intel columns — these are handled separately by the chart recommender
+        if (['previous_value', 'growth_pct', 'growth_abs', 'running_total', 'moving_avg'].includes(colLower)) {
+            continue;
+        }
+
         // Try to match to semantic model
         const field = fieldMap.get(colLower)
             || fieldMap.get(colLower.replace(/_sum$|_avg$|_count$|_min$|_max$/, ''));

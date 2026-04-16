@@ -228,7 +228,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         return !sem?.isHidden;
     });
     const metrics = visibleColumns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
-    const dims = visibleColumns.filter(c => c.type === ColumnType.DIMENSION).map(c => c.name);
+    const dims = visibleColumns.filter(c => c.type === ColumnType.DIMENSION || c.type === ColumnType.ID).map(c => c.name);
     const dateColumns = visibleColumns.filter(c => c.type === ColumnType.DATE).map(c => c.name);
 
     // Helper: get human-readable label for a column

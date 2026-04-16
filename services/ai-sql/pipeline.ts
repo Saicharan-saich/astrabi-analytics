@@ -198,8 +198,121 @@ export async function runAISQLPipeline(
         throw new Error(`SQL execution failed: ${execResult.error}`);
     }
 
-    const rawData = execResult.data || [];
+    let rawData = execResult.data || [];
     const columns = execResult.columns || [];
+
+    // ─── Step 5c: Time Intelligence Engine ─────────────────────────
+    // AlaSQL doesn't support LAG/LEAD/ROW_NUMBER/SUM OVER window functions.
+    // This JS engine computes ALL time intelligence post-SQL:
+    //   A) Total period comparison (this year vs last year → growth badge)
+    //   B) Trend growth (MoM, QoQ, YoY → LAG emulation)
+    //   C) Running totals (cumulative SUM)
+    //   D) Moving averages (3-period rolling)
+
+    if (rawData.length > 0) {
+        const cols = Object.keys(rawData[0]);
+
+        // ── (A) Total Period Comparison ─────────────────────────────
+        // Detect UNION ALL "Current"/"Previous" pattern from comparison queries
+        const periodCol = cols.find(c => c.toLowerCase() === 'period');
+        if (periodCol && rawData.length === 2) {
+            const currentRow = rawData.find(r => String(r[periodCol]).toLowerCase() === 'current');
+            const previousRow = rawData.find(r => String(r[periodCol]).toLowerCase() === 'previous');
+
+            if (currentRow && previousRow) {
+                const metricCols = cols.filter(c => c !== periodCol && typeof currentRow[c] === 'number');
+
+                if (metricCols.length > 0) {
+                    const primaryMetric = metricCols[0];
+                    const currentVal = Number(currentRow[primaryMetric]) || 0;
+                    const previousVal = Number(previousRow[primaryMetric]) || 0;
+                    const diff = currentVal - previousVal;
+                    // Guard: division by zero → null (not 0, not Infinity)
+                    const rawPct = previousVal !== 0 ? (diff / Math.abs(previousVal)) * 100 : null;
+                    const pct = rawPct !== null && isFinite(rawPct) ? rawPct : null;
+
+                    // Enrich both rows with growth data
+                    currentRow.growth_pct = pct;
+                    currentRow.growth_abs = diff;
+                    currentRow.previous_value = previousVal;
+                    previousRow.growth_pct = null;
+                    previousRow.growth_abs = null;
+                    previousRow.previous_value = null;
+
+                    // Store growth on the plan for KPI card rendering
+                    (plan as any)._computedGrowth = {
+                        currentValue: currentVal,
+                        previousValue: previousVal,
+                        diff,
+                        pct,
+                        currentLabel: String(currentRow[periodCol]),
+                        previousLabel: String(previousRow[periodCol]),
+                        metric: primaryMetric,
+                    };
+
+                    console.log(`[Pipeline] Time Intel (A): Total comparison — ${primaryMetric}: ${currentVal.toFixed(2)} vs ${previousVal.toFixed(2)} = ${pct >= 0 ? '+' : ''}${pct.toFixed(1)}%`);
+                }
+            }
+        }
+
+        // ── (B) Trend Growth (LAG emulation) ─────────────────────────
+        // For trend comparisons with time grain (MoM, QoQ, YoY)
+        if (plan.comparison && !periodCol) {
+            const timeDim = plan.dimensions.find(d => d.timeGrain);
+            const timeCol = timeDim
+                ? (timeDim.timeGrain && timeDim.timeGrain !== 'day'
+                    ? `${timeDim.field}_${timeDim.timeGrain}`
+                    : timeDim.field)
+                : null;
+
+            const metricCols = cols.filter(k => {
+                if (timeCol && k === timeCol) return false;
+                if (['previous_value', 'growth_pct', 'growth_abs', 'running_total', 'moving_avg'].includes(k.toLowerCase())) return false;
+                return typeof rawData[0][k] === 'number' || /_(sum|avg|count|min|max)$/.test(k);
+            });
+
+            if (timeCol && metricCols.length > 0) {
+                // Sort chronologically
+                rawData.sort((a, b) => String(a[timeCol] || '').localeCompare(String(b[timeCol] || '')));
+
+                const primaryMetric = metricCols[0];
+
+                for (let i = 0; i < rawData.length; i++) {
+                    const current = Number(rawData[i][primaryMetric]) || 0;
+
+                    if (i === 0) {
+                        rawData[i].previous_value = null;
+                        rawData[i].growth_pct = null;
+                        rawData[i].growth_abs = null;
+                    } else {
+                        const previous = Number(rawData[i - 1][primaryMetric]) || 0;
+                        rawData[i].previous_value = previous;
+                        rawData[i].growth_abs = current - previous;
+                        // Guard: division by zero → null; also guard NaN/Infinity
+                        const rawGrowth = previous !== 0
+                            ? ((current - previous) / Math.abs(previous)) * 100
+                            : null;
+                        rawData[i].growth_pct = rawGrowth !== null && isFinite(rawGrowth) ? rawGrowth : null;
+                    }
+
+                    // ── (C) Running Total ────────────────────────────
+                    rawData[i].running_total = rawData
+                        .slice(0, i + 1)
+                        .reduce((sum, r) => sum + (Number(r[primaryMetric]) || 0), 0);
+
+                    // ── (D) Moving Average (3-period) ────────────────
+                    if (i >= 2) {
+                        const window = rawData.slice(i - 2, i + 1);
+                        rawData[i].moving_avg = window.reduce((s, r) => s + (Number(r[primaryMetric]) || 0), 0) / 3;
+                    } else {
+                        rawData[i].moving_avg = null;
+                    }
+                }
+
+                console.log(`[Pipeline] Time Intel (B/C/D): Trend growth + running total + moving avg — ${rawData.length} rows, metric="${primaryMetric}"`);
+            }
+        }
+    }
 
     if (rawData.length === 0) {
         throw new Error('Query returned no results. Try a different question.');
@@ -210,6 +323,53 @@ export async function runAISQLPipeline(
     console.log('[Pipeline] Step 6: Validating result...');
     const resultChecks = validateResult(rawData, plan, semanticModel);
     validation.checks.push(...resultChecks);
+
+    // ─── Step 6b: Total Consistency Check ──────────────────────────
+    // For trend/breakdown: verify that SUM of parts ≈ grand total
+    if (['trend', 'breakdown'].includes(plan.intent) && plan.metrics.length > 0 && rawData.length > 1) {
+        try {
+            const primaryMetricField = plan.metrics[0].field;
+            const primaryAgg = plan.metrics[0].agg;
+            const metricAlias = `${primaryMetricField}_${primaryAgg}`;
+            // Sum all values in the result set
+            const resultTotal = rawData.reduce((sum, row) => {
+                const key = Object.keys(row).find(k => k.toLowerCase() === metricAlias.toLowerCase())
+                    || Object.keys(row).find(k => k.toLowerCase().includes(primaryMetricField.toLowerCase()) && typeof row[k] === 'number');
+                return sum + (key ? (Number(row[key]) || 0) : 0);
+            }, 0);
+
+            // Run a grand total query with the same filters
+            const filterClause = plan.filters.length > 0
+                ? ' WHERE ' + plan.filters.map(f => {
+                    if (f.op === 'between' && Array.isArray(f.value)) {
+                        return `${f.field} BETWEEN '${f.value[0]}' AND '${f.value[1]}'`;
+                    }
+                    return `${f.field} ${f.op} '${f.value}'`;
+                }).join(' AND ')
+                : '';
+            const grandTotalSQL = `SELECT ${primaryAgg.toUpperCase()}(${primaryMetricField}) AS grand_total FROM data${filterClause}`;
+            const grandResult = executeSQL(dataset.rows, grandTotalSQL);
+
+            if (grandResult.data && grandResult.data.length > 0) {
+                const grandTotal = Number(grandResult.data[0].grand_total) || 0;
+                if (grandTotal > 0 && primaryAgg === 'sum') {
+                    const drift = Math.abs(resultTotal - grandTotal) / grandTotal;
+                    if (drift > 0.01) {
+                        validation.checks.push({
+                            name: 'total_consistency',
+                            status: 'warn',
+                            message: `Sum of ${metricAlias} in result (${resultTotal.toFixed(2)}) differs from grand total (${grandTotal.toFixed(2)}) by ${(drift * 100).toFixed(1)}%. This may indicate data grouping issues.`,
+                        });
+                        console.warn(`[Pipeline] TOTAL CONSISTENCY WARNING: result=${resultTotal.toFixed(2)}, grand=${grandTotal.toFixed(2)}, drift=${(drift * 100).toFixed(1)}%`);
+                    } else {
+                        validation.checks.push({ name: 'total_consistency', status: 'pass', message: 'Sum of parts matches grand total.' });
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('[Pipeline] Total consistency check failed:', e);
+        }
+    }
 
     // ─── Step 7: Profile Result ──────────────────────────────────
     reportProgress('Profiling results...', 9);

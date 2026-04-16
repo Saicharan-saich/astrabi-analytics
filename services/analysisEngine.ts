@@ -2,6 +2,8 @@
 // Re-exports from extracted modules for backward compatibility
 import { AggregationType, AnalysisResult, AnalysisType, ColumnDefinition, ColumnProfile, ColumnType, Dataset, ETLLog, QueryConfig, TimeContext, TimeGrain, SchemaType, CanonicalMapping, QuestionTemplate, QuestionGrain } from "../types";
 import * as XLSX from 'xlsx';
+import { findMeasure, findDimension } from './semanticModel';
+import type { SemanticModel } from './semanticModel';
 
 // Re-export from extracted modules
 export { QUESTION_REGISTRY, QUESTION_BANK, getFullQuestionBank, getFullRegistry, getFullQuestionBankForDomain } from './questionRegistry';
@@ -26,6 +28,17 @@ export const runAnalysis = (dataset: Dataset, query: QueryConfig): AnalysisResul
     if (!query.questionId) {
         return { data: [], xKey: '', yKey: '', yLabel: '', insight: '', sql: '', config: query };
     }
+
+    // ═══ GRAIN ENFORCEMENT ═══════════════════════════════════════════
+    // If semantic model exists but grain is undefined, warn strongly.
+    // This ensures every analysis knows what a row represents.
+    const semModel = dataset.semanticModel;
+    if (semModel && !semModel.grain) {
+        console.warn('[runAnalysis] ⚠️ Dataset grain is not defined in semantic model. Aggregation results may be unreliable.');
+    }
+
+    // ═══ CONFIDENCE THRESHOLD ════════════════════════════════════════
+    const CONFIDENCE_THRESHOLD = 0.7;
 
     // ===== DIRECT AI SQL EXECUTION =====
     // If the query has aiSql, execute it directly via alasql — bypass evaluateLocally entirely
@@ -159,8 +172,117 @@ export const runAnalysis = (dataset: Dataset, query: QueryConfig): AnalysisResul
         sql: finalSQL,
         config: query,
         vis: visuals as any,
-        growth
+        growth,
+        // ── System Correction Directive: Confidence + Warnings ──
+        confidence: 1.0,
+        warnings: [],
     };
+
+    // ── Compute confidence score ──
+    const resultWarnings: string[] = [];
+    let confidence = 1.0;
+    const model = dataset.semanticModel;
+
+    // Grain penalty
+    if (model && !model.grain) {
+        confidence -= 0.1;
+        resultWarnings.push('Dataset grain not defined — row identity is ambiguous');
+    }
+
+    if (!model) {
+        confidence -= 0.15;
+        resultWarnings.push('No semantic model — aggregation may be inferred');
+    } else {
+        // Validate metric against semantic model
+        if (query.metric) {
+            const measure = findMeasure(model, query.metric);
+            if (!measure) {
+                confidence -= 0.1;
+                resultWarnings.push(`Metric "${query.metric}" not in semantic model`);
+            } else if (query.aggregation && query.aggregation !== measure.aggregation) {
+                if (measure.behavior === 'non_additive' && query.aggregation === AggregationType.SUM) {
+                    confidence -= 0.2;
+                    resultWarnings.push(`Unsafe aggregation: SUM on non-additive metric "${query.metric}". Should use ${measure.aggregation}`);
+                }
+            }
+        }
+        // Validate dimension
+        if (query.dimension) {
+            const dim = findDimension(model, query.dimension);
+            if (!dim) {
+                confidence -= 0.05;
+                resultWarnings.push(`Dimension "${query.dimension}" not in semantic model`);
+            }
+        }
+    }
+
+    // Check data quality
+    if (data.length === 0) {
+        confidence -= 0.3;
+        resultWarnings.push('Query returned zero rows');
+    }
+
+    // Check for high null rate in metric column
+    if (query.metric && dataset.rows.length > 0) {
+        const nullCount = dataset.rows.filter(r => r[query.metric] === null || r[query.metric] === undefined).length;
+        const nullRate = nullCount / dataset.rows.length;
+        if (nullRate > 0.3) {
+            confidence -= 0.1;
+            resultWarnings.push(`High null rate (${Math.round(nullRate * 100)}%) in metric "${query.metric}"`);
+        }
+    }
+
+    // Check for join-based datasets
+    if (dataset.sourceSchema?.joinEdges && dataset.sourceSchema.joinEdges.length > 0) {
+        confidence -= 0.05;
+        resultWarnings.push('Data includes joined tables — verify no row duplication');
+    }
+
+    analysisResult.confidence = Math.max(0, Math.min(1, confidence));
+    analysisResult.warnings = resultWarnings;
+
+    // ── Explainability ──
+    if (query.metric && query.dimension) {
+        const aggLabel = model ? (findMeasure(model, query.metric)?.aggregation || query.aggregation || 'SUM') : (query.aggregation || 'SUM');
+        const filtersApplied: string[] = [];
+        if (query.filters) {
+            for (const [dim, vals] of Object.entries(query.filters)) {
+                filtersApplied.push(`${dim} IN (${vals.join(', ')})`);
+            }
+        }
+        if (query.dateFilters) {
+            for (const df of query.dateFilters) {
+                filtersApplied.push(`${df.column} IN (${df.values.join(', ')})`);
+            }
+        }
+        analysisResult.explainability = {
+            metric: query.metric,
+            aggregation: String(aggLabel),
+            sourceColumn: query.metric,
+            dimension: query.dimension,
+            filtersApplied,
+            rowsProcessed: dataset.rows.length,
+        };
+    }
+
+    // ── HARD CONFIDENCE THRESHOLD — Block unreliable results ──
+    if (analysisResult.confidence < CONFIDENCE_THRESHOLD && data.length > 0) {
+        return {
+            data: [],
+            xKey: analysisResult.xKey,
+            yKey: analysisResult.yKey,
+            yLabel: analysisResult.yLabel,
+            insight: '',
+            sql: analysisResult.sql,
+            config: query,
+            confidence: analysisResult.confidence,
+            warnings: resultWarnings,
+            explainability: analysisResult.explainability,
+            error: `Result confidence (${Math.round(analysisResult.confidence * 100)}%) is below the reliability threshold (${Math.round(CONFIDENCE_THRESHOLD * 100)}%). ` +
+                `Issues: ${resultWarnings.join('; ')}. ` +
+                `Fix these issues or refine your query for a trustworthy result.`,
+        };
+    }
 
     // ─── VALIDATOR: Post-execution ───────────────────────────────
     const postValidation = validateAnalysis.post(analysisResult, dataset);
@@ -347,6 +469,82 @@ export const autoPickConfig = (dataset: Dataset, intent: any, asOfDate?: string)
     };
 };
 
+// ═══════════════════════════════════════════════════════════════════
+// DYNAMIC AGGREGATION INFERENCE — Works for ANY domain automatically
+// Analyzes column metadata to determine the correct aggregation.
+// Priority: AI profile hints > column name patterns > data range > SUM default
+// ═══════════════════════════════════════════════════════════════════
+export const inferAggregationForColumn = (dataset: Dataset, columnName: string): { agg: string; format: string } => {
+    const col = dataset.columns.find(c => c.name.toLowerCase() === columnName.toLowerCase());
+    const lowerName = columnName.toLowerCase();
+
+    // ════════════════════════════════════════════════════
+    // SEMANTIC MODEL PATH (deterministic — no fallbacks)
+    // ════════════════════════════════════════════════════
+    if (dataset.semanticModel) {
+        const measure = findMeasure(dataset.semanticModel, columnName);
+        if (measure) {
+            return {
+                agg: measure.aggregation,
+                format: measure.format === 'currency_usd' || measure.format === 'currency_eur' ? 'currency'
+                    : measure.format === 'percent' ? 'percent'
+                        : measure.format === 'count' ? 'count'
+                            : 'raw',
+            };
+        }
+        // ── HARD FAIL: metric not in semantic model ──
+        // No heuristics allowed when model exists. This ensures
+        // every aggregation is deterministic and auditable.
+        throw new Error(
+            `[DETERMINISTIC GUARD] Metric "${columnName}" is not defined in the semantic model. ` +
+            `Available measures: ${dataset.semanticModel.measures.map(m => m.name).join(', ')}. ` +
+            `Add this metric to the semantic model or check the column name.`
+        );
+    }
+
+    // ════════════════════════════════════════════════════
+    // LEGACY PATH — only when NO semantic model exists
+    // (backward compatibility for datasets loaded before
+    //  semantic model was introduced)
+    // ════════════════════════════════════════════════════
+    if (dataset.domainProfile?.columnSemantics) {
+        const sem = Object.entries(dataset.domainProfile.columnSemantics)
+            .find(([k]) => k.toLowerCase() === lowerName)?.[1];
+        if (sem) {
+            const fmtStr = String(sem.format || '').toLowerCase();
+            const aggStr = String(sem.aggregation || '').toLowerCase();
+            if (fmtStr.includes('percent')) return { agg: 'AVG', format: 'percent' };
+            if (aggStr === 'avg' || aggStr === 'average') return { agg: 'AVG', format: fmtStr || 'raw' };
+            if (aggStr === 'count') return { agg: 'COUNT', format: 'count' };
+            if (aggStr === 'count_distinct') return { agg: 'COUNT_DISTINCT', format: 'count' };
+            if (fmtStr.includes('currency') || fmtStr.includes('money')) return { agg: 'SUM', format: 'currency' };
+        }
+    }
+
+    // Legacy heuristic fallbacks (name patterns)
+    const ratePatterns = ['rate', 'percentage', 'pct', 'percent', '_pct', '_rate', 'margin', 'yield', 'efficiency'];
+    if (ratePatterns.some(p => lowerName.includes(p))) return { agg: 'AVG', format: 'percent' };
+
+    const scorePatterns = ['score', 'gpa', 'grade', 'rating', 'satisfaction', 'nps', 'index', 'mark', 'points'];
+    if (scorePatterns.some(p => lowerName.includes(p))) return { agg: 'AVG', format: 'score' };
+
+    const ratioPatterns = ['ratio', 'per_capita', 'per_student', 'per_employee', 'per_patient', 'average', 'avg_', 'mean_'];
+    if (ratioPatterns.some(p => lowerName.includes(p))) return { agg: 'AVG', format: 'ratio' };
+
+    if (col && col.type === ColumnType.ID) return { agg: 'COUNT_DISTINCT', format: 'count' };
+    const idPatterns = ['_id', 'id_', 'identifier', 'key'];
+    if (idPatterns.some(p => lowerName.includes(p)) || lowerName.endsWith('id')) return { agg: 'COUNT_DISTINCT', format: 'count' };
+
+    const countPatterns = ['count', 'headcount', 'qty', 'quantity', 'units', 'volume', 'num_', 'number_of', 'total_'];
+    if (countPatterns.some(p => lowerName.includes(p))) return { agg: 'SUM', format: 'count' };
+
+    const amountPatterns = ['revenue', 'sales', 'amount', 'price', 'cost', 'fee', 'tuition', 'salary', 'wage',
+        'payment', 'income', 'expense', 'profit', 'billing', 'invoice', 'total', 'spend', 'budget', 'value'];
+    if (amountPatterns.some(p => lowerName.includes(p))) return { agg: 'SUM', format: 'currency' };
+
+    return { agg: 'SUM', format: 'raw' };
+};
+
 export const resolveMapping = (dataset: Dataset): CanonicalMapping => {
     const columns = dataset.columns.map(c => c.name);
     const fields: Record<string, string> = {};
@@ -422,7 +620,35 @@ export const resolveMapping = (dataset: Dataset): CanonicalMapping => {
                     if (!fields['customer_id']) fields['customer_id'] = colName;
                 }
             }
+
+            // ═══════════════════════════════════════════════════════════════════
+            // DOMAIN-AWARE: Map rate/score/ratio columns regardless of semanticRole
+            // These are new canonical roles used by domain-specific questions.
+            // ═══════════════════════════════════════════════════════════════════
+            const lbl = (sem.humanLabel || colName).toLowerCase();
+            const fmt = sem.format || 'raw';
+
+            // Rate/Percentage columns — attendance rate, graduation rate, pass rate, etc.
+            if (!fields['rate'] && (fmt === 'percent' || lbl.includes('rate') || lbl.includes('percentage') || lbl.includes('pct') || lbl.includes('percent'))) {
+                if (sem.role === 'METRIC' || sem.role === 'UNKNOWN') fields['rate'] = colName;
+            }
+
+            // Score columns — GPA, test score, satisfaction score, etc.
+            if (!fields['score'] && (lbl.includes('score') || lbl.includes('gpa') || lbl.includes('grade') || lbl.includes('mark') || lbl.includes('points'))) {
+                if (sem.role === 'METRIC' || sem.role === 'UNKNOWN') fields['score'] = colName;
+            }
+
+            // Ratio columns — student-to-faculty ratio, etc.
+            if (!fields['ratio'] && (lbl.includes('ratio') || lbl.includes('per capita') || lbl.includes('per student'))) {
+                if (sem.role === 'METRIC' || sem.role === 'UNKNOWN') fields['ratio'] = colName;
+            }
         }
+
+        // Fallback: if no dedicated 'rate' or 'score' was found but primary_metric exists,
+        // map rate/score to primary_metric so questions still resolve to something
+        if (!fields['rate'] && fields['revenue']) fields['rate'] = fields['revenue'];
+        if (!fields['score'] && fields['revenue']) fields['score'] = fields['revenue'];
+        if (!fields['ratio'] && fields['revenue']) fields['ratio'] = fields['revenue'];
 
         console.log('[resolveMapping] AI Semantic roles:', fields);
         return { schemaType: 'flat', fields, missingFields: [] };
@@ -535,6 +761,14 @@ export const resolveMapping = (dataset: Dataset): CanonicalMapping => {
             'member_id', 'memberid', 'subscriber_id', 'patron_id',
             'shopper_id', 'consumer_id', 'party_id',
             'email', 'email_address', 'customer_email',
+            // Cross-domain: HR
+            'emp_id', 'employee_id', 'empid', 'staff_id', 'staffid',
+            'worker_id', 'workerid', 'personnel_id', 'associate_id',
+            // Cross-domain: Healthcare
+            'patient_id', 'patientid', 'mrn', 'medical_record_number',
+            // Cross-domain: Education
+            'student_id', 'studentid', 'learner_id', 'enrollment_id',
+            'faculty_id', 'teacher_id', 'instructor_id',
         ],
         'customer_name': [
             'customer_name', 'customer', 'client_name', 'client',
@@ -544,6 +778,14 @@ export const resolveMapping = (dataset: Dataset): CanonicalMapping => {
             'member_name', 'member', 'subscriber_name',
             'cust_name', 'cust', 'patron_name', 'patron',
             'user_name', 'username', 'display_name',
+            // Cross-domain: HR
+            'emp_name', 'employee_name', 'staff_name', 'worker_name',
+            'associate_name', 'personnel_name',
+            // Cross-domain: Healthcare
+            'patient_name', 'patient',
+            // Cross-domain: Education
+            'student_name', 'student', 'learner_name',
+            'faculty_name', 'teacher_name', 'instructor_name',
         ],
         'category': [
             'category', 'product_category', 'item_category',
@@ -621,6 +863,27 @@ export const resolveMapping = (dataset: Dataset): CanonicalMapping => {
             'status', 'order_status', 'shipment_status', 'delivery_status',
             'payment_status', 'fulfillment_status', 'state',
             'condition', 'stage', 'phase', 'progress',
+        ],
+        // Domain-aware canonical roles
+        'rate': [
+            'rate', 'percentage', 'pct', 'percent',
+            'graduation_rate', 'dropout_rate', 'retention_rate', 'pass_rate',
+            'attendance_rate', 'completion_rate', 'acceptance_rate',
+            'attrition_rate', 'turnover_rate', 'churn_rate',
+            'readmission_rate', 'mortality_rate', 'infection_rate',
+            'occupancy_rate', 'utilization_rate', 'fill_rate',
+            'conversion_rate', 'bounce_rate', 'click_rate',
+        ],
+        'score': [
+            'gpa', 'grade', 'score', 'mark', 'points',
+            'test_score', 'exam_score', 'final_grade', 'average_grade',
+            'satisfaction_score', 'quality_score', 'performance_score',
+            'engagement_score', 'assessment_score',
+        ],
+        'ratio': [
+            'ratio', 'student_faculty_ratio', 'staff_ratio',
+            'per_capita', 'per_student', 'per_employee', 'per_patient',
+            'debt_equity', 'current_ratio', 'ltv_cac',
         ],
     };
 
@@ -994,15 +1257,17 @@ export const buildJoinStrategy = (
         nmProgress = false;
 
         for (const tbl of [...pendingNM]) {
-            const tblCols = (tableColumns[tbl] || []).map(c => c.name.toLowerCase());
+            const tblColInfos = tableColumns[tbl] || [];
+            const tblColsLower = tblColInfos.map(c => c.name.toLowerCase());
             let bestMatch: { baseTable: string; col: string; tblCol: string; score: number } | null = null;
 
             // Search through ALL already-joined tables for a matching column
             for (const bTbl of [...joined]) {
-                const baseCols = (tableColumns[bTbl] || []).map(c => c.name.toLowerCase());
+                const baseColInfos = tableColumns[bTbl] || [];
+                const baseColsLower = baseColInfos.map(c => c.name.toLowerCase());
 
-                for (const bc of baseCols) {
-                    if (!tblCols.includes(bc)) continue;
+                for (const bc of baseColsLower) {
+                    if (!tblColsLower.includes(bc)) continue;
 
                     // Score match quality: prefer _id columns (FK-like)
                     const matchScore =
@@ -1011,7 +1276,10 @@ export const buildJoinStrategy = (
                                 bc.endsWith('_code') || bc.endsWith('_key') ? 6 : 2;
 
                     if (!bestMatch || matchScore > bestMatch.score) {
-                        bestMatch = { baseTable: bTbl, col: bc, tblCol: bc, score: matchScore };
+                        // Preserve original-case column names for downstream lookups
+                        const origBaseCol = baseColInfos.find(c => c.name.toLowerCase() === bc)?.name || bc;
+                        const origTblCol = tblColInfos.find(c => c.name.toLowerCase() === bc)?.name || bc;
+                        bestMatch = { baseTable: bTbl, col: origBaseCol, tblCol: origTblCol, score: matchScore };
                     }
                 }
             }
@@ -1061,6 +1329,14 @@ export const buildJoinStrategy = (
  * This guarantees the result has N rows = fact table grain (e.g. ~200 rows),
  * NOT 2 rows (stores) or 20 rows (products).
  */
+
+/** Find the actual property key in a row object matching a (possibly lowercased) column name */
+const resolveKey = (row: Record<string, any>, col: string): string => {
+    if (col in row) return col;
+    const lower = col.toLowerCase();
+    return Object.keys(row).find(k => k.toLowerCase() === lower) || col;
+};
+
 export const autoJoinDatasets = (
     tables: Record<string, any[]>,
     joinEdges?: JoinEdge[]
@@ -1087,32 +1363,38 @@ export const autoJoinDatasets = (
                 continue;
             }
 
-            const leftCols = new Set(Object.keys(merged[0] || {}));
+            const leftColKeys = Object.keys(merged[0] || {});
+            const leftCols = new Set(leftColKeys);
+            const leftColsLower = new Map(leftColKeys.map(k => [k.toLowerCase(), k]));
             const rightCols = Object.keys(rightRows[0] || {});
 
-            // Find the best shared ID column
+            // Find the best shared ID column (case-insensitive)
             // Priority: _id suffix > id suffix > any shared column
+            const ciMatch = (rc: string) => leftCols.has(rc) || leftColsLower.has(rc.toLowerCase());
             let sharedCol: string | undefined;
             sharedCol = rightCols.find(c =>
-                leftCols.has(c) && c.toLowerCase().endsWith('_id')
+                ciMatch(c) && c.toLowerCase().endsWith('_id')
             );
             if (!sharedCol) {
                 sharedCol = rightCols.find(c =>
-                    leftCols.has(c) && c.toLowerCase().endsWith('id')
+                    ciMatch(c) && c.toLowerCase().endsWith('id')
                 );
             }
             if (!sharedCol) {
-                sharedCol = rightCols.find(c => leftCols.has(c));
+                sharedCol = rightCols.find(c => ciMatch(c));
             }
 
             if (sharedCol) {
+                // Resolve the actual key on the left side (may differ in case)
+                const leftKey = resolveKey(merged[0] || {}, sharedCol);
+
                 // Build a lookup map from the dimension table (1:1 or many:1)
                 const rightMap = new Map<string, any>();
                 rightRows.forEach(r => rightMap.set(String(r[sharedCol!]), r));
 
                 const beforeCount = merged.length;
                 merged = merged.map(row => {
-                    const match = rightMap.get(String(row[sharedCol!]));
+                    const match = rightMap.get(String(row[leftKey]));
                     if (match) {
                         const enriched: any = {};
                         for (const [k, v] of Object.entries(match)) {
@@ -1123,7 +1405,7 @@ export const autoJoinDatasets = (
                     }
                     return row;
                 });
-                logs.push(`LEFT JOIN ${rightTable} ON ${sharedCol} → ${merged.length} rows (was ${beforeCount})`);
+                logs.push(`LEFT JOIN ${rightTable} ON ${leftKey} = ${sharedCol} → ${merged.length} rows (was ${beforeCount})`);
             } else {
                 logs.push(`SKIP ${rightTable} — no shared ID column with ${factTable}`);
             }
@@ -1189,17 +1471,21 @@ export const autoJoinDatasets = (
 
             const leftColsSet = new Set(Object.keys(merged[0] || {}));
 
+            // Resolve case-correct keys from row objects (join edge columns may be lowercased)
+            const actualRightCol = resolveKey(rightRows[0] || {}, rightCol);
+            const actualLeftCol = resolveKey(merged[0] || {}, leftCol);
+
             // Build a 1-to-1 lookup map from the dimension/right table
             const rightMap = new Map<string, any>();
-            rightRows.forEach(r => rightMap.set(String(r[rightCol]), r));
+            rightRows.forEach(r => rightMap.set(String(r[actualRightCol]), r));
 
             const beforeCount = merged.length;
             merged = merged.map(row => {
-                const match = rightMap.get(String(row[leftCol]));
+                const match = rightMap.get(String(row[actualLeftCol]));
                 if (match) {
                     const enriched: any = {};
                     for (const [k, v] of Object.entries(match)) {
-                        if (k === rightCol) continue;
+                        if (k === actualRightCol) continue;
                         enriched[leftColsSet.has(k) ? `${rightName}_${k}` : k] = v;
                     }
                     return { ...row, ...enriched };
@@ -1208,7 +1494,7 @@ export const autoJoinDatasets = (
             });
 
             joined.add(rightName);
-            logs.push(`LEFT JOIN ${rightName} ON ${leftCol} = ${rightCol} [${edge.type}] → ${merged.length} rows (was ${beforeCount})`);
+            logs.push(`LEFT JOIN ${rightName} ON ${actualLeftCol} = ${actualRightCol} [${edge.type}] → ${merged.length} rows (was ${beforeCount})`);
             pending.splice(i, 1);
             progress = true;
         }

@@ -17,7 +17,7 @@ import {
     buildJoinStrategy,
     autoJoinDatasets,
 } from '../services/analysisEngine';
-import type { ColumnInfo } from '../services/analysisEngine';
+import type { ColumnInfo, JoinEdge } from '../services/analysisEngine';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers
@@ -264,6 +264,56 @@ describe('autoJoinDatasets', () => {
     it('empty table dict returns empty array', () => {
         const { mergedRows } = autoJoinDatasets({});
         expect(mergedRows).toEqual([]);
+    });
+
+    it('handles mixed-case column names with join edges (ACID vs acid)', () => {
+        // Simulate Excel sheets where keys are uppercase
+        const transactions = [
+            { TNO: '1', ACID: '101', txn_amount: 500 },
+            { TNO: '2', ACID: '102', txn_amount: 300 },
+            { TNO: '3', ACID: '101', txn_amount: 200 },
+        ];
+        const customers = [
+            { ACID: '101', customer_name: 'Alice' },
+            { ACID: '102', customer_name: 'Bob' },
+        ];
+        // Edges with lowercased column names (as buildJoinStrategy used to produce)
+        const edges: JoinEdge[] = [{
+            leftTable: 'Transactions', rightTable: 'Customers',
+            leftColumn: 'acid', rightColumn: 'acid',
+            type: 'name_match',
+        }];
+        const { mergedRows } = autoJoinDatasets(
+            { Transactions: transactions, Customers: customers },
+            edges
+        );
+        expect(mergedRows.length).toBe(3);
+        expect(mergedRows[0].customer_name).toBe('Alice');
+        expect(mergedRows[1].customer_name).toBe('Bob');
+        expect(mergedRows[2].customer_name).toBe('Alice');
+    });
+
+    it('handles mixed-case columns in no-edge fallback mode', () => {
+        // Left table has "ACID", right table has "acid"
+        const transactions = Array.from({ length: 5 }, (_, i) => ({
+            tno: String(i + 1),
+            ACID: String(100 + (i % 2)),
+            amount: (i + 1) * 100,
+        }));
+        const customers = [
+            { acid: '100', cust_name: 'Alice' },
+            { acid: '101', cust_name: 'Bob' },
+        ];
+        const { mergedRows } = autoJoinDatasets({
+            transaction_items: transactions,
+            customers: customers,
+        });
+        expect(mergedRows.length).toBe(5);
+        // Rows with ACID=100 should get Alice, ACID=101 should get Bob
+        const aliceRows = mergedRows.filter(r => r.cust_name === 'Alice');
+        const bobRows = mergedRows.filter(r => r.cust_name === 'Bob');
+        expect(aliceRows.length).toBe(3); // i=0,2,4 → ACID=100
+        expect(bobRows.length).toBe(2);   // i=1,3 → ACID=101
     });
 });
 

@@ -647,7 +647,7 @@ function timeGrainExpr(field: string, grain: string): string {
         case 'quarter':
             return `CONCAT(YEAR(${field}), '-Q', QUARTER(${field}))`;
         case 'month':
-            return `CONCAT(YEAR(${field}), '-', LPAD(MONTH(${field}), 2, '0'))`;
+            return `FORMAT_MONTH(${field})`;
         case 'week':
             return `CONCAT(YEAR(${field}), '-W', LPAD(WEEK(${field}), 2, '0'))`;
         default:

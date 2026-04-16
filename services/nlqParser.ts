@@ -1,4 +1,5 @@
 import { Dataset, ColumnType, AggregationType, TimeGrain } from '../types';
+import { findMeasure, findDimension } from './semanticModel';
 
 export interface NLQParseResult {
     metric: string;
@@ -1209,9 +1210,40 @@ export const parseNLQ = (query: string, dataset: Dataset): NLQParseResult => {
         explanation.push(`Chart hint: **Pie**`);
     }
 
-    // ── Step 12: Confidence ──────────────────────────────────
+    // ── Step 12: Semantic Model Validation + Confidence ────────
     if (result.metric) result.confidence = Math.min(result.confidence, 1.0);
     if (!result.dimension) result.confidence -= 0.2;
+
+    // ── SEMANTIC MODEL HARD CONSTRAINTS ──
+    if (dataset.semanticModel && result.metric && result.metric !== 'count') {
+        const measure = findMeasure(dataset.semanticModel, result.metric);
+        if (measure) {
+            // Override aggregation with semantic model's deterministic aggregation
+            // (unless user explicitly specified one via "average" / "sum" keywords)
+            const userExplicitlySetAgg = tokens.some(t => AGG_KEYWORDS[t] !== undefined);
+            if (!userExplicitlySetAgg) {
+                result.aggregation = measure.aggregation;
+                explanation.push(`Aggregation from semantic model: **${measure.aggregation}** for "${result.metric}"`);
+            } else if (measure.behavior === 'non_additive' && result.aggregation === AggregationType.SUM) {
+                // Block SUMming non-additive metrics (prices, rates, scores)
+                result.aggregation = measure.aggregation;
+                result.confidence -= 0.15;
+                explanation.push(`⚠️ Blocked SUM on non-additive metric "${result.metric}" → using ${measure.aggregation}`);
+            }
+        } else {
+            result.confidence -= 0.1;
+            explanation.push(`⚠️ Metric "${result.metric}" not found in semantic model`);
+        }
+
+        if (result.dimension) {
+            const dim = findDimension(dataset.semanticModel, result.dimension);
+            if (!dim) {
+                result.confidence -= 0.05;
+                explanation.push(`⚠️ Dimension "${result.dimension}" not found in semantic model`);
+            }
+        }
+    }
+
     result.confidence = Math.max(0.1, Math.min(1.0, result.confidence));
 
     result.explanation = explanation;

@@ -177,8 +177,8 @@ const MONTH_MAP: Record<string, number> = {
     oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
 };
 
-// ID column name patterns
-const ID_PATTERNS = /(?:^id$|_id$|^id_|order_?id|cust(?:omer)?_?id|product_?id|trans(?:action)?_?id|invoice_?id|sku|code$|_code$|_no$|_num$|number$|_key$|^pk_|^fk_)/i;
+// ID column name patterns — includes abbreviated forms like acid (account-id), brid (branch-id), tno (txn-no)
+const ID_PATTERNS = /(?:^id$|_id$|^id_|order_?id|cust(?:omer)?_?id|product_?id|trans(?:action)?_?id|invoice_?id|sku|code$|_code$|_no$|_num$|number$|_key$|^pk_|^fk_|^.{1,4}id$|^.{1,4}no$|^.{1,4}cd$|^s_?no$|^t_?no$|^sr_?no$|^acc_?(?:id|no)$|^acct_?(?:id|no)$|^emp_?(?:id|no)$|^cust_?(?:id|no)$|^br_?(?:id|no)$)/i;
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  HELPER FUNCTIONS                                               ║
@@ -468,23 +468,31 @@ function layer1_structuralNormalization(
         }
     }
 
-    // ── 1f: Duplicate Row Removal (using ID/PK columns when available) ──
+    // ── 1f: Duplicate Row Removal (using truly unique ID/PK columns only) ──
     {
         const before = rows.length;
         const allCols = Object.keys(rows[0] || {});
 
-        // Find ID/PK columns for smarter dedup
-        const idCols = allCols.filter(col => ID_PATTERNS.test(col));
-        const dedupCols = idCols.length > 0 ? idCols : allCols;
-        const strategy = idCols.length > 0
-            ? `primary key match on ${idCols.length} ID column(s): ${idCols.join(', ')}`
+        // Find candidate ID columns by name pattern
+        const candidateIdCols = allCols.filter(col => ID_PATTERNS.test(col));
+
+        // Validate candidates: only use columns with high uniqueness (≥90% distinct)
+        // This prevents foreign keys (branch_id, product_id) from being used as primary keys
+        const trueIdCols = candidateIdCols.filter(col => {
+            const vals = rows.map(r => r[col]);
+            const distinct = new Set(vals.map(v => JSON.stringify(v))).size;
+            return distinct / rows.length >= 0.9;
+        });
+
+        const dedupCols = trueIdCols.length > 0 ? trueIdCols : allCols;
+        const strategy = trueIdCols.length > 0
+            ? `primary key match on ${trueIdCols.length} unique ID column(s): ${trueIdCols.join(', ')}`
             : `exact match across all ${allCols.length} columns`;
 
         const seen = new Set<string>();
         const duplicateRows: Record<string, any>[] = [];
         const uniqueRows: Record<string, any>[] = [];
         for (const row of rows) {
-            // Build key from dedup columns only
             const key = dedupCols.map(c => JSON.stringify(row[c])).join('|');
             if (seen.has(key)) {
                 if (duplicateRows.length < 10) duplicateRows.push(row);
@@ -493,14 +501,23 @@ function layer1_structuralNormalization(
                 uniqueRows.push(row);
             }
         }
-        rows = uniqueRows;
-        duplicatesRemoved = before - rows.length;
-        if (duplicatesRemoved > 0) {
-            logs.push(log('Duplicate Row Removal', 1, 'applied',
-                `Removed ${duplicatesRemoved} duplicate row(s). Strategy: ${strategy}.`,
-                { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: duplicateRows, affectedColumns: dedupCols }));
+
+        // Safety guard: if dedup removes >50% of rows, it's likely a false positive
+        const wouldRemove = before - uniqueRows.length;
+        if (wouldRemove > before * 0.5 && trueIdCols.length > 0) {
+            // Don't apply — too aggressive, likely using wrong keys
+            logs.push(log('Duplicate Row Removal', 1, 'skipped',
+                `Skipped: dedup on ${trueIdCols.join(', ')} would remove ${wouldRemove} of ${before} rows (${Math.round(wouldRemove / before * 100)}%). Likely foreign keys, not primary keys.`));
         } else {
-            logs.push(log('Duplicate Row Removal', 1, 'skipped', `No duplicate rows found (strategy: ${strategy}).`));
+            rows = uniqueRows;
+            duplicatesRemoved = before - rows.length;
+            if (duplicatesRemoved > 0) {
+                logs.push(log('Duplicate Row Removal', 1, 'applied',
+                    `Removed ${duplicatesRemoved} duplicate row(s). Strategy: ${strategy}.`,
+                    { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: duplicateRows, affectedColumns: dedupCols }));
+            } else {
+                logs.push(log('Duplicate Row Removal', 1, 'skipped', `No duplicate rows found (strategy: ${strategy}).`));
+            }
         }
     }
 
@@ -711,8 +728,11 @@ function layer4_rulePlanner(
     const columns: ColumnDefinition[] = [];
     const plans: TransformPlan[] = [];
 
-    // Metric name patterns (strong signal for metric classification)
-    const METRIC_NAME_PATTERNS = /^(quantity|qty|amount|amt|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|avg|average|num|number)$/i;
+    // Metric name patterns — exact match for standalone names
+    const METRIC_NAME_EXACT = /^(quantity|qty|amount|amt|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|avg|average|num|number)$/i;
+
+    // Metric keyword fragments — for compound names like txn_amount, total_sales, net_revenue
+    const METRIC_KEYWORDS = /(?:^|[_\s])(amount|amt|qty|quantity|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|average|avg|number|num|charge|payment|spend|earning|payout|funding|debt|credit|debit|turnover|premium|commission|bonus|interest|deposit|withdrawal|refund|surcharge|tariff|fare|toll|rent|royalty|stipend)(?:[_\s]|$)/i;
 
     // Date name patterns (strong signal for date classification)
     const DATE_NAME_PATTERNS = /^(date|sale_?date|order_?date|purchase_?date|created_?at|updated_?at|ship_?date|delivery_?date|birth_?date|dob|start_?date|end_?date|due_?date|invoice_?date|payment_?date|registration_?date|timestamp|datetime|created|modified|posted|expired|effective)$/i;
@@ -726,7 +746,7 @@ function layer4_rulePlanner(
             type = columnTypeOverrides[p.name];
             logs.push(log('User Override', 4, 'info', `Column '${p.name}' set to ${type} (manual override).`, { affectedColumns: [p.name] }));
         } else {
-            const isMetricName = METRIC_NAME_PATTERNS.test(p.name);
+            const isMetricName = METRIC_NAME_EXACT.test(p.name) || METRIC_KEYWORDS.test(p.name);
             const isDateName = DATE_NAME_PATTERNS.test(p.name);
             const effectiveNumericRate = p.numericParseRate + (p.wordNumberRate || 0);
 
@@ -739,7 +759,6 @@ function layer4_rulePlanner(
                 type = ColumnType.DATE;
             }
             // ── Gate 2b: Date by name — trust the column name pattern ──
-            // If the column is named order_date, ship_date, etc., it IS a date column
             else if (isDateName) {
                 type = ColumnType.DATE;
             }
@@ -747,12 +766,12 @@ function layer4_rulePlanner(
             else if (p.booleanTokenRate >= 0.6) {
                 type = ColumnType.DIMENSION; // Booleans are dimensions with bool normalization
             }
-            // ── Gate 4: Metric gate (high cardinality or metric name pattern) ──
-            else if (effectiveNumericRate >= 0.7 && (p.distinctCount >= 10 || isMetricName) && !ID_PATTERNS.test(p.name)) {
+            // ── Gate 4: Metric by name + numeric data — trust the name ──
+            else if (isMetricName && effectiveNumericRate >= 0.3) {
                 type = ColumnType.METRIC;
             }
-            // ── Gate 4b: Metric by name + moderate numeric ──
-            else if (isMetricName && effectiveNumericRate >= 0.3) {
+            // ── Gate 4b: Metric gate (high numeric rate + sufficient cardinality) ──
+            else if (effectiveNumericRate >= 0.7 && p.distinctCount >= 10 && !ID_PATTERNS.test(p.name)) {
                 type = ColumnType.METRIC;
             }
             // ── Gate 5: Low-cardinality numeric = ID ──

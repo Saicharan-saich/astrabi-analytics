@@ -148,11 +148,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     return items.map((item, i) => ({
       i: item.id,
       x: (i % 2) * 6,
-      y: Math.floor(i / 2) * 5,
+      y: Math.floor(i / 2) * 6,
       w: 6,
-      h: 5,
-      minW: 3,
-      minH: 3,
+      h: 6,
+      minW: 4,
+      minH: 4,
     }));
   }, [items]);
 
@@ -185,17 +185,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
       // Otherwise, create a new layout item at the bottom
       const newItem = {
         i: item.id,
-        x: (i % 2) * 6, // Alternating columns (2 items per row on desktop)
-        y: maxY,       // Place below everyone else
+        x: (i % 2) * 6,
+        y: maxY,
         w: 6,
-        h: 5,
-        minW: 3,
-        minH: 3,
+        h: 6,
+        minW: 4,
+        minH: 4,
       };
 
-      // Increment maxY for the *next* new item. 
-      // If we are placing two items side-by-side, we only increase maxY after the second one.
-      if (i % 2 === 1) maxY += 5;
+      if (i % 2 === 1) maxY += 6;
 
       return newItem;
     });
@@ -203,31 +201,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
 
   // Generate responsive layouts for all breakpoints
   const allLayouts = useMemo(() => {
-    // lg: 12 cols → 2 per row (w=6)
+    // lg: 12 cols — use user-persisted layout directly
     const lg = layout;
 
-    // md: 8 cols → 2 per row (w=4)
-    const md = layout.map((item: any, i: number) => ({
+    // md: 8 cols — scale x/w proportionally but preserve user height
+    const md = layout.map((item: any) => ({
       ...item,
-      x: (i % 2) * 4,
-      w: 4,
-      y: Math.floor(i / 2) * 5,
+      x: Math.min(Math.floor(item.x * 8 / 12), 4),
+      w: Math.min(Math.max(Math.floor(item.w * 8 / 12), 4), 8),
     }));
 
-    // sm: 4 cols → 1 per row (w=4, full width)
+    // sm: 4 cols — full width single column, preserve height
     const sm = layout.map((item: any, i: number) => ({
       ...item,
       x: 0,
       w: 4,
-      y: i * 5,
+      y: i * item.h,
     }));
 
-    // xs: 2 cols → 1 per row (w=2, full width)
+    // xs: 2 cols — full width single column, preserve height
     const xs = layout.map((item: any, i: number) => ({
       ...item,
       x: 0,
       w: 2,
-      y: i * 5,
+      y: i * item.h,
     }));
 
     return { lg, md, sm, xs };
@@ -367,21 +364,35 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
 
         {/* ─── Dashboard Header ─── */}
         <div className="flex flex-col gap-4 mb-6">
-          <div className="flex justify-between items-start">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-md">
-                  <LayoutDashboard className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">Dashboard</h2>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    {items.length > 0
-                      ? `${items.length} visual${items.length !== 1 ? 's' : ''} · Drag to rearrange · Hover to interact`
-                      : 'Pin visuals from Builder, NLQ, or Workbench'}
-                  </p>
-                </div>
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-md">
+                <LayoutDashboard className="w-5 h-5 text-white" />
               </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">Dashboard</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {items.length > 0
+                    ? `${items.length} visual${items.length !== 1 ? 's' : ''} · Drag to rearrange · Hover to interact`
+                    : 'Pin visuals from Builder, NLQ, or Workbench'}
+                </p>
+              </div>
+
+              {/* Inline stats badges — adjacent to Dashboard title */}
+              {kpiSummary && (
+                <div className="flex items-center gap-2 ml-4">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 dark:bg-violet-500/10 border border-violet-200/50 dark:border-violet-500/20 rounded-lg">
+                    <Eye className="w-3.5 h-3.5 text-violet-500 dark:text-violet-400" />
+                    <span className="text-xs font-bold text-violet-700 dark:text-violet-300">{kpiSummary.totalVisuals}</span>
+                    <span className="text-[10px] text-violet-500/70 dark:text-violet-400/60 font-medium">visuals</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200/50 dark:border-amber-500/20 rounded-lg">
+                    {getChartIcon(kpiSummary.mostUsedChart)}
+                    <span className="text-xs font-bold text-amber-700 dark:text-amber-300 capitalize">{kpiSummary.mostUsedChart}</span>
+                    <span className="text-[10px] text-amber-500/70 dark:text-amber-400/60 font-medium">most used</span>
+                  </div>
+                </div>
+              )}
             </div>
 
             {items.length > 0 && (
@@ -410,39 +421,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               </div>
             )}
           </div>
-
-          {/* ─── KPI Summary Strip ─── */}
-          {kpiSummary && (
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-white dark:bg-[#1c2033] border border-gray-200 dark:border-white/[0.08] rounded-xl p-3.5 flex items-center gap-3 shadow-sm">
-                <div className="w-8 h-8 rounded-lg bg-violet-100 dark:bg-violet-500/15 flex items-center justify-center">
-                  <Eye className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-                </div>
-                <div>
-                  <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Total Visuals</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">{kpiSummary.totalVisuals}</p>
-                </div>
-              </div>
-              <div className="bg-white dark:bg-[#1c2033] border border-gray-200 dark:border-white/[0.08] rounded-xl p-3.5 flex items-center gap-3 shadow-sm">
-                <div className="w-8 h-8 rounded-lg bg-emerald-100 dark:bg-emerald-500/15 flex items-center justify-center">
-                  <Activity className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                </div>
-                <div>
-                  <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Data Points</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white">{formatCompact(kpiSummary.totalDataPoints)}</p>
-                </div>
-              </div>
-              <div className="bg-white dark:bg-[#1c2033] border border-gray-200 dark:border-white/[0.08] rounded-xl p-3.5 flex items-center gap-3 shadow-sm">
-                <div className="w-8 h-8 rounded-lg bg-amber-100 dark:bg-amber-500/15 flex items-center justify-center">
-                  {getChartIcon(kpiSummary.mostUsedChart)}
-                </div>
-                <div>
-                  <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Most Used Chart</p>
-                  <p className="text-lg font-bold text-gray-900 dark:text-white capitalize">{kpiSummary.mostUsedChart}</p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* ─── Global Filter Bar ─── */}
@@ -632,7 +610,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             layouts={allLayouts}
             breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
             cols={{ lg: 12, md: 8, sm: 4, xs: 2 }}
-            rowHeight={80}
+            rowHeight={70}
             width={containerWidth}
             onLayoutChange={handleLayoutChange}
             isResizable={true}

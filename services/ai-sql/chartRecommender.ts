@@ -68,11 +68,35 @@ export function recommendChart(
         return { chartType, xKey, yKey, useDualAxis, reason, growth };
     }
 
-    // ─── Rule 3: Total Comparison → Grouped Bar + Growth ─────────
+    // ─── Rule 3: Total Period Comparison → Grouped Bar with Growth Badge ──
+    // Detects "Current" vs "Previous" UNION ALL result from comparison queries
+    const hasPeriodDim = dimensionColumns.some(c => c.toLowerCase() === 'period');
+    const computedGrowth = (plan as any)._computedGrowth;
+    if (hasPeriodDim && rowCount === 2 && metricCount >= 1) {
+        chartType = 'groupedBar';
+        xKey = dimensionColumns.find(c => c.toLowerCase() === 'period') || dimensionColumns[0];
+        yKey = metricColumns[0];
+        reason = 'Period-over-period total comparison → Grouped Bar with growth badge';
+        if (computedGrowth) {
+            growth = {
+                diff: computedGrowth.diff,
+                pct: computedGrowth.pct,
+                label: `${computedGrowth.currentLabel} vs ${computedGrowth.previousLabel}`,
+            };
+        }
+        return { chartType, xKey, yKey, useDualAxis, reason, growth };
+    }
     if (plan.intent === 'total_comparison' && rowCount <= 2) {
         chartType = 'groupedBar';
         reason = 'Period-over-period total comparison → Grouped Bar';
-        return { chartType, xKey, yKey, useDualAxis, reason };
+        if (computedGrowth) {
+            growth = {
+                diff: computedGrowth.diff,
+                pct: computedGrowth.pct,
+                label: `${computedGrowth.currentLabel} vs ${computedGrowth.previousLabel}`,
+            };
+        }
+        return { chartType, xKey, yKey, useDualAxis, reason, growth };
     }
 
     // ─── Rule 4: Share of Total → Donut or Bar ──────────────────
@@ -86,6 +110,20 @@ export function recommendChart(
             reason = `Share of total with ${cardinality} categories (>${DONUT_MAX_CATEGORIES}) → Horizontal Bar`;
         }
         return { chartType, xKey, yKey, useDualAxis, reason };
+    }
+
+    // ─── Rule 4b: Growth/Comparison → Dual-Axis Combo (bars + growth line) ──
+    // When plan has comparison, pipeline Step 5c guarantees growth_pct columns exist
+    if (plan.comparison && hasTimeDimension && timeDimensionColumn && metricColumns.length >= 1) {
+        chartType = 'dualAxisCombo';
+        xKey = timeDimensionColumn;
+        yKey = metricColumns[0] || '';
+        secondaryYKeys = ['growth_pct'];
+        useDualAxis = true;
+        leftAxisFormat = metricSemanticTypes[metricColumns[0]] === 'currency' ? 'currency_usd' : 'compact';
+        rightAxisFormat = 'percent';
+        reason = `${plan.comparison.type} comparison → Dual-Axis Combo (${metricColumns[0]} bars + growth % line)`;
+        return { chartType, xKey, yKey, secondaryYKeys, useDualAxis, leftAxisFormat, rightAxisFormat, reason };
     }
 
     // ─── Rule 5: Time Dimension Present ──────────────────────────

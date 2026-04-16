@@ -218,11 +218,99 @@ const registerCustomFunctions = () => {
         return Math.round((da.getTime() - db.getTime()) / 86400000);
     };
 
+    // TENURE_YEARS — computes years between hire_date and as_of_date as a single function.
+    // Workaround: alasql parser can't handle AVG(DATEDIFF(...)) (nested custom function inside aggregate),
+    // so we combine the operation into one function: AVG(TENURE_YEARS(col, 'date')) works fine.
+    alasql.fn.TENURE_YEARS = (hireDate: any, asOfDate: any) => {
+        if (!hireDate || !asOfDate) return null;
+        const dh = new Date(hireDate);
+        const da = new Date(asOfDate);
+        if (isNaN(dh.getTime()) || isNaN(da.getTime())) return null;
+        return Math.round((da.getTime() - dh.getTime()) / 86400000) / 365.0;
+    };
+
     // CURRENT_DATE — returns today's date as YYYY-MM-DD
+
     alasql.fn.CURRENT_DATE = () => {
         const d = new Date();
         return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     };
+
+    // LPAD — left-pad a value with a character to a target length
+    alasql.fn.LPAD = (val: any, length: number, padChar?: string) => {
+        if (val === null || val === undefined) return null;
+        return String(val).padStart(length, padChar || ' ');
+    };
+
+    // RPAD — right-pad a value
+    alasql.fn.RPAD = (val: any, length: number, padChar?: string) => {
+        if (val === null || val === undefined) return null;
+        return String(val).padEnd(length, padChar || ' ');
+    };
+
+    // FORMAT_MONTH — returns YYYY-MM string from a date value (reliable month formatting)
+    alasql.fn.FORMAT_MONTH = (val: any) => {
+        if (val === null || val === undefined) return null;
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return null;
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+    };
+
+    // QUARTER — extract quarter (1-4) from date
+    alasql.fn.QUARTER = (val: any) => {
+        if (val === null || val === undefined) return null;
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return null;
+        return Math.ceil((d.getMonth() + 1) / 3);
+    };
+
+    // DAYOFWEEK — day of the week (1=Sunday...7=Saturday)
+    alasql.fn.DAYOFWEEK = (val: any) => {
+        if (val === null || val === undefined) return null;
+        const d = new Date(val);
+        return !isNaN(d.getTime()) ? d.getDay() + 1 : null;
+    };
+
+    // DAYNAME — name of the day
+    alasql.fn.DAYNAME = (val: any) => {
+        if (val === null || val === undefined) return null;
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return null;
+        return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()];
+    };
+
+    // MONTHNAME — name of the month
+    alasql.fn.MONTHNAME = (val: any) => {
+        if (val === null || val === undefined) return null;
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return null;
+        return ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][d.getMonth()];
+    };
+
+    // NOW — returns current datetime as ISO string
+    alasql.fn.NOW = () => new Date().toISOString();
+
+    // LOWER / UPPER — string case functions
+    alasql.fn.LOWER = (val: any) => val == null ? null : String(val).toLowerCase();
+    alasql.fn.UPPER = (val: any) => val == null ? null : String(val).toUpperCase();
+
+    // TRIM — remove whitespace
+    alasql.fn.TRIM = (val: any) => val == null ? null : String(val).trim();
+
+    // LENGTH / LEN — string length
+    alasql.fn.LENGTH = (val: any) => val == null ? null : String(val).length;
+    alasql.fn.LEN = alasql.fn.LENGTH;
+
+    // ABS — absolute value
+    alasql.fn.ABS = (val: any) => val == null ? null : Math.abs(Number(val));
+
+    // CEIL / FLOOR
+    alasql.fn.CEIL = (val: any) => val == null ? null : Math.ceil(Number(val));
+    alasql.fn.CEILING = alasql.fn.CEIL;
+    alasql.fn.FLOOR = (val: any) => val == null ? null : Math.floor(Number(val));
+
+    // IIF — inline if (SQL Server style)
+    alasql.fn.IIF = (cond: any, trueVal: any, falseVal: any) => cond ? trueVal : falseVal;
 };
 
 /**
@@ -272,6 +360,16 @@ const normalizeSQL = (sql: string): string => {
     // 9. Handle CURDATE() / CURRENT_DATE → CURRENT_DATE()
     normalized = normalized.replace(/\bCURDATE\s*\(\s*\)/gi, 'CURRENT_DATE()');
     normalized = normalized.replace(/\bCURRENT_DATE\b(?!\s*\()/gi, 'CURRENT_DATE()');
+
+    // 10. Rewrite CONCAT(YEAR(col), '-', LPAD(MONTH(col), 2, '0')) → FORMAT_MONTH(col)
+    // This pattern is the #1 cause of "LPAD is not a function" errors in AI SQL
+    normalized = normalized.replace(
+        /CONCAT\s*\(\s*YEAR\s*\(([^)]+)\)\s*,\s*'-'\s*,\s*LPAD\s*\(\s*MONTH\s*\(\1\)\s*,\s*2\s*,\s*'0'\s*\)\s*\)/gi,
+        'FORMAT_MONTH($1)'
+    );
+
+    // 11. Handle NOW() → CURRENT_DATE()
+    normalized = normalized.replace(/\bNOW\s*\(\s*\)/gi, 'NOW()');
 
     return normalized;
 };

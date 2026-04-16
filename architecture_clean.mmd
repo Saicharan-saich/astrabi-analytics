@@ -1,0 +1,47 @@
+graph TB
+    subgraph "Frontend - React + Vite"
+        A["App.tsx (738 lines)\nShell: tabs, upload dispatch"]
+        A --> B["UploadView.tsx\nFile upload + ETL worker"]
+        A --> C["Workbench.tsx (135KB)\nTHE HUB: question bank,\nconfig inference, execution"]
+        A --> D["Dashboard.tsx\nPinned charts + grid layout"]
+        A --> E["NLQView.tsx (69KB)\nNatural language query"]
+        A --> F["AISQLView.tsx (60KB)\nAI SQL chat"]
+        A --> G["BuilderView.tsx (58KB)\nManual query builder"]
+        A --> H["ConnectorsPanel.tsx (50KB)\nSQL Server / PostgreSQL"]
+    end
+
+    subgraph "State Management - Zustand"
+        Z["useAppStore.ts\nMONOLITHIC: 8 slices\nUI + Data + Workbench +\nDashboard + History +\nSavedQuestions + Layout + Filters"]
+    end
+
+    subgraph "Data Pipeline"
+        B --> ETL["etlPipeline.ts (1298 lines)\n7-Layer Deterministic ETL"]
+        ETL --> AI["aiSemanticProfiler.ts (409 lines)\n2-pass LLM domain detection"]
+        AI --> STORE["IndexedDB + Zustand\nDataset persistence"]
+    end
+
+    subgraph "Query Engine — 3 PARALLEL SYSTEMS"
+        C --> QR["questionRegistry.ts (410 lines)\nSales domain: 200+ templates"]
+        C --> DQ["domainQuestions.ts (323 lines)\n7 domains × 30 questions\nOnly HR has sqlTemplate"]
+        C --> RESOLVE["resolveMapping (483 lines)\nCanonical semantic mapping"]
+
+        QR --> EL["evaluateLocally.ts (2345 lines)\nONE massive function\n50+ switch cases"]
+        DQ --> STR["sqlTemplateResolver.ts (262 lines)\nHeuristic-first resolution"]
+        STR --> EXEC["sqlExecutor.ts (436 lines)\nalasql + 25 custom functions"]
+
+        C --> AISQL["ai-sql/ (15 files)\nIntent ? SQL ? Correction ? Execute"]
+    end
+
+    subgraph "Visualization"
+        CHART["ChartVisualization.tsx (1745 lines)\nChart.js: 20+ chart types\nKPI cards, formatting, export"]
+    end
+
+    subgraph "Backend - Express.js"
+        SRV["server.js (887 lines)\nJWT auth, rate limiting\nSQL Server + PostgreSQL connectors\nAI proxy (profile-dataset, NLQ)"]
+    end
+
+    EL --> CHART
+    EXEC --> CHART
+    AISQL --> EXEC
+    AI -.->|/api/ai/profile-dataset| SRV
+

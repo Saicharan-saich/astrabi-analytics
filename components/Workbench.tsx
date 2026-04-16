@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Play, Pin, BarChart2, LineChart as LineChartIcon, TrendingUp, PieChart as PieIcon,
     Activity, Grid, Palette, ChevronLeft, ChevronRight, X, Sparkles,
@@ -39,7 +39,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
     const [questionSearch, setQuestionSearch] = useState('');
     const [showAllQuestions, setShowAllQuestions] = useState(false);
 
-    // 10 curated default questions � adapts to detected domain
+    // 10 curated default questions — adapts to detected domain
     const DEFAULT_QUESTION_IDS = useMemo(() => {
         const detectedDomain = dataset?.domainProfile?.domain;
         if (!detectedDomain || detectedDomain === 'Sales' || detectedDomain === 'Retail') {
@@ -94,7 +94,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
     const [isBuilderCollapsed, setIsBuilderCollapsed] = useState(false);
     const [contentTab, setContentTab] = useState<'visual' | 'sql' | 'data'>('visual');
 
-    // -- DYNAMIC CONTROLS --
+    // ── DYNAMIC CONTROLS ──
     const [topN, setTopN] = useState<number>(0); // 0 = use question default
     const [secondaryMetric, setSecondaryMetric] = useState<string>(''); // For multi-metric overlay
     const [periodScope, setPeriodScope] = useState<string>(''); // '' = use question default, or WTD/MTD/QTD/YTD
@@ -181,7 +181,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             setTimeout(() => handleRunAnalysis(initialConfig), 0);
         }
 
-        // Always reset AS OF date when dataset changes � user override only persists within the same dataset
+        // Always reset AS OF date when dataset changes — user override only persists within the same dataset
         const tc = dataset.timeContext;
         if (tc) {
             setAnchorColumn(tc.anchorDateColumn || '');
@@ -250,7 +250,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             questionLabel: (config as any).questionLabel || currentQuestionLabel
         };
 
-        // -- INJECT DYNAMIC CONTROLS --
+        // ── INJECT DYNAMIC CONTROLS ──
         if (!('limit' in config) && topN > 0) fullConfig.limit = topN;
         const activeScope = 'periodScope' in config ? (config as any).periodScope : periodScope;
         if (activeScope) {
@@ -290,7 +290,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                 semanticRoles: (config as any).semanticRoles || semanticOverrides
             });
 
-            // -- WHAT-IF: Apply metric multiplier to results --
+            // ── WHAT-IF: Apply metric multiplier to results ──
             if (isWhatIfActive && whatIfPct !== 0 && analysisResult.data && analysisResult.data.length > 0) {
                 const multiplier = 1 + (whatIfPct / 100);
                 const yKey = analysisResult.yKey;
@@ -404,7 +404,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             // Find the actual question template to extract its requirements
             const questionDef = getFullRegistry().find(qt => qt.id === q.intent.questionId);
             // Also check custom questions from localStorage (AI-saved questions)
-            const customQuestions = JSON.parse(localStorage.getItem('QuickInsight_custom_questions') || '[]');
+            const customQuestions = JSON.parse(localStorage.getItem('astrabi_custom_questions') || '[]');
             const customDef = customQuestions.find((cq: any) =>
                 cq.question === q.label || cq.questionId === q.intent.questionId
             );
@@ -575,7 +575,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
     };
 
 
-    // generateDynamicLabel � Fix #6: now imported from ../services/workbenchLogic
+    // generateDynamicLabel — Fix #6: now imported from ../services/workbenchLogic
 
     // Handler for Question Customizer updates (keeps Simplified View but runs dynamic logic)
     const handleCustomizerRun = (customConfig: any) => {
@@ -604,7 +604,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
         const specialPatterns = ['_ma_', '_run_', '_vs_', '_pct_', 'trend', 'op_', '_mtd_', '_py_', '_growth_', '_aov'];
         const isSpecialized = currentQuestionId && specialPatterns.some(p => currentQuestionId.includes(p));
         const preservedQuestionId = isSpecialized ? currentQuestionId : 'custom_builder';
-        console.log(`[Workbench] ROUTING ? ${preservedQuestionId} (${isSpecialized ? 'specialized handler' : 'generic handler'})`);
+        console.log(`[Workbench] ROUTING → ${preservedQuestionId} (${isSpecialized ? 'specialized handler' : 'generic handler'})`);
 
         // Update Builder State so switching to Full Builder works seamlessly
         setBuilderState({
@@ -663,7 +663,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
         const newOverrides = { ...semanticOverrides, [role]: column };
         setSemanticOverrides(newOverrides);
         if (currentQuestionId) {
-            // Pass newOverrides directly � don't rely on semanticOverrides state
+            // Pass newOverrides directly — don't rely on semanticOverrides state
             // which hasn't flushed yet due to React setState batching
             handleRunAnalysis({
                 ...(config || {}),
@@ -836,7 +836,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             {/* CENTER */}
             <div className="flex-1 flex flex-col h-full overflow-hidden relative min-w-0">
 
-                {/* MAD-LIB BUILDER � Collapsible */}
+                {/* MAD-LIB BUILDER — Collapsible */}
                 <div className={`z-10 bg-white border-b border-slate-200 transition-all duration-300 ${isBuilderCollapsed ? 'max-h-0 overflow-hidden border-b-0' : 'max-h-[500px] overflow-visible'}`}>
                     <div className="flex items-start">
                         <div className="flex-1 ml-4 sm:ml-0 transition-all">
@@ -907,7 +907,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                 ? 'bg-violet-500 text-white shadow-sm hover:bg-violet-600'
                                 : 'bg-violet-50 text-violet-600 ring-1 ring-violet-200 hover:bg-violet-100'
                                 }`}
-                            title="AI SQL Generator � generate SQL from natural language"
+                            title="AI SQL Generator — generate SQL from natural language"
                         >
                             <Sparkles className="w-4 h-4" />
                             AI SQL
@@ -969,7 +969,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                             </div>
                         )}
 
-                        {/* -- SECONDARY METRIC (+ Metric) -- */}
+                        {/* ── SECONDARY METRIC (+ Metric) ── */}
                         {result && !error && contentTab === 'visual' && (
                             <div className="flex items-center gap-1 ml-2 shrink-0">
                                 <select
@@ -1003,7 +1003,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                             </div>
                         )}
 
-                        {/* -- TOP N CONTROL -- */}
+                        {/* ── TOP N CONTROL ── */}
                         {result && !error && contentTab === 'visual' && isTopNQuestion && (
                             <div className="flex items-center gap-1.5 ml-2 bg-amber-50 px-2.5 py-1 rounded-lg border border-amber-200 shrink-0">
                                 <Hash className="w-3.5 h-3.5 text-amber-600" />
@@ -1034,14 +1034,14 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                         ? 'bg-amber-200 text-amber-800 border-amber-400'
                                         : 'bg-white text-amber-600 border-amber-300 hover:bg-amber-100'
                                         }`}
-                                    title={config?.sort === 'asc' ? 'Showing Bottom N � click for Top N' : 'Showing Top N � click for Bottom N'}
+                                    title={config?.sort === 'asc' ? 'Showing Bottom N — click for Top N' : 'Showing Top N — click for Bottom N'}
                                 >
                                     <ArrowUpDown className="w-3 h-3" />
                                 </button>
                             </div>
                         )}
 
-                        {/* -- PERIOD SCOPE SELECTOR -- */}
+                        {/* ── PERIOD SCOPE SELECTOR ── */}
                         {result && !error && contentTab === 'visual' && isRunningTotalQuestion && (
                             <div className="flex items-center gap-1 ml-2 bg-teal-50 px-2 py-1 rounded-lg border border-teal-200 shrink-0">
                                 <Calendar className="w-3 h-3 text-teal-600" />
@@ -1063,7 +1063,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                             }`}
                                     >{p}</button>
                                 ))}
-                                {/* Grain selector � compact dropdown when a scope is active */}
+                                {/* Grain selector — compact dropdown when a scope is active */}
                                 {periodScope && (
                                     <select
                                         value={periodGrain || defaultGrainForScope[periodScope] || 'day'}
@@ -1087,7 +1087,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                             </div>
                         )}
 
-                        {/* -- WHAT-IF SLIDER -- */}
+                        {/* ── WHAT-IF SLIDER ── */}
                         {result && !error && contentTab === 'visual' && (
                             <div className="flex items-center gap-1.5 ml-2 shrink-0">
                                 <button
@@ -1160,14 +1160,14 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                 <button
                                     onClick={() => { if (config) handleRunAnalysis(config); }}
                                     className="flex items-center text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap"
-                                    title="Refresh � re-run current query"
+                                    title="Refresh — re-run current query"
                                 >
                                     <RefreshCw className="w-4 h-4 mr-1" /> Refresh
                                 </button>
                                 <button
                                     onClick={() => { setResult(undefined); setConfig(undefined); setError(null); setCurrentQuestionLabel('Select a question'); setCurrentQuestionId(null); setViewMode('bank'); onStateChange?.(undefined, undefined); }}
                                     className="flex items-center text-sm font-bold text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap"
-                                    title="Reset � clear all results and start fresh"
+                                    title="Reset — clear all results and start fresh"
                                 >
                                     <RotateCcw className="w-4 h-4 mr-1" /> Reset
                                 </button>
@@ -1176,7 +1176,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                     )}
                 </div>
 
-                {/* CONTENT AREA � Tabbed */}
+                {/* CONTENT AREA — Tabbed */}
                 <div className="flex-1 flex flex-col overflow-auto p-4">
                     {/* AI SQL Chat Panel */}
                     {isAISQLOpen && (
@@ -1197,7 +1197,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                         </div>
                     )}
 
-                    {/* --- EMPTY STATE � No question selected yet --- */}
+                    {/* ─── EMPTY STATE — No question selected yet ─── */}
                     {!result && !error && (
                         <div className="flex flex-col items-center justify-center h-full text-center py-16 px-8">
                             <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-100 flex items-center justify-center mb-6 shadow-sm">
@@ -1227,7 +1227,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
 
                     {result && !error && (
                         <>
-                            {/* --- VISUAL TAB --- */}
+                            {/* ─── VISUAL TAB ─── */}
                             {contentTab === 'visual' && (
                                 <>
                                     {result.data && result.data.length > 0 ? (
@@ -1301,7 +1301,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                 onChange={e => onUpdateFormatting({ ...formatting, numberFormat: e.target.value as any })}
                                                                 className="w-full text-sm border-slate-200 rounded-md py-1 text-slate-700 bg-white focus:ring-indigo-500 focus:border-indigo-500"
                                                             >
-                                                                <option value="auto" className="text-slate-700 font-semibold">? Intelligent (Auto)</option>
+                                                                <option value="auto" className="text-slate-700 font-semibold">✨ Intelligent (Auto)</option>
                                                                 <option value="raw" className="text-slate-700">Raw Number</option>
                                                                 <option value="currency_usd" className="text-slate-700">Currency (USD)</option>
                                                                 <option value="currency_eur" className="text-slate-700">Currency (EUR)</option>
@@ -1517,7 +1517,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                             <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Offset</span>
                                                                             <div className="flex items-center gap-2">
                                                                                 <button onClick={() => { const n = Math.max(1, (config.comparisonOffset || 1) - 1); handleRunAnalysis({ ...config, comparisonOffset: n }); }}
-                                                                                    className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 font-bold text-sm transition-all">-</button>
+                                                                                    className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 font-bold text-sm transition-all">−</button>
                                                                                 <span className="w-8 text-center text-sm font-bold text-indigo-800">{config.comparisonOffset || 1}</span>
                                                                                 <button onClick={() => { const n = Math.min(24, (config.comparisonOffset || 1) + 1); handleRunAnalysis({ ...config, comparisonOffset: n }); }}
                                                                                     className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 font-bold text-sm transition-all">+</button>
@@ -1628,7 +1628,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                                     if (current > 2) onUpdateFormatting({ ...formatting, movingAvgWindow: current - 1 });
                                                                                 }}
                                                                                 className="w-6 h-6 rounded bg-white border border-emerald-300 text-emerald-700 flex items-center justify-center hover:bg-emerald-100 text-sm font-bold transition-colors"
-                                                                            >-</button>
+                                                                            >−</button>
                                                                             <input
                                                                                 type="number"
                                                                                 min={2}
@@ -1657,7 +1657,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                         {(formatting.tableCalculations || []).filter(c => c !== 'none').length > 0 && (
                                                             <div className="p-2.5 bg-emerald-50 rounded-lg border border-emerald-100 flex items-center gap-2">
                                                                 <div className="w-5 h-5 rounded-full bg-emerald-200 flex items-center justify-center shrink-0">
-                                                                    <span className="text-xs">?</span>
+                                                                    <span className="text-xs">✨</span>
                                                                 </div>
                                                                 <p className="text-xs text-emerald-700 font-medium">
                                                                     {(formatting.tableCalculations || []).filter(c => c !== 'none').map(c => getCalculationDisplayName(c)).join(', ')}
@@ -1676,7 +1676,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                 </>
                             )}
 
-                            {/* --- SQL TAB --- */}
+                            {/* ─── SQL TAB ─── */}
                             {contentTab === 'sql' && (
                                 <div className="space-y-4">
                                     <div className="bg-gray-100 dark:bg-slate-900 rounded-xl p-6 overflow-hidden shadow-inner">
@@ -1705,7 +1705,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                 </div>
                             )}
 
-                            {/* --- DATA TAB --- */}
+                            {/* ─── DATA TAB ─── */}
                             {contentTab === 'data' && (
                                 <>
                                     {result.data && result.data.length > 0 && (
