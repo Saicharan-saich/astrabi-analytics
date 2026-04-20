@@ -58,7 +58,8 @@ export async function runAISQLPipeline(
     question: string,
     dataset: Dataset,
     externalFilters?: PlanFilter[],
-    onProgress?: (progress: PipelineProgress) => void
+    onProgress?: (progress: PipelineProgress) => void,
+    grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year'
 ): Promise<AISQLPipelineResult> {
     const startTime = performance.now();
     let repairAttempts = 0;
@@ -90,7 +91,7 @@ export async function runAISQLPipeline(
     // ─── Step 2: Generate Analysis Plan (Step A — LLM) ───────────
     reportProgress('Generating analysis plan (AI)...', 3);
     console.log('[Pipeline] Step 2: Generating analysis plan...');
-    const plan = await generatePlan(augmentedQuestion, semanticModel);
+    const plan = await generatePlan(augmentedQuestion, semanticModel, grainOverride);
 
     // Inject the pre-resolved time filter if the LLM didn't include one
     if (resolvedTime.filter) {
@@ -165,6 +166,19 @@ export async function runAISQLPipeline(
         currentSQL = aiGeneratedSQL; // Fallback to AI SQL if engine fails
     }
 
+    // Surface fallback reason from the correction engine (e.g., hour grain without time data)
+    if ((plan as any)._fallbackReason) {
+        sqlResult.explanation = (plan as any)._fallbackReason;
+        console.log('[Pipeline] Correction engine set fallback reason:', (plan as any)._fallbackReason);
+    }
+
+    // Surface smart default explanation (e.g., "Showing revenue growth by product")
+    if ((plan as any)._smartDefaultApplied && (plan as any)._smartDefaultExplanation) {
+        const smartNote = (plan as any)._smartDefaultExplanation;
+        sqlResult.explanation = smartNote + (sqlResult.explanation ? ` — ${sqlResult.explanation}` : '');
+        console.log('[Pipeline] Smart default applied:', smartNote);
+    }
+
     // ─── Step 4: Validate SQL ────────────────────────────────────
     reportProgress('Validating SQL...', 6);
     console.log('[Pipeline] Step 4: Validating SQL...');
@@ -177,7 +191,7 @@ export async function runAISQLPipeline(
     // ─── Step 5: Execute SQL ─────────────────────────────────────
     reportProgress('Executing SQL...', 7);
     console.log('[Pipeline] Step 5: Executing SQL...');
-    let execResult = executeSQL(dataset.rows, currentSQL);
+    let execResult = executeSQL(dataset.rows, currentSQL, semanticModel.timeContext);
 
     // ─── Step 5b: Repair Loop (max 2 attempts) ──────────────────
     while (execResult.error && repairAttempts < 2) {
@@ -187,7 +201,7 @@ export async function runAISQLPipeline(
             const repaired = await repairSQL(currentSQL, execResult.error, plan, semanticModel, repairAttempts);
             currentSQL = repaired.sql;
             sqlResult.explanation = repaired.explanation;
-            execResult = executeSQL(dataset.rows, currentSQL);
+            execResult = executeSQL(dataset.rows, currentSQL, semanticModel.timeContext);
         } catch (repairErr: any) {
             console.warn(`[Pipeline] Repair attempt ${repairAttempts} failed:`, repairErr.message);
             break;
@@ -255,9 +269,13 @@ export async function runAISQLPipeline(
             }
         }
 
-        // ── (B) Trend Growth (LAG emulation) ─────────────────────────
-        // For trend comparisons with time grain (MoM, QoQ, YoY)
-        if (plan.comparison && !periodCol) {
+        // ── (B) Trend Growth (LAG emulation) — PARTITIONED ─────────
+        // For ANY multi-row result with a time dimension: comparison queries,
+        // plain trends, or time-grouped breakdowns.
+        // CRITICAL: Growth/running_total/moving_avg are computed WITHIN EACH
+        // entity partition (e.g., per product), NOT globally across all rows.
+        const hasTimeDim = plan.dimensions.some(d => d.timeGrain);
+        if (!periodCol && (plan.comparison || hasTimeDim || ['trend', 'breakdown'].includes(plan.intent)) && rawData.length > 1) {
             const timeDim = plan.dimensions.find(d => d.timeGrain);
             const timeCol = timeDim
                 ? (timeDim.timeGrain && timeDim.timeGrain !== 'day'
@@ -265,57 +283,266 @@ export async function runAISQLPipeline(
                     : timeDim.field)
                 : null;
 
+            // Identify NON-time dimension columns for partitioning
+            // (e.g., product_name, region, category)
+            const partitionCols = cols.filter(k => {
+                if (timeCol && k === timeCol) return false;
+                if (['previous_value', 'growth_pct', 'growth_abs', 'running_total', 'moving_avg', 'day_name'].includes(k.toLowerCase())) return false;
+                if (typeof rawData[0][k] === 'number' || /_(sum|avg|count|min|max)$/.test(k)) return false;
+                return true;
+            });
+
             const metricCols = cols.filter(k => {
                 if (timeCol && k === timeCol) return false;
+                if (partitionCols.includes(k)) return false;
                 if (['previous_value', 'growth_pct', 'growth_abs', 'running_total', 'moving_avg'].includes(k.toLowerCase())) return false;
                 return typeof rawData[0][k] === 'number' || /_(sum|avg|count|min|max)$/.test(k);
             });
 
             if (timeCol && metricCols.length > 0) {
-                // Sort chronologically
-                rawData.sort((a, b) => String(a[timeCol] || '').localeCompare(String(b[timeCol] || '')));
-
                 const primaryMetric = metricCols[0];
 
-                for (let i = 0; i < rawData.length; i++) {
-                    const current = Number(rawData[i][primaryMetric]) || 0;
+                // Build partition key from non-time dimensions
+                const buildPartitionKey = (row: Record<string, any>): string => {
+                    if (partitionCols.length === 0) return '__ALL__';
+                    return partitionCols.map(c => String(row[c] ?? '')).join('|||');
+                };
 
-                    if (i === 0) {
-                        rawData[i].previous_value = null;
-                        rawData[i].growth_pct = null;
-                        rawData[i].growth_abs = null;
-                    } else {
-                        const previous = Number(rawData[i - 1][primaryMetric]) || 0;
-                        rawData[i].previous_value = previous;
-                        rawData[i].growth_abs = current - previous;
-                        // Guard: division by zero → null; also guard NaN/Infinity
-                        const rawGrowth = previous !== 0
-                            ? ((current - previous) / Math.abs(previous)) * 100
-                            : null;
-                        rawData[i].growth_pct = rawGrowth !== null && isFinite(rawGrowth) ? rawGrowth : null;
-                    }
+                // Group rows by partition key
+                const partitions = new Map<string, Record<string, any>[]>();
+                for (const row of rawData) {
+                    const key = buildPartitionKey(row);
+                    if (!partitions.has(key)) partitions.set(key, []);
+                    partitions.get(key)!.push(row);
+                }
 
-                    // ── (C) Running Total ────────────────────────────
-                    rawData[i].running_total = rawData
-                        .slice(0, i + 1)
-                        .reduce((sum, r) => sum + (Number(r[primaryMetric]) || 0), 0);
+                // Apply time intelligence WITHIN each partition
+                for (const [partKey, partRows] of partitions) {
+                    // Sort chronologically within this entity
+                    partRows.sort((a, b) => String(a[timeCol] || '').localeCompare(String(b[timeCol] || '')));
 
-                    // ── (D) Moving Average (3-period) ────────────────
-                    if (i >= 2) {
-                        const window = rawData.slice(i - 2, i + 1);
-                        rawData[i].moving_avg = window.reduce((s, r) => s + (Number(r[primaryMetric]) || 0), 0) / 3;
-                    } else {
-                        rawData[i].moving_avg = null;
+                    for (let i = 0; i < partRows.length; i++) {
+                        const current = Number(partRows[i][primaryMetric]) || 0;
+
+                        // (B) Growth — compared to PREVIOUS row of the SAME entity
+                        if (i === 0) {
+                            partRows[i].previous_value = null;
+                            partRows[i].growth_pct = null;
+                            partRows[i].growth_abs = null;
+                        } else {
+                            const previous = Number(partRows[i - 1][primaryMetric]) || 0;
+                            partRows[i].previous_value = previous;
+                            partRows[i].growth_abs = current - previous;
+                            const rawGrowth = previous !== 0
+                                ? ((current - previous) / Math.abs(previous)) * 100
+                                : null;
+                            partRows[i].growth_pct = rawGrowth !== null && isFinite(rawGrowth) ? rawGrowth : null;
+                        }
+
+                        // (C) Running Total — cumulative within this entity only
+                        partRows[i].running_total = partRows
+                            .slice(0, i + 1)
+                            .reduce((sum, r) => sum + (Number(r[primaryMetric]) || 0), 0);
+
+                        // (D) Moving Average (3-period) — within this entity only
+                        if (i >= 2) {
+                            const window = partRows.slice(i - 2, i + 1);
+                            partRows[i].moving_avg = window.reduce((s, r) => s + (Number(r[primaryMetric]) || 0), 0) / 3;
+                        } else {
+                            partRows[i].moving_avg = null;
+                        }
                     }
                 }
 
-                console.log(`[Pipeline] Time Intel (B/C/D): Trend growth + running total + moving avg — ${rawData.length} rows, metric="${primaryMetric}"`);
+                // Rebuild rawData from partitions (sorted: by partition, then time)
+                rawData.length = 0;
+                for (const partRows of partitions.values()) {
+                    rawData.push(...partRows);
+                }
+
+                console.log(`[Pipeline] Time Intel (B/C/D): Partitioned growth — ${partitions.size} partition(s), ${rawData.length} rows, metric="${primaryMetric}", partitionBy=[${partitionCols.join(', ')}]`);
+
+                // ── (E) Growth Ranking Collapse ─────────────────────
+                // For growth-ranking queries (e.g., "which products are growing fastest?"),
+                // ── (E) Growth Ranking Collapse — CONFIDENCE-AWARE ──────
+                // For growth-ranking queries, collapse multi-row partitioned data
+                // to 1 ROW PER ENTITY with its latest growth. Includes:
+                // - Entity name normalization (merge duplicates)
+                // - Growth quality filtering (exclude unreliable data)
+                // - Growth capping (flag extreme % as unstable)
+                // Trigger: _growthRanking flag from intent planner (single source of truth)
+                const isGrowthRanking = !!(plan as any)._growthRanking;
+
+                if (isGrowthRanking && partitionCols.length > 0 && partitions.size > 1) {
+
+                    // ── STEP E1: Normalize entity names & merge duplicates ──
+                    const normalize = (name: string): string =>
+                        String(name).toLowerCase().replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+                    // Re-group partitions by normalized name
+                    const mergedPartitions = new Map<string, Record<string, any>[]>();
+                    const normalizedDisplayNames = new Map<string, string>(); // normalized → best display name
+
+                    for (const [, partRows] of partitions) {
+                        if (partRows.length === 0) continue;
+                        const rawName = String(partRows[0][partitionCols[0]] || '');
+                        const normName = normalize(rawName);
+
+                        if (!mergedPartitions.has(normName)) {
+                            mergedPartitions.set(normName, []);
+                            normalizedDisplayNames.set(normName, rawName); // Keep first seen as display name
+                        } else {
+                            // Keep the longer/more proper name as display
+                            const existing = normalizedDisplayNames.get(normName)!;
+                            if (rawName.length > existing.length || /[A-Z]/.test(rawName)) {
+                                normalizedDisplayNames.set(normName, rawName);
+                            }
+                        }
+                        mergedPartitions.get(normName)!.push(...partRows);
+                    }
+
+                    if (mergedPartitions.size < partitions.size) {
+                        console.log(`[Pipeline] Entity normalization: ${partitions.size} → ${mergedPartitions.size} entities (merged duplicates)`);
+                    }
+
+                    // ── STEP E2: Compute growth per merged entity ──
+                    const collapsed: Record<string, any>[] = [];
+                    const MIN_PERIODS = 2;      // Need at least 2 data points for growth
+                    const MIN_BASELINE = 100;    // Previous value must be >= $100 for reliable growth
+                    const GROWTH_CAP = 300;      // Cap extreme growth at 300%
+
+                    for (const [normName, partRows] of mergedPartitions) {
+                        // Re-sort chronologically within merged entity
+                        partRows.sort((a, b) => String(a[timeCol] || '').localeCompare(String(b[timeCol] || '')));
+
+                        // Recompute growth within merged entity
+                        for (let i = 0; i < partRows.length; i++) {
+                            const current = Number(partRows[i][primaryMetric]) || 0;
+                            if (i === 0) {
+                                partRows[i].growth_pct = null;
+                                partRows[i].previous_value = null;
+                            } else {
+                                const prev = Number(partRows[i - 1][primaryMetric]) || 0;
+                                partRows[i].previous_value = prev;
+                                partRows[i].growth_pct = prev !== 0 ? ((current - prev) / Math.abs(prev)) * 100 : null;
+                            }
+                        }
+
+                        const rowsWithGrowth = partRows.filter(r => r.growth_pct !== null && r.growth_pct !== undefined && isFinite(Number(r.growth_pct)));
+
+                        // ── STEP E3: Quality filter — skip unreliable entities ──
+                        if (partRows.length < MIN_PERIODS) {
+                            console.log(`[Pipeline] Growth filter: Skipping "${normName}" — only ${partRows.length} period(s), need ${MIN_PERIODS}`);
+                            continue;
+                        }
+
+                        const latestRow = rowsWithGrowth.length > 0
+                            ? rowsWithGrowth[rowsWithGrowth.length - 1]
+                            : partRows[partRows.length - 1];
+
+                        const previousValue = Number(latestRow.previous_value) || 0;
+                        if (previousValue > 0 && previousValue < MIN_BASELINE && rowsWithGrowth.length > 0) {
+                            console.log(`[Pipeline] Growth filter: Skipping "${normName}" — baseline too small ($${previousValue.toFixed(0)}), produces misleading %`);
+                            continue;
+                        }
+
+                        // ── STEP E4: Compute & cap growth ──
+                        let latestGrowth = latestRow.growth_pct !== null ? Number(latestRow.growth_pct) : null;
+
+                        if (latestGrowth !== null && Math.abs(latestGrowth) > GROWTH_CAP) {
+                            console.log(`[Pipeline] Growth cap: "${normName}" growth ${latestGrowth.toFixed(0)}% capped to ${latestGrowth > 0 ? '+' : '-'}${GROWTH_CAP}%`);
+                            latestGrowth = latestGrowth > 0 ? GROWTH_CAP : -GROWTH_CAP;
+                        }
+
+                        const displayName = normalizedDisplayNames.get(normName) || normName;
+
+                        collapsed.push({
+                            [partitionCols[0]]: displayName,
+                            latest_growth_pct: latestGrowth !== null ? Number(latestGrowth.toFixed(1)) : 0,
+                        });
+                    }
+
+                    // Sort by growth (descending for "fastest", ascending for "slowest")
+                    const isDescending = !/\b(slowest|least|lowest|worst|declining|shrinking)\b/.test((plan.originalQuestion || '').toLowerCase());
+                    collapsed.sort((a, b) => {
+                        const aVal = a.latest_growth_pct ?? -Infinity;
+                        const bVal = b.latest_growth_pct ?? -Infinity;
+                        return isDescending ? bVal - aVal : aVal - bVal;
+                    });
+
+                    // Apply limit
+                    const limit = plan.limit || 10;
+                    const finalData = collapsed.slice(0, limit);
+
+                    // Replace rawData with CLEAN collapsed rows (ONLY 2 columns)
+                    rawData.length = 0;
+                    rawData.push(...finalData);
+
+                    // Generate summary insight
+                    if (finalData.length > 0) {
+                        const topEntity = finalData[0][partitionCols[0]];
+                        const topGrowth = finalData[0].latest_growth_pct;
+                        const sign = topGrowth >= 0 ? '+' : '';
+                        const grainLabel = plan.comparison?.grain || 'month';
+                        (plan as any)._growthInsight = `${topEntity} is growing ${isDescending ? 'fastest' : 'slowest'} at ${sign}${topGrowth}% compared to last ${grainLabel}.`;
+                    }
+
+                    // Flag for chart override
+                    (plan as any)._growthCollapsed = true;
+
+                    console.log(`[Pipeline] Time Intel (E): Growth ranking — ${mergedPartitions.size} entities → ${finalData.length} reliable rows, columns=[${Object.keys(finalData[0] || {}).join(', ')}]`);
+                }
             }
         }
     }
 
     if (rawData.length === 0) {
-        throw new Error('Query returned no results. Try a different question.');
+        // Build a helpful no-data message instead of throwing
+        const tc = semanticModel.timeContext;
+        const periodDesc = resolvedTime?.description
+            ? `for ${resolvedTime.description}`
+            : plan.filters.length > 0 ? 'for the specified filters' : '';
+        const rangeNote = tc
+            ? ` The dataset contains data from ${tc.minDate} to ${tc.maxDate}.`
+            : '';
+
+        const noDataExplanation =
+            `No data found ${periodDesc}.${rangeNote} ` +
+            `Try broadening your date range, removing filters, or checking if your data covers this period.`;
+
+        console.warn('[Pipeline] Query returned 0 rows —', noDataExplanation);
+
+        const executionTimeEmpty = performance.now() - startTime;
+        return {
+            plan,
+            sql: currentSQL,
+            validation,
+            rawData: [],
+            chartData: [],
+            profile: {
+                rowCount: 0, columnCount: 0, metricCount: 0, dimensionCount: 0,
+                dimensionColumns: [], metricColumns: [], dimensionCardinality: {},
+                hasTimeDimension: false, metricsScaleMismatch: 1, metricSemanticTypes: {},
+                isPivoted: false, isSingleValue: false,
+            },
+            chart: {
+                chartType: 'table', xKey: '', yKey: '', useDualAxis: false,
+                reason: 'No results — empty dataset for this query'
+            },
+            confidence: {
+                score: 0, level: 'low',
+                factors: { semanticMatch: 0, filterClarity: 0, aggregationCertainty: 0, planComplexity: 0, repairAttempts: 0 },
+                reasons: ['Query returned 0 rows']
+            },
+            explanation: noDataExplanation,
+            columnsUsed: [
+                ...plan.dimensions.map(d => d.field),
+                ...plan.metrics.map(m => m.field),
+                ...plan.filters.map(f => f.field),
+            ].filter((v, i, a) => a.indexOf(v) === i),
+            executionTimeMs: Math.round(executionTimeEmpty),
+            repairAttempts,
+        };
     }
 
     // ─── Step 6: Validate Result ─────────────────────────────────
@@ -348,7 +575,7 @@ export async function runAISQLPipeline(
                 }).join(' AND ')
                 : '';
             const grandTotalSQL = `SELECT ${primaryAgg.toUpperCase()}(${primaryMetricField}) AS grand_total FROM data${filterClause}`;
-            const grandResult = executeSQL(dataset.rows, grandTotalSQL);
+            const grandResult = executeSQL(dataset.rows, grandTotalSQL, semanticModel.timeContext);
 
             if (grandResult.data && grandResult.data.length > 0) {
                 const grandTotal = Number(grandResult.data[0].grand_total) || 0;
@@ -371,6 +598,13 @@ export async function runAISQLPipeline(
         }
     }
 
+    // ── Growth Chart Override (BEFORE profiler) ─────────────────
+    // Must happen before profiler so the profiler sees only 2 columns
+    // (1 dim + 1 metric) instead of the 6+ collapsed columns.
+    if ((plan as any)._growthCollapsed && rawData.length > 0) {
+        console.log(`[Pipeline] Growth data already clean: ${rawData.length} rows, columns=[${Object.keys(rawData[0]).join(', ')}]`);
+    }
+
     // ─── Step 7: Profile Result ──────────────────────────────────
     reportProgress('Profiling results...', 9);
     console.log('[Pipeline] Step 7: Profiling result...');
@@ -383,10 +617,38 @@ export async function runAISQLPipeline(
     const chartRec = recommendChart(profile, plan, semanticModel);
     console.log(`[Pipeline] Chart: ${chartRec.chartType} (${chartRec.reason})`);
 
+    // ── Growth Ranking Chart Override ─────────────────────────
+    // Force simple bar chart for growth-collapsed data.
+    if ((plan as any)._growthCollapsed && rawData.length > 0) {
+        const entityCol = Object.keys(rawData[0]).find(k => k !== 'latest_growth_pct');
+
+        if (entityCol) {
+            chartRec.chartType = 'bar';
+            chartRec.xKey = entityCol;
+            chartRec.yKey = 'latest_growth_pct';
+            chartRec.useDualAxis = false;
+            chartRec.reason = 'Growth ranking → simple bar (entity vs growth %)';
+            console.log(`[Pipeline] Growth chart override: bar, x=${entityCol}, y=latest_growth_pct`);
+        }
+
+        // Surface growth insight in explanation
+        if ((plan as any)._growthInsight) {
+            const insight = (plan as any)._growthInsight;
+            sqlResult.explanation = insight;
+            console.log(`[Pipeline] Growth insight: ${insight}`);
+        }
+    }
+
     // ─── Step 9: Reshape Data ────────────────────────────────────
     reportProgress('Reshaping data for chart...', 11);
     console.log('[Pipeline] Step 9: Reshaping data...');
     const reshaped = reshapeData(rawData, profile, chartRec, plan);
+
+    // For growth-collapsed data, force clean reshaped output
+    if ((plan as any)._growthCollapsed && rawData.length > 0) {
+        reshaped.data = rawData;
+        reshaped.chart = chartRec;
+    }
 
     // ─── Step 10: Score Confidence ───────────────────────────────
     console.log('[Pipeline] Step 10: Scoring confidence...');

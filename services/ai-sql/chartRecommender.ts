@@ -20,6 +20,20 @@ const HIGH_CARDINALITY_THRESHOLD = 15; // More than 15 categories = horizontal b
 const DONUT_MAX_CATEGORIES = 6; // Donut only for small category counts
 
 /**
+ * Derive the axis/label format for the primary metric based on its semantic type.
+ * Used to ensure data labels always show '%' for discounts, '$' for revenue, etc.
+ */
+function deriveAxisFormat(
+    primaryMetricCol: string,
+    metricSemanticTypes: Record<string, import('./types').SemanticType>
+): ChartRecommendation['leftAxisFormat'] {
+    const stype = metricSemanticTypes[primaryMetricCol];
+    if (stype === 'percentage') return 'percent';
+    if (stype === 'currency') return 'currency_usd';
+    return 'compact';
+}
+
+/**
  * Recommend the best chart type and configuration based on the result profile.
  * This is 100% deterministic — no LLM involved.
  */
@@ -53,9 +67,10 @@ export function recommendChart(
         chartType = 'kpiCard';
         xKey = metricColumns[0] || Object.keys(profile.metricSemanticTypes)[0] || '';
         yKey = xKey;
+        leftAxisFormat = deriveAxisFormat(xKey, metricSemanticTypes);
         reason = 'Single scalar value → KPI Card';
 
-        return { chartType, xKey, yKey, useDualAxis, reason };
+        return { chartType, xKey, yKey, useDualAxis, leftAxisFormat, reason };
     }
 
     // ─── Rule 2: Pivoted Comparison → Grouped Bar + Growth ───────
@@ -133,6 +148,7 @@ export function recommendChart(
         if (metricCount === 1) {
             // Single metric over time → Line
             chartType = 'line';
+            leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
             reason = 'One time dimension + one metric → Line chart';
         } else if (metricCount >= 2) {
             // Multiple metrics over time
@@ -193,9 +209,11 @@ export function recommendChart(
             // Too many categories → horizontal bar with top-N
             chartType = 'horizontalBar';
             topN = 15;
+            leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
             reason = `${cardinality} categories (>${HIGH_CARDINALITY_THRESHOLD}) → Horizontal Bar (top ${topN})`;
         } else if (metricCount === 1) {
             chartType = 'bar';
+            leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
             reason = `${cardinality} categories + 1 metric → Bar`;
         } else if (metricCount >= 2) {
             // Multiple metrics by category

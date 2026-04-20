@@ -5,6 +5,7 @@ export interface SqlQueryConfig {
     metric: string;
     aggregation: string;
     dimension?: string;
+    secondaryDimensions?: string[]; // Additional grouping dimensions
     table: string;
     dateColumn?: string; // Actual date column name from dataset (e.g., 'sale_date')
     timeFilter?: string;
@@ -73,7 +74,7 @@ export class SqlGenerator {
     }
 
     private buildSelect(): string {
-        const { metric, aggregation, dimension } = this.config;
+        const { metric, aggregation, dimension, secondaryDimensions } = this.config;
         // Validate aggregation against whitelist
         const aggUpper = (aggregation || 'SUM').toUpperCase();
         const aggFunc = ALLOWED_AGGREGATIONS.has(aggUpper) ? aggUpper : 'SUM';
@@ -81,8 +82,14 @@ export class SqlGenerator {
         const metricId = metric === '*' ? '*' : safeId(metric || '*');
         const metricExp = `${aggFunc}(${metricId})`;
 
-        if (dimension) {
-            return `SELECT ${safeId(dimension)}, ${metricExp}`;
+        const dimCols: string[] = [];
+        if (dimension) dimCols.push(safeId(dimension));
+        if (secondaryDimensions && secondaryDimensions.length > 0) {
+            secondaryDimensions.forEach(sd => dimCols.push(safeId(sd)));
+        }
+
+        if (dimCols.length > 0) {
+            return `SELECT ${dimCols.join(', ')}, ${metricExp}`;
         }
         return `SELECT ${metricExp}`;
     }
@@ -169,8 +176,14 @@ export class SqlGenerator {
     }
 
     private buildGroupBy(): string {
-        if (this.config.dimension) {
-            return `GROUP BY ${safeId(this.config.dimension)}`;
+        const { dimension, secondaryDimensions } = this.config;
+        const dims: string[] = [];
+        if (dimension) dims.push(safeId(dimension));
+        if (secondaryDimensions && secondaryDimensions.length > 0) {
+            secondaryDimensions.forEach(sd => dims.push(safeId(sd)));
+        }
+        if (dims.length > 0) {
+            return `GROUP BY ${dims.join(', ')}`;
         }
         return '';
     }

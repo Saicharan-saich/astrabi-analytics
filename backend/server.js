@@ -145,21 +145,22 @@ app.post('/api/auth/register', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Email, name, and password are required' });
         }
 
-        if (users.has(email)) {
+        const emailNorm = email.trim().toLowerCase();
+        if (users.has(emailNorm)) {
             return res.status(400).json({ success: false, error: 'User already exists' });
         }
 
         const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
         const user = {
             id: Date.now().toString(),
-            email,
+            email: emailNorm,
             name,
             role: role || 'viewer',
             passwordHash: hashedPassword,
             createdAt: new Date().toISOString()
         };
 
-        users.set(email, user);
+        users.set(emailNorm, user);
         saveUsersToDisk(users); // Fix #4: persist new user
 
         const token = jwt.sign(
@@ -187,7 +188,8 @@ app.post('/api/auth/login', async (req, res) => {
             return res.status(400).json({ success: false, error: 'Email and password are required' });
         }
 
-        const user = users.get(email);
+        const emailNorm = email.trim().toLowerCase();
+        const user = users.get(emailNorm);
         if (!user) {
             return res.status(401).json({ success: false, error: 'Invalid credentials' });
         }

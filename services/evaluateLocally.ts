@@ -386,6 +386,8 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 console.log(`[DimDate] Pre-populated ${Object.keys(groups).length} ${dimCol} buckets from dimDate spine`);
             }
 
+            const secDims = query.secondaryDimensions || [];
+
             filteredRows.forEach(r => {
                 let k = dimCol ? String(r[dimCol] || 'Unknown') : 'Total';
                 if (isTimeDim) {
@@ -413,11 +415,20 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                         }
                     }
                 }
+
+                // Append secondary dimension values to the key for multi-dimension grouping
+                const secDimValues: string[] = [];
+                for (const sd of secDims) {
+                    const sdVal = String(r[sd] || 'Unknown');
+                    secDimValues.push(sdVal);
+                    k += ` | ${sdVal}`;
+                }
+
                 const rawV = r[metricCol];
                 const v = Number(String(rawV || 0).replace(/[$,]/g, '')) || 0;
 
                 if (!groups[k]) {
-                    groups[k] = { sum: 0, count: 0, min: v, max: v, distinct: new Set(), sec: {} as Record<string, { sum: number; count: number; min: number; max: number }> };
+                    groups[k] = { sum: 0, count: 0, min: v, max: v, distinct: new Set(), sec: {} as Record<string, { sum: number; count: number; min: number; max: number }>, secDimValues };
                     // Initialize secondary metric accumulators
                     for (const sm of secMetrics) {
                         // Case-insensitive column lookup
@@ -487,15 +498,30 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     [metricCol]: finalValue
                 };
 
+                // Add secondary dimension columns to the row
+                if (secDims.length > 0 && stats.secDimValues) {
+                    secDims.forEach((sd: string, idx: number) => {
+                        row[sd] = stats.secDimValues[idx] || 'Unknown';
+                    });
+                }
+
                 // Add secondary metric values to the row
-                // Smart aggregation: rate/ratio/discount/avg metrics use AVG, others follow primary
+                // Use user-specified aggregation if available, else smart auto-detect
+                const secAggOverrides = query.secondaryMetricAggregations || {};
                 for (const sm of secMetrics) {
                     if (stats.sec[sm]) {
-                        const smLower = sm.toLowerCase();
-                        const isAvgMetric = smLower.includes('discount') || smLower.includes('rate') || smLower.includes('ratio')
-                            || smLower.includes('avg') || smLower.includes('average') || smLower.includes('margin')
-                            || smLower.includes('percent') || smLower.includes('pct');
-                        const secAgg = isAvgMetric ? 'AVG' : (aggType === 'COUNT_DISTINCT' ? 'SUM' : aggType);
+                        let secAgg: string;
+                        if (secAggOverrides[sm]) {
+                            // User explicitly chose the aggregation
+                            secAgg = secAggOverrides[sm];
+                        } else {
+                            // Smart auto-detect: rate/ratio/discount/avg metrics use AVG, others follow primary
+                            const smLower = sm.toLowerCase();
+                            const isAvgMetric = smLower.includes('discount') || smLower.includes('rate') || smLower.includes('ratio')
+                                || smLower.includes('avg') || smLower.includes('average') || smLower.includes('margin')
+                                || smLower.includes('percent') || smLower.includes('pct');
+                            secAgg = isAvgMetric ? 'AVG' : (aggType === 'COUNT_DISTINCT' ? 'SUM' : aggType);
+                        }
                         row[sm] = resolveAgg(stats.sec[sm], secAgg);
                     }
                 }
@@ -1018,6 +1044,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 metric: metricCol,
                 aggregation: aggType,
                 dimension: dimCol,
+                secondaryDimensions: secDims.length > 0 ? secDims : undefined,
                 dateColumn: dateColKey,
                 timeFilter: query.timeFilter,
                 filters: query.filters as Record<string, string[]>,

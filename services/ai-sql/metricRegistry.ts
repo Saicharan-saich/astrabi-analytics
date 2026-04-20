@@ -79,8 +79,20 @@ export function buildCompositeMetrics(fields: SemanticField[]): MetricDefinition
     const fieldNames = new Set(fields.map(f => f.name.toLowerCase()));
     const fieldsByName = new Map(fields.map(f => [f.name.toLowerCase(), f]));
 
-    // Helper: find a field matching any of the given patterns
+    // Helper: find a METRIC field matching any of the given patterns
+    // Only matches fields with role='metric' to avoid matching text columns
+    // (e.g., 'sales_rep' should NOT match pattern 'sales')
     const findField = (...patterns: string[]): SemanticField | undefined => {
+        for (const p of patterns) {
+            for (const [name, field] of fieldsByName) {
+                if (field.role === 'metric' && name.includes(p)) return field;
+            }
+        }
+        return undefined;
+    };
+
+    // Helper: find ANY field (dimension or metric) matching patterns
+    const findAnyField = (...patterns: string[]): SemanticField | undefined => {
         for (const p of patterns) {
             for (const [name, field] of fieldsByName) {
                 if (name.includes(p)) return field;
@@ -91,13 +103,13 @@ export function buildCompositeMetrics(fields: SemanticField[]): MetricDefinition
 
     // ---------- Revenue / Sales based metrics ----------
 
-    const revenueField = findField('revenue', 'sales', 'total', 'amount', 'line_total');
+    const revenueField = findField('revenue', 'sale_amt', 'sales_amt', 'sales', 'total', 'amount', 'line_total');
     const costField = findField('cost', 'cogs', 'expense');
     const profitField = findField('profit');
     const quantityField = findField('quantity', 'qty', 'units');
     const discountField = findField('discount');
-    const orderIdField = findField('order_id', 'transaction_id', 'invoice');
-    const customerIdField = findField('customer_id', 'client_id', 'customer');
+    const orderIdField = findAnyField('order_id', 'transaction_id', 'invoice');
+    const customerIdField = findAnyField('customer_id', 'client_id', 'customer');
 
     // Gross Margin %
     if (revenueField && costField) {

@@ -1,8 +1,10 @@
 /**
  * Tooltip — lightweight, reusable hover tooltip component.
- * CSS-only positioning, no external dependencies.
+ * Renders via React portal so it fully escapes overflow-hidden containers.
+ * Displays text horizontally in a wide, readable bubble.
  */
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useLayoutEffect, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 
 interface TooltipProps {
     text: string;
@@ -17,9 +19,12 @@ export const Tooltip: React.FC<TooltipProps> = ({
     children,
     position = 'top',
     delay = 300,
-    maxWidth = 260,
+    maxWidth = 420,
 }) => {
     const [visible, setVisible] = useState(false);
+    const [coords, setCoords] = useState<{ top: number; left: number }>({ top: -9999, left: -9999 });
+    const triggerRef = useRef<HTMLSpanElement>(null);
+    const tooltipRef = useRef<HTMLDivElement>(null);
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const show = useCallback(() => {
@@ -31,36 +36,93 @@ export const Tooltip: React.FC<TooltipProps> = ({
         setVisible(false);
     }, []);
 
-    const positionClasses: Record<string, string> = {
-        top: 'bottom-full left-1/2 -translate-x-1/2 mb-2',
-        bottom: 'top-full left-1/2 -translate-x-1/2 mt-2',
-        left: 'right-full top-1/2 -translate-y-1/2 mr-2',
-        right: 'left-full top-1/2 -translate-y-1/2 ml-2',
-    };
+    // Recalculate position after the tooltip renders and its size is known
+    useLayoutEffect(() => {
+        if (!visible || !triggerRef.current || !tooltipRef.current) return;
 
-    const arrowClasses: Record<string, string> = {
-        top: 'top-full left-1/2 -translate-x-1/2 border-l-transparent border-r-transparent border-b-transparent border-t-slate-800',
-        bottom: 'bottom-full left-1/2 -translate-x-1/2 border-l-transparent border-r-transparent border-t-transparent border-b-slate-800',
-        left: 'left-full top-1/2 -translate-y-1/2 border-t-transparent border-b-transparent border-r-transparent border-l-slate-800',
-        right: 'right-full top-1/2 -translate-y-1/2 border-t-transparent border-b-transparent border-l-transparent border-r-slate-800',
-    };
+        const recalc = () => {
+            const trigger = triggerRef.current!.getBoundingClientRect();
+            const tip = tooltipRef.current!.getBoundingClientRect();
+            const gap = 10;
+
+            let top = 0;
+            let left = 0;
+
+            switch (position) {
+                case 'right':
+                    top = trigger.top + trigger.height / 2 - tip.height / 2;
+                    left = trigger.right + gap;
+                    break;
+                case 'left':
+                    top = trigger.top + trigger.height / 2 - tip.height / 2;
+                    left = trigger.left - tip.width - gap;
+                    break;
+                case 'bottom':
+                    top = trigger.bottom + gap;
+                    left = trigger.left + trigger.width / 2 - tip.width / 2;
+                    break;
+                case 'top':
+                default:
+                    top = trigger.top - tip.height - gap;
+                    left = trigger.left + trigger.width / 2 - tip.width / 2;
+                    break;
+            }
+
+            // Clamp to viewport
+            const vw = window.innerWidth;
+            const vh = window.innerHeight;
+            if (left < 8) left = 8;
+            if (left + tip.width > vw - 8) left = vw - tip.width - 8;
+            if (top < 8) top = 8;
+            if (top + tip.height > vh - 8) top = vh - tip.height - 8;
+
+            setCoords({ top, left });
+        };
+
+        // Run twice: once immediately, once on next frame (after browser has laid out text wrapping)
+        recalc();
+        requestAnimationFrame(recalc);
+    }, [visible, position]);
 
     if (!text) return <>{children}</>;
 
     return (
-        <span className="relative inline-flex" onMouseEnter={show} onMouseLeave={hide}>
+        <span ref={triggerRef} className="relative inline-flex" onMouseEnter={show} onMouseLeave={hide}>
             {children}
-            {visible && (
-                <span
-                    className={`absolute z-[9999] ${positionClasses[position]} pointer-events-none animate-in fade-in duration-150`}
-                    style={{ maxWidth }}
-                >
-                    <span className="block bg-slate-800 text-white text-xs font-medium px-3 py-2 rounded-lg shadow-xl border border-white/10 leading-relaxed whitespace-normal">
-                        {text}
-                    </span>
-                    <span className={`absolute w-0 h-0 border-4 ${arrowClasses[position]}`} />
-                </span>
-            )}
+            {visible &&
+                ReactDOM.createPortal(
+                    <div
+                        ref={tooltipRef}
+                        style={{
+                            position: 'fixed',
+                            zIndex: 99999,
+                            top: coords.top,
+                            left: coords.left,
+                            width: maxWidth,
+                            maxWidth: maxWidth,
+                            pointerEvents: 'none',
+                        }}
+                    >
+                        <div
+                            style={{
+                                background: '#1e293b',
+                                color: '#fff',
+                                fontSize: '13px',
+                                fontWeight: 500,
+                                lineHeight: 1.5,
+                                padding: '8px 14px',
+                                borderRadius: '10px',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                boxShadow: '0 8px 30px rgba(0,0,0,0.4)',
+                                whiteSpace: 'normal',
+                                wordBreak: 'break-word',
+                            }}
+                        >
+                            {text}
+                        </div>
+                    </div>,
+                    document.body
+                )}
         </span>
     );
 };

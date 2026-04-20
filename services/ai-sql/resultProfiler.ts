@@ -66,6 +66,15 @@ export function profileResult(
             } else {
                 metricSemanticTypes[col] = 'quantity';
             }
+        } else if (/_(sum|avg|count|min|max|pct|total)$/.test(colLower) || colLower.endsWith('_count_distinct')) {
+            // Fallback: column name strongly suggests a metric (aggregated alias)
+            // even if the first value is null/string (e.g., SUM on a mistyped column)
+            metricColumns.push(col);
+            if (colLower.includes('pct') || colLower.includes('margin')) {
+                metricSemanticTypes[col] = 'percentage';
+            } else {
+                metricSemanticTypes[col] = 'currency';
+            }
         } else {
             dimensionColumns.push(col);
         }

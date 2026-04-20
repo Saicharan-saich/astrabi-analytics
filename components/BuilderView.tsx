@@ -122,7 +122,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 comparison: ('comparison' in config) ? (config.comparison || '') : (result?.config?.comparison || ''),
                 comparisonGrain: ('comparisonGrain' in config) ? config.comparisonGrain : (result?.config?.comparisonGrain),
                 comparisonOffset: ('comparisonOffset' in config) ? config.comparisonOffset : (result?.config?.comparisonOffset),
-                ...(config.secondaryMetrics?.length > 0 ? { secondaryMetrics: config.secondaryMetrics, axisMode: config.axisMode || 'auto', secondaryMetricVisuals: config.secondaryMetricVisuals || {} } : {})
+                ...(config.secondaryMetrics?.length > 0 ? { secondaryMetrics: config.secondaryMetrics, axisMode: config.axisMode || 'auto', secondaryMetricVisuals: config.secondaryMetricVisuals || {}, secondaryMetricAggregations: config.secondaryMetricAggregations || {} } : {}),
+                ...(config.secondaryDimensions?.length > 0 ? { secondaryDimensions: config.secondaryDimensions } : {})
             };
 
             const res = runAnalysis(dataset, query);
@@ -299,8 +300,37 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         </button>
 
                         {onPin && (
-                            <button onClick={() => onPin(result.yLabel, { ...result, vis: chartType })} className="flex items-center text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap" title="Pin to Dashboard">
-                                <Pin className="w-4 h-4 mr-1" /> Pin
+                            <button onClick={() => {
+                                const firstCol = tableData.columns[0];
+                                if (showGrowthChart && firstCol) {
+                                    // Pin the CALCULATED view (e.g., % of Total pie chart)
+                                    const calcColumnKeys = new Set([result.xKey, ...tableData.columns.map(c => c.key)]);
+                                    const calcCleanData = tableData.data.map((d: any) => {
+                                        const clean: any = {};
+                                        for (const k of Object.keys(d)) {
+                                            if (calcColumnKeys.has(k) || typeof d[k] !== 'number') {
+                                                clean[k] = d[k];
+                                            }
+                                        }
+                                        return clean;
+                                    });
+                                    const calcChartType = firstCol.calculation === 'percent_of_total' ? 'pie' : chartType;
+                                    const calcFormatting = { ...formatting, tableCalculations: [], numberFormat: (firstCol.format || formatting?.numberFormat), showDataLabels: true } as any;
+                                    onPin(firstCol.label || result.yLabel, {
+                                        ...result,
+                                        data: calcCleanData,
+                                        yKey: firstCol.key,
+                                        yLabel: firstCol.label,
+                                        vis: calcChartType,
+                                        formatting: calcFormatting,
+                                        config: result.config ? { ...result.config, comparison: 'none' as any } : result.config,
+                                    });
+                                } else {
+                                    // Pin the ORIGINAL view
+                                    onPin(result.yLabel, { ...result, vis: chartType, formatting: { ...formatting, tableCalculations: [] } as any });
+                                }
+                            }} className={`flex items-center text-sm font-bold text-white ${showGrowthChart && tableData.columns.length > 0 ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'} px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap`} title={showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated View to Dashboard' : 'Pin to Dashboard'}>
+                                <Pin className="w-4 h-4 mr-1" /> {showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated' : 'Pin'}
                             </button>
                         )}
                         <button

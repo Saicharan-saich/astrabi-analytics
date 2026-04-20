@@ -1,5 +1,6 @@
 // sqlExecutor.ts — Execute AI-generated SQL directly against dataset rows using alasql
 import alasql from 'alasql';
+import { generateDimDate } from './dimDateGenerator';
 
 export interface SQLExecutionResult {
     data: any[];
@@ -93,6 +94,11 @@ const registerCustomFunctions = () => {
     // IFNULL — SQLite null replacement
     alasql.fn.IFNULL = (val: any, fallback: any) => {
         return (val === null || val === undefined) ? fallback : val;
+    };
+
+    // NULLIF — returns NULL if the two arguments are equal, otherwise returns first arg
+    alasql.fn.NULLIF = (a: any, b: any) => {
+        return a === b ? null : a;
     };
 
     // ROUND — round to decimal places
@@ -277,6 +283,30 @@ const registerCustomFunctions = () => {
         const d = new Date(val);
         if (isNaN(d.getTime())) return null;
         return ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d.getDay()];
+    };
+
+    // HOUR — extract hour (0-23) from datetime
+    alasql.fn.HOUR = (val: any) => {
+        if (val === null || val === undefined) return null;
+        const d = new Date(val);
+        return !isNaN(d.getTime()) ? d.getHours() : null;
+    };
+
+    // MINUTE — extract minute (0-59) from datetime
+    alasql.fn.MINUTE = (val: any) => {
+        if (val === null || val === undefined) return null;
+        const d = new Date(val);
+        return !isNaN(d.getTime()) ? d.getMinutes() : null;
+    };
+
+    // WEEK — ISO week number (1-53)
+    alasql.fn.WEEK = (val: any) => {
+        if (val === null || val === undefined) return null;
+        const d = new Date(val);
+        if (isNaN(d.getTime())) return null;
+        const oneJan = new Date(d.getFullYear(), 0, 1);
+        const dayOfYear = Math.floor((d.getTime() - oneJan.getTime()) / 86400000) + 1;
+        return Math.ceil(dayOfYear / 7);
     };
 
     // MONTHNAME — name of the month
@@ -488,8 +518,15 @@ const normalizeCAST = (sql: string): string => {
  * Execute an SQL query directly against an array of data rows.
  * The rows are loaded into a temporary alasql table called "data".
  * The AI prompt tells the model to use "data" as the table name.
+ *
+ * Optionally, if timeContext is provided, a continuous dim_date table is also
+ * registered so queries can JOIN fact data with calendar attributes.
  */
-export const executeSQL = (rows: any[], sql: string): SQLExecutionResult => {
+export const executeSQL = (
+    rows: any[],
+    sql: string,
+    timeContext?: { minDate: string; maxDate: string; primaryDateColumn?: string }
+): SQLExecutionResult => {
     try {
         // Register custom functions
         registerCustomFunctions();
@@ -501,6 +538,18 @@ export const executeSQL = (rows: any[], sql: string): SQLExecutionResult => {
         alasql('DROP TABLE IF EXISTS data');
         alasql('CREATE TABLE data');
         alasql.tables['data'].data = [...rows];
+
+        // Register dim_date table when timeContext is available
+        // This enables time intelligence JOINs: JOIN dim_date d ON fact.date_col = d.date_key
+        alasql('DROP TABLE IF EXISTS dim_date');
+        if (timeContext?.minDate && timeContext?.maxDate) {
+            const dimRows = generateDimDate(timeContext.minDate, timeContext.maxDate);
+            if (dimRows.length > 0) {
+                alasql('CREATE TABLE dim_date');
+                alasql.tables['dim_date'].data = dimRows;
+                console.log(`[SQL Executor] dim_date registered: ${dimRows.length} rows (${timeContext.minDate} → ${timeContext.maxDate})`);
+            }
+        }
 
         console.log('[SQL Executor] Original SQL:', sql);
         console.log('[SQL Executor] Normalized SQL:', normalizedSQL);

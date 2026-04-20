@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
+import { UserRole } from '../types';
 import { Eye, EyeOff, LogIn, Sparkles, AlertCircle, UserPlus, Users } from 'lucide-react';
+
+const API_BASE = 'http://localhost:5002';
 
 export const LoginPage: React.FC = () => {
     const [email, setEmail] = useState('');
@@ -10,28 +13,77 @@ export const LoginPage: React.FC = () => {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [mode, setMode] = useState<'login' | 'register'>('login');
-    const login = useAuthStore(s => s.login);
-    const register = useAuthStore(s => s.register);
     const loginAsGuest = useAuthStore(s => s.loginAsGuest);
+
+    /** Map backend role strings to UserRole enum */
+    const mapRole = (role: string): UserRole => {
+        switch (role) {
+            case 'admin': return UserRole.ADMIN;
+            case 'contributor': return UserRole.CONTRIBUTOR;
+            default: return UserRole.VIEWER;
+        }
+    };
+
+    const AVATAR_COLORS = [
+        '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316',
+        '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
+    ];
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         setIsLoading(true);
 
-        await new Promise(r => setTimeout(r, 400));
+        try {
+            const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
+            const body = mode === 'login'
+                ? { email: email.trim(), password }
+                : { email: email.trim(), name: name.trim(), password, role: 'contributor' };
 
-        if (mode === 'login') {
-            const result = login(email, password);
-            if (!result.success) {
-                setError(result.error || 'Login failed');
+            const res = await fetch(`${API_BASE}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok || !data.success) {
+                setError(data.error || (mode === 'login' ? 'Login failed' : 'Registration failed'));
+                setIsLoading(false);
+                return;
             }
-        } else {
-            const result = register(email, name, password);
-            if (!result.success) {
-                setError(result.error || 'Registration failed');
+
+            // Persist JWT token
+            if (data.token) {
+                localStorage.setItem('qi_token', data.token);
             }
+
+            // Sync user into Zustand auth store so the rest of the app works
+            const backendUser = data.user;
+            const storeUser = {
+                id: backendUser.id,
+                email: backendUser.email,
+                name: backendUser.name,
+                role: mapRole(backendUser.role),
+                passwordHash: '', // not needed on client
+                createdAt: Date.now(),
+                avatar: AVATAR_COLORS[Math.abs(backendUser.email.length) % AVATAR_COLORS.length],
+            };
+
+            // Directly set auth state in Zustand
+            useAuthStore.setState((state) => ({
+                currentUser: storeUser,
+                isAuthenticated: true,
+                users: state.users.some(u => u.email === storeUser.email)
+                    ? state.users.map(u => u.email === storeUser.email ? storeUser : u)
+                    : [...state.users, storeUser],
+            }));
+        } catch (err: any) {
+            console.error('[LoginPage] Auth request failed:', err);
+            setError('Could not connect to the server. Make sure the backend is running on port 5002.');
         }
+
         setIsLoading(false);
     };
 

@@ -18,6 +18,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
     const [isLoading, setIsLoading] = useState(false);
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [noDataMsg, setNoDataMsg] = useState<string | null>(null);
     const [activeResultTab, setActiveResultTab] = useState<'chart' | 'table' | 'sql'>('chart');
     const [isInputCollapsed, setIsInputCollapsed] = useState(false);
     const [isExplanationCollapsed, setIsExplanationCollapsed] = useState(false);
@@ -44,6 +45,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const [pipelineResult, setPipelineResult] = useState<AISQLPipelineResult | null>(null);
     const [showGrowthPct, setShowGrowthPct] = useState(false);
+    const [timeGrain, setTimeGrain] = useState<'day' | 'week' | 'month' | 'quarter' | 'year'>('month');
 
     const updateFormatting = (f: FormattingConfig) => setFormatting(f);
 
@@ -60,11 +62,26 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
         if (!query.trim() || !dataset || isLoading) return;
         setIsLoading(true);
         setError(null);
+        setNoDataMsg(null);
         setIsInputCollapsed(true);
 
         try {
             // Run the full enterprise AI SQL pipeline
-            const result = await runAISQLPipeline(query, dataset);
+            const result = await runAISQLPipeline(query, dataset, undefined, undefined, timeGrain);
+
+            // ── Graceful empty-result handling ─────────────────────────
+            // When the pipeline finds 0 rows it now returns a result with
+            // rawData:[] and an explanation instead of throwing. Show the
+            // explanation as a friendly banner, not as a chart.
+            if (result.rawData.length === 0 && result.explanation) {
+                setPipelineResult(result);
+                setGeneratedSQL(result.sql);
+                setAiExplanation(result.explanation);
+                setColumnsUsed(result.columnsUsed);
+                setNoDataMsg(result.explanation);
+                setIsLoading(false);
+                return;
+            }
 
             // Store the full pipeline result for the Trust UI
             setPipelineResult(result);
@@ -107,6 +124,20 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                 heatmap: 'heatmap',
                 table: 'table',
             };
+
+            // ── Auto-apply axis format from chart recommender ──────────
+            // leftAxisFormat tells us whether this metric is a percentage,
+            // currency, or plain number — override numberFormat so labels
+            // immediately show '%' for discounts, '$' for revenue, etc.
+            const axisFormatMap: Record<string, FormattingConfig['numberFormat']> = {
+                percent: 'percent',
+                currency_usd: 'currency_usd',
+                compact: 'compact',
+            };
+            const detectedFormat = result.chart.leftAxisFormat
+                ? (axisFormatMap[result.chart.leftAxisFormat] ?? 'auto')
+                : 'auto';
+            setFormatting(prev => ({ ...prev, numberFormat: detectedFormat }));
 
             // Set the analysis result for ChartVisualization
             setAnalysisResult({
@@ -161,6 +192,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
         setQuery('');
         setAnalysisResult(null);
         setError(null);
+        setNoDataMsg(null);
         setAiExplanation(null);
         setColumnsUsed([]);
         setGeneratedSQL(null);
@@ -190,12 +222,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
 
                 {/* Header */}
                 <div className="flex flex-col gap-1 shrink-0">
-                    <Tooltip text="AI SQL uses Gemini to generate and execute SQL queries on your dataset. Ask questions in plain English and get instant results." position="right">
+                    <Tooltip text="AI SQL uses advanced AI to generate and execute SQL queries on your dataset. Ask questions in plain English and get instant results." position="right">
                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                            <Sparkles className="w-6 h-6 text-amber-500 dark:text-amber-400" />
+                            <img src="/ai-sql-logo.png" alt="AI SQL" className="w-7 h-7 rounded-lg object-cover" />
                             AI SQL
-                            <span className="text-xs font-medium bg-amber-500/15 text-amber-600 dark:text-amber-400 px-2 py-0.5 rounded-full border border-amber-500/20">
-                                Powered by Gemini
+                            <span className="text-xs font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20">
+                                Intelligent Analytics
                             </span>
                         </h2>
                     </Tooltip>
@@ -225,7 +257,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                             />
                             <div className="flex items-center justify-between px-4 pb-3">
                                 <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
-                                    <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                                    <img src="/ai-sql-logo.png" alt="" className="w-3.5 h-3.5 rounded-sm" />
                                     <span>AI generates SQL &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[10px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
                                 </div>
                                 <button
@@ -260,6 +292,23 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                 </div>
 
                 {/* Results Area */}
+                {/* ── No-data explanation banner ──────────────────────── */}
+                {noDataMsg && !isLoading && (
+                    <div className="mt-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-500/40 rounded-xl p-5 flex items-start gap-4">
+                        <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-500/20 flex items-center justify-center shrink-0">
+                            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="font-bold text-amber-800 dark:text-amber-300 mb-1 text-sm">No data found for this query</div>
+                            <p className="text-sm text-amber-700 dark:text-amber-200/80 leading-relaxed">{noDataMsg}</p>
+                            {generatedSQL && (
+                                <pre className="mt-3 text-[11px] text-emerald-700 dark:text-emerald-300 font-mono bg-white/60 dark:bg-slate-900/60 rounded-lg p-3 border border-amber-200 dark:border-white/5 overflow-x-auto">{generatedSQL}</pre>
+                            )}
+                        </div>
+                        <button onClick={handleReset} className="text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 shrink-0"><X className="w-4 h-4" /></button>
+                    </div>
+                )}
+
                 {(analysisResult || error || isLoading) && (
                     <div className="flex-1 min-h-0 flex gap-0 overflow-hidden">
 
@@ -405,7 +454,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
 
                                     <div className="flex gap-2">
                                         <button
-                                            onClick={() => onPin?.(query, analysisResult)}
+                                            onClick={() => onPin?.(query, { ...analysisResult, formatting })}
                                             className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-[13px] font-bold transition-all flex items-center gap-2 shadow-lg"
                                         >
                                             <Pin className="w-4 h-4" />
@@ -463,10 +512,10 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                                                         {/* Confidence Badge */}
                                                         <div className="flex items-center gap-2">
                                                             <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${pipelineResult.confidence.level === 'high'
-                                                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
-                                                                    : pipelineResult.confidence.level === 'medium'
-                                                                        ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-500/20'
-                                                                        : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20'
+                                                                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
+                                                                : pipelineResult.confidence.level === 'medium'
+                                                                    ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-500/20'
+                                                                    : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20'
                                                                 }`}>
                                                                 <span>{pipelineResult.confidence.level === 'high' ? '✓' : pipelineResult.confidence.level === 'medium' ? '⚠' : '✗'}</span>
                                                                 <span>{pipelineResult.confidence.score}% confidence</span>
@@ -474,6 +523,59 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                                                             <span className="text-[10px] text-gray-400 dark:text-slate-500 font-medium" title={pipelineResult.chart.reason}>
                                                                 {pipelineResult.chart.chartType === 'dualAxisCombo' ? '📊 Dual Axis' : ''}
                                                             </span>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                {/* Time Grain Toggle — shown for growth ranking queries */}
+                                                {pipelineResult && pipelineResult.plan && (pipelineResult.plan as any)._growthRanking && (
+                                                    <div className="flex items-center gap-2 mb-2 px-1">
+                                                        <span className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Compare by:</span>
+                                                        <div className="flex gap-1 bg-gray-100 dark:bg-slate-700/50 rounded-lg p-0.5">
+                                                            {(['day', 'week', 'month', 'quarter', 'year'] as const).map(g => (
+                                                                <button
+                                                                    key={g}
+                                                                    onClick={async () => {
+                                                                        if (isLoading || timeGrain === g) return;
+                                                                        setTimeGrain(g);
+                                                                        setIsLoading(true);
+                                                                        try {
+                                                                            const result = await runAISQLPipeline(query, dataset!, undefined, undefined, g);
+                                                                            if (result.rawData.length === 0 && result.explanation) {
+                                                                                setPipelineResult(result);
+                                                                                setGeneratedSQL(result.sql);
+                                                                                setAiExplanation(result.explanation);
+                                                                                setNoDataMsg(result.explanation);
+                                                                                setIsLoading(false);
+                                                                                return;
+                                                                            }
+                                                                            setPipelineResult(result);
+                                                                            setGeneratedSQL(result.sql);
+                                                                            setAiExplanation(result.explanation);
+                                                                            setColumnsUsed(result.columnsUsed);
+                                                                            setAnalysisResult({
+                                                                                data: result.chartData,
+                                                                                xKey: result.chart.xKey,
+                                                                                yKey: result.chart.yKey,
+                                                                                yLabel: result.chart.yKey,
+                                                                                vis: result.chart.chartType,
+                                                                                title: query,
+                                                                            });
+                                                                            setNoDataMsg(null);
+                                                                            setError(null);
+                                                                        } catch (err: any) {
+                                                                            setError(err.message || 'Failed to re-run with new grain');
+                                                                        } finally {
+                                                                            setIsLoading(false);
+                                                                        }
+                                                                    }}
+                                                                    className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${timeGrain === g
+                                                                        ? 'bg-amber-500 text-white shadow-sm'
+                                                                        : 'text-gray-500 dark:text-slate-400 hover:text-amber-600 dark:hover:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-500/10'
+                                                                        }`}
+                                                                >
+                                                                    {g.charAt(0).toUpperCase() + g.slice(1)}
+                                                                </button>
+                                                            ))}
                                                         </div>
                                                     </div>
                                                 )}

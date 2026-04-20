@@ -6,10 +6,10 @@ import 'react-resizable/css/styles.css';
 import { ChartVisualization } from './ChartVisualization';
 import { ErrorBoundary } from './ErrorBoundary';
 import {
-  Trash2, Plus, Edit, AlertTriangle, X, FileDown, Presentation,
+  Trash2, Edit, AlertTriangle, X, FileDown, Presentation,
   ChevronLeft, ChevronRight, Maximize2, LayoutDashboard, GripVertical,
-  TrendingUp, TrendingDown, BarChart3, PieChart, LineChart, Activity,
-  Sparkles, Eye, Clock, ArrowUpRight, Filter, ChevronDown, RefreshCw
+  BarChart3, PieChart, LineChart, Activity,
+  Eye, Filter, ChevronDown, RefreshCw, SlidersHorizontal
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Dataset, DashboardItem } from '../types';
@@ -104,6 +104,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
   const [filterColumn, setFilterColumn] = useState<string>('');
+  const [filterMeasureOp, setFilterMeasureOp] = useState<'>' | '<' | '=' | '!=' | '>=' | '<='>('>');
+  const [filterMeasureValue, setFilterMeasureValue] = useState<string>('');
   const [refreshingCards, setRefreshingCards] = useState<Set<string>>(new Set());
 
   // Fix #8: Re-evaluate a dashboard card by re-running its stored query config
@@ -231,9 +233,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   }, [layout]);
 
   const handleLayoutChange = useCallback((_cur: any, _allLayouts: any) => {
-    // _cur is always the current breakpoint's live layout with the user's latest resize/drag.
-    // allLayouts.lg can be stale on re-render, so we always save _cur directly.
-    if (Array.isArray(_cur) && _cur.length > 0) {
+    // Always persist the lg layout so smaller breakpoints don't corrupt saved sizes.
+    // _allLayouts.lg keeps the real user-sized layout even when viewing at md/sm/xs.
+    const lg = _allLayouts?.lg;
+    if (Array.isArray(lg) && lg.length > 0) {
+      setDashboardLayout(lg);
+    } else if (Array.isArray(_cur) && _cur.length > 0) {
       setDashboardLayout(_cur);
     }
   }, [setDashboardLayout]);
@@ -265,9 +270,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   useEffect(() => {
     if (!presentationMode) return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't intercept keys when user is typing in an input (e.g. renaming title)
+      const tag = (e.target as HTMLElement)?.tagName;
+      const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable;
       if (e.key === 'Escape') setPresentationMode(false);
-      if (e.key === 'ArrowRight' || e.key === ' ') setCurrentSlide(prev => Math.min(prev + 1, items.length - 1));
-      if (e.key === 'ArrowLeft') setCurrentSlide(prev => Math.max(prev - 1, 0));
+      if (!isTyping && (e.key === 'ArrowRight' || e.key === ' ')) setCurrentSlide(prev => Math.min(prev + 1, items.length - 1));
+      if (!isTyping && e.key === 'ArrowLeft') setCurrentSlide(prev => Math.max(prev - 1, 0));
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
@@ -321,7 +329,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                 yLabel={item.result.yLabel}
                 chartType={(item.result.vis as any) || 'bar'}
                 onChartTypeChange={() => { }}
-                formatting={formatting}
+                formatting={item.result.formatting || formatting}
                 hideControls={true}
               />
             </div>
@@ -423,76 +431,303 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
           </div>
         </div>
 
-        {/* ─── Global Filter Bar ─── */}
-        {items.length > 0 && (
-          <div className="mb-4">
-            <button
-              onClick={() => setFilterOpen(!filterOpen)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border ${dashboardFilters.length > 0
-                ? 'bg-amber-50 text-amber-700 border-amber-300 hover:bg-amber-100'
-                : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-700'
-                }`}
-            >
-              <Filter className="w-4 h-4" />
-              Global Filters
+        {items.length > 0 && (() => {
+          // ── Group columns from the FULL dataset by their type ──────────
+          const colGroups: Record<string, string[]> = { Dimensions: [], Measures: [], Dates: [], IDs: [], Other: [] };
+          if (dataset?.columns) {
+            dataset.columns.forEach(c => {
+              if (c.type === 'DIMENSION') colGroups.Dimensions.push(c.name);
+              else if (c.type === 'METRIC') colGroups.Measures.push(c.name);
+              else if (c.type === 'DATE') colGroups.Dates.push(c.name);
+              else if (c.type === 'ID') colGroups.IDs.push(c.name);
+              else colGroups.Other.push(c.name);
+            });
+          }
+
+          // ── Detect column type using column definition ──
+          const colDef = filterColumn && dataset?.columns ? dataset.columns.find(c => c.name === filterColumn) : undefined;
+          const isNumericColumn = colDef?.type === 'METRIC';
+          const isDateColumn = colDef?.type === 'DATE';
+
+          // ── Distinct values from the FULL dataset rows (categorical) ──
+          const categoricalValues: string[] = (() => {
+            if (!filterColumn || isNumericColumn || isDateColumn) return [];
+            const valSet = new Set<string>();
+            const rows = dataset?.rows ?? [];
+            rows.forEach((row: any) => {
+              if (row[filterColumn] !== undefined && row[filterColumn] !== null)
+                valSet.add(String(row[filterColumn]));
+            });
+            return Array.from(valSet).sort();
+          })();
+
+          // ── Date hierarchy values (year > quarter > month) ──
+          const dateHierarchy: { years: string[]; quarters: Map<string, string[]>; months: Map<string, string[]> } = (() => {
+            const years = new Set<string>();
+            const quarters = new Map<string, string[]>();
+            const months = new Map<string, string[]>();
+            if (!filterColumn || !isDateColumn) return { years: [], quarters, months };
+            const rows = dataset?.rows ?? [];
+            rows.forEach((row: any) => {
+              const raw = row[filterColumn];
+              if (!raw) return;
+              const d = new Date(raw);
+              if (isNaN(d.getTime())) return;
+              const yr = String(d.getFullYear());
+              const qtr = `Q${Math.ceil((d.getMonth() + 1) / 3)}`;
+              const qKey = `${yr}-${qtr}`;
+              const mon = d.toLocaleString('en', { month: 'short' });
+              const mKey = `${yr}-${mon}`;
+              years.add(yr);
+              if (!quarters.has(yr)) quarters.set(yr, []);
+              if (!quarters.get(yr)!.includes(qKey)) quarters.get(yr)!.push(qKey);
+              if (!months.has(qKey)) months.set(qKey, []);
+              if (!months.get(qKey)!.includes(mKey)) months.get(qKey)!.push(mKey);
+            });
+            return { years: Array.from(years).sort(), quarters, months };
+          })();
+
+          const activeFilter = dashboardFilters.find(f => f.column === filterColumn);
+
+          return (
+            <div className="mb-4">
+              {/* Toggle button */}
+              <button
+                onClick={() => setFilterOpen(!filterOpen)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border ${dashboardFilters.length > 0
+                  ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-500/40 hover:bg-indigo-100 dark:hover:bg-indigo-500/20'
+                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-slate-700'
+                  }`}
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                Global Filters
+                {dashboardFilters.length > 0 && (
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-500 text-white text-[10px] font-bold">
+                    {dashboardFilters.length}
+                  </span>
+                )}
+                <ChevronDown className={`w-3.5 h-3.5 transition-transform ml-1 ${filterOpen ? 'rotate-180' : ''}`} />
+              </button>
+
+              {/* Active filter chips — always visible when filters are applied */}
               {dashboardFilters.length > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 text-[10px] font-bold">
-                  {dashboardFilters.length}
-                </span>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {dashboardFilters.map(f => (
+                    <div
+                      key={f.column}
+                      className="flex items-center gap-1.5 bg-indigo-50 dark:bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 rounded-lg px-2.5 py-1 text-xs"
+                    >
+                      <Filter className="w-3 h-3 text-indigo-400" />
+                      <span className="font-bold text-indigo-700 dark:text-indigo-300">{f.column}</span>
+                      {f.type === 'measure' ? (
+                        <span className="text-slate-500 dark:text-slate-400">
+                          {f.operator} {f.numericValue}
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 dark:text-slate-400">
+                          ∈ {f.values.length > 2 ? `${f.values.slice(0, 2).join(', ')} +${f.values.length - 2}` : f.values.join(', ')}
+                        </span>
+                      )}
+                      <button
+                        onClick={() => setDashboardFilters(dashboardFilters.filter(df => df.column !== f.column))}
+                        className="ml-0.5 text-slate-400 hover:text-red-400 transition-colors"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  ))}
+                  {dashboardFilters.length > 0 && (
+                    <button
+                      onClick={() => { setDashboardFilters([]); setFilterColumn(''); }}
+                      className="text-xs font-semibold text-red-500 hover:text-red-600 transition-colors px-2 py-1"
+                    >
+                      Clear all
+                    </button>
+                  )}
+                </div>
               )}
-              <ChevronDown className={`w-3.5 h-3.5 transition-transform ml-1 ${filterOpen ? 'rotate-180' : ''}`} />
-            </button>
 
-            {filterOpen && (() => {
-              // Collect all columns from all dashboard items
-              const allColumns = new Set<string>();
-              items.forEach(item => {
-                if (item.result?.data?.length > 0) {
-                  Object.keys(item.result.data[0]).forEach(k => allColumns.add(k));
-                }
-              });
-              const columnList = Array.from(allColumns).sort();
+              {/* Expanded filter builder panel */}
+              {filterOpen && (
+                <div className="mt-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-xl p-4 shadow-lg dark:shadow-2xl">
+                  <div className="flex flex-wrap items-end gap-4">
 
-              // Get unique values for the selected filter column
-              const selectedColValues: string[] = [];
-              if (filterColumn) {
-                const valSet = new Set<string>();
-                items.forEach(item => {
-                  item.result?.data?.forEach((row: any) => {
-                    if (row[filterColumn] !== undefined && row[filterColumn] !== null) {
-                      valSet.add(String(row[filterColumn]));
-                    }
-                  });
-                });
-                selectedColValues.push(...Array.from(valSet).sort());
-              }
-
-              const activeFilter = dashboardFilters.find(f => f.column === filterColumn);
-
-              return (
-                <div className="mt-2 bg-white border border-slate-200 rounded-xl p-4 shadow-lg">
-                  <div className="flex flex-wrap items-start gap-4">
-                    {/* Column Selector */}
+                    {/* ── Column picker with optgroup by type ── */}
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Filter Column</label>
+                      <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Column</label>
                       <select
                         value={filterColumn}
-                        onChange={e => setFilterColumn(e.target.value)}
-                        className="bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none min-w-[180px]"
+                        onChange={e => {
+                          setFilterColumn(e.target.value);
+                          setFilterMeasureOp('>');
+                          setFilterMeasureValue('');
+                        }}
+                        className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none min-w-[220px]"
                       >
-                        <option value="">Select column...</option>
-                        {columnList.map(col => (
-                          <option key={col} value={col}>{col}</option>
+                        <option value="">Select column…</option>
+                        {Object.entries(colGroups).filter(([_, cols]) => cols.length > 0).map(([groupLabel, cols]) => (
+                          <optgroup key={groupLabel} label={`── ${groupLabel} ──`}>
+                            {cols.sort().map(col => (
+                              <option key={col} value={col}>{col}</option>
+                            ))}
+                          </optgroup>
                         ))}
                       </select>
                     </div>
 
-                    {/* Value Multi-Select */}
-                    {filterColumn && selectedColValues.length > 0 && (
+                    {/* ── MEASURE filter: operator + numeric input ── */}
+                    {filterColumn && isNumericColumn && (
+                      <>
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Operator</label>
+                          <select
+                            value={filterMeasureOp}
+                            onChange={e => setFilterMeasureOp(e.target.value as any)}
+                            className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none min-w-[90px]"
+                          >
+                            {(['>', '<', '=', '!=', '>=', '<='] as const).map(op => (
+                              <option key={op} value={op}>{op}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Value</label>
+                          <input
+                            type="number"
+                            placeholder="e.g. 1000"
+                            value={filterMeasureValue}
+                            onChange={e => setFilterMeasureValue(e.target.value)}
+                            className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-white/10 rounded-lg px-3 py-2 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none w-32"
+                          />
+                        </div>
+                        <button
+                          disabled={filterMeasureValue === ''}
+                          onClick={() => {
+                            const numVal = parseFloat(filterMeasureValue);
+                            if (isNaN(numVal)) return;
+                            const updated = dashboardFilters.filter(f => f.column !== filterColumn);
+                            setDashboardFilters([...updated, {
+                              column: filterColumn,
+                              type: 'measure',
+                              values: [],
+                              operator: filterMeasureOp,
+                              numericValue: numVal,
+                            }]);
+                          }}
+                          className="self-end px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-bold rounded-lg transition-all"
+                        >
+                          Apply
+                        </button>
+                      </>
+                    )}
+
+                    {/* ── DATE filter: hierarchical year/quarter/month + date range ── */}
+                    {filterColumn && isDateColumn && (
+                      <div className="flex flex-col gap-2 flex-1 min-w-[240px]">
+                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          Date Range / Hierarchy
+                        </label>
+
+                        {/* Date-range inputs */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium">From</span>
+                            <input
+                              type="date"
+                              value={activeFilter?.values?.[0] ?? ''}
+                              onChange={e => {
+                                const from = e.target.value;
+                                const to = activeFilter?.values?.[1] ?? '';
+                                if (!from) { setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn)); return; }
+                                const existing = dashboardFilters.filter(f => f.column !== filterColumn);
+                                setDashboardFilters([...existing, { column: filterColumn, type: 'dimension', values: [from, to || from] }]);
+                              }}
+                              className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
+                          </div>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium">To</span>
+                            <input
+                              type="date"
+                              value={activeFilter?.values?.[1] ?? ''}
+                              onChange={e => {
+                                const to = e.target.value;
+                                const from = activeFilter?.values?.[0] ?? '';
+                                if (!from && !to) { setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn)); return; }
+                                const existing = dashboardFilters.filter(f => f.column !== filterColumn);
+                                setDashboardFilters([...existing, { column: filterColumn, type: 'dimension', values: [from || to, to || from] }]);
+                              }}
+                              className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Hierarchy pills — year / quarter / month */}
+                        {dateHierarchy.years.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5 max-h-[90px] overflow-y-auto pr-1">
+                            {dateHierarchy.years.map(yr => {
+                              const isActive = activeFilter?.values?.includes(yr) ?? false;
+                              return (
+                                <button
+                                  key={yr}
+                                  onClick={() => {
+                                    const existing = dashboardFilters.find(f => f.column === filterColumn);
+                                    if (isActive) {
+                                      const newVals = (existing?.values || []).filter(v => v !== yr);
+                                      if (newVals.length === 0) setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn));
+                                      else setDashboardFilters(dashboardFilters.map(f => f.column === filterColumn ? { ...f, values: newVals } : f));
+                                    } else {
+                                      if (existing) setDashboardFilters(dashboardFilters.map(f => f.column === filterColumn ? { ...f, values: [...f.values, yr] } : f));
+                                      else setDashboardFilters([...dashboardFilters, { column: filterColumn, type: 'dimension', values: [yr] }]);
+                                    }
+                                  }}
+                                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${isActive
+                                    ? 'bg-indigo-100 dark:bg-indigo-500/30 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-500/50'
+                                    : 'bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:border-slate-300'
+                                    }`}
+                                >
+                                  {yr}
+                                </button>
+                              );
+                            })}
+                            {dateHierarchy.years.flatMap(yr => (dateHierarchy.quarters.get(yr) || []).map(q => {
+                              const isActive = activeFilter?.values?.includes(q) ?? false;
+                              return (
+                                <button
+                                  key={q}
+                                  onClick={() => {
+                                    const existing = dashboardFilters.find(f => f.column === filterColumn);
+                                    if (isActive) {
+                                      const newVals = (existing?.values || []).filter(v => v !== q);
+                                      if (newVals.length === 0) setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn));
+                                      else setDashboardFilters(dashboardFilters.map(f => f.column === filterColumn ? { ...f, values: newVals } : f));
+                                    } else {
+                                      if (existing) setDashboardFilters(dashboardFilters.map(f => f.column === filterColumn ? { ...f, values: [...f.values, q] } : f));
+                                      else setDashboardFilters([...dashboardFilters, { column: filterColumn, type: 'dimension', values: [q] }]);
+                                    }
+                                  }}
+                                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all border ${isActive
+                                    ? 'bg-violet-100 dark:bg-violet-500/25 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/40'
+                                    : 'bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:border-slate-300'
+                                    }`}
+                                >
+                                  {q}
+                                </button>
+                              );
+                            }))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── DIMENSION filter: value pills ── */}
+                    {filterColumn && !isNumericColumn && !isDateColumn && categoricalValues.length > 0 && (
                       <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
-                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Values (click to toggle)</label>
-                        <div className="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto">
-                          {selectedColValues.map(val => {
+                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                          Values <span className="normal-case font-normal">(click to select)</span>
+                        </label>
+                        <div className="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto pr-1">
+                          {categoricalValues.map(val => {
                             const isActive = activeFilter?.values.includes(val) ?? false;
                             return (
                               <button
@@ -500,27 +735,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                                 onClick={() => {
                                   const existing = dashboardFilters.find(f => f.column === filterColumn);
                                   if (isActive) {
-                                    // Remove this value
-                                    if (existing) {
-                                      const newValues = existing.values.filter(v => v !== val);
-                                      if (newValues.length === 0) {
-                                        setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn));
-                                      } else {
-                                        setDashboardFilters(dashboardFilters.map(f => f.column === filterColumn ? { ...f, values: newValues } : f));
-                                      }
+                                    const newVals = (existing?.values || []).filter(v => v !== val);
+                                    if (newVals.length === 0) {
+                                      setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn));
+                                    } else {
+                                      setDashboardFilters(dashboardFilters.map(f =>
+                                        f.column === filterColumn ? { ...f, values: newVals } : f
+                                      ));
                                     }
                                   } else {
-                                    // Add this value
                                     if (existing) {
-                                      setDashboardFilters(dashboardFilters.map(f => f.column === filterColumn ? { ...f, values: [...f.values, val] } : f));
+                                      setDashboardFilters(dashboardFilters.map(f =>
+                                        f.column === filterColumn ? { ...f, values: [...f.values, val] } : f
+                                      ));
                                     } else {
-                                      setDashboardFilters([...dashboardFilters, { column: filterColumn, values: [val] }]);
+                                      setDashboardFilters([...dashboardFilters, {
+                                        column: filterColumn,
+                                        type: 'dimension',
+                                        values: [val],
+                                      }]);
                                     }
                                   }
                                 }}
                                 className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${isActive
-                                  ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:border-slate-300 hover:text-slate-700'
+                                  ? 'bg-indigo-100 dark:bg-indigo-500/30 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-500/50'
+                                  : 'bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
                                   }`}
                               >
                                 {val}
@@ -531,40 +770,28 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       </div>
                     )}
 
-                    {/* Clear All Filters */}
-                    {dashboardFilters.length > 0 && (
+                    {/* Remove filter for selected column */}
+                    {activeFilter && (
                       <button
-                        onClick={() => { setDashboardFilters([]); setFilterColumn(''); }}
-                        className="self-end px-3 py-2 text-xs font-semibold text-red-600 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-all"
+                        onClick={() => setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn))}
+                        className="self-end px-3 py-2 text-xs font-semibold text-red-600 dark:text-red-400 hover:text-red-700 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 border border-red-200 dark:border-red-500/20 rounded-lg transition-all"
                       >
-                        Clear Filters
+                        Remove filter
                       </button>
                     )}
                   </div>
 
-                  {/* Active Filters Summary */}
-                  {dashboardFilters.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-slate-200 flex flex-wrap gap-2">
-                      {dashboardFilters.map(f => (
-                        <div key={f.column} className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 text-xs">
-                          <span className="text-amber-700 font-bold">{f.column}</span>
-                          <span className="text-slate-500">=</span>
-                          <span className="text-amber-600">{f.values.join(', ')}</span>
-                          <button
-                            onClick={() => setDashboardFilters(dashboardFilters.filter(df => df.column !== f.column))}
-                            className="ml-1 text-slate-400 hover:text-red-500 transition-colors"
-                          >
-                            <X className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
+                  {/* Help text */}
+                  {!filterColumn && (
+                    <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
+                      Select a column to build a filter. Categorical fields show selectable values; numeric fields show a comparison operator; date fields show hierarchy + calendar.
+                    </p>
                   )}
                 </div>
-              );
-            })()}
-          </div>
-        )}
+              )}
+            </div>
+          );
+        })()}
 
         {/* ─── Empty State ─── */}
         {items.length === 0 && (
@@ -611,13 +838,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
             cols={{ lg: 12, md: 8, sm: 4, xs: 2 }}
             rowHeight={70}
-            width={containerWidth}
+            width={containerWidth - 48}
             onLayoutChange={handleLayoutChange}
             isResizable={true}
             isDraggable={true}
             draggableHandle=".drag-handle"
             compactType="vertical"
             margin={[16, 16]}
+            containerPadding={[24, 0]}
           >
             {items.map((item, idx) => {
               const accent = CARD_ACCENTS[idx % CARD_ACCENTS.length];
@@ -665,6 +893,22 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
 
                     {/* Actions */}
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all print:hidden shrink-0 ml-2">
+                      {/* Global filter toggle — only shown when filters are active */}
+                      {dashboardFilters.length > 0 && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateItem({ ...item, ignoreGlobalFilter: !item.ignoreGlobalFilter });
+                          }}
+                          className={`p-1.5 rounded-lg transition-all ${item.ignoreGlobalFilter
+                            ? 'bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'
+                            : 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/25'
+                            }`}
+                          title={item.ignoreGlobalFilter ? 'Global filter OFF — click to enable' : 'Global filter ON — click to disable'}
+                        >
+                          <Filter className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => { e.stopPropagation(); onEdit?.(item); }}
                         className="p-1.5 rounded-lg bg-violet-50 dark:bg-violet-500/15 hover:bg-violet-100 dark:hover:bg-violet-500/25 text-violet-600 dark:text-violet-300 transition-all"
@@ -699,25 +943,87 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       <ErrorBoundary compact label={item.title || 'Chart'}>
                         <ChartVisualization
                           data={(() => {
-                            // Apply global dashboard filters
-                            let filteredData = item.result.data;
-                            if (dashboardFilters.length > 0 && Array.isArray(filteredData)) {
-                              dashboardFilters.forEach(f => {
-                                filteredData = filteredData.filter((row: any) => {
-                                  const val = row[f.column];
-                                  if (val === undefined || val === null) return true;
-                                  return f.values.includes(String(val));
-                                });
+                            // ── Skip filters when this card has opted out ──
+                            if (item.ignoreGlobalFilter) return item.result.data;
+                            if (dashboardFilters.length === 0 || !Array.isArray(item.result.data)) return item.result.data;
+
+                            // Strategy:
+                            // 1. Filter the FULL dataset rows by global filters
+                            // 2. Collect allowed xKey values from filtered rows
+                            // 3. Keep only result rows whose xKey is in the allowed set
+                            const xKey = item.result.xKey;
+                            const sourceRows = dataset?.rows ?? [];
+
+                            // Pass 1: filter raw dataset rows
+                            let filteredSource = sourceRows;
+                            dashboardFilters.forEach(f => {
+                              filteredSource = filteredSource.filter((row: any) => {
+                                const val = row[f.column];
+                                if (val === undefined || val === null) return true;
+
+                                // Date range filter
+                                const colType = dataset?.columns?.find(c => c.name === f.column)?.type;
+                                if (colType === 'DATE' && f.values.length === 2 && f.values[0] && f.values[1]) {
+                                  const d = new Date(val);
+                                  if (isNaN(d.getTime())) return true;
+                                  const from = new Date(f.values[0]); const to = new Date(f.values[1]);
+                                  // Also check if values match year/quarter hierarchy tokens
+                                  const yr = String(d.getFullYear());
+                                  const qtr = `${yr}-Q${Math.ceil((d.getMonth() + 1) / 3)}`;
+                                  if (f.values.includes(yr) || f.values.includes(qtr)) return true;
+                                  return d >= from && d <= to;
+                                }
+                                // Date hierarchy tokens (year like "2024", quarter like "2024-Q1")
+                                if (colType === 'DATE' && f.values.length > 0) {
+                                  const d = new Date(val);
+                                  if (isNaN(d.getTime())) return true;
+                                  const yr = String(d.getFullYear());
+                                  const qtr = `${yr}-Q${Math.ceil((d.getMonth() + 1) / 3)}`;
+                                  return f.values.some(v => v === yr || v === qtr);
+                                }
+
+                                // Measure
+                                if (f.type === 'measure' && f.operator !== undefined && f.numericValue !== undefined) {
+                                  const num = typeof val === 'number' ? val : parseFloat(val);
+                                  if (isNaN(num)) return true;
+                                  switch (f.operator) {
+                                    case '>': return num > f.numericValue;
+                                    case '<': return num < f.numericValue;
+                                    case '=': return num === f.numericValue;
+                                    case '!=': return num !== f.numericValue;
+                                    case '>=': return num >= f.numericValue;
+                                    case '<=': return num <= f.numericValue;
+                                    default: return true;
+                                  }
+                                }
+                                // Categorical
+                                return f.values.length === 0 || f.values.includes(String(val));
                               });
-                            }
-                            return filteredData;
+                            });
+
+                            // Pass 2: build allowed xKey value set
+                            const allowedXVals = new Set<string>();
+                            filteredSource.forEach((row: any) => {
+                              if (row[xKey] !== undefined && row[xKey] !== null)
+                                allowedXVals.add(String(row[xKey]));
+                            });
+
+                            // Pass 3: keep result rows whose xKey is in the allowed set
+                            // If the filter column exists directly in result data, also apply direct filter
+                            return item.result.data.filter((row: any) => {
+                              const xVal = row[xKey];
+                              if (xVal !== undefined && xVal !== null && allowedXVals.size > 0) {
+                                return allowedXVals.has(String(xVal));
+                              }
+                              return true;
+                            });
                           })()}
                           xKey={item.result.xKey}
                           yKey={item.result.yKey}
                           yLabel={item.result.yLabel}
                           chartType={(item.result.vis as any) || 'bar'}
                           onChartTypeChange={() => { }}
-                          formatting={formatting}
+                          formatting={item.result.formatting || formatting}
                           hideControls={true}
                         />
                       </ErrorBoundary>

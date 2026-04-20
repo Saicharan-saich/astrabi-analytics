@@ -33,7 +33,7 @@ const TIME_PATTERNS: { regex: RegExp; resolve: (anchor: Date, match: RegExpMatch
             const n = parseInt(match[1]);
             const end = new Date(anchor);
             const start = new Date(anchor);
-            start.setDate(start.getDate() - n);
+            start.setDate(start.getDate() - (n - 1)); // inclusive BETWEEN: N-1 to get exactly N days
             return { start, end, desc: `last ${n} days` };
         }
     },
@@ -44,7 +44,7 @@ const TIME_PATTERNS: { regex: RegExp; resolve: (anchor: Date, match: RegExpMatch
             const n = parseInt(match[1]);
             const end = new Date(anchor);
             const start = new Date(anchor);
-            start.setDate(start.getDate() - n * 7);
+            start.setDate(start.getDate() - (n * 7 - 1)); // inclusive BETWEEN: N*7-1 to get exactly N weeks
             return { start, end, desc: `last ${n} weeks` };
         }
     },
@@ -56,6 +56,7 @@ const TIME_PATTERNS: { regex: RegExp; resolve: (anchor: Date, match: RegExpMatch
             const end = new Date(anchor);
             const start = new Date(anchor);
             start.setMonth(start.getMonth() - n);
+            start.setDate(start.getDate() + 1); // inclusive BETWEEN: shift 1 day forward
             return { start, end, desc: `last ${n} months` };
         }
     },

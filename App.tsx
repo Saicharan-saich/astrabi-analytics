@@ -35,6 +35,7 @@ import { DatasetSwitcher } from './components/DatasetSwitcher';
 import { saveDatasetToDB, loadAllDatasetsFromDB, deleteDatasetFromDB } from './services/datasetDB';
 import { DomainReviewModal } from './components/DomainReviewModal';
 import { ColumnMappingWizard } from './components/ColumnMappingWizard';
+import { SplashScreen } from './components/SplashScreen';
 
 // ── Heuristic domain detection (fallback when AI profiling unavailable) ──
 function detectDomainFromColumns(columns: { name: string }[], fileName: string): string {
@@ -133,6 +134,7 @@ function App() {
   const [isAIProfiling, setIsAIProfiling] = useState(false);
   const [showDomainReview, setShowDomainReview] = useState(false);
   const [pendingProfile, setPendingProfile] = useState<any>(null);
+  const [showSplash, setShowSplash] = useState(true);
 
   // Hydrate datasets from IndexedDB on mount
   useEffect(() => {
@@ -511,6 +513,9 @@ function App() {
 
   return (
     <ErrorBoundary>
+      {/* ── Splash / Boot Screen ── */}
+      {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+
       <ThemeProvider theme={theme} toggleTheme={toggleTheme} setTheme={setTheme}>
 
         {/* Auth Gate: Show login if not authenticated */}

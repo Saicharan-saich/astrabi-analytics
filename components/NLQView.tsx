@@ -638,7 +638,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                                     </div>
 
                                     <button
-                                        onClick={() => onPin?.(query, analysisResult)}
+                                        onClick={() => onPin?.(query, { ...analysisResult, formatting: { ...formatting, tableCalculations: [] } as any })}
                                         className="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-[13px] font-bold transition-all flex items-center gap-2 shadow-lg"
                                     >
                                         <Pin className="w-4 h-4" />

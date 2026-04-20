@@ -239,6 +239,8 @@ export interface QueryConfig {
   secondaryMetrics?: string[]; // Additional metrics to overlay (e.g., profit alongside revenue)
   axisMode?: 'auto' | 'single' | 'dual' | 'blended'; // How to handle Y axes for multi-metric
   secondaryMetricVisuals?: Record<string, string>; // Per-metric visual type: { 'quantity': 'bar', 'discount': 'area' }
+  secondaryMetricAggregations?: Record<string, string>; // Per-metric aggregation: { 'quantity': 'SUM', 'discount': 'AVG' }
+  secondaryDimensions?: string[]; // Additional grouping dimensions (e.g., ['region', 'category'])
   tableCalculations?: string[]; // Table calculations to apply post-aggregation (e.g., pct_change, diff_from_prev)
 
   // Deterministic Engine
@@ -258,6 +260,7 @@ export interface AnalysisResult {
   error?: string; // If mapping failed
   kpi?: number | string; // Optional override for the main KPI number
   vis?: ChartConfig['type']; // Recommended visualization
+  formatting?: FormattingConfig; // Per-item formatting (preserved when pinning)
   growth?: { diff: number; pct: number }; // Metadata for toggle
   secondaryYKeys?: string[]; // Additional metric keys in data rows (e.g., ['profit', 'quantity'])
   axisMode?: 'single' | 'dual' | 'blended'; // Recommended axis mode for multi-metric
@@ -288,6 +291,8 @@ export interface DashboardItem {
   pinnedAt?: number; // Fix #8: Timestamp of last pin/refresh
   // ── System Correction Directive additions ──
   datasetVersion?: number; // Version of dataset when this item was pinned (mismatch → stale warning)
+  /** When true this card ignores all dashboard-level global filters */
+  ignoreGlobalFilter?: boolean;
 }
 
 export interface Connector {

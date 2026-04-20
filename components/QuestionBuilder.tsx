@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal } from 'lucide-react';
+import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
 import { FilterItem } from './FilterItem';
 import { DateFilterItem } from './DateFilterItem';
@@ -92,6 +92,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     // Secondary metrics for combo/dual-axis charts
     const [secondaryMetrics, setSecondaryMetrics] = useState<string[]>([]);
     const [secondaryMetricVisuals, setSecondaryMetricVisuals] = useState<Record<string, string>>({});
+    const [secondaryMetricAggregations, setSecondaryMetricAggregations] = useState<Record<string, string>>({});
+
+    // Secondary dimensions for multi-dimension grouping
+    const [secondaryDimensions, setSecondaryDimensions] = useState<string[]>([]);
 
     // Comparison state
     const [comparison, setComparison] = useState<string>('');
@@ -425,7 +429,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             comparison: comparison,
             comparisonGrain: comparison ? comparisonGrain : undefined,
             comparisonOffset: comparison ? comparisonOffset : undefined,
-            ...(secondaryMetrics.length > 0 ? { secondaryMetrics, axisMode: 'auto', secondaryMetricVisuals } : {})
+            ...(secondaryMetrics.length > 0 ? { secondaryMetrics, axisMode: 'auto', secondaryMetricVisuals, secondaryMetricAggregations } : {}),
+            ...(secondaryDimensions.length > 0 ? { secondaryDimensions } : {})
         };
 
         onRunRef.current(config);
@@ -446,7 +451,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             const timer = setTimeout(() => handleRun(), 400);
             return () => clearTimeout(timer);
         }
-    }, [metric, aggregation, dimension, timeFilter, filters, sort, limit, comparison, comparisonGrain, comparisonOffset, secondaryMetrics, secondaryMetricVisuals]);
+    }, [metric, aggregation, dimension, timeFilter, filters, sort, limit, comparison, comparisonGrain, comparisonOffset, secondaryMetrics, secondaryMetricVisuals, secondaryMetricAggregations, secondaryDimensions]);
 
     // AUTO-DRILL CASCADE: When a date filter has values selected, auto-add a child filter
     useEffect(() => {
@@ -642,15 +647,28 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                 {/* Secondary Metric Chips (display only — add button moved to Options row) */}
                 {secondaryMetrics.map((sm, i) => (
-                    <span key={sm} className="inline-flex items-center gap-1.5 bg-teal-50 text-teal-700 font-bold text-sm border border-teal-300 rounded-lg px-2.5 py-1 shadow-sm">
+                    <span key={sm} className="inline-flex items-center gap-1 bg-teal-50 text-teal-700 font-bold text-sm border border-teal-300 rounded-lg px-2.5 py-1 shadow-sm">
                         <span className="text-teal-500 font-normal text-xs">+</span>
                         <span>{sm.replace(/_/g, ' ')}</span>
                         <span className="text-teal-400 mx-0.5">│</span>
                         <select
+                            value={secondaryMetricAggregations[sm] || 'SUM'}
+                            onChange={e => setSecondaryMetricAggregations(prev => ({ ...prev, [sm]: e.target.value }))}
+                            className="bg-white text-teal-800 text-[11px] font-bold rounded border border-teal-200 px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400 hover:bg-teal-50 transition-colors"
+                            title="Aggregation for this metric"
+                        >
+                            <option value="SUM">Σ Sum</option>
+                            <option value="AVG">μ Avg</option>
+                            <option value="MAX">↑ Max</option>
+                            <option value="MIN">↓ Min</option>
+                            <option value="COUNT"># Count</option>
+                            <option value="COUNT_DISTINCT">⊕ Unique</option>
+                        </select>
+                        <select
                             value={secondaryMetricVisuals[sm] || 'line'}
                             onChange={e => setSecondaryMetricVisuals(prev => ({ ...prev, [sm]: e.target.value }))}
-                            className="bg-white text-teal-800 text-xs font-bold rounded border border-teal-200 px-1.5 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400 hover:bg-teal-50 transition-colors"
-                            title="Choose visual type for this metric"
+                            className="bg-white text-teal-800 text-[11px] font-bold rounded border border-teal-200 px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400 hover:bg-teal-50 transition-colors"
+                            title="Visual type for this metric"
                         >
                             <option value="line">📈 Line</option>
                             <option value="bar">📊 Bar</option>
@@ -659,8 +677,21 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <button onClick={() => {
                             setSecondaryMetrics(prev => prev.filter((_, idx) => idx !== i));
                             setSecondaryMetricVisuals(prev => { const next = { ...prev }; delete next[sm]; return next; });
+                            setSecondaryMetricAggregations(prev => { const next = { ...prev }; delete next[sm]; return next; });
                         }}
                             className="text-teal-400 hover:text-red-500 transition-colors ml-0.5">
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </span>
+                ))}
+
+                {/* Secondary Dimension Chips */}
+                {secondaryDimensions.map((sd, i) => (
+                    <span key={sd} className="inline-flex items-center gap-1.5 bg-violet-50 text-violet-700 font-bold text-sm border border-violet-300 rounded-lg px-2.5 py-1 shadow-sm">
+                        <Layers className="w-3 h-3 text-violet-500" />
+                        <span>{sd.replace(/_/g, ' ')}</span>
+                        <button onClick={() => setSecondaryDimensions(prev => prev.filter((_, idx) => idx !== i))}
+                            className="text-violet-400 hover:text-red-500 transition-colors ml-0.5">
                             <X className="w-3.5 h-3.5" />
                         </button>
                     </span>
@@ -795,15 +826,15 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     onClick={() => setShowOptions(!showOptions)}
                     className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-lg border transition-all shadow-sm ${showOptions
                         ? 'bg-indigo-100 text-indigo-800 border-indigo-400'
-                        : comparison || limit > 0 || secondaryMetrics.length > 0
+                        : comparison || limit > 0 || secondaryMetrics.length > 0 || secondaryDimensions.length > 0
                             ? 'bg-indigo-100 text-indigo-700 border-indigo-400 ring-2 ring-indigo-200'
                             : 'bg-white text-indigo-600 border-indigo-300 hover:bg-indigo-50 hover:border-indigo-400'
                         }`}
-                    title="Toggle analysis options (comparison, sort, limit, additional metrics)"
+                    title="Toggle analysis options (comparison, sort, limit, additional metrics & dimensions)"
                 >
                     <SlidersHorizontal className="w-4 h-4" />
                     Options
-                    {(comparison || limit > 0 || secondaryMetrics.length > 0) && !showOptions && (
+                    {(comparison || limit > 0 || secondaryMetrics.length > 0 || secondaryDimensions.length > 0) && !showOptions && (
                         <span className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse"></span>
                     )}
                 </button>
@@ -870,6 +901,28 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     ))}
                                 </select>
                                 <Plus className="w-3 h-3 text-teal-600 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            </div>
+                        </div>
+                    )}
+
+                    <span className="text-slate-300">•</span>
+
+                    {/* Additional Dimension */}
+                    {dims.filter(d => d !== dimension && !secondaryDimensions.includes(d)).length > 0 && (
+                        <div className="flex items-center gap-1">
+                            <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Dimension:</span>
+                            <div className="relative inline-block">
+                                <select
+                                    value=""
+                                    onChange={e => { if (e.target.value) setSecondaryDimensions(prev => [...prev, e.target.value]); }}
+                                    className="appearance-none bg-violet-50 hover:bg-violet-100 text-violet-700 font-bold border border-violet-300 rounded-lg px-3 py-1 pr-7 cursor-pointer focus:outline-none focus:ring-2 focus:ring-violet-400 text-sm shadow-sm"
+                                >
+                                    <option value="">+ Add Dimension</option>
+                                    {dims.filter(d => d !== dimension && !secondaryDimensions.includes(d)).map(d => (
+                                        <option key={d} value={d}>{d.replace(/_/g, ' ')}</option>
+                                    ))}
+                                </select>
+                                <Layers className="w-3 h-3 text-violet-600 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                             </div>
                         </div>
                     )}

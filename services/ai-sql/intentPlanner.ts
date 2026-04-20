@@ -13,7 +13,7 @@
  * This ensures the LLM can never ignore the user's explicit aggregation.
  */
 
-import { SemanticModel, AnalysisPlan, AnalysisIntent } from './types';
+import { SemanticModel, SemanticField, AnalysisPlan, AnalysisIntent } from './types';
 import { serializeSemanticModel } from './semanticLayer';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -474,7 +474,8 @@ function enforceComparison(plan: AnalysisPlan, question: string, model: Semantic
  */
 export async function generatePlan(
     question: string,
-    model: SemanticModel
+    model: SemanticModel,
+    grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year'
 ): Promise<AnalysisPlan> {
     if (!API_KEY) {
         throw new Error('OpenRouter API key not configured. Set VITE_OPENROUTER_API_KEY in .env');
@@ -551,6 +552,30 @@ export async function generatePlan(
         // ── STEP 3: SEMANTIC VALIDATION ──
         // Catch nonsensical queries: AVG(customer_id), COUNT(revenue), revenue by revenue
         validateSemantics(plan, model);
+
+        // ── STEP 4: SMART DEFAULTS ──
+        // If the plan is ambiguous due to missing metrics, auto-fill with
+        // intelligent defaults (e.g., revenue for compare/growth/performance)
+        applySmartDefaults(plan, question, model);
+
+        // ── STEP 5: ENFORCE TIME DIMENSION FOR GROWTH/COMPARISON ──
+        // Even if the LLM sets ambiguous=false and picks the right metric,
+        // it often forgets the time dimension needed for growth calculations.
+        // This step ALWAYS runs and injects the time grain if missing.
+        // Grain override MUST be set BEFORE this step runs.
+        if (grainOverride) {
+            (plan as any)._grainOverride = grainOverride;
+        }
+        enforceGrowthTimeDimension(plan, question, model);
+
+        // ── STEP 6: STRIP LIMIT/ORDER FOR GROWTH RANKING ──
+        // Growth ranking needs ALL data for correct growth computation.
+        // LIMIT and ORDER BY are applied post-collapse, not in SQL.
+        if ((plan as any)._growthRanking) {
+            plan.limit = null;
+            plan.sort = [];
+            console.log('[Intent Planner] Growth ranking: stripped LIMIT and ORDER BY (applied post-collapse)');
+        }
 
         console.log('[Intent Planner] Generated plan:', JSON.stringify(plan, null, 2));
         return plan;
@@ -679,6 +704,225 @@ function validateSemantics(plan: AnalysisPlan, model: SemanticModel): void {
             `⚠️ This query has semantic issues:\n\n` +
             warnings.map((w, i) => `${i + 1}. ${w}`).join('\n\n') +
             `\n\nPlease rephrase your question with the correct field names and aggregations.`;
+    }
+}
+
+/**
+ * SMART DEFAULTS LAYER
+ *
+ * When the LLM marks a plan as ambiguous because no specific metric was
+ * mentioned, this layer fills in intelligent defaults based on the question type.
+ *
+ * Rules:
+ *   "compare" / "vs"           → default metric = primary revenue (SUM)
+ *   "growth" / "growing"       → default metric = primary revenue (SUM) + comparison
+ *   "performance" / "doing"    → default metric = primary revenue (SUM), top products
+ *   "trend" / "over time"      → default metric = primary revenue (SUM)
+ *   generic breakdown          → default metric = primary revenue (SUM)
+ *
+ * The system annotates the plan with `_smartDefaultApplied` so the UI
+ * can show: "Showing revenue by product (you can change metric)"
+ */
+function applySmartDefaults(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    // Only apply if the plan is ambiguous OR has no metrics
+    if (!plan.ambiguous && plan.metrics.length > 0) return;
+
+    // Find the primary revenue/sales field (the most important metric)
+    const primaryMetric = findPrimaryMetric(model);
+    if (!primaryMetric) return; // Can't default if there's no obvious metric
+
+    const q = question.toLowerCase();
+
+    // ── Detect question patterns ──────────────────────────────
+    const isCompare = /\b(compare|vs\.?|versus|compared|comparison)\b/.test(q);
+    const isGrowth = /\b(grow|growing|growth|increase|increasing|decline|declining|changing|change)\b/.test(q);
+    const isPerformance = /\b(performance|performing|doing|how.+doing|best|worst)\b/.test(q);
+    const isTrend = /\b(trend|over\s+time|over\s+the\s+(past|last)|monthly|weekly|daily|quarterly|yearly)\b/.test(q);
+    const isRanking = /\b(top|bottom|best|worst|fastest|slowest|highest|lowest|most|least|leading|lagging)\b/.test(q);
+    const isBreakdown = /\b(by\s+\w+|each\s+\w+|per\s+\w+|breakdown|split)\b/.test(q);
+
+    // If none of these patterns match, don't apply defaults
+    if (!isCompare && !isGrowth && !isPerformance && !isTrend && !isRanking && !isBreakdown) return;
+
+    console.log('[Smart Defaults] Ambiguous query detected — applying intelligent defaults');
+
+    // ── Determine the default metric and explanation ──────────
+    let defaultMetricName = primaryMetric.name;
+    let defaultAgg: 'sum' | 'avg' | 'count' = primaryMetric.defaultAgg === 'avg' ? 'avg' : 'sum';
+    let explanation = '';
+
+    if (isGrowth) {
+        explanation = `Showing ${primaryMetric.displayLabel} growth`;
+        // Growth queries should be trend comparisons
+        if (!plan.comparison) {
+            plan.comparison = { type: 'previous_period', mode: 'trend', grain: 'month' };
+            plan.intent = 'trend_comparison';
+        }
+        // Ensure a time dimension
+        const dateField = model.fields.find(f => f.semanticType === 'date' && f.role === 'dimension');
+        if (dateField && !plan.dimensions.some(d => d.timeGrain)) {
+            plan.dimensions = plan.dimensions.filter(d => {
+                const f = model.fields.find(ff => ff.name.toLowerCase() === d.field.toLowerCase());
+                return f?.semanticType !== 'date';
+            });
+            plan.dimensions.push({ field: dateField.name, timeGrain: 'month' });
+        }
+    } else if (isCompare) {
+        explanation = `Comparing ${primaryMetric.displayLabel}`;
+        if (!plan.comparison) {
+            plan.comparison = { type: 'previous_period', mode: 'total' };
+            plan.intent = 'total_comparison';
+        }
+    } else if (isPerformance || isRanking) {
+        explanation = `Ranking by ${primaryMetric.displayLabel}`;
+        plan.intent = 'ranking';
+        if (!plan.sort.length) {
+            plan.sort = [{ field: defaultMetricName, dir: 'desc' }];
+        }
+        if (!plan.limit) plan.limit = 10;
+    } else if (isTrend) {
+        explanation = `${primaryMetric.displayLabel} over time`;
+        plan.intent = 'trend';
+        const dateField = model.fields.find(f => f.semanticType === 'date' && f.role === 'dimension');
+        if (dateField && !plan.dimensions.some(d => d.timeGrain)) {
+            plan.dimensions.push({ field: dateField.name, timeGrain: 'month' });
+        }
+    } else {
+        explanation = `${primaryMetric.displayLabel} breakdown`;
+    }
+
+    // Add dimension context to explanation
+    const nonTimeDims = plan.dimensions.filter(d => !d.timeGrain);
+    if (nonTimeDims.length > 0) {
+        const dimLabel = model.fields.find(f => f.name.toLowerCase() === nonTimeDims[0].field.toLowerCase())?.displayLabel || nonTimeDims[0].field;
+        explanation += ` by ${dimLabel}`;
+    }
+
+    // ── Fill in the metrics if empty or replace wrong ones ──────
+    if (plan.metrics.length === 0 || plan.ambiguous) {
+        plan.metrics = [{ field: defaultMetricName, agg: defaultAgg }];
+    }
+
+    // ── Clear ambiguous flag ──────────────────────────────────
+    plan.ambiguous = false;
+    plan.clarificationQuestion = undefined;
+
+    // ── Annotate for UI explanation ───────────────────────────
+    (plan as any)._smartDefaultApplied = true;
+    (plan as any)._smartDefaultExplanation = `${explanation} (defaulted to ${primaryMetric.displayLabel})`;
+
+    console.log(`[Smart Defaults] Applied: metric="${defaultMetricName}", agg="${defaultAgg}", intent="${plan.intent}", explanation="${explanation}"`);
+}
+
+/**
+ * Find the primary metric field in the semantic model.
+ * Priorities:
+ *   1. Field named 'revenue', 'sale_amt', 'sales', 'total_sales'
+ *   2. First currency-type metric field
+ *   3. First quantity-type metric field
+ *   4. First metric field of any type
+ */
+function findPrimaryMetric(model: SemanticModel): SemanticField | null {
+    const metrics = model.fields.filter(f => f.role === 'metric');
+    if (metrics.length === 0) return null;
+
+    // Priority 1: exact name matches
+    const priorityNames = ['revenue', 'sale_amt', 'sales_amt', 'total_sales', 'sales', 'amount', 'total_amount'];
+    for (const name of priorityNames) {
+        const found = metrics.find(f => f.name.toLowerCase() === name);
+        if (found) return found;
+    }
+
+    // Priority 2: name contains revenue/sales/amount (but not "sales_rep")
+    const revenueField = metrics.find(f => {
+        const n = f.name.toLowerCase();
+        return (n.includes('revenue') || n.includes('sale') || n.includes('amount'))
+            && !n.includes('rep') && !n.includes('person') && !n.includes('name');
+    });
+    if (revenueField) return revenueField;
+
+    // Priority 3: currency type
+    const currencyField = metrics.find(f => f.semanticType === 'currency');
+    if (currencyField) return currencyField;
+
+    // Priority 4: first metric
+    return metrics[0];
+}
+
+/**
+ * ENFORCE TIME DIMENSION FOR GROWTH/COMPARISON QUERIES
+ *
+ * Even when the LLM correctly identifies the metric and sets ambiguous=false,
+ * it often forgets to include a time dimension with a grain. Without the grain,
+ * the correction engine generates a plain GROUP BY (no time series), so
+ * growth calculations never fire.
+ *
+ * This step ALWAYS runs (not conditional on ambiguity) and:
+ * 1. Detects growth/comparison intent from plan.comparison OR question keywords
+ * 2. Checks if a time dimension with timeGrain exists in the plan
+ * 3. If missing, injects the primary date column with timeGrain='month'
+ * 4. Upgrades the intent to trend_comparison if needed
+ */
+function enforceGrowthTimeDimension(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    const q = question.toLowerCase();
+
+    // Broad growth detection — includes fuzzy matching for typos
+    const isGrowthQuestion = /\b(grow|growing|growth|growin|growt|increase|increasing|decline|declining|changing|change|faster|fastest|slower|slowest)\b/.test(q);
+    const hasComparison = !!plan.comparison;
+    const isComparisonIntent = ['trend_comparison', 'total_comparison'].includes(plan.intent);
+
+    // Only apply to growth/comparison queries
+    if (!isGrowthQuestion && !hasComparison && !isComparisonIntent) return;
+
+    // Check if a time dimension with grain already exists
+    const hasTimeDimWithGrain = plan.dimensions.some(d => d.timeGrain);
+
+    // Find the primary date column
+    const dateField = model.fields.find(f => f.semanticType === 'date' && f.role === 'dimension');
+    if (!dateField) return;
+
+    // ── KEY DISTINCTION: Growth Ranking vs Growth Trend ──────────
+    // "Which products are growing fastest?" → RANKING (final output = 1 row per entity)
+    // "How are sales changing over time?"   → TREND   (final output = time series)
+    const hasRankingLanguage = /\b(which|what|who|top|bottom|fastest|slowest|best|worst|most|least|leading|lagging|faster|slower)\b/.test(q);
+    const hasEntityDimension = plan.dimensions.some(d => !d.timeGrain); // has a non-time dimension like product_name
+
+    const isGrowthRanking = isGrowthQuestion && hasRankingLanguage && hasEntityDimension;
+
+    // Determine grain: user override > plan comparison grain > default 'month'
+    const grain = (plan as any)._grainOverride
+        || (plan.comparison?.grain)
+        || 'month';
+
+    if (!hasTimeDimWithGrain) {
+        console.log(`[Intent Planner] ENFORCE: Growth query missing time dimension — injecting ${dateField.name} with timeGrain="${grain}"`);
+        plan.dimensions.push({ field: dateField.name, timeGrain: grain });
+    } else if ((plan as any)._grainOverride) {
+        // Override existing grain if user explicitly selected one
+        const timeDim = plan.dimensions.find(d => d.timeGrain);
+        if (timeDim) {
+            console.log(`[Intent Planner] GRAIN OVERRIDE: Changing grain from "${timeDim.timeGrain}" to "${grain}"`);
+            timeDim.timeGrain = grain;
+        }
+    }
+
+    // Ensure comparison is set for growth queries (needed for intermediate computation)
+    if (isGrowthQuestion && !plan.comparison) {
+        plan.comparison = { type: 'previous_period', mode: 'trend', grain };
+    } else if (plan.comparison && (plan as any)._grainOverride) {
+        plan.comparison.grain = grain;
+    }
+
+    if (isGrowthRanking) {
+        // GROWTH RANKING: time dimension exists for computation,
+        // but the FINAL output is a ranking (1 row per entity)
+        plan.intent = 'ranking';
+        (plan as any)._growthRanking = true;
+        console.log(`[Intent Planner] ENFORCE: Growth RANKING detected — intent set to "ranking" with _growthRanking=true`);
+    } else if (plan.intent !== 'trend_comparison') {
+        // GROWTH TREND: normal time-series output
+        console.log(`[Intent Planner] ENFORCE: Upgrading intent "${plan.intent}" → "trend_comparison" for growth query`);
+        plan.intent = 'trend_comparison';
     }
 }
 

@@ -81,7 +81,14 @@ interface DashboardLayoutState {
 
 export interface DashboardFilter {
     column: string;
+    /** 'dimension' = categorical / 'measure' = numeric comparison */
+    type?: 'dimension' | 'measure';
+    /** Categorical: selected string values (WHERE col IN [...]) */
     values: string[];
+    /** Numeric: comparison operator */
+    operator?: '>' | '<' | '=' | '!=' | '>=' | '<=';
+    /** Numeric: value to compare against */
+    numericValue?: number;
 }
 
 interface DashboardFilterState {

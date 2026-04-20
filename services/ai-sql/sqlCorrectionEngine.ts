@@ -30,6 +30,35 @@ import { SemanticModel, AnalysisPlan, PlanMetric, PlanDimension, PlanFilter, Der
 export function correctSQL(plan: AnalysisPlan, model: SemanticModel): string {
     console.log(`[SQL Correction Engine] Building SQL for intent="${plan.intent}"`);
 
+    // ── Intercept hour/time-of-day grain: check if dataset has time data ──
+    const hourDim = plan.dimensions.find(d => ['hour', 'time_of_day', 'hour_of_day'].includes((d as any).timeGrain || ''));
+    if (hourDim) {
+        const dateField = model.fields.find(f => f.name.toLowerCase() === hourDim.field.toLowerCase());
+        const hasTimeData = dateField?.sampleValues?.some(v => String(v).includes(':')) ?? false;
+
+        if (!hasTimeData) {
+            console.warn(`[SQL Correction Engine] hour grain requested but date column "${hourDim.field}" has no time data. Falling back to today's sales.`);
+
+            // Annotate the plan with a fallback reason so the pipeline can surface it
+            (plan as any)._fallbackReason =
+                `⚠️ This dataset's "${hourDim.field}" column contains only dates (e.g., "2025-12-31"), not date-times (e.g., "2025-12-31 14:30:00"). ` +
+                `Time-of-day analysis requires timestamps with hours/minutes. ` +
+                `Showing today's total sales instead.`;
+
+            // Fall back to: total sales for today (the anchor date)
+            const anchorStr = model.timeContext?.anchorDate || model.timeContext?.maxDate || new Date().toISOString().split('T')[0];
+            const metExprs = buildMetricExpressions(plan.metrics, model);
+            const where = buildWhereClause(plan.filters);
+            const dateFilter = `${hourDim.field} = '${anchorStr}'`;
+            const fullWhere = where ? `${where} AND ${dateFilter}` : dateFilter;
+
+            return [
+                `SELECT '${anchorStr}' AS date, ${metExprs.join(', ')}`,
+                'FROM data',
+                `WHERE ${fullWhere}`,
+            ].join('\n');
+        }
+    }
     // Check for derived metrics FIRST (two-stage aggregation)
     // This handles cases like "average daily sales" where the plan
     // references a derived metric OR where the LLM set intent=derived_metric
@@ -200,6 +229,12 @@ function buildSingleMetricSQL(plan: AnalysisPlan, model: SemanticModel): string 
  * breakdown: "Sales by category" → SELECT category, SUM(sales) FROM data GROUP BY category
  */
 function buildBreakdownSQL(plan: AnalysisPlan, model: SemanticModel): string {
+    // ── Special handling for day_of_week ──
+    const dowDim = plan.dimensions.find(d => (d as any).timeGrain === 'day_of_week');
+    if (dowDim) {
+        return buildDayOfWeekSQL(plan, model, dowDim, 'breakdown');
+    }
+
     const dimExprs = buildDimensionExpressions(plan.dimensions);
     const metExprs = buildMetricExpressions(plan.metrics, model);
     const groupBy = buildGroupByClause(plan.dimensions);
@@ -225,6 +260,12 @@ function buildBreakdownSQL(plan: AnalysisPlan, model: SemanticModel): string {
  * trend: "Monthly sales for 2017" → SELECT time_grain, SUM(sales) ... ORDER BY time ASC
  */
 function buildTrendSQL(plan: AnalysisPlan, model: SemanticModel): string {
+    // ── Special handling for day_of_week ──
+    const dowDim = plan.dimensions.find(d => (d as any).timeGrain === 'day_of_week');
+    if (dowDim) {
+        return buildDayOfWeekSQL(plan, model, dowDim, 'trend');
+    }
+
     const dimExprs = buildDimensionExpressions(plan.dimensions);
     const metExprs = buildMetricExpressions(plan.metrics, model);
     const groupBy = buildGroupByClause(plan.dimensions);
@@ -256,6 +297,12 @@ function buildTrendSQL(plan: AnalysisPlan, model: SemanticModel): string {
  * "Top 10 products by revenue" → SUM + GROUP BY + ORDER BY DESC + LIMIT 10
  */
 function buildRankingSQL(plan: AnalysisPlan, model: SemanticModel): string {
+    // ── Special handling for day_of_week: scope to current week ──
+    const dowDim = plan.dimensions.find(d => (d as any).timeGrain === 'day_of_week');
+    if (dowDim) {
+        return buildDayOfWeekSQL(plan, model, dowDim, 'ranking');
+    }
+
     const dimExprs = buildDimensionExpressions(plan.dimensions);
     const metExprs = buildMetricExpressions(plan.metrics, model);
     const groupBy = buildGroupByClause(plan.dimensions);
@@ -279,6 +326,80 @@ function buildRankingSQL(plan: AnalysisPlan, model: SemanticModel): string {
     parts.push(`ORDER BY ${firstMetAlias} ${sortDir}`);
     parts.push(`LIMIT ${limit}`);
 
+    return parts.join('\n');
+}
+
+/**
+ * Build SQL for day-of-week analysis.
+ * Scopes to the current week (using model's anchor/max date) and shows
+ * both the raw date and the day name in results.
+ *
+ * Example output:
+ *   SELECT sale_date, DAYNAME(sale_date) AS day_name, SUM(sale_amt) AS sale_amt_sum
+ *   FROM data
+ *   WHERE sale_date BETWEEN '2025-12-28' AND '2026-01-03'
+ *   GROUP BY sale_date
+ *   ORDER BY sale_amt_sum ASC
+ */
+function buildDayOfWeekSQL(
+    plan: AnalysisPlan,
+    model: SemanticModel,
+    dowDim: PlanDimension,
+    intent: 'ranking' | 'breakdown' | 'trend'
+): string {
+    const dateField = dowDim.field;
+    const metExprs = buildMetricExpressions(plan.metrics, model);
+
+    // Compute current week boundaries from anchor date
+    const anchorStr = model.timeContext?.anchorDate || model.timeContext?.maxDate || new Date().toISOString().split('T')[0];
+    const anchor = new Date(anchorStr + 'T12:00:00Z');
+    const dayOfWeek = anchor.getUTCDay(); // 0=Sun, 6=Sat
+
+    // Week runs Sunday → Saturday
+    const weekStart = new Date(anchor);
+    weekStart.setUTCDate(anchor.getUTCDate() - dayOfWeek);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setUTCDate(weekStart.getUTCDate() + 6);
+
+    const fmtDate = (d: Date) =>
+        `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+
+    const weekStartStr = fmtDate(weekStart);
+    const weekEndStr = fmtDate(weekEnd);
+
+    // Build WHERE — merge any existing filters with the week filter
+    const existingWhere = buildWhereClause(plan.filters);
+    const weekFilter = `${dateField} BETWEEN '${weekStartStr}' AND '${weekEndStr}'`;
+    const fullWhere = existingWhere
+        ? `${existingWhere} AND ${weekFilter}`
+        : weekFilter;
+
+    // SELECT both the raw date and the day name
+    const selects = [
+        dateField,
+        `DAYNAME(${dateField}) AS day_name`,
+        ...metExprs,
+    ];
+
+    // Sort
+    const sortDir = plan.sort.length > 0 ? plan.sort[0].dir.toUpperCase() : 'DESC';
+    const firstMetAlias = getMetricAlias(plan.metrics[0], model);
+
+    const parts = [
+        `SELECT ${selects.join(', ')}`,
+        'FROM data',
+        `WHERE ${fullWhere}`,
+        `GROUP BY ${dateField}`,
+    ];
+
+    if (intent === 'ranking') {
+        parts.push(`ORDER BY ${firstMetAlias} ${sortDir}`);
+        if (plan.limit) parts.push(`LIMIT ${plan.limit}`);
+    } else {
+        parts.push(`ORDER BY ${dateField} ASC`);
+    }
+
+    console.log(`[SQL Correction] day_of_week: scoped to week ${weekStartStr} → ${weekEndStr} (anchor: ${anchorStr})`);
     return parts.join('\n');
 }
 
@@ -650,6 +771,12 @@ function timeGrainExpr(field: string, grain: string): string {
             return `FORMAT_MONTH(${field})`;
         case 'week':
             return `CONCAT(YEAR(${field}), '-W', LPAD(WEEK(${field}), 2, '0'))`;
+        case 'day_of_week':
+            return `DAYNAME(${field})`;
+        case 'month_of_year':
+            return `MONTHNAME(${field})`;
+        case 'hour':
+            return `HOUR(${field})`;
         default:
             return field;
     }
@@ -664,30 +791,62 @@ function calculatePreviousPeriod(
     endStr: string,
     type: 'previous_period' | 'same_period_last_year' | 'custom'
 ): { start: string; end: string } {
-    const start = new Date(startStr);
-    const end = new Date(endStr);
-    const durationMs = end.getTime() - start.getTime();
-    const durationDays = Math.round(durationMs / (1000 * 60 * 60 * 24));
+    const start = new Date(startStr + 'T12:00:00Z');
+    const end = new Date(endStr + 'T12:00:00Z');
+
+    const fmtDate = (d: Date) =>
+        `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 
     if (type === 'same_period_last_year') {
         const prevStart = new Date(start);
-        prevStart.setFullYear(prevStart.getFullYear() - 1);
+        prevStart.setUTCFullYear(prevStart.getUTCFullYear() - 1);
         const prevEnd = new Date(end);
-        prevEnd.setFullYear(prevEnd.getFullYear() - 1);
+        prevEnd.setUTCFullYear(prevEnd.getUTCFullYear() - 1);
+        return { start: fmtDate(prevStart), end: fmtDate(prevEnd) };
+    }
+
+    // Detect calendar-month-aligned range: starts on 1st, ends on last day of month
+    const isMonthAligned = start.getUTCDate() === 1 &&
+        end.getUTCDate() === new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate();
+
+    if (isMonthAligned) {
+        // Use proper calendar month arithmetic
+        // Current: Dec 1 → Dec 31  →  Previous: Nov 1 → Nov 30
+        const prevStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 1, 1));
+        const prevEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 0)); // last day of prev month
+        return { start: fmtDate(prevStart), end: fmtDate(prevEnd) };
+    }
+
+    // Detect calendar-quarter-aligned range
+    const isQuarterAligned = start.getUTCDate() === 1 && [0, 3, 6, 9].includes(start.getUTCMonth()) &&
+        end.getUTCDate() === new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate() &&
+        (end.getUTCMonth() - start.getUTCMonth() === 2);
+
+    if (isQuarterAligned) {
+        const prevStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 3, 1));
+        const prevEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 0));
+        return { start: fmtDate(prevStart), end: fmtDate(prevEnd) };
+    }
+
+    // Detect calendar-year-aligned range
+    const isYearAligned = start.getUTCMonth() === 0 && start.getUTCDate() === 1 &&
+        end.getUTCMonth() === 11 && end.getUTCDate() === 31;
+
+    if (isYearAligned) {
         return {
-            start: prevStart.toISOString().split('T')[0],
-            end: prevEnd.toISOString().split('T')[0],
+            start: `${start.getUTCFullYear() - 1}-01-01`,
+            end: `${start.getUTCFullYear() - 1}-12-31`,
         };
     }
 
-    // previous_period: shift back by the same duration
-    const prevEnd = new Date(start);
-    prevEnd.setDate(prevEnd.getDate() - 1);
-    const prevStart = new Date(prevEnd);
-    prevStart.setDate(prevStart.getDate() - durationDays);
+    // Non-aligned: shift back by duration (standard approach)
+    const durationMs = end.getTime() - start.getTime();
+    const durationDays = Math.round(durationMs / (1000 * 60 * 60 * 24));
 
-    return {
-        start: prevStart.toISOString().split('T')[0],
-        end: prevEnd.toISOString().split('T')[0],
-    };
+    const prevEnd = new Date(start);
+    prevEnd.setUTCDate(prevEnd.getUTCDate() - 1);
+    const prevStart = new Date(prevEnd);
+    prevStart.setUTCDate(prevStart.getUTCDate() - durationDays + 1); // +1 so both periods have same count
+
+    return { start: fmtDate(prevStart), end: fmtDate(prevEnd) };
 }
