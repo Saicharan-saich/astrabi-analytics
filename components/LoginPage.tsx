@@ -3,7 +3,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { UserRole } from '../types';
 import { Eye, EyeOff, LogIn, Sparkles, AlertCircle, UserPlus, Users } from 'lucide-react';
 
-const API_BASE = 'http://localhost:5002';
+const API_BASE = import.meta.env.VITE_API_URL?.replace(/\/api$/, '') || 'http://localhost:5002';
 
 export const LoginPage: React.FC = () => {
     const [email, setEmail] = useState('');

@@ -16,7 +16,7 @@ import { buildMaskedProfiles, profilesToPromptText } from './dataMasker';
 // CONFIGURATION
 // ═══════════════════════════════════════════════════════════════════
 
-const API_ENDPOINT = 'http://localhost:5002/api/ai/profile-dataset';
+const API_ENDPOINT = `${import.meta.env.VITE_API_URL || 'http://localhost:5002/api'}/ai/profile-dataset`;
 const PASS1_MAX_COLUMNS = 30;
 const PASS2_BATCH_SIZE = 40;
 const TIMEOUT_MS = 15000; // 15s timeout per LLM call

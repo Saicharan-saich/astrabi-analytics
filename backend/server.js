@@ -92,7 +92,9 @@ const allowedOrigins = [
     'http://localhost:3001',
     'http://localhost:3002',
     'http://localhost:3003',
-    process.env.FRONTEND_URL // Azure Static Web App URL
+    'https://quickinsight.co.uk',
+    'https://www.quickinsight.co.uk',
+    process.env.FRONTEND_URL // Custom override URL
 ].filter(Boolean);
 
 app.use(cors({
