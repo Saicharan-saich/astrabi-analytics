@@ -49,6 +49,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
     const [showGrowthPct, setShowGrowthPct] = useState(false);
     const [timeGrain, setTimeGrain] = useState<'day' | 'week' | 'month' | 'quarter' | 'year'>('month');
     const [fromCache, setFromCache] = useState(false);
+    const [cacheCleared, setCacheCleared] = useState(false);
 
     const updateFormatting = (f: FormattingConfig) => setFormatting(f);
 
@@ -306,8 +307,23 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                             </span>
                         </h2>
                     </Tooltip>
-                    <p className="text-gray-500 dark:text-slate-400 text-sm">
-                        Ask any question — AI generates SQL, executes it on your data, and visualizes the results.
+                    <p className="text-gray-500 dark:text-slate-400 text-sm flex items-center justify-between">
+                        <span>Ask any question — AI generates SQL, executes it on your data, and visualizes the results.</span>
+                        <button
+                            onClick={async () => {
+                                await clearAISQLCache();
+                                setCacheCleared(true);
+                                setTimeout(() => setCacheCleared(false), 2500);
+                            }}
+                            className="flex items-center gap-1.5 text-xs font-bold text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition-all active:scale-95 border border-red-200 dark:border-red-500/20 shrink-0 ml-4"
+                            title="Clear all cached AI SQL results"
+                        >
+                            {cacheCleared ? (
+                                <><Check className="w-3.5 h-3.5" /> Cache Cleared!</>
+                            ) : (
+                                <><RotateCcw className="w-3.5 h-3.5" /> Clear Cache</>
+                            )}
+                        </button>
                     </p>
                 </div>
 
