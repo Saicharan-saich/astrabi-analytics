@@ -154,14 +154,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
             <div className={`mx-2 mb-3 h-px ${isDark ? 'bg-white/[0.06]' : 'bg-gray-200'}`} />
 
             {/* Navigation */}
-            <nav className="flex-1 space-y-3 stagger-in">
+            <nav className="flex-1 min-h-0 overflow-y-auto space-y-3 stagger-in">
                 {renderSection('Data', dataSection)}
                 {renderSection('Analysis', analysisSection)}
                 {renderSection('Views', viewSection)}
             </nav>
 
             {/* User Section */}
-            <div className="mt-auto pt-2 space-y-2">
+            <div className="shrink-0 mt-auto pt-2 space-y-2">
                 <div className={`mx-2 mb-2 h-px ${isDark ? 'bg-white/[0.06]' : 'bg-gray-200'}`} />
 
                 {perms.canManageUsers && onOpenUserManagement && (
