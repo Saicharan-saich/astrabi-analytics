@@ -781,7 +781,7 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
                 'X-Title': 'QuickInsight'
             },
             body: JSON.stringify({
-                model: model || 'openai/gpt-4o',
+                model: model || 'anthropic/claude-opus-4.6-fast',
                 messages,
                 max_tokens: Math.min(max_tokens || 2000, 4000), // Cap at 4000
                 temperature: temperature ?? 0.1

@@ -9,7 +9,7 @@
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-const MODEL = 'openai/gpt-4o'; // Powerful flagship model
+const MODEL = 'anthropic/claude-opus-4.6-fast';
 const TIMEOUT_MS = 20000;
 
 // Simple cache to avoid redundant API calls for the same chart
