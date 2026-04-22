@@ -27,7 +27,7 @@ function loadUsersFromDisk() {
             const raw = fs.readFileSync(USERS_FILE, 'utf-8');
             const arr = JSON.parse(raw);
             const map = new Map();
-            arr.forEach(u => map.set(u.email, u));
+            arr.forEach(u => map.set(u.email.toLowerCase(), u));
             console.log(`[Auth] Loaded ${map.size} user(s) from disk`);
             return map;
         }
@@ -62,7 +62,7 @@ async function initializeUsers() {
         passwordHash: adminHash,
         createdAt: new Date().toISOString()
     };
-    map.set(admin.email, admin);
+    map.set(admin.email.toLowerCase(), admin);
     saveUsersToDisk(map);
     console.log('[Auth] Created seed admin user');
     return map;
