@@ -3,6 +3,7 @@ import { Sparkles, Play, RefreshCw, Search, AlertTriangle, BarChart2, Table, Cod
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { ChatMessage } from '../services/aiSQLService';
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
+import { MODEL } from '../services/ai-sql/intentPlanner';
 import { getCacheStats, clearAISQLCache } from '../services/aiSqlCache';
 import { ChartVisualization } from './ChartVisualization';
 import { Tooltip } from './Tooltip';
@@ -298,6 +299,10 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                             AI SQL
                             <span className="text-xs font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20">
                                 Intelligent Analytics
+                            </span>
+                            <span className="text-xs font-medium bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                                {MODEL.includes('gpt') ? `⚡ ${MODEL.split('/').pop()?.toUpperCase()}` : MODEL.includes('gemini') ? `✨ ${MODEL.split('/').pop()}` : MODEL.split('/').pop()}
                             </span>
                         </h2>
                     </Tooltip>
