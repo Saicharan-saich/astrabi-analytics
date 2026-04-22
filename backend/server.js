@@ -27,12 +27,38 @@ async function initAuthDatabase() {
         console.warn('[Auth] DATABASE_URL not set — user auth will not persist!');
         return;
     }
+
+    // Try connecting — first without SSL (internal Railway), then with SSL (external)
+    const sslConfigs = [
+        false,                          // Internal Railway connections
+        { rejectUnauthorized: false },   // External / public Railway connections
+    ];
+
+    for (const sslConfig of sslConfigs) {
+        try {
+            const pool = new PgPool({
+                connectionString: AUTH_DATABASE_URL,
+                ssl: sslConfig,
+                max: 5,
+                connectionTimeoutMillis: 10000
+            });
+
+            // Test the connection
+            await pool.query('SELECT 1');
+            authPool = pool;
+            console.log(`[Auth] Connected to PostgreSQL (ssl=${JSON.stringify(sslConfig)})`);
+            break;
+        } catch (err) {
+            console.warn(`[Auth] Connection attempt failed (ssl=${JSON.stringify(sslConfig)}):`, err.message);
+        }
+    }
+
+    if (!authPool) {
+        console.error('[Auth] Could not connect to PostgreSQL with any SSL config');
+        return;
+    }
+
     try {
-        authPool = new PgPool({
-            connectionString: AUTH_DATABASE_URL,
-            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-            max: 5
-        });
         // Create users table if it doesn't exist
         await authPool.query(`
             CREATE TABLE IF NOT EXISTS users (
@@ -59,7 +85,8 @@ async function initAuthDatabase() {
             console.log(`[Auth] ${rows[0].count} user(s) already in database`);
         }
     } catch (err) {
-        console.error('[Auth] Failed to initialize PostgreSQL auth:', err.message);
+        console.error('[Auth] Failed to initialize tables:', err.message);
+        authPool = null;
     }
 }
 
