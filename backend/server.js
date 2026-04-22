@@ -171,29 +171,47 @@ app.use('/api/', apiKeyMiddleware);
 // Register a new user
 app.post('/api/auth/register', async (req, res) => {
     try {
-        if (!authPool) return res.status(503).json({ success: false, error: 'Database not available' });
-
         const { email, name, password, role } = req.body;
         if (!email || !password || !name) {
             return res.status(400).json({ success: false, error: 'Email, name, and password are required' });
         }
 
         const emailNorm = email.trim().toLowerCase();
-
-        // Check if user already exists
-        const existing = await authPool.query('SELECT id FROM users WHERE email = $1', [emailNorm]);
-        if (existing.rows.length > 0) {
-            return res.status(400).json({ success: false, error: 'User already exists' });
-        }
-
         const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
         const userId = Date.now().toString();
         const userRole = role || 'viewer';
 
-        await authPool.query(
-            'INSERT INTO users (id, email, name, role, password_hash) VALUES ($1, $2, $3, $4, $5)',
-            [userId, emailNorm, name, userRole, hashedPassword]
-        );
+        if (!authPool) {
+            // Json file fallback
+            const usersPath = path.join(__dirname, 'users.json');
+            let localUsers = [];
+            if (fs.existsSync(usersPath)) {
+                localUsers = JSON.parse(fs.readFileSync(usersPath, 'utf8'));
+            }
+            if (localUsers.some(u => u.email.toLowerCase() === emailNorm)) {
+                return res.status(400).json({ success: false, error: 'User already exists' });
+            }
+            localUsers.push({
+                id: userId,
+                email: emailNorm,
+                name,
+                role: userRole,
+                passwordHash: hashedPassword,
+                createdAt: new Date().toISOString()
+            });
+            fs.writeFileSync(usersPath, JSON.stringify(localUsers, null, 2));
+        } else {
+            // Check if user already exists
+            const existing = await authPool.query('SELECT id FROM users WHERE email = $1', [emailNorm]);
+            if (existing.rows.length > 0) {
+                return res.status(400).json({ success: false, error: 'User already exists' });
+            }
+
+            await authPool.query(
+                'INSERT INTO users (id, email, name, role, password_hash) VALUES ($1, $2, $3, $4, $5)',
+                [userId, emailNorm, name, userRole, hashedPassword]
+            );
+        }
 
         const token = jwt.sign(
             { userId, email: emailNorm, role: userRole },
@@ -215,20 +233,34 @@ app.post('/api/auth/register', async (req, res) => {
 // Login
 app.post('/api/auth/login', async (req, res) => {
     try {
-        if (!authPool) return res.status(503).json({ success: false, error: 'Database not available' });
-
         const { email, password } = req.body;
         if (!email || !password) {
             return res.status(400).json({ success: false, error: 'Email and password are required' });
         }
 
         const emailNorm = email.trim().toLowerCase();
-        const { rows } = await authPool.query('SELECT * FROM users WHERE email = $1', [emailNorm]);
-        if (rows.length === 0) {
+        let user;
+
+        if (!authPool) {
+            // Json file fallback
+            const usersPath = path.join(__dirname, 'users.json');
+            let localUsers = [];
+            if (fs.existsSync(usersPath)) {
+                localUsers = JSON.parse(fs.readFileSync(usersPath, 'utf8'));
+            }
+            user = localUsers.find(u => u.email.toLowerCase() === emailNorm);
+            if (user) {
+                user.password_hash = user.passwordHash || user.password_hash;
+            }
+        } else {
+            const { rows } = await authPool.query('SELECT * FROM users WHERE email = $1', [emailNorm]);
+            user = rows[0];
+        }
+
+        if (!user) {
             return res.status(401).json({ success: false, error: 'Invalid credentials' });
         }
 
-        const user = rows[0];
         const isValid = await bcrypt.compare(password, user.password_hash);
         if (!isValid) {
             return res.status(401).json({ success: false, error: 'Invalid credentials' });
