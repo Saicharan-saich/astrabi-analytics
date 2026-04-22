@@ -12,7 +12,7 @@ import { Dataset, ColumnType } from '../types';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-const MODEL = 'google/gemini-2.0-flash-001';
+const MODEL = 'openai/gpt-4o';
 const TIMEOUT_MS = 25000;
 
 export interface SQLGenerationResult {

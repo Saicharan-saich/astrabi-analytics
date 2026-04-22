@@ -9,7 +9,7 @@
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-const MODEL = 'google/gemini-2.0-flash-001'; // Vision-capable, fast, cost-effective
+const MODEL = 'openai/gpt-4o'; // Powerful flagship model
 const TIMEOUT_MS = 20000;
 
 // Simple cache to avoid redundant API calls for the same chart
