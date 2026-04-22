@@ -127,15 +127,97 @@ function inferSemanticType(
 }
 
 /**
- * Determine the role (metric vs dimension) for a column
+ * Determine the role (metric vs dimension) for a column.
+ *
+ * KEY INSIGHT: Not all numeric columns are business metrics.
+ * Columns like age, rating, satisfaction_score, years_at_company are
+ * "numeric attributes" — they describe properties of entities and should
+ * be treated as DIMENSIONS (filterable, groupable) not metrics.
+ *
+ * We detect these using STATISTICAL signals (not hardcoded names) so
+ * this works for ANY dataset.
  */
-function inferRole(colType: ColumnType, semanticType: SemanticType): FieldRole {
+function inferRole(
+    colType: ColumnType,
+    semanticType: SemanticType,
+    colName?: string,
+    range?: { min: number; max: number },
+    distinctCount?: number,
+    totalRows?: number
+): FieldRole {
+    // Currency, percentage, count, ratio are always metrics
     if (semanticType === 'currency' || semanticType === 'percentage' ||
-        semanticType === 'quantity' || semanticType === 'count' || semanticType === 'ratio') {
+        semanticType === 'count' || semanticType === 'ratio') {
         return 'metric';
     }
+
+    // For numeric columns classified as METRIC by ETL, check if they are
+    // actually numeric attributes (demographic/descriptive fields)
+    if (colType === ColumnType.METRIC && semanticType === 'quantity') {
+        if (isNumericAttribute(colName, range, distinctCount, totalRows)) {
+            return 'dimension';
+        }
+        return 'metric';
+    }
+
     if (colType === ColumnType.METRIC) return 'metric';
     return 'dimension';
+}
+
+/**
+ * Detects if a numeric column is a "numeric attribute" (like age, rating,
+ * satisfaction score) rather than a business metric (like revenue, quantity).
+ *
+ * Uses STATISTICAL SIGNALS, not hardcoded column names, so it works
+ * for any dataset:
+ *
+ *  1. Bounded human-scale range (max < 200, e.g. age 18-65, rating 1-5)
+ *  2. Integer-only values (no decimals — ages, ratings, years, levels)
+ *  3. Low cardinality relative to value range (many rows share same value)
+ *  4. Name does NOT match strong metric keywords (salary, income, revenue)
+ */
+function isNumericAttribute(
+    colName?: string,
+    range?: { min: number; max: number },
+    distinctCount?: number,
+    totalRows?: number
+): boolean {
+    if (!range || !colName) return false;
+
+    const name = colName.toLowerCase();
+
+    // Never reclassify columns with strong business metric names
+    const STRONG_METRIC_NAMES = /(?:^|[_\s])(sales|revenue|profit|cost|price|amount|total|income|salary|wage|pay|compensation|expense|fee|charge|payment|spend|earning|bonus|commission|balance|budget|discount|tax|shipping|freight|margin|debt|credit|debit|turnover|premium|interest|deposit|refund|rent|royalty|stipend|funding|payout)(?:[_\s]|$)/i;
+    if (STRONG_METRIC_NAMES.test(name)) return false;
+
+    const span = range.max - range.min;
+    const maxVal = Math.max(Math.abs(range.min), Math.abs(range.max));
+
+    // Signal 1: Bounded human-scale range (0-200) with non-zero span
+    const isBoundedRange = maxVal > 0 && maxVal <= 200 && span > 0 && span <= 200;
+
+    // Signal 2: Values look like integers (min and max are whole numbers)
+    const isIntegerLike = Number.isInteger(range.min) && Number.isInteger(range.max);
+
+    // Signal 3: Low distinct-to-range ratio (many rows share same value)
+    // e.g. Age has ~45 distinct values across 1470 rows = attribute
+    // vs revenue has ~1000 distinct values across 1470 rows = metric
+    const hasLowDistinctRatio = distinctCount !== undefined && totalRows !== undefined
+        && distinctCount > 0 && totalRows > 0
+        && (distinctCount / totalRows) < 0.15;  // < 15% unique = likely attribute
+
+    // Need at least 2 of 3 signals to reclassify
+    const signalCount = [isBoundedRange, isIntegerLike, hasLowDistinctRatio]
+        .filter(Boolean).length;
+
+    if (signalCount >= 2) {
+        console.log(`[SemanticLayer] Reclassified "${colName}" as numeric DIMENSION (attribute) — ` +
+            `range: ${range.min}-${range.max}, distinct: ${distinctCount}, ` +
+            `signals: bounded=${isBoundedRange}, integer=${isIntegerLike}, lowDistinct=${hasLowDistinctRatio}`);
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -226,16 +308,7 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
             col.name, col.type, distinctCount, totalRows, numericSamples
         );
 
-        // Infer role and aggregation
-        const role = inferRole(col.type, semanticType);
-        const defaultAgg = inferDefaultAgg(semanticType, role);
-
-        // Time grain support
-        const timeGrainSupport = semanticType === 'date'
-            ? (['day', 'week', 'month', 'quarter', 'year'] as const).map(g => g)
-            : [];
-
-        // Compute range for numeric fields
+        // Compute range for numeric fields (needed before inferRole)
         let range: { min: number; max: number } | undefined;
         if (numericSamples.length > 0) {
             range = {
@@ -243,6 +316,15 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
                 max: Math.max(...numericSamples)
             };
         }
+
+        // Infer role and aggregation
+        const role = inferRole(col.type, semanticType, col.name, range, distinctCount, totalRows);
+        const defaultAgg = inferDefaultAgg(semanticType, role);
+
+        // Time grain support
+        const timeGrainSupport = semanticType === 'date'
+            ? (['day', 'week', 'month', 'quarter', 'year'] as const).map(g => g)
+            : [];
 
         fields.push({
             name: col.name,
@@ -354,20 +436,33 @@ export function serializeSemanticModel(model: SemanticModel): string {
         lines.push('');
     }
 
-    // Fields table
+    // Fields table — include range for numeric fields so LLM can reason about filtering
     lines.push('Fields:');
-    lines.push('  field | type | semantic | role | default_agg | samples');
-    lines.push('  ' + '-'.repeat(90));
+    lines.push('  field | type | semantic | role | default_agg | range | distinct | samples');
+    lines.push('  ' + '-'.repeat(110));
 
     for (const f of model.fields) {
         const samples = f.sampleValues.slice(0, 3).map(s => `"${s}"`).join(', ');
+        const rangeStr = f.range ? `${f.range.min}–${f.range.max}` : '—';
+        const distinctStr = String(f.distinctCount);
         lines.push(
-            `  ${f.name} | ${f.physicalType} | ${f.semanticType} | ${f.role} | ${f.defaultAgg} | ${samples}`
+            `  ${f.name} | ${f.physicalType} | ${f.semanticType} | ${f.role} | ${f.defaultAgg} | ${rangeStr} | ${distinctStr} | ${samples}`
         );
         if (f.synonyms.length > 0) {
             lines.push(`    synonyms: ${f.synonyms.join(', ')}`);
         }
     }
+
+    // Filtering rules — critical for correct column selection
+    lines.push('');
+    lines.push('FILTERING RULES (CRITICAL):');
+    lines.push('  - ANY field (metric or dimension) can be used in WHERE clauses for filtering.');
+    lines.push('  - For numeric fields, use BETWEEN / >= / <= operators for range filtering.');
+    lines.push('  - When the user describes a numeric range ("in their forties", "over 50", "under 30",');
+    lines.push('    "between 20 and 30"), ALWAYS prefer the raw numeric column with BETWEEN/>=/<= over');
+    lines.push('    a categorical grouping column. Example: use "WHERE age BETWEEN 40 AND 49" not');
+    lines.push('    "WHERE age_group IN (\'40-49\')".');
+    lines.push('  - Look at the range column above to identify which fields are numeric and filterable.');
 
     // Composite metrics
     if (model.compositeMetrics.length > 0) {

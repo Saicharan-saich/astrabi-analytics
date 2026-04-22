@@ -83,6 +83,22 @@ FILTER RULES:
 - Use the reference date from Time Context as "today".
 - For "this month", filter where the date column's month/year matches today's month/year.
 
+NUMERIC RANGE FILTERING (CRITICAL):
+- ANY field in the schema can be used in WHERE clauses, regardless of its role (metric or dimension).
+- When the user describes a numeric range using natural language, you MUST use the raw numeric column
+  with BETWEEN / >= / <= operators. NEVER use a categorical/grouping column with IN for range queries.
+- Examples of natural language → SQL mapping:
+  "in their forties" → WHERE age BETWEEN 40 AND 49
+  "over 50" → WHERE age >= 50
+  "under 30" → WHERE age < 30
+  "between 20 and 30" → WHERE age BETWEEN 20 AND 30
+  "more than 5 years experience" → WHERE years_at_company > 5
+  "high performers" → WHERE performance_rating >= 4
+- Look at the "range" column in the Fields table to identify numeric columns and their value ranges.
+- If both a raw numeric column (e.g., age with range 18-60) and a categorical grouping column
+  (e.g., age_group with values "20-29", "30-39") exist, ALWAYS prefer the raw numeric column
+  for range-based filtering because it gives precise results.
+
 OUTPUT FORMAT:
 Respond with ONLY a valid JSON object (no markdown, no code fences):
 {
