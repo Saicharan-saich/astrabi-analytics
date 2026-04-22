@@ -17,55 +17,50 @@ const JWT_SECRET = process.env.JWT_SECRET || 'QuickInsight-dev-secret-change-in-
 const BCRYPT_ROUNDS = 12;
 
 // ═══════════════════════════════════════════
-// Fix #4: FILE-BASED USER PERSISTENCE
+// POSTGRESQL USER PERSISTENCE
 // ═══════════════════════════════════════════
-const USERS_FILE = path.join(__dirname, 'users.json');
+const AUTH_DATABASE_URL = process.env.DATABASE_URL;
+let authPool = null;
 
-function loadUsersFromDisk() {
+async function initAuthDatabase() {
+    if (!AUTH_DATABASE_URL) {
+        console.warn('[Auth] DATABASE_URL not set — user auth will not persist!');
+        return;
+    }
     try {
-        if (fs.existsSync(USERS_FILE)) {
-            const raw = fs.readFileSync(USERS_FILE, 'utf-8');
-            const arr = JSON.parse(raw);
-            const map = new Map();
-            arr.forEach(u => map.set(u.email.toLowerCase(), u));
-            console.log(`[Auth] Loaded ${map.size} user(s) from disk`);
-            return map;
+        authPool = new PgPool({
+            connectionString: AUTH_DATABASE_URL,
+            ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+            max: 5
+        });
+        // Create users table if it doesn't exist
+        await authPool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                name TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'viewer',
+                password_hash TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+        console.log('[Auth] PostgreSQL users table ready');
+
+        // Seed admin user if table is empty
+        const { rows } = await authPool.query('SELECT COUNT(*) as count FROM users');
+        if (parseInt(rows[0].count) === 0) {
+            const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
+            await authPool.query(
+                'INSERT INTO users (id, email, name, role, password_hash) VALUES ($1, $2, $3, $4, $5)',
+                ['admin_001', 'saicharan@quickinsight.co.uk', 'Sai Charan', 'admin', adminHash]
+            );
+            console.log('[Auth] Seeded admin user: saicharan@quickinsight.co.uk');
+        } else {
+            console.log(`[Auth] ${rows[0].count} user(s) already in database`);
         }
     } catch (err) {
-        console.warn('[Auth] Failed to load users from disk:', err.message);
+        console.error('[Auth] Failed to initialize PostgreSQL auth:', err.message);
     }
-    return null;
-}
-
-function saveUsersToDisk(usersMap) {
-    try {
-        const arr = Array.from(usersMap.values());
-        fs.writeFileSync(USERS_FILE, JSON.stringify(arr, null, 2), 'utf-8');
-        console.log(`[Auth] Saved ${arr.length} user(s) to disk`);
-    } catch (err) {
-        console.warn('[Auth] Failed to save users to disk:', err.message);
-    }
-}
-
-async function initializeUsers() {
-    const loaded = loadUsersFromDisk();
-    if (loaded && loaded.size > 0) return loaded;
-
-    // Seed admin user on first run
-    const map = new Map();
-    const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
-    const admin = {
-        id: 'admin_001',
-        email: 'saicharan@QuickInsight.co.uk',
-        name: 'Sai Charan',
-        role: 'admin',
-        passwordHash: adminHash,
-        createdAt: new Date().toISOString()
-    };
-    map.set(admin.email.toLowerCase(), admin);
-    saveUsersToDisk(map);
-    console.log('[Auth] Created seed admin user');
-    return map;
 }
 
 const app = express();
@@ -132,42 +127,40 @@ app.use('/api/', apiKeyMiddleware);
 // JWT AUTHENTICATION ENDPOINTS
 // ═══════════════════════════════════════════
 
-// File-backed user store (Fix #4: persists across server restarts)
-let users = new Map();
-
-// Initialize users asynchronously
+// Initialize PostgreSQL auth database
 (async () => {
-    users = await initializeUsers();
+    await initAuthDatabase();
 })();
 
 // Register a new user
 app.post('/api/auth/register', async (req, res) => {
     try {
+        if (!authPool) return res.status(503).json({ success: false, error: 'Database not available' });
+
         const { email, name, password, role } = req.body;
         if (!email || !password || !name) {
             return res.status(400).json({ success: false, error: 'Email, name, and password are required' });
         }
 
         const emailNorm = email.trim().toLowerCase();
-        if (users.has(emailNorm)) {
+
+        // Check if user already exists
+        const existing = await authPool.query('SELECT id FROM users WHERE email = $1', [emailNorm]);
+        if (existing.rows.length > 0) {
             return res.status(400).json({ success: false, error: 'User already exists' });
         }
 
         const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
-        const user = {
-            id: Date.now().toString(),
-            email: emailNorm,
-            name,
-            role: role || 'viewer',
-            passwordHash: hashedPassword,
-            createdAt: new Date().toISOString()
-        };
+        const userId = Date.now().toString();
+        const userRole = role || 'viewer';
 
-        users.set(emailNorm, user);
-        saveUsersToDisk(users); // Fix #4: persist new user
+        await authPool.query(
+            'INSERT INTO users (id, email, name, role, password_hash) VALUES ($1, $2, $3, $4, $5)',
+            [userId, emailNorm, name, userRole, hashedPassword]
+        );
 
         const token = jwt.sign(
-            { userId: user.id, email: user.email, role: user.role },
+            { userId, email: emailNorm, role: userRole },
             JWT_SECRET,
             { expiresIn: '24h' }
         );
@@ -175,7 +168,7 @@ app.post('/api/auth/register', async (req, res) => {
         res.json({
             success: true,
             token,
-            user: { id: user.id, email: user.email, name: user.name, role: user.role }
+            user: { id: userId, email: emailNorm, name, role: userRole }
         });
     } catch (error) {
         console.error('Registration error:', error);
@@ -186,18 +179,21 @@ app.post('/api/auth/register', async (req, res) => {
 // Login
 app.post('/api/auth/login', async (req, res) => {
     try {
+        if (!authPool) return res.status(503).json({ success: false, error: 'Database not available' });
+
         const { email, password } = req.body;
         if (!email || !password) {
             return res.status(400).json({ success: false, error: 'Email and password are required' });
         }
 
         const emailNorm = email.trim().toLowerCase();
-        const user = users.get(emailNorm);
-        if (!user) {
+        const { rows } = await authPool.query('SELECT * FROM users WHERE email = $1', [emailNorm]);
+        if (rows.length === 0) {
             return res.status(401).json({ success: false, error: 'Invalid credentials' });
         }
 
-        const isValid = await bcrypt.compare(password, user.passwordHash);
+        const user = rows[0];
+        const isValid = await bcrypt.compare(password, user.password_hash);
         if (!isValid) {
             return res.status(401).json({ success: false, error: 'Invalid credentials' });
         }
