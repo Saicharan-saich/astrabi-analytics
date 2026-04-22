@@ -5,7 +5,8 @@ const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const sql = require('mssql');
-const rawSql = require('msnodesqlv8');
+let rawSql = null;
+try { rawSql = require('msnodesqlv8'); } catch { console.warn('[Server] msnodesqlv8 not available — Windows Auth SQL disabled'); }
 const { Pool: PgPool } = require('pg');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -271,6 +272,9 @@ app.post('/api/connect', async (req, res) => {
         let connectionEntry = { config: req.body };
 
         if (useWindowsAuth) {
+            if (!rawSql) {
+                return res.status(400).json({ success: false, error: 'Windows Authentication is not available on this server (requires Windows + ODBC drivers). Use SQL Server Authentication instead.' });
+            }
             // Use Raw msnodesqlv8 driver
             console.log('Using Raw msnodesqlv8 driver for Windows Auth');
 
