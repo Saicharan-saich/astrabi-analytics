@@ -182,36 +182,19 @@ app.post('/api/auth/register', async (req, res) => {
         const userRole = role || 'viewer';
 
         if (!authPool) {
-            // Json file fallback
-            const usersPath = path.join(__dirname, 'users.json');
-            let localUsers = [];
-            if (fs.existsSync(usersPath)) {
-                localUsers = JSON.parse(fs.readFileSync(usersPath, 'utf8'));
-            }
-            if (localUsers.some(u => u.email.toLowerCase() === emailNorm)) {
-                return res.status(400).json({ success: false, error: 'User already exists' });
-            }
-            localUsers.push({
-                id: userId,
-                email: emailNorm,
-                name,
-                role: userRole,
-                passwordHash: hashedPassword,
-                createdAt: new Date().toISOString()
-            });
-            fs.writeFileSync(usersPath, JSON.stringify(localUsers, null, 2));
-        } else {
-            // Check if user already exists
-            const existing = await authPool.query('SELECT id FROM users WHERE email = $1', [emailNorm]);
-            if (existing.rows.length > 0) {
-                return res.status(400).json({ success: false, error: 'User already exists' });
-            }
-
-            await authPool.query(
-                'INSERT INTO users (id, email, name, role, password_hash) VALUES ($1, $2, $3, $4, $5)',
-                [userId, emailNorm, name, userRole, hashedPassword]
-            );
+            return res.status(503).json({ success: false, error: 'Database connection not available' });
         }
+
+        // Check if user already exists
+        const existing = await authPool.query('SELECT id FROM users WHERE email = $1', [emailNorm]);
+        if (existing.rows.length > 0) {
+            return res.status(400).json({ success: false, error: 'User already exists' });
+        }
+
+        await authPool.query(
+            'INSERT INTO users (id, email, name, role, password_hash) VALUES ($1, $2, $3, $4, $5)',
+            [userId, emailNorm, name, userRole, hashedPassword]
+        );
 
         const token = jwt.sign(
             { userId, email: emailNorm, role: userRole },
@@ -242,20 +225,11 @@ app.post('/api/auth/login', async (req, res) => {
         let user;
 
         if (!authPool) {
-            // Json file fallback
-            const usersPath = path.join(__dirname, 'users.json');
-            let localUsers = [];
-            if (fs.existsSync(usersPath)) {
-                localUsers = JSON.parse(fs.readFileSync(usersPath, 'utf8'));
-            }
-            user = localUsers.find(u => u.email.toLowerCase() === emailNorm);
-            if (user) {
-                user.password_hash = user.passwordHash || user.password_hash;
-            }
-        } else {
-            const { rows } = await authPool.query('SELECT * FROM users WHERE email = $1', [emailNorm]);
-            user = rows[0];
+            return res.status(503).json({ success: false, error: 'Database connection not available' });
         }
+
+        const { rows } = await authPool.query('SELECT * FROM users WHERE email = $1', [emailNorm]);
+        user = rows[0];
 
         if (!user) {
             return res.status(401).json({ success: false, error: 'Invalid credentials' });
