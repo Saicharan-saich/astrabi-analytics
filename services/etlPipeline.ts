@@ -771,8 +771,42 @@ function layer4_rulePlanner(
                 type = ColumnType.METRIC;
             }
             // ── Gate 4b: Metric gate (high numeric rate + sufficient cardinality) ──
+            // BUT: first check if this is a numeric ATTRIBUTE (age, rating, etc.)
+            // using statistical signals — bounded range, integer values, low cardinality
             else if (effectiveNumericRate >= 0.7 && p.distinctCount >= 10 && !ID_PATTERNS.test(p.name)) {
-                type = ColumnType.METRIC;
+                // Check if this looks like a numeric attribute vs a business metric
+                const pMin = p.min;
+                const pMax = p.max;
+                const isAttribute = (() => {
+                    if (pMin === undefined || pMax === undefined) return false;
+
+                    // Never reclassify columns with strong business metric names
+                    const STRONG_METRIC = /(?:^|[_\s])(sales|revenue|profit|cost|price|amount|total|income|salary|wage|pay|compensation|expense|fee|charge|payment|spend|earning|bonus|commission|balance|budget|discount|tax|shipping|freight|margin|debt|credit|debit|turnover|premium|interest|deposit|refund|rent|royalty|stipend|funding|payout)(?:[_\s]|$)/i;
+                    if (STRONG_METRIC.test(p.name)) return false;
+
+                    const span = pMax - pMin;
+                    const maxVal = Math.max(Math.abs(pMin), Math.abs(pMax));
+
+                    // Signal 1: Bounded human-scale range (0–200)
+                    const bounded = maxVal > 0 && maxVal <= 200 && span > 0 && span <= 200;
+                    // Signal 2: Integer-only values
+                    const integers = Number.isInteger(pMin) && Number.isInteger(pMax);
+                    // Signal 3: Low distinct-to-row ratio (< 15% unique)
+                    const lowDistinct = p.totalValues > 0 && (p.distinctCount / p.totalValues) < 0.15;
+
+                    const signals = [bounded, integers, lowDistinct].filter(Boolean).length;
+                    return signals >= 2;
+                })();
+
+                if (isAttribute) {
+                    type = ColumnType.DIMENSION;
+                    logs.push(log('Attribute Detection', 4, 'info',
+                        `Column '${p.name}' reclassified as DIMENSION (numeric attribute) — ` +
+                        `range: ${pMin}–${pMax}, distinct: ${p.distinctCount}/${p.totalValues}`,
+                        { affectedColumns: [p.name] }));
+                } else {
+                    type = ColumnType.METRIC;
+                }
             }
             // ── Gate 5: Low-cardinality numeric = ID ──
             else if (p.numericParseRate >= 0.9 && p.distinctCount < 10 && p.totalValues > 0 && p.distinctCount / p.totalValues < 0.05) {
