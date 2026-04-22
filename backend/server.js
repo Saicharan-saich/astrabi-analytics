@@ -19,47 +19,55 @@ const BCRYPT_ROUNDS = 12;
 // ═══════════════════════════════════════════
 // POSTGRESQL USER PERSISTENCE
 // ═══════════════════════════════════════════
-const AUTH_DATABASE_URL = process.env.DATABASE_URL;
 let authPool = null;
+let authDbStatus = 'not_configured';
 
 async function initAuthDatabase() {
-    if (!AUTH_DATABASE_URL) {
-        console.warn('[Auth] DATABASE_URL not set — user auth will not persist!');
+    // Try multiple URL env vars that Railway might provide
+    const dbUrls = [
+        process.env.DATABASE_URL,
+        process.env.DATABASE_PUBLIC_URL,
+        process.env.POSTGRES_URL,
+    ].filter(Boolean);
+
+    if (dbUrls.length === 0) {
+        console.warn('[Auth] No database URL found (tried DATABASE_URL, DATABASE_PUBLIC_URL, POSTGRES_URL)');
+        authDbStatus = 'no_url';
         return;
     }
 
-    // Try connecting — first without SSL (internal Railway), then with SSL (external)
-    const sslConfigs = [
-        false,                          // Internal Railway connections
-        { rejectUnauthorized: false },   // External / public Railway connections
-    ];
+    console.log(`[Auth] Found ${dbUrls.length} database URL(s) to try`);
 
-    for (const sslConfig of sslConfigs) {
-        try {
-            const pool = new PgPool({
-                connectionString: AUTH_DATABASE_URL,
-                ssl: sslConfig,
-                max: 5,
-                connectionTimeoutMillis: 10000
-            });
-
-            // Test the connection
-            await pool.query('SELECT 1');
-            authPool = pool;
-            console.log(`[Auth] Connected to PostgreSQL (ssl=${JSON.stringify(sslConfig)})`);
-            break;
-        } catch (err) {
-            console.warn(`[Auth] Connection attempt failed (ssl=${JSON.stringify(sslConfig)}):`, err.message);
+    // Try each URL with both SSL configs
+    for (const url of dbUrls) {
+        const masked = url.replace(/\/\/[^@]+@/, '//***:***@');
+        for (const sslConfig of [false, { rejectUnauthorized: false }]) {
+            try {
+                const pool = new PgPool({
+                    connectionString: url,
+                    ssl: sslConfig,
+                    max: 5,
+                    connectionTimeoutMillis: 10000
+                });
+                await pool.query('SELECT 1');
+                authPool = pool;
+                console.log(`[Auth] Connected to PostgreSQL: ${masked} (ssl=${JSON.stringify(sslConfig)})`);
+                authDbStatus = 'connected';
+                break;
+            } catch (err) {
+                console.warn(`[Auth] Failed: ${masked} (ssl=${JSON.stringify(sslConfig)}): ${err.message}`);
+            }
         }
+        if (authPool) break;
     }
 
     if (!authPool) {
-        console.error('[Auth] Could not connect to PostgreSQL with any SSL config');
+        console.error('[Auth] Could not connect to PostgreSQL with any URL/SSL combination');
+        authDbStatus = 'connection_failed';
         return;
     }
 
     try {
-        // Create users table if it doesn't exist
         await authPool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
@@ -72,7 +80,6 @@ async function initAuthDatabase() {
         `);
         console.log('[Auth] PostgreSQL users table ready');
 
-        // Seed admin user if table is empty
         const { rows } = await authPool.query('SELECT COUNT(*) as count FROM users');
         if (parseInt(rows[0].count) === 0) {
             const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
@@ -84,9 +91,11 @@ async function initAuthDatabase() {
         } else {
             console.log(`[Auth] ${rows[0].count} user(s) already in database`);
         }
+        authDbStatus = 'ready';
     } catch (err) {
         console.error('[Auth] Failed to initialize tables:', err.message);
         authPool = null;
+        authDbStatus = 'table_init_failed: ' + err.message;
     }
 }
 
