@@ -1,0 +1,345 @@
+import React, { useMemo, useState } from 'react';
+import {
+    Database, Columns, BarChart3, Hash, Calendar, Type, Key,
+    TrendingUp, TrendingDown, ChevronDown, ChevronRight, Layers,
+    FileText, Eye
+} from 'lucide-react';
+import { Dataset } from '../types';
+
+interface DatasetSummaryViewProps {
+    dataset: Dataset | null;
+}
+
+interface ColumnStats {
+    name: string;
+    type: string;
+    count: number;
+    unique: number;
+    nullCount: number;
+    nullPct: number;
+    min?: number | string;
+    max?: number | string;
+    sum?: number;
+    mean?: number;
+    median?: number;
+    stdDev?: number;
+    topValues?: { value: string; count: number }[];
+}
+
+const TYPE_ICONS: Record<string, React.ReactNode> = {
+    METRIC: <Hash className="w-3.5 h-3.5" />,
+    DIMENSION: <Type className="w-3.5 h-3.5" />,
+    DATE: <Calendar className="w-3.5 h-3.5" />,
+    ID: <Key className="w-3.5 h-3.5" />,
+};
+
+const TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
+    METRIC: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20' },
+    DIMENSION: { bg: 'bg-violet-500/10', text: 'text-violet-400', border: 'border-violet-500/20' },
+    DATE: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20' },
+    ID: { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' },
+};
+
+function computeColumnStats(rows: Record<string, any>[], colName: string, colType: string): ColumnStats {
+    const values = rows.map(r => r[colName]);
+    const nonNull = values.filter(v => v !== null && v !== undefined && v !== '');
+    const count = values.length;
+    const nullCount = count - nonNull.length;
+    const nullPct = count > 0 ? (nullCount / count) * 100 : 0;
+    const uniqueSet = new Set(nonNull.map(String));
+    const unique = uniqueSet.size;
+
+    const stats: ColumnStats = { name: colName, type: colType, count, unique, nullCount, nullPct };
+
+    if (colType === 'METRIC') {
+        const nums = nonNull.map(Number).filter(n => !isNaN(n));
+        if (nums.length > 0) {
+            nums.sort((a, b) => a - b);
+            stats.min = nums[0];
+            stats.max = nums[nums.length - 1];
+            stats.sum = nums.reduce((s, n) => s + n, 0);
+            stats.mean = stats.sum / nums.length;
+            const mid = Math.floor(nums.length / 2);
+            stats.median = nums.length % 2 !== 0 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
+            const variance = nums.reduce((s, n) => s + Math.pow(n - stats.mean!, 2), 0) / nums.length;
+            stats.stdDev = Math.sqrt(variance);
+        }
+    } else if (colType === 'DATE') {
+        const dates = nonNull.map(v => new Date(v)).filter(d => !isNaN(d.getTime()));
+        if (dates.length > 0) {
+            dates.sort((a, b) => a.getTime() - b.getTime());
+            stats.min = dates[0].toISOString().split('T')[0];
+            stats.max = dates[dates.length - 1].toISOString().split('T')[0];
+        }
+    }
+
+    // Top values for categorical
+    if (colType === 'DIMENSION' || colType === 'ID') {
+        const freq = new Map<string, number>();
+        nonNull.forEach(v => {
+            const s = String(v);
+            freq.set(s, (freq.get(s) || 0) + 1);
+        });
+        stats.topValues = Array.from(freq.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(([value, count]) => ({ value, count }));
+    }
+
+    return stats;
+}
+
+function formatNum(n: number | undefined): string {
+    if (n === undefined) return '—';
+    if (Math.abs(n) >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
+    if (Math.abs(n) >= 1_000) return (n / 1_000).toFixed(2) + 'K';
+    return n.toFixed(2);
+}
+
+const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, totalRows }) => {
+    const [expanded, setExpanded] = useState(false);
+    const color = TYPE_COLORS[stat.type] || TYPE_COLORS.DIMENSION;
+    const icon = TYPE_ICONS[stat.type] || <Type className="w-3.5 h-3.5" />;
+    const fillPct = totalRows > 0 ? ((totalRows - stat.nullCount) / totalRows) * 100 : 0;
+
+    return (
+        <div
+            className={`bg-white dark:bg-[#1c2033] border ${color.border} rounded-xl overflow-hidden hover:shadow-md transition-all duration-200`}
+        >
+            {/* Header */}
+            <button
+                onClick={() => setExpanded(!expanded)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
+            >
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className={`w-7 h-7 rounded-lg ${color.bg} flex items-center justify-center shrink-0 ${color.text}`}>
+                        {icon}
+                    </div>
+                    <div className="min-w-0">
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate">{stat.name}</h4>
+                        <span className={`text-[10px] font-semibold uppercase tracking-wider ${color.text}`}>{stat.type}</span>
+                    </div>
+                </div>
+                <div className="flex items-center gap-3 shrink-0">
+                    <span className="text-xs font-medium text-slate-400">
+                        {stat.unique} unique
+                    </span>
+                    {expanded
+                        ? <ChevronDown className="w-4 h-4 text-slate-400" />
+                        : <ChevronRight className="w-4 h-4 text-slate-400" />}
+                </div>
+            </button>
+
+            {/* Data completeness bar */}
+            <div className="px-4 pb-2">
+                <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                    <span>{fillPct.toFixed(0)}% filled</span>
+                    <span>{stat.nullCount} nulls</span>
+                </div>
+                <div className="h-1.5 bg-slate-100 dark:bg-slate-700/50 rounded-full overflow-hidden">
+                    <div
+                        className={`h-full rounded-full transition-all duration-500 ${fillPct > 90 ? 'bg-emerald-500' : fillPct > 70 ? 'bg-amber-500' : 'bg-red-500'
+                            }`}
+                        style={{ width: `${fillPct}%` }}
+                    />
+                </div>
+            </div>
+
+            {/* Expanded details */}
+            {expanded && (
+                <div className="px-4 pb-4 pt-2 border-t border-slate-100 dark:border-white/5 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                    {stat.type === 'METRIC' && (
+                        <div className="grid grid-cols-3 gap-2">
+                            {[
+                                { label: 'Min', value: formatNum(stat.min as number) },
+                                { label: 'Max', value: formatNum(stat.max as number) },
+                                { label: 'Sum', value: formatNum(stat.sum) },
+                                { label: 'Mean', value: formatNum(stat.mean) },
+                                { label: 'Median', value: formatNum(stat.median) },
+                                { label: 'Std Dev', value: formatNum(stat.stdDev) },
+                            ].map(item => (
+                                <div key={item.label} className="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-2.5 py-2 text-center">
+                                    <div className="text-[10px] text-slate-400 font-medium">{item.label}</div>
+                                    <div className="text-xs font-bold text-gray-900 dark:text-white">{item.value}</div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {stat.type === 'DATE' && (
+                        <div className="grid grid-cols-2 gap-2">
+                            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2">
+                                <div className="text-[10px] text-slate-400 font-medium">Earliest</div>
+                                <div className="text-xs font-bold text-gray-900 dark:text-white">{stat.min || '—'}</div>
+                            </div>
+                            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2">
+                                <div className="text-[10px] text-slate-400 font-medium">Latest</div>
+                                <div className="text-xs font-bold text-gray-900 dark:text-white">{stat.max || '—'}</div>
+                            </div>
+                        </div>
+                    )}
+
+                    {stat.topValues && stat.topValues.length > 0 && (
+                        <div>
+                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Top Values</div>
+                            <div className="space-y-1.5">
+                                {stat.topValues.map((tv, i) => {
+                                    const barW = stat.topValues![0].count > 0
+                                        ? (tv.count / stat.topValues![0].count) * 100
+                                        : 0;
+                                    return (
+                                        <div key={i} className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-700 dark:text-slate-300 font-medium truncate min-w-[80px] max-w-[140px]">
+                                                {tv.value}
+                                            </span>
+                                            <div className="flex-1 h-4 bg-slate-100 dark:bg-slate-700/40 rounded-full overflow-hidden">
+                                                <div
+                                                    className="h-full bg-violet-500/30 dark:bg-violet-500/20 rounded-full flex items-center justify-end pr-1"
+                                                    style={{ width: `${barW}%`, minWidth: '20px' }}
+                                                >
+                                                    <span className="text-[9px] font-bold text-violet-600 dark:text-violet-300">
+                                                        {tv.count}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({ dataset }) => {
+    const columnStats = useMemo(() => {
+        if (!dataset?.rows || !dataset?.columns) return [];
+        return dataset.columns.map(col =>
+            computeColumnStats(dataset.rows, col.name, col.type)
+        );
+    }, [dataset]);
+
+    const overviewStats = useMemo(() => {
+        if (!dataset) return null;
+        const rows = dataset.rows?.length || 0;
+        const cols = dataset.columns?.length || 0;
+        const metrics = dataset.columns?.filter(c => c.type === 'METRIC').length || 0;
+        const dimensions = dataset.columns?.filter(c => c.type === 'DIMENSION').length || 0;
+        const dates = dataset.columns?.filter(c => c.type === 'DATE').length || 0;
+        const ids = dataset.columns?.filter(c => c.type === 'ID').length || 0;
+        const totalCells = rows * cols;
+        const nullCells = columnStats.reduce((s, c) => s + c.nullCount, 0);
+        const completeness = totalCells > 0 ? ((totalCells - nullCells) / totalCells) * 100 : 100;
+        return { rows, cols, metrics, dimensions, dates, ids, completeness };
+    }, [dataset, columnStats]);
+
+    if (!dataset) {
+        return (
+            <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
+                <Database className="w-16 h-16 text-slate-600" />
+                <h3 className="text-xl font-bold text-slate-300">No Dataset Loaded</h3>
+                <p className="text-sm text-slate-500">Please load a dataset to see its summary.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="h-full overflow-y-auto bg-gray-50 dark:bg-slate-900">
+            <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+
+                {/* Header */}
+                <div className="flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg">
+                        <Database className="w-6 h-6 text-white" />
+                    </div>
+                    <div>
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
+                            Dataset Summary
+                        </h2>
+                        <p className="text-sm text-gray-500 dark:text-slate-400">
+                            {dataset.name || 'Unnamed Dataset'} · {overviewStats?.rows.toLocaleString()} rows · {overviewStats?.cols} columns
+                        </p>
+                    </div>
+                </div>
+
+                {/* Overview KPI Cards */}
+                {overviewStats && (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                        {[
+                            { label: 'Total Rows', value: overviewStats.rows.toLocaleString(), icon: <Layers className="w-4 h-4" />, color: 'from-blue-500 to-cyan-500' },
+                            { label: 'Columns', value: String(overviewStats.cols), icon: <Columns className="w-4 h-4" />, color: 'from-violet-500 to-purple-500' },
+                            { label: 'Metrics', value: String(overviewStats.metrics), icon: <Hash className="w-4 h-4" />, color: 'from-emerald-500 to-teal-500' },
+                            { label: 'Dimensions', value: String(overviewStats.dimensions), icon: <Type className="w-4 h-4" />, color: 'from-amber-500 to-orange-500' },
+                            { label: 'Date Fields', value: String(overviewStats.dates), icon: <Calendar className="w-4 h-4" />, color: 'from-rose-500 to-pink-500' },
+                            { label: 'Completeness', value: `${overviewStats.completeness.toFixed(1)}%`, icon: <Eye className="w-4 h-4" />, color: overviewStats.completeness > 90 ? 'from-emerald-500 to-green-500' : 'from-amber-500 to-red-500' },
+                        ].map(kpi => (
+                            <div key={kpi.label} className="bg-white dark:bg-[#1c2033] rounded-xl border border-gray-200 dark:border-white/[0.06] p-4 hover:shadow-md transition-all">
+                                <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${kpi.color} flex items-center justify-center text-white mb-2`}>
+                                    {kpi.icon}
+                                </div>
+                                <div className="text-xl font-black text-gray-900 dark:text-white">{kpi.value}</div>
+                                <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{kpi.label}</div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Column breakdown */}
+                <div>
+                    <h3 className="text-sm font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        Column Details — Click to expand
+                    </h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {columnStats.map(stat => (
+                            <ColumnCard key={stat.name} stat={stat} totalRows={overviewStats?.rows || 0} />
+                        ))}
+                    </div>
+                </div>
+
+                {/* Quick Data Preview */}
+                {dataset.rows && dataset.rows.length > 0 && (
+                    <div className="bg-white dark:bg-[#1c2033] rounded-xl border border-gray-200 dark:border-white/[0.06] overflow-hidden">
+                        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
+                            <h3 className="text-sm font-bold text-gray-700 dark:text-white flex items-center gap-2">
+                                <BarChart3 className="w-4 h-4 text-amber-500" />
+                                Data Preview (first 10 rows)
+                            </h3>
+                        </div>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                                <thead>
+                                    <tr className="border-b border-gray-100 dark:border-white/5">
+                                        {dataset.columns.map(col => (
+                                            <th key={col.name} className="text-left text-slate-400 font-bold uppercase tracking-wider px-3 py-2 bg-gray-50 dark:bg-slate-800/50 sticky top-0 whitespace-nowrap">
+                                                {col.name}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {dataset.rows.slice(0, 10).map((row, i) => (
+                                        <tr key={i} className="border-b border-gray-50 dark:border-white/[0.03] hover:bg-gray-50 dark:hover:bg-white/[0.02]">
+                                            {dataset.columns.map(col => (
+                                                <td key={col.name} className="px-3 py-2 text-gray-900 dark:text-white font-mono whitespace-nowrap">
+                                                    {row[col.name] !== null && row[col.name] !== undefined
+                                                        ? (typeof row[col.name] === 'number'
+                                                            ? row[col.name].toLocaleString(undefined, { maximumFractionDigits: 2 })
+                                                            : String(row[col.name]).substring(0, 40))
+                                                        : <span className="text-slate-300 dark:text-slate-600 italic">null</span>}
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};

@@ -26,6 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         { id: Tab.ETL, label: 'ETL Pipeline', icon: Database, requiresEditSchema: true, tooltip: 'View each automated data cleaning step — null handling, type casting, date parsing, and more.' },
         { id: Tab.SCHEMA, label: 'Schema', icon: GitMerge, requiresEditSchema: true, tooltip: 'See how columns were classified (metric, dimension, date, ID) and override types if needed.' },
         { id: Tab.DATA, label: 'Data Explorer', icon: BarChart2, tooltip: 'Browse your cleaned data in a table view with column stats and distributions.' },
+        { id: Tab.DATASET_SUMMARY, label: 'Dataset Summary', icon: BarChart2, tooltip: 'See column-level statistics, distributions, data quality, and a quick preview of your dataset.' },
     ];
 
     const analysisSection = [

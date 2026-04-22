@@ -3,6 +3,7 @@ import { Sparkles, Play, RefreshCw, Search, AlertTriangle, BarChart2, Table, Cod
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { ChatMessage } from '../services/aiSQLService';
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
+import { getCacheStats, clearAISQLCache } from '../services/aiSqlCache';
 import { ChartVisualization } from './ChartVisualization';
 import { Tooltip } from './Tooltip';
 import { AIInsightPanel } from './AIInsightPanel';
@@ -46,6 +47,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
     const [pipelineResult, setPipelineResult] = useState<AISQLPipelineResult | null>(null);
     const [showGrowthPct, setShowGrowthPct] = useState(false);
     const [timeGrain, setTimeGrain] = useState<'day' | 'week' | 'month' | 'quarter' | 'year'>('month');
+    const [fromCache, setFromCache] = useState(false);
 
     const updateFormatting = (f: FormattingConfig) => setFormatting(f);
 
@@ -68,6 +70,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
         try {
             // Run the full enterprise AI SQL pipeline
             const result = await runAISQLPipeline(query, dataset, undefined, undefined, timeGrain);
+            setFromCache(!!(result as any).fromCache);
 
             // ── Graceful empty-result handling ─────────────────────────
             // When the pipeline finds 0 rows it now returns a result with
@@ -203,7 +206,74 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
         setIsInputCollapsed(false);
         setIsExplanationCollapsed(false);
         setPipelineResult(null);
-        setShowGrowthPct(false);
+        setFromCache(false);
+    };
+
+    // Regenerate: force bypass cache
+    const handleRegenerate = async () => {
+        if (!query.trim() || !dataset || isLoading) return;
+        setIsLoading(true);
+        setError(null);
+        setNoDataMsg(null);
+        setFromCache(false);
+        try {
+            const result = await runAISQLPipeline(query, dataset, undefined, undefined, timeGrain, true);
+            if (result.rawData.length === 0 && result.explanation) {
+                setPipelineResult(result);
+                setGeneratedSQL(result.sql);
+                setAiExplanation(result.explanation);
+                setNoDataMsg(result.explanation);
+                setIsLoading(false);
+                return;
+            }
+            setPipelineResult(result);
+            setGeneratedSQL(result.sql);
+            setAiExplanation(result.explanation);
+            setColumnsUsed(result.columnsUsed);
+
+            const chartTypeMap: Record<string, string> = {
+                kpiCard: 'kpiCard', line: 'line', bar: 'bar', horizontalBar: 'horizontalBar',
+                groupedBar: 'groupedBar', stackedBar: 'stackedBar', area: 'area',
+                dualAxisCombo: 'comboChart', multiLine: 'line', donut: 'donut', heatmap: 'heatmap', table: 'table',
+            };
+            const axisFormatMap: Record<string, FormattingConfig['numberFormat']> = {
+                percent: 'percent', currency_usd: 'currency_usd', compact: 'compact',
+            };
+            const detectedFormat = result.chart.leftAxisFormat
+                ? (axisFormatMap[result.chart.leftAxisFormat] ?? 'auto') : 'auto';
+            setFormatting(prev => ({ ...prev, numberFormat: detectedFormat }));
+
+            setAnalysisResult({
+                data: result.chartData,
+                xKey: result.chart.xKey,
+                yKey: result.chart.yKey,
+                yLabel: query,
+                insight: result.explanation,
+                sql: result.sql,
+                config: {
+                    metric: result.plan.metrics[0]?.field || result.chart.yKey,
+                    dimension: result.plan.dimensions[0]?.field || result.chart.xKey,
+                    aggregation: AggregationType.SUM,
+                    timeGrain: TimeGrain.RAW,
+                    analysisType: AnalysisType.STANDARD,
+                    questionId: 'ai_sql_regen_' + Date.now(),
+                    questionLabel: query,
+                    secondaryMetrics: result.chart.secondaryYKeys,
+                    axisMode: result.chart.useDualAxis ? 'dual' : 'auto',
+                },
+                vis: (chartTypeMap[result.chart.chartType] || 'bar') as any,
+                kpi: result.chart.chartType === 'kpiCard' && result.chartData.length > 0
+                    ? result.chartData[0][result.chart.yKey] : undefined,
+                growth: result.chart.growth
+                    ? { diff: result.chart.growth.diff, pct: result.chart.growth.pct } : undefined,
+                secondaryYKeys: result.chart.secondaryYKeys,
+            });
+            setFromCache(false);
+        } catch (err: any) {
+            setError(err.message || 'Regeneration failed.');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     if (!dataset) {
@@ -461,6 +531,13 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                                             Pin to Dashboard
                                         </button>
                                         <button
+                                            onClick={handleRegenerate}
+                                            className="flex items-center text-[13px] font-bold text-cyan-600 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 px-3.5 py-2 rounded-lg transition-all active:scale-95 border border-cyan-200 dark:border-cyan-500/20"
+                                            title="Regenerate — bypass cache, call AI fresh"
+                                        >
+                                            <RefreshCw className="w-4 h-4 mr-1.5" /> Regenerate
+                                        </button>
+                                        <button
                                             onClick={handleSubmit}
                                             className="flex items-center text-[13px] font-bold text-gray-600 dark:text-slate-300 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 px-3.5 py-2 rounded-lg transition-all active:scale-95"
                                             title="Refresh — re-run current query"
@@ -508,6 +585,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                                                             <span className="text-[10px] bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full font-bold">
                                                                 {pipelineResult.profile.rowCount} rows
                                                             </span>
+                                                            {/* Cache hit badge */}
+                                                            {fromCache && (
+                                                                <span className="text-[10px] bg-cyan-100 dark:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
+                                                                    ⚡ Cached
+                                                                </span>
+                                                            )}
                                                         </div>
                                                         {/* Confidence Badge */}
                                                         <div className="flex items-center gap-2">
@@ -557,8 +640,18 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                                                                                 xKey: result.chart.xKey,
                                                                                 yKey: result.chart.yKey,
                                                                                 yLabel: result.chart.yKey,
-                                                                                vis: result.chart.chartType,
-                                                                                title: query,
+                                                                                insight: result.explanation,
+                                                                                sql: result.sql,
+                                                                                config: {
+                                                                                    metric: result.plan.metrics[0]?.field || result.chart.yKey,
+                                                                                    dimension: result.plan.dimensions[0]?.field || result.chart.xKey,
+                                                                                    aggregation: AggregationType.SUM,
+                                                                                    timeGrain: TimeGrain.RAW,
+                                                                                    analysisType: AnalysisType.STANDARD,
+                                                                                    questionId: 'ai_sql_grain_' + Date.now(),
+                                                                                    questionLabel: query,
+                                                                                },
+                                                                                vis: result.chart.chartType as any,
                                                                             });
                                                                             setNoDataMsg(null);
                                                                             setError(null);

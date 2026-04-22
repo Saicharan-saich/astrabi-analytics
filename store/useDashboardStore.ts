@@ -33,6 +33,10 @@ interface DashboardState {
     dashboardFilters: DashboardFilter[];
     setDashboardFilters: (filters: DashboardFilter[]) => void;
 
+    // Dataset scoping
+    selectedDatasetId: string | null;
+    setSelectedDatasetId: (id: string | null) => void;
+
     // Formatting
     formatting: FormattingConfig;
     updateFormatting: (formatting: FormattingConfig) => void;
@@ -87,6 +91,10 @@ export const useDashboardStore = create<DashboardState>()(
             // Dashboard filters
             dashboardFilters: [],
             setDashboardFilters: (filters) => set({ dashboardFilters: filters }),
+
+            // Dataset scoping
+            selectedDatasetId: null,
+            setSelectedDatasetId: (id) => set({ selectedDatasetId: id }),
 
             // Formatting
             formatting: {

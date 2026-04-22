@@ -59,7 +59,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
 
     return (
         <React.Fragment>
-            <span className="text-purple-600 font-semibold self-center">and</span>
+            <span className="text-purple-400 font-semibold self-center">and</span>
 
             {filter.type === 'dimension' ? (
                 <>
@@ -68,34 +68,34 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                         <select
                             value={filter.column}
                             onChange={e => onUpdate(id, 'column', e.target.value)}
-                            className="appearance-none bg-purple-50 hover:bg-purple-100 text-purple-700 font-bold border-b-2 border-purple-300 rounded px-3 py-1 pr-8 cursor-pointer text-base focus:outline-none focus:ring-2 focus:ring-purple-500"
+                            className="appearance-none bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold border-b-2 border-purple-400/40 rounded-lg px-3 py-1 pr-8 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50"
                         >
                             {columnOptions.map(d => <option key={d} value={d}>{d.replace(/_/g, ' ')}</option>)}
                         </select>
-                        <ChevronDown className="w-4 h-4 text-purple-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <ChevronDown className="w-4 h-4 text-purple-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
 
-                    <span className="text-slate-500 self-center">is</span>
+                    <span className="text-slate-500 self-center text-sm">is</span>
 
                     <div className="relative inline-block">
                         <button
                             ref={buttonRef}
                             type="button"
                             onClick={() => setIsOpen(!isOpen)}
-                            className="appearance-none bg-white hover:bg-slate-50 text-slate-800 font-bold border-2 border-purple-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500 min-w-[140px] text-left flex items-center justify-between"
+                            className="appearance-none bg-white/10 hover:bg-white/15 text-slate-300 font-bold border-2 border-purple-400/30 rounded-lg px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-400/50 min-w-[140px] text-left flex items-center justify-between text-sm"
                         >
                             <span className="truncate">
                                 {selectedValues.length === 0 ? 'Select...' :
                                     selectedValues.length === 1 ? selectedValues[0] :
                                         `${selectedValues.length} selected`}
                             </span>
-                            <ChevronDown className="w-4 h-4 text-slate-500 ml-2" />
+                            <ChevronDown className="w-4 h-4 text-slate-400 ml-2" />
                         </button>
 
                         {isOpen && ReactDOM.createPortal(
                             <div
                                 ref={dropdownRef}
-                                className="fixed z-[9999] bg-white border-2 border-purple-300 rounded-md shadow-xl"
+                                className="fixed z-[9999] bg-slate-800 border border-purple-400/30 rounded-xl shadow-2xl"
                                 style={{
                                     top: dropdownPos.top,
                                     left: dropdownPos.left,
@@ -112,7 +112,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                                             placeholder="Search..."
                                             value={searchTerm}
                                             onChange={e => setSearchTerm(e.target.value)}
-                                            className="w-full pl-7 pr-2 py-1.5 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-purple-400"
+                                            className="w-full pl-7 pr-2 py-1.5 text-xs border border-white/15 rounded bg-white/10 text-slate-300 focus:outline-none focus:ring-1 focus:ring-purple-400 placeholder-slate-500"
                                             onClick={e => e.stopPropagation()}
                                         />
                                     </div>
@@ -124,7 +124,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                                         availableValues.filter(v => v.toLowerCase().includes(searchTerm.toLowerCase())).map(val => (
                                             <label
                                                 key={val}
-                                                className="flex items-center px-3 py-2 hover:bg-purple-50 cursor-pointer text-sm text-slate-800"
+                                                className="flex items-center px-3 py-2 hover:bg-purple-500/20 cursor-pointer text-sm text-slate-300"
                                             >
                                                 <input
                                                     type="checkbox"
@@ -132,7 +132,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                                                     onChange={() => toggleValue(val)}
                                                     className="mr-2 rounded border-purple-300 text-purple-600 focus:ring-purple-500"
                                                 />
-                                                <span className="text-slate-800">{val}</span>
+                                                <span className="text-slate-300">{val}</span>
                                             </label>
                                         ))
                                     )}
@@ -148,18 +148,18 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                         <select
                             value={filter.column}
                             onChange={e => onUpdate(id, 'column', e.target.value)}
-                            className="appearance-none bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold border-b-2 border-blue-300 rounded px-3 py-1 pr-8 cursor-pointer text-base focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="appearance-none bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 font-bold border-b-2 border-blue-400/40 rounded-lg px-3 py-1 pr-8 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
                         >
                             {columnOptions.map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
                         </select>
-                        <ChevronDown className="w-4 h-4 text-blue-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <ChevronDown className="w-4 h-4 text-blue-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
 
                     <div className="relative group inline-block">
                         <select
                             value={filter.operator}
                             onChange={e => onUpdate(id, 'operator', e.target.value)}
-                            className="appearance-none bg-white hover:bg-slate-50 text-slate-700 font-bold border-2 border-blue-300 rounded px-2 py-1 pr-6 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            className="appearance-none bg-white/10 hover:bg-white/15 text-slate-300 font-bold border-2 border-blue-400/30 rounded-lg px-2 py-1 pr-6 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400/50"
                         >
                             <option value=">=">&gt;=</option>
                             <option value="<=">&lt;=</option>
@@ -175,7 +175,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                         type="number"
                         value={filter.value}
                         onChange={e => onUpdate(id, 'value', parseFloat(e.target.value) || 0)}
-                        className="bg-white text-slate-800 font-bold border-2 border-blue-300 rounded px-3 py-1 w-28 focus:ring-2 focus:ring-blue-500 outline-none"
+                        className="bg-white/10 text-slate-300 font-bold border-2 border-blue-400/30 rounded-lg px-3 py-1 w-28 focus:ring-2 focus:ring-blue-400/50 outline-none text-sm"
                         placeholder="0"
                     />
                 </>
@@ -183,7 +183,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
 
             <button
                 onClick={() => onRemove(id)}
-                className="text-red-500 hover:text-red-700 hover:bg-red-50 rounded p-1 transition-colors self-center"
+                className="text-red-400 hover:text-red-300 hover:bg-red-500/20 rounded p-1 transition-colors self-center"
                 title="Remove filter"
             >
                 <X className="w-4 h-4" />

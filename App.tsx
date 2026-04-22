@@ -14,6 +14,7 @@ import { Sidebar } from './components/Sidebar';
 import { UploadView } from './components/UploadView';
 import { ETLView } from './components/ETLView';
 import { DataExplorerView } from './components/DataExplorerView';
+import { DatasetSummaryView } from './components/DatasetSummaryView';
 import { WorkbenchView } from './components/WorkbenchView';
 import { BuilderView } from './components/BuilderView';
 import { NLQView } from './components/NLQView';
@@ -103,6 +104,7 @@ function App() {
     setActiveTab,
     isSidebarOpen,
     toggleSidebar,
+    setSidebarOpen,
     showAbout,
     toggleAbout,
     dataset,
@@ -152,6 +154,13 @@ function App() {
       }
     });
   }, []);
+
+  // Auto-collapse sidebar when entering the builder
+  useEffect(() => {
+    if (activeTab === Tab.BUILDER) {
+      setSidebarOpen(false);
+    }
+  }, [activeTab, setSidebarOpen]);
 
   const handleDeleteDataset = (id: string) => {
     removeDataset(id);
@@ -465,6 +474,8 @@ function App() {
       result: result,
       width: 'half' as 'half' | 'full',
       datasetVersion: dataset?.version,
+      datasetId: dataset?.id,
+      datasetName: dataset?.name,
     };
     addItem(newItem);
     showToast("Pinned to Dashboard!");
@@ -744,6 +755,10 @@ function App() {
 
                 <div className={`h-full w-full ${activeTab === Tab.DATA ? '' : 'hidden'}`}>
                   <DataExplorerView dataset={dataset} />
+                </div>
+
+                <div className={`h-full w-full ${activeTab === Tab.DATASET_SUMMARY ? '' : 'hidden'}`}>
+                  <DatasetSummaryView dataset={dataset} />
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.NLQ ? '' : 'hidden'}`}>

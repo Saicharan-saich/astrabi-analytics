@@ -12,6 +12,7 @@ interface UIState {
     theme: 'dark' | 'light';
     setActiveTab: (tab: Tab) => void;
     toggleSidebar: () => void;
+    setSidebarOpen: (isOpen: boolean) => void;
     toggleAbout: (show: boolean) => void;
     setAppFontSize: (size: number) => void;
     toggleAppFontBold: () => void;
@@ -94,6 +95,8 @@ export interface DashboardFilter {
 interface DashboardFilterState {
     dashboardFilters: DashboardFilter[];
     setDashboardFilters: (filters: DashboardFilter[]) => void;
+    selectedDatasetId: string | null;
+    setSelectedDatasetId: (id: string | null) => void;
 }
 
 type AppStore = UIState & DataState & WorkbenchState & DashboardState & HistoryState & SavedQuestionsState & DashboardLayoutState & DashboardFilterState;
@@ -110,6 +113,7 @@ export const useAppStore = create<AppStore>()(
             theme: 'dark',
             setActiveTab: (tab) => set({ activeTab: tab }),
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
+            setSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),
             toggleAbout: (show) => set({ showAbout: show }),
             setAppFontSize: (size) => set({ appFontSize: size }),
             toggleAppFontBold: () => set((state) => ({ appFontBold: !state.appFontBold })),
@@ -194,6 +198,8 @@ export const useAppStore = create<AppStore>()(
             // Dashboard Filter Slice
             dashboardFilters: [],
             setDashboardFilters: (filters) => set({ dashboardFilters: filters }),
+            selectedDatasetId: null,
+            setSelectedDatasetId: (id) => set({ selectedDatasetId: id }),
         }),
         {
             name: 'QuickInsight-storage-v3', // unique name

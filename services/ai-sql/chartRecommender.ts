@@ -94,8 +94,8 @@ export function recommendChart(
         reason = 'Period-over-period total comparison → Grouped Bar with growth badge';
         if (computedGrowth) {
             growth = {
-                diff: computedGrowth.diff,
-                pct: computedGrowth.pct,
+                diff: computedGrowth.diff ?? 0,
+                pct: computedGrowth.pct ?? 0,
                 label: `${computedGrowth.currentLabel} vs ${computedGrowth.previousLabel}`,
             };
         }
@@ -106,8 +106,8 @@ export function recommendChart(
         reason = 'Period-over-period total comparison → Grouped Bar';
         if (computedGrowth) {
             growth = {
-                diff: computedGrowth.diff,
-                pct: computedGrowth.pct,
+                diff: computedGrowth.diff ?? 0,
+                pct: computedGrowth.pct ?? 0,
                 label: `${computedGrowth.currentLabel} vs ${computedGrowth.previousLabel}`,
             };
         }

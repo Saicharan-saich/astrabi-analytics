@@ -256,7 +256,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 });
             }
 
-            // DATE FILTERS
+            // DATE FILTERS (supports both hierarchy values and range mode)
             if (query.dateFilters && query.dateFilters.length > 0) {
                 query.dateFilters.forEach((df: any) => {
                     const sampleRow = filteredRows[0] || {};
@@ -283,6 +283,14 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
 
                         if (!d || isNaN(d.getTime())) return false;
 
+                        // RANGE MODE: value contains "start__end"
+                        if (df.values.length === 1 && df.values[0].includes('__')) {
+                            const [rangeStart, rangeEnd] = df.values[0].split('__');
+                            const isoDate = d.toISOString().split('T')[0];
+                            return isoDate >= rangeStart && isoDate <= rangeEnd;
+                        }
+
+                        // HIERARCHY MODE: match grain-formatted value
                         const year = d.getFullYear();
                         const month = d.getMonth() + 1;
                         const day = d.getDate();
@@ -1316,14 +1324,31 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 });
             }
 
-            // ── USER OVERRIDE: DATE FILTERS (Hierarchical) ──
+            // ── USER OVERRIDE: DATE FILTERS (Hierarchy + Range) ──
             if (query.dateFilters && (query.dateFilters as any[]).length > 0) {
                 (query.dateFilters as any[]).forEach((df: any) => {
                     if (!df.values || df.values.length === 0) return;
+
+                    // Range mode: value contains "start__end"
+                    if (df.values.length === 1 && df.values[0].includes('__')) {
+                        const [rangeStart, rangeEnd] = df.values[0].split('__');
+                        rows = rows.filter(r => {
+                            const d = date(r);
+                            return d >= rangeStart && d <= rangeEnd;
+                        });
+                        return;
+                    }
+
+                    // Hierarchy mode
                     const valSet = new Set(df.values);
                     rows = rows.filter(r => {
                         const d = date(r);
                         if (df.timeGrain === 'year') return valSet.has(d.substring(0, 4));
+                        if (df.timeGrain === 'quarter') {
+                            const parts = d.split('-').map(Number);
+                            const q = Math.ceil(parts[1] / 3);
+                            return valSet.has(`${parts[0]}-Q${q}`);
+                        }
                         if (df.timeGrain === 'month') return valSet.has(d.substring(0, 7));
                         if (df.timeGrain === 'day') return valSet.has(d);
                         return true;

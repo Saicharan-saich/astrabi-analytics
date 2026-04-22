@@ -289,6 +289,8 @@ export interface DashboardItem {
   result: AnalysisResult;
   width: 'full' | 'half';
   pinnedAt?: number; // Fix #8: Timestamp of last pin/refresh
+  datasetId?: string;   // ID of dataset this card was pinned from
+  datasetName?: string; // Human-readable dataset name for badges
   // ── System Correction Directive additions ──
   datasetVersion?: number; // Version of dataset when this item was pinned (mismatch → stale warning)
   /** When true this card ignores all dashboard-level global filters */
@@ -370,7 +372,8 @@ export enum Tab {
   CONNECTORS = 'CONNECTORS',
   NLQ = 'NLQ',
   AI_SQL = 'AI_SQL',
-  CUSTOM_QUESTIONS = 'CUSTOM_QUESTIONS'
+  CUSTOM_QUESTIONS = 'CUSTOM_QUESTIONS',
+  DATASET_SUMMARY = 'DATASET_SUMMARY'
 }
 
 // ─── Authentication & RBAC ───────────────────────────────────────

@@ -46,31 +46,18 @@ interface DateFilter {
     id: number;
     type: 'date';
     column: string;
-    timeGrain: 'year' | 'quarter' | 'month' | 'week' | 'day';
-    values: string[];
+    mode: 'hierarchy' | 'range';
+    year?: string;
+    quarter?: string;
+    month?: string;
+    day?: string;
+    rangeStart?: string;
+    rangeEnd?: string;
+    timeGrain?: string;
+    values?: string[];
 }
 
 type Filter = DimensionFilter | MeasureFilter | DateFilter;
-
-const getNextGrain = (grain: string) => {
-    switch (grain) {
-        case 'year': return 'quarter';
-        case 'quarter': return 'month';
-        case 'month': return 'week';
-        case 'week': return 'day';
-        default: return null;
-    }
-};
-
-const getPriorGrain = (grain: string) => {
-    switch (grain) {
-        case 'quarter': return 'year';
-        case 'month': return 'quarter';
-        case 'week': return 'month';
-        case 'day': return 'week'; // Assuming week is parent of day
-        default: return null;
-    }
-};
 
 // ... imports
 
@@ -243,7 +230,12 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
             } else if (f.type === 'measure' && f.column) {
                 measureFilters.push({ column: f.column, operator: f.operator, value: f.value });
             } else if (f.type === 'date' && f.column) {
-                if (f.values && f.values.length > 0) dateFilters.push({ column: f.column, timeGrain: f.timeGrain, values: f.values });
+                const df = f as DateFilter;
+                if (df.mode === 'range' && df.rangeStart && df.rangeEnd) {
+                    dateFilters.push({ column: df.column, timeGrain: 'day', values: [`${df.rangeStart}__${df.rangeEnd}`] });
+                } else if (df.values && df.values.length > 0) {
+                    dateFilters.push({ column: df.column, timeGrain: df.timeGrain || 'year', values: df.values });
+                }
             }
         });
 
@@ -278,7 +270,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
 
     // Filter Handlers
     const addFilter = (type: 'dimension' | 'measure' | 'date', column?: string, grain?: string) => {
-        if (type === 'date') setFilters([...filters, { id: nextFilterId, type: 'date', column: column || dateColumns[0] || '', timeGrain: (grain as any) || 'year', values: [] }]);
+        if (type === 'date') setFilters([...filters, { id: nextFilterId, type: 'date', column: column || dateColumns[0] || '', mode: 'hierarchy', year: '', quarter: '', month: '', day: '', rangeStart: '', rangeEnd: '', timeGrain: 'year', values: [] }]);
         else if (type === 'dimension') setFilters([...filters, { id: nextFilterId, type: 'dimension', column: dims.length ? dims[0] : '', value: [] }]);
         else setFilters([...filters, { id: nextFilterId, type: 'measure', column: metric || (metrics.length ? metrics[0] : ''), operator: '>', value: 0 }]);
         setNextFilterId(nextFilterId + 1);
@@ -747,9 +739,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
 
                         {filters.map(filter => {
                             if (filter.type === 'date') {
-                                const priorGrain = getPriorGrain(filter.timeGrain);
-                                const parentFilter = priorGrain ? filters.find(p => p.type === 'date' && p.column === filter.column && p.timeGrain === priorGrain) as DateFilter : undefined;
-                                return <DateFilterItem key={filter.id} id={filter.id} filter={filter} dateColumns={dateColumns} getDateValues={getDateValues} onUpdate={updateFilter} onRemove={removeFilter} onAddFilter={addFilter} selectedParentValues={parentFilter?.values} />;
+                                return <DateFilterItem key={filter.id} id={filter.id} filter={filter} dateColumns={dateColumns} getDateValues={getDateValues} onUpdate={updateFilter} onRemove={removeFilter} />;
                             }
                             return <FilterItem key={filter.id} id={filter.id} filter={filter} dims={dims} metrics={metrics} getColumnValues={getColumnValues} onUpdate={updateFilter} onRemove={removeFilter} />;
                         })}

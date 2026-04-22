@@ -9,7 +9,7 @@ import {
   Trash2, Edit, AlertTriangle, X, FileDown, Presentation,
   ChevronLeft, ChevronRight, Maximize2, LayoutDashboard, GripVertical,
   BarChart3, PieChart, LineChart, Activity,
-  Eye, Filter, ChevronDown, RefreshCw, SlidersHorizontal
+  Eye, Filter, ChevronDown, RefreshCw, SlidersHorizontal, Database
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Dataset, DashboardItem } from '../types';
@@ -95,8 +95,39 @@ const EditableTitle: React.FC<{
   );
 };
 
+// Colour palette for dataset badges
+const DATASET_COLORS = [
+  { bg: 'bg-cyan-500/15', text: 'text-cyan-400', dot: 'bg-cyan-400' },
+  { bg: 'bg-amber-500/15', text: 'text-amber-400', dot: 'bg-amber-400' },
+  { bg: 'bg-pink-500/15', text: 'text-pink-400', dot: 'bg-pink-400' },
+  { bg: 'bg-lime-500/15', text: 'text-lime-400', dot: 'bg-lime-400' },
+  { bg: 'bg-violet-500/15', text: 'text-violet-400', dot: 'bg-violet-400' },
+  { bg: 'bg-orange-500/15', text: 'text-orange-400', dot: 'bg-orange-400' },
+];
+
 export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit }) => {
-  const { items, removeItem, updateItem, formatting, clearAllItems, dashboardLayout, setDashboardLayout, dashboardFilters, setDashboardFilters } = useAppStore();
+  const { items, removeItem, updateItem, formatting, clearAllItems, dashboardLayout, setDashboardLayout, dashboardFilters, setDashboardFilters, selectedDatasetId, setSelectedDatasetId } = useAppStore();
+
+  // ── Dataset scoping ─────────────────────────────────────────
+  const uniqueDatasets = useMemo(() => {
+    const map = new Map<string, string>();
+    items.forEach(item => {
+      if (item.datasetId && item.datasetName) map.set(item.datasetId, item.datasetName);
+    });
+    return Array.from(map.entries()); // [[id, name], ...]
+  }, [items]);
+
+  const filteredItems = useMemo(() => {
+    if (!selectedDatasetId) return items;
+    return items.filter(item => item.datasetId === selectedDatasetId);
+  }, [items, selectedDatasetId]);
+
+  // Map dataset IDs to colours for badges
+  const datasetColorMap = useMemo(() => {
+    const map = new Map<string, typeof DATASET_COLORS[0]>();
+    uniqueDatasets.forEach(([id], i) => map.set(id, DATASET_COLORS[i % DATASET_COLORS.length]));
+    return map;
+  }, [uniqueDatasets]);
   const [showClearModal, setShowClearModal] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
@@ -380,8 +411,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               <div>
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">Dashboard</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
-                  {items.length > 0
-                    ? `${items.length} visual${items.length !== 1 ? 's' : ''} · Drag to rearrange · Hover to interact`
+                  {filteredItems.length > 0
+                    ? `${filteredItems.length} visual${filteredItems.length !== 1 ? 's' : ''}${selectedDatasetId ? ` · Filtered by dataset` : ''} · Drag to rearrange`
                     : 'Pin visuals from Builder, NLQ, or Workbench'}
                 </p>
               </div>
@@ -429,6 +460,41 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               </div>
             )}
           </div>
+
+          {/* ── Dataset Selector ── */}
+          {uniqueDatasets.length > 1 && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 text-xs text-slate-400 mr-1">
+                <Database className="w-3.5 h-3.5" />
+                <span className="font-medium">Dataset:</span>
+              </div>
+              <button
+                onClick={() => { setSelectedDatasetId(null); setDashboardFilters([]); }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${!selectedDatasetId
+                  ? 'bg-violet-500/15 text-violet-300 border-violet-500/30'
+                  : 'bg-slate-800 text-slate-400 border-white/10 hover:bg-slate-700'
+                  }`}
+              >
+                All Datasets
+              </button>
+              {uniqueDatasets.map(([id, name]) => {
+                const c = datasetColorMap.get(id) || DATASET_COLORS[0];
+                return (
+                  <button
+                    key={id}
+                    onClick={() => { setSelectedDatasetId(id); setDashboardFilters([]); }}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${selectedDatasetId === id
+                      ? `${c.bg} ${c.text} border-current/30`
+                      : 'bg-slate-800 text-slate-400 border-white/10 hover:bg-slate-700'
+                      }`}
+                  >
+                    <div className={`w-2 h-2 rounded-full ${c.dot}`} />
+                    {name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {items.length > 0 && (() => {
@@ -629,38 +695,48 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                         </label>
 
                         {/* Date-range inputs */}
-                        <div className="flex flex-wrap items-center gap-2">
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium">From</span>
-                            <input
-                              type="date"
-                              value={activeFilter?.values?.[0] ?? ''}
-                              onChange={e => {
-                                const from = e.target.value;
-                                const to = activeFilter?.values?.[1] ?? '';
-                                if (!from) { setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn)); return; }
-                                const existing = dashboardFilters.filter(f => f.column !== filterColumn);
-                                setDashboardFilters([...existing, { column: filterColumn, type: 'dimension', values: [from, to || from] }]);
-                              }}
-                              className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                            />
-                          </div>
-                          <div className="flex flex-col gap-0.5">
-                            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium">To</span>
-                            <input
-                              type="date"
-                              value={activeFilter?.values?.[1] ?? ''}
-                              onChange={e => {
-                                const to = e.target.value;
-                                const from = activeFilter?.values?.[0] ?? '';
-                                if (!from && !to) { setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn)); return; }
-                                const existing = dashboardFilters.filter(f => f.column !== filterColumn);
-                                setDashboardFilters([...existing, { column: filterColumn, type: 'dimension', values: [from || to, to || from] }]);
-                              }}
-                              className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                            />
-                          </div>
-                        </div>
+                        {(() => {
+                          // Only populate date inputs with actual yyyy-MM-dd values, not hierarchy tokens like "2024" or "2024-Q3"
+                          const isDateStr = (v?: string) => v ? /^\d{4}-\d{2}-\d{2}$/.test(v) : false;
+                          const dateFrom = activeFilter?.values?.find(v => isDateStr(v) && (activeFilter.values!.indexOf(v) === 0 || !isDateStr(activeFilter.values![0]))) ?? '';
+                          const dateTo = activeFilter?.values?.find((v, i) => isDateStr(v) && i > 0) ?? '';
+                          return (
+                            <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium">From</span>
+                                <input
+                                  type="date"
+                                  value={dateFrom}
+                                  onChange={e => {
+                                    const from = e.target.value;
+                                    if (!from) { setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn)); return; }
+                                    // Remove any existing date-range values and keep hierarchy tokens
+                                    const hierarchyTokens = (activeFilter?.values || []).filter(v => !isDateStr(v));
+                                    const existing = dashboardFilters.filter(f => f.column !== filterColumn);
+                                    setDashboardFilters([...existing, { column: filterColumn, type: 'dimension', values: [...hierarchyTokens, from, dateTo || from] }]);
+                                  }}
+                                  className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium">To</span>
+                                <input
+                                  type="date"
+                                  value={dateTo}
+                                  onChange={e => {
+                                    const to = e.target.value;
+                                    const from = dateFrom;
+                                    if (!from && !to) { setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn)); return; }
+                                    const hierarchyTokens = (activeFilter?.values || []).filter(v => !isDateStr(v));
+                                    const existing = dashboardFilters.filter(f => f.column !== filterColumn);
+                                    setDashboardFilters([...existing, { column: filterColumn, type: 'dimension', values: [...hierarchyTokens, from || to, to || from] }]);
+                                  }}
+                                  className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                                />
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {/* Hierarchy pills — year / quarter / month */}
                         {dateHierarchy.years.length > 0 && (
@@ -831,7 +907,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
         )}
 
         {/* ─── Drag-Drop Grid Layout ─── */}
-        {items.length > 0 && (
+        {filteredItems.length > 0 && (
           <ResponsiveGridLayout
             className="layout"
             layouts={allLayouts}
@@ -847,7 +923,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             margin={[16, 16]}
             containerPadding={[24, 0]}
           >
-            {items.map((item, idx) => {
+            {filteredItems.map((item, idx) => {
               const accent = CARD_ACCENTS[idx % CARD_ACCENTS.length];
               const vis = (item.result.vis as string) || 'bar';
               const isHovered = hoveredCard === item.id;
@@ -889,6 +965,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                           inputClassName="text-gray-900 dark:text-white text-sm"
                         />
                       </h3>
+
+                      {/* Dataset badge */}
+                      {item.datasetName && uniqueDatasets.length > 1 && (() => {
+                        const c = datasetColorMap.get(item.datasetId || '') || DATASET_COLORS[0];
+                        return (
+                          <span className={`hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${c.bg} ${c.text} shrink-0`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
+                            {item.datasetName}
+                          </span>
+                        );
+                      })()}
                     </div>
 
                     {/* Actions */}
@@ -947,76 +1034,120 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                             if (item.ignoreGlobalFilter) return item.result.data;
                             if (dashboardFilters.length === 0 || !Array.isArray(item.result.data)) return item.result.data;
 
-                            // Strategy:
-                            // 1. Filter the FULL dataset rows by global filters
-                            // 2. Collect allowed xKey values from filtered rows
-                            // 3. Keep only result rows whose xKey is in the allowed set
+                            const isDateStr = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
                             const xKey = item.result.xKey;
+                            const yKey = item.result.yKey;
                             const sourceRows = dataset?.rows ?? [];
+                            const cfg = item.result.config || item.result.queryConfig;
 
-                            // Pass 1: filter raw dataset rows
+                            // Pass 1: filter raw dataset rows by ALL global filters
                             let filteredSource = sourceRows;
                             dashboardFilters.forEach(f => {
                               filteredSource = filteredSource.filter((row: any) => {
                                 const val = row[f.column];
                                 if (val === undefined || val === null) return true;
-
-                                // Date range filter
                                 const colType = dataset?.columns?.find(c => c.name === f.column)?.type;
-                                if (colType === 'DATE' && f.values.length === 2 && f.values[0] && f.values[1]) {
-                                  const d = new Date(val);
-                                  if (isNaN(d.getTime())) return true;
-                                  const from = new Date(f.values[0]); const to = new Date(f.values[1]);
-                                  // Also check if values match year/quarter hierarchy tokens
-                                  const yr = String(d.getFullYear());
-                                  const qtr = `${yr}-Q${Math.ceil((d.getMonth() + 1) / 3)}`;
-                                  if (f.values.includes(yr) || f.values.includes(qtr)) return true;
-                                  return d >= from && d <= to;
-                                }
-                                // Date hierarchy tokens (year like "2024", quarter like "2024-Q1")
+
                                 if (colType === 'DATE' && f.values.length > 0) {
                                   const d = new Date(val);
                                   if (isNaN(d.getTime())) return true;
                                   const yr = String(d.getFullYear());
                                   const qtr = `${yr}-Q${Math.ceil((d.getMonth() + 1) / 3)}`;
-                                  return f.values.some(v => v === yr || v === qtr);
+                                  const hierarchyTokens = f.values.filter(v => !isDateStr(v));
+                                  const dateRangeValues = f.values.filter(v => isDateStr(v));
+                                  let passedHierarchy = hierarchyTokens.length === 0;
+                                  let passedRange = dateRangeValues.length === 0;
+                                  if (hierarchyTokens.length > 0) passedHierarchy = hierarchyTokens.some(v => v === yr || v === qtr);
+                                  if (dateRangeValues.length >= 2) { const from = new Date(dateRangeValues[0]); const to = new Date(dateRangeValues[1]); passedRange = d >= from && d <= to; }
+                                  if (hierarchyTokens.length > 0 && dateRangeValues.length >= 2) return passedHierarchy || passedRange;
+                                  return passedHierarchy && passedRange;
                                 }
-
-                                // Measure
                                 if (f.type === 'measure' && f.operator !== undefined && f.numericValue !== undefined) {
                                   const num = typeof val === 'number' ? val : parseFloat(val);
                                   if (isNaN(num)) return true;
                                   switch (f.operator) {
-                                    case '>': return num > f.numericValue;
-                                    case '<': return num < f.numericValue;
-                                    case '=': return num === f.numericValue;
-                                    case '!=': return num !== f.numericValue;
-                                    case '>=': return num >= f.numericValue;
-                                    case '<=': return num <= f.numericValue;
+                                    case '>': return num > f.numericValue; case '<': return num < f.numericValue;
+                                    case '=': return num === f.numericValue; case '!=': return num !== f.numericValue;
+                                    case '>=': return num >= f.numericValue; case '<=': return num <= f.numericValue;
                                     default: return true;
                                   }
                                 }
-                                // Categorical
                                 return f.values.length === 0 || f.values.includes(String(val));
                               });
                             });
 
-                            // Pass 2: build allowed xKey value set
-                            const allowedXVals = new Set<string>();
-                            filteredSource.forEach((row: any) => {
-                              if (row[xKey] !== undefined && row[xKey] !== null)
-                                allowedXVals.add(String(row[xKey]));
-                            });
+                            // ── RE-AGGREGATE from filtered rows ──
+                            // If we have a config with metric + dimension, rebuild the chart data
+                            if (cfg && cfg.metric && filteredSource.length > 0) {
+                              const metricCol = cfg.metric;
+                              const dimCol = cfg.dimension || '';
+                              const agg = (cfg.aggregation || 'SUM').toUpperCase();
 
-                            // Pass 3: keep result rows whose xKey is in the allowed set
-                            // If the filter column exists directly in result data, also apply direct filter
-                            return item.result.data.filter((row: any) => {
-                              const xVal = row[xKey];
-                              if (xVal !== undefined && xVal !== null && allowedXVals.size > 0) {
-                                return allowedXVals.has(String(xVal));
-                              }
-                              return true;
-                            });
+                              // Determine the dimension column in the raw data
+                              // Time dimensions (day/week/month/quarter/year) need date extraction
+                              const timeDims = ['day', 'week', 'month', 'quarter', 'year'];
+                              const isTimeDim = timeDims.includes(dimCol);
+                              const dateCol = dataset?.timeContext?.anchorDateColumn || dataset?.columns?.find(c => c.type === 'DATE')?.name;
+
+                              // Group rows by dimension value
+                              const groups = new Map<string, number[]>();
+                              filteredSource.forEach((row: any) => {
+                                let dimVal = '(Total)';
+                                if (dimCol && !isTimeDim) {
+                                  dimVal = String(row[dimCol] ?? '(empty)');
+                                } else if (isTimeDim && dateCol) {
+                                  const d = new Date(row[dateCol]);
+                                  if (!isNaN(d.getTime())) {
+                                    if (dimCol === 'year') dimVal = String(d.getFullYear());
+                                    else if (dimCol === 'quarter') dimVal = `Q${Math.ceil((d.getMonth() + 1) / 3)} ${d.getFullYear()}`;
+                                    else if (dimCol === 'month') dimVal = `${d.toLocaleString('en', { month: 'short' })} ${d.getFullYear()}`;
+                                    else if (dimCol === 'week') dimVal = `W${Math.ceil(((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000 + 1) / 7)} ${d.getFullYear()}`;
+                                    else if (dimCol === 'day') dimVal = d.toISOString().slice(0, 10);
+                                  }
+                                }
+                                const metricVal = typeof row[metricCol] === 'number' ? row[metricCol] : parseFloat(row[metricCol]);
+                                if (!isNaN(metricVal)) {
+                                  if (!groups.has(dimVal)) groups.set(dimVal, []);
+                                  groups.get(dimVal)!.push(metricVal);
+                                }
+                              });
+
+                              // Aggregate each group
+                              const reAggregated: any[] = [];
+                              groups.forEach((vals, dim) => {
+                                let result = 0;
+                                if (agg === 'SUM') result = vals.reduce((a, b) => a + b, 0);
+                                else if (agg === 'AVG') result = vals.reduce((a, b) => a + b, 0) / vals.length;
+                                else if (agg === 'COUNT') result = vals.length;
+                                else if (agg === 'COUNT_DISTINCT') result = new Set(vals).size;
+                                else if (agg === 'MAX') result = Math.max(...vals);
+                                else if (agg === 'MIN') result = Math.min(...vals);
+                                else result = vals.reduce((a, b) => a + b, 0);
+
+                                // Build row using the SAME keys as the original chart data
+                                const row: any = { [xKey]: dim, [yKey]: result };
+                                // Also add 'dim' and 'metric' aliases (used by some chart configs)
+                                if (xKey !== 'dim') row.dim = dim;
+                                if (yKey !== 'metric') row.metric = result;
+                                reAggregated.push(row);
+                              });
+
+                              // Sort to match original chart order
+                              const sort = cfg.sort || 'desc';
+                              if (sort === 'desc') reAggregated.sort((a, b) => (b[yKey] || 0) - (a[yKey] || 0));
+                              else if (sort === 'asc') reAggregated.sort((a, b) => (a[yKey] || 0) - (b[yKey] || 0));
+                              else if (sort === 'oldest') { /* keep insertion order for time dims */ }
+                              else if (sort === 'newest') reAggregated.reverse();
+
+                              // Apply limit if configured
+                              const limit = cfg.limit || 0;
+                              if (limit > 0 && reAggregated.length > limit) return reAggregated.slice(0, limit);
+
+                              return reAggregated;
+                            }
+
+                            // Fallback: simple row filtering for charts without config
+                            return item.result.data;
                           })()}
                           xKey={item.result.xKey}
                           yKey={item.result.yKey}

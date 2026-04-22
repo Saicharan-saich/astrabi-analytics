@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers } from 'lucide-react';
+import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers, MapPin } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
 import { FilterItem } from './FilterItem';
 import { DateFilterItem } from './DateFilterItem';
 import { Tooltip } from './Tooltip';
+import { QuerySelect } from './QuerySelect';
 
 interface QuestionBuilderProps {
     dataset: Dataset;
@@ -39,31 +40,21 @@ interface DateFilter {
     id: number;
     type: 'date';
     column: string;
-    timeGrain: 'year' | 'quarter' | 'month' | 'week' | 'day';
-    values: string[];
+    mode: 'hierarchy' | 'range';
+    // Hierarchy mode selections
+    year?: string;
+    quarter?: string;
+    month?: string;
+    day?: string;
+    // Range mode selections
+    rangeStart?: string;
+    rangeEnd?: string;
+    // Computed by DateFilterItem for downstream use
+    timeGrain?: string;
+    values?: string[];
 }
 
 type Filter = DimensionFilter | MeasureFilter | DateFilter;
-
-const getNextGrain = (grain: string) => {
-    switch (grain) {
-        case 'year': return 'quarter';
-        case 'quarter': return 'month';
-        case 'month': return 'week';
-        case 'week': return 'day';
-        default: return null;
-    }
-};
-
-const getPriorGrain = (grain: string) => {
-    switch (grain) {
-        case 'quarter': return 'year';
-        case 'month': return 'quarter';
-        case 'week': return 'month';
-        case 'day': return 'week'; // Assuming week is parent of day
-        default: return null;
-    }
-};
 
 export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     dataset,
@@ -410,8 +401,13 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             } else if (f.type === 'measure' && f.column) {
                 measureFilters.push({ column: f.column, operator: f.operator, value: f.value });
             } else if (f.type === 'date' && f.column) {
-                if (f.values && f.values.length > 0) {
-                    dateFilters.push({ column: f.column, timeGrain: f.timeGrain, values: f.values });
+                const df = f as DateFilter;
+                if (df.mode === 'range' && df.rangeStart && df.rangeEnd) {
+                    // Range mode: pass as day-grain BETWEEN filter
+                    dateFilters.push({ column: df.column, timeGrain: 'day', values: [`${df.rangeStart}__${df.rangeEnd}`] });
+                } else if (df.values && df.values.length > 0) {
+                    // Hierarchy mode: use the finest grain value set by DateFilterItem
+                    dateFilters.push({ column: df.column, timeGrain: df.timeGrain || 'year', values: df.values });
                 }
             }
         });
@@ -453,41 +449,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         }
     }, [metric, aggregation, dimension, timeFilter, filters, sort, limit, comparison, comparisonGrain, comparisonOffset, secondaryMetrics, secondaryMetricVisuals, secondaryMetricAggregations, secondaryDimensions]);
 
-    // AUTO-DRILL CASCADE: When a date filter has values selected, auto-add a child filter
-    useEffect(() => {
-        const dateFilters = filters.filter((f): f is DateFilter => f.type === 'date');
-        if (dateFilters.length === 0) return;
-
-        const grainOrder = ['year', 'quarter', 'month', 'week', 'day'];
-        let newFilters: Filter[] | null = null;
-
-        for (const df of dateFilters) {
-            if (!df.values || df.values.length === 0) continue;
-            const nextGrain = getNextGrain(df.timeGrain);
-            if (!nextGrain) continue; // Already at 'day'
-
-            // Check if a child filter already exists for this column + next grain
-            const childExists = filters.some(
-                f => f.type === 'date' && f.column === df.column && f.timeGrain === nextGrain
-            );
-            if (childExists) continue;
-
-            // Auto-add child filter
-            if (!newFilters) newFilters = [...filters];
-            newFilters.push({
-                id: nextFilterId + (newFilters.length - filters.length),
-                type: 'date',
-                column: df.column,
-                timeGrain: nextGrain as any,
-                values: []
-            });
-        }
-
-        if (newFilters) {
-            setFilters(newFilters);
-            setNextFilterId(prev => prev + (newFilters!.length - filters.length));
-        }
-    }, [filters.filter(f => f.type === 'date').map(f => `${f.id}:${(f as DateFilter).timeGrain}:${(f as DateFilter).values?.join(',')}`).join('|')]);
+    // (Auto-drill cascade removed — the new DateFilterItem handles hierarchy internally)
 
     // Filter Handlers
     const addFilter = (type: 'dimension' | 'measure' | 'date', column?: string, grain?: string) => {
@@ -496,7 +458,14 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                 id: nextFilterId,
                 type: 'date',
                 column: column || dateColumns[0] || '',
-                timeGrain: (grain as any) || 'year',
+                mode: 'hierarchy',
+                year: '',
+                quarter: '',
+                month: '',
+                day: '',
+                rangeStart: '',
+                rangeEnd: '',
+                timeGrain: 'year',
                 values: []
             }]);
         } else if (type === 'dimension') {
@@ -533,179 +502,112 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                 return f;
             });
 
-            // Recursive Reset Logic:
-            if (field === 'values') {
-                const parent = updatedFilters.find(f => f.id === id);
-                if (parent && parent.type === 'date' && parent.column) {
-                    // NOTE: Auto-switch to Trend was removed.
-                    // The user should explicitly choose Trend vs Total — selecting multiple
-                    // date values in a filter should NOT change the visualization mode.
-
-                    const grainOrder = ['year', 'quarter', 'month', 'week', 'day'];
-                    const parentGrainIdx = grainOrder.indexOf(parent.timeGrain);
-
-                    if (parentGrainIdx !== -1) {
-                        return updatedFilters.filter(f => {
-                            if (f.type !== 'date') return true;
-                            if (f.column !== parent.column) return true;
-                            if (f.id === parent.id) return true;
-
-                            const childGrainIdx = grainOrder.indexOf(f.timeGrain);
-                            return childGrainIdx <= parentGrainIdx;
-                        });
-                    }
-                }
-            }
+            // (Recursive reset logic removed — hierarchy is managed within the single DateFilterItem)
 
             return updatedFilters;
         });
     };
 
     return (
-        <div className="max-w-7xl mx-auto px-4 py-0 bg-slate-50 border-b border-slate-200 overflow-visible relative">
-            {/* Header / Context */}
-            <div className="flex justify-end mb-1">
-                <div className="flex items-center gap-2 bg-white px-2 py-1 bg-opacity-80 rounded-b-lg shadow-sm border border-t-0 border-slate-200">
-                    {/* Date Column Picker */}
-                    {dataset.timeContext?.dateColumnMaxDates && Object.keys(dataset.timeContext.dateColumnMaxDates).length > 1 && (
-                        <Tooltip text="Choose which date column drives the time anchor. Different columns may have different date ranges." position="bottom">
-                            <select
-                                value={anchorColumn || dataset.timeContext?.anchorDateColumn || ''}
-                                onChange={(e) => onAnchorColumnChange?.(e.target.value)}
-                                className="text-xs font-medium text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-md px-1.5 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-300"
-                            >
-                                {Object.entries(dataset.timeContext.dateColumnMaxDates).map(([col, maxDate]) => (
-                                    <option key={col} value={col}>
-                                        {col.replace(/_/g, ' ')} (max: {maxDate})
-                                    </option>
-                                ))}
-                            </select>
-                        </Tooltip>
-                    )}
-                    <Tooltip text="As of date — defines what 'today' means for time queries. Defaults to MAX date in your dataset." position="bottom">
-                        <span className="flex items-center gap-1.5">
-                            <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                            <span className="text-xs text-slate-500 font-medium">As of:</span>
-                            <input
-                                type="date"
-                                value={asOfDate}
-                                onChange={(e) => onDateChange(e.target.value)}
-                                className="text-xs font-bold text-slate-700 bg-transparent border-none focus:ring-0 cursor-pointer p-0"
-                            />
-                        </span>
-                    </Tooltip>
-                </div>
-            </div>
+        <div className="max-w-7xl mx-auto px-6 pt-5 pb-4 bg-gradient-to-b from-slate-900 to-slate-800 rounded-2xl overflow-visible relative" style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.2)' }}>
 
-            {/* ═══ Enhancement 4: Plain English Summary ═══ */}
-            {metric && summaryText && (
-                <div className="mb-1.5 px-1">
-                    <p className="text-xs text-slate-400 italic tracking-wide leading-relaxed">
-                        {summaryText}
-                    </p>
-                </div>
-            )}
+            <div className="flex items-start justify-between w-full">
+                {/* ═══════════════ PRIMARY ROW: THE CORE QUESTION ═══════════════ */}
+                <div className="flex flex-wrap items-center gap-3 text-sm leading-snug flex-1 pr-4 pt-1 pb-1">
+                    <img src="/logo.jpg" alt="QuickInsight" className="w-5 h-5 rounded-md opacity-80" />
+                    <span className="text-slate-400 text-sm">Show me</span>
 
-            {/* ═══════════════ ROW 1: THE CORE QUESTION ═══════════════ */}
-            <div className="flex flex-wrap items-center gap-2 text-base font-medium text-slate-700 leading-snug">
-                <img src="/logo.jpg" alt="QuickInsight" className="w-5 h-5 rounded mr-1 shadow-sm" />
-                <span>Show me</span>
-
-                {/* Metric Selector */}
-                <Tooltip text="Choose the numeric measure to analyze (e.g. revenue, quantity, profit). This is the 'what' of your question." position="bottom">
-                    <div className="relative group inline-block">
-                        <select
+                    {/* Metric Selector */}
+                    <Tooltip text="Choose the numeric measure to analyze (e.g. revenue, quantity, profit). This is the 'what' of your question." position="bottom">
+                        <QuerySelect
                             value={metric}
-                            onChange={e => setMetric(e.target.value)}
-                            className="appearance-none bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold border border-indigo-300 rounded-lg px-3 py-1.5 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
-                        >
-                            {metrics.map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
-                        </select>
-                        <ChevronDown className="w-4 h-4 text-indigo-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                </Tooltip>
+                            onChange={setMetric}
+                            options={metrics.map(m => ({ label: m.replace(/_/g, ' '), value: m }))}
+                            icon={<TrendingUp className="w-3.5 h-3.5" />}
+                            colorTextClass="text-purple-400"
+                            colorRingClass="focus:ring-purple-500/30"
+                            placeholder="Select Metric"
+                        />
+                    </Tooltip>
 
-                <span>(</span>
-                <Tooltip text="How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values." position="bottom">
-                    <div className="relative group inline-block">
-                        <select
+                    <Tooltip text="How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values." position="bottom">
+                        <QuerySelect
                             value={aggregation}
-                            onChange={e => setAggregation(e.target.value)}
-                            className="appearance-none bg-slate-50 hover:bg-slate-100 text-slate-600 font-semibold border border-slate-300 rounded-lg px-2 py-1 pr-5 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-400 shadow-sm"
-                        >
-                            <option value="SUM">Sum</option>
-                            <option value="AVG">Average</option>
-                            <option value="MAX">Max</option>
-                            <option value="MIN">Min</option>
-                            <option value="COUNT">Count</option>
-                            <option value="COUNT_DISTINCT">Unique Count</option>
-                        </select>
-                        <ChevronDown className="w-3 h-3 text-slate-500 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    </div>
-                </Tooltip>
-                <span>)</span>
+                            onChange={setAggregation}
+                            options={[
+                                { label: 'Sum', value: 'SUM' },
+                                { label: 'Average', value: 'AVG' },
+                                { label: 'Max', value: 'MAX' },
+                                { label: 'Min', value: 'MIN' },
+                                { label: 'Count', value: 'COUNT' },
+                                { label: 'Unique Count', value: 'COUNT_DISTINCT' }
+                            ]}
+                            icon={<span className="font-bold text-xs px-0.5">Σ</span>}
+                            colorTextClass="text-purple-400"
+                            colorRingClass="focus:ring-purple-500/30"
+                            searchable={false}
+                        />
+                    </Tooltip>
 
-                {/* Secondary Metric Chips (display only — add button moved to Options row) */}
-                {secondaryMetrics.map((sm, i) => (
-                    <span key={sm} className="inline-flex items-center gap-1 bg-teal-50 text-teal-700 font-bold text-sm border border-teal-300 rounded-lg px-2.5 py-1 shadow-sm">
-                        <span className="text-teal-500 font-normal text-xs">+</span>
-                        <span>{sm.replace(/_/g, ' ')}</span>
-                        <span className="text-teal-400 mx-0.5">│</span>
-                        <select
-                            value={secondaryMetricAggregations[sm] || 'SUM'}
-                            onChange={e => setSecondaryMetricAggregations(prev => ({ ...prev, [sm]: e.target.value }))}
-                            className="bg-white text-teal-800 text-[11px] font-bold rounded border border-teal-200 px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400 hover:bg-teal-50 transition-colors"
-                            title="Aggregation for this metric"
-                        >
-                            <option value="SUM">Σ Sum</option>
-                            <option value="AVG">μ Avg</option>
-                            <option value="MAX">↑ Max</option>
-                            <option value="MIN">↓ Min</option>
-                            <option value="COUNT"># Count</option>
-                            <option value="COUNT_DISTINCT">⊕ Unique</option>
-                        </select>
-                        <select
-                            value={secondaryMetricVisuals[sm] || 'line'}
-                            onChange={e => setSecondaryMetricVisuals(prev => ({ ...prev, [sm]: e.target.value }))}
-                            className="bg-white text-teal-800 text-[11px] font-bold rounded border border-teal-200 px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400 hover:bg-teal-50 transition-colors"
-                            title="Visual type for this metric"
-                        >
-                            <option value="line">📈 Line</option>
-                            <option value="bar">📊 Bar</option>
-                            <option value="area">📉 Area</option>
-                        </select>
-                        <button onClick={() => {
-                            setSecondaryMetrics(prev => prev.filter((_, idx) => idx !== i));
-                            setSecondaryMetricVisuals(prev => { const next = { ...prev }; delete next[sm]; return next; });
-                            setSecondaryMetricAggregations(prev => { const next = { ...prev }; delete next[sm]; return next; });
-                        }}
-                            className="text-teal-400 hover:text-red-500 transition-colors ml-0.5">
-                            <X className="w-3.5 h-3.5" />
-                        </button>
-                    </span>
-                ))}
+                    {/* Secondary Metric Chips (display only — add button moved to Options row) */}
+                    {secondaryMetrics.map((sm, i) => (
+                        <span key={sm} className="inline-flex items-center gap-1 bg-teal-500/20 text-teal-300 font-bold text-xs border border-teal-400/30 rounded-lg px-2 py-1 shadow-sm hover:scale-[1.02] transition-all">
+                            <span className="text-teal-500 font-normal text-xs">+</span>
+                            <span>{sm.replace(/_/g, ' ')}</span>
+                            <span className="text-teal-400 mx-0.5">│</span>
+                            <select
+                                value={secondaryMetricAggregations[sm] || 'SUM'}
+                                onChange={e => setSecondaryMetricAggregations(prev => ({ ...prev, [sm]: e.target.value }))}
+                                className="bg-white/10 text-teal-200 text-[11px] font-bold rounded border border-teal-400/30 px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400/50 hover:bg-white/15 transition-colors"
+                                title="Aggregation for this metric"
+                            >
+                                <option value="SUM">Σ Sum</option>
+                                <option value="AVG">μ Avg</option>
+                                <option value="MAX">↑ Max</option>
+                                <option value="MIN">↓ Min</option>
+                                <option value="COUNT"># Count</option>
+                                <option value="COUNT_DISTINCT">⊕ Unique</option>
+                            </select>
+                            <select
+                                value={secondaryMetricVisuals[sm] || 'line'}
+                                onChange={e => setSecondaryMetricVisuals(prev => ({ ...prev, [sm]: e.target.value }))}
+                                className="bg-white/10 text-teal-200 text-[11px] font-bold rounded border border-teal-400/30 px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400/50 hover:bg-white/15 transition-colors"
+                                title="Visual type for this metric"
+                            >
+                                <option value="line">📈 Line</option>
+                                <option value="bar">📊 Bar</option>
+                                <option value="area">📉 Area</option>
+                            </select>
+                            <button onClick={() => {
+                                setSecondaryMetrics(prev => prev.filter((_, idx) => idx !== i));
+                                setSecondaryMetricVisuals(prev => { const next = { ...prev }; delete next[sm]; return next; });
+                                setSecondaryMetricAggregations(prev => { const next = { ...prev }; delete next[sm]; return next; });
+                            }}
+                                className="text-teal-400 hover:text-red-500 transition-colors ml-0.5">
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </span>
+                    ))}
 
-                {/* Secondary Dimension Chips */}
-                {secondaryDimensions.map((sd, i) => (
-                    <span key={sd} className="inline-flex items-center gap-1.5 bg-violet-50 text-violet-700 font-bold text-sm border border-violet-300 rounded-lg px-2.5 py-1 shadow-sm">
-                        <Layers className="w-3 h-3 text-violet-500" />
-                        <span>{sd.replace(/_/g, ' ')}</span>
-                        <button onClick={() => setSecondaryDimensions(prev => prev.filter((_, idx) => idx !== i))}
-                            className="text-violet-400 hover:text-red-500 transition-colors ml-0.5">
-                            <X className="w-3.5 h-3.5" />
-                        </button>
-                    </span>
-                ))}
+                    {/* Secondary Dimension Chips */}
+                    {secondaryDimensions.map((sd, i) => (
+                        <span key={sd} className="inline-flex items-center gap-1 bg-violet-500/20 text-violet-300 font-bold text-xs border border-violet-400/30 rounded-lg px-2 py-1 shadow-sm hover:scale-[1.02] transition-all">
+                            <Layers className="w-3 h-3 text-violet-400" />
+                            <span>{sd.replace(/_/g, ' ')}</span>
+                            <button onClick={() => setSecondaryDimensions(prev => prev.filter((_, idx) => idx !== i))}
+                                className="text-violet-400 hover:text-red-500 transition-colors ml-0.5">
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </span>
+                    ))}
 
-                <span>by</span>
+                    <span className="text-slate-400 text-sm">by</span>
 
-                {/* Dimension Selector */}
-                <Tooltip text="How to group or break down the metric. Choose a time grain (day/month/year) for trends, or a column (product, region) for comparisons." position="bottom">
-                    <div className="relative group inline-block">
-                        <select
+                    {/* Dimension Selector */}
+                    <Tooltip text="How to group or break down the metric. Choose a time grain (day/month/year) for trends, or a column (product, region) for comparisons." position="bottom">
+                        <QuerySelect
                             value={dimension}
-                            onChange={e => {
-                                const newDim = e.target.value;
+                            onChange={newDim => {
                                 setDimension(newDim);
                                 if (['day', 'week', 'month', 'quarter', 'year'].includes(newDim)) {
                                     setSort('oldest');
@@ -713,243 +615,248 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     setSort('desc');
                                 }
                             }}
-                            className={`appearance-none font-bold border rounded-lg px-3 py-1.5 pr-8 cursor-pointer focus:outline-none focus:ring-2 shadow-sm ${!dimension
-                                ? 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-300 focus:ring-indigo-500'
-                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300 focus:ring-emerald-500'
-                                }`}
-                        >
-                            <option value="">(Total)</option>
-                            <optgroup label="Time">
-                                {['day', 'week', 'month', 'quarter', 'year'].map(t => <option key={t} value={t}>{t}</option>)}
-                            </optgroup>
-                            <optgroup label="Columns">
-                                {dims.map(d => <option key={d} value={d}>{d.replace(/_/g, ' ')}</option>)}
-                            </optgroup>
-                        </select>
-                        <ChevronDown className={`w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none ${!dimension ? 'text-indigo-500' : 'text-emerald-500'}`} />
-                    </div>
-                </Tooltip>
+                            options={[
+                                { label: '(Total)', value: '' },
+                                ...['day', 'week', 'month', 'quarter', 'year'].map(t => ({ label: t, value: t, group: 'Time' })),
+                                ...dims.map(d => ({ label: d.replace(/_/g, ' '), value: d, group: 'Columns' }))
+                            ]}
+                            icon={<MapPin className="w-3.5 h-3.5" />}
+                            colorTextClass="text-blue-400"
+                            colorRingClass="focus:ring-blue-500/30"
+                            placeholder="Select Dimension"
+                        />
+                    </Tooltip>
 
-                {/* Total / Trend Shortcut */}
-                <Tooltip text="Total shows a single aggregate number. Trend shows data over time (day/week/month/quarter/year)." position="bottom">
-                    <div className="flex bg-white rounded-lg p-0.5 border border-slate-300 mx-1 shadow-sm">
+                    {/* Total / Trend */}
+                    <div className="flex bg-white/5 rounded-xl p-0.5 border border-white/10">
                         <button
                             onClick={() => setDimension('')}
-                            title="View Total (Scalar)"
-                            className={`px-3 py-1.5 text-sm font-bold rounded-md transition-colors ${!dimension ? 'bg-indigo-100 text-indigo-800 border border-indigo-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+                            title="View Total"
+                            className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-all duration-200 ${!dimension ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
                         >
                             Total
                         </button>
                         <button
                             onClick={() => {
-                                if (!isTimeDimension) {
-                                    setDimension('day');
-                                }
+                                if (!isTimeDimension) setDimension('day');
                                 setSort('oldest');
                             }}
-                            title="View Trend (Time Series)"
-                            className={`flex items-center gap-1 px-3 py-1.5 text-sm font-bold rounded-md transition-colors ${isTimeDimension ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-sm' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}
+                            title="View Trend"
+                            className={`flex items-center gap-1 px-3 py-1.5 text-sm font-semibold rounded-lg transition-all duration-200 ${isTimeDimension ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
                         >
                             <TrendingUp className="w-3.5 h-3.5" />
                             Trend
                         </button>
                     </div>
-                </Tooltip>
 
-                <span>where</span>
+                    <span className="text-slate-400 text-sm">where</span>
 
-                {/* Time Filter */}
-                <div className="flex items-center gap-2">
-                    <Tooltip text="Filter data by time range relative to the AS OF date. 'Time is Anything' includes all data. 'Last...' lets you pick a custom window." position="bottom">
-                        <div className="relative group inline-block">
-                            <select
+                    {/* Time Filter */}
+                    <div className="flex items-center gap-2">
+                        <Tooltip text="Filter data by time range relative to the AS OF date. 'Time is Anything' includes all data. 'Last...' lets you pick a custom window." position="bottom">
+                            <QuerySelect
                                 value={timeFilter.startsWith('last_') && !['last_30_days', 'last_90_days', 'last_year'].includes(timeFilter) ? 'custom' : timeFilter}
-                                onChange={e => {
-                                    const val = e.target.value;
+                                onChange={val => {
                                     if (val === 'custom') setTimeFilter('last_7_days');
                                     else setTimeFilter(val);
                                 }}
-                                className="appearance-none bg-orange-50 hover:bg-orange-100 text-orange-700 font-bold border border-orange-300 rounded-lg px-3 py-1.5 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-orange-500 shadow-sm"
-                            >
-                                <option value="all_time">Time is Anything</option>
-                                <option value="today">Today</option>
-                                <option value="yesterday">Yesterday</option>
-                                <option value="last_30_days">Last 30 Days</option>
-                                <option value="last_90_days">Last 90 Days</option>
-                                <option value="this_week">This Week</option>
-                                <option value="this_month">This Month</option>
-                                <option value="this_quarter">This Quarter</option>
-                                <option value="this_year">This Year</option>
-                                <option value="custom">Last...</option>
-                            </select>
-                            <ChevronDown className="w-4 h-4 text-orange-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                        </div>
-                    </Tooltip>
-
-                    {/* Custom Last N UI */}
-                    {(timeFilter.startsWith('last_') && !['last_30_days', 'last_90_days', 'last_year'].includes(timeFilter)) && (
-                        <div className="flex items-center gap-1 animate-in fade-in slide-in-from-left-2 duration-300">
-                            <input
-                                type="number"
-                                min="1"
-                                value={timeFilter.split('_')[1]}
-                                onChange={e => {
-                                    const n = parseInt(e.target.value) || 1;
-                                    const unit = timeFilter.split('_')[2] || 'days';
-                                    setTimeFilter(`last_${n}_${unit}`);
-                                }}
-                                className="w-16 bg-white border-b-2 border-orange-300 rounded px-2 py-1 text-center font-bold text-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                                options={[
+                                    { label: 'Time is Anything', value: 'all_time' },
+                                    { label: 'Today', value: 'today', group: 'Preset' },
+                                    { label: 'Yesterday', value: 'yesterday', group: 'Preset' },
+                                    { label: 'Last 30 Days', value: 'last_30_days', group: 'Preset' },
+                                    { label: 'Last 90 Days', value: 'last_90_days', group: 'Preset' },
+                                    { label: 'This Week', value: 'this_week', group: 'Current' },
+                                    { label: 'This Month', value: 'this_month', group: 'Current' },
+                                    { label: 'This Quarter', value: 'this_quarter', group: 'Current' },
+                                    { label: 'This Year', value: 'this_year', group: 'Current' },
+                                    { label: 'Last...', value: 'custom', group: 'Custom' }
+                                ]}
+                                icon={<Calendar className="w-3.5 h-3.5" />}
+                                colorTextClass="text-green-400"
+                                colorRingClass="focus:ring-green-500/30"
+                                searchable={false}
                             />
-                            <div className="relative inline-block">
-                                <select
-                                    value={timeFilter.split('_')[2] || 'days'}
+                        </Tooltip>
+
+                        {/* Custom Last N UI */}
+                        {(timeFilter.startsWith('last_') && !['last_30_days', 'last_90_days', 'last_year'].includes(timeFilter)) && (
+                            <div className="flex items-center gap-1 animate-in fade-in slide-in-from-left-2 duration-300">
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={timeFilter.split('_')[1]}
                                     onChange={e => {
-                                        const n = timeFilter.split('_')[1] || '7';
-                                        const unit = e.target.value;
+                                        const n = parseInt(e.target.value) || 1;
+                                        const unit = timeFilter.split('_')[2] || 'days';
                                         setTimeFilter(`last_${n}_${unit}`);
                                     }}
-                                    className="appearance-none bg-white border-b-2 border-orange-300 rounded px-2 py-1 font-bold text-orange-700 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                                >
-                                    <option value="days">Days</option>
-                                    <option value="weeks">Weeks</option>
-                                    <option value="months">Months</option>
-                                    <option value="years">Years</option>
-                                </select>
-                                <ChevronDown className="w-3 h-3 text-orange-500 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                    className="w-16 bg-white/10 border-b-2 border-amber-400/50 rounded px-2 py-1 text-center font-bold text-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                                />
+                                <div className="relative inline-block">
+                                    <select
+                                        value={timeFilter.split('_')[2] || 'days'}
+                                        onChange={e => {
+                                            const n = timeFilter.split('_')[1] || '7';
+                                            const unit = e.target.value;
+                                            setTimeFilter(`last_${n}_${unit}`);
+                                        }}
+                                        className="appearance-none bg-white/10 border-b-2 border-amber-400/50 rounded px-2 py-1 font-bold text-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
+                                    >
+                                        <option value="days">Days</option>
+                                        <option value="weeks">Weeks</option>
+                                        <option value="months">Months</option>
+                                        <option value="years">Years</option>
+                                    </select>
+                                    <ChevronDown className="w-3 h-3 text-amber-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        )}
+                    </div>
+
                 </div>
+                {/* ═══════════════ RIGHT CONTROLS: AS-OF, OPTIONS, FILTERS ═══════════════ */}
+                <div className="flex flex-col items-end gap-2 flex-shrink-0 relative z-[200]">
+                    <div className="flex items-center gap-2">
+                        {dataset.timeContext?.dateColumnMaxDates && Object.keys(dataset.timeContext.dateColumnMaxDates).length > 1 && (
+                            <Tooltip text="Choose which date column drives the time anchor." position="bottom">
+                                <QuerySelect
+                                    value={anchorColumn || dataset.timeContext?.anchorDateColumn || ''}
+                                    onChange={(newAnchor) => { if (newAnchor) onAnchorColumnChange?.(newAnchor) }}
+                                    options={Object.keys(dataset.timeContext.dateColumnMaxDates).map(col => ({
+                                        label: col.replace(/_/g, ' '),
+                                        value: col
+                                    }))}
+                                    colorTextClass="text-slate-400"
+                                    colorRingClass="focus:ring-white/20"
+                                    searchable={false}
+                                />
+                            </Tooltip>
+                        )}
+                        <Tooltip text="As of date — defines what 'today' means for time queries." position="bottom">
+                            <span className="flex items-center gap-1.5 bg-white/5 rounded-xl px-3 py-1.5 border border-white/10 hover:bg-white/8 transition-colors cursor-pointer text-sm">
+                                <Calendar className="w-4 h-4 text-slate-400" />
+                                <span className="text-slate-400 font-semibold text-xs">As of:</span>
+                                <input
+                                    type="date"
+                                    value={asOfDate}
+                                    onChange={(e) => onDateChange(e.target.value)}
+                                    className="font-bold text-white bg-transparent border-none focus:ring-0 cursor-pointer p-0 w-[110px]"
+                                />
+                            </span>
+                        </Tooltip>
+                    </div>
 
-                {/* ═══ Options Toggle Button ═══ */}
-                <button
-                    onClick={() => setShowOptions(!showOptions)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 text-sm font-bold rounded-lg border transition-all shadow-sm ${showOptions
-                        ? 'bg-indigo-100 text-indigo-800 border-indigo-400'
-                        : comparison || limit > 0 || secondaryMetrics.length > 0 || secondaryDimensions.length > 0
-                            ? 'bg-indigo-100 text-indigo-700 border-indigo-400 ring-2 ring-indigo-200'
-                            : 'bg-white text-indigo-600 border-indigo-300 hover:bg-indigo-50 hover:border-indigo-400'
-                        }`}
-                    title="Toggle analysis options (comparison, sort, limit, additional metrics & dimensions)"
-                >
-                    <SlidersHorizontal className="w-4 h-4" />
-                    Options
-                    {(comparison || limit > 0 || secondaryMetrics.length > 0 || secondaryDimensions.length > 0) && !showOptions && (
-                        <span className="w-2 h-2 bg-indigo-600 rounded-full animate-pulse"></span>
-                    )}
-                </button>
+                    <div className="flex items-center gap-2">
+                        {/* Options button */}
+                        <button
+                            onClick={() => setShowOptions(!showOptions)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase rounded-xl border transition-all duration-200 ${showOptions ? 'bg-white/15 border-white/20 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`}
+                            title="Toggle options"
+                        >
+                            <SlidersHorizontal className="w-3.5 h-3.5" />
+                            Options
+                        </button>
 
-                {/* ═══ Enhancement 3: Consolidated Filter Button ═══ */}
-                <div className="relative" ref={filterMenuRef}>
-                    <button
-                        onClick={() => setShowFilterMenu(!showFilterMenu)}
-                        className={`flex items-center gap-1.5 text-sm font-bold border rounded-lg px-3 py-1.5 transition-all shadow-sm ${filters.length > 0
-                            ? 'text-purple-800 border-purple-400 bg-purple-100 hover:bg-purple-200 ring-2 ring-purple-200'
-                            : 'text-purple-600 border-purple-300 bg-white hover:bg-purple-50 hover:border-purple-400'
-                            }`}
-                    >
-                        <Filter className="w-4 h-4" />
-                        {filters.length > 0 ? `Filters (${filters.length})` : '+ Add Filter'}
-                    </button>
-
-                    {showFilterMenu && (
-                        <div className="absolute top-full left-0 mt-1 bg-white rounded-lg shadow-xl border border-slate-200 py-1 z-50 min-w-[180px] animate-in fade-in slide-in-from-top-2 duration-200">
+                        {/* ═══ Enhancement 3: Consolidated Filter Button ═══ */}
+                        <div className="relative" ref={filterMenuRef}>
                             <button
-                                onClick={() => { addFilter('dimension'); setShowFilterMenu(false); }}
-                                className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:bg-purple-50 hover:text-purple-700 flex items-center gap-2 transition-colors"
+                                onClick={() => setShowFilterMenu(!showFilterMenu)}
+                                className={`flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase border rounded-xl px-3 py-1.5 transition-all duration-200 ${showFilterMenu || filters.length > 0 ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white'}`}
                             >
-                                <span className="text-base">🏷️</span> By Dimension
-                                <span className="text-[10px] text-slate-400 ml-auto">category, region...</span>
+                                <Filter className="w-3.5 h-3.5" />
+                                {filters.length > 0 ? `Filters (${filters.length})` : 'Add Filter'}
                             </button>
-                            <button
-                                onClick={() => { addFilter('measure'); setShowFilterMenu(false); }}
-                                className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2 transition-colors"
-                            >
-                                <span className="text-base">📊</span> By Metric Value
-                                <span className="text-[10px] text-slate-400 ml-auto">sales &gt; 1000...</span>
-                            </button>
-                            {dateColumns.length > 0 && (
-                                <button
-                                    onClick={() => { addFilter('date'); setShowFilterMenu(false); }}
-                                    className="w-full text-left px-3 py-2 text-sm font-medium text-slate-700 hover:bg-teal-50 hover:text-teal-700 flex items-center gap-2 transition-colors"
-                                >
-                                    <span className="text-base">📅</span> By Date
-                                    <span className="text-[10px] text-slate-400 ml-auto">year, quarter...</span>
-                                </button>
+
+                            {showFilterMenu && (
+                                <div className="absolute top-full right-0 mt-1 bg-slate-800 backdrop-blur-xl rounded-xl shadow-2xl border border-white/10 py-1 z-50 min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200">
+                                    <button
+                                        onClick={() => { addFilter('dimension'); setShowFilterMenu(false); }}
+                                        className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-purple-500/20 hover:text-purple-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
+                                    >
+                                        <span className="text-base">🏷️</span> By Dimension
+                                        <span className="text-[10px] text-slate-500 ml-auto">category, region...</span>
+                                    </button>
+                                    <button
+                                        onClick={() => { addFilter('measure'); setShowFilterMenu(false); }}
+                                        className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-blue-500/20 hover:text-blue-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
+                                    >
+                                        <span className="text-base">📊</span> By Metric Value
+                                        <span className="text-[10px] text-slate-500 ml-auto">sales &gt; 1000...</span>
+                                    </button>
+                                    {dateColumns.length > 0 && (
+                                        <button
+                                            onClick={() => { addFilter('date'); setShowFilterMenu(false); }}
+                                            className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-teal-500/20 hover:text-teal-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
+                                        >
+                                            <span className="text-base">📅</span> By Date
+                                            <span className="text-[10px] text-slate-500 ml-auto">year, quarter...</span>
+                                        </button>
+                                    )}
+                                </div>
                             )}
                         </div>
-                    )}
+                    </div>
                 </div>
             </div>
 
-            {/* ═══════════════ ROW 2: REFINEMENTS (Collapsible) ═══════════════ */}
+            {/* ═══════════════ ROW 2: SECONDARY CONTROLS (Always visible) ═══════════════ */}
             {showOptions && (
-                <div className="flex flex-wrap items-center gap-3 mt-2 pt-2 border-t border-slate-200 text-sm font-medium text-slate-600 animate-in fade-in slide-in-from-top-1 duration-300">
-                    {/* Additional Metric */}
+                <div className="flex flex-wrap items-center gap-4 mt-4 pt-3 border-t border-white/5 text-sm animate-in fade-in slide-in-from-top-2 duration-200">
+                    {/* METRIC */}
                     {metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).length > 0 && (
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Metric:</span>
-                            <div className="relative inline-block">
-                                <select
-                                    value=""
-                                    onChange={e => { if (e.target.value) setSecondaryMetrics(prev => [...prev, e.target.value]); }}
-                                    className="appearance-none bg-teal-50 hover:bg-teal-100 text-teal-700 font-bold border border-teal-300 rounded-lg px-3 py-1 pr-7 cursor-pointer focus:outline-none focus:ring-2 focus:ring-teal-400 text-sm shadow-sm"
-                                >
-                                    <option value="">+ Add Metric</option>
-                                    {metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).map(m => (
-                                        <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>
-                                    ))}
-                                </select>
-                                <Plus className="w-3 h-3 text-teal-600 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-purple-400 uppercase tracking-wider font-bold">Metric</span>
+                            <QuerySelect
+                                value=""
+                                onChange={val => { if (val) setSecondaryMetrics(prev => [...prev, val]); }}
+                                options={[
+                                    { label: '+ Add Metric', value: '' },
+                                    ...metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).map(m => ({ label: m.replace(/_/g, ' '), value: m }))
+                                ]}
+                                icon={<span className="text-xl leading-none -mt-1 font-normal">+</span>}
+                                colorTextClass="text-purple-400"
+                                colorRingClass="focus:ring-purple-500/30"
+                                placeholder="+ Add Metric"
+                            />
                         </div>
                     )}
 
-                    <span className="text-slate-300">•</span>
-
-                    {/* Additional Dimension */}
+                    {/* DIMENSION */}
                     {dims.filter(d => d !== dimension && !secondaryDimensions.includes(d)).length > 0 && (
-                        <div className="flex items-center gap-1">
-                            <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Dimension:</span>
-                            <div className="relative inline-block">
-                                <select
-                                    value=""
-                                    onChange={e => { if (e.target.value) setSecondaryDimensions(prev => [...prev, e.target.value]); }}
-                                    className="appearance-none bg-violet-50 hover:bg-violet-100 text-violet-700 font-bold border border-violet-300 rounded-lg px-3 py-1 pr-7 cursor-pointer focus:outline-none focus:ring-2 focus:ring-violet-400 text-sm shadow-sm"
-                                >
-                                    <option value="">+ Add Dimension</option>
-                                    {dims.filter(d => d !== dimension && !secondaryDimensions.includes(d)).map(d => (
-                                        <option key={d} value={d}>{d.replace(/_/g, ' ')}</option>
-                                    ))}
-                                </select>
-                                <Layers className="w-3 h-3 text-violet-600 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            </div>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-blue-400 uppercase tracking-wider font-bold">Dimension</span>
+                            <QuerySelect
+                                value=""
+                                onChange={val => { if (val) setSecondaryDimensions(prev => [...prev, val]); }}
+                                options={[
+                                    { label: '+ Add Dimension', value: '' },
+                                    ...dims.filter(d => d !== dimension && !secondaryDimensions.includes(d)).map(d => ({ label: d.replace(/_/g, ' '), value: d }))
+                                ]}
+                                icon={<span className="text-xl leading-none -mt-1 font-normal">+</span>}
+                                colorTextClass="text-blue-400"
+                                colorRingClass="focus:ring-blue-500/30"
+                                placeholder="+ Add Dimension"
+                            />
                         </div>
                     )}
 
-                    <span className="text-slate-300">•</span>
-
-                    {/* Compare With */}
+                    {/* COMPARE */}
                     <div className="flex items-center gap-2">
-                        <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Compare:</span>
-                        <Tooltip text="Compare current period with a previous period to see growth or decline." position="bottom">
-                            <div className="relative group inline-block">
-                                <select
-                                    value={comparison}
-                                    onChange={e => setComparison(e.target.value)}
-                                    className={`appearance-none font-bold border-b-2 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 text-sm ${comparison
-                                        ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300 focus:ring-emerald-500'
-                                        : 'bg-slate-100 hover:bg-slate-200 text-slate-500 border-slate-300 focus:ring-slate-500'
-                                        }`}
-                                >
-                                    <option value="">No Comparison</option>
-                                    <option value="previous_period">vs Previous Period</option>
-                                    <option value="same_period_last_year">vs Same Period Last Year</option>
-                                    <option value="same_period_last_n">vs Last N...</option>
-                                </select>
-                                <ChevronDown className={`w-4 h-4 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none ${comparison ? 'text-emerald-500' : 'text-slate-400'}`} />
-                            </div>
-                        </Tooltip>
+                        <span className="text-xs text-yellow-400 uppercase tracking-wider font-bold">Compare</span>
+                        <QuerySelect
+                            value={comparison}
+                            onChange={setComparison}
+                            options={[
+                                { label: 'No Comparison', value: '' },
+                                { label: 'vs Previous Period', value: 'previous_period' },
+                                { label: 'vs Same Period Last Year', value: 'same_period_last_year' },
+                                { label: 'vs Last N...', value: 'same_period_last_n' }
+                            ]}
+                            colorTextClass="text-yellow-400"
+                            colorRingClass="focus:ring-yellow-500/30"
+                            searchable={false}
+                        />
 
                         {/* Grain + Offset for Same Period Last N */}
                         {comparison === 'same_period_last_n' && (
@@ -959,8 +866,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                         key={g}
                                         onClick={() => setComparisonGrain(g)}
                                         className={`px-2 py-0.5 rounded-md text-xs font-bold transition-all border ${comparisonGrain === g
-                                            ? 'bg-emerald-500 text-white border-emerald-600'
-                                            : 'bg-white text-emerald-600 border-emerald-200 hover:bg-emerald-50'
+                                            ? 'bg-white/15 text-white border-white/20'
+                                            : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
                                             }`}
                                     >
                                         {g[0].toUpperCase()}
@@ -969,23 +876,23 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 <div className="flex items-center gap-0.5 ml-1">
                                     <button
                                         onClick={() => setComparisonOffset(Math.max(1, comparisonOffset - 1))}
-                                        className="w-5 h-5 rounded bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center hover:bg-emerald-200 transition-all"
+                                        className="w-5 h-5 rounded bg-white/10 text-white font-bold text-xs flex items-center justify-center hover:bg-white/15 transition-all"
                                     >−</button>
-                                    <span className="text-xs font-bold text-emerald-700 min-w-[1.2rem] text-center">{comparisonOffset}</span>
+                                    <span className="text-xs font-bold text-white min-w-[1.2rem] text-center">{comparisonOffset}</span>
                                     <button
                                         onClick={() => setComparisonOffset(comparisonOffset + 1)}
-                                        className="w-5 h-5 rounded bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center hover:bg-emerald-200 transition-all"
+                                        className="w-5 h-5 rounded bg-white/10 text-white font-bold text-xs flex items-center justify-center hover:bg-white/15 transition-all"
                                     >+</button>
                                 </div>
-                                <span className="text-[10px] font-semibold text-emerald-600 ml-1 whitespace-nowrap">
+                                <span className="text-[10px] font-semibold text-slate-400 ml-1 whitespace-nowrap">
                                     (Last {comparisonOffset} {comparisonGrain}{comparisonOffset > 1 ? 's' : ''})
                                 </span>
                             </div>
                         )}
 
-                        {/* Quick comparison hint based on time filter */}
+                        {/* Quick comparison hint */}
                         {comparison === 'previous_period' && timeFilter.startsWith('this_') && (
-                            <span className="text-[10px] font-semibold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                            <span className="text-[10px] font-semibold text-slate-300 bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
                                 {timeFilter === 'this_week' ? 'This Week vs Last Week'
                                     : timeFilter === 'this_month' ? 'This Month vs Last Month'
                                         : timeFilter === 'this_quarter' ? 'This Quarter vs Last Quarter'
@@ -995,85 +902,68 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         )}
                     </div>
 
-                    {/* ═══ Enhancement 2: Smart Auto-Defaults — Hide Sort/Limit for time dimensions ═══ */}
+                    {/* LIMIT */}
                     {!isTimeDimension && (
-                        <>
-                            <span className="text-slate-300">•</span>
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">Limit</span>
+                            <QuerySelect
+                                value={limit > 0 && ![5, 10, 20, 50].includes(limit) ? 'custom' : (limit <= 0 ? -1 : limit).toString()}
+                                onChange={val => {
+                                    if (val === 'custom') setLimit(15);
+                                    else setLimit(Number(val));
+                                }}
+                                options={[
+                                    { label: 'Show All', value: '-1' },
+                                    { label: 'Top 5', value: '5' },
+                                    { label: 'Top 10', value: '10' },
+                                    { label: 'Top 20', value: '20' },
+                                    { label: 'Top 50', value: '50' },
+                                    { label: 'Custom...', value: 'custom' }
+                                ]}
+                                colorRingClass="focus:ring-white/20"
+                                searchable={false}
+                            />
 
-                            {/* Limit */}
-                            <div className="flex items-center gap-1">
-                                <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Limit:</span>
-                                <div className="relative inline-block">
-                                    <select
-                                        value={limit > 0 && ![5, 10, 20, 50].includes(limit) ? 'custom' : (limit <= 0 ? -1 : limit)}
-                                        onChange={e => {
-                                            const val = e.target.value;
-                                            if (val === 'custom') setLimit(15);
-                                            else setLimit(Number(val));
-                                        }}
-                                        className="appearance-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border-b-2 border-slate-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
-                                    >
-                                        <option value={-1}>Show All</option>
-                                        <option value={5}>Top 5</option>
-                                        <option value={10}>Top 10</option>
-                                        <option value={20}>Top 20</option>
-                                        <option value={50}>Top 50</option>
-                                        <option value="custom">Custom...</option>
-                                    </select>
-                                    <ChevronDown className="w-4 h-4 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                </div>
+                            {/* Custom Top N Input */}
+                            {(limit > 0 && ![5, 10, 20, 50].includes(limit)) && (
+                                <input
+                                    type="number"
+                                    min="1"
+                                    value={limit}
+                                    onChange={e => setLimit(parseInt(e.target.value) || 1)}
+                                    className="w-16 bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 text-center font-semibold text-white focus:outline-none focus:ring-2 focus:ring-white/20 text-sm"
+                                />
+                            )}
+                        </div>
+                    )}
 
-                                {/* Custom Top N Input */}
-                                {(limit > 0 && ![5, 10, 20, 50].includes(limit)) && (
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={limit}
-                                        onChange={e => setLimit(parseInt(e.target.value) || 1)}
-                                        className="w-16 bg-white border-b-2 border-slate-300 rounded px-2 py-1 text-center font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
-                                    />
-                                )}
-                            </div>
-
-                            <span className="text-slate-300">•</span>
-
-                            {/* Sort */}
-                            <div className="flex items-center gap-1">
-                                <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Sort:</span>
-                                <div className="relative inline-block">
-                                    <select
-                                        value={sort}
-                                        onChange={e => setSort(e.target.value as 'asc' | 'desc')}
-                                        className="appearance-none bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold border-b-2 border-slate-300 rounded px-3 py-1 pr-8 cursor-pointer focus:outline-none focus:ring-2 focus:ring-slate-500 text-sm"
-                                    >
-                                        <option value="desc">High to Low</option>
-                                        <option value="asc">Low to High</option>
-                                        <option value="oldest">Oldest First</option>
-                                        <option value="newest">Newest First</option>
-                                    </select>
-                                    <ChevronDown className="w-4 h-4 text-slate-500 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
-                                </div>
-                            </div>
-                        </>
+                    {/* SORT */}
+                    {!isTimeDimension && (
+                        <div className="flex items-center gap-2">
+                            <span className="text-xs text-amber-400 uppercase tracking-wider font-bold">Sort</span>
+                            <QuerySelect
+                                value={sort}
+                                onChange={val => setSort(val as 'asc' | 'desc' | 'oldest' | 'newest')}
+                                options={[
+                                    { label: 'High to Low', value: 'desc' },
+                                    { label: 'Low to High', value: 'asc' },
+                                    { label: 'Oldest First', value: 'oldest' },
+                                    { label: 'Newest First', value: 'newest' }
+                                ]}
+                                colorTextClass="text-amber-400"
+                                colorRingClass="focus:ring-amber-500/30"
+                                searchable={false}
+                            />
+                        </div>
                     )}
                 </div>
             )}
 
             {/* ═══ Active Filters Row ═══ */}
             {filters.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-slate-100">
+                <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-white/10">
                     {filters.map(filter => {
                         if (filter.type === 'date') {
-                            // FIND PARENT VALUES
-                            const priorGrain = getPriorGrain(filter.timeGrain);
-                            const parentFilter = priorGrain ? filters.find(p =>
-                                p.type === 'date' &&
-                                p.column === filter.column &&
-                                p.timeGrain === priorGrain
-                            ) as DateFilter : undefined;
-
-                            const selectedParentValues = parentFilter?.values;
-
                             return (
                                 <DateFilterItem
                                     key={filter.id}
@@ -1083,8 +973,6 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     getDateValues={getDateValues}
                                     onUpdate={updateFilter}
                                     onRemove={removeFilter}
-                                    onAddFilter={addFilter}
-                                    selectedParentValues={selectedParentValues}
                                 />
                             );
                         }
