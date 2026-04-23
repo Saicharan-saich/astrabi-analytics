@@ -720,6 +720,12 @@ export async function runAISQLPipeline(
         ...plan.filters.map(f => f.field),
     ].filter((v, i, a) => a.indexOf(v) === i); // deduplicate
 
+    // ─── Step 10b: Generate Data-Driven Answer ───────────────────
+    // Build the explanation from ACTUAL RESULTS, not the plan
+    const chartDataForAnswer = reshaped.data.length > 0 ? reshaped.data : rawData;
+    const dataAnswer = generateDataDrivenAnswer(question, plan, chartDataForAnswer, semanticModel);
+    const finalExplanation = dataAnswer || sqlResult.explanation;
+
     const pipelineResult: AISQLPipelineResult = {
         plan,
         sql: currentSQL,
@@ -729,7 +735,7 @@ export async function runAISQLPipeline(
         profile,
         chart: reshaped.chart,
         confidence,
-        explanation: sqlResult.explanation,
+        explanation: finalExplanation,
         columnsUsed,
         executionTimeMs: Math.round(executionTime),
         repairAttempts,
@@ -743,4 +749,140 @@ export async function runAISQLPipeline(
     }
 
     return pipelineResult;
+}
+
+/**
+ * Generate a data-driven natural-language answer from actual query results.
+ * This reads the real data and answers the user's question directly.
+ */
+function generateDataDrivenAnswer(
+    question: string,
+    plan: import('./types').AnalysisPlan,
+    data: Record<string, any>[],
+    model: import('./types').SemanticModel
+): string | null {
+    if (!data || data.length === 0) return null;
+
+    const cols = Object.keys(data[0]);
+    const questionLower = question.toLowerCase();
+
+    // Helper: format numbers nicely
+    const fmt = (v: any): string => {
+        const n = Number(v);
+        if (isNaN(n)) return String(v);
+        if (Math.abs(n) >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+        if (Math.abs(n) >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+        if (Number.isInteger(n)) return n.toLocaleString();
+        return n.toFixed(2);
+    };
+
+    // Helper: get the display label for a field
+    const getLabel = (fieldName: string): string => {
+        const f = model.fields.find(fld => fld.name === fieldName);
+        return f?.displayLabel || fieldName.replace(/_/g, ' ');
+    };
+
+    // Find metric and dimension columns from the data
+    const metricCols = cols.filter(c => {
+        const val = data[0][c];
+        return typeof val === 'number' && !['growth_pct', 'growth_abs', 'previous_value', 'running_total', 'moving_avg'].includes(c);
+    });
+    const dimCols = cols.filter(c => !metricCols.includes(c) && !['growth_pct', 'growth_abs', 'previous_value', 'running_total', 'moving_avg', 'period'].includes(c));
+
+    // ── Case 1: Single KPI (1 row, 1 metric) ───────────────────
+    if (data.length === 1 && metricCols.length >= 1 && dimCols.length === 0) {
+        const metric = metricCols[0];
+        const value = data[0][metric];
+        const label = getLabel(metric.replace(/_(sum|avg|count|count_distinct|min|max)$/i, ''));
+        return `The ${label} is ${fmt(value)}.`;
+    }
+
+    // ── Case 2: Ranking / Top-N / "Which is the best/highest/top" ──
+    if ((plan.intent === 'ranking' || /\b(top|best|highest|most|largest|biggest|greatest|leading|#1)\b/.test(questionLower))
+        && data.length >= 1 && dimCols.length >= 1 && metricCols.length >= 1) {
+        const topRow = data[0];
+        const entityCol = dimCols[0];
+        const metricCol = metricCols[0];
+        const entity = topRow[entityCol];
+        const value = topRow[metricCol];
+        const metricLabel = getLabel(metricCol.replace(/_(sum|avg|count|count_distinct|min|max)$/i, ''));
+        const entityLabel = getLabel(entityCol);
+
+        if (data.length === 1) {
+            return `${entity} is the top ${entityLabel} with ${fmt(value)} ${metricLabel}.`;
+        }
+
+        // Show top result and runner-up
+        const runnerUp = data[1];
+        const runnerEntity = runnerUp[entityCol];
+        const runnerValue = runnerUp[metricCol];
+        return `${entity} leads with ${fmt(value)} ${metricLabel}, followed by ${runnerEntity} at ${fmt(runnerValue)}.`;
+    }
+
+    // ── Case 3: "Lowest / worst / least / bottom" ──────────────
+    if (/\b(bottom|worst|lowest|least|smallest|fewest|minimum)\b/.test(questionLower)
+        && data.length >= 1 && dimCols.length >= 1 && metricCols.length >= 1) {
+        const lastRow = data[data.length - 1];
+        const entityCol = dimCols[0];
+        const metricCol = metricCols[0];
+        const entity = lastRow[entityCol];
+        const value = lastRow[metricCol];
+        const metricLabel = getLabel(metricCol.replace(/_(sum|avg|count|count_distinct|min|max)$/i, ''));
+        return `${entity} has the lowest ${metricLabel} at ${fmt(value)}.`;
+    }
+
+    // ── Case 4: Trend — summarize latest data point ────────────
+    if (plan.intent === 'trend' && data.length > 1 && metricCols.length >= 1) {
+        const latestRow = data[data.length - 1];
+        const metricCol = metricCols[0];
+        const timeDim = dimCols.find(c => plan.dimensions.some(d => c.includes(d.field))) || dimCols[0];
+        const latestValue = latestRow[metricCol];
+        const latestPeriod = timeDim ? latestRow[timeDim] : null;
+        const metricLabel = getLabel(metricCol.replace(/_(sum|avg|count|count_distinct|min|max)$/i, ''));
+
+        const growth = latestRow.growth_pct;
+        let trendNote = '';
+        if (growth !== null && growth !== undefined && isFinite(Number(growth))) {
+            const g = Number(growth);
+            trendNote = g >= 0
+                ? `, up ${g.toFixed(1)}% from the previous period`
+                : `, down ${Math.abs(g).toFixed(1)}% from the previous period`;
+        }
+
+        return `The latest ${metricLabel}${latestPeriod ? ' for ' + latestPeriod : ''} is ${fmt(latestValue)}${trendNote}.`;
+    }
+
+    // ── Case 5: Comparison (Current vs Previous) ──────────────
+    if (plan.intent === 'total_comparison' && data.length === 2) {
+        const periodCol = cols.find(c => c.toLowerCase() === 'period');
+        if (periodCol && metricCols.length >= 1) {
+            const currentRow = data.find(r => String(r[periodCol]).toLowerCase() === 'current');
+            const previousRow = data.find(r => String(r[periodCol]).toLowerCase() === 'previous');
+            if (currentRow && previousRow) {
+                const metric = metricCols[0];
+                const curr = Number(currentRow[metric]);
+                const prev = Number(previousRow[metric]);
+                const metricLabel = getLabel(metric.replace(/_(sum|avg|count|count_distinct|min|max)$/i, ''));
+                const diff = curr - prev;
+                const pct = prev !== 0 ? ((diff / Math.abs(prev)) * 100).toFixed(1) : 'N/A';
+                const direction = diff >= 0 ? 'increased' : 'decreased';
+                return `${metricLabel} ${direction} from ${fmt(prev)} to ${fmt(curr)} (${diff >= 0 ? '+' : ''}${pct}%).`;
+            }
+        }
+    }
+
+    // ── Case 6: General breakdown with data ────────────
+    if (dimCols.length >= 1 && metricCols.length >= 1 && data.length > 1) {
+        const topRow = data[0];
+        const entityCol = dimCols[0];
+        const metricCol = metricCols[0];
+        const entity = topRow[entityCol];
+        const value = topRow[metricCol];
+        const metricLabel = getLabel(metricCol.replace(/_(sum|avg|count|count_distinct|min|max)$/i, ''));
+        const entityLabel = getLabel(entityCol);
+        return `Across ${data.length} ${entityLabel} categories, ${entity} has the highest ${metricLabel} at ${fmt(value)}.`;
+    }
+
+    // Fallback: return null to use the plan-based explanation
+    return null;
 }
