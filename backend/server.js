@@ -80,17 +80,15 @@ async function initAuthDatabase() {
         `);
         console.log('[Auth] PostgreSQL users table ready');
 
-        // Always ensure admin user exists (upsert — won't overwrite if already present)
+        // Always ensure admin user exists with valid credentials
         const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
         const upsertResult = await authPool.query(
             `INSERT INTO users (id, email, name, role, password_hash)
              VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (email) DO NOTHING`,
+             ON CONFLICT (email) DO UPDATE SET password_hash = $5`,
             ['admin_001', 'saicharan@quickinsight.co.uk', 'Sai Charan', 'admin', adminHash]
         );
-        if (upsertResult.rowCount > 0) {
-            console.log('[Auth] Seeded admin user: saicharan@quickinsight.co.uk / password');
-        }
+        console.log('[Auth] Admin user ensured: saicharan@quickinsight.co.uk / password');
 
         const { rows } = await authPool.query('SELECT COUNT(*) as count FROM users');
         console.log(`[Auth] ${rows[0].count} user(s) in database`);
