@@ -57,7 +57,8 @@ TASKS:
 3. Write a 1-sentence summary of what this dataset represents
 
 4. For EACH column, determine:
-   - role: "METRIC", "DIMENSION", "DATE", or "ID"
+   - role: "METRIC", "DIMENSION", "DATE", "BOOLEAN", or "ID"
+     Use BOOLEAN for columns containing yes/no, true/false, 0/1, active/inactive values.
    - aggregation: "SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX", or "NONE"
    - format: "currency_usd", "currency_eur", "percent", "raw", "count", or "date_iso"
    - humanLabel: A clean, readable label (e.g., "Monthly Revenue" instead of "rev_monthly_v2")
@@ -76,7 +77,7 @@ RESPOND WITH ONLY VALID JSON matching this exact schema (no markdown fences):
   "themeColor": "hex color string",
   "columnSemantics": {
     "column_name": {
-      "role": "METRIC|DIMENSION|DATE|ID",
+      "role": "METRIC|DIMENSION|DATE|BOOLEAN|ID",
       "aggregation": "SUM|AVG|COUNT|COUNT_DISTINCT|MIN|MAX|NONE",
       "format": "currency_usd|currency_eur|percent|raw|count|date_iso",
       "humanLabel": "string",
@@ -100,7 +101,8 @@ DO NOT reconsider or change the domain. Map the following columns strictly withi
 ${profileText}
 
 For EACH column below, determine:
-- role: "METRIC", "DIMENSION", "DATE", or "ID"
+- role: "METRIC", "DIMENSION", "DATE", "BOOLEAN", or "ID"
+  Use BOOLEAN for columns containing yes/no, true/false, 0/1, active/inactive values.
 - aggregation: "SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX", or "NONE"
 - format: "currency_usd", "currency_eur", "percent", "raw", "count", or "date_iso"
 - humanLabel: Clean readable label
@@ -219,7 +221,7 @@ function parseProfileResponse(raw: any): Partial<DatasetDomainProfile> | null {
         }
 
         // Validate and normalize column semantics
-        const validRoles = new Set(['METRIC', 'DIMENSION', 'DATE', 'ID', 'UNKNOWN']);
+        const validRoles = new Set(['METRIC', 'DIMENSION', 'DATE', 'BOOLEAN', 'ID', 'UNKNOWN']);
         const validAggs = new Set(['SUM', 'AVG', 'COUNT', 'COUNT_DISTINCT', 'MIN', 'MAX', 'NONE']);
         const validFormats = new Set(['currency_usd', 'currency_eur', 'percent', 'raw', 'count', 'date_iso']);
 
@@ -350,12 +352,28 @@ export async function profileDatasetWithAI(
             }
         }
 
-        // Step 7: Build the final profile
+        // Step 7: Compute deterministic confidence (not LLM self-reported)
+        const totalCols = columns.length;
+        const mappedCols = Object.keys(allSemantics).length;
+        const coverageScore = totalCols > 0 ? mappedCols / totalCols : 0;
+        const unknownCols = Object.values(allSemantics).filter(s => s.role === ColumnType.UNKNOWN).length;
+        const unknownPenalty = totalCols > 0 ? (unknownCols / totalCols) * 0.3 : 0;
+        const hiddenCols = Object.values(allSemantics).filter(s => s.isHidden).length;
+        const visibleCols = totalCols - hiddenCols;
+        const metricCount = Object.values(allSemantics).filter(s => s.role === ColumnType.METRIC).length;
+        const dimCount = Object.values(allSemantics).filter(s => s.role === ColumnType.DIMENSION || s.role === ColumnType.BOOLEAN).length;
+        const hasMinTypes = metricCount > 0 && dimCount > 0 ? 0 : 0.15;
+        const computedConfidence = Math.max(0.1, Math.min(1.0,
+            coverageScore - unknownPenalty - hasMinTypes
+        ));
+        console.log(`[AI Profiler] Confidence: ${(computedConfidence * 100).toFixed(0)}% (coverage=${(coverageScore * 100).toFixed(0)}%, unknowns=${unknownCols}, metrics=${metricCount}, dims=${dimCount})`);
+
+        // Step 8: Build the final profile
         const profile: DatasetDomainProfile = {
             domain: pass1Parsed.domain!,
             subDomain: pass1Parsed.subDomain,
             summary: pass1Parsed.summary || '',
-            confidence: pass1Parsed.confidence || 0.5,
+            confidence: computedConfidence,
             themeColor: pass1Parsed.themeColor,
             columnSemantics: allSemantics,
             suggestedQuestionCategories: generateSuggestedCategories(pass1Parsed.domain!),

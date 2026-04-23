@@ -764,7 +764,7 @@ function layer4_rulePlanner(
             }
             // ── Gate 3: Boolean gate (≥60% boolean tokens) ──
             else if (p.booleanTokenRate >= 0.6) {
-                type = ColumnType.DIMENSION; // Booleans are dimensions with bool normalization
+                type = ColumnType.BOOLEAN; // Booleans get their own type with bool normalization
             }
             // ── Gate 4: Metric by name + numeric data — trust the name ──
             else if (isMetricName && effectiveNumericRate >= 0.3) {
@@ -828,35 +828,32 @@ function layer4_rulePlanner(
         } else if (type === ColumnType.DATE) {
             const fmt = p.dateFormatCandidate || 'YYYY-MM-DD';
             steps.push({ name: `PARSE_DATE(${fmt})`, fn: (v: any) => tryParseDateWithFormat(v, fmt) || tryParseDateAny(v)?.iso || null });
+        } else if (type === ColumnType.BOOLEAN) {
+            steps.push({
+                name: 'NORMALIZE_BOOLEAN', fn: (v: any) => {
+                    if (v === true) return 'True';
+                    if (v === false) return 'False';
+                    if (typeof v === 'number') return v === 1 ? 'True' : v === 0 ? 'False' : String(v);
+                    if (typeof v !== 'string') return v;
+                    const b = BOOLEAN_TOKENS[v.toLowerCase().trim()];
+                    return b !== undefined ? (b ? 'True' : 'False') : v;
+                }
+            });
+            steps.push({ name: 'IMPUTE_UNKNOWN', fn: (v: any) => (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) ? 'Unknown' : v });
         } else if (type === ColumnType.DIMENSION) {
-            if (p.booleanTokenRate >= 0.6) {
-                steps.push({
-                    name: 'NORMALIZE_BOOLEAN', fn: (v: any) => {
-                        if (v === true) return 'True';
-                        if (v === false) return 'False';
-                        if (typeof v === 'number') return v === 1 ? 'True' : v === 0 ? 'False' : String(v);
-                        if (typeof v !== 'string') return v;
-                        const b = BOOLEAN_TOKENS[v.toLowerCase().trim()];
-                        return b !== undefined ? (b ? 'True' : 'False') : v;
+            steps.push({ name: 'TITLE_CASE', fn: (v: any) => typeof v === 'string' && v.trim() !== '' ? toTitleCase(v) : v });
+            // Add synonym normalization step
+            steps.push({
+                name: 'SYNONYM_MAP', fn: (v: any) => {
+                    if (typeof v !== 'string' || v.trim() === '') return v;
+                    const colSynonyms = CATEGORY_SYNONYMS[p.name];
+                    if (colSynonyms && colSynonyms[v]) return colSynonyms[v];
+                    for (const group of Object.values(CATEGORY_SYNONYMS)) {
+                        if (group[v]) return group[v];
                     }
-                });
-            } else {
-                steps.push({ name: 'TITLE_CASE', fn: (v: any) => typeof v === 'string' && v.trim() !== '' ? toTitleCase(v) : v });
-                // Add synonym normalization step
-                steps.push({
-                    name: 'SYNONYM_MAP', fn: (v: any) => {
-                        if (typeof v !== 'string' || v.trim() === '') return v;
-                        // Try column-specific synonyms first, then try all synonym groups
-                        const colSynonyms = CATEGORY_SYNONYMS[p.name];
-                        if (colSynonyms && colSynonyms[v]) return colSynonyms[v];
-                        // Also try all categories if column name doesn't match
-                        for (const group of Object.values(CATEGORY_SYNONYMS)) {
-                            if (group[v]) return group[v];
-                        }
-                        return v;
-                    }
-                });
-            }
+                    return v;
+                }
+            });
             steps.push({ name: 'IMPUTE_UNKNOWN', fn: (v: any) => (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) ? 'Unknown' : v });
         } else if (type === ColumnType.ID) {
             // Cast IDs to clean integer strings (1.0 → "1", not "1.0")

@@ -30,7 +30,7 @@ const GRAIN_SUGGESTIONS: Record<string, string[]> = {
     default: ['Record', 'Row', 'Entry', 'Event'],
 };
 
-const COLUMN_TYPES: ColumnType[] = [ColumnType.METRIC, ColumnType.DIMENSION, ColumnType.DATE, ColumnType.ID, ColumnType.UNKNOWN];
+const COLUMN_TYPES: ColumnType[] = [ColumnType.METRIC, ColumnType.DIMENSION, ColumnType.DATE, ColumnType.BOOLEAN, ColumnType.ID, ColumnType.UNKNOWN];
 const AGGREGATIONS = ['SUM', 'AVG', 'COUNT', 'COUNT_DISTINCT', 'MIN', 'MAX', 'NONE'] as const;
 const FORMATS = ['currency_usd', 'currency_eur', 'percent', 'raw', 'count', 'date_iso'] as const;
 const SEMANTIC_ROLES = [
@@ -56,6 +56,7 @@ const TYPE_COLORS: Record<string, string> = {
     METRIC: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
     DIMENSION: 'bg-violet-500/15 text-violet-400 border-violet-500/25',
     DATE: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
+    BOOLEAN: 'bg-rose-500/15 text-rose-400 border-rose-500/25',
     ID: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
     UNKNOWN: 'bg-gray-500/15 text-gray-400 border-gray-500/25',
 };
@@ -170,7 +171,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             const existing = initialProfile.columnSemantics?.[col.name];
             merged[col.name] = existing || {
                 role: col.type,
-                aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : 'NONE',
+                aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : col.type === ColumnType.BOOLEAN ? 'COUNT' : 'NONE',
                 format: 'raw',
                 humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
                 description: '',
@@ -193,6 +194,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             metrics: entries.filter(([, s]) => s.role === ColumnType.METRIC).length,
             dimensions: entries.filter(([, s]) => s.role === ColumnType.DIMENSION).length,
             dates: entries.filter(([, s]) => s.role === ColumnType.DATE).length,
+            booleans: entries.filter(([, s]) => s.role === ColumnType.BOOLEAN).length,
             ids: entries.filter(([, s]) => s.role === ColumnType.ID).length,
             hidden: Object.values(columnSemantics).filter(s => s.isHidden).length,
         };
@@ -352,8 +354,8 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                 onClick={handleApply}
                                 disabled={showErrors && !canApply}
                                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all shadow-lg ${showErrors && !canApply
-                                        ? 'bg-gray-600/50 text-gray-400 cursor-not-allowed shadow-none'
-                                        : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-violet-500/20'
+                                    ? 'bg-gray-600/50 text-gray-400 cursor-not-allowed shadow-none'
+                                    : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-violet-500/20'
                                     }`}
                             >
                                 <CheckCircle2 className="w-4 h-4" />
@@ -373,8 +375,8 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                     <div className="grid grid-cols-4 gap-3">
                         {/* Grain (MANDATORY — most prominent) */}
                         <div className={`col-span-2 rounded-xl p-4 border transition-all ${showErrors && !grain.trim()
-                                ? 'bg-red-500/10 border-red-500/30'
-                                : 'bg-[#1c2033] border-white/[0.06]'
+                            ? 'bg-red-500/10 border-red-500/30'
+                            : 'bg-[#1c2033] border-white/[0.06]'
                             }`}>
                             <div className="flex items-center gap-2 mb-2">
                                 <Layers className="w-4 h-4 text-violet-400" />
@@ -395,8 +397,8 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                         key={g}
                                         onClick={() => setGrain(g)}
                                         className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${grain === g
-                                                ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
-                                                : 'bg-white/[0.04] text-gray-500 hover:text-gray-300 border border-white/[0.06]'
+                                            ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
+                                            : 'bg-white/[0.04] text-gray-500 hover:text-gray-300 border border-white/[0.06]'
                                             }`}
                                     >{g}</button>
                                 ))}
@@ -428,12 +430,12 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                         animate={{ width: `${initialProfile.confidence * 100}%` }}
                                         transition={{ duration: 0.8, ease: 'easeOut' }}
                                         className={`h-full rounded-full ${initialProfile.confidence >= 0.8 ? 'bg-emerald-500' :
-                                                initialProfile.confidence >= 0.5 ? 'bg-amber-500' : 'bg-red-500'
+                                            initialProfile.confidence >= 0.5 ? 'bg-amber-500' : 'bg-red-500'
                                             }`}
                                     />
                                 </div>
                                 <span className={`text-lg font-bold ${initialProfile.confidence >= 0.8 ? 'text-emerald-400' :
-                                        initialProfile.confidence >= 0.5 ? 'text-amber-400' : 'text-red-400'
+                                    initialProfile.confidence >= 0.5 ? 'text-amber-400' : 'text-red-400'
                                     }`}>
                                     {(initialProfile.confidence * 100).toFixed(0)}%
                                 </span>
@@ -469,6 +471,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                             { label: 'Metrics', count: stats.metrics, color: 'text-emerald-400', bg: 'bg-emerald-500/10', req: true },
                             { label: 'Dimensions', count: stats.dimensions, color: 'text-violet-400', bg: 'bg-violet-500/10', req: true },
                             { label: 'Dates', count: stats.dates, color: 'text-blue-400', bg: 'bg-blue-500/10', req: false },
+                            { label: 'Booleans', count: stats.booleans, color: 'text-rose-400', bg: 'bg-rose-500/10', req: false },
                             { label: 'IDs', count: stats.ids, color: 'text-amber-400', bg: 'bg-amber-500/10', req: false },
                             { label: 'Hidden', count: stats.hidden, color: 'text-gray-400', bg: 'bg-gray-500/10', req: false },
                         ].map(s => (
@@ -574,8 +577,8 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                         onChange={e => { e.stopPropagation(); updateColumn(col.name, { aggregation: e.target.value as any }); }}
                                                         onClick={e => e.stopPropagation()}
                                                         className={`w-full px-1.5 py-1 rounded text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/50 ${hasAggError
-                                                                ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                                                                : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                                                            ? 'bg-red-500/15 text-red-400 border-red-500/30'
+                                                            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
                                                             }`}
                                                     >
                                                         {AGGREGATIONS.filter(a => a !== 'NONE').map(a => (
@@ -598,8 +601,8 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                 <button
                                                     onClick={e => { e.stopPropagation(); toggleHidden(col.name); }}
                                                     className={`p-1 rounded-lg transition-all ${sem.isHidden
-                                                            ? 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10'
-                                                            : 'text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10'
+                                                        ? 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10'
+                                                        : 'text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10'
                                                         }`}
                                                 >
                                                     {sem.isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
@@ -789,8 +792,8 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                             onClick={handleApply}
                             disabled={showErrors && !canApply}
                             className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium transition-all shadow-lg ${showErrors && !canApply
-                                    ? 'bg-gray-600/50 text-gray-400 cursor-not-allowed shadow-none'
-                                    : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-violet-500/20'
+                                ? 'bg-gray-600/50 text-gray-400 cursor-not-allowed shadow-none'
+                                : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-violet-500/20'
                                 }`}
                         >
                             <CheckCircle2 className="w-4 h-4" />

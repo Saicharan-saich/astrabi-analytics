@@ -84,6 +84,11 @@ function inferSemanticType(
         return { semanticType: 'identifier', formatHint: 'text' };
     }
 
+    // Boolean columns
+    if (colType === ColumnType.BOOLEAN) {
+        return { semanticType: 'category', formatHint: 'text' };
+    }
+
     // Numeric columns — classify by name patterns
     if (colType === ColumnType.METRIC) {
         // Check for percentage patterns first (more specific)
@@ -161,6 +166,7 @@ function inferRole(
     }
 
     if (colType === ColumnType.METRIC) return 'metric';
+    if (colType === ColumnType.BOOLEAN) return 'dimension';
     return 'dimension';
 }
 

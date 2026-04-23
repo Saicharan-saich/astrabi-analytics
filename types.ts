@@ -4,6 +4,7 @@ export enum ColumnType {
   METRIC = 'METRIC',
   DATE = 'DATE',
   ID = 'ID',
+  BOOLEAN = 'BOOLEAN',
   UNKNOWN = 'UNKNOWN'
 }
 
