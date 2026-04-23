@@ -318,53 +318,87 @@ function generateComparisonSQL(
 }
 
 /**
- * Build a human-readable explanation of the plan
+ * Build a human-readable, natural-language explanation of the plan
  */
 function buildExplanation(plan: AnalysisPlan, model: SemanticModel): string {
-    const parts: string[] = [];
-
-    // Intent
-    const intentLabels: Record<string, string> = {
-        single_metric: 'Calculating a single metric',
-        breakdown: 'Breaking down by dimension',
-        trend: 'Showing trend over time',
-        trend_comparison: 'Comparing trends across periods',
-        total_comparison: 'Comparing period totals',
-        ranking: 'Ranking',
-        share_of_total: 'Showing share of total',
-        correlation: 'Correlating metrics',
-        distribution: 'Showing distribution',
-    };
-    parts.push(intentLabels[plan.intent] || plan.intent);
-
-    // Metrics
+    // Get metric display names
     const metricNames = plan.metrics.map(m => {
         const field = model.fields.find(f => f.name === m.field);
         return field?.displayLabel || m.field;
     });
-    parts.push(`metrics: ${metricNames.join(', ')}`);
 
-    // Dimensions
-    if (plan.dimensions.length > 0) {
-        const dimNames = plan.dimensions.map(d => {
-            const field = model.fields.find(f => f.name === d.field);
-            const label = field?.displayLabel || d.field;
-            return d.timeGrain ? `${label} (by ${d.timeGrain})` : label;
-        });
-        parts.push(`grouped by: ${dimNames.join(', ')}`);
+    // Get dimension display names
+    const dimNames = plan.dimensions.map(d => {
+        const field = model.fields.find(f => f.name === d.field);
+        return field?.displayLabel || d.field;
+    });
+
+    // Build aggregation labels
+    const aggLabel = (m: typeof plan.metrics[0]) => {
+        switch (m.agg) {
+            case 'sum': return 'total';
+            case 'avg': return 'average';
+            case 'count': return 'count of';
+            case 'count_distinct': return 'distinct count of';
+            case 'min': return 'minimum';
+            case 'max': return 'maximum';
+            default: return '';
+        }
+    };
+
+    let sentence = '';
+
+    // Single metric, no dimensions → direct KPI answer
+    if (plan.intent === 'single_metric' && dimNames.length === 0) {
+        const m = plan.metrics[0];
+        sentence = `Calculating the ${aggLabel(m)} ${metricNames[0]}`;
     }
-
-    // Filters
-    if (plan.filters.length > 0) {
-        parts.push(`with ${plan.filters.length} filter(s)`);
+    // Trend
+    else if (plan.intent === 'trend' || plan.intent === 'trend_comparison') {
+        const timeGrain = plan.dimensions.find(d => d.timeGrain)?.timeGrain || 'time';
+        sentence = `Showing ${metricNames.join(' and ')} trend over ${timeGrain}`;
     }
-
+    // Ranking
+    else if (plan.intent === 'ranking') {
+        const limit = plan.limit || 10;
+        sentence = `Showing the top ${limit} ${dimNames[0] || 'items'} ranked by ${metricNames[0]}`;
+    }
+    // Share of total
+    else if (plan.intent === 'share_of_total') {
+        sentence = `Showing each ${dimNames[0] || 'category'}'s share of total ${metricNames[0]}`;
+    }
     // Comparison
-    if (plan.comparison) {
-        parts.push(`comparing: ${plan.comparison.type} (${plan.comparison.mode} mode)`);
+    else if (plan.intent === 'total_comparison') {
+        sentence = `Comparing ${metricNames[0]} across periods`;
+    }
+    // Breakdown (most common)
+    else if (dimNames.length > 0) {
+        const m = plan.metrics[0];
+        sentence = `Showing ${aggLabel(m)} ${metricNames.join(', ')} by ${dimNames.join(' and ')}`;
+    }
+    // Fallback
+    else {
+        sentence = `Calculating ${metricNames.join(', ')}`;
     }
 
-    return parts.join(' — ');
+    // Add filter context
+    if (plan.filters.length > 0) {
+        const filterDescs = plan.filters.map(f => {
+            const field = model.fields.find(fld => fld.name === f.field);
+            const label = field?.displayLabel || f.field;
+            if (f.op === 'in' && Array.isArray(f.value)) return `${label} is ${f.value.join(', ')}`;
+            if (f.op === 'between' && Array.isArray(f.value) && f.value.length === 2) return `${label} from ${f.value[0]} to ${f.value[1]}`;
+            return `filtered by ${label}`;
+        });
+        sentence += `, where ${filterDescs.join(' and ')}`;
+    }
+
+    // Add comparison note
+    if (plan.comparison) {
+        sentence += ` — compared with ${plan.comparison.type.replace(/_/g, ' ')}`;
+    }
+
+    return sentence + '.';
 }
 
 
