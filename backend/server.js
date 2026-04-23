@@ -80,17 +80,20 @@ async function initAuthDatabase() {
         `);
         console.log('[Auth] PostgreSQL users table ready');
 
-        const { rows } = await authPool.query('SELECT COUNT(*) as count FROM users');
-        if (parseInt(rows[0].count) === 0) {
-            const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
-            await authPool.query(
-                'INSERT INTO users (id, email, name, role, password_hash) VALUES ($1, $2, $3, $4, $5)',
-                ['admin_001', 'saicharan@quickinsight.co.uk', 'Sai Charan', 'admin', adminHash]
-            );
-            console.log('[Auth] Seeded admin user: saicharan@quickinsight.co.uk');
-        } else {
-            console.log(`[Auth] ${rows[0].count} user(s) already in database`);
+        // Always ensure admin user exists (upsert — won't overwrite if already present)
+        const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
+        const upsertResult = await authPool.query(
+            `INSERT INTO users (id, email, name, role, password_hash)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (email) DO NOTHING`,
+            ['admin_001', 'saicharan@quickinsight.co.uk', 'Sai Charan', 'admin', adminHash]
+        );
+        if (upsertResult.rowCount > 0) {
+            console.log('[Auth] Seeded admin user: saicharan@quickinsight.co.uk / password');
         }
+
+        const { rows } = await authPool.query('SELECT COUNT(*) as count FROM users');
+        console.log(`[Auth] ${rows[0].count} user(s) in database`);
         authDbStatus = 'ready';
     } catch (err) {
         console.error('[Auth] Failed to initialize tables:', err.message);
