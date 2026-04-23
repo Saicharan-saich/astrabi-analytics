@@ -1,5 +1,5 @@
-import React from 'react';
-import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles } from 'lucide-react';
+import React, { useState } from 'react';
+import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2 } from 'lucide-react';
 import { Tab, UserRole } from '../types';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { Tooltip } from './Tooltip';
@@ -19,6 +19,47 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     const isDark = theme === 'dark';
     const userRole = currentUser?.role || UserRole.VIEWER;
     const perms = ROLE_PERMISSIONS[userRole];
+
+    // Change Password modal state
+    const [showChangePw, setShowChangePw] = useState(false);
+    const [pwCurrent, setPwCurrent] = useState('');
+    const [pwNew, setPwNew] = useState('');
+    const [pwConfirm, setPwConfirm] = useState('');
+    const [pwError, setPwError] = useState('');
+    const [pwSuccess, setPwSuccess] = useState(false);
+    const [pwLoading, setPwLoading] = useState(false);
+
+    const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5002/api';
+
+    const handleChangePassword = async () => {
+        setPwError('');
+        setPwSuccess(false);
+        if (!pwCurrent || !pwNew || !pwConfirm) { setPwError('All fields are required'); return; }
+        if (pwNew.length < 6) { setPwError('New password must be at least 6 characters'); return; }
+        if (pwNew !== pwConfirm) { setPwError('New passwords do not match'); return; }
+        if (pwNew === pwCurrent) { setPwError('New password must be different from current'); return; }
+
+        setPwLoading(true);
+        try {
+            const token = localStorage.getItem('qi_token');
+            const res = await fetch(`${API_BASE}/auth/change-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                body: JSON.stringify({ currentPassword: pwCurrent, newPassword: pwNew }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                setPwError(data.error || 'Failed to change password');
+            } else {
+                setPwSuccess(true);
+                setPwCurrent(''); setPwNew(''); setPwConfirm('');
+                setTimeout(() => { setShowChangePw(false); setPwSuccess(false); }, 2000);
+            }
+        } catch {
+            setPwError('Could not connect to server');
+        }
+        setPwLoading(false);
+    };
 
     const dataSection = [
         { id: Tab.UPLOAD, label: 'Data Source', icon: Upload, requiresUpload: true, tooltip: 'Upload CSV/Excel files or connect to databases like SQL Server to import your data.' },
@@ -195,6 +236,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                                 </div>
                             </div>
                             <button
+                                onClick={() => { setShowChangePw(true); setPwError(''); setPwSuccess(false); setPwCurrent(''); setPwNew(''); setPwConfirm(''); }}
+                                className={`p-1.5 rounded-lg transition-all duration-150 shrink-0 ${isDark ? 'text-gray-500 hover:text-violet-400 hover:bg-violet-500/10' : 'text-gray-400 hover:text-violet-500 hover:bg-violet-50'
+                                    }`}
+                                title="Change Password"
+                            >
+                                <KeyRound className="w-4 h-4" />
+                            </button>
+                            <button
                                 onClick={logout}
                                 className={`p-1.5 rounded-lg transition-all duration-150 shrink-0 ${isDark ? 'text-gray-500 hover:text-red-400 hover:bg-red-500/10' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
                                     }`}
@@ -212,6 +261,81 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                     <span className={`text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>QuickInsight</span>
                 </div>
             </div>
+
+            {/* ── Change Password Modal ── */}
+            {showChangePw && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+                    <div className={`w-full max-w-sm mx-4 rounded-2xl shadow-2xl border p-6 ${isDark ? 'bg-[#1a1f2e] border-white/10' : 'bg-white border-gray-200'}`}>
+                        <div className="flex items-center gap-3 mb-5">
+                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shadow-violet-500/20">
+                                <KeyRound className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                                <h3 className={`text-base font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Change Password</h3>
+                                <p className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{currentUser?.email}</p>
+                            </div>
+                        </div>
+
+                        <div className="space-y-3">
+                            <div>
+                                <label className={`text-[10px] font-semibold uppercase tracking-wider block mb-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Current Password</label>
+                                <input
+                                    type="password" value={pwCurrent} onChange={e => setPwCurrent(e.target.value)}
+                                    className={`w-full rounded-lg px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white placeholder-gray-600' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'
+                                        }`}
+                                    placeholder="Enter current password"
+                                />
+                            </div>
+                            <div>
+                                <label className={`text-[10px] font-semibold uppercase tracking-wider block mb-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>New Password</label>
+                                <input
+                                    type="password" value={pwNew} onChange={e => setPwNew(e.target.value)}
+                                    className={`w-full rounded-lg px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white placeholder-gray-600' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'
+                                        }`}
+                                    placeholder="Enter new password (min 6 chars)"
+                                />
+                            </div>
+                            <div>
+                                <label className={`text-[10px] font-semibold uppercase tracking-wider block mb-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Confirm New Password</label>
+                                <input
+                                    type="password" value={pwConfirm} onChange={e => setPwConfirm(e.target.value)}
+                                    className={`w-full rounded-lg px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white placeholder-gray-600' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'
+                                        }`}
+                                    placeholder="Re-enter new password"
+                                    onKeyDown={e => e.key === 'Enter' && handleChangePassword()}
+                                />
+                            </div>
+                        </div>
+
+                        {pwError && (
+                            <div className="mt-3 flex items-center gap-2 text-xs text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {pwError}
+                            </div>
+                        )}
+                        {pwSuccess && (
+                            <div className="mt-3 flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg px-3 py-2">
+                                <Check className="w-3.5 h-3.5 shrink-0" /> Password changed successfully!
+                            </div>
+                        )}
+
+                        <div className="flex gap-2 mt-5">
+                            <button
+                                onClick={() => setShowChangePw(false)}
+                                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-gray-300 hover:bg-white/[0.08]' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'
+                                    }`}
+                            >Cancel</button>
+                            <button
+                                onClick={handleChangePassword}
+                                disabled={pwLoading || pwSuccess}
+                                className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-lg shadow-violet-500/20 transition-all disabled:opacity-50"
+                            >
+                                {pwLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                {pwLoading ? 'Changing...' : 'Update Password'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

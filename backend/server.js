@@ -80,15 +80,17 @@ async function initAuthDatabase() {
         `);
         console.log('[Auth] PostgreSQL users table ready');
 
-        // Always ensure admin user exists with valid credentials
+        // Always ensure admin user exists (upsert — won't overwrite if already present)
         const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
         const upsertResult = await authPool.query(
             `INSERT INTO users (id, email, name, role, password_hash)
              VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (email) DO UPDATE SET password_hash = $5`,
+             ON CONFLICT (email) DO NOTHING`,
             ['admin_001', 'saicharan@quickinsight.co.uk', 'Sai Charan', 'admin', adminHash]
         );
-        console.log('[Auth] Admin user ensured: saicharan@quickinsight.co.uk / password');
+        if (upsertResult.rowCount > 0) {
+            console.log('[Auth] Seeded admin user: saicharan@quickinsight.co.uk');
+        }
 
         const { rows } = await authPool.query('SELECT COUNT(*) as count FROM users');
         console.log(`[Auth] ${rows[0].count} user(s) in database`);
@@ -255,6 +257,55 @@ app.post('/api/auth/login', async (req, res) => {
     } catch (error) {
         console.error('Login error:', error);
         res.status(500).json({ success: false, error: 'Login failed' });
+    }
+});
+
+// Change Password
+app.post('/api/auth/change-password', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ success: false, error: 'Not authenticated' });
+        }
+
+        let decoded;
+        try {
+            decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+        } catch {
+            return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+        }
+
+        const { currentPassword, newPassword } = req.body;
+        if (!currentPassword || !newPassword) {
+            return res.status(400).json({ success: false, error: 'Current and new passwords are required' });
+        }
+        if (newPassword.length < 6) {
+            return res.status(400).json({ success: false, error: 'New password must be at least 6 characters' });
+        }
+
+        if (!authPool) {
+            return res.status(503).json({ success: false, error: 'Database connection not available' });
+        }
+
+        const { rows } = await authPool.query('SELECT * FROM users WHERE email = $1', [decoded.email]);
+        const user = rows[0];
+        if (!user) {
+            return res.status(404).json({ success: false, error: 'User not found' });
+        }
+
+        const isValid = await bcrypt.compare(currentPassword, user.password_hash);
+        if (!isValid) {
+            return res.status(401).json({ success: false, error: 'Current password is incorrect' });
+        }
+
+        const newHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+        await authPool.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, user.id]);
+
+        console.log(`[Auth] Password changed for: ${user.email}`);
+        res.json({ success: true, message: 'Password changed successfully' });
+    } catch (error) {
+        console.error('Change password error:', error);
+        res.status(500).json({ success: false, error: 'Failed to change password' });
     }
 });
 
