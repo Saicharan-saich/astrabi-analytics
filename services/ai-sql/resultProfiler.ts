@@ -43,12 +43,30 @@ export function profileResult(
             continue;
         }
 
+        // CRITICAL: Detect if this column has an aggregation suffix (e.g., _avg, _sum)
+        // Aggregated columns are ALWAYS metrics — even if the source field is a dimension.
+        // Example: job_satisfaction is ordinal/dimension, but AVG(job_satisfaction) → job_satisfaction_avg
+        // is absolutely a metric in the result set.
+        const aggSuffixMatch = colLower.match(/_(sum|avg|count|count_distinct|min|max)$/);
+        const baseColName = aggSuffixMatch
+            ? colLower.replace(/_(sum|avg|count|count_distinct|min|max)$/, '')
+            : colLower;
+
         // Try to match to semantic model
-        const field = fieldMap.get(colLower)
-            || fieldMap.get(colLower.replace(/_sum$|_avg$|_count$|_min$|_max$/, ''));
+        const field = fieldMap.get(colLower) || fieldMap.get(baseColName);
 
         if (field) {
-            if (field.role === 'metric') {
+            if (aggSuffixMatch) {
+                // Column has aggregation suffix → ALWAYS a metric regardless of source field role
+                metricColumns.push(col);
+                // Infer the semantic type from the source field or the aggregation
+                if (field.semanticType === 'ordinal' || field.semanticType === 'category') {
+                    // Aggregated ordinal/category (e.g., AVG(rating)) → treat as quantity
+                    metricSemanticTypes[col] = 'quantity';
+                } else {
+                    metricSemanticTypes[col] = field.semanticType;
+                }
+            } else if (field.role === 'metric') {
                 metricColumns.push(col);
                 metricSemanticTypes[col] = field.semanticType;
             } else {
