@@ -198,6 +198,11 @@ function App() {
   }, [dataset?.id]);
 
   const handleDeleteDataset = (id: string) => {
+    // Reset processing/profiling state to prevent blocking overlay from persisting
+    // when the user deletes a dataset that was still being profiled
+    setProcessing(false);
+    setIsAIProfiling(false);
+    setPendingProfile(null);
     removeDataset(id);
     deleteDatasetFromDB(id);
   };

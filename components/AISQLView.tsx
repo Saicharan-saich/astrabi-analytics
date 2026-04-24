@@ -50,6 +50,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
     const [timeGrain, setTimeGrain] = useState<'day' | 'week' | 'month' | 'quarter' | 'year'>('month');
     const [fromCache, setFromCache] = useState(false);
     const [cacheCleared, setCacheCleared] = useState(false);
+    const [showConfidenceBreakdown, setShowConfidenceBreakdown] = useState(false);
 
     const updateFormatting = (f: FormattingConfig) => setFormatting(f);
 
@@ -613,20 +614,77 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        {/* Confidence Badge */}
-                                                        <div className="flex items-center gap-2">
-                                                            <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border ${pipelineResult.confidence.level === 'high'
-                                                                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
-                                                                : pipelineResult.confidence.level === 'medium'
-                                                                    ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-500/20'
-                                                                    : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20'
-                                                                }`}>
+                                                        {/* Confidence Badge — clickable to expand breakdown */}
+                                                        <div className="relative">
+                                                            <button
+                                                                onClick={() => setShowConfidenceBreakdown(!showConfidenceBreakdown)}
+                                                                className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border cursor-pointer transition-all hover:opacity-80 ${pipelineResult.confidence.level === 'high'
+                                                                        ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
+                                                                        : pipelineResult.confidence.level === 'medium'
+                                                                            ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-500/20'
+                                                                            : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20'
+                                                                    }`}
+                                                                title="Click to see confidence breakdown"
+                                                            >
                                                                 <span>{pipelineResult.confidence.level === 'high' ? '✓' : pipelineResult.confidence.level === 'medium' ? '⚠' : '✗'}</span>
                                                                 <span>{pipelineResult.confidence.score}% confidence</span>
-                                                            </div>
-                                                            <span className="text-[10px] text-gray-400 dark:text-slate-500 font-medium" title={pipelineResult.chart.reason}>
-                                                                {pipelineResult.chart.chartType === 'dualAxisCombo' ? '📊 Dual Axis' : ''}
-                                                            </span>
+                                                                <span className="ml-0.5 opacity-60">{showConfidenceBreakdown ? '▲' : '▼'}</span>
+                                                            </button>
+
+                                                            {/* Expandable Confidence Breakdown */}
+                                                            {showConfidenceBreakdown && (
+                                                                <div className="absolute top-full right-0 mt-2 w-80 bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/10 rounded-xl shadow-2xl z-30 overflow-hidden animate-in fade-in slide-in-from-top-2">
+                                                                    <div className="p-3 border-b border-gray-100 dark:border-white/5">
+                                                                        <div className="flex items-center justify-between">
+                                                                            <span className="text-xs font-bold text-gray-700 dark:text-white">Confidence Breakdown</span>
+                                                                            <span className={`text-lg font-black ${pipelineResult.confidence.level === 'high' ? 'text-emerald-500'
+                                                                                    : pipelineResult.confidence.level === 'medium' ? 'text-yellow-500' : 'text-red-500'
+                                                                                }`}>{pipelineResult.confidence.score}/100</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="p-3 space-y-2">
+                                                                        {/* Factor bars */}
+                                                                        {[
+                                                                            { label: 'Semantic Match', value: pipelineResult.confidence.factors.semanticMatch, max: 30 },
+                                                                            { label: 'Filter Clarity', value: pipelineResult.confidence.factors.filterClarity, max: 20 },
+                                                                            { label: 'Aggregation Certainty', value: pipelineResult.confidence.factors.aggregationCertainty, max: 20 },
+                                                                            { label: 'Plan Complexity', value: pipelineResult.confidence.factors.planComplexity, max: 15 },
+                                                                            { label: 'SQL Quality', value: pipelineResult.confidence.factors.repairAttempts, max: 15 },
+                                                                        ].map(factor => (
+                                                                            <div key={factor.label}>
+                                                                                <div className="flex items-center justify-between mb-0.5">
+                                                                                    <span className="text-[10px] font-medium text-gray-500 dark:text-slate-400">{factor.label}</span>
+                                                                                    <span className={`text-[10px] font-bold ${factor.value >= factor.max * 0.8 ? 'text-emerald-500'
+                                                                                            : factor.value >= factor.max * 0.5 ? 'text-yellow-500' : 'text-red-500'
+                                                                                        }`}>{factor.value}/{factor.max}</span>
+                                                                                </div>
+                                                                                <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/[0.06] overflow-hidden">
+                                                                                    <div
+                                                                                        className={`h-full rounded-full transition-all ${factor.value >= factor.max * 0.8 ? 'bg-emerald-500'
+                                                                                                : factor.value >= factor.max * 0.5 ? 'bg-yellow-500' : 'bg-red-500'
+                                                                                            }`}
+                                                                                        style={{ width: `${(factor.value / factor.max) * 100}%` }}
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                    {/* Reasons */}
+                                                                    {pipelineResult.confidence.reasons.length > 0 && (
+                                                                        <div className="px-3 pb-3 border-t border-gray-100 dark:border-white/5 pt-2">
+                                                                            <div className="text-[10px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider mb-1.5">Why this score</div>
+                                                                            <div className="space-y-1">
+                                                                                {pipelineResult.confidence.reasons.map((reason: string, i: number) => (
+                                                                                    <div key={i} className="flex items-start gap-1.5 text-[10px] text-gray-600 dark:text-slate-300">
+                                                                                        <span className="mt-0.5 flex-shrink-0">{reason.includes('matched exactly') || reason.includes('Verified') ? '✅' : reason.includes('ambiguous') || reason.includes('fail') ? '❌' : '⚠️'}</span>
+                                                                                        <span>{reason}</span>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 )}
