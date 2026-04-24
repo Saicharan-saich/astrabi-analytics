@@ -374,7 +374,8 @@ export enum Tab {
   NLQ = 'NLQ',
   AI_SQL = 'AI_SQL',
   CUSTOM_QUESTIONS = 'CUSTOM_QUESTIONS',
-  DATASET_SUMMARY = 'DATASET_SUMMARY'
+  DATASET_SUMMARY = 'DATASET_SUMMARY',
+  SMART_QUESTIONS = 'SMART_QUESTIONS'
 }
 
 // ─── Authentication & RBAC ───────────────────────────────────────

@@ -13,9 +13,10 @@ import { getCalculationDisplayName, type TableCalculation } from '../utils/table
 interface AISQLViewProps {
     dataset: Dataset | null;
     onPin?: (title: string, result: AnalysisResult) => void;
+    initialQuery?: string | null;
 }
 
-export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
+export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQuery }) => {
     const [query, setQuery] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -53,6 +54,17 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
     const [showConfidenceBreakdown, setShowConfidenceBreakdown] = useState(false);
 
     const updateFormatting = (f: FormattingConfig) => setFormatting(f);
+
+    // Auto-fill and auto-submit when initialQuery is set
+    const initialQueryProcessed = React.useRef<string | null>(null);
+    const pendingAutoSubmit = React.useRef(false);
+    React.useEffect(() => {
+        if (initialQuery && initialQuery !== initialQueryProcessed.current && dataset && !isLoading) {
+            initialQueryProcessed.current = initialQuery;
+            setQuery(initialQuery);
+            pendingAutoSubmit.current = true;
+        }
+    }, [initialQuery, dataset]);
 
     const examples = [
         "Total revenue by category",
@@ -181,6 +193,14 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
             setIsLoading(false);
         }
     };
+
+    // Auto-submit when pending (triggered by initialQuery)
+    React.useEffect(() => {
+        if (pendingAutoSubmit.current && query.trim() && dataset && !isLoading) {
+            pendingAutoSubmit.current = false;
+            handleSubmit();
+        }
+    }, [query]);
 
     const handleKeyDown = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !e.shiftKey) handleSubmit();
@@ -619,10 +639,10 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                                                             <button
                                                                 onClick={() => setShowConfidenceBreakdown(!showConfidenceBreakdown)}
                                                                 className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold border cursor-pointer transition-all hover:opacity-80 ${pipelineResult.confidence.level === 'high'
-                                                                        ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
-                                                                        : pipelineResult.confidence.level === 'medium'
-                                                                            ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-500/20'
-                                                                            : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20'
+                                                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20'
+                                                                    : pipelineResult.confidence.level === 'medium'
+                                                                        ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-500/20'
+                                                                        : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20'
                                                                     }`}
                                                                 title="Click to see confidence breakdown"
                                                             >
@@ -638,7 +658,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                                                                         <div className="flex items-center justify-between">
                                                                             <span className="text-xs font-bold text-gray-700 dark:text-white">Confidence Breakdown</span>
                                                                             <span className={`text-lg font-black ${pipelineResult.confidence.level === 'high' ? 'text-emerald-500'
-                                                                                    : pipelineResult.confidence.level === 'medium' ? 'text-yellow-500' : 'text-red-500'
+                                                                                : pipelineResult.confidence.level === 'medium' ? 'text-yellow-500' : 'text-red-500'
                                                                                 }`}>{pipelineResult.confidence.score}/100</span>
                                                                         </div>
                                                                     </div>
@@ -655,13 +675,13 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin }) => {
                                                                                 <div className="flex items-center justify-between mb-0.5">
                                                                                     <span className="text-[10px] font-medium text-gray-500 dark:text-slate-400">{factor.label}</span>
                                                                                     <span className={`text-[10px] font-bold ${factor.value >= factor.max * 0.8 ? 'text-emerald-500'
-                                                                                            : factor.value >= factor.max * 0.5 ? 'text-yellow-500' : 'text-red-500'
+                                                                                        : factor.value >= factor.max * 0.5 ? 'text-yellow-500' : 'text-red-500'
                                                                                         }`}>{factor.value}/{factor.max}</span>
                                                                                 </div>
                                                                                 <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/[0.06] overflow-hidden">
                                                                                     <div
                                                                                         className={`h-full rounded-full transition-all ${factor.value >= factor.max * 0.8 ? 'bg-emerald-500'
-                                                                                                : factor.value >= factor.max * 0.5 ? 'bg-yellow-500' : 'bg-red-500'
+                                                                                            : factor.value >= factor.max * 0.5 ? 'bg-yellow-500' : 'bg-red-500'
                                                                                             }`}
                                                                                         style={{ width: `${(factor.value / factor.max) * 100}%` }}
                                                                                     />

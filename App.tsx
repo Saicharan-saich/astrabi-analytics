@@ -37,6 +37,7 @@ import { saveDatasetToDB, loadAllDatasetsFromDB, deleteDatasetFromDB } from './s
 import { DomainReviewModal } from './components/DomainReviewModal';
 import { ColumnMappingWizard } from './components/ColumnMappingWizard';
 import { SplashScreen } from './components/SplashScreen';
+import { SmartQuestionsView } from './components/SmartQuestionsView';
 
 // ── Heuristic domain detection (fallback when AI profiling unavailable) ──
 function detectDomainFromColumns(columns: { name: string }[], fileName: string): string {
@@ -160,6 +161,13 @@ function App() {
   const [showDomainReview, setShowDomainReview] = useState(false);
   const [pendingProfile, setPendingProfile] = useState<any>(null);
   const [showSplash, setShowSplash] = useState(true);
+  const [smartQuestionQuery, setSmartQuestionQuery] = useState<string | null>(null);
+
+  // Smart Questions → AI SQL routing
+  const handleSmartQuestion = (question: string) => {
+    setSmartQuestionQuery(question);
+    setActiveTab(Tab.AI_SQL);
+  };
 
   // Hydrate datasets from IndexedDB on mount
   useEffect(() => {
@@ -914,6 +922,7 @@ function App() {
                   <AISQLView
                     dataset={dataset}
                     onPin={(title, result) => handlePin({ ...result, insight: title })}
+                    initialQuery={smartQuestionQuery}
                   />
                 </div>
 
@@ -952,6 +961,15 @@ function App() {
 
                 <div className={`h-full w-full ${activeTab === Tab.CUSTOM_QUESTIONS ? '' : 'hidden'}`}>
                   <AdminQuestionBuilder dataset={dataset} />
+                </div>
+
+                <div className={`h-full w-full ${activeTab === Tab.SMART_QUESTIONS ? '' : 'hidden'}`}>
+                  {dataset && (
+                    <SmartQuestionsView
+                      dataset={dataset}
+                      onAskQuestion={handleSmartQuestion}
+                    />
+                  )}
                 </div>
               </main>
             </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2 } from 'lucide-react';
+import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb } from 'lucide-react';
 import { Tab, UserRole } from '../types';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { Tooltip } from './Tooltip';
@@ -28,6 +28,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     const [pwError, setPwError] = useState('');
     const [pwSuccess, setPwSuccess] = useState(false);
     const [pwLoading, setPwLoading] = useState(false);
+
+    // Explore Data collapsible state
+    const exploreDataTabs = [Tab.COLUMN_MAPPING, Tab.ETL, Tab.SCHEMA, Tab.DATA, Tab.DATASET_SUMMARY];
+    const isExploreActive = exploreDataTabs.includes(activeTab);
+    const [exploreDataOpen, setExploreDataOpen] = useState(isExploreActive);
 
     const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5002/api';
 
@@ -63,6 +68,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
 
     const dataSection = [
         { id: Tab.UPLOAD, label: 'Data Source', icon: Upload, requiresUpload: true, tooltip: 'Upload CSV/Excel files or connect to databases like SQL Server to import your data.' },
+    ];
+
+    // Explore Data sub-items (collapsed under one group)
+    const exploreDataItems = [
         { id: Tab.COLUMN_MAPPING, label: 'Column Mapping', icon: Eye, tooltip: 'Review and adjust AI-detected column types, semantic roles, and data formats before analysis.' },
         { id: Tab.ETL, label: 'ETL Pipeline', icon: Database, requiresEditSchema: true, tooltip: 'View each automated data cleaning step — null handling, type casting, date parsing, and more.' },
         { id: Tab.SCHEMA, label: 'Schema', icon: GitMerge, requiresEditSchema: true, tooltip: 'See how columns were classified (metric, dimension, date, ID) and override types if needed.' },
@@ -71,11 +80,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     ];
 
     const analysisSection = [
-        // Workbench hidden from UI (code preserved for future use)
-        // { id: Tab.WORKBENCH, label: 'Workbench', icon: Play, requiresCreateVisuals: true, tooltip: 'Pick from the Question Bank or build custom queries with full control over metrics, dimensions, and filters.' },
+        { id: Tab.SMART_QUESTIONS, label: 'Smart Insights', icon: Lightbulb, requiresCreateVisuals: true, tooltip: 'AI-curated questions tailored to your dataset. Click any card to instantly run the analysis.' },
         { id: Tab.BUILDER, label: 'Question Builder', icon: Search, requiresCreateVisuals: true, tooltip: 'A simplified natural-language-style builder: "Show me [metric] by [dimension]" with intuitive dropdowns.' },
-        // Ask Data hidden from UI (code preserved for future use)
-        // { id: Tab.NLQ, label: 'Ask Data', icon: MessageSquare, requiresCreateVisuals: true, tooltip: 'Type questions in plain English like "revenue by month" and get instant charts.' },
         { id: Tab.AI_SQL, label: 'AI SQL', icon: Sparkles, requiresCreateVisuals: true, tooltip: 'Ask questions in natural language — AI generates and executes SQL on your dataset. Powered by Gemini.' },
         { id: Tab.CUSTOM_QUESTIONS, label: 'Custom Questions', icon: Wrench, requiresManageQuestions: true, tooltip: 'Build custom analytical questions with SQL. Admin only.' },
     ];
@@ -84,11 +90,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         { id: Tab.DASHBOARD, label: 'Dashboard', icon: Layout, tooltip: 'View all your pinned analyses in a dashboard layout with drag-and-drop arrangement.' },
     ];
 
-    const filterItems = (items: typeof dataSection) => items.filter(item => {
-        if ((item as any).requiresUpload && !perms.canUpload) return false;
-        if ((item as any).requiresEditSchema && !perms.canEditSchema) return false;
-        if ((item as any).requiresCreateVisuals && !perms.canCreateVisuals) return false;
-        if ((item as any).requiresManageQuestions && !perms.canManageQuestions) return false;
+    const filterItems = (items: any[]) => items.filter(item => {
+        if (item.requiresUpload && !perms.canUpload) return false;
+        if (item.requiresEditSchema && !perms.canEditSchema) return false;
+        if (item.requiresCreateVisuals && !perms.canCreateVisuals) return false;
+        if (item.requiresManageQuestions && !perms.canManageQuestions) return false;
         return true;
     });
 
@@ -115,7 +121,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         }
     };
 
-    const renderNavItem = (item: typeof dataSection[0]) => {
+    const renderNavItem = (item: any) => {
         const isActive = activeTab === item.id;
         return (
             <Tooltip key={item.id} text={item.tooltip || ''} position="right" delay={400}>
@@ -150,7 +156,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         );
     };
 
-    const renderSection = (label: string, items: typeof dataSection) => {
+    const renderSection = (label: string, items: any[]) => {
         const filtered = filterItems(items);
         if (filtered.length === 0) return null;
         return (
@@ -164,6 +170,44 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                 <div className="space-y-0.5">
                     {filtered.map(renderNavItem)}
                 </div>
+            </div>
+        );
+    };
+
+    // Render the "Explore Data" collapsible group
+    const renderExploreDataGroup = () => {
+        const filteredExplore = filterItems(exploreDataItems);
+        if (filteredExplore.length === 0) return null;
+        return (
+            <div className="space-y-0.5">
+                <button
+                    onClick={() => setExploreDataOpen(!exploreDataOpen)}
+                    className={classNames(
+                        "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 text-[13px] font-medium relative",
+                        isExploreActive
+                            ? isDark ? "bg-violet-500/15 text-violet-300" : "bg-violet-50 text-violet-700"
+                            : isDark ? "text-gray-400 hover:bg-white/[0.05] hover:text-gray-200" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                    )}
+                >
+                    {isExploreActive && (
+                        <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full ${isDark ? 'bg-violet-400' : 'bg-violet-600'}`} />
+                    )}
+                    <Database className={classNames(
+                        "w-[17px] h-[17px] transition-colors duration-150",
+                        isExploreActive ? isDark ? "text-violet-400" : "text-violet-600" : isDark ? "text-gray-500" : "text-gray-400"
+                    )} />
+                    <span className="flex-1 text-left">Explore Data</span>
+                    <ChevronRight className={classNames(
+                        "w-3.5 h-3.5 transition-transform duration-200",
+                        exploreDataOpen ? "rotate-90" : "",
+                        isDark ? "text-gray-600" : "text-gray-400"
+                    )} />
+                </button>
+                {exploreDataOpen && (
+                    <div className={`ml-4 pl-3 space-y-0.5 border-l ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
+                        {filteredExplore.map(renderNavItem)}
+                    </div>
+                )}
             </div>
         );
     };
@@ -196,7 +240,18 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
 
             {/* Navigation */}
             <nav className="flex-1 min-h-0 overflow-y-auto space-y-3 stagger-in">
-                {renderSection('Data', dataSection)}
+                {/* Data section: Upload + collapsible Explore Data */}
+                <div className="mb-1">
+                    <div className="px-3 mb-1.5">
+                        <span className={`text-[10px] font-semibold uppercase tracking-[0.1em] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                            Data
+                        </span>
+                    </div>
+                    <div className="space-y-0.5">
+                        {filterItems(dataSection).map(renderNavItem)}
+                        {renderExploreDataGroup()}
+                    </div>
+                </div>
                 {renderSection('Analysis', analysisSection)}
                 {renderSection('Views', viewSection)}
             </nav>
