@@ -289,7 +289,29 @@ export function parseOperation(
         }
     }
 
-    // ─── Step 4: Guardrail — plan tries to aggregate a date column ───
+    // ─── Step 4: Detect multiplication patterns ───
+    const multPatterns = [
+        /(\w[\w\s]*?)\s+(?:times|multiplied by|x)\s+(\w[\w\s]*)/i,
+        /(\w[\w\s]*?)\s*\*\s*(\w[\w\s]*)/,
+    ];
+    for (const rx of multPatterns) {
+        const m = qLower.match(rx);
+        if (!m) continue;
+        const leftCol = fuzzyMatchColumn(m[1].trim(), model);
+        const rightCol = fuzzyMatchColumn(m[2].trim(), model);
+        if (leftCol && rightCol && leftCol !== rightCol) {
+            return {
+                type: 'multiplication',
+                left: leftCol,
+                right: rightCol,
+                semanticType: 'number',
+                derivedName: `${leftCol}_x_${rightCol}`,
+                allowedAggs: ['SUM', 'AVG', 'MIN', 'MAX'],
+            };
+        }
+    }
+
+    // ─── Step 5: Guardrail — plan tries to aggregate a date column ───
     for (const met of plan.metrics) {
         if (isDateField(met.field, model) && ['sum', 'avg'].includes(met.agg)) {
             const dateFields = getDateFields(model);
@@ -446,9 +468,49 @@ export function validateGuardrails(
                 penalty: 20,
             });
         }
+
+        // Rule 4: COUNT on a date column (usually meaningless — should use DATEDIFF)
+        if (isDateField(met.field, model) && met.agg === 'count') {
+            violations.push({
+                rule: 'COUNT_ON_DATE',
+                message: `COUNT(${met.field}) on a date column is usually meaningless. Did you mean a date-based calculation?`,
+                severity: 'warning',
+                penalty: 10,
+            });
+        }
+
+        // Rule 5: SUM/AVG on text/category field
+        if (field && (field.physicalType === 'string' || field.semanticType === 'category') && ['sum', 'avg'].includes(met.agg)) {
+            violations.push({
+                rule: 'AGG_ON_TEXT',
+                message: `Cannot ${met.agg.toUpperCase()}(${met.field}) — it is a text/category field.`,
+                severity: 'error',
+                penalty: 45,
+            });
+        }
+
+        // Rule 6: Aggregation on boolean/flag field (except COUNT)
+        if (field && field.physicalType === 'boolean' && ['sum', 'avg', 'min', 'max'].includes(met.agg)) {
+            violations.push({
+                rule: 'AGG_ON_BOOLEAN',
+                message: `${met.agg.toUpperCase()}(${met.field}) on a boolean field is suspicious. Did you mean COUNT?`,
+                severity: 'warning',
+                penalty: 15,
+            });
+        }
+
+        // Rule 7: Metric field doesn't exist in model (phantom field)
+        if (!field && !met.compositeId && !met.derivedMetricId) {
+            violations.push({
+                rule: 'PHANTOM_FIELD',
+                message: `Field "${met.field}" does not exist in the dataset.`,
+                severity: 'error',
+                penalty: 60,
+            });
+        }
     }
 
-    // Rule 4: Breakdown with no dimensions
+    // Rule 8: Breakdown with no dimensions
     if (plan.dimensions.length === 0 && plan.intent === 'breakdown') {
         violations.push({
             rule: 'MISSING_DIMENSION',
@@ -456,6 +518,29 @@ export function validateGuardrails(
             severity: 'warning',
             penalty: 15,
         });
+    }
+
+    // Rule 9: Trend with no time dimension
+    if (plan.intent === 'trend' && !plan.dimensions.some(d => d.timeGrain)) {
+        violations.push({
+            rule: 'TREND_NO_TIME',
+            message: 'Trend intent but no time-granulated dimension.',
+            severity: 'warning',
+            penalty: 20,
+        });
+    }
+
+    // Rule 10: High-cardinality dimension (>100 unique values) in breakdown
+    for (const dim of plan.dimensions) {
+        const field = model.fields.find(f => f.name === dim.field);
+        if (field && field.distinctCount && field.distinctCount > 100 && !dim.timeGrain) {
+            violations.push({
+                rule: 'HIGH_CARDINALITY',
+                message: `Dimension "${dim.field}" has ${field.distinctCount} unique values — results may be overwhelming. Consider filtering or using a different dimension.`,
+                severity: 'warning',
+                penalty: 10,
+            });
+        }
     }
 
     return violations;

@@ -62,8 +62,37 @@ YOUR JOB:
 6. If the user asks to compare periods (e.g., "this month vs last month"), set the comparison object.
 7. If the question is ambiguous, set "ambiguous": true and provide a "clarificationQuestion".
 
+DERIVED METRIC DETECTION (CRITICAL — NEW):
+When the user asks about computed values that require TWO columns combined, you MUST detect this and handle it correctly.
+NEVER aggregate a date column directly (e.g., SUM(discharge_date) or AVG(admission_date) is ALWAYS WRONG).
+Instead, recognize these as derived metric patterns:
+
+  a. DATE DIFFERENCES (duration, length of stay, tenure, age):
+     - "average length of stay" → needs DATEDIFF(discharge_date, admission_date), NOT AVG(discharge_date)
+     - "employee tenure" → needs DATEDIFF(termination_date, hire_date)
+     - "patient age" → needs DATEDIFF(admission_date, date_of_birth)
+     Detection: if user mentions duration/stay/tenure/age AND the dataset has two date columns, this is a date-diff.
+     Action: Set intent to "breakdown" or "single_metric" as normal. The downstream APDME engine will handle the SQL.
+     For the metric, use the END date column (e.g., discharge_date) with agg="avg" — APDME will replace it.
+
+  b. PROFIT / MARGIN (revenue minus cost):
+     - "profit by category" → needs (revenue - cost), NOT SUM(revenue)
+     Detection: keywords "profit", "earnings", "margin", "net income"
+     Action: Set metric field to the revenue column with agg="sum" — APDME will detect and inject the formula.
+
+  c. RATIOS AND PERCENTAGES:
+     - "conversion rate" → needs (conversions / visits * 100)
+     - "profit margin %" → needs (profit / revenue * 100)
+     Detection: keywords "rate", "ratio", "percentage", "per", "divided by"
+     Action: Set the numerator column as the metric with agg="avg" — APDME will handle.
+
+  d. MULTIPLICATION:
+     - "total value" → needs (quantity * unit_price)
+     Detection: keywords "times", "multiplied by", "total value"
+
 VALID INTENTS:
 - "single_metric" — user wants a single number (e.g., "what is total sales?", "average daily sales")
+- "derived_metric" — user wants a computed value from two columns (e.g., "average length of stay", "profit margin")
 - "breakdown" — user wants a dimension breakdown (e.g., "sales by category")
 - "trend" — user wants data over time (e.g., "monthly sales for 2023")
 - "trend_comparison" — user wants a time trend comparing two periods
@@ -121,10 +150,12 @@ Respond with ONLY a valid JSON object (no markdown, no code fences):
 CRITICAL RULES:
 - Use ONLY field names that exist in the semantic model above.
 - The aggregation MUST match what the user explicitly asked for. "average" ALWAYS means "avg", NEVER "sum". This is non-negotiable.
+- NEVER use SUM() or AVG() directly on a date column. If the question implies date arithmetic, use the end-date as the metric field and let APDME handle the DATEDIFF.
 - For "average daily/weekly/monthly X", set compoundAgg to indicate it needs a subquery with GROUP BY date then AVG.
 - For composite metrics, use the compositeId: { "field": "gross_margin_pct", "agg": "none", "compositeId": "gross_margin_pct" }
 - If the user mentions a synonym (e.g., "revenue"), map it to the actual field name.
-- Always set resultGrain to describe what each row represents.`;
+- Always set resultGrain to describe what each row represents.
+- When you detect a derived metric pattern (date-diff, profit, ratio), the downstream APDME engine will intercept and build the correct SQL. Your job is ONLY to map intent + dimensions correctly.`;
 }
 
 /**
@@ -610,7 +641,7 @@ export async function generatePlan(
  */
 function validateIntent(intent: string): AnalysisIntent {
     const validIntents: AnalysisIntent[] = [
-        'single_metric', 'breakdown', 'trend', 'trend_comparison',
+        'single_metric', 'derived_metric', 'breakdown', 'trend', 'trend_comparison',
         'total_comparison', 'ranking', 'share_of_total', 'correlation', 'distribution'
     ];
     if (validIntents.includes(intent as AnalysisIntent)) {
