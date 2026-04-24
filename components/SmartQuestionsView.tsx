@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { Lightbulb, TrendingUp, BarChart2, Trophy, PieChart, ArrowRight, Search, Sparkles, Database, Rows3 } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Lightbulb, TrendingUp, BarChart2, Trophy, PieChart, ArrowRight, Search, Sparkles, Database, Rows3, Loader2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Dataset } from '../types';
-import { generateQuestions, type SmartQuestion, type QuestionCategory } from '../services/questionGenerator';
+import { generateQuestions, type SmartQuestion, type QuestionCategory, type QuestionSet } from '../services/questionGenerator';
 
 interface SmartQuestionsViewProps {
     dataset: Dataset;
@@ -19,25 +19,43 @@ const categoryConfig: Record<string, { label: string; icon: React.ReactNode; col
 export const SmartQuestionsView: React.FC<SmartQuestionsViewProps> = ({ dataset, onAskQuestion }) => {
     const [activeCategory, setActiveCategory] = useState<string>('trends');
     const [customQuery, setCustomQuery] = useState('');
+    const [questionSet, setQuestionSet] = useState<QuestionSet | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
-    const questionSet = useMemo(() => generateQuestions(dataset), [dataset]);
+    // Generate questions when dataset changes
+    useEffect(() => {
+        let cancelled = false;
+        setIsLoading(true);
+        setQuestionSet(null);
+
+        generateQuestions(dataset).then(qs => {
+            if (!cancelled) {
+                setQuestionSet(qs);
+                setIsLoading(false);
+            }
+        }).catch(err => {
+            console.error('[SmartQ] Generation failed:', err);
+            if (!cancelled) setIsLoading(false);
+        });
+
+        return () => { cancelled = true; };
+    }, [dataset.id, dataset.version]);
 
     const domain = dataset.domainProfile?.domain || 'General';
     const grain = dataset.semanticModel?.grain || dataset.domainProfile?.grain || 'Record';
 
     // Filter out empty categories for tabs
-    const availableCategories = useMemo(() => {
-        return Object.entries(questionSet.categories)
+    const availableCategories = questionSet
+        ? Object.entries(questionSet.categories)
             .filter(([, qs]) => qs.length > 0)
-            .map(([key]) => key);
-    }, [questionSet]);
+            .map(([key]) => key)
+        : [];
 
-    // Auto-select first available category
     const effectiveCategory = availableCategories.includes(activeCategory)
         ? activeCategory
         : (availableCategories[0] || 'trends');
 
-    const categoryQuestions = (questionSet.categories as any)[effectiveCategory] || [];
+    const categoryQuestions = questionSet ? (questionSet.categories as any)[effectiveCategory] || [] : [];
 
     const handleCustomSubmit = () => {
         if (customQuery.trim()) {
@@ -86,34 +104,58 @@ export const SmartQuestionsView: React.FC<SmartQuestionsViewProps> = ({ dataset,
                     </div>
                 </motion.div>
 
-                {/* ═══ Section 2: Primary Insights ═══ */}
-                <motion.div
-                    initial={{ opacity: 0, y: 12 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: 0.1 }}
-                >
-                    <div className="flex items-center gap-2.5 mb-4">
-                        <Lightbulb className="w-5 h-5 text-amber-400" />
-                        <h2 className="text-base font-bold text-white">Start with these insights</h2>
-                        <span className="text-xs text-gray-500 ml-1">({questionSet.primary.length} curated)</span>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {questionSet.primary.map((q, i) => (
-                            <QuestionCard key={q.id} question={q} index={i} onClick={() => onAskQuestion(q.question)} />
-                        ))}
-                    </div>
-
-                    {questionSet.primary.length === 0 && (
-                        <div className="text-center py-10 text-gray-500 text-sm">
-                            <Lightbulb className="w-8 h-8 mx-auto mb-2 text-gray-600" />
-                            No insights available — try uploading a dataset with more columns.
+                {/* ═══ Loading State ═══ */}
+                {isLoading && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        className="flex flex-col items-center justify-center py-20"
+                    >
+                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-600/20 to-purple-700/20 border border-violet-500/20 flex items-center justify-center mb-5">
+                            <Loader2 className="w-8 h-8 text-violet-400 animate-spin" />
                         </div>
-                    )}
-                </motion.div>
+                        <h3 className="text-base font-semibold text-white mb-2">AI is analyzing your dataset</h3>
+                        <p className="text-sm text-gray-500 text-center max-w-md">
+                            Reading all {dataset.columns.length} columns and generating tailored questions for your {domain} data...
+                        </p>
+                    </motion.div>
+                )}
+
+                {/* ═══ Section 2: Primary Insights ═══ */}
+                {!isLoading && questionSet && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: 0.1 }}
+                    >
+                        <div className="flex items-center gap-2.5 mb-4">
+                            <Lightbulb className="w-5 h-5 text-amber-400" />
+                            <h2 className="text-base font-bold text-white">Start with these insights</h2>
+                            <span className="text-xs text-gray-500 ml-1">({questionSet.primary.length} curated)</span>
+                            {questionSet.source === 'ai' && (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 ml-auto">
+                                    <Sparkles className="w-3 h-3" /> AI Generated
+                                </span>
+                            )}
+                        </div>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {questionSet.primary.map((q, i) => (
+                                <QuestionCard key={q.id} question={q} index={i} onClick={() => onAskQuestion(q.question)} />
+                            ))}
+                        </div>
+
+                        {questionSet.primary.length === 0 && (
+                            <div className="text-center py-10 text-gray-500 text-sm">
+                                <Lightbulb className="w-8 h-8 mx-auto mb-2 text-gray-600" />
+                                No insights available — try uploading a dataset with more columns.
+                            </div>
+                        )}
+                    </motion.div>
+                )}
 
                 {/* ═══ Section 3: Explore by Category ═══ */}
-                {availableCategories.length > 0 && (
+                {!isLoading && questionSet && availableCategories.length > 0 && (
                     <motion.div
                         initial={{ opacity: 0, y: 12 }}
                         animate={{ opacity: 1, y: 0 }}
@@ -170,7 +212,7 @@ export const SmartQuestionsView: React.FC<SmartQuestionsViewProps> = ({ dataset,
                 <motion.div
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: 0.3 }}
+                    transition={{ duration: 0.3, delay: isLoading ? 0.1 : 0.3 }}
                     className="bg-[#1c2033] border border-white/[0.06] rounded-2xl p-5"
                 >
                     <div className="flex items-center gap-2.5 mb-3">
@@ -186,7 +228,7 @@ export const SmartQuestionsView: React.FC<SmartQuestionsViewProps> = ({ dataset,
                             value={customQuery}
                             onChange={e => setCustomQuery(e.target.value)}
                             onKeyDown={e => e.key === 'Enter' && handleCustomSubmit()}
-                            placeholder={`e.g. "What is the average ${dataset.semanticModel?.measures?.[0]?.column || 'revenue'} by ${dataset.semanticModel?.dimensions?.[0]?.column || 'category'}?"`}
+                            placeholder={`e.g. "What is the average billing amount by medical condition?"`}
                             className="flex-1 bg-white/[0.04] border border-white/[0.08] rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500/40 transition-all"
                         />
                         <button
@@ -222,6 +264,7 @@ const QuestionCard: React.FC<QuestionCardProps> = ({ question, index, onClick, c
         ranking: 'from-amber-600/10 to-amber-700/5 border-amber-500/15 hover:border-amber-500/30',
         distribution: 'from-emerald-600/10 to-emerald-700/5 border-emerald-500/15 hover:border-emerald-500/30',
         overview: 'from-cyan-600/10 to-cyan-700/5 border-cyan-500/15 hover:border-cyan-500/30',
+        correlation: 'from-rose-600/10 to-rose-700/5 border-rose-500/15 hover:border-rose-500/30',
     };
 
     return (

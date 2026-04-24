@@ -1,22 +1,19 @@
 /**
- * questionGenerator.ts — Deterministic Smart Question Engine
+ * questionGenerator.ts — AI-Powered Smart Question Engine
  *
- * Generates contextual, executable questions from the SemanticModel + DomainProfile.
- * Rules:
- *   1. Deterministic first — no LLM calls, only pattern matching
- *   2. Every question maps to an executable query
- *   3. Ranked by relevance, coverage, diversity
- *   4. Max 6 primary, rest categorized
+ * Generates contextual, executable questions by sending the FULL dataset
+ * profile (all columns, domain, semantic model, sample data) to Gemini AI.
+ *
+ * Fallback: If AI is unavailable, generates basic deterministic questions.
  */
 
-import { Dataset, ColumnType } from '../types';
-import type { SemanticModel, SemanticMeasure, SemanticDimension } from './semanticModel';
+import { Dataset, ColumnDefinition, ColumnType } from '../types';
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES
 // ═══════════════════════════════════════════════════════════════════
 
-export type QuestionCategory = 'trend' | 'comparison' | 'ranking' | 'distribution' | 'overview';
+export type QuestionCategory = 'trend' | 'comparison' | 'ranking' | 'distribution' | 'overview' | 'correlation';
 
 export interface SmartQuestion {
     id: string;
@@ -24,11 +21,11 @@ export interface SmartQuestion {
     description: string;
     category: QuestionCategory;
     icon: string;
-    priority: number;          // 1-100, higher = more relevant
+    priority: number;
 }
 
 export interface QuestionSet {
-    primary: SmartQuestion[];           // Top 6 curated
+    primary: SmartQuestion[];
     categories: {
         trends: SmartQuestion[];
         comparisons: SmartQuestion[];
@@ -36,214 +33,306 @@ export interface QuestionSet {
         distributions: SmartQuestion[];
     };
     generatedAt: number;
+    source: 'ai' | 'fallback';
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// HELPERS
+// AI QUESTION GENERATION
+// ═══════════════════════════════════════════════════════════════════
+
+const API_ENDPOINT = `${import.meta.env.VITE_API_URL || 'http://localhost:5002/api'}/ai/profile-dataset`;
+const TIMEOUT_MS = 20000;
+
+/**
+ * Builds a comprehensive prompt that sends the FULL dataset profile to the AI
+ * so it can generate holistic, meaningful questions across ALL columns.
+ */
+function buildQuestionPrompt(dataset: Dataset): string {
+    const domain = dataset.domainProfile?.domain || 'General';
+    const subDomain = dataset.domainProfile?.subDomain || '';
+    const summary = dataset.domainProfile?.summary || '';
+    const grain = dataset.domainProfile?.grain || dataset.semanticModel?.grain || '';
+
+    // Build a rich column profile for the AI
+    const columnProfiles = dataset.columns.map(col => {
+        const semantic = dataset.domainProfile?.columnSemantics?.[col.name];
+        const smMeasure = dataset.semanticModel?.measures?.find(m => m.column === col.name);
+        const smDimension = dataset.semanticModel?.dimensions?.find(d => d.column === col.name);
+
+        const parts = [
+            `  - ${col.name}`,
+            `    Type: ${col.type}`,
+        ];
+
+        if (semantic) {
+            parts.push(`    Role: ${semantic.role}`);
+            parts.push(`    Label: ${semantic.humanLabel || col.name}`);
+            if (semantic.description) parts.push(`    Description: ${semantic.description}`);
+            if (semantic.aggregation && semantic.aggregation !== 'NONE') parts.push(`    Default Aggregation: ${semantic.aggregation}`);
+            if (semantic.semanticRole) parts.push(`    Semantic Role: ${semantic.semanticRole}`);
+        } else if (smMeasure) {
+            parts.push(`    Role: METRIC`);
+            parts.push(`    Aggregation: ${smMeasure.aggregation}`);
+            parts.push(`    Label: ${smMeasure.label || col.name}`);
+        } else if (smDimension) {
+            parts.push(`    Role: DIMENSION`);
+            parts.push(`    Label: ${smDimension.label || col.name}`);
+        }
+
+        // Add sample unique values for dimensions (up to 5)
+        if (col.type === ColumnType.DIMENSION || semantic?.role === 'DIMENSION') {
+            const uniques = new Set<string>();
+            for (let i = 0; i < Math.min(dataset.rows.length, 200) && uniques.size < 5; i++) {
+                const v = dataset.rows[i]?.[col.name];
+                if (v != null && String(v).trim()) uniques.add(String(v));
+            }
+            if (uniques.size > 0) {
+                parts.push(`    Sample Values: ${[...uniques].join(', ')}`);
+            }
+        }
+
+        return parts.join('\n');
+    }).join('\n');
+
+    // Measures and dimensions from semantic model
+    const measures = dataset.semanticModel?.measures?.map(m => `${m.label || m.column} (${m.aggregation})`).join(', ') || 'None identified';
+    const dimensions = dataset.semanticModel?.dimensions?.map(d => d.label || d.column).join(', ') || 'None identified';
+    const dateColumns = dataset.semanticModel?.dateColumns?.join(', ') || 'None identified';
+
+    return `You are an expert Business Analyst. A user uploaded a dataset and wants to explore it.
+
+DATASET OVERVIEW:
+- Name: ${dataset.name}
+- Domain: ${domain}${subDomain ? ` (${subDomain})` : ''}
+- Summary: ${summary || 'N/A'}
+- Total Rows: ${dataset.totalRows.toLocaleString()}
+- Total Columns: ${dataset.columns.length}
+- Grain: 1 row = 1 ${grain || 'record'}
+
+KEY FIELDS:
+- Measures (metrics for aggregation): ${measures}
+- Dimensions (for grouping/filtering): ${dimensions}
+- Date Columns: ${dateColumns}
+
+ALL COLUMNS WITH PROFILES:
+${columnProfiles}
+
+YOUR TASK:
+Generate 15-20 insightful, actionable analytical questions that a business user would want to ask about this dataset. The questions must:
+
+1. Consider the ENTIRE dataset — use multiple columns, not just one
+2. Be natural-language questions that can be answered with SQL queries and charts
+3. Cover different analytical categories:
+   - "trend": Time-based analysis (only if date columns exist)
+   - "comparison": Comparing metrics across different groups/categories
+   - "ranking": Top/bottom N analysis
+   - "distribution": How values are spread, count breakdowns
+   - "overview": Summary statistics, overall KPIs
+   - "correlation": Relationships between two or more columns
+4. Be specific to this dataset's domain (${domain}) — use actual column names and context
+5. Range from simple (1 column) to complex (multi-column analysis)
+6. Use the human-readable labels, not raw column names, in the question text
+
+RESPOND WITH ONLY VALID JSON (no markdown fences):
+{
+  "questions": [
+    {
+      "question": "What is the average billing amount by medical condition?",
+      "description": "Compare average billing across different diagnoses to identify costly conditions",
+      "category": "comparison",
+      "icon": "📊",
+      "priority": 95
+    }
+  ]
+}
+
+RULES:
+- priority: 1-100 score, higher = more relevant/valuable to a business user
+- Pick the TOP 6 questions as highest priority (90-100)
+- icon: use relevant emoji (📈 trend, 📊 comparison, 🏆 ranking, 🔢 distribution, 📋 overview, 🔗 correlation)
+- Questions must be self-contained and executable as natural language queries
+- Do NOT generate generic questions — make them SPECIFIC to the columns and domain`;
+}
+
+/**
+ * Call the AI backend to generate questions
+ */
+async function callAIForQuestions(prompt: string): Promise<any> {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+    try {
+        const response = await fetch(API_ENDPOINT, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt }),
+            signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+            throw new Error(`AI API returned ${response.status}`);
+        }
+
+        const data = await response.json();
+        return data;
+    } catch (err: any) {
+        clearTimeout(timeoutId);
+        if (err.name === 'AbortError') {
+            console.info('[SmartQ] AI call timed out — using fallback.');
+        } else {
+            console.info('[SmartQ] AI unavailable — using fallback.', err.message);
+        }
+        return null;
+    }
+}
+
+/**
+ * Parse AI response into SmartQuestion[]
+ */
+function parseAIResponse(raw: any): SmartQuestion[] | null {
+    try {
+        let parsed = raw;
+
+        // Handle string responses (may be wrapped in markdown fences)
+        if (typeof parsed === 'string') {
+            parsed = parsed.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+            parsed = JSON.parse(parsed);
+        }
+
+        // Handle { result: "..." } wrapper from backend
+        if (parsed?.result && typeof parsed.result === 'string') {
+            let clean = parsed.result.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+            parsed = JSON.parse(clean);
+        }
+
+        const questions = parsed?.questions;
+        if (!Array.isArray(questions) || questions.length === 0) return null;
+
+        return questions.map((q: any, i: number) => ({
+            id: `ai_q_${i}_${Date.now()}`,
+            question: String(q.question || ''),
+            description: String(q.description || ''),
+            category: (['trend', 'comparison', 'ranking', 'distribution', 'overview', 'correlation'].includes(q.category) ? q.category : 'overview') as QuestionCategory,
+            icon: String(q.icon || '📊'),
+            priority: typeof q.priority === 'number' ? q.priority : (100 - i * 5),
+        })).filter(q => q.question.length > 5);
+    } catch (err) {
+        console.error('[SmartQ] Failed to parse AI response:', err);
+        return null;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// DETERMINISTIC FALLBACK (used when AI is unavailable)
 // ═══════════════════════════════════════════════════════════════════
 
 function humanize(col: string): string {
-    return col
-        .replace(/_/g, ' ')
-        .replace(/([a-z])([A-Z])/g, '$1 $2')
-        .replace(/\b\w/g, c => c.toUpperCase());
+    return col.replace(/_/g, ' ').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function qid(cat: string, metric: string, dim: string): string {
-    return `${cat}__${metric}__${dim}`.toLowerCase().replace(/\s+/g, '_');
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// QUESTION GENERATION RULES
-// ═══════════════════════════════════════════════════════════════════
-
-function generateTrendQuestions(
-    measures: SemanticMeasure[],
-    dateColumns: string[],
-    domain: string,
-): SmartQuestion[] {
-    if (dateColumns.length === 0) return [];
-    const dateName = humanize(dateColumns[0]);
+function generateFallbackQuestions(dataset: Dataset): SmartQuestion[] {
     const questions: SmartQuestion[] = [];
+    const cols = dataset.columns || [];
+    const semantics = dataset.domainProfile?.columnSemantics || {};
+    const model = dataset.semanticModel;
 
-    for (const m of measures.slice(0, 5)) {
-        const metricName = m.label || humanize(m.column);
-        const agg = m.aggregation === 'AVG' ? 'average' : 'total';
+    // Gather ALL metrics and dimensions (from semanticModel + domainProfile)
+    const metrics: { name: string; label: string; agg: string }[] = [];
+    const dimensions: { name: string; label: string }[] = [];
+    const dates: string[] = model?.dateColumns || [];
 
-        questions.push({
-            id: qid('trend', m.column, dateColumns[0]),
-            question: `How has ${metricName} changed over time?`,
-            description: `${agg === 'average' ? 'Average' : 'Total'} ${metricName} trend by ${dateName}`,
-            category: 'trend',
-            icon: '📈',
-            priority: m.column === measures[0]?.column ? 95 : 70,
-        });
-    }
+    for (const col of cols) {
+        const sem = semantics[col.name];
+        const smMeasure = model?.measures?.find(m => m.column === col.name);
+        const smDim = model?.dimensions?.find(d => d.column === col.name);
 
-    return questions;
-}
-
-function generateComparisonQuestions(
-    measures: SemanticMeasure[],
-    dimensions: SemanticDimension[],
-    domain: string,
-): SmartQuestion[] {
-    const questions: SmartQuestion[] = [];
-    const usableDims = dimensions.filter(d => d.dataType === 'string').slice(0, 5);
-
-    for (const m of measures.slice(0, 4)) {
-        for (const d of usableDims.slice(0, 3)) {
-            const metricName = m.label || humanize(m.column);
-            const dimName = d.label || humanize(d.column);
-            const agg = m.aggregation === 'AVG' ? 'average' : 'total';
-
-            questions.push({
-                id: qid('comparison', m.column, d.column),
-                question: `Compare ${metricName} across different ${dimName}`,
-                description: `${agg === 'average' ? 'Avg' : 'Total'} ${metricName} broken down by ${dimName}`,
-                category: 'comparison',
-                icon: '📊',
-                priority: m.column === measures[0]?.column ? 85 : 60,
+        if (col.type === ColumnType.METRIC || sem?.role === 'METRIC' || smMeasure) {
+            metrics.push({
+                name: col.name,
+                label: sem?.humanLabel || smMeasure?.label || humanize(col.name),
+                agg: sem?.aggregation || smMeasure?.aggregation || 'SUM',
             });
+        } else if (col.type === ColumnType.DIMENSION || sem?.role === 'DIMENSION' || smDim) {
+            dimensions.push({
+                name: col.name,
+                label: sem?.humanLabel || smDim?.label || humanize(col.name),
+            });
+        } else if (col.type === ColumnType.DATE || sem?.role === 'DATE') {
+            if (!dates.includes(col.name)) dates.push(col.name);
         }
     }
 
-    return questions;
-}
+    let priority = 95;
 
-function generateRankingQuestions(
-    measures: SemanticMeasure[],
-    dimensions: SemanticDimension[],
-    domain: string,
-): SmartQuestion[] {
-    const questions: SmartQuestion[] = [];
-    const usableDims = dimensions.filter(d => d.dataType === 'string').slice(0, 5);
-
-    for (const m of measures.slice(0, 3)) {
-        for (const d of usableDims.slice(0, 3)) {
-            const metricName = m.label || humanize(m.column);
-            const dimName = d.label || humanize(d.column);
-
-            questions.push({
-                id: qid('ranking_top', m.column, d.column),
-                question: `Top 10 ${dimName} by ${metricName}`,
-                description: `Which ${dimName} have the highest ${metricName}`,
-                category: 'ranking',
-                icon: '🏆',
-                priority: m.column === measures[0]?.column ? 80 : 55,
-            });
-
-            questions.push({
-                id: qid('ranking_bottom', m.column, d.column),
-                question: `Bottom 10 ${dimName} by ${metricName}`,
-                description: `Which ${dimName} have the lowest ${metricName}`,
-                category: 'ranking',
-                icon: '📉',
-                priority: m.column === measures[0]?.column ? 60 : 40,
-            });
-        }
-    }
-
-    return questions;
-}
-
-function generateDistributionQuestions(
-    measures: SemanticMeasure[],
-    dimensions: SemanticDimension[],
-    domain: string,
-): SmartQuestion[] {
-    const questions: SmartQuestion[] = [];
-    const usableDims = dimensions.filter(d => d.dataType === 'string').slice(0, 5);
-
-    // Count-based grouped by dimension
-    for (const d of usableDims.slice(0, 4)) {
-        const dimName = d.label || humanize(d.column);
+    // Overview
+    if (metrics.length > 0) {
         questions.push({
-            id: qid('dist_count', 'count', d.column),
-            question: `How many records per ${dimName}?`,
-            description: `Distribution of records across ${dimName} categories`,
-            category: 'distribution',
-            icon: '🔢',
-            priority: 65,
-        });
-    }
-
-    // Metric distribution
-    for (const m of measures.slice(0, 3)) {
-        const metricName = m.label || humanize(m.column);
-        questions.push({
-            id: qid('dist_metric', m.column, 'all'),
-            question: `What is the distribution of ${metricName}?`,
-            description: `Statistical spread and range of ${metricName}`,
-            category: 'distribution',
-            icon: '📐',
-            priority: 50,
-        });
-    }
-
-    return questions;
-}
-
-function generateOverviewQuestions(
-    measures: SemanticMeasure[],
-    dimensions: SemanticDimension[],
-    dateColumns: string[],
-    domain: string,
-    grain: string | null,
-    totalRows: number,
-): SmartQuestion[] {
-    const questions: SmartQuestion[] = [];
-
-    if (measures.length > 0) {
-        const primaryMetric = measures[0].label || humanize(measures[0].column);
-        questions.push({
-            id: qid('overview', 'summary', 'all'),
-            question: `Give me an overall summary of ${primaryMetric}`,
-            description: `Key statistics: total, average, min, max`,
+            id: 'fb_overview',
+            question: `Give me an overall summary of key metrics`,
+            description: `Summary statistics for ${metrics.slice(0, 3).map(m => m.label).join(', ')}`,
             category: 'overview',
             icon: '📋',
-            priority: 90,
+            priority: priority--,
         });
     }
 
-    if (measures.length >= 2 && dimensions.length > 0) {
-        const dim = dimensions[0].label || humanize(dimensions[0].column);
+    // Trends (each metric × first date)
+    if (dates.length > 0) {
+        for (const m of metrics.slice(0, 3)) {
+            questions.push({
+                id: `fb_trend_${m.name}`,
+                question: `How has ${m.label} changed over time?`,
+                description: `${m.agg === 'AVG' ? 'Average' : 'Total'} ${m.label} trend over time`,
+                category: 'trend',
+                icon: '📈',
+                priority: priority--,
+            });
+        }
+    }
+
+    // Comparisons (each metric × each dimension)
+    for (const m of metrics.slice(0, 3)) {
+        for (const d of dimensions.slice(0, 3)) {
+            questions.push({
+                id: `fb_comp_${m.name}_${d.name}`,
+                question: `Compare ${m.label} across ${d.label}`,
+                description: `Breakdown of ${m.label} by ${d.label}`,
+                category: 'comparison',
+                icon: '📊',
+                priority: priority--,
+            });
+        }
+    }
+
+    // Rankings
+    for (const m of metrics.slice(0, 2)) {
+        for (const d of dimensions.slice(0, 2)) {
+            questions.push({
+                id: `fb_rank_${m.name}_${d.name}`,
+                question: `Top 10 ${d.label} by ${m.label}`,
+                description: `Which ${d.label} have the highest ${m.label}`,
+                category: 'ranking',
+                icon: '🏆',
+                priority: priority--,
+            });
+        }
+    }
+
+    // Distributions
+    for (const d of dimensions.slice(0, 3)) {
         questions.push({
-            id: qid('overview', 'multi', dimensions[0].column),
-            question: `Compare all key metrics by ${dim}`,
-            description: `Side-by-side view of ${measures.slice(0, 3).map(m => m.label || humanize(m.column)).join(', ')}`,
-            category: 'overview',
-            icon: '🔍',
-            priority: 75,
+            id: `fb_dist_${d.name}`,
+            question: `How are records distributed across ${d.label}?`,
+            description: `Count of records per ${d.label} category`,
+            category: 'distribution',
+            icon: '🔢',
+            priority: priority--,
         });
     }
 
     return questions;
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// DEDUPLICATION + SCORING
-// ═══════════════════════════════════════════════════════════════════
-
-function deduplicate(questions: SmartQuestion[]): SmartQuestion[] {
-    const seen = new Set<string>();
-    return questions.filter(q => {
-        if (seen.has(q.id)) return false;
-        seen.add(q.id);
-        return true;
-    });
-}
-
-function diversityBoost(questions: SmartQuestion[]): SmartQuestion[] {
-    // Increase scores for questions that cover unique categories
-    const catCounts: Record<string, number> = {};
-    for (const q of questions) {
-        catCounts[q.category] = (catCounts[q.category] || 0) + 1;
-    }
-    return questions.map(q => ({
-        ...q,
-        priority: q.priority + (catCounts[q.category] === 1 ? 10 : 0),
-    }));
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -252,92 +341,35 @@ function diversityBoost(questions: SmartQuestion[]): SmartQuestion[] {
 
 const questionCache = new Map<string, QuestionSet>();
 
-export function generateQuestions(dataset: Dataset): QuestionSet {
+/**
+ * Generate smart questions for a dataset using AI.
+ * Returns cached results if available for the same dataset version.
+ */
+export async function generateQuestions(dataset: Dataset): Promise<QuestionSet> {
     const cacheKey = `${dataset.id}_${dataset.version || 0}`;
     const cached = questionCache.get(cacheKey);
     if (cached) return cached;
 
-    const model = dataset.semanticModel;
-    const profile = dataset.domainProfile;
-    const domain = profile?.domain || 'General';
-    const grain = model?.grain || profile?.grain || null;
+    // Try AI-powered generation first
+    console.log('[SmartQ] Generating AI-powered questions for', dataset.name);
+    const prompt = buildQuestionPrompt(dataset);
+    const aiResponse = await callAIForQuestions(prompt);
+    const aiQuestions = aiResponse ? parseAIResponse(aiResponse) : null;
 
-    // Get measures and dimensions from semantic model, or fallback to column defs
-    let measures: SemanticMeasure[] = model?.measures || [];
-    let dimensions: SemanticDimension[] = model?.dimensions || [];
-    let dateColumns: string[] = model?.dateColumns || [];
+    let allQuestions: SmartQuestion[];
+    let source: 'ai' | 'fallback';
 
-    // Fallback if no semantic model: use column types
-    if (measures.length === 0 && dimensions.length === 0) {
-        const cols = dataset.columns || [];
-        measures = cols
-            .filter(c => c.type === ColumnType.METRIC)
-            .map(c => ({
-                name: c.name,
-                column: c.name,
-                aggregation: 'SUM' as any,
-                behavior: 'ADDITIVE' as any,
-                format: 'raw' as any,
-                requiresWeighting: false,
-                isHidden: false,
-            }));
-        dimensions = cols
-            .filter(c => c.type === ColumnType.DIMENSION)
-            .map(c => ({
-                name: c.name,
-                column: c.name,
-                dataType: 'string' as any,
-                isHidden: false,
-            }));
-        dateColumns = cols
-            .filter(c => c.type === ColumnType.DATE)
-            .map(c => c.name);
+    if (aiQuestions && aiQuestions.length >= 5) {
+        console.log(`[SmartQ] AI generated ${aiQuestions.length} questions`);
+        allQuestions = aiQuestions;
+        source = 'ai';
+    } else {
+        console.log('[SmartQ] Using fallback question generation');
+        allQuestions = generateFallbackQuestions(dataset);
+        source = 'fallback';
     }
 
-    // Edge case: 50+ columns — only use top items
-    if (measures.length > 8) measures = measures.slice(0, 8);
-    if (dimensions.length > 8) dimensions = dimensions.slice(0, 8);
-
-    // Generate all question types
-    let allQuestions: SmartQuestion[] = [
-        ...generateOverviewQuestions(measures, dimensions, dateColumns, domain, grain, dataset.totalRows),
-        ...generateTrendQuestions(measures, dateColumns, domain),
-        ...generateComparisonQuestions(measures, dimensions, domain),
-        ...generateRankingQuestions(measures, dimensions, domain),
-        ...generateDistributionQuestions(measures, dimensions, domain),
-    ];
-
-    // Edge case: no metrics at all — generate count-based questions
-    if (measures.length === 0 && dimensions.length > 0) {
-        for (const d of dimensions.slice(0, 4)) {
-            const dimName = d.label || humanize(d.column);
-            allQuestions.push({
-                id: qid('count', 'count', d.column),
-                question: `Count of records by ${dimName}`,
-                description: `How many records exist in each ${dimName} category`,
-                category: 'distribution',
-                icon: '🔢',
-                priority: 80,
-            });
-        }
-    }
-
-    // Edge case: only 1 column
-    if (dataset.columns.length === 1) {
-        const col = dataset.columns[0];
-        allQuestions = [{
-            id: 'single_col_dist',
-            question: `Distribution of ${humanize(col.name)}`,
-            description: `Value breakdown for the only column in this dataset`,
-            category: 'distribution',
-            icon: '📐',
-            priority: 100,
-        }];
-    }
-
-    // Dedup + diversity + sort
-    allQuestions = deduplicate(allQuestions);
-    allQuestions = diversityBoost(allQuestions);
+    // Sort by priority
     allQuestions.sort((a, b) => b.priority - a.priority);
 
     // Split: top 6 → primary, rest → categorized
@@ -350,9 +382,10 @@ export function generateQuestions(dataset: Dataset): QuestionSet {
             trends: rest.filter(q => q.category === 'trend'),
             comparisons: rest.filter(q => q.category === 'comparison'),
             rankings: rest.filter(q => q.category === 'ranking'),
-            distributions: rest.filter(q => q.category === 'distribution'),
+            distributions: rest.filter(q => q.category === 'distribution' || q.category === 'overview' || q.category === 'correlation'),
         },
         generatedAt: Date.now(),
+        source,
     };
 
     questionCache.set(cacheKey, result);
