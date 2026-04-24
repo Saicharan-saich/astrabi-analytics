@@ -20,6 +20,7 @@
  */
 
 import { SemanticModel, AnalysisPlan, PlanMetric, PlanDimension, PlanFilter, DerivedMetricDefinition } from './types';
+import type { DerivedMetric } from './derivedMetricEngine';
 
 // ─── Public API ──────────────────────────────────────────────────
 
@@ -27,7 +28,7 @@ import { SemanticModel, AnalysisPlan, PlanMetric, PlanDimension, PlanFilter, Der
  * Generate 100% correct SQL from a structured AnalysisPlan.
  * This REPLACES whatever SQL the AI produced.
  */
-export function correctSQL(plan: AnalysisPlan, model: SemanticModel): string {
+export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
     console.log(`[SQL Correction Engine] Building SQL for intent="${plan.intent}"`);
 
     // ── Intercept hour/time-of-day grain: check if dataset has time data ──
@@ -47,7 +48,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel): string {
 
             // Fall back to: total sales for today (the anchor date)
             const anchorStr = model.timeContext?.anchorDate || model.timeContext?.maxDate || new Date().toISOString().split('T')[0];
-            const metExprs = buildMetricExpressions(plan.metrics, model);
+            const metExprs = buildMetricExpressions(plan.metrics, model, apdmeMetrics);
             const where = buildWhereClause(plan.filters);
             const dateFilter = `${hourDim.field} = '${anchorStr}'`;
             const fullWhere = where ? `${where} AND ${dateFilter}` : dateFilter;
@@ -82,16 +83,16 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel): string {
     // Dispatch by intent
     switch (plan.intent) {
         case 'single_metric':
-            return buildSingleMetricSQL(plan, model);
+            return buildSingleMetricSQL(plan, model, apdmeMetrics);
         case 'derived_metric':
             // If we get here, findDerivedMetric() didn't match — fallback to single
-            return buildSingleMetricSQL(plan, model);
+            return buildSingleMetricSQL(plan, model, apdmeMetrics);
         case 'breakdown':
-            return buildBreakdownSQL(plan, model);
+            return buildBreakdownSQL(plan, model, apdmeMetrics);
         case 'trend':
-            return buildTrendSQL(plan, model);
+            return buildTrendSQL(plan, model, apdmeMetrics);
         case 'ranking':
-            return buildRankingSQL(plan, model);
+            return buildRankingSQL(plan, model, apdmeMetrics);
         case 'share_of_total':
             return buildShareOfTotalSQL(plan, model);
         case 'correlation':
@@ -104,7 +105,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel): string {
             return buildComparisonSQL(plan, model);
         default:
             // Fallback: treat as breakdown
-            return buildBreakdownSQL(plan, model);
+            return buildBreakdownSQL(plan, model, apdmeMetrics);
     }
 }
 
@@ -212,8 +213,8 @@ function buildDerivedMetricSQL(
 /**
  * single_metric: "What is total sales?" → SELECT SUM(sales) AS sales_sum FROM data
  */
-function buildSingleMetricSQL(plan: AnalysisPlan, model: SemanticModel): string {
-    const selects = buildMetricExpressions(plan.metrics, model);
+function buildSingleMetricSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
+    const selects = buildMetricExpressions(plan.metrics, model, apdmeMetrics);
     const where = buildWhereClause(plan.filters);
 
     const parts = [
@@ -228,7 +229,7 @@ function buildSingleMetricSQL(plan: AnalysisPlan, model: SemanticModel): string 
 /**
  * breakdown: "Sales by category" → SELECT category, SUM(sales) FROM data GROUP BY category
  */
-function buildBreakdownSQL(plan: AnalysisPlan, model: SemanticModel): string {
+function buildBreakdownSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
     // ── Special handling for day_of_week ──
     const dowDim = plan.dimensions.find(d => (d as any).timeGrain === 'day_of_week');
     if (dowDim) {
@@ -236,7 +237,7 @@ function buildBreakdownSQL(plan: AnalysisPlan, model: SemanticModel): string {
     }
 
     const dimExprs = buildDimensionExpressions(plan.dimensions);
-    const metExprs = buildMetricExpressions(plan.metrics, model);
+    const metExprs = buildMetricExpressions(plan.metrics, model, apdmeMetrics);
     const groupBy = buildGroupByClause(plan.dimensions);
     const where = buildWhereClause(plan.filters);
     const orderBy = buildOrderByClause(plan);
@@ -259,7 +260,7 @@ function buildBreakdownSQL(plan: AnalysisPlan, model: SemanticModel): string {
 /**
  * trend: "Monthly sales for 2017" → SELECT time_grain, SUM(sales) ... ORDER BY time ASC
  */
-function buildTrendSQL(plan: AnalysisPlan, model: SemanticModel): string {
+function buildTrendSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
     // ── Special handling for day_of_week ──
     const dowDim = plan.dimensions.find(d => (d as any).timeGrain === 'day_of_week');
     if (dowDim) {
@@ -267,7 +268,7 @@ function buildTrendSQL(plan: AnalysisPlan, model: SemanticModel): string {
     }
 
     const dimExprs = buildDimensionExpressions(plan.dimensions);
-    const metExprs = buildMetricExpressions(plan.metrics, model);
+    const metExprs = buildMetricExpressions(plan.metrics, model, apdmeMetrics);
     const groupBy = buildGroupByClause(plan.dimensions);
     const where = buildWhereClause(plan.filters);
 
@@ -296,7 +297,7 @@ function buildTrendSQL(plan: AnalysisPlan, model: SemanticModel): string {
  * ranking: "Which day had the lowest sales?" → SUM + GROUP BY + ORDER BY ASC + LIMIT 1
  * "Top 10 products by revenue" → SUM + GROUP BY + ORDER BY DESC + LIMIT 10
  */
-function buildRankingSQL(plan: AnalysisPlan, model: SemanticModel): string {
+function buildRankingSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
     // ── Special handling for day_of_week: scope to current week ──
     const dowDim = plan.dimensions.find(d => (d as any).timeGrain === 'day_of_week');
     if (dowDim) {
@@ -304,7 +305,7 @@ function buildRankingSQL(plan: AnalysisPlan, model: SemanticModel): string {
     }
 
     const dimExprs = buildDimensionExpressions(plan.dimensions);
-    const metExprs = buildMetricExpressions(plan.metrics, model);
+    const metExprs = buildMetricExpressions(plan.metrics, model, apdmeMetrics);
     const groupBy = buildGroupByClause(plan.dimensions);
     const where = buildWhereClause(plan.filters);
 
@@ -600,10 +601,22 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
  * Build SELECT expressions for metrics.
  * Handles: sum, avg, count, count_distinct, min, max, and composite formulas.
  */
-function buildMetricExpressions(metrics: PlanMetric[], model: SemanticModel): string[] {
+function buildMetricExpressions(metrics: PlanMetric[], model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string[] {
     const exprs: string[] = [];
 
     for (const met of metrics) {
+        // ─── APDME Derived Metrics (highest priority) ───
+        // If this metric has a derivedMetricId, use the pre-built expression
+        // from the APDME engine (e.g., AVG(JULIANDAY(x) - JULIANDAY(y)))
+        if (met.derivedMetricId && apdmeMetrics?.length) {
+            const derived = apdmeMetrics.find(d => d.name === met.derivedMetricId);
+            if (derived) {
+                exprs.push(`${derived.aggregatedExpression} AS ${derived.alias}`);
+                console.log(`[SQL Correction] Using APDME derived metric: ${derived.aggregatedExpression}`);
+                continue;
+            }
+        }
+
         // Composite metrics: use the governed formula
         if (met.compositeId) {
             const composite = model.compositeMetrics.find(m => m.id === met.compositeId);
@@ -747,7 +760,11 @@ function buildOrderByClause(plan: AnalysisPlan): string {
 /**
  * Get the column alias for a metric in the SELECT clause.
  */
-function getMetricAlias(met: PlanMetric, model: SemanticModel): string {
+function getMetricAlias(met: PlanMetric, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
+    if (met.derivedMetricId && apdmeMetrics?.length) {
+        const derived = apdmeMetrics.find(d => d.name === met.derivedMetricId);
+        if (derived) return derived.alias;
+    }
     if (met.compositeId) {
         return met.compositeId;
     }

@@ -209,7 +209,7 @@ export async function runAISQLPipeline(
     console.log('[Pipeline] Step 3b: Running SQL Correction Engine...');
     let currentSQL: string;
     try {
-        currentSQL = correctSQL(plan, semanticModel);
+        currentSQL = correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
         console.log('[Pipeline] Correction Engine SQL:', currentSQL);
     } catch (correctionErr: any) {
         console.warn('[Pipeline] Correction engine failed, using AI SQL:', correctionErr.message);
