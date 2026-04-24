@@ -1,9 +1,14 @@
 /**
- * Semantic Layer — Auto-infers a SemanticModel from the dataset
- * 
- * Uses existing ETL column profiles (currency/percentage/date detection)
- * to classify each column with its semantic type, role, default aggregation,
- * time grain support, and synonyms.
+ * Semantic Layer — Constrained Probabilistic Decision Engine
+ *
+ * Upgraded from a rule-based classifier to a full arbitration pipeline:
+ *   1. Constraint Gates → hard physics (Boolean/Date/Anti-ID/Ordinal)
+ *   2. User Feedback Cache → scoped overrides with frequency weighting
+ *   3. Deterministic Scoring → weighted name+stats confidence
+ *   4. AI Arbitration → optional async cross-verification (batched LLM)
+ *   5. Continuous Delta → asymmetric arbitration with physics ceiling
+ *
+ * PRIORITY: Hard Physics > User Feedback > Deterministic > AI
  */
 
 import { Dataset, ColumnType } from '../../types';
@@ -11,6 +16,10 @@ import {
     SemanticField, SemanticModel, SemanticType, FieldRole, MetricDefinition
 } from './types';
 import { buildCompositeMetrics, buildDerivedMetrics } from './metricRegistry';
+import { runConstraintGates, ColumnStatProfile } from './constraintGates';
+import { lookupFeedback, bucketUniqueRatio, bucketRangeSpan } from './classificationFeedback';
+import { arbitrate } from './arbitrationEngine';
+import { runAIArbitration, AIClassificationRequest } from './aiArbitrator';
 
 // ─── Synonym Dictionary ──────────────────────────────────────────
 const SYNONYM_MAP: Record<string, string[]> = {
@@ -54,180 +63,11 @@ const SYNONYM_MAP: Record<string, string[]> = {
     amount: ['value', 'total', 'sum', 'payment'],
 };
 
-// ─── Column Name Pattern Matchers ────────────────────────────────
-const CURRENCY_PATTERNS = /\b(sales|revenue|price|cost|total|amount|profit|discount|shipping|tax|payment|spend|income|earning|margin|fee|charge|balance)\b/i;
-const PERCENTAGE_PATTERNS = /\b(rate|pct|percent|ratio|margin_pct|discount_pct|growth_pct|share|proportion)\b/i;
-const COUNT_PATTERNS = /\b(count|num|number_of|total_count|qty|quantity|units|items|orders|transactions)\b/i;
+// ─── Column Name Pattern Matchers (kept for synonym/display logic) ────
 const DATE_PATTERNS = /\b(date|day|month|year|quarter|week|time|timestamp|created|updated|ordered|shipped|delivered)\b/i;
-const GEO_PATTERNS = /\b(region|state|city|country|zip|postal|address|geo|territory|area|location|lat|lng|longitude|latitude)\b/i;
-const ID_PATTERNS = /\b(id|_id|key|code|number|no|num)$/i;
 
 /**
- * Infer the semantic type for a single column
- */
-function inferSemanticType(
-    colName: string,
-    colType: ColumnType,
-    distinctCount: number,
-    totalRows: number,
-    sampleValues: any[]
-): { semanticType: SemanticType; formatHint?: SemanticField['formatHint'] } {
-    const name = colName.toLowerCase();
-
-    // Date columns
-    if (colType === ColumnType.DATE) {
-        return { semanticType: 'date', formatHint: 'date' };
-    }
-
-    // ID columns
-    if (colType === ColumnType.ID || ID_PATTERNS.test(name)) {
-        return { semanticType: 'identifier', formatHint: 'text' };
-    }
-
-    // Boolean columns
-    if (colType === ColumnType.BOOLEAN) {
-        return { semanticType: 'category', formatHint: 'text' };
-    }
-
-    // Numeric columns — classify by name patterns
-    if (colType === ColumnType.METRIC) {
-        // Check for percentage patterns first (more specific)
-        if (PERCENTAGE_PATTERNS.test(name)) {
-            return { semanticType: 'percentage', formatHint: 'percent' };
-        }
-        // Check for currency patterns
-        if (CURRENCY_PATTERNS.test(name)) {
-            // Check if values look like small percentages vs large currency
-            const maxVal = Math.max(...sampleValues.filter(v => typeof v === 'number').map(Math.abs));
-            if (maxVal <= 1 && PERCENTAGE_PATTERNS.test(name)) {
-                return { semanticType: 'percentage', formatHint: 'percent' };
-            }
-            return { semanticType: 'currency', formatHint: 'currency_usd' };
-        }
-        // Check for count/quantity patterns
-        if (COUNT_PATTERNS.test(name)) {
-            return { semanticType: 'quantity', formatHint: 'integer' };
-        }
-        // Default numeric — check value ranges
-        const numericSamples = sampleValues.filter(v => typeof v === 'number');
-        if (numericSamples.length > 0) {
-            const maxVal = Math.max(...numericSamples.map(Math.abs));
-            if (maxVal <= 1) return { semanticType: 'ratio', formatHint: 'decimal' };
-            if (maxVal <= 100 && name.includes('pct')) return { semanticType: 'percentage', formatHint: 'percent' };
-        }
-        return { semanticType: 'quantity', formatHint: 'decimal' };
-    }
-
-    // Text/Dimension columns
-    if (GEO_PATTERNS.test(name)) {
-        return { semanticType: 'geography', formatHint: 'text' };
-    }
-
-    // Category vs text — use cardinality
-    if (distinctCount > 0 && distinctCount < totalRows * 0.5) {
-        return { semanticType: 'category', formatHint: 'text' };
-    }
-
-    return { semanticType: 'text', formatHint: 'text' };
-}
-
-/**
- * Determine the role (metric vs dimension) for a column.
- *
- * KEY INSIGHT: Not all numeric columns are business metrics.
- * Columns like age, rating, satisfaction_score, years_at_company are
- * "numeric attributes" — they describe properties of entities and should
- * be treated as DIMENSIONS (filterable, groupable) not metrics.
- *
- * We detect these using STATISTICAL signals (not hardcoded names) so
- * this works for ANY dataset.
- */
-function inferRole(
-    colType: ColumnType,
-    semanticType: SemanticType,
-    colName?: string,
-    range?: { min: number; max: number },
-    distinctCount?: number,
-    totalRows?: number
-): FieldRole {
-    // Currency, percentage, count, ratio are always metrics
-    if (semanticType === 'currency' || semanticType === 'percentage' ||
-        semanticType === 'count' || semanticType === 'ratio') {
-        return 'metric';
-    }
-
-    // For numeric columns classified as METRIC by ETL, check if they are
-    // actually numeric attributes (demographic/descriptive fields)
-    if (colType === ColumnType.METRIC && semanticType === 'quantity') {
-        if (isNumericAttribute(colName, range, distinctCount, totalRows)) {
-            return 'dimension';
-        }
-        return 'metric';
-    }
-
-    if (colType === ColumnType.METRIC) return 'metric';
-    if (colType === ColumnType.BOOLEAN) return 'dimension';
-    return 'dimension';
-}
-
-/**
- * Detects if a numeric column is a "numeric attribute" (like age, rating,
- * satisfaction score) rather than a business metric (like revenue, quantity).
- *
- * Uses STATISTICAL SIGNALS, not hardcoded column names, so it works
- * for any dataset:
- *
- *  1. Bounded human-scale range (max < 200, e.g. age 18-65, rating 1-5)
- *  2. Integer-only values (no decimals — ages, ratings, years, levels)
- *  3. Low cardinality relative to value range (many rows share same value)
- *  4. Name does NOT match strong metric keywords (salary, income, revenue)
- */
-function isNumericAttribute(
-    colName?: string,
-    range?: { min: number; max: number },
-    distinctCount?: number,
-    totalRows?: number
-): boolean {
-    if (!range || !colName) return false;
-
-    const name = colName.toLowerCase();
-
-    // Never reclassify columns with strong business metric names
-    const STRONG_METRIC_NAMES = /(?:^|[_\s])(sales|revenue|profit|cost|price|amount|total|income|salary|wage|pay|compensation|expense|fee|charge|payment|spend|earning|bonus|commission|balance|budget|discount|tax|shipping|freight|margin|debt|credit|debit|turnover|premium|interest|deposit|refund|rent|royalty|stipend|funding|payout)(?:[_\s]|$)/i;
-    if (STRONG_METRIC_NAMES.test(name)) return false;
-
-    const span = range.max - range.min;
-    const maxVal = Math.max(Math.abs(range.min), Math.abs(range.max));
-
-    // Signal 1: Bounded human-scale range (0-200) with non-zero span
-    const isBoundedRange = maxVal > 0 && maxVal <= 200 && span > 0 && span <= 200;
-
-    // Signal 2: Values look like integers (min and max are whole numbers)
-    const isIntegerLike = Number.isInteger(range.min) && Number.isInteger(range.max);
-
-    // Signal 3: Low distinct-to-range ratio (many rows share same value)
-    // e.g. Age has ~45 distinct values across 1470 rows = attribute
-    // vs revenue has ~1000 distinct values across 1470 rows = metric
-    const hasLowDistinctRatio = distinctCount !== undefined && totalRows !== undefined
-        && distinctCount > 0 && totalRows > 0
-        && (distinctCount / totalRows) < 0.15;  // < 15% unique = likely attribute
-
-    // Need at least 2 of 3 signals to reclassify
-    const signalCount = [isBoundedRange, isIntegerLike, hasLowDistinctRatio]
-        .filter(Boolean).length;
-
-    if (signalCount >= 2) {
-        console.log(`[SemanticLayer] Reclassified "${colName}" as numeric DIMENSION (attribute) — ` +
-            `range: ${range.min}-${range.max}, distinct: ${distinctCount}, ` +
-            `signals: bounded=${isBoundedRange}, integer=${isIntegerLike}, lowDistinct=${hasLowDistinctRatio}`);
-        return true;
-    }
-
-    return false;
-}
-
-/**
- * Determine default aggregation
+ * Determine default aggregation — now handles ordinal type
  */
 function inferDefaultAgg(semanticType: SemanticType, role: FieldRole): SemanticField['defaultAgg'] {
     if (role === 'dimension') return 'none';
@@ -237,8 +77,98 @@ function inferDefaultAgg(semanticType: SemanticType, role: FieldRole): SemanticF
         case 'count': return 'count';
         case 'percentage': return 'avg';
         case 'ratio': return 'avg';
+        case 'ordinal': return 'none'; // Ordinals are dimensions, never aggregated
         default: return 'sum';
     }
+}
+
+/**
+ * Derive format hint from the arbitrated semantic type
+ */
+function deriveFormatHint(semanticType: SemanticType): SemanticField['formatHint'] {
+    switch (semanticType) {
+        case 'currency': return 'currency_usd';
+        case 'percentage': return 'percent';
+        case 'date': return 'date';
+        case 'quantity': return 'decimal';
+        case 'count': return 'integer';
+        case 'ratio': return 'decimal';
+        case 'ordinal': return 'integer';
+        case 'identifier': return 'text';
+        case 'boolean': return 'text';
+        default: return 'text';
+    }
+}
+
+/**
+ * Build a ColumnStatProfile from dataset rows for the constraint engine.
+ */
+function buildColumnStatProfile(
+    colName: string,
+    colType: ColumnType,
+    rows: Record<string, any>[],
+    actualKey: string,
+): ColumnStatProfile {
+    const totalRows = rows.length;
+    const sampleSize = Math.min(totalRows, 2000);
+
+    let distinctValues = new Set<any>();
+    let nullCount = 0;
+    let numericValues: number[] = [];
+    let dateParseCount = 0;
+    let integerCount = 0;
+    const sampleValues: any[] = [];
+
+    for (let i = 0; i < sampleSize; i++) {
+        const val = rows[i]?.[actualKey];
+        distinctValues.add(val);
+
+        if (val === null || val === undefined || val === '') {
+            nullCount++;
+            continue;
+        }
+
+        if (sampleValues.length < 20) sampleValues.push(val);
+
+        if (typeof val === 'number') {
+            numericValues.push(val);
+            if (Number.isInteger(val)) integerCount++;
+        } else if (typeof val === 'string') {
+            const num = Number(val);
+            if (!isNaN(num) && val.trim() !== '') {
+                numericValues.push(num);
+                if (Number.isInteger(num)) integerCount++;
+            }
+            // Quick date parse check
+            if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(val) || /^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(val)) {
+                dateParseCount++;
+            }
+        }
+    }
+
+    const nonNullCount = sampleSize - nullCount;
+    const dateParseRate = nonNullCount > 0 ? dateParseCount / nonNullCount : 0;
+    const isIntegerLike = numericValues.length > 0 && integerCount >= numericValues.length * 0.95;
+
+    let range: { min: number; max: number } | undefined;
+    if (numericValues.length > 0) {
+        range = {
+            min: Math.min(...numericValues),
+            max: Math.max(...numericValues),
+        };
+    }
+
+    return {
+        name: colName,
+        etlType: colType,
+        totalRows,
+        distinctCount: distinctValues.size,
+        nullRate: totalRows > 0 ? nullCount / sampleSize : 0,
+        range,
+        isIntegerLike,
+        dateParseRate,
+        sampleValues,
+    };
 }
 
 /**
@@ -275,12 +205,24 @@ function generateDisplayLabel(colName: string): string {
 
 /**
  * Build a complete SemanticModel from a Dataset.
- * This is the main entry point for the semantic layer.
+ *
+ * UPGRADED: Now uses the Constrained Probabilistic Decision Engine:
+ *   1. Build ColumnStatProfile for each column
+ *   2. Run constraint gates → allowedTypes + detConf
+ *   3. Check user feedback cache (scoped by column/domain/distribution)
+ *   4. Run deterministic arbitration (sync, no AI)
+ *   5. Attach classification signals for explainability
+ *
+ * AI cross-verification is handled separately by enhanceWithAIArbitration()
+ * which runs async after the initial model is built.
  */
 export function buildSemanticModel(dataset: Dataset): SemanticModel {
     const fields: SemanticField[] = [];
     const rows = dataset.rows;
     const totalRows = rows.length;
+    const domain = dataset.domainProfile?.domain || 'Other';
+
+    let arbitrationStats = { total: 0, ordinal: 0, feedbackUsed: 0, needsReview: 0 };
 
     for (const col of dataset.columns) {
         // Get the actual key in the data (case-insensitive match)
@@ -288,68 +230,72 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
             ? Object.keys(rows[0]).find(k => k.toLowerCase() === col.name.toLowerCase()) || col.name
             : col.name;
 
-        // Collect sample values
+        // ── STEP 1: Build statistical profile ────────────────────
+        const statProfile = buildColumnStatProfile(col.name, col.type, rows, actualKey);
+
+        // Collect sample values for display
         const sampleSet = new Set<string>();
-        const numericSamples: number[] = [];
         for (let i = 0; i < Math.min(totalRows, 500) && sampleSet.size < 10; i++) {
             const val = rows[i][actualKey];
             if (val !== null && val !== undefined && val !== '') {
                 sampleSet.add(String(val).substring(0, 50));
-                if (typeof val === 'number') numericSamples.push(val);
             }
         }
 
-        // Compute distinct count
-        const distinctValues = new Set<any>();
-        for (let i = 0; i < Math.min(totalRows, 2000); i++) {
-            distinctValues.add(rows[i]?.[actualKey]);
-        }
-        const distinctCount = distinctValues.size;
+        // ── STEP 2: Run constraint gates (hard physics) ──────────
+        const constraintResult = runConstraintGates(statProfile);
 
-        // Check for nulls
-        const nullCount = rows.slice(0, 500).filter(r => r[actualKey] === null || r[actualKey] === undefined || r[actualKey] === '').length;
+        // ── STEP 3: Check user feedback cache ────────────────────
+        const uniqueRatio = totalRows > 0 ? statProfile.distinctCount / totalRows : 0;
+        const rangeSpan = statProfile.range ? statProfile.range.max - statProfile.range.min : undefined;
+        const feedback = lookupFeedback(col.name, domain, uniqueRatio, rangeSpan);
 
-        // Infer semantic type
-        const { semanticType, formatHint } = inferSemanticType(
-            col.name, col.type, distinctCount, totalRows, numericSamples
-        );
+        // ── STEP 4: Run arbitration (deterministic + feedback, no AI yet) ──
+        const arbResult = arbitrate(col.name, constraintResult, null, feedback);
 
-        // Compute range for numeric fields (needed before inferRole)
-        let range: { min: number; max: number } | undefined;
-        if (numericSamples.length > 0) {
-            range = {
-                min: Math.min(...numericSamples),
-                max: Math.max(...numericSamples)
-            };
-        }
+        // Track stats
+        arbitrationStats.total++;
+        if (arbResult.semanticType === 'ordinal') arbitrationStats.ordinal++;
+        if (arbResult.signals.finalSource === 'user_override' || arbResult.signals.finalSource === 'seed') arbitrationStats.feedbackUsed++;
+        if (arbResult.needsReview) arbitrationStats.needsReview++;
 
-        // Infer role and aggregation
-        const role = inferRole(col.type, semanticType, col.name, range, distinctCount, totalRows);
+        // ── STEP 5: Build SemanticField with classification signals ──
+        const semanticType = arbResult.semanticType;
+        const role = arbResult.role;
         const defaultAgg = inferDefaultAgg(semanticType, role);
+        const formatHint = deriveFormatHint(semanticType);
 
-        // Time grain support
         const timeGrainSupport = semanticType === 'date'
             ? (['day', 'week', 'month', 'quarter', 'year'] as const).map(g => g)
             : [];
+
+        // Check for nulls
+        const nullCount = rows.slice(0, 500).filter(r => r[actualKey] === null || r[actualKey] === undefined || r[actualKey] === '').length;
 
         fields.push({
             name: col.name,
             physicalType: col.type === ColumnType.DATE ? 'date'
                 : col.type === ColumnType.METRIC ? 'number'
-                    : 'string',
+                    : col.type === ColumnType.BOOLEAN ? 'boolean'
+                        : 'string',
             semanticType,
             role,
             defaultAgg,
             timeGrainSupport: timeGrainSupport as any,
             synonyms: generateSynonyms(col.name),
             sampleValues: Array.from(sampleSet).slice(0, 5),
-            distinctCount,
+            distinctCount: statProfile.distinctCount,
             hasNulls: nullCount > 0,
-            range,
+            range: statProfile.range,
             displayLabel: generateDisplayLabel(col.name),
             formatHint,
+            classificationSignals: arbResult.signals,
         });
     }
+
+    console.log(`[SemanticLayer] ✅ Decision Engine: ${arbitrationStats.total} columns classified ` +
+        `(${arbitrationStats.ordinal} ordinal, ${arbitrationStats.feedbackUsed} from feedback, ` +
+        `${arbitrationStats.needsReview} needs review)`);
 
     // Detect primary date column
     const dateFields = fields.filter(f => f.semanticType === 'date');
@@ -370,9 +316,7 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
 
     // Performance guardrails
     if (totalRows > 500000) {
-        console.warn(`[SemanticLayer] ⚠️ LARGE DATASET: ${totalRows.toLocaleString()} rows. Performance may be affected. Consider sampling or filtering.`);
-    } else if (totalRows > 100000) {
-        console.warn(`[SemanticLayer] NOTE: ${totalRows.toLocaleString()} rows — performance should be fine for most queries.`);
+        console.warn(`[SemanticLayer] ⚠️ LARGE DATASET: ${totalRows.toLocaleString()} rows. Performance may be affected.`);
     }
 
     return {
@@ -397,6 +341,104 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
             }))
         } : undefined,
         grain,
+    };
+}
+
+/**
+ * ASYNC AI ENHANCEMENT — Optional second pass.
+ *
+ * Runs AI cross-verification on the existing semantic model's fields
+ * and re-arbitrates with the AI results. Returns an upgraded model.
+ *
+ * Call this after buildSemanticModel() when AI is available.
+ * If AI is unavailable, the original model is returned unchanged.
+ */
+export async function enhanceWithAIArbitration(
+    model: SemanticModel,
+    dataset: Dataset,
+): Promise<SemanticModel> {
+    const domain = dataset.domainProfile?.domain || 'Other';
+    const domainConfidence = dataset.domainProfile?.confidence ?? 0.5;
+
+    // Build AI classification requests from existing constraint data
+    const requests: AIClassificationRequest[] = [];
+    for (const field of model.fields) {
+        if (!field.classificationSignals) continue;
+        // Only send columns that aren't already locked by physics (boolean/date)
+        if (field.semanticType === 'boolean' || field.semanticType === 'date') continue;
+
+        requests.push({
+            columnName: field.name,
+            constraintResult: {
+                allowedTypes: field.classificationSignals.allowedTypes,
+                detConf: field.classificationSignals.detConf,
+                bestGuess: { semanticType: field.semanticType, role: field.role },
+                reason: field.classificationSignals.reason,
+                signals: field.classificationSignals.signals as any,
+            },
+        });
+    }
+
+    if (requests.length === 0) return model;
+
+    // Run batched AI arbitration
+    const aiResults = await runAIArbitration(
+        requests, model.datasetName, domain, domainConfidence,
+    );
+
+    if (!aiResults || aiResults.length === 0) {
+        console.log('[SemanticLayer] AI arbitration returned no results — keeping deterministic model');
+        return model;
+    }
+
+    // Build lookup for fast access
+    const aiLookup = new Map(aiResults.map(r => [r.columnName, r]));
+
+    // Re-arbitrate fields with AI results
+    let aiUpgrades = 0;
+    const updatedFields = model.fields.map(field => {
+        const aiResult = aiLookup.get(field.name);
+        if (!aiResult || !field.classificationSignals) return field;
+
+        const uniqueRatio = field.distinctCount / (model.rowCount || 1);
+        const rangeSpan = field.range ? field.range.max - field.range.min : undefined;
+        const feedback = lookupFeedback(field.name, domain, uniqueRatio, rangeSpan);
+
+        const reArbResult = arbitrate(
+            field.name,
+            {
+                allowedTypes: field.classificationSignals.allowedTypes,
+                detConf: field.classificationSignals.detConf,
+                bestGuess: { semanticType: field.semanticType, role: field.role },
+                reason: field.classificationSignals.reason,
+                signals: field.classificationSignals.signals as any,
+            },
+            aiResult,
+            feedback,
+        );
+
+        if (reArbResult.semanticType !== field.semanticType || reArbResult.role !== field.role) {
+            aiUpgrades++;
+        }
+
+        return {
+            ...field,
+            semanticType: reArbResult.semanticType,
+            role: reArbResult.role,
+            defaultAgg: inferDefaultAgg(reArbResult.semanticType, reArbResult.role),
+            formatHint: deriveFormatHint(reArbResult.semanticType),
+            classificationSignals: reArbResult.signals,
+        };
+    });
+
+    console.log(`[SemanticLayer] 🧠 AI arbitration complete: ${aiUpgrades} field(s) upgraded`);
+
+    // Rebuild composite/derived metrics with updated field types
+    return {
+        ...model,
+        fields: updatedFields,
+        compositeMetrics: buildCompositeMetrics(updatedFields),
+        derivedMetrics: buildDerivedMetrics(updatedFields),
     };
 }
 

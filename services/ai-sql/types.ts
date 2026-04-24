@@ -16,12 +16,38 @@ export type SemanticType =
     | 'date'
     | 'geography'
     | 'category'
+    | 'ordinal'
     | 'identifier'
     | 'boolean'
     | 'text'
     | 'unknown';
 
 export type FieldRole = 'metric' | 'dimension';
+
+/**
+ * Structured classification signals — explainability layer for the arbitration engine.
+ * Surfaces the reasoning behind each field's type/role decision.
+ */
+export interface FieldClassificationSignals {
+    /** Deterministic engine confidence (0–1) */
+    detConf: number;
+    /** Derived AI confidence after validation (0–1), null if AI was not consulted */
+    aiConf: number | null;
+    /** Which source won the arbitration */
+    finalSource: 'deterministic' | 'ai' | 'user_override' | 'seed';
+    /** Human-readable reason for the classification */
+    reason: string;
+    /** Raw statistical signals used in the decision */
+    signals: {
+        rangeSpan?: number;
+        uniqueValues: number;
+        isInteger?: boolean;
+        namePatternMatch?: string;
+        uniqueRatio?: number;
+    };
+    /** Constraint-filtered allowed types (physics layer output) */
+    allowedTypes: SemanticType[];
+}
 
 export interface SemanticField {
     /** Physical column name in the dataset */
@@ -50,6 +76,8 @@ export interface SemanticField {
     displayLabel: string;
     /** Format hint for rendering */
     formatHint?: 'currency_usd' | 'currency_eur' | 'percent' | 'decimal' | 'integer' | 'date' | 'text';
+    /** Classification signals — explainability & arbitration audit trail */
+    classificationSignals?: FieldClassificationSignals;
 }
 
 export interface MetricDefinition {

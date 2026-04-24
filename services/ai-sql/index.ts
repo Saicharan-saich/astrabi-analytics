@@ -5,7 +5,7 @@
  */
 
 export { runAISQLPipeline } from './pipeline';
-export { buildSemanticModel, serializeSemanticModel } from './semanticLayer';
+export { buildSemanticModel, serializeSemanticModel, enhanceWithAIArbitration } from './semanticLayer';
 export { generatePlan } from './intentPlanner';
 export { generateSQLFromPlan, repairSQL } from './sqlGenerator';
 export { correctSQL } from './sqlCorrectionEngine';
@@ -17,6 +17,8 @@ export { scoreConfidence } from './confidenceScorer';
 export { logAuditEntry, getAuditLog, clearAuditLog, getAuditStats } from './auditLogger';
 export { buildCompositeMetrics, buildDerivedMetrics } from './metricRegistry';
 export { resolveTimeContext, augmentQuestionWithTime } from './timeResolver';
+export { storeUserOverride } from './classificationFeedback';
+export { getClassificationTelemetry } from './arbitrationEngine';
 
 export type {
     SemanticField, SemanticModel, MetricDefinition, DerivedMetricDefinition,
@@ -24,4 +26,5 @@ export type {
     ResultProfile, ChartRecommendation, RecommendedChart,
     ConfidenceScore, AuditEntry, AISQLPipelineResult,
     ValidationResult, ValidationCheck,
+    FieldClassificationSignals,
 } from './types';
