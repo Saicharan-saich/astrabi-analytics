@@ -67,9 +67,15 @@ const SYNONYM_MAP: Record<string, string[]> = {
 const DATE_PATTERNS = /\b(date|day|month|year|quarter|week|time|timestamp|created|updated|ordered|shipped|delivered)\b/i;
 
 /**
- * Determine default aggregation — now handles ordinal type
+ * Determine default aggregation — handles ordinal dual-role.
+ *
+ * KEY INSIGHT: Ordinal fields (ratings, satisfaction scores, Likert scales)
+ * are dimensions for GROUP BY but ALSO aggregatable with AVG.
+ * They must return 'avg' BEFORE the generic dimension→'none' check.
  */
 function inferDefaultAgg(semanticType: SemanticType, role: FieldRole): SemanticField['defaultAgg'] {
+    // Ordinal is special: it's a dimension but aggregatable (AVG of a 1-5 rating is meaningful)
+    if (semanticType === 'ordinal') return 'avg';
     if (role === 'dimension') return 'none';
     switch (semanticType) {
         case 'currency': return 'sum';
@@ -77,7 +83,6 @@ function inferDefaultAgg(semanticType: SemanticType, role: FieldRole): SemanticF
         case 'count': return 'count';
         case 'percentage': return 'avg';
         case 'ratio': return 'avg';
-        case 'ordinal': return 'none'; // Ordinals are dimensions, never aggregated
         default: return 'sum';
     }
 }
@@ -501,13 +506,27 @@ export function serializeSemanticModel(model: SemanticModel): string {
         }
     }
 
+    // Ordinal aggregation rules — critical for correct treatment of rating/score fields
+    const ordinalFields = model.fields.filter(f => f.semanticType === 'ordinal');
+    if (ordinalFields.length > 0) {
+        lines.push('');
+        lines.push('ORDINAL FIELD RULES (CRITICAL):');
+        lines.push('  Ordinal fields are numeric scales (ratings, scores, satisfaction levels, Likert scales).');
+        lines.push('  They have a DUAL ROLE:');
+        lines.push('  - As DIMENSIONS: use in GROUP BY to show distribution (e.g., "count by satisfaction level")');
+        lines.push('  - As METRICS: AGGREGATE with AVG() to show averages (e.g., "avg satisfaction by department")');
+        lines.push('  When the user asks about an ordinal field as a measure ("what\'s the job satisfaction",');
+        lines.push('    "average rating", "satisfaction score by X"), ALWAYS use AVG() aggregation.');
+        lines.push('  Ordinal fields: ' + ordinalFields.map(f => f.name).join(', '));
+    }
+
     // Filtering rules — critical for correct column selection
     lines.push('');
     lines.push('FILTERING RULES (CRITICAL):');
     lines.push('  - ANY field (metric or dimension) can be used in WHERE clauses for filtering.');
     lines.push('  - For numeric fields, use BETWEEN / >= / <= operators for range filtering.');
     lines.push('  - When the user describes a numeric range ("in their forties", "over 50", "under 30",');
-    lines.push('    "between 20 and 30"), ALWAYS prefer the raw numeric column with BETWEEN/>=/<= over');
+    lines.push('    "between 20 and 30"), ALWAYS prefer the raw numeric column with BETWEEN/>=/<=  over');
     lines.push('    a categorical grouping column. Example: use "WHERE age BETWEEN 40 AND 49" not');
     lines.push('    "WHERE age_group IN (\'40-49\')".');
     lines.push('  - Look at the range column above to identify which fields are numeric and filterable.');
