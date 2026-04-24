@@ -33,6 +33,7 @@ import { reshapeData } from './dataReshaper';
 import { scoreConfidence } from './confidenceScorer';
 import { logAuditEntry } from './auditLogger';
 import { resolveTimeContext, augmentQuestionWithTime } from './timeResolver';
+import { processPlan } from './derivedMetricEngine';
 import { getCachedResult, setCachedResult } from '../aiSqlCache';
 
 /**
@@ -160,6 +161,17 @@ export async function runAISQLPipeline(
         }
     }
 
+    // ─── Step 2c: APDME — Derived Metrics & Guardrails ─────────────
+    reportProgress('Analyzing derived metrics...', 3);
+    console.log('[Pipeline] Step 2c: Running APDME (Derived Metric Engine)...');
+    const apdmeResult = processPlan(plan, semanticModel);
+    if (apdmeResult.derivedMetricApplied) {
+        console.log(`[Pipeline] APDME: Derived metric applied — ${apdmeResult.derivedMetrics.map(d => d.aggregatedExpression).join(', ')}`);
+    }
+    if (apdmeResult.violations.length > 0) {
+        console.warn(`[Pipeline] APDME: ${apdmeResult.violations.length} guardrail violation(s), penalty: -${apdmeResult.confidencePenalty}`);
+    }
+
     // If the plan is ambiguous, return early with clarification request
     if (plan.ambiguous) {
         console.log('[Pipeline] Plan is ambiguous, requesting clarification');
@@ -188,7 +200,7 @@ export async function runAISQLPipeline(
     // ─── Step 3: Generate SQL (Step B — deterministic + LLM fallback) ─
     reportProgress('Generating SQL...', 4);
     console.log('[Pipeline] Step 3: Generating SQL...');
-    let sqlResult = await generateSQLFromPlan(plan, semanticModel);
+    let sqlResult = await generateSQLFromPlan(plan, semanticModel, apdmeResult.derivedMetrics);
     const aiGeneratedSQL = sqlResult.sql; // Keep AI's SQL for reference
     const sqlMethod = sqlResult.method;
 
@@ -691,6 +703,13 @@ export async function runAISQLPipeline(
     // ─── Step 10: Score Confidence ───────────────────────────────
     console.log('[Pipeline] Step 10: Scoring confidence...');
     const confidence = scoreConfidence(plan, semanticModel, validation, sqlMethod, repairAttempts);
+    // Apply APDME guardrail penalties (e.g., -50 for SUM on a date column)
+    if (apdmeResult.confidencePenalty > 0) {
+        confidence.score = Math.max(0, confidence.score - apdmeResult.confidencePenalty);
+        confidence.level = confidence.score >= 70 ? 'high' : confidence.score >= 40 ? 'medium' : 'low';
+        confidence.reasons.push(...apdmeResult.violations.map(v => v.message));
+        console.log(`[Pipeline] APDME penalty applied: -${apdmeResult.confidencePenalty} → ${confidence.score}/100`);
+    }
     console.log(`[Pipeline] Confidence: ${confidence.score}/100 (${confidence.level})`);
 
     const executionTime = performance.now() - startTime;

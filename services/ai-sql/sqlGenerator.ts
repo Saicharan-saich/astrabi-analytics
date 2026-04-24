@@ -8,6 +8,7 @@
 
 import { SemanticModel, AnalysisPlan, ValidationResult } from './types';
 import { serializeSemanticModel } from './semanticLayer';
+import type { DerivedMetric } from './derivedMetricEngine';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
@@ -21,11 +22,12 @@ const TIMEOUT_MS = 20000;
  */
 export async function generateSQLFromPlan(
     plan: AnalysisPlan,
-    model: SemanticModel
+    model: SemanticModel,
+    derivedMetrics?: DerivedMetric[]
 ): Promise<{ sql: string; explanation: string; method: 'deterministic' | 'llm' }> {
 
     // Try deterministic generation first
-    const deterministicResult = tryDeterministicSQL(plan, model);
+    const deterministicResult = tryDeterministicSQL(plan, model, derivedMetrics);
     if (deterministicResult) {
         console.log('[SQL Generator] Used deterministic generation');
         return { ...deterministicResult, method: 'deterministic' };
@@ -42,7 +44,8 @@ export async function generateSQLFromPlan(
  */
 function tryDeterministicSQL(
     plan: AnalysisPlan,
-    model: SemanticModel
+    model: SemanticModel,
+    derivedMetrics?: DerivedMetric[]
 ): { sql: string; explanation: string } | null {
 
     // We can handle most standard queries deterministically
@@ -73,8 +76,20 @@ function tryDeterministicSQL(
             }
         }
 
-        // Metrics
+        // Metrics — check for APDME derived metrics first
         for (const met of plan.metrics) {
+            // ─── APDME Derived Metric ───
+            // If this metric has a derivedMetricId, use the pre-built expression
+            // from the Derived Metric Engine (e.g., AVG(JULIANDAY(x) - JULIANDAY(y)))
+            if (met.derivedMetricId && derivedMetrics?.length) {
+                const derived = derivedMetrics.find(d => d.name === met.derivedMetricId);
+                if (derived) {
+                    selectParts.push(`${derived.aggregatedExpression} AS ${derived.alias}`);
+                    console.log(`[SQL Generator] Using APDME derived metric: ${derived.aggregatedExpression} AS ${derived.alias}`);
+                    continue;
+                }
+            }
+
             // Check if it's a composite metric
             if (met.compositeId) {
                 const composite = model.compositeMetrics.find(m => m.id === met.compositeId);
