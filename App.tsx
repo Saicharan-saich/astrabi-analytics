@@ -97,6 +97,29 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
   }
 }
 
+/** Step indicator row for the profiling overlay */
+function ProfilingStep({ label, active, done, theme }: { label: string; active: boolean; done: boolean; theme: string }) {
+  return (
+    <div className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-left text-xs font-medium transition-all ${active
+        ? theme === 'dark' ? 'bg-violet-500/10 text-violet-300' : 'bg-violet-50 text-violet-700'
+        : done
+          ? theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600'
+          : theme === 'dark' ? 'text-gray-600' : 'text-gray-400'
+      }`}>
+      {done ? (
+        <svg className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+      ) : active ? (
+        <div className="w-3.5 h-3.5 flex-shrink-0 relative">
+          <div className="absolute inset-0 rounded-full border-2 border-violet-400 border-t-transparent animate-spin" />
+        </div>
+      ) : (
+        <div className={`w-3.5 h-3.5 rounded-full flex-shrink-0 ${theme === 'dark' ? 'bg-white/[0.06]' : 'bg-gray-200'}`} />
+      )}
+      {label}
+    </div>
+  );
+}
+
 function App() {
   // Global State
   const {
@@ -670,6 +693,108 @@ function App() {
               {/* Main Content Area */}
               <main className={`flex-1 overflow-hidden relative ${theme === 'dark' ? 'bg-[#0c0f1a]' : 'bg-[#f5f6fa]'
                 }`}>
+
+                {/* ── FULL-SCREEN PROFILING OVERLAY ── */}
+                <AnimatePresence>
+                  {(isProcessing || isAIProfiling) && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      transition={{ duration: 0.3 }}
+                      className="absolute inset-0 z-50 flex items-center justify-center"
+                      style={{ backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+                    >
+                      {/* Dark scrim */}
+                      <div className="absolute inset-0 bg-black/60" />
+
+                      {/* Profiling card */}
+                      <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.9, opacity: 0 }}
+                        transition={{ delay: 0.1, duration: 0.3 }}
+                        className="relative z-10 w-[420px] rounded-2xl border shadow-2xl overflow-hidden"
+                        style={{
+                          background: theme === 'dark'
+                            ? 'linear-gradient(135deg, #1a1d2e 0%, #141825 100%)'
+                            : 'linear-gradient(135deg, #ffffff 0%, #f8f9fc 100%)',
+                          borderColor: theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
+                        }}
+                      >
+                        {/* Top glow accent */}
+                        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-violet-500 via-indigo-500 to-purple-600" />
+
+                        <div className="p-8 flex flex-col items-center text-center">
+                          {/* Animated brain icon */}
+                          <div className="relative mb-6">
+                            <div className="absolute inset-0 rounded-full bg-violet-500/20 animate-ping" style={{ animationDuration: '2s' }} />
+                            <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/25">
+                              <Brain className="w-8 h-8 text-white" />
+                            </div>
+                          </div>
+
+                          {/* Title */}
+                          <h3 className={`text-lg font-bold mb-1 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                            {isProcessing ? 'Processing Dataset' : 'AI Profiling'}
+                          </h3>
+                          <p className={`text-sm mb-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {isProcessing
+                              ? 'Running ETL pipeline — cleaning, classifying, and structuring your data...'
+                              : 'Analyzing column semantics, detecting domain, and building the decision model...'
+                            }
+                          </p>
+
+                          {/* Progress bar */}
+                          <div className={`w-full h-2 rounded-full overflow-hidden mb-4 ${theme === 'dark' ? 'bg-white/[0.06]' : 'bg-gray-200'}`}>
+                            <motion.div
+                              className="h-full rounded-full bg-gradient-to-r from-violet-500 via-indigo-500 to-purple-500"
+                              initial={{ width: '5%' }}
+                              animate={{
+                                width: isProcessing ? ['5%', '40%', '65%'] : ['30%', '60%', '85%', '95%'],
+                              }}
+                              transition={{
+                                duration: isProcessing ? 8 : 12,
+                                ease: 'easeInOut',
+                                times: isProcessing ? [0, 0.4, 1] : [0, 0.3, 0.7, 1],
+                              }}
+                            />
+                          </div>
+
+                          {/* Step indicators */}
+                          <div className="w-full space-y-2">
+                            {isProcessing ? (
+                              <>
+                                <ProfilingStep label="Structural normalization" active done={false} theme={theme} />
+                                <ProfilingStep label="Column classification" active={false} done={false} theme={theme} />
+                                <ProfilingStep label="Data transformation" active={false} done={false} theme={theme} />
+                              </>
+                            ) : (
+                              <>
+                                <ProfilingStep label="ETL pipeline complete" active={false} done theme={theme} />
+                                <ProfilingStep label="Semantic domain detection" active done={false} theme={theme} />
+                                <ProfilingStep label="Building decision model" active={false} done={false} theme={theme} />
+                              </>
+                            )}
+                          </div>
+
+                          {/* Dataset info */}
+                          {dataset && (
+                            <div className={`mt-5 pt-4 border-t w-full flex items-center justify-center gap-3 ${theme === 'dark' ? 'border-white/[0.06]' : 'border-gray-200'}`}>
+                              <span className={`text-xs font-medium ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                                {dataset.name}
+                              </span>
+                              <span className={`text-xs ${theme === 'dark' ? 'text-gray-600' : 'text-gray-300'}`}>•</span>
+                              <span className={`text-xs font-medium ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                                {dataset.totalRows?.toLocaleString()} rows • {dataset.columns?.length} columns
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
 
                 {/* All tabs stay mounted for state persistence — only the active one is visible */}
                 {/* ── COLUMN MAPPING WIZARD (full-page step) ── */}
