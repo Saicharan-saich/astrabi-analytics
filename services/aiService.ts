@@ -9,7 +9,7 @@
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-const MODEL = 'qwen/qwen3-coder';
+const MODEL = 'qwen/qwen-2.5-vl-72b-instruct'; // Must support image input for chart visual interpretation
 const TIMEOUT_MS = 20000;
 
 // Simple cache to avoid redundant API calls for the same chart

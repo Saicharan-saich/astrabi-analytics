@@ -66,6 +66,18 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         }
     }, [initialQuery, dataset]);
 
+    // Re-run pipeline when time grain changes (only if we already have results)
+    const grainInitialized = React.useRef(true);
+    React.useEffect(() => {
+        if (grainInitialized.current) {
+            grainInitialized.current = false;
+            return;
+        }
+        if (query.trim() && dataset && !isLoading && analysisResult) {
+            handleSubmit();
+        }
+    }, [timeGrain]);
+
     const examples = [
         "Total revenue by category",
         "Top 10 products by profit",
@@ -560,6 +572,31 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                                     className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${formatting.showYAxis ? 'bg-amber-50 dark:bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-400/30' : 'bg-gray-100 dark:bg-slate-700/50 text-gray-600 dark:text-white/80 border-gray-200 dark:border-white/20 hover:bg-gray-200 dark:hover:bg-slate-700'}`}
                                                     title="Toggle Y-Axis"
                                                 >Y</button>
+                                            </div>
+                                        )}
+
+                                        {/* Time Grain Toggle — D/W/M/Q/Y */}
+                                        {activeResultTab === 'chart' && (
+                                            <div className="flex items-center gap-1 ml-2">
+                                                <span className="text-xs text-gray-700 dark:text-white font-bold mr-0.5">Grain:</span>
+                                                {([
+                                                    { value: 'day' as const, label: 'D' },
+                                                    { value: 'week' as const, label: 'W' },
+                                                    { value: 'month' as const, label: 'M' },
+                                                    { value: 'quarter' as const, label: 'Q' },
+                                                    { value: 'year' as const, label: 'Y' },
+                                                ]).map(g => (
+                                                    <button
+                                                        key={g.value}
+                                                        onClick={() => {
+                                                            if (g.value !== timeGrain) {
+                                                                setTimeGrain(g.value);
+                                                            }
+                                                        }}
+                                                        className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${timeGrain === g.value ? 'bg-blue-50 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 border-blue-400/30 ring-1 ring-blue-400/30' : 'bg-gray-100 dark:bg-slate-700/50 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-white/10 hover:bg-gray-200 dark:hover:bg-slate-600 hover:text-gray-800 dark:hover:text-white'}`}
+                                                        title={`${g.value.charAt(0).toUpperCase() + g.value.slice(1)} grain`}
+                                                    >{g.label}</button>
+                                                ))}
                                             </div>
                                         )}
                                     </div>
