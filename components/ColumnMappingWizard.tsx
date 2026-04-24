@@ -186,6 +186,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
     const [searchFilter, setSearchFilter] = useState('');
     const [typeFilter, setTypeFilter] = useState<ColumnType | 'ALL'>('ALL');
     const [showErrors, setShowErrors] = useState(false);
+    const [showDetails, setShowDetails] = useState(false);
 
     // ── Derived stats ──
     const stats = useMemo(() => {
@@ -420,90 +421,133 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                             {subDomain && <p className="text-[10px] text-gray-500 mt-1">Sub: {subDomain}</p>}
                         </div>
 
-                        {/* AI Confidence — expandable breakdown */}
-                        <div className="bg-[#1c2033] border border-white/[0.06] rounded-xl p-4">
-                            <div className="flex items-center justify-between mb-2">
-                                <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">AI Confidence</label>
-                                <span className={`text-lg font-bold ${initialProfile.confidence >= 0.8 ? 'text-emerald-400' :
-                                    initialProfile.confidence >= 0.5 ? 'text-amber-400' : 'text-red-400'
-                                    }`}>
-                                    {(initialProfile.confidence * 100).toFixed(0)}%
-                                </span>
-                            </div>
-                            <div className="h-2.5 bg-white/[0.06] rounded-full overflow-hidden mb-3">
-                                <motion.div
-                                    initial={{ width: 0 }}
-                                    animate={{ width: `${initialProfile.confidence * 100}%` }}
-                                    transition={{ duration: 0.8, ease: 'easeOut' }}
-                                    className={`h-full rounded-full ${initialProfile.confidence >= 0.8 ? 'bg-emerald-500' :
-                                        initialProfile.confidence >= 0.5 ? 'bg-amber-500' : 'bg-red-500'
-                                        }`}
-                                />
-                            </div>
-                            {/* Factor breakdown */}
-                            {(() => {
-                                // Compute column-level factors
-                                const lowConfCols = Object.entries(columnConfidences).filter(([, v]) => v < 0.45);
-                                const medConfCols = Object.entries(columnConfidences).filter(([, v]) => v >= 0.45 && v < 0.75);
-                                const highConfCols = Object.entries(columnConfidences).filter(([, v]) => v >= 0.75);
-                                const totalCols = columns.length;
-                                const domainScore = initialProfile.confidence >= 0.8 ? 1 : initialProfile.confidence >= 0.5 ? 0.6 : 0.3;
-                                const nameClarity = totalCols > 0 ? highConfCols.length / totalCols : 0;
-                                const typeBalance = stats.metrics > 0 && stats.dimensions > 0 ? 1 : 0.3;
-                                const factors = [
-                                    { label: 'Domain Detection', value: Math.round(domainScore * 100), max: 100, desc: domainScore >= 0.8 ? `Detected: ${domain}` : `Low certainty for ${domain}` },
-                                    { label: 'Column Name Clarity', value: Math.round(nameClarity * 100), max: 100, desc: `${highConfCols.length}/${totalCols} columns have clear names` },
-                                    { label: 'Type Distribution', value: Math.round(typeBalance * 100), max: 100, desc: typeBalance >= 1 ? `${stats.metrics} metrics, ${stats.dimensions} dimensions` : 'Missing metrics or dimensions' },
-                                ];
-                                return (
-                                    <div className="space-y-2">
-                                        {factors.map(f => (
-                                            <div key={f.label}>
-                                                <div className="flex items-center justify-between mb-0.5">
-                                                    <span className="text-[10px] font-medium text-gray-500">{f.label}</span>
-                                                    <span className={`text-[10px] font-bold ${f.value >= 80 ? 'text-emerald-400' : f.value >= 50 ? 'text-amber-400' : 'text-red-400'}`}>{f.value}%</span>
-                                                </div>
-                                                <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
-                                                    <div className={`h-full rounded-full transition-all ${f.value >= 80 ? 'bg-emerald-500' : f.value >= 50 ? 'bg-amber-500' : 'bg-red-500'}`} style={{ width: `${f.value}%` }} />
-                                                </div>
-                                                <p className="text-[9px] text-gray-600 mt-0.5">{f.desc}</p>
-                                            </div>
-                                        ))}
+                        {/* ── Classification Status (user-friendly framing) ── */}
+                        {(() => {
+                            const conf = initialProfile.confidence;
+                            const lowConfCols = Object.entries(columnConfidences).filter(([, v]) => v < 0.45);
+                            const highConfCols = Object.entries(columnConfidences).filter(([, v]) => v >= 0.75);
+                            const totalCols = columns.length;
+                            const classifiedCount = totalCols - lowConfCols.length;
+
+                            // Qualitative tiers — no scary percentages
+                            const status = conf >= 0.8
+                                ? { label: 'Ready', icon: '✓', color: 'text-emerald-400', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25', barColor: 'bg-emerald-500' }
+                                : conf >= 0.5
+                                    ? { label: 'Review Suggested', icon: '👀', color: 'text-amber-400', bg: 'bg-amber-500/15', border: 'border-amber-500/25', barColor: 'bg-amber-500' }
+                                    : { label: 'Setup Needed', icon: '⚙️', color: 'text-violet-400', bg: 'bg-violet-500/15', border: 'border-violet-500/25', barColor: 'bg-violet-500' };
+
+
+                            return (
+                                <div className="bg-[#1c2033] border border-white/[0.06] rounded-xl p-4">
+                                    {/* Status badge + columns classified */}
+                                    <div className="flex items-center justify-between mb-3">
+                                        <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Classification Status</label>
+                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${status.bg} ${status.color} border ${status.border}`}>
+                                            {status.icon} {status.label}
+                                        </span>
+                                    </div>
+
+                                    {/* Columns classified progress bar */}
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <span className="text-[10px] text-gray-500 font-medium">{classifiedCount} of {totalCols} columns auto-classified</span>
                                         {lowConfCols.length > 0 && (
-                                            <div className="mt-2 pt-2 border-t border-white/[0.04]">
-                                                <p className="text-[10px] font-bold text-red-400 mb-1">⚠ {lowConfCols.length} column{lowConfCols.length > 1 ? 's' : ''} dragging score down:</p>
-                                                <div className="space-y-0.5">
-                                                    {lowConfCols.slice(0, 5).map(([name]) => {
-                                                        const lower = name.toLowerCase();
-                                                        const weakPatterns = ['value', 'col', 'field', 'data', 'var', 'x', 'y', 'z'];
-                                                        const isWeak = weakPatterns.some(p => lower === p || lower.startsWith(p + '_'));
-                                                        const sem = columnSemantics[name];
-                                                        const reason = isWeak ? 'Ambiguous column name' : !sem ? 'No AI match' : sem.role === ColumnType.ID ? 'Classified as ID (review type)' : 'Unrecognized pattern';
-                                                        return (
-                                                            <div key={name} className="flex items-center gap-1.5 text-[10px]">
-                                                                <span className="text-red-400">🔴</span>
-                                                                <span className="text-gray-400 font-mono">{name}</span>
-                                                                <span className="text-gray-600">— {reason}</span>
-                                                            </div>
-                                                        );
-                                                    })}
-                                                    {lowConfCols.length > 5 && <p className="text-[9px] text-gray-600">...and {lowConfCols.length - 5} more</p>}
-                                                </div>
-                                            </div>
+                                            <span className="text-[10px] text-amber-400 font-medium">· {lowConfCols.length} need review</span>
                                         )}
                                     </div>
-                                );
-                            })()}
-                        </div>
+                                    <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden mb-3">
+                                        <motion.div
+                                            initial={{ width: 0 }}
+                                            animate={{ width: `${(classifiedCount / Math.max(1, totalCols)) * 100}%` }}
+                                            transition={{ duration: 0.8, ease: 'easeOut' }}
+                                            className={`h-full rounded-full ${status.barColor}`}
+                                        />
+                                    </div>
+
+                                    {/* Actionable summary */}
+                                    <p className="text-[10px] text-gray-500 leading-relaxed">
+                                        {conf >= 0.8
+                                            ? `AI recognized this as ${domain} data and classified all columns. You can apply directly or review.`
+                                            : conf >= 0.5
+                                                ? `AI detected ${domain} domain. Some columns may need manual review — check the ${lowConfCols.length > 0 ? `${lowConfCols.length} flagged column${lowConfCols.length > 1 ? 's' : ''}` : 'yellow indicators'} below.`
+                                                : `This dataset has uncommon column names. The AI did its best to classify them — please review the column types below to ensure accuracy.`
+                                        }
+                                    </p>
+
+                                    {/* Expandable technical details */}
+                                    <button
+                                        onClick={() => setShowDetails(!showDetails)}
+                                        className="mt-2 text-[10px] text-gray-600 hover:text-gray-400 transition-colors flex items-center gap-1"
+                                    >
+                                        <ChevronDown className={`w-3 h-3 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
+                                        {showDetails ? 'Hide details' : 'Show details'}
+                                    </button>
+
+                                    <AnimatePresence>
+                                        {showDetails && (
+                                            <motion.div
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: 'auto', opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                transition={{ duration: 0.15 }}
+                                                className="overflow-hidden"
+                                            >
+                                                <div className="mt-2 pt-2 border-t border-white/[0.04] space-y-2">
+                                                    {/* Factor bars */}
+                                                    {[
+                                                        { label: 'Domain Detection', pct: conf >= 0.8 ? 100 : conf >= 0.5 ? 60 : 30, desc: conf >= 0.8 ? `Detected: ${domain}` : `Uncertain: ${domain}` },
+                                                        { label: 'Column Name Clarity', pct: totalCols > 0 ? Math.round((highConfCols.length / totalCols) * 100) : 0, desc: `${highConfCols.length} of ${totalCols} columns have clear names` },
+                                                        { label: 'Type Balance', pct: stats.metrics > 0 && stats.dimensions > 0 ? 100 : 30, desc: `${stats.metrics} metrics, ${stats.dimensions} dimensions` },
+                                                    ].map(f => (
+                                                        <div key={f.label}>
+                                                            <div className="flex items-center justify-between mb-0.5">
+                                                                <span className="text-[10px] font-medium text-gray-500">{f.label}</span>
+                                                                <span className={`text-[10px] font-bold ${f.pct >= 80 ? 'text-emerald-400' : f.pct >= 50 ? 'text-amber-400' : 'text-gray-400'}`}>{f.pct}%</span>
+                                                            </div>
+                                                            <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
+                                                                <div className={`h-full rounded-full ${f.pct >= 80 ? 'bg-emerald-500' : f.pct >= 50 ? 'bg-amber-500' : 'bg-gray-500'}`} style={{ width: `${f.pct}%` }} />
+                                                            </div>
+                                                            <p className="text-[9px] text-gray-600 mt-0.5">{f.desc}</p>
+                                                        </div>
+                                                    ))}
+
+                                                    {/* Columns needing review */}
+                                                    {lowConfCols.length > 0 && (
+                                                        <div className="mt-1 pt-2 border-t border-white/[0.04]">
+                                                            <p className="text-[10px] font-medium text-amber-400 mb-1">Columns to review:</p>
+                                                            <div className="space-y-0.5">
+                                                                {lowConfCols.slice(0, 5).map(([name]) => {
+                                                                    const sem = columnSemantics[name];
+                                                                    const reason = sem?.role === ColumnType.ID ? 'May not be an ID' : 'Uncommon name pattern';
+                                                                    return (
+                                                                        <div key={name} className="flex items-center gap-1.5 text-[10px]">
+                                                                            <span className="text-amber-400">•</span>
+                                                                            <span className="text-gray-400 font-mono">{name}</span>
+                                                                            <span className="text-gray-600">— {reason}</span>
+                                                                        </div>
+                                                                    );
+                                                                })}
+                                                                {lowConfCols.length > 5 && <p className="text-[9px] text-gray-600">...and {lowConfCols.length - 5} more</p>}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                </div>
+                            );
+                        })()}
                     </div>
 
-                    {/* ══ LOW CONFIDENCE WARNING (moved to top) ══ */}
+                    {/* ══ REVIEW SUGGESTED BANNER (gentle, no scary numbers) ══ */}
                     {initialProfile.confidence < 0.7 && (
-                        <div className="flex items-start gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl p-3">
-                            <AlertTriangle className="w-4 h-4 text-amber-400 flex-shrink-0 mt-0.5" />
+                        <div className="flex items-start gap-3 bg-violet-500/10 border border-violet-500/20 rounded-xl p-3">
+                            <div className="w-7 h-7 rounded-lg bg-violet-500/20 flex items-center justify-center flex-shrink-0">
+                                <Sparkles className="w-3.5 h-3.5 text-violet-400" />
+                            </div>
                             <div>
-                                <p className="text-xs font-medium text-amber-300">Low confidence — please review columns with 🔴 and 🟡 indicators carefully.</p>
-                                <p className="text-[10px] text-amber-400/70 mt-0.5">The AI is {(initialProfile.confidence * 100).toFixed(0)}% confident in its classification. Click the confidence panel above to see which columns need attention.</p>
+                                <p className="text-xs font-medium text-violet-300">Quick review recommended</p>
+                                <p className="text-[10px] text-violet-400/70 mt-0.5">Some columns have uncommon names — a quick check of the types below will help the AI give you better results.</p>
                             </div>
                         </div>
                     )}
