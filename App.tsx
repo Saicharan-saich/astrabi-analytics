@@ -101,10 +101,10 @@ class ErrorBoundary extends React.Component<{ children: React.ReactNode }, { has
 function ProfilingStep({ label, active, done, theme }: { label: string; active: boolean; done: boolean; theme: string }) {
   return (
     <div className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg text-left text-xs font-medium transition-all ${active
-        ? theme === 'dark' ? 'bg-violet-500/10 text-violet-300' : 'bg-violet-50 text-violet-700'
-        : done
-          ? theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600'
-          : theme === 'dark' ? 'text-gray-600' : 'text-gray-400'
+      ? theme === 'dark' ? 'bg-violet-500/10 text-violet-300' : 'bg-violet-50 text-violet-700'
+      : done
+        ? theme === 'dark' ? 'text-emerald-400' : 'text-emerald-600'
+        : theme === 'dark' ? 'text-gray-600' : 'text-gray-400'
       }`}>
       {done ? (
         <svg className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
@@ -184,6 +184,18 @@ function App() {
       setSidebarOpen(false);
     }
   }, [activeTab, setSidebarOpen]);
+
+  // ── AUTO-SYNC pendingProfile to active dataset ──
+  // When the user switches datasets or a new dataset is uploaded,
+  // update pendingProfile so the Column Mapping Wizard always shows
+  // the correct domain profile for the active dataset.
+  useEffect(() => {
+    if (dataset?.domainProfile) {
+      setPendingProfile(dataset.domainProfile);
+    } else {
+      setPendingProfile(null);
+    }
+  }, [dataset?.id]);
 
   const handleDeleteDataset = (id: string) => {
     removeDataset(id);
