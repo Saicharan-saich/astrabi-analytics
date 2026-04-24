@@ -44,8 +44,9 @@ const API_ENDPOINT = `${import.meta.env.VITE_API_URL || 'http://localhost:5002/a
 const TIMEOUT_MS = 20000;
 
 /**
- * Builds a comprehensive prompt that sends the FULL dataset profile to the AI
- * so it can generate holistic, meaningful questions across ALL columns.
+ * Builds a comprehensive prompt using ONLY METADATA — column names, types,
+ * roles, and descriptions. ZERO raw data values are sent to the AI.
+ * This preserves user data privacy and security.
  */
 function buildQuestionPrompt(dataset: Dataset): string {
     const domain = dataset.domainProfile?.domain || 'General';
@@ -53,7 +54,7 @@ function buildQuestionPrompt(dataset: Dataset): string {
     const summary = dataset.domainProfile?.summary || '';
     const grain = dataset.domainProfile?.grain || dataset.semanticModel?.grain || '';
 
-    // Build a rich column profile for the AI
+    // Build column profile from METADATA ONLY — no raw data
     const columnProfiles = dataset.columns.map(col => {
         const semantic = dataset.domainProfile?.columnSemantics?.[col.name];
         const smMeasure = dataset.semanticModel?.measures?.find(m => m.column === col.name);
@@ -79,17 +80,7 @@ function buildQuestionPrompt(dataset: Dataset): string {
             parts.push(`    Label: ${smDimension.label || col.name}`);
         }
 
-        // Add sample unique values for dimensions (up to 5)
-        if (col.type === ColumnType.DIMENSION || semantic?.role === 'DIMENSION') {
-            const uniques = new Set<string>();
-            for (let i = 0; i < Math.min(dataset.rows.length, 200) && uniques.size < 5; i++) {
-                const v = dataset.rows[i]?.[col.name];
-                if (v != null && String(v).trim()) uniques.add(String(v));
-            }
-            if (uniques.size > 0) {
-                parts.push(`    Sample Values: ${[...uniques].join(', ')}`);
-            }
-        }
+        // NO raw data values are sent — only metadata above
 
         return parts.join('\n');
     }).join('\n');
