@@ -441,17 +441,17 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                 <div className="bg-[#1c2033] border border-white/[0.06] rounded-xl p-4">
                                     {/* Status badge + columns classified */}
                                     <div className="flex items-center justify-between mb-3">
-                                        <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Classification Status</label>
-                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ${status.bg} ${status.color} border ${status.border}`}>
+                                        <label className="text-sm text-gray-400 uppercase tracking-wider font-semibold">Classification Status</label>
+                                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold ${status.bg} ${status.color} border ${status.border}`}>
                                             {status.icon} {status.label}
                                         </span>
                                     </div>
 
                                     {/* Columns classified progress bar */}
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <span className="text-[10px] text-gray-500 font-medium">{classifiedCount} of {totalCols} columns auto-classified</span>
+                                    <div className="flex items-center gap-2 mb-1.5">
+                                        <span className="text-xs text-gray-400 font-medium">{classifiedCount} of {totalCols} columns auto-classified</span>
                                         {lowConfCols.length > 0 && (
-                                            <span className="text-[10px] text-amber-400 font-medium">· {lowConfCols.length} need review</span>
+                                            <span className="text-xs text-amber-400 font-medium">· {lowConfCols.length} need review</span>
                                         )}
                                     </div>
                                     <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden mb-3">
@@ -464,7 +464,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                     </div>
 
                                     {/* Actionable summary */}
-                                    <p className="text-[10px] text-gray-500 leading-relaxed">
+                                    <p className="text-xs text-gray-400 leading-relaxed">
                                         {conf >= 0.8
                                             ? `AI recognized this as ${domain} data and classified all columns. You can apply directly or review.`
                                             : conf >= 0.5
@@ -476,9 +476,9 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                     {/* Expandable technical details */}
                                     <button
                                         onClick={() => setShowDetails(!showDetails)}
-                                        className="mt-2 text-[10px] text-gray-600 hover:text-gray-400 transition-colors flex items-center gap-1"
+                                        className="mt-3 text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1.5"
                                     >
-                                        <ChevronDown className={`w-3 h-3 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
+                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
                                         {showDetails ? 'Hide details' : 'Show details'}
                                     </button>
 
