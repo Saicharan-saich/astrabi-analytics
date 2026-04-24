@@ -124,11 +124,18 @@ export function runConstraintGates(profile: ColumnStatProfile): ConstraintResult
 
     // ── GATE 4: Ordinal Protection ──────────────────────────────
     // Integer + low unique count + small range → lock to ordinal/category
+    // NOTE: ETL often misclassifies Likert-scale integers (1-5) as ID.
+    // We check BOTH ColumnType.METRIC and ColumnType.ID here because
+    // the ETL's ID classification is frequently wrong for ordinal columns.
+    const isNumericColumn = (
+        profile.etlType === ColumnType.METRIC ||
+        profile.etlType === ColumnType.ID
+    );
     const isOrdinalCandidate = (
         profile.isIntegerLike &&
         profile.distinctCount <= 10 &&
         rangeSpan !== undefined && rangeSpan <= 10 &&
-        profile.etlType === ColumnType.METRIC // Only apply to numeric columns
+        isNumericColumn
     );
 
     if (isOrdinalCandidate) {
@@ -231,6 +238,25 @@ function computeDeterministicGuess(
         let s = 0.6;
         if (profile.distinctCount < profile.totalRows * 0.5) s += 0.2;
         scores.push({ type: 'category', role: 'dimension', score: Math.min(1, s), reason: `Categorical dimension: ${profile.distinctCount} unique values` });
+    }
+
+    // --- Ordinal fallback for ETL-misclassified ID columns ---
+    // If ETL says ID, but name matches ordinal patterns and stats are ordinal-like,
+    // force an ordinal score even if isOrdinalCandidate wasn't set (wider rangeSpan tolerance)
+    if (allowedTypes.includes('ordinal') && !isOrdinalCandidate && profile.etlType === ColumnType.ID && ORDINAL_NAMES.test(name)) {
+        let s = 0.7;
+        if (profile.isIntegerLike) s += 0.1;
+        if (profile.distinctCount <= 10) s += 0.1;
+        scores.push({ type: 'ordinal', role: 'dimension', score: Math.min(1, s), reason: `ETL-ID with ordinal name pattern: "${name}" — reclassified as ordinal dimension` });
+    }
+
+    // --- Category fallback for ID-typed columns with low cardinality ---
+    // ETL ID columns that don't match ordinal patterns but have <50 unique values
+    // are likely categories, not real identifiers (Anti-ID gate already removed 'identifier')
+    if (allowedTypes.includes('category') && profile.etlType === ColumnType.ID && !ID_NAMES.test(name) && scores.length === 0) {
+        let s = 0.5;
+        if (profile.distinctCount < 20) s += 0.2;
+        scores.push({ type: 'category', role: 'dimension', score: Math.min(1, s), reason: `ETL-ID reclassified as category dimension: ${profile.distinctCount} unique values` });
     }
 
     // --- Text (high cardinality string) ---
