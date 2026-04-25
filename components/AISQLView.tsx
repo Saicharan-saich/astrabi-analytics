@@ -37,7 +37,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         headerSize: 'md',
         headerBold: true,
         showLabels: true,
-        showDataLabels: true,
+        showDataLabels: false,
         tableCalculations: [],
         showXAxis: true,
         showYAxis: true
@@ -173,7 +173,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
             const detectedFormat = result.chart.leftAxisFormat
                 ? (axisFormatMap[result.chart.leftAxisFormat] ?? 'auto')
                 : 'auto';
-            setFormatting(prev => ({ ...prev, numberFormat: detectedFormat }));
+            setFormatting(prev => ({
+                ...prev,
+                numberFormat: detectedFormat,
+                // Auto-enable labels only for small datasets (≤8 points)
+                showDataLabels: result.chartData.length <= 8,
+            }));
 
             // Set the analysis result for ChartVisualization
             setAnalysisResult({
