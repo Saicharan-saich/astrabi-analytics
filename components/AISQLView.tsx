@@ -67,14 +67,20 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     }, [initialQuery, dataset]);
 
     // Re-run pipeline when time grain changes (only if we already have results)
+    // Use a ref to avoid stale closure — handleSubmit reads timeGrain from state,
+    // but by the time useEffect fires the state is already updated.
     const grainInitialized = React.useRef(true);
     React.useEffect(() => {
         if (grainInitialized.current) {
             grainInitialized.current = false;
             return;
         }
-        if (query.trim() && dataset && !isLoading && analysisResult) {
-            handleSubmit();
+        // Re-run only if we have an active query with results
+        if (query.trim() && dataset && analysisResult) {
+            // Use queueMicrotask so React state is settled before handleSubmit reads timeGrain
+            queueMicrotask(() => {
+                handleSubmit();
+            });
         }
     }, [timeGrain]);
 
@@ -558,27 +564,20 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                             </button>
                                         ))}
 
-                                        {/* X/Y Axis Toggles */}
+                                        {/* Axis + Grain — compact inline */}
                                         {activeResultTab === 'chart' && (
-                                            <div className="flex items-center gap-1.5 ml-2">
-                                                <span className="text-xs text-gray-700 dark:text-white font-bold mr-0.5">Axis:</span>
+                                            <div className="flex items-center gap-1 ml-1.5">
                                                 <button
                                                     onClick={() => setFormatting(f => ({ ...f, showXAxis: !f.showXAxis }))}
-                                                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${formatting.showXAxis ? 'bg-amber-50 dark:bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-400/30' : 'bg-gray-100 dark:bg-slate-700/50 text-gray-600 dark:text-white/80 border-gray-200 dark:border-white/20 hover:bg-gray-200 dark:hover:bg-slate-700'}`}
+                                                    className={`px-1.5 py-1 rounded text-[11px] font-bold transition-all ${formatting.showXAxis ? 'text-amber-600 dark:text-amber-300 bg-amber-500/10' : 'text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-white'}`}
                                                     title="Toggle X-Axis"
                                                 >X</button>
                                                 <button
                                                     onClick={() => setFormatting(f => ({ ...f, showYAxis: !f.showYAxis }))}
-                                                    className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${formatting.showYAxis ? 'bg-amber-50 dark:bg-amber-500/20 text-amber-600 dark:text-amber-300 border-amber-400/30' : 'bg-gray-100 dark:bg-slate-700/50 text-gray-600 dark:text-white/80 border-gray-200 dark:border-white/20 hover:bg-gray-200 dark:hover:bg-slate-700'}`}
+                                                    className={`px-1.5 py-1 rounded text-[11px] font-bold transition-all ${formatting.showYAxis ? 'text-amber-600 dark:text-amber-300 bg-amber-500/10' : 'text-gray-400 dark:text-slate-500 hover:text-gray-600 dark:hover:text-white'}`}
                                                     title="Toggle Y-Axis"
                                                 >Y</button>
-                                            </div>
-                                        )}
-
-                                        {/* Time Grain Toggle — D/W/M/Q/Y */}
-                                        {activeResultTab === 'chart' && (
-                                            <div className="flex items-center gap-1 ml-2">
-                                                <span className="text-xs text-gray-700 dark:text-white font-bold mr-0.5">Grain:</span>
+                                                <div className="w-px h-3.5 bg-gray-200 dark:bg-white/10 mx-0.5" />
                                                 {([
                                                     { value: 'day' as const, label: 'D' },
                                                     { value: 'week' as const, label: 'W' },
@@ -593,7 +592,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                                                 setTimeGrain(g.value);
                                                             }
                                                         }}
-                                                        className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border ${timeGrain === g.value ? 'bg-blue-50 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 border-blue-400/30 ring-1 ring-blue-400/30' : 'bg-gray-100 dark:bg-slate-700/50 text-gray-500 dark:text-slate-400 border-gray-200 dark:border-white/10 hover:bg-gray-200 dark:hover:bg-slate-600 hover:text-gray-800 dark:hover:text-white'}`}
+                                                        className={`w-6 h-6 rounded text-[11px] font-bold transition-all ${timeGrain === g.value ? 'bg-blue-500/15 text-blue-500 dark:text-blue-300 ring-1 ring-blue-400/40' : 'text-gray-400 dark:text-slate-500 hover:text-gray-700 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700'}`}
                                                         title={`${g.value.charAt(0).toUpperCase() + g.value.slice(1)} grain`}
                                                     >{g.label}</button>
                                                 ))}
@@ -601,34 +600,35 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                         )}
                                     </div>
 
-                                    <div className="flex gap-2">
+                                    <div className="flex items-center gap-1.5">
                                         <button
                                             onClick={() => onPin?.(query, { ...analysisResult, formatting })}
-                                            className="bg-amber-600 hover:bg-amber-500 text-white px-4 py-2 rounded-lg text-[13px] font-bold transition-all flex items-center gap-2 shadow-lg"
+                                            className="flex items-center gap-1.5 text-[12px] font-bold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 px-3 py-1.5 rounded-lg transition-all active:scale-95 border border-amber-200 dark:border-amber-500/20"
+                                            title="Pin to Dashboard"
                                         >
-                                            <Pin className="w-4 h-4" />
-                                            Pin to Dashboard
+                                            <Pin className="w-3.5 h-3.5" />
+                                            Pin
                                         </button>
                                         <button
                                             onClick={handleRegenerate}
-                                            className="flex items-center text-[13px] font-bold text-cyan-600 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 px-3.5 py-2 rounded-lg transition-all active:scale-95 border border-cyan-200 dark:border-cyan-500/20"
+                                            className="flex items-center gap-1 text-[12px] font-bold text-cyan-600 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 px-2.5 py-1.5 rounded-lg transition-all active:scale-95 border border-cyan-200 dark:border-cyan-500/20"
                                             title="Regenerate — bypass cache, call AI fresh"
                                         >
-                                            <RefreshCw className="w-4 h-4 mr-1.5" /> Regenerate
+                                            <RefreshCw className="w-3.5 h-3.5" />
                                         </button>
                                         <button
                                             onClick={handleSubmit}
-                                            className="flex items-center text-[13px] font-bold text-gray-600 dark:text-slate-300 bg-gray-200 dark:bg-slate-700 hover:bg-gray-300 dark:hover:bg-slate-600 px-3.5 py-2 rounded-lg transition-all active:scale-95"
+                                            className="flex items-center gap-1 text-[12px] font-bold text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-white bg-gray-100 dark:bg-slate-700/50 hover:bg-gray-200 dark:hover:bg-slate-600 px-2.5 py-1.5 rounded-lg transition-all active:scale-95"
                                             title="Refresh — re-run current query"
                                         >
-                                            <RefreshCw className="w-4 h-4 mr-1.5" /> Refresh
+                                            <Play className="w-3.5 h-3.5" />
                                         </button>
                                         <button
                                             onClick={handleReset}
-                                            className="flex items-center text-[13px] font-bold text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 px-3.5 py-2 rounded-lg transition-all active:scale-95"
+                                            className="flex items-center gap-1 text-[12px] font-bold text-red-400 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10 px-2.5 py-1.5 rounded-lg transition-all active:scale-95"
                                             title="Reset — clear all results and start fresh"
                                         >
-                                            <RotateCcw className="w-4 h-4 mr-1.5" /> Reset
+                                            <RotateCcw className="w-3.5 h-3.5" />
                                         </button>
                                     </div>
                                 </div>
