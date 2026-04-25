@@ -102,10 +102,34 @@ VALID INTENTS:
 - "correlation" — user wants to see two metrics together
 - "distribution" — user wants a histogram-like view
 
+TIME COMPARISON DETECTION (CRITICAL — NEW):
+When the user asks about growth, change over time, or period comparisons combined with ANY metric (including derived metrics like length of stay, profit, etc.), you MUST:
+1. Set the correct time dimension with timeGrain
+2. Set the comparison object
+3. Keep the metric field as-is (APDME will handle derived computation)
+
+Examples:
+- "YoY growth in average length of stay by condition"
+  → intent: "trend", dimensions: [{field: "date_of_admission", timeGrain: "year"}, {field: "medical_condition"}]
+  → comparison: {type: "same_period_last_year", mode: "trend", grain: "year"}
+  → metrics: [{field: "discharge_date", agg: "avg"}]  (APDME replaces with DATEDIFF)
+
+- "MoM revenue trend"
+  → intent: "trend", dimensions: [{field: "order_date", timeGrain: "month"}]
+  → comparison: {type: "previous_period", mode: "trend", grain: "month"}
+
+- "QoQ profit growth by region"
+  → intent: "trend", dimensions: [{field: "date", timeGrain: "quarter"}, {field: "region"}]
+  → comparison: {type: "previous_period", mode: "trend", grain: "quarter"}
+
 COMPARISON RULES:
 - comparison.type: "previous_period", "same_period_last_year", or "custom"
 - comparison.mode: "trend" or "total"
 - comparison.grain: day, week, month, quarter, year
+- "YoY" / "year over year" → type: "same_period_last_year", grain: "year"
+- "MoM" / "month over month" → type: "previous_period", grain: "month"
+- "QoQ" / "quarter over quarter" → type: "previous_period", grain: "quarter"
+- "growth" / "change" / "trend" without explicit period → type: "previous_period", grain: "month"
 
 FILTER RULES:
 - "this week", "this month", "this year" etc. → filter using the primary date column.
@@ -516,6 +540,99 @@ function enforceComparison(plan: AnalysisPlan, question: string, model: Semantic
 }
 
 /**
+ * MSARE: TIME COMPARISON DETECTION
+ * Detects YoY, MoM, QoQ, growth, and temporal change patterns.
+ * Unlike enforceComparison (which handles "vs" and "compare to"),
+ * this handles analytical growth patterns that need time-grouped aggregation.
+ *
+ * CRITICAL for derived metrics: ensures "YoY average length of stay"
+ * gets a time dimension + comparison metadata so the SQL includes
+ * GROUP BY year and the JS engine computes LAG-based growth.
+ */
+function enforceTimeComparison(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    const q = question.toLowerCase();
+
+    // Already has comparison from enforceComparison — skip
+    if (plan.comparison && plan.intent === 'trend_comparison') return;
+
+    // ── Detect time comparison patterns ──
+    type TimePattern = { grain: 'year' | 'quarter' | 'month' | 'week' | 'day'; type: 'same_period_last_year' | 'previous_period' };
+    let detected: TimePattern | null = null;
+
+    // YoY patterns
+    if (/\b(yoy|y-o-y|year[\s-]*over[\s-]*year|yearly\s+growth|annual\s+growth|year\s+on\s+year)\b/.test(q)) {
+        detected = { grain: 'year', type: 'same_period_last_year' };
+    }
+    // MoM patterns
+    else if (/\b(mom|m-o-m|month[\s-]*over[\s-]*month|monthly\s+growth|month\s+on\s+month)\b/.test(q)) {
+        detected = { grain: 'month', type: 'previous_period' };
+    }
+    // QoQ patterns
+    else if (/\b(qoq|q-o-q|quarter[\s-]*over[\s-]*quarter|quarterly\s+growth|quarter\s+on\s+quarter)\b/.test(q)) {
+        detected = { grain: 'quarter', type: 'previous_period' };
+    }
+    // WoW patterns
+    else if (/\b(wow|w-o-w|week[\s-]*over[\s-]*week|weekly\s+growth)\b/.test(q)) {
+        detected = { grain: 'week', type: 'previous_period' };
+    }
+    // Generic growth/change/trend WITH time hint
+    else if (/\b(growth|change|changing|grew|declined|increasing|decreasing)\b/.test(q)) {
+        // Determine grain from context
+        if (/\b(year|annual|yearly)\b/.test(q)) {
+            detected = { grain: 'year', type: 'same_period_last_year' };
+        } else if (/\b(quarter|quarterly)\b/.test(q)) {
+            detected = { grain: 'quarter', type: 'previous_period' };
+        } else if (/\b(week|weekly)\b/.test(q)) {
+            detected = { grain: 'week', type: 'previous_period' };
+        } else if (/\b(month|monthly)\b/.test(q) || true) {
+            // Default: monthly growth
+            detected = { grain: 'month', type: 'previous_period' };
+        }
+    }
+
+    if (!detected) return;
+
+    console.log(`[MSARE] Detected time comparison: ${detected.type}, grain=${detected.grain}`);
+
+    // Find primary date field
+    const dateField = model.fields.find(f => f.semanticType === 'date' && f.role === 'dimension');
+    if (!dateField) {
+        console.warn('[MSARE] No date field found — cannot apply time comparison');
+        return;
+    }
+
+    // ── Inject time dimension if missing ──
+    const hasTimeDim = plan.dimensions.some(d => d.timeGrain);
+    if (!hasTimeDim) {
+        plan.dimensions.push({ field: dateField.name, timeGrain: detected.grain });
+        console.log(`[MSARE] Injected time dimension: ${dateField.name} (grain=${detected.grain})`);
+    } else {
+        // Override grain to match detected pattern
+        const timeDim = plan.dimensions.find(d => d.timeGrain);
+        if (timeDim && timeDim.timeGrain !== detected.grain) {
+            console.log(`[MSARE] Overriding time grain: ${timeDim.timeGrain} → ${detected.grain}`);
+            timeDim.timeGrain = detected.grain;
+        }
+    }
+
+    // ── Set comparison metadata ──
+    plan.comparison = {
+        type: detected.type,
+        mode: 'trend',
+        grain: detected.grain,
+    };
+
+    // ── Upgrade intent to trend (not trend_comparison, because the JS engine
+    //    handles growth computation post-SQL for trend queries) ──
+    if (!['trend', 'trend_comparison', 'ranking'].includes(plan.intent)) {
+        console.log(`[MSARE] Upgrading intent: ${plan.intent} → trend`);
+        plan.intent = 'trend';
+    }
+
+    console.log(`[MSARE] Time comparison applied: intent=${plan.intent}, grain=${detected.grain}, type=${detected.type}`);
+}
+
+/**
  * Generate an AnalysisPlan from a natural language question.
  * This is Step A of the two-step LLM pipeline.
  */
@@ -595,6 +712,7 @@ export async function generatePlan(
         enforceAggregation(plan, question, model);
         enforceTimeContext(plan, question, model);
         enforceComparison(plan, question, model); // Fix: detect comparison patterns
+        enforceTimeComparison(plan, question, model); // MSARE: detect YoY/MoM/QoQ + derived metric combos
 
         // ── STEP 3: SEMANTIC VALIDATION ──
         // Catch nonsensical queries: AVG(customer_id), COUNT(revenue), revenue by revenue

@@ -76,7 +76,14 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     }
 
     // Check for comparison
+    // MSARE: If APDME derived metrics exist, use buildTrendSQL (which supports derived expressions)
+    // instead of buildComparisonSQL (which doesn't). The JS Time Intelligence Engine will
+    // compute growth/LAG post-SQL from the time-grouped results.
     if (plan.comparison) {
+        if (apdmeMetrics && apdmeMetrics.length > 0) {
+            console.log(`[SQL Correction Engine] MSARE: APDME + comparison detected — routing to buildTrendSQL with derived expressions`);
+            return buildTrendSQL(plan, model, apdmeMetrics);
+        }
         return buildComparisonSQL(plan, model);
     }
 
