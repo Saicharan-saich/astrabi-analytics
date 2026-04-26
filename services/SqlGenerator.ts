@@ -189,17 +189,23 @@ export class SqlGenerator {
     }
 
     private buildOrderBy(): string {
-        const { sort, dimension, metric } = this.config;
+        const { sort, dimension, metric, aggregation } = this.config;
+
+        // Reconstruct the exact aggregate expression used in SELECT
+        const aggUpper = (aggregation || 'SUM').toUpperCase();
+        const aggFunc = ALLOWED_AGGREGATIONS.has(aggUpper) ? aggUpper : 'SUM';
+        const metricId = metric === '*' ? '*' : safeId(metric || '*');
+        const metricExp = `${aggFunc}(${metricId})`;
 
         if (sort === 'oldest') {
             return dimension ? `ORDER BY ${safeId(dimension)} ASC` : '';
         } else if (sort === 'newest') {
             return dimension ? `ORDER BY ${safeId(dimension)} DESC` : '';
         } else if (sort === 'asc') {
-            return `ORDER BY ${safeId(metric)} ASC`;
+            return `ORDER BY ${metricExp} ASC`;
         } else {
             // Default desc
-            return `ORDER BY ${safeId(metric)} DESC`;
+            return `ORDER BY ${metricExp} DESC`;
         }
     }
 
