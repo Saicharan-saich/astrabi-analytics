@@ -224,6 +224,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     });
     const metrics = visibleColumns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
     const dims = visibleColumns.filter(c => c.type === ColumnType.DIMENSION || c.type === ColumnType.ID).map(c => c.name);
+    const countableColumns = visibleColumns.filter(c => c.type === ColumnType.DIMENSION || c.type === ColumnType.ID).map(c => c.name);
+    const isDimensionMetric = countableColumns.includes(metric);
     const dateColumns = visibleColumns.filter(c => c.type === ColumnType.DATE).map(c => c.name);
 
     // Helper: get human-readable label for a column
@@ -518,11 +520,19 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     <span className="text-slate-400 text-sm">Show me</span>
 
                     {/* Metric Selector */}
-                    <Tooltip text="Choose the numeric measure to analyze (e.g. revenue, quantity, profit). This is the 'what' of your question." position="bottom">
+                    <Tooltip text="Choose the measure to analyze. Pick a numeric metric (e.g. revenue) or a dimension to count (e.g. patient count)." position="bottom">
                         <QuerySelect
                             value={metric}
-                            onChange={setMetric}
-                            options={metrics.map(m => ({ label: m.replace(/_/g, ' '), value: m }))}
+                            onChange={val => {
+                                setMetric(val);
+                                if (countableColumns.includes(val) && !['COUNT', 'COUNT_DISTINCT'].includes(aggregation)) {
+                                    setAggregation('COUNT');
+                                }
+                            }}
+                            options={[
+                                ...metrics.map(m => ({ label: m.replace(/_/g, ' '), value: m, group: 'Measures' })),
+                                ...countableColumns.map(c => ({ label: c.replace(/_/g, ' '), value: c, group: 'Countable Dimensions' }))
+                            ]}
                             icon={<TrendingUp className="w-3.5 h-3.5" />}
                             colorTextClass="text-purple-400"
                             colorRingClass="focus:ring-purple-500/30"
@@ -530,19 +540,24 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         />
                     </Tooltip>
 
-                    <Tooltip text="How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values." position="bottom">
+                    <Tooltip text={isDimensionMetric ? "Counting dimensions: Count tallies rows, Unique Count counts distinct values." : "How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values."} position="bottom">
                         <QuerySelect
                             value={aggregation}
                             onChange={setAggregation}
-                            options={[
-                                { label: 'Sum', value: 'SUM' },
-                                { label: 'Average', value: 'AVG' },
-                                { label: 'Max', value: 'MAX' },
-                                { label: 'Min', value: 'MIN' },
-                                { label: 'Count', value: 'COUNT' },
-                                { label: 'Unique Count', value: 'COUNT_DISTINCT' }
-                            ]}
-                            icon={<span className="font-bold text-xs px-0.5">Σ</span>}
+                            options={isDimensionMetric
+                                ? [
+                                    { label: 'Count', value: 'COUNT' },
+                                    { label: 'Unique Count', value: 'COUNT_DISTINCT' }
+                                ]
+                                : [
+                                    { label: 'Sum', value: 'SUM' },
+                                    { label: 'Average', value: 'AVG' },
+                                    { label: 'Max', value: 'MAX' },
+                                    { label: 'Min', value: 'MIN' },
+                                    { label: 'Count', value: 'COUNT' },
+                                    { label: 'Unique Count', value: 'COUNT_DISTINCT' }
+                                ]}
+                            icon={<span className="font-bold text-xs px-0.5">{isDimensionMetric ? '#' : 'Σ'}</span>}
                             colorTextClass="text-purple-400"
                             colorRingClass="focus:ring-purple-500/30"
                             searchable={false}

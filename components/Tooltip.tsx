@@ -87,7 +87,7 @@ export const Tooltip: React.FC<TooltipProps> = ({
     if (!text) return <>{children}</>;
 
     return (
-        <span ref={triggerRef} className="relative inline-flex" onMouseEnter={show} onMouseLeave={hide}>
+        <span ref={triggerRef} className="relative inline-flex" onMouseEnter={show} onMouseLeave={hide} onMouseDown={hide}>
             {children}
             {visible &&
                 ReactDOM.createPortal(

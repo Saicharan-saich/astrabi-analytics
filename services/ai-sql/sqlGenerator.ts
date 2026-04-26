@@ -12,7 +12,7 @@ import type { DerivedMetric } from './derivedMetricEngine';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-const MODEL = 'qwen/qwen3-coder';
+const MODEL = 'deepseek/deepseek-r1';
 const TIMEOUT_MS = 20000;
 
 /**

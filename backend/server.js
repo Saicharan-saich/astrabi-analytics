@@ -807,7 +807,7 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
                 'X-Title': 'QuickInsight'
             },
             body: JSON.stringify({
-                model: model || 'qwen/qwen3-coder',
+                model: model || 'deepseek/deepseek-r1',
                 messages,
                 max_tokens: Math.min(max_tokens || 2000, 4000), // Cap at 4000
                 temperature: temperature ?? 0.1
@@ -913,7 +913,7 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
                 'X-Title': 'QuickInsight'
             },
             body: JSON.stringify({
-                model: 'google/gemini-2.0-flash-001',
+                model: 'deepseek/deepseek-r1',
                 messages: [
                     {
                         role: 'system',
