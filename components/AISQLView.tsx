@@ -4,7 +4,6 @@ import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, Form
 import { ChatMessage } from '../services/aiSQLService';
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { MODEL } from '../services/ai-sql/intentPlanner';
-import { getCacheStats, clearAISQLCache } from '../services/aiSqlCache';
 import { ChartVisualization } from './ChartVisualization';
 import { Tooltip } from './Tooltip';
 import { AIInsightPanel } from './AIInsightPanel';
@@ -49,8 +48,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const [pipelineResult, setPipelineResult] = useState<AISQLPipelineResult | null>(null);
     const [showGrowthPct, setShowGrowthPct] = useState(false);
     const [timeGrain, setTimeGrain] = useState<'day' | 'week' | 'month' | 'quarter' | 'year'>('month');
-    const [fromCache, setFromCache] = useState(false);
-    const [cacheCleared, setCacheCleared] = useState(false);
     const [showConfidenceBreakdown, setShowConfidenceBreakdown] = useState(false);
 
     const updateFormatting = (f: FormattingConfig) => setFormatting(f);
@@ -103,7 +100,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         try {
             // Run the full enterprise AI SQL pipeline
             const result = await runAISQLPipeline(query, dataset, undefined, undefined, timeGrain);
-            setFromCache(!!(result as any).fromCache);
 
             // ── Graceful empty-result handling ─────────────────────────
             // When the pipeline finds 0 rows it now returns a result with
@@ -252,7 +248,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         setIsInputCollapsed(false);
         setIsExplanationCollapsed(false);
         setPipelineResult(null);
-        setFromCache(false);
     };
 
     // Regenerate: force bypass cache
@@ -261,7 +256,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         setIsLoading(true);
         setError(null);
         setNoDataMsg(null);
-        setFromCache(false);
         try {
             const result = await runAISQLPipeline(query, dataset, undefined, undefined, timeGrain, true);
             if (result.rawData.length === 0 && result.explanation) {
@@ -314,7 +308,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     ? { diff: result.chart.growth.diff, pct: result.chart.growth.pct } : undefined,
                 secondaryYKeys: result.chart.secondaryYKeys,
             });
-            setFromCache(false);
         } catch (err: any) {
             setError(err.message || 'Regeneration failed.');
         } finally {
@@ -353,21 +346,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     </Tooltip>
                     <p className="text-gray-500 dark:text-slate-400 text-sm flex items-center justify-between">
                         <span>Ask any question — AI generates SQL, executes it on your data, and visualizes the results.</span>
-                        <button
-                            onClick={async () => {
-                                await clearAISQLCache();
-                                setCacheCleared(true);
-                                setTimeout(() => setCacheCleared(false), 2500);
-                            }}
-                            className="flex items-center gap-1.5 text-xs font-bold text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 px-3 py-1.5 rounded-lg transition-all active:scale-95 border border-red-200 dark:border-red-500/20 shrink-0 ml-4"
-                            title="Clear all cached AI SQL results"
-                        >
-                            {cacheCleared ? (
-                                <><Check className="w-3.5 h-3.5" /> Cache Cleared!</>
-                            ) : (
-                                <><RotateCcw className="w-3.5 h-3.5" /> Clear Cache</>
-                            )}
-                        </button>
                     </p>
                 </div>
 
@@ -617,7 +595,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                         <button
                                             onClick={handleRegenerate}
                                             className="flex items-center gap-1 text-[12px] font-bold text-cyan-600 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 px-2.5 py-1.5 rounded-lg transition-all active:scale-95 border border-cyan-200 dark:border-cyan-500/20"
-                                            title="Regenerate — bypass cache, call AI fresh"
+                                            title="Regenerate — call AI fresh"
                                         >
                                             <RefreshCw className="w-3.5 h-3.5" />
                                         </button>
@@ -669,12 +647,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                                             <span className="text-[10px] bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded-full font-bold">
                                                                 {pipelineResult.profile.rowCount} rows
                                                             </span>
-                                                            {/* Cache hit badge */}
-                                                            {fromCache && (
-                                                                <span className="text-[10px] bg-cyan-100 dark:bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 px-2 py-0.5 rounded-full font-bold flex items-center gap-1">
-                                                                    ⚡ Cached
-                                                                </span>
-                                                            )}
                                                         </div>
                                                         {/* Confidence Badge — clickable to expand breakdown */}
                                                         <div className="relative">

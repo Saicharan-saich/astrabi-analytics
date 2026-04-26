@@ -34,7 +34,6 @@ import { scoreConfidence } from './confidenceScorer';
 import { logAuditEntry } from './auditLogger';
 import { resolveTimeContext, augmentQuestionWithTime } from './timeResolver';
 import { processPlan } from './derivedMetricEngine';
-import { getCachedResult, setCachedResult } from '../aiSqlCache';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -73,40 +72,6 @@ export async function runAISQLPipeline(
 
     console.log('[AI SQL Pipeline] Starting for question:', question);
 
-    // ── Cache Lookup (skip if forceRefresh or external filters) ──
-    if (!forceRefresh && (!externalFilters || externalFilters.length === 0)) {
-        try {
-            const cached = await getCachedResult(question, dataset);
-            if (cached) {
-                console.log(`[Pipeline] ⚡ CACHE HIT — returning cached result (hits: ${cached.hitCount})`);
-                reportProgress('Cache hit! Loading result...', TOTAL_STEPS);
-
-                // Re-execute the cached SQL against current data to get fresh rows
-                const { executeSQL } = await import('../sqlExecutor');
-                const semanticModel = buildSemanticModel(dataset);
-                const execResult = executeSQL(dataset.rows, cached.sql, semanticModel.timeContext);
-                const chartData = execResult.data || [];
-
-                return {
-                    plan: cached.plan,
-                    sql: cached.sql,
-                    validation: cached.validation,
-                    rawData: chartData,
-                    chartData: chartData,
-                    profile: cached.profile,
-                    chart: cached.chart,
-                    confidence: cached.confidence,
-                    explanation: cached.explanation,
-                    columnsUsed: cached.columnsUsed,
-                    executionTimeMs: Math.round(performance.now() - startTime),
-                    repairAttempts: 0,
-                    fromCache: true,
-                } as AISQLPipelineResult & { fromCache: boolean };
-            }
-        } catch (err) {
-            console.warn('[Pipeline] Cache lookup failed, proceeding without cache:', err);
-        }
-    }
 
     if (externalFilters?.length) {
         console.log(`[Pipeline] ${externalFilters.length} external filter(s) provided from UI`);
@@ -760,12 +725,6 @@ export async function runAISQLPipeline(
         repairAttempts,
     };
 
-    // ── Cache Store (only for non-filtered, successful queries) ──
-    if (!externalFilters || externalFilters.length === 0) {
-        setCachedResult(question, dataset, pipelineResult).catch(err =>
-            console.warn('[Pipeline] Failed to cache result:', err)
-        );
-    }
 
     return pipelineResult;
 }
