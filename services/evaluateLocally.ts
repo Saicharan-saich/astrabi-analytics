@@ -1,5 +1,5 @@
-import { CanonicalMapping, Dataset, DimDateRow, QuestionTemplate, QueryConfig } from "../types";
-import { SqlGenerator, SqlQueryConfig } from './SqlGenerator';
+﻿import { CanonicalMapping, Dataset, DimDateRow, QuestionTemplate, QueryConfig } from "../types";
+import { buildQueryPlan, compileSQL, executeQueryPlan, validatePlan, dimensionId } from './queryPlan';
 import { DateRange, pad, getISOWeek } from './dateHelpers';
 
 // --- VALIDATION & SAFETY LAYERS ---
@@ -17,7 +17,7 @@ export const validateRequirements = (q: QuestionTemplate, mapping: CanonicalMapp
 export const validateGrainSafety = (q: QuestionTemplate, dataset: Dataset, mapping: CanonicalMapping): { safe: boolean; error?: string } => {
     // Validate that the dataset has enough data for the requested grain
     if (!dataset || !dataset.rows || dataset.rows.length === 0) {
-        return { safe: false, error: 'Dataset is empty — cannot analyze.' };
+        return { safe: false, error: 'Dataset is empty â€” cannot analyze.' };
     }
 
     // Check grain compatibility
@@ -48,7 +48,7 @@ export const validateGrainSafety = (q: QuestionTemplate, dataset: Dataset, mappi
 
 // --- LOCAL EVALUATION ENGINE ---
 export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: CanonicalMapping, dates: DateRange, query: QueryConfig, datasetName?: string, dimDate?: DimDateRow[]): any => {
-    // ── DEFENSIVE GUARD: Normalize comparison ──
+    // â”€â”€ DEFENSIVE GUARD: Normalize comparison â”€â”€
     // Strip invalid/stale comparison values so the comparison blocks never fire accidentally.
     const validComparisons = ['previous_period', 'same_period_last_year', 'same_period_last_n'];
     if ((query as any).comparison && !validComparisons.includes((query as any).comparison)) {
@@ -128,198 +128,71 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
 
     try {
         if (dq.id === 'custom_builder') {
-            // DYNAMIC BUILDER LOGIC
+            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+            // QUERYPLAN-BASED EXECUTION â€” Single Source of Truth
+            // The QueryPlan AST drives both the JS engine and SQL output.
+            // Comparison logic is applied as post-processing on the result.
+            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+
             const metricCol = query.metric;
             const dimCol = query.dimension;
+            const timeGrains = ['day', 'week', 'month', 'quarter', 'year'];
+            const isTimeDim = dimCol && timeGrains.includes(dimCol);
 
-            // Apply Filters
-            let filteredRows = rows;
-            const allUnfilteredRows = [...rows]; // Snapshot before time filtering for comparison lookups
+            // 1. BUILD QUERY PLAN from UI config
+            const plan = buildQueryPlan(
+                {
+                    metric: query.metric,
+                    aggregation: query.aggregation,
+                    dimension: query.dimension,
+                    timeFilter: query.timeFilter,
+                    filters: query.filters as Record<string, string[]>,
+                    measureFilters: query.measureFilters,
+                    dateFilters: query.dateFilters,
+                    sort: query.sort,
+                    limit: query.limit,
+                    secondaryMetrics: query.secondaryMetrics,
+                    secondaryMetricAggregations: query.secondaryMetricAggregations,
+                    secondaryDimensions: query.secondaryDimensions,
+                },
+                dateColKey,
+                dates,
+                datasetName || 'dataset'
+            );
 
-            // TIME FILTER — hoisted so comparison code can use exact boundaries
+            // 2. VALIDATE PLAN
+            const validation = validatePlan(plan);
+            if (validation.warnings.length > 0) {
+                console.warn(`[QueryPlan] Validation warnings:`, validation.warnings);
+            }
+
+            // 3. EXECUTE QUERY PLAN (WHERE â†’ GROUP â†’ AGG â†’ HAVING â†’ ORDER â†’ LIMIT)
+            const result = executeQueryPlan(plan, rows, dimDate);
+
+            // 4. COMPILE SQL from the same plan
+            const sql = compileSQL(plan);
+
+            // Bridge variables: map plan aliases back to names used by comparison code
+            const planDimKey = result.xKey;            // dimension output key (alias or column name)
+            const planMetricKey = result.yKey;         // primary metric alias
+            const secMetrics = result.secondaryYKeys || [];
+            const aggType = plan.metrics[0]?.aggregation || 'SUM';
+
+            // Extract resolved time filter boundaries from the plan (for comparison)
             let timeFilterStart = '1970-01-01';
             let timeFilterEnd = dates.today;
-
-            if (query.timeFilter && query.timeFilter !== 'all_time') {
-                const today = new Date(`${dates.today}T00:00:00Z`); // UTC anchor
-                const lastNMatch = query.timeFilter.match(/^last_(\d+)_(c?[a-z]+)$/);
-
-                // UTC Formatter
-                const formatDate = (d: Date) => d.toISOString().split('T')[0];
-
-                let startStr = '1970-01-01';
-                let endStr = dates.today;
-
-                if (query.timeFilter === 'today') {
-                    startStr = dates.today;
-                    endStr = dates.today;
-                } else if (query.timeFilter === 'yesterday') {
-                    startStr = dates.yesterday;
-                    endStr = dates.yesterday;
-                } else if (query.timeFilter === 'this_week') {
-                    startStr = dates.monday;
-                } else if (query.timeFilter === 'this_month') {
-                    startStr = dates.this_month_start;
-                } else if (query.timeFilter === 'this_quarter') {
-                    const d = new Date(today);
-                    const currentMonth = d.getUTCMonth();
-                    const qMonth = Math.floor(currentMonth / 3) * 3;
-                    d.setUTCMonth(qMonth, 1);
-                    startStr = formatDate(d);
-                } else if (query.timeFilter === 'this_year') {
-                    startStr = dates.year_start;
-                } else if (query.timeFilter === 'last_year') {
-                    startStr = dates.last_year_start;
-                    endStr = new Date(Date.UTC(today.getUTCFullYear() - 1, 11, 31)).toISOString().split('T')[0];
-                } else if (lastNMatch) {
-                    const n = parseInt(lastNMatch[1], 10);
-                    const unit = lastNMatch[2];
-                    if (unit === 'cyears') {
-                        // CALENDAR YEAR MODE
-                        const asOfYear = today.getUTCFullYear();
-                        startStr = formatDate(new Date(Date.UTC(asOfYear - n, 0, 1)));
-                        endStr = formatDate(new Date(Date.UTC(asOfYear - 1, 11, 31)));
-                    } else {
-                        const targetDate = new Date(today);
-                        if (unit === 'days') {
-                            targetDate.setUTCDate(today.getUTCDate() - n);
-                        } else if (unit === 'weeks') {
-                            targetDate.setUTCDate(today.getUTCDate() - (n * 7));
-                        } else if (unit === 'months') {
-                            targetDate.setUTCMonth(today.getUTCMonth() - n);
-                        } else if (unit === 'years') {
-                            targetDate.setUTCFullYear(today.getUTCFullYear() - n);
-                        }
-                        startStr = formatDate(targetDate);
-                    }
-                } else if (query.timeFilter === 'last_7_days') {
-                    startStr = dates.last_7_days;
-                } else if (query.timeFilter === 'last_30_days') {
-                    startStr = dates.last_30_days;
-                } else if (query.timeFilter === 'last_90_days') {
-                    const d = new Date(today);
-                    d.setUTCDate(d.getUTCDate() - 90);
-                    startStr = formatDate(d);
-                }
-
-                console.log(`[Engine] custom_builder time filter: ${query.timeFilter} → range [${startStr}, ${endStr}], rows before: ${filteredRows.length}`);
-                filteredRows = filteredRows.filter(r => {
-                    const dStr = date(r);
-                    return dStr >= startStr && dStr <= endStr;
-                });
-                console.log(`[Engine] rows after time filter: ${filteredRows.length}`);
-                // Expose exact filter boundaries for comparison code
-                timeFilterStart = startStr;
-                timeFilterEnd = endStr;
+            const timeRangeFilter = plan.filters.range.find(f => {
+                const fCol = f.column.toLowerCase().replace(/[_\s]+/g, '');
+                const dCol = dateColKey.toLowerCase().replace(/[_\s]+/g, '');
+                return fCol === dCol;
+            });
+            if (timeRangeFilter) {
+                timeFilterStart = timeRangeFilter.start || '1970-01-01';
+                timeFilterEnd = timeRangeFilter.end || dates.today;
             }
 
-            // DIMENSION FILTERS
-            if (query.filters) {
-                const sampleRow = filteredRows[0] || {};
-
-                Object.entries(query.filters).forEach(([col, allowedValues]) => {
-                    // Robust Key Lookup (Handle 'segment' vs 'Segment' mismatch)
-                    let effectiveCol = col;
-                    if (filteredRows.length > 0 && !(col in filteredRows[0])) {
-                        const keys = Object.keys(filteredRows[0]);
-                        const normalize = (s: string) => s.toLowerCase().replace(/[_\s]+/g, '');
-                        const target = normalize(col);
-                        const match = keys.find(k => normalize(k) === target);
-                        if (match) {
-                            effectiveCol = match;
-                        }
-                    }
-
-                    filteredRows = filteredRows.filter(r => {
-                        const val = String(r[effectiveCol] || '').trim();
-                        return allowedValues.some(allowed => val.toLowerCase() === String(allowed).toLowerCase());
-                    });
-                });
-            }
-
-            // MEASURE FILTERS
-            if (query.measureFilters) {
-                query.measureFilters.forEach((mf: any) => {
-                    filteredRows = filteredRows.filter(r => {
-                        const numVal = Number(String(r[mf.column] || 0).replace(/[$,]/g, '')) || 0;
-                        const filterVal = Number(mf.value) || 0;
-                        switch (mf.operator) {
-                            case '>=': return numVal >= filterVal;
-                            case '<=': return numVal <= filterVal;
-                            case '>': return numVal > filterVal;
-                            case '<': return numVal < filterVal;
-                            case '=': return numVal === filterVal;
-                            case '!=': return numVal !== filterVal;
-                            default: return true;
-                        }
-                    });
-                });
-            }
-
-            // DATE FILTERS (supports both hierarchy values and range mode)
-            if (query.dateFilters && query.dateFilters.length > 0) {
-                query.dateFilters.forEach((df: any) => {
-                    const sampleRow = filteredRows[0] || {};
-                    const actualKey = Object.keys(sampleRow).find(k => k.toLowerCase() === df.column.toLowerCase()) || df.column;
-
-                    filteredRows = filteredRows.filter(r => {
-                        const dateVal = r[actualKey];
-                        if (!dateVal || dateVal === 'null' || dateVal === 'undefined' || dateVal === '1970-01-01') return false;
-
-                        const dateStr = String(dateVal);
-                        let d: Date | null = null;
-
-                        if (dateStr.match(/^\d{4}-\d{2}-\d{2}/)) {
-                            const parts = dateStr.split('-').map(Number);
-                            d = new Date(parts[0], parts[1] - 1, parts[2], 12);
-                        } else if (dateStr.indexOf('/') > -1) {
-                            const parts = dateStr.split('/');
-                            if (parts.length === 3) {
-                                d = new Date(Number(parts[2]), Number(parts[0]) - 1, Number(parts[1]), 12);
-                            }
-                        } else {
-                            d = new Date(dateStr);
-                        }
-
-                        if (!d || isNaN(d.getTime())) return false;
-
-                        // RANGE MODE: value contains "start__end"
-                        if (df.values.length === 1 && df.values[0].includes('__')) {
-                            const [rangeStart, rangeEnd] = df.values[0].split('__');
-                            const isoDate = d.toISOString().split('T')[0];
-                            return isoDate >= rangeStart && isoDate <= rangeEnd;
-                        }
-
-                        // HIERARCHY MODE: match grain-formatted value
-                        const year = d.getFullYear();
-                        const month = d.getMonth() + 1;
-                        const day = d.getDate();
-                        const pad2 = pad;
-
-                        let formattedValue = '';
-                        if (df.timeGrain === 'year') {
-                            formattedValue = `${year}`;
-                        } else if (df.timeGrain === 'quarter') {
-                            const q = Math.ceil(month / 3);
-                            formattedValue = `${year}-Q${q}`;
-                        } else if (df.timeGrain === 'month') {
-                            formattedValue = `${year}-${pad2(month)}`;
-                        } else if (df.timeGrain === 'week') {
-                            const week = getISOWeek(d);
-                            formattedValue = `${year}-W${pad2(week)}`;
-                        } else if (df.timeGrain === 'day') {
-                            formattedValue = `${year}-${pad2(month)}-${pad2(day)}`;
-                        }
-
-                        return df.values.includes(formattedValue);
-                    });
-                });
-            }
-
-            // --- CONTEXT FILTERED ROWS ---
-            // Rows with dimension/measure/date filters applied but WITHOUT time filter.
-            // Used by comparison blocks so the comparison period respects user's context filters
-            // (e.g., only Consumer segment) while allowing different time ranges.
+            // Build context-filtered rows (dimension/measure filters but NO time filter)
+            // Used by comparison blocks to access historical data
             let contextFilteredRows = [...rows];
             if (query.filters) {
                 Object.entries(query.filters).forEach(([col, allowedValues]) => {
@@ -333,214 +206,21 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     }
                     contextFilteredRows = contextFilteredRows.filter(r => {
                         const val = String(r[effectiveCol] || '').trim();
-                        return allowedValues.some(allowed => val.toLowerCase() === String(allowed).toLowerCase());
-                    });
-                });
-            }
-            if (query.measureFilters) {
-                query.measureFilters.forEach((mf: any) => {
-                    contextFilteredRows = contextFilteredRows.filter(r => {
-                        const numVal = Number(String(r[mf.column] || 0).replace(/[$,]/g, '')) || 0;
-                        const filterVal = Number(mf.value) || 0;
-                        switch (mf.operator) {
-                            case '>=': return numVal >= filterVal;
-                            case '<=': return numVal <= filterVal;
-                            case '>': return numVal > filterVal;
-                            case '<': return numVal < filterVal;
-                            case '=': return numVal === filterVal;
-                            case '!=': return numVal !== filterVal;
-                            default: return true;
-                        }
+                        return (allowedValues as string[]).some(allowed => val.toLowerCase() === String(allowed).toLowerCase());
                     });
                 });
             }
 
-            // Aggregation
-            const groups: any = {};
-            const timeGrains = ['day', 'week', 'month', 'quarter', 'year'];
-            const isTimeDim = dimCol && timeGrains.includes(dimCol);
-            const secMetrics = query.secondaryMetrics || [];
+            // Use the executed data (already sorted and limited by the plan engine)
+            data = result.data;
 
-            // ── PRE-POPULATE DATE BUCKETS FROM DIM DATE ─────────────────────
-            // This ensures that time periods with zero transactions still appear
-            // in charts (Power BI-style continuous date spine).
-            if (isTimeDim && dimDate && dimDate.length > 0) {
-                const emptyStats = () => ({ sum: 0, count: 0, min: 0, max: 0, distinct: new Set(), sec: {} as Record<string, { sum: number; count: number; min: number; max: number }> });
-                for (const dr of dimDate) {
-                    // Only include dates within the active time filter range
-                    if (dr.date_key < timeFilterStart || dr.date_key > timeFilterEnd) continue;
-
-                    let bucketKey = '';
-                    if (dimCol === 'day') {
-                        bucketKey = dr.date_key;
-                    } else if (dimCol === 'week') {
-                        bucketKey = `${dr.year}-W${pad(dr.week_of_year)}`;
-                    } else if (dimCol === 'month') {
-                        bucketKey = `${dr.year}-${pad(dr.month)}`;
-                    } else if (dimCol === 'quarter') {
-                        bucketKey = `${dr.year}-Q${dr.quarter}`;
-                    } else if (dimCol === 'year') {
-                        bucketKey = `${dr.year}`;
-                    }
-
-                    if (bucketKey && !groups[bucketKey]) {
-                        const stats = emptyStats();
-                        for (const sm of secMetrics) {
-                            stats.sec[sm] = { sum: 0, count: 0, min: 0, max: 0 };
-                        }
-                        groups[bucketKey] = stats;
-                    }
-                }
-                console.log(`[DimDate] Pre-populated ${Object.keys(groups).length} ${dimCol} buckets from dimDate spine`);
-            }
-
-            const secDims = query.secondaryDimensions || [];
-
-            filteredRows.forEach(r => {
-                let k = dimCol ? String(r[dimCol] || 'Unknown') : 'Total';
-                if (isTimeDim) {
-                    const dStr = date(r);
-                    if (dStr && dStr !== '1970-01-01') {
-                        const parts = dStr.split('-').map(Number);
-                        const d = new Date(parts[0], parts[1] - 1, parts[2], 12);
-                        const y = d.getFullYear();
-                        const m = d.getMonth() + 1;
-                        const day = d.getDate();
-                        const pad2 = pad;
-
-                        if (dimCol === 'day') {
-                            k = `${y}-${pad2(m)}-${pad2(day)}`;
-                        } else if (dimCol === 'week') {
-                            const week = getISOWeek(d);
-                            k = `${y}-W${pad2(week)}`;
-                        } else if (dimCol === 'month') {
-                            k = `${y}-${pad(m)}`;
-                        } else if (dimCol === 'quarter') {
-                            const q = Math.ceil(m / 3);
-                            k = `${y}-Q${q}`;
-                        } else if (dimCol === 'year') {
-                            k = `${y}`;
-                        }
-                    }
-                }
-
-                // Append secondary dimension values to the key for multi-dimension grouping
-                const secDimValues: string[] = [];
-                for (const sd of secDims) {
-                    const sdVal = String(r[sd] || 'Unknown');
-                    secDimValues.push(sdVal);
-                    k += ` | ${sdVal}`;
-                }
-
-                const rawV = r[metricCol];
-                const v = Number(String(rawV || 0).replace(/[$,]/g, '')) || 0;
-
-                if (!groups[k]) {
-                    groups[k] = { sum: 0, count: 0, min: v, max: v, distinct: new Set(), sec: {} as Record<string, { sum: number; count: number; min: number; max: number }>, secDimValues };
-                    // Initialize secondary metric accumulators
-                    for (const sm of secMetrics) {
-                        // Case-insensitive column lookup
-                        const smLower = sm.toLowerCase();
-                        const matchKey = Object.keys(r).find(k => k.toLowerCase() === smLower) || sm;
-                        const sv = Number(String(r[matchKey] || 0).replace(/[$,]/g, '')) || 0;
-                        groups[k].sec[sm] = { sum: sv, count: 1, min: sv, max: sv };
-                    }
-                } else {
-                    // Accumulate secondary metrics
-                    for (const sm of secMetrics) {
-                        const smLower = sm.toLowerCase();
-                        const matchKey = Object.keys(r).find(k => k.toLowerCase() === smLower) || sm;
-                        const sv = Number(String(r[matchKey] || 0).replace(/[$,]/g, '')) || 0;
-                        if (!groups[k].sec[sm]) {
-                            groups[k].sec[sm] = { sum: sv, count: 1, min: sv, max: sv };
-                        } else {
-                            groups[k].sec[sm].sum += sv;
-                            groups[k].sec[sm].count += 1;
-                            groups[k].sec[sm].min = Math.min(groups[k].sec[sm].min, sv);
-                            groups[k].sec[sm].max = Math.max(groups[k].sec[sm].max, sv);
-                        }
-                    }
-                }
-
-                groups[k].sum += v;
-                groups[k].count += 1;
-                groups[k].min = Math.min(groups[k].min, v);
-                groups[k].max = Math.max(groups[k].max, v);
-                if (rawV !== undefined && rawV !== null) groups[k].distinct.add(String(rawV));
-            });
-
-            // Convert groups to array based on Aggregation Type
-            let aggType = query.aggregation || 'SUM';
-            // ── ID COLUMN GUARD: Never SUM an ID column ──
-            // If the metric column name indicates an ID, force COUNT_DISTINCT
-            const metricLower = metricCol.toLowerCase();
-            if (aggType === 'SUM' && (metricLower.endsWith('_id') || metricLower.endsWith('id') || metricLower.endsWith('_key') || metricLower === 'id')) {
-                aggType = 'COUNT_DISTINCT';
-                console.warn(`[Engine] Overrode SUM → COUNT_DISTINCT for ID column "${metricCol}"`);
-            }
-
-            // Helper to resolve aggregate value
-            const resolveAgg = (stats: { sum: number; count: number; min: number; max: number }, agg: string) => {
-                switch (agg) {
-                    case 'AVG': return stats.sum / (stats.count || 1);
-                    case 'COUNT': return stats.count;
-                    case 'MAX': return stats.max;
-                    case 'MIN': return stats.min;
-                    case 'SUM': default: return stats.sum;
-                }
-            };
-
-            data = Object.entries(groups).map(([key, stats]: [string, any]) => {
-                let finalValue = 0;
-                switch (aggType) {
-                    case 'AVG': finalValue = stats.sum / (stats.count || 1); break;
-                    case 'COUNT': finalValue = stats.count; break;
-                    case 'COUNT_DISTINCT': finalValue = stats.distinct.size; break;
-                    case 'MAX': finalValue = stats.max; break;
-                    case 'MIN': finalValue = stats.min; break;
-                    case 'SUM': default: finalValue = stats.sum; break;
-                }
-
-                const row: any = {
-                    [dimCol || 'metric']: key,
-                    [metricCol]: finalValue
-                };
-
-                // Add secondary dimension columns to the row
-                if (secDims.length > 0 && stats.secDimValues) {
-                    secDims.forEach((sd: string, idx: number) => {
-                        row[sd] = stats.secDimValues[idx] || 'Unknown';
-                    });
-                }
-
-                // Add secondary metric values to the row
-                // Use user-specified aggregation if available, else smart auto-detect
-                const secAggOverrides = query.secondaryMetricAggregations || {};
-                for (const sm of secMetrics) {
-                    if (stats.sec[sm]) {
-                        let secAgg: string;
-                        if (secAggOverrides[sm]) {
-                            // User explicitly chose the aggregation
-                            secAgg = secAggOverrides[sm];
-                        } else {
-                            // Smart auto-detect: rate/ratio/discount/avg metrics use AVG, others follow primary
-                            const smLower = sm.toLowerCase();
-                            const isAvgMetric = smLower.includes('discount') || smLower.includes('rate') || smLower.includes('ratio')
-                                || smLower.includes('avg') || smLower.includes('average') || smLower.includes('margin')
-                                || smLower.includes('percent') || smLower.includes('pct');
-                            secAgg = isAvgMetric ? 'AVG' : (aggType === 'COUNT_DISTINCT' ? 'SUM' : aggType);
-                        }
-                        row[sm] = resolveAgg(stats.sec[sm], secAgg);
-                    }
-                }
-
-                return row;
-            });
+            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+            // COMPARISON â€” Post-Processing (v1: stays outside the plan)
+            // This block injects previous_value and growth_pct into data rows.
+            // Uses planDimKey/planMetricKey (the alias keys) for data access.
+            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 
             // --- TREND COMPARISON MODE (Dual-Line Time Series) ---
-            // When dimension is a time grain and comparison is active, generate dual-line
-            // overlay data. The `data` array is already aggregated by grain at this point.
-            // We scan raw `allRows` to build the comparison period using the same bucket format.
             if ((query.comparison === 'previous_period' || query.comparison === 'same_period_last_year' || query.comparison === 'same_period_last_n')
                 && isTimeDim) {
 
@@ -549,9 +229,8 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 console.log(`[Engine Comparison] contextFilteredRows.length=${contextFilteredRows.length}`);
 
                 const grain = query.dimension || 'day';
-                const allRows = contextFilteredRows; // Use context-filtered data (dimension/measure filters applied, no time filter)
+                const allRows = contextFilteredRows;
 
-                // Bucket a raw date string using the SAME format as the main aggregator above
                 const formatBucket = (dateStr: string): string => {
                     const parts = dateStr.split('-').map(Number);
                     const d = new Date(parts[0], parts[1] - 1, parts[2] || 1, 12);
@@ -573,86 +252,65 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     return dateStr;
                 };
 
-                // 1. Current period: pull directly from aggregated `data`
                 const currentGroups: Record<string, number> = {};
                 data.forEach((d: any) => {
-                    const key = String(d[dimCol] || '');
-                    currentGroups[key] = (currentGroups[key] || 0) + (Number(d[metricCol]) || 0);
+                    const key = String(d[planDimKey] || '');
+                    currentGroups[key] = (currentGroups[key] || 0) + (Number(d[planMetricKey]) || 0);
                 });
 
-                // 2. Use exact time filter boundaries for comparison (not derived from actual transaction dates)
                 const minDate = timeFilterStart;
                 const maxDate = timeFilterEnd;
 
                 console.log(`[Engine Comparison] currentGroups:`, JSON.stringify(currentGroups), `minDate=${minDate}, maxDate=${maxDate}`);
 
-                // 3. Build comparison period data from raw allRows
                 const compGroups: Record<string, number> = {};
-                const prevLabelMap: Record<string, string> = {}; // current bucket → original previous bucket label
+                const prevLabelMap: Record<string, string> = {};
 
                 if (query.comparison === 'same_period_last_year' && minDate && maxDate) {
-                    // Shift date range back 1 year
                     const shiftDate = (ds: string, years: number): string => {
                         const d = new Date(`${ds}T00:00:00Z`);
                         d.setUTCFullYear(d.getUTCFullYear() + years);
                         return d.toISOString().split('T')[0];
                     };
                     const lyStart = shiftDate(minDate, -1);
-                    // Use exact shifted date — no end-of-month extension
-                    // (extending picks up extra days like Dec 31 when current is Dec 30)
                     const lyEnd = shiftDate(maxDate, -1);
 
-                    // Track original previous-year buckets
-                    const lyBucketMap: Record<string, string> = {}; // shifted(current-aligned) → original
                     allRows.forEach(r => {
-                        const d = date(r);
-                        if (d >= lyStart && d <= lyEnd) {
-                            const shifted = shiftDate(d, 1);
-                            const alignedBucket = formatBucket(shifted);
-                            const originalBucket = formatBucket(d);
-                            compGroups[alignedBucket] = (compGroups[alignedBucket] || 0) + (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
-                            if (!lyBucketMap[alignedBucket]) lyBucketMap[alignedBucket] = originalBucket;
+                        const dStr = date(r);
+                        if (dStr >= lyStart && dStr <= lyEnd) {
+                            const bucket = formatBucket(dStr);
+                            const shiftedBucket = formatBucket(shiftDate(dStr, 1));
+                            compGroups[shiftedBucket] = (compGroups[shiftedBucket] || 0) + (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
+                            prevLabelMap[shiftedBucket] = bucket;
                         }
                     });
-                    // Copy to prevLabelMap
-                    Object.entries(lyBucketMap).forEach(([k, v]) => { prevLabelMap[k] = v; });
-
                 } else if (query.comparison === 'previous_period' && minDate && maxDate) {
-                    // Previous period = same length span ending right before current period starts
-                    const spanMs = new Date(maxDate).getTime() - new Date(minDate).getTime();
-                    const spanDays = Math.round(spanMs / 86400000) + 1;
-                    const prevEnd = new Date(new Date(minDate).getTime() - 86400000);
-                    const prevStart = new Date(prevEnd.getTime() - (spanDays - 1) * 86400000);
-                    const prevStartStr = prevStart.toISOString().split('T')[0];
-                    const prevEndStr = prevEnd.toISOString().split('T')[0];
+                    const startD = new Date(`${minDate}T00:00:00Z`);
+                    const endD = new Date(`${maxDate}T00:00:00Z`);
+                    const periodMs = endD.getTime() - startD.getTime();
+                    const periodDays = Math.max(1, Math.round(periodMs / 86400000));
 
-                    console.log(`[Engine Comparison] previous_period: prevStart=${prevStartStr}, prevEnd=${prevEndStr}`);
+                    const prevEndD = new Date(startD.getTime() - 86400000);
+                    const prevStartD = new Date(prevEndD.getTime() - (periodDays - 1) * 86400000);
+                    const prevStart = prevStartD.toISOString().split('T')[0];
+                    const prevEnd = prevEndD.toISOString().split('T')[0];
 
-                    // Bucket previous period data
-                    const prevGrouped: Record<string, number> = {};
+                    const shiftForward = (d: string): string => {
+                        const dt = new Date(`${d}T00:00:00Z`);
+                        dt.setUTCDate(dt.getUTCDate() + periodDays);
+                        return dt.toISOString().split('T')[0];
+                    };
+
                     allRows.forEach(r => {
-                        const d = date(r);
-                        if (d >= prevStartStr && d <= prevEndStr) {
-                            const bucket = formatBucket(d);
-                            prevGrouped[bucket] = (prevGrouped[bucket] || 0) + (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
-                        }
-                    });
-
-                    console.log(`[Engine Comparison] prevGrouped:`, JSON.stringify(prevGrouped));
-
-                    // Map previous period buckets positionally to current period buckets
-                    const prevKeys = Object.keys(prevGrouped).sort();
-                    const currKeys = Object.keys(currentGroups).sort();
-                    prevKeys.forEach((pk, i) => {
-                        if (i < currKeys.length) {
-                            compGroups[currKeys[i]] = prevGrouped[pk];
-                            prevLabelMap[currKeys[i]] = pk; // store original prev label
+                        const dStr = date(r);
+                        if (dStr >= prevStart && dStr <= prevEnd) {
+                            const bucket = formatBucket(dStr);
+                            const shiftedBucket = formatBucket(shiftForward(dStr));
+                            compGroups[shiftedBucket] = (compGroups[shiftedBucket] || 0) + (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
+                            prevLabelMap[shiftedBucket] = bucket;
                         }
                     });
                 } else if (query.comparison === 'same_period_last_n' && minDate && maxDate) {
-                    // LAST N COMPLETE PERIODS: Compare current period with the last N
-                    // complete calendar periods anchored to the as-of date.
-                    // E.g. Today vs Last 1 Month = today's sales vs ALL of last month's sales.
                     const compGrain = query.comparisonGrain || 'day';
                     const compOffset = query.comparisonOffset || 1;
                     const asOf = new Date(`${dates.today}T00:00:00Z`);
@@ -679,124 +337,41 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                         const startD = new Date(Date.UTC(endD.getUTCFullYear(), endD.getUTCMonth() + 1 - (compOffset * 3), 1));
                         prevStart = fmt(startD); prevEnd = fmt(endD);
                     } else {
-                        // year
                         const endD = new Date(Date.UTC(asOf.getUTCFullYear() - 1, 11, 31));
                         const startD = new Date(Date.UTC(asOf.getUTCFullYear() - compOffset, 0, 1));
                         prevStart = fmt(startD); prevEnd = fmt(endD);
                     }
 
-                    console.log(`[Engine Comparison] last_n_complete: compGrain=${compGrain}, compOffset=${compOffset}, prevStart=${prevStart}, prevEnd=${prevEnd}`);
-
-                    // Sum ALL previous period data into a single total for comparison
-                    let prevTotal = 0;
                     allRows.forEach(r => {
-                        const d = date(r);
-                        if (d >= prevStart && d <= prevEnd) {
-                            prevTotal += (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
+                        const dStr = date(r);
+                        if (dStr >= prevStart && dStr <= prevEnd) {
+                            const bucket = formatBucket(dStr);
+                            compGroups[bucket] = (compGroups[bucket] || 0) + (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
                         }
                     });
-
-                    console.log(`[Engine Comparison] prevTotal=${prevTotal}`);
-
-                    // Assign the total to each current bucket so all bars/points get the comparison
-                    const currKeys = Object.keys(currentGroups).sort();
-                    const periodLabel = `Last ${compOffset} ${compGrain}${compOffset > 1 ? 's' : ''}`;
-                    currKeys.forEach(ck => {
-                        compGroups[ck] = prevTotal;
-                        prevLabelMap[ck] = `${prevStart} to ${prevEnd}`;
-                    });
                 }
 
-                // 4. Merge into dual-line data, only overwrite data if we found some comparison
-                console.log(`[Engine Comparison] compGroups:`, JSON.stringify(compGroups));
-                if (Object.keys(compGroups).length > 0) {
-                    // Build a lookup of original data rows to preserve secondary metric values
-                    const originalDataMap: Record<string, any> = {};
-                    data.forEach((d: any) => {
-                        const key = String(d[dimCol || 'period'] || '');
-                        originalDataMap[key] = d;
-                    });
-
-                    const allKeys = [...new Set([...Object.keys(currentGroups), ...Object.keys(compGroups)])].sort();
-                    data = allKeys.map(key => ({
-                        // Spread original row first to preserve secondary metrics, then override with comparison fields
-                        ...(originalDataMap[key] || {}),
-                        [dimCol || 'period']: key,
-                        [metricCol]: currentGroups[key] || 0,
-                        previous_value: compGroups[key] !== undefined ? compGroups[key] : undefined,
-                        previous_period_label: prevLabelMap[key] || undefined,
-                        growth_pct: compGroups[key] && compGroups[key] !== 0
-                            ? (((currentGroups[key] || 0) - compGroups[key]) / Math.abs(compGroups[key])) * 100
-                            : undefined
-                    }));
-                    console.log(`[Engine Comparison] FINAL merged data:`, JSON.stringify(data));
-                } else {
-                    console.log(`[Engine Comparison] NO compGroups found — comparison data is empty!`);
-                }
-            } else {
-                if (query.comparison) {
-                    console.log(`[Engine Comparison] SKIPPED trend comparison. comparison=${query.comparison}, isTimeDim=${isTimeDim}, dim=${query.dimension}`);
-                }
-            }
-
-            // --- COMPARISON LOGIC (Previous Period — Time-based, Non-Time Dimension) ---
-            // For categorical dimensions with previous_period comparison, compute the metric
-            // for the equivalent previous time period (e.g., yesterday, last week) per category.
-            const hasGrowthCalc = (query as any).tableCalculations?.some((tc: string) =>
-                ['pct_change', 'diff_from_prev', 'pct_diff_from_prev'].includes(tc)
-            );
-
-            // Only apply sequential LAG if explicitly requested via tableCalculations (not comparison mode)
-            if (hasGrowthCalc && !query.comparison) {
-                console.log(`[Engine Comparison] ENTERED growth calc LAG block. dimCol='${dimCol}', data.length=${data.length}`);
-
-                for (let i = 0; i < data.length; i++) {
-                    if (i === 0) {
-                        data[i].previous_value = undefined;
-                        data[i].difference = undefined;
-                        data[i].growth_pct = undefined;
+                // Merge comparison data into result
+                data.forEach((d: any) => {
+                    const key = String(d[planDimKey] || '');
+                    const prevVal = compGroups[key];
+                    const current = Number(d[planMetricKey]) || 0;
+                    d.previous_value = prevVal !== undefined ? prevVal : undefined;
+                    d.previous_label = prevLabelMap[key] || undefined;
+                    if (prevVal !== undefined && prevVal !== 0) {
+                        d.growth_pct = ((current - prevVal) / Math.abs(prevVal)) * 100;
+                    } else if (current !== 0 && prevVal !== undefined) {
+                        d.growth_pct = 100;
                     } else {
-                        const current = Number(data[i][metricCol]) || 0;
-                        const prev = Number(data[i - 1][metricCol]) || 0;
-
-                        data[i].previous_value = prev;
-                        data[i].difference = current - prev;
-
-                        if (prev !== 0) {
-                            data[i].growth_pct = ((current - prev) / Math.abs(prev)) * 100;
-                        } else if (current !== 0) {
-                            data[i].growth_pct = 100;
-                        } else {
-                            data[i].growth_pct = 0;
-                        }
+                        d.growth_pct = undefined;
                     }
-                }
+                });
             }
 
-            // For previous_period with non-time dimension, compute time-based previous period per category
+            // --- NON-TIME DIMENSION COMPARISON ---
             if (query.comparison === 'previous_period' && !isTimeDim) {
-                // When no explicit time filter was set, derive boundaries from the
-                // actual data dates so the comparison window is meaningful.
-                let effStart = timeFilterStart;
-                let effEnd = timeFilterEnd;
-                if (effStart === '1970-01-01') {
-                    // Scan rows to find actual min/max dates
-                    let dataMin = '9999-12-31';
-                    let dataMax = '0000-01-01';
-                    for (const r of contextFilteredRows) {
-                        const d = date(r);
-                        if (d && d !== '1970-01-01') {
-                            if (d < dataMin) dataMin = d;
-                            if (d > dataMax) dataMax = d;
-                        }
-                    }
-                    if (dataMin <= dataMax) {
-                        effStart = dataMin;
-                        effEnd = dataMax;
-                    }
-                }
-
-                console.log(`[Engine Comparison] ENTERED previous_period NON-TIME-DIM. dimCol='${dimCol}', timeFilterStart=${effStart}, timeFilterEnd=${effEnd}`);
+                const effStart = timeFilterStart;
+                const effEnd = timeFilterEnd;
 
                 const allRows = contextFilteredRows;
                 const startD = new Date(`${effStart}T00:00:00Z`);
@@ -804,49 +379,46 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 const periodMs = endD.getTime() - startD.getTime();
                 const periodDays = Math.max(1, Math.round(periodMs / 86400000));
 
-                // Previous period: shift back by the same number of days
-                const prevEndD = new Date(startD.getTime() - 86400000); // day before current start
+                const prevEndD = new Date(startD.getTime() - 86400000);
                 const prevStartD = new Date(prevEndD.getTime() - (periodDays - 1) * 86400000);
                 const prevStart = prevStartD.toISOString().split('T')[0];
                 const prevEnd = prevEndD.toISOString().split('T')[0];
 
-                console.log(`[Engine Comparison] Previous period: ${prevStart} → ${prevEnd} (${periodDays} days)`);
+                console.log(`[Engine Comparison] Previous period: ${prevStart} â†’ ${prevEnd} (${periodDays} days)`);
 
-                // Aggregate previous period data by dimension
-                const prevGroups: Record<string, { sum: number; count: number; min: number; max: number }> = {};
+                const prevGroups: Record<string, { sum: number; count: number; min: number; max: number; distinct: Set<string> }> = {};
                 allRows.forEach(r => {
                     const d = date(r);
                     if (d >= prevStart && d <= prevEnd) {
                         const key = dimCol ? String(r[dimCol] || 'Unknown') : '__total__';
                         const v = Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0;
                         if (!prevGroups[key]) {
-                            prevGroups[key] = { sum: v, count: 1, min: v, max: v };
+                            prevGroups[key] = { sum: v, count: 1, min: v, max: v, distinct: new Set([String(r[metricCol])]) };
                         } else {
                             prevGroups[key].sum += v;
                             prevGroups[key].count += 1;
                             prevGroups[key].min = Math.min(prevGroups[key].min, v);
                             prevGroups[key].max = Math.max(prevGroups[key].max, v);
+                            if (r[metricCol] !== undefined && r[metricCol] !== null) prevGroups[key].distinct.add(String(r[metricCol]));
                         }
                     }
                 });
 
-                console.log(`[Engine Comparison] prevGroups:`, JSON.stringify(Object.fromEntries(Object.entries(prevGroups).map(([k, v]) => [k, v.sum]))));
-
-                const aggType = query.aggregation || 'SUM';
                 data.forEach((d: any) => {
-                    const key = dimCol ? String(d[dimCol] || '') : '__total__';
+                    const key = dimCol ? String(d[planDimKey] || '') : '__total__';
                     const stats = prevGroups[key];
                     if (stats) {
                         let prevVal: number;
                         switch (aggType) {
                             case 'AVG': prevVal = stats.sum / (stats.count || 1); break;
                             case 'COUNT': prevVal = stats.count; break;
+                            case 'COUNT_DISTINCT': prevVal = stats.distinct.size; break;
                             case 'MAX': prevVal = stats.max; break;
                             case 'MIN': prevVal = stats.min; break;
                             case 'SUM': default: prevVal = stats.sum; break;
                         }
                         d.previous_value = prevVal;
-                        const current = Number(d[metricCol]) || 0;
+                        const current = Number(d[planMetricKey]) || 0;
                         if (prevVal !== 0) {
                             d.growth_pct = ((current - prevVal) / Math.abs(prevVal)) * 100;
                         } else if (current !== 0) {
@@ -859,111 +431,81 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                         d.growth_pct = undefined;
                     }
                 });
-
-                console.log(`[Engine Comparison] data after previous_period merge:`, JSON.stringify(data.map((d: any) => ({ dim: d[dimCol], metric: d[metricCol], prev: d.previous_value, growth: d.growth_pct }))));
             }
 
-            // --- SAME PERIOD LAST YEAR (YoY) COMPARISON ---
-            // For each data point, find the equivalent from 1 year ago
+            // --- SAME PERIOD LAST YEAR (Non-Time-Dim) ---
             if (query.comparison === 'same_period_last_year' && !isTimeDim) {
-                console.log(`[Engine Comparison] ENTERED same_period_last_year (non-time-dim). dimCol='${dimCol}'`);
-                // Build a lookup of last year's data from the FULL dataset (pre-filtered)
-                const allRows = contextFilteredRows;  // Context-filtered: dimension/measure filters applied, no time filter
-                const lyGroups: Record<string, number> = {};
-
-                // Use exact time filter boundaries (not derived from data which has category labels)
+                const allRows = contextFilteredRows;
+                const lyGroups: Record<string, { sum: number; count: number; min: number; max: number; distinct: Set<string> }> = {};
                 const minDate = timeFilterStart;
                 const maxDate = timeFilterEnd;
 
-                if (isTimeDim && minDate && maxDate) {
-                    // Shift date range back 1 year
-                    const shiftYear = (dateStr: string) => {
-                        const d = new Date(`${dateStr}T00:00:00Z`);
-                        d.setUTCFullYear(d.getUTCFullYear() - 1);
-                        return d.toISOString().split('T')[0];
-                    };
-                    const lyStart = shiftYear(minDate);
-                    const lyEnd = shiftYear(maxDate);
-
-                    // Aggregate last year's data from all rows
-                    allRows.forEach(r => {
-                        const d = date(r);
-                        if (d >= lyStart && d <= lyEnd) {
-                            const key = shiftYear(d); // Shift BACK to get the "current year equivalent" key
-                            // Actually we need to shift FORWARD: LY date → this year date for matching
-                            const fwd = new Date(`${d}T00:00:00Z`);
-                            fwd.setUTCFullYear(fwd.getUTCFullYear() + 1);
-                            const fwdKey = fwd.toISOString().split('T')[0];
-                            lyGroups[fwdKey] = (lyGroups[fwdKey] || 0) + (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
-                        }
-                    });
-
-                    // Attach previous_value from last year
-                    data.forEach(d => {
-                        const key = String(d[dimCol] || '');
-                        const lyVal = lyGroups[key];
-                        const current = Number(d[metricCol]) || 0;
-                        d.previous_value = lyVal !== undefined ? lyVal : undefined;
-                        if (lyVal !== undefined && lyVal !== 0) {
-                            d.growth_pct = ((current - lyVal) / Math.abs(lyVal)) * 100;
-                        } else if (current !== 0 && lyVal !== undefined) {
-                            d.growth_pct = 100;
-                        } else {
-                            d.growth_pct = undefined;
-                        }
-                    });
-                } else if (minDate && maxDate) {
-                    // Categorical dimension: aggregate same categories from the equivalent prior year span
+                if (minDate && maxDate) {
                     const shiftYear = (dateStr: string) => {
                         const d = new Date(`${dateStr}T00:00:00Z`);
                         d.setUTCFullYear(d.getUTCFullYear() - 1);
                         return d.toISOString().split('T')[0];
                     };
                     const lyStartStr = shiftYear(minDate);
-                    // Use exact shifted date — no end-of-month extension
                     const lyEndStr = shiftYear(maxDate);
 
                     allRows.forEach(r => {
                         const d = date(r);
                         if (d >= lyStartStr && d <= lyEndStr) {
                             const key = dimCol ? String(r[dimCol] || 'Unknown') : '__total__';
-                            lyGroups[key] = (lyGroups[key] || 0) + (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
+                            const v = Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0;
+                            if (!lyGroups[key]) {
+                                lyGroups[key] = { sum: v, count: 1, min: v, max: v, distinct: new Set([String(r[metricCol])]) };
+                            } else {
+                                lyGroups[key].sum += v;
+                                lyGroups[key].count += 1;
+                                lyGroups[key].min = Math.min(lyGroups[key].min, v);
+                                lyGroups[key].max = Math.max(lyGroups[key].max, v);
+                                if (r[metricCol] !== undefined && r[metricCol] !== null) lyGroups[key].distinct.add(String(r[metricCol]));
+                            }
                         }
                     });
 
-                    data.forEach(d => {
-                        const key = dimCol ? String(d[dimCol] || '') : '__total__';
-                        const lyVal = lyGroups[key];
-                        const current = Number(d[metricCol]) || 0;
-                        d.previous_value = lyVal !== undefined ? lyVal : undefined;
-                        if (lyVal !== undefined && lyVal !== 0) {
-                            d.growth_pct = ((current - lyVal) / Math.abs(lyVal)) * 100;
-                        } else if (current !== 0 && lyVal !== undefined) {
-                            d.growth_pct = 100;
+                    data.forEach((d: any) => {
+                        const key = dimCol ? String(d[planDimKey] || '') : '__total__';
+                        const stats = lyGroups[key];
+                        if (stats) {
+                            let lyVal: number;
+                            switch (aggType) {
+                                case 'AVG': lyVal = stats.sum / (stats.count || 1); break;
+                                case 'COUNT': lyVal = stats.count; break;
+                                case 'COUNT_DISTINCT': lyVal = stats.distinct.size; break;
+                                case 'MAX': lyVal = stats.max; break;
+                                case 'MIN': lyVal = stats.min; break;
+                                case 'SUM': default: lyVal = stats.sum; break;
+                            }
+                            const current = Number(d[planMetricKey]) || 0;
+                            d.previous_value = lyVal;
+                            if (lyVal !== 0) {
+                                d.growth_pct = ((current - lyVal) / Math.abs(lyVal)) * 100;
+                            } else if (current !== 0) {
+                                d.growth_pct = 100;
+                            } else {
+                                d.growth_pct = undefined;
+                            }
                         } else {
+                            d.previous_value = undefined;
                             d.growth_pct = undefined;
                         }
                     });
                 }
             }
 
-            // --- SAME PERIOD LAST N (Dimension Comparison) ---
-            // For categorical dimensions, compare current period with N grains ago
+            // --- SAME PERIOD LAST N (Non-Time-Dim) ---
             if (query.comparison === 'same_period_last_n' && !isTimeDim) {
-                // LAST N COMPLETE PERIODS (Total/KPI mode):
-                // Compare current filtered data against the TOTAL of the last N
-                // complete calendar periods anchored to the as-of date.
                 const allRows = contextFilteredRows;
                 const compGrain = query.comparisonGrain || 'day';
                 const compOffset = query.comparisonOffset || 1;
-                const nGroups: Record<string, number> = {};
+                const nGroups: Record<string, { sum: number; count: number; min: number; max: number; distinct: Set<string> }> = {};
                 const totalFallbackKey = '__total__';
                 const asOf = new Date(`${dates.today}T00:00:00Z`);
                 const fmt = (d: Date) => d.toISOString().split('T')[0];
 
-                console.log(`[Engine Comparison] ENTERED last_n_complete (non-time-dim). dimCol='${dimCol}', compGrain=${compGrain}, compOffset=${compOffset}`);
-
-                // Compute "Last N complete periods" date range
                 let prevStart: string, prevEnd: string;
                 if (compGrain === 'day') {
                     const end = new Date(asOf); end.setUTCDate(end.getUTCDate() - 1);
@@ -985,132 +527,91 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     const startD = new Date(Date.UTC(endD.getUTCFullYear(), endD.getUTCMonth() + 1 - (compOffset * 3), 1));
                     prevStart = fmt(startD); prevEnd = fmt(endD);
                 } else {
-                    // year
                     const endD = new Date(Date.UTC(asOf.getUTCFullYear() - 1, 11, 31));
                     const startD = new Date(Date.UTC(asOf.getUTCFullYear() - compOffset, 0, 1));
                     prevStart = fmt(startD); prevEnd = fmt(endD);
                 }
 
-                console.log(`[Engine Comparison] prevStart=${prevStart}, prevEnd=${prevEnd}, allRows.length=${allRows.length}`);
-
                 allRows.forEach(r => {
                     const d = date(r);
                     if (d >= prevStart && d <= prevEnd) {
                         const key = dimCol ? String(r[dimCol] || 'Unknown') : totalFallbackKey;
-                        nGroups[key] = (nGroups[key] || 0) + (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
+                        const v = Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0;
+                        if (!nGroups[key]) {
+                            nGroups[key] = { sum: v, count: 1, min: v, max: v, distinct: new Set([String(r[metricCol])]) };
+                        } else {
+                            nGroups[key].sum += v;
+                            nGroups[key].count += 1;
+                            nGroups[key].min = Math.min(nGroups[key].min, v);
+                            nGroups[key].max = Math.max(nGroups[key].max, v);
+                            if (r[metricCol] !== undefined && r[metricCol] !== null) nGroups[key].distinct.add(String(r[metricCol]));
+                        }
                     }
                 });
 
-                console.log(`[Engine Comparison] nGroups:`, JSON.stringify(nGroups));
-
-                // For Total mode without dimension, all previous data is summed into __total__
-                // For dimensional mode, each category gets its own comparison value from the previous period
                 data.forEach((d: any) => {
-                    const key = dimCol ? String(d[dimCol] || '') : totalFallbackKey;
-                    const prevVal = nGroups[key];
-                    // If no dimensional match but we have a total, use that (Total mode)
-                    const effectivePrev = prevVal !== undefined ? prevVal : (key === totalFallbackKey ? undefined : nGroups[totalFallbackKey]);
-                    const current = Number(d[metricCol]) || 0;
-                    d.previous_value = effectivePrev !== undefined ? effectivePrev : undefined;
-                    if (effectivePrev !== undefined && effectivePrev !== 0) {
-                        d.growth_pct = ((current - effectivePrev) / Math.abs(effectivePrev)) * 100;
-                    } else if (current !== 0 && effectivePrev !== undefined) {
-                        d.growth_pct = 100;
+                    const key = dimCol ? String(d[planDimKey] || '') : totalFallbackKey;
+                    const stats = nGroups[key];
+                    const effectiveStats = stats || (key === totalFallbackKey ? undefined : nGroups[totalFallbackKey]);
+                    const current = Number(d[planMetricKey]) || 0;
+                    if (effectiveStats) {
+                        let prevVal: number;
+                        switch (aggType) {
+                            case 'AVG': prevVal = effectiveStats.sum / (effectiveStats.count || 1); break;
+                            case 'COUNT': prevVal = effectiveStats.count; break;
+                            case 'COUNT_DISTINCT': prevVal = effectiveStats.distinct.size; break;
+                            case 'MAX': prevVal = effectiveStats.max; break;
+                            case 'MIN': prevVal = effectiveStats.min; break;
+                            case 'SUM': default: prevVal = effectiveStats.sum; break;
+                        }
+                        d.previous_value = prevVal;
+                        if (prevVal !== 0) {
+                            d.growth_pct = ((current - prevVal) / Math.abs(prevVal)) * 100;
+                        } else if (current !== 0) {
+                            d.growth_pct = 100;
+                        } else {
+                            d.growth_pct = undefined;
+                        }
                     } else {
+                        d.previous_value = undefined;
                         d.growth_pct = undefined;
                     }
                 });
-
-                console.log(`[Engine Comparison] data after merge:`, JSON.stringify(data.map(d => ({ dim: d[dimCol], metric: d[metricCol], prev: d.previous_value, growth: d.growth_pct }))));
             }
 
-            // POST-AGGREGATION SORT & LIMIT
-            // 3. Sorting
-            const sortMode = query.sort || 'desc';
-
-            if (sortMode === 'oldest') {
-                data.sort((a, b) => a[dimCol].localeCompare(b[dimCol]));
-            } else if (sortMode === 'newest') {
-                data.sort((a, b) => b[dimCol].localeCompare(a[dimCol]));
-            } else {
-                const isAsc = sortMode === 'asc';
-                data.sort((a, b) => {
-                    const valA = Number(a[metricCol]) || 0;
-                    const valB = Number(b[metricCol]) || 0;
-                    return isAsc ? valA - valB : valB - valA;
-                });
-            }
-
-            // 2. Apply Limit (if any)
-            if (query.limit && query.limit > 0) {
-                data = data.slice(0, query.limit);
-            }
-
-            // 4. Generate SQL (Robust Engine)
-            const sqlConfig: SqlQueryConfig = {
-                table: datasetName || 'dataset',
-                metric: metricCol,
-                aggregation: aggType,
-                dimension: dimCol,
-                secondaryDimensions: secDims.length > 0 ? secDims : undefined,
-                dateColumn: dateColKey,
-                timeFilter: query.timeFilter,
-                filters: query.filters as Record<string, string[]>,
-                measureFilters: query.measureFilters,
-                sort: query.sort,
-                limit: query.limit,
-                dates: {
-                    today: dates.today,
-                    yesterday: dates.yesterday,
-                    this_week_start: dates.monday,
-                    this_month_start: dates.this_month_start,
-                    this_quarter_start: (() => {
-                        const d = new Date(`${dates.today}T00:00:00Z`);
-                        const qMonth = Math.floor(d.getUTCMonth() / 3) * 3;
-                        d.setUTCMonth(qMonth, 1);
-                        return d.toISOString().split('T')[0];
-                    })(),
-                    year_start: dates.year_start,
-                    last_30_days: dates.last_30_days,
-                    last_90_days: dates.last_90_days || '',
-                }
-            };
-
-            const sql = new SqlGenerator(sqlConfig).build();
-
-            // ── Auto-axis detection for multi-metric ──
+            // â”€â”€ Auto-axis detection for multi-metric â”€â”€
             let detectedAxisMode: 'single' | 'dual' | 'blended' = 'single';
             if (secMetrics.length > 0 && data.length > 0) {
-                const primaryMax = Math.max(...data.map((d: any) => Math.abs(d[metricCol] || 0)));
+                const primaryMax = Math.max(...data.map((d: any) => Math.abs(d[planMetricKey] || 0)));
                 const secondaryMaxes = secMetrics.map(sm => Math.max(...data.map((d: any) => Math.abs(d[sm] || 0))));
                 const overallSecMax = Math.max(...secondaryMaxes);
                 const ratio = primaryMax > 0 && overallSecMax > 0
                     ? Math.max(primaryMax / overallSecMax, overallSecMax / primaryMax)
                     : 1;
-                // If scale differs by more than 5x, use dual axis; otherwise blended
                 detectedAxisMode = ratio > 5 ? 'dual' : 'blended';
             }
             const userAxisMode = query.axisMode;
             const finalAxisMode = userAxisMode && userAxisMode !== 'auto' ? userAxisMode as 'single' | 'dual' | 'blended' : detectedAxisMode;
 
-            const allMetricNames = [metricCol, ...secMetrics];
-            const yLabelStr = secMetrics.length > 0
+            const allMetricNames = [metricCol, ...(query.secondaryMetrics || [])];
+            const yLabelStr = (query.secondaryMetrics || []).length > 0
                 ? `${allMetricNames.join(' & ')} by ${dimCol || 'Total'}`
                 : `${metricCol} by ${dimCol || 'Total'}`;
 
             return {
-                data, xKey: dimCol || 'metric', yKey: metricCol,
+                data, xKey: planDimKey || 'metric', yKey: planMetricKey,
                 yLabel: yLabelStr, sql,
                 ...(secMetrics.length > 0 ? { secondaryYKeys: secMetrics, axisMode: finalAxisMode } : {})
             };
+
         } else {
             // --- DETERMINISTIC LOGIC ---
 
-            // ── USER OVERRIDE: METRIC ──
+            // â”€â”€ USER OVERRIDE: METRIC â”€â”€
             // If the customizer changed the metric, override the question's default
             let metricName = 'revenue';
             if (query.metric && query.metric !== '' && dq.id !== 'custom_builder') {
-                // User explicitly chose a metric in the customizer — try to find its canonical role
+                // User explicitly chose a metric in the customizer â€” try to find its canonical role
                 const userMetricLower = query.metric.toLowerCase();
                 const metricRoles = ['revenue', 'quantity', 'order_id', 'customer_id', 'discount', 'profit', 'sales', 'cost', 'price'];
                 const matchedRole = metricRoles.find(role => {
@@ -1143,7 +644,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 return dataset.reduce((a, r) => a + val(r, metricName), 0);
             };
 
-            // ── CENTRALIZED DIMENSION RESOLVER ──
+            // â”€â”€ CENTRALIZED DIMENSION RESOLVER â”€â”€
             // User's Group By override takes priority over question default
             const timeGrains = ['day', 'week', 'month', 'quarter', 'year'];
             const userDimOverride = query.dimension && query.dimension !== '' && !timeGrains.includes(query.dimension) ? query.dimension : null;
@@ -1151,7 +652,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             const resolvedDim = userDimOverride || defaultDimRole;
             const isUserDimOverride = !!userDimOverride;
 
-            // Helper to access a dimension value from a row — handles both canonical roles and direct column names
+            // Helper to access a dimension value from a row â€” handles both canonical roles and direct column names
             const dimAccessor = (r: any): string => {
                 if (isUserDimOverride) {
                     // Direct column access for user-chosen dimensions
@@ -1160,7 +661,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 return str(r, resolvedDim);
             };
 
-            // ── UNIVERSAL TIME FILTER OVERRIDE ──
+            // â”€â”€ UNIVERSAL TIME FILTER OVERRIDE â”€â”€
             // When the user customizes the time period in the QuestionCustomizer,
             // query.timeFilter contains their choice. We pre-filter rows so ALL
             // downstream eval branches (ranking, comparison, trend, KPI, etc.)
@@ -1226,7 +727,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     }
                 }
 
-                console.log(`[Engine] deterministic time filter: ${query.timeFilter} → range [${startStr}, ${endStr}], rows before: ${rows.length}`);
+                console.log(`[Engine] deterministic time filter: ${query.timeFilter} â†’ range [${startStr}, ${endStr}], rows before: ${rows.length}`);
                 rows = rows.filter(r => {
                     const dStr = date(r);
                     return dStr >= startStr && dStr <= endStr;
@@ -1234,10 +735,10 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 console.log(`[Engine] rows after time filter: ${rows.length}`);
             }
 
-            // ── USER OVERRIDE: PERIOD SCOPE (WTD / MTD / QTD / YTD) ──
+            // â”€â”€ USER OVERRIDE: PERIOD SCOPE (WTD / MTD / QTD / YTD) â”€â”€
             // When both timeFilter AND periodScope are active, we need to compute
             // the period scope relative to the SHIFTED reference date (start of time range).
-            // E.g., "Last 1 Year" shifts reference from 2017-12-30 → 2016-12-30,
+            // E.g., "Last 1 Year" shifts reference from 2017-12-30 â†’ 2016-12-30,
             // so MTD becomes Dec 2016 (2016-12-01 to 2016-12-30).
             const periodScope = (query as any).periodScope;
             if (periodScope) {
@@ -1290,7 +791,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                         rows = rows.filter(r => date(r) >= fmt(sYearStart) && date(r) <= sRefStr);
                     }
                 } else {
-                    // No time override — use current as-of date boundaries
+                    // No time override â€” use current as-of date boundaries
                     if (periodScope === 'WTD') {
                         rows = rows.filter(r => date(r) >= dates.monday && date(r) <= dates.today);
                     } else if (periodScope === 'MTD') {
@@ -1301,10 +802,10 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                         rows = rows.filter(r => date(r) >= dates.year_start && date(r) <= dates.today);
                     }
                 }
-                console.log(`[Engine] periodScope ${periodScope}: rows ${beforePS} → ${rows.length}`);
+                console.log(`[Engine] periodScope ${periodScope}: rows ${beforePS} â†’ ${rows.length}`);
             }
 
-            // ── USER OVERRIDE: DIMENSION FILTERS ──
+            // â”€â”€ USER OVERRIDE: DIMENSION FILTERS â”€â”€
             // Apply any dimension filters from the customizer
             if (query.filters && Object.keys(query.filters).length > 0) {
                 const sampleRow = rows[0] || {};
@@ -1324,7 +825,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 });
             }
 
-            // ── USER OVERRIDE: DATE FILTERS (Hierarchy + Range) ──
+            // â”€â”€ USER OVERRIDE: DATE FILTERS (Hierarchy + Range) â”€â”€
             if (query.dateFilters && (query.dateFilters as any[]).length > 0) {
                 (query.dateFilters as any[]).forEach((df: any) => {
                     if (!df.values || df.values.length === 0) return;
@@ -1355,7 +856,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     });
                 });
             }
-            // ── EVAL-TYPE ROUTING ──
+            // â”€â”€ EVAL-TYPE ROUTING â”€â”€
             // Questions with explicit evalType use that to determine the logic branch
             // This lets new categories (diagnostics, growth, etc.) reuse existing patterns
             const evalType = dq.evalType;
@@ -1372,7 +873,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             if (useRanking) {
                 let dim = resolvedDim;
 
-                // ── PREFER NAME COLUMNS OVER IDs (only when using default dimension) ──
+                // â”€â”€ PREFER NAME COLUMNS OVER IDs (only when using default dimension) â”€â”€
                 if (!isUserDimOverride) {
                     const dimCol = cols[dim];
                     if (dimCol) {
@@ -1462,7 +963,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                         prevLabel = 'Previous Period';
                     }
                 } else {
-                    // Default comparison logic — use question ID prefix to decide periods
+                    // Default comparison logic â€” use question ID prefix to decide periods
                     if (dq.id.startsWith('d_')) { currSet = rows.filter(isToday); prevSet = rows.filter(isYesterday); currLabel = 'Today'; prevLabel = 'Yesterday'; }
                     else if (dq.id.startsWith('w_')) { currSet = rows.filter(isThisWeek); prevSet = rows.filter(isLastWeek); currLabel = 'This Week'; prevLabel = 'Last Week'; }
                     else if (dq.id.startsWith('m_')) {
@@ -1486,7 +987,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     else { currSet = rows.filter(isThisMonth); prevSet = rows.filter(isLastMonth); currLabel = 'Current'; prevLabel = 'Previous'; }
                 }
 
-                // ── TREND MODE: Dual-line time series ──
+                // â”€â”€ TREND MODE: Dual-line time series â”€â”€
                 if (isTrendMode && currSet.length > 0) {
                     // Bucket function matching the same format as custom_builder
                     const trendBucket = (dateStr: string): string => {
@@ -1618,7 +1119,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
 
                     console.log(`[Engine] Trend comparison: ${currKeys.length} current buckets, ${prevKeys.length} prev buckets, ${allKeys.length} merged`);
                 } else {
-                    // ── TOTAL MODE: Simple 2-bar comparison ──
+                    // â”€â”€ TOTAL MODE: Simple 2-bar comparison â”€â”€
                     const currVal = aggregate(currSet);
                     const prevVal = aggregate(prevSet);
                     const growthPct = prevVal !== 0 ? ((currVal - prevVal) / prevVal) * 100 : (currVal > 0 ? 100 : 0);
@@ -1637,7 +1138,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             }
             // 5. MOVING AVERAGES & RUNNING TOTALS
             else if (useMovingAvgOrRunning) {
-                // ── DETERMINE TIME GRAIN ──
+                // â”€â”€ DETERMINE TIME GRAIN â”€â”€
                 // Use explicit periodGrain from the UI if available, otherwise infer from question ID
                 const explicitGrain = (query as any).periodGrain;
                 const isWeekly = explicitGrain === 'week' || (!explicitGrain && dq.id.startsWith('w_'));
@@ -1664,10 +1165,10 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                         dt.setUTCDate(dt.getUTCDate() - (dayOfWeek - 1));
                         return dt.toISOString().split('T')[0];
                     }
-                    return d; // daily — no bucketing needed
+                    return d; // daily â€” no bucketing needed
                 };
 
-                // ── SCOPE DATA TO CORRECT PERIOD ──
+                // â”€â”€ SCOPE DATA TO CORRECT PERIOD â”€â”€
                 let subset = rows;
                 const periodScope = (query as any).periodScope; // WTD/MTD/QTD/YTD override
                 const hasUserDateFilters = query.dateFilters && (query.dateFilters as any[]).length > 0;
@@ -1716,7 +1217,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 const hasSpecificTimeRange = hasTimeOverride && query.timeFilter !== 'all_time';
 
                 if (hasSpecificTimeRange && periodScope) {
-                    // Universal period scope already applied shifted MTD/WTD/etc — use rows directly
+                    // Universal period scope already applied shifted MTD/WTD/etc â€” use rows directly
                     subset = rows;
                 }
                 // Period scope buttons take priority over question default
@@ -1752,13 +1253,13 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     const idWindow = windowMatch ? parseInt(windowMatch[1]) : 7;
                     // Prefer user-configured window from customizer, fall back to question ID
                     const N = (query as any).maWindow && (query as any).maWindow > 0 ? (query as any).maWindow : idWindow;
-                    console.log(`[Engine MA] ✅ ENTERED MA branch. Window=${N}, totalBuckets=${sortedSeries.length}`);
+                    console.log(`[Engine MA] âœ… ENTERED MA branch. Window=${N}, totalBuckets=${sortedSeries.length}`);
 
                     // When user has explicitly set a time filter, use ALL the filtered data.
                     // Only apply the trailing-days slice as a default when no time filter is active.
                     let tail: typeof sortedSeries;
                     if (hasTimeOverride) {
-                        // User selected a time period (e.g., "This Quarter") — use all filtered data
+                        // User selected a time period (e.g., "This Quarter") â€” use all filtered data
                         tail = sortedSeries;
                     } else {
                         // Default: show trailing portion based on question prefix
@@ -1767,7 +1268,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     }
 
                     // Group into non-overlapping N-day buckets
-                    // Each bucket: sum all daily values, divide by N → one data point
+                    // Each bucket: sum all daily values, divide by N â†’ one data point
                     const buckets: { x: string, value: number, raw_values: number[] }[] = [];
                     for (let i = 0; i < tail.length; i += N) {
                         const chunk = tail.slice(i, i + N);
@@ -1868,7 +1369,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             else if (usePctOrGrowth) {
                 let currSet: any[] = [], prevSet: any[] = [];
                 if (hasTimeOverride) {
-                    // User overrode time period — rows are already pre-filtered as currSet
+                    // User overrode time period â€” rows are already pre-filtered as currSet
                     currSet = rows;
                     // Compute an equivalent previous period from allOrigRows
                     // by shifting the current time range backward by the same duration
@@ -1999,7 +1500,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     let pct = 0;
                     if (prev !== 0) pct = ((curr - prev) / prev) * 100;
 
-                    // Determine period labels — prioritize user's time override, fall back to question prefix
+                    // Determine period labels â€” prioritize user's time override, fall back to question prefix
                     let currLabel = 'Current', prevLabel = 'Previous';
                     if (hasTimeOverride && query.timeFilter) {
                         const tlMap: Record<string, [string, string]> = {
@@ -2325,43 +1826,43 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 // Find dimension column for breakdown questions (respects user override)
                 const dimCol = isUserDimOverride ? resolvedDim : (cols[defaultDimRole] || cols['product_name'] || defaultDimRole);
 
-                // ─── VS (Comparison) ───
+                // â”€â”€â”€ VS (Comparison) â”€â”€â”€
                 if (dq.id.includes('_vs_')) {
                     sql = `-- ${dq.question}\nSELECT\n  '${pw.currLabel}' AS period,\n  ${aggExpr} AS ${aggLabel}\nFROM ${tbl}\nWHERE ${pw.curr}\n\nUNION ALL\n\nSELECT\n  '${pw.prevLabel}' AS period,\n  ${aggExpr} AS ${aggLabel}\nFROM ${tbl}\nWHERE ${pw.prev}`;
                 }
-                // ─── % Change ───
+                // â”€â”€â”€ % Change â”€â”€â”€
                 else if (dq.id.includes('_pct_chg_') || (dq.id.includes('_pct_') && !dq.id.includes('_total_') && !dq.id.includes('_growth_'))) {
                     sql = `-- ${dq.question}\nWITH curr AS (\n  SELECT ${aggExpr} AS val\n  FROM ${tbl}\n  WHERE ${pw.curr}\n),\nprev AS (\n  SELECT ${aggExpr} AS val\n  FROM ${tbl}\n  WHERE ${pw.prev}\n)\nSELECT\n  curr.val AS "${pw.currLabel}",\n  prev.val AS "${pw.prevLabel}",\n  ROUND((curr.val - prev.val) * 100.0 / NULLIF(prev.val, 0), 2) AS pct_change\nFROM curr, prev`;
                 }
-                // ─── Growth % ───
+                // â”€â”€â”€ Growth % â”€â”€â”€
                 else if (dq.id.includes('_growth_')) {
                     sql = `-- ${dq.question}\nWITH curr AS (\n  SELECT ${aggExpr} AS val\n  FROM ${tbl}\n  WHERE ${pw.curr}\n),\nprev AS (\n  SELECT ${aggExpr} AS val\n  FROM ${tbl}\n  WHERE ${pw.prev}\n)\nSELECT\n  curr.val AS "${pw.currLabel}",\n  prev.val AS "${pw.prevLabel}",\n  ROUND((curr.val - prev.val) * 100.0 / NULLIF(prev.val, 0), 2) AS growth_pct\nFROM curr, prev`;
                 }
-                // ─── % of Total (breakdown) ───
+                // â”€â”€â”€ % of Total (breakdown) â”€â”€â”€
                 else if (dq.id.includes('_total_')) {
                     const dim = dimCol || cols['product_name'] || 'product_name';
                     sql = `-- ${dq.question}\nSELECT\n  ${dim},\n  ${aggExpr} AS ${aggLabel},\n  ROUND(${aggExpr} * 100.0 / SUM(${aggExpr}) OVER(), 2) AS pct_of_total\nFROM ${tbl}\nWHERE ${pw.curr}\nGROUP BY ${dim}\nORDER BY ${aggLabel} DESC`;
                 }
-                // ─── Trend ───
+                // â”€â”€â”€ Trend â”€â”€â”€
                 else if (dq.id.includes('trend') || dq.id === 'rev_30d') {
                     const grain = dq.grain === 'month' || dq.id.includes('month') ? 'month' : dq.grain === 'week' ? 'week' : 'day';
                     sql = `-- ${dq.question}\nSELECT\n  DATE_TRUNC('${grain}', ${dateCol}) AS date,\n  ${aggExpr} AS ${aggLabel}\nFROM ${tbl}\nGROUP BY 1\nORDER BY 1 ASC`;
                 }
-                // ─── Moving Average ───
+                // â”€â”€â”€ Moving Average â”€â”€â”€
                 else if (dq.id.includes('_ma_')) {
                     const windowMatch = dq.id.match(/_ma_(\d+)_/);
                     const N = windowMatch ? parseInt(windowMatch[1]) : 7;
                     const grain = dq.grain === 'week' ? 'week' : dq.grain === 'month' ? 'month' : 'day';
                     sql = `-- ${dq.question} (${N}-${grain} Moving Average)\nSELECT\n  DATE_TRUNC('${grain}', ${dateCol}) AS date,\n  ${aggExpr} AS period_${metricName},\n  AVG(${aggExpr}) OVER (\n    ORDER BY DATE_TRUNC('${grain}', ${dateCol})\n    ROWS BETWEEN ${N - 1} PRECEDING AND CURRENT ROW\n  ) AS ma_${N}\nFROM ${tbl}\nGROUP BY 1\nORDER BY 1 ASC`;
                 }
-                // ─── Running Total ───
+                // â”€â”€â”€ Running Total â”€â”€â”€
                 else if (dq.id.includes('_run_')) {
                     const grain = dq.grain === 'week' ? 'week' : dq.grain === 'month' ? 'month' : 'day';
                     const scope = dq.id.includes('ytd') ? `WHERE ${dateCol} BETWEEN '${dates.year_start}' AND '${dates.today}'` :
                         dq.id.includes('month') ? `WHERE ${dateCol} BETWEEN '${dates.this_month_start}' AND '${dates.today}'` : '';
                     sql = `-- ${dq.question}\nSELECT\n  DATE_TRUNC('${grain}', ${dateCol}) AS date,\n  ${aggExpr} AS period_${metricName},\n  SUM(${aggExpr}) OVER (\n    ORDER BY DATE_TRUNC('${grain}', ${dateCol})\n  ) AS running_total\nFROM ${tbl}\n${scope}\nGROUP BY 1\nORDER BY 1 ASC`;
                 }
-                // ─── Top N / Ranking ───
+                // â”€â”€â”€ Top N / Ranking â”€â”€â”€
                 else if (dq.id.includes('top') || dq.id.includes('best') || dq.id.includes('worst')) {
                     const dim = dimCol || cols['product_name'] || 'product_name';
                     const limitMatch = dq.question.match(/(?:Top|Bottom)\s+(\d+)/i) || dq.id.match(/(?:top|bottom)_(\d+)/i);
@@ -2369,17 +1870,17 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     const dir = dq.id.includes('worst') || dq.id.includes('bottom') || dq.id.includes('least') ? 'ASC' : 'DESC';
                     sql = `-- ${dq.question}\nSELECT\n  ${dim},\n  ${aggExpr} AS ${aggLabel}\nFROM ${tbl}\nWHERE ${pw.curr}\nGROUP BY ${dim}\nORDER BY ${aggLabel} ${dir}\nLIMIT ${limit}`;
                 }
-                // ─── AOV ───
+                // â”€â”€â”€ AOV â”€â”€â”€
                 else if (dq.id.endsWith('_aov')) {
                     const revCol = cols['revenue'] || 'revenue';
                     const orderCol = cols['order_id'] || 'order_id';
                     sql = `-- ${dq.question}\nSELECT\n  SUM(${revCol}) / NULLIF(COUNT(DISTINCT ${orderCol}), 0) AS aov\nFROM ${tbl}\nWHERE ${pw.curr}`;
                 }
-                // ─── KPI (simple aggregation) ───
+                // â”€â”€â”€ KPI (simple aggregation) â”€â”€â”€
                 else if (dq.vis === 'kpiCard' || useKpi) {
                     sql = `-- ${dq.question}\nSELECT\n  ${aggExpr} AS ${aggLabel}\nFROM ${tbl}\nWHERE ${pw.curr}`;
                 }
-                // ─── Operational ───
+                // â”€â”€â”€ Operational â”€â”€â”€
                 else if (dq.id.startsWith('op_')) {
                     if (dq.id === 'op_track_vs_y') {
                         sql = `-- ${dq.question}\nSELECT\n  '${pw.currLabel}' AS period,\n  ${aggExpr} AS ${aggLabel}\nFROM ${tbl}\nWHERE ${pw.curr}\n\nUNION ALL\n\nSELECT\n  '${pw.prevLabel}' AS period,\n  ${aggExpr} AS ${aggLabel}\nFROM ${tbl}\nWHERE ${pw.prev}`;
@@ -2388,7 +1889,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                         sql = `-- ${dq.question}\nSELECT\n  ${dim},\n  ${aggExpr} AS ${aggLabel}\nFROM ${tbl}\nWHERE ${pw.curr}\nGROUP BY ${dim}\nORDER BY ${aggLabel} DESC\nLIMIT 10`;
                     }
                 }
-                // ─── Default: period aggregation ───
+                // â”€â”€â”€ Default: period aggregation â”€â”€â”€
                 else {
                     sql = `-- ${dq.question}\nSELECT\n  ${aggExpr} AS ${aggLabel}\nFROM ${tbl}\nWHERE ${pw.curr}`;
                 }
