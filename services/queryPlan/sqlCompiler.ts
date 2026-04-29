@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import {
-    QueryPlan, Expression, Metric, Dimension, RowFilter, RangeFilter,
+    QueryPlan, Expression, Metric, Dimension, RowFilter, RangeFilter, DateFilter,
     GroupFilter, OrderBy, AggregationType, dimensionId
 } from './types';
 import { sanitizeIdentifier, escapeStringValue } from '../analysisValidator';
@@ -153,6 +153,26 @@ function compileGroupFilter(gf: GroupFilter, metrics: Metric[]): string {
     return `${aggExpr} ${gf.op} ${gf.value}`;
 }
 
+function compileDateFilter(df: DateFilter): string {
+    const col = safeId(df.column);
+    const vals = df.values.map(v => `'${escapeStringValue(v)}'`).join(', ');
+
+    switch (df.timeGrain) {
+        case 'year':
+            return `EXTRACT(YEAR FROM ${col})::TEXT IN (${vals})`;
+        case 'quarter':
+            return `(EXTRACT(YEAR FROM ${col})::TEXT || '-Q' || EXTRACT(QUARTER FROM ${col})::TEXT) IN (${vals})`;
+        case 'month':
+            return `TO_CHAR(${col}, 'YYYY-MM') IN (${vals})`;
+        case 'week':
+            return `(EXTRACT(YEAR FROM ${col})::TEXT || '-W' || LPAD(EXTRACT(WEEK FROM ${col})::TEXT, 2, '0')) IN (${vals})`;
+        case 'day':
+            return `TO_CHAR(${col}, 'YYYY-MM-DD') IN (${vals})`;
+        default:
+            return `${col} IN (${vals})`;
+    }
+}
+
 // ── ORDER BY COMPILER ────────────────────────────────────────────
 
 function compileOrderBy(ob: OrderBy, plan: QueryPlan): string {
@@ -201,13 +221,16 @@ export function compileSQL(plan: QueryPlan): string {
     // ── FROM ─────────────────────────────────────────────────────
     parts.push(`FROM ${safeId(plan.source)}`);
 
-    // ── WHERE (row filters + range filters) ──────────────────────
+    // ── WHERE (row filters + range filters + date filters) ───────
     const whereClauses: string[] = [];
     for (const rf of plan.filters.row) {
         whereClauses.push(compileRowFilter(rf));
     }
     for (const rf of plan.filters.range) {
         whereClauses.push(compileRangeFilter(rf));
+    }
+    for (const df of plan.filters.date) {
+        whereClauses.push(compileDateFilter(df));
     }
     if (whereClauses.length > 0) {
         parts.push(`WHERE ${whereClauses.join(' AND ')}`);

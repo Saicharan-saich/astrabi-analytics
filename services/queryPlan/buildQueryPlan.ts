@@ -5,7 +5,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import {
-    QueryPlan, Metric, Dimension, Filters, RowFilter, RangeFilter,
+    QueryPlan, Metric, Dimension, Filters, RowFilter, RangeFilter, DateFilter,
     GroupFilter, OrderBy, AggregationType, TimeGrain, Expression
 } from './types';
 import { DateRange } from '../dateHelpers';
@@ -183,6 +183,7 @@ export function buildQueryPlan(
     // ── FILTERS ──────────────────────────────────────────────────
     const rowFilters: RowFilter[] = [];
     const rangeFilters: RangeFilter[] = [];
+    const dateFilters: DateFilter[] = [];
     const groupFilters: GroupFilter[] = [];
 
     // 1. Time filter → resolved range
@@ -219,13 +220,17 @@ export function buildQueryPlan(
                 const [rangeStart, rangeEnd] = df.values[0].split('__');
                 rangeFilters.push({ column: df.column, start: rangeStart, end: rangeEnd });
             } else if (df.values.length > 0) {
-                // Hierarchy mode: the values are grain-formatted strings
-                rowFilters.push({ column: df.column, op: 'IN', value: df.values });
+                // Hierarchy mode: grain-formatted values (e.g. '2018', '2020-Q1')
+                dateFilters.push({
+                    column: df.column,
+                    timeGrain: (df.timeGrain || 'year') as TimeGrain,
+                    values: df.values
+                });
             }
         }
     }
 
-    const filters: Filters = { row: rowFilters, range: rangeFilters, group: groupFilters };
+    const filters: Filters = { row: rowFilters, range: rangeFilters, date: dateFilters, group: groupFilters };
 
     // ── ORDER BY ─────────────────────────────────────────────────
     const orderBy: OrderBy[] = [];

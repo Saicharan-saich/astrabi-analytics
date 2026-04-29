@@ -14,7 +14,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import {
-    QueryPlan, Expression, Metric, Dimension, RowFilter, RangeFilter,
+    QueryPlan, Expression, Metric, Dimension, RowFilter, RangeFilter, DateFilter,
     GroupFilter, OrderBy, AggregationType, dimensionId, deriveResultSchema
 } from './types';
 import { pad, getISOWeek } from '../dateHelpers';
@@ -229,6 +229,19 @@ export function executeQueryPlan(
         filtered = filtered.filter(r =>
             plan.filters.range.every(f => applyRangeFilter(r, f, effectiveDateCol))
         );
+    }
+
+    // Date filters (grain-aware: format date to grain then check IN)
+    if (plan.filters.date.length > 0) {
+        filtered = filtered.filter(r => {
+            return plan.filters.date.every(df => {
+                const key = resolveColumnKey(r, df.column || effectiveDateCol);
+                const dateStr = extractDateStr(r, key);
+                if (dateStr === '1970-01-01') return false;
+                const formatted = formatTimeBucket(dateStr, df.timeGrain);
+                return df.values.some(v => formatted.toLowerCase() === v.toLowerCase());
+            });
+        });
     }
 
     console.log(`[QueryPlan Engine] After WHERE: ${filtered.length} rows (from ${rows.length})`);

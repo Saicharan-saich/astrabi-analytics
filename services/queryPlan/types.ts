@@ -53,7 +53,8 @@ export function dimensionId(dim: Dimension): string {
 }
 
 // ── FILTERS ──────────────────────────────────────────────────────
-// Separated into row-level (WHERE), range (BETWEEN), and group-level (HAVING).
+// Separated into row-level (WHERE), range (BETWEEN), date (grain-aware),
+// and group-level (HAVING).
 
 export interface RowFilter {
     column: string;
@@ -68,6 +69,15 @@ export interface RangeFilter {
     // Both present → BETWEEN (inclusive)
 }
 
+/** Date-hierarchy filter: compares row dates formatted at the given grain.
+ *  JS: format date to grain, then check if IN values.
+ *  SQL: EXTRACT(YEAR FROM col) IN (...) or TO_CHAR(col, 'YYYY-MM') IN (...) */
+export interface DateFilter {
+    column: string;
+    timeGrain: TimeGrain;
+    values: string[];    // Grain-formatted: ['2018'], ['2020-Q1'], ['2019-06'] etc.
+}
+
 export interface GroupFilter {
     metricId: string;  // Must reference an existing metric's id
     op: '>' | '<' | '>=' | '<=' | '=';
@@ -77,6 +87,7 @@ export interface GroupFilter {
 export interface Filters {
     row: RowFilter[];
     range: RangeFilter[];
+    date: DateFilter[];    // Grain-aware date hierarchy filters
     group: GroupFilter[];
 }
 
