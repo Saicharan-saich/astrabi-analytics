@@ -246,7 +246,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 (rawLabel.startsWith('%') && !rawLabel.includes('change') && !rawLabel.includes('growth') && !rawLabel.includes('vs')) ||
                 rawLabel.includes('% of') || rawLabel.includes('percent of') ||
                 /\bshare\b/.test(metricName) ||
-                /\brate\b/.test(metricName) || /\bconversion\b/.test(metricName) || /\bratio\b/.test(metricName)
+                (/\brate\b/.test(metricName) && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)\s*_?\s*rate\b/.test(metricName)) ||
+                /\bconversion\b/.test(metricName) || /\bratio\b/.test(metricName)
             ) {
                 effectiveFormat = 'percent';
             }
@@ -306,7 +307,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         let fmt: string;
         if (name.includes('count') || name.includes('quantity') || name.includes('units') || name.includes('volume') || name.includes('orders') || name.includes('users') || name.includes('sessions')) {
             fmt = value < 1000 ? 'raw' : 'compact';
-        } else if (name.includes('discount') || name.includes('rate') || name.includes('ratio') || name.includes('percent') || name.includes('share') || name.includes('conversion') || name.includes('margin_pct')) {
+        } else if (name.includes('discount') || (name.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(name)) || name.includes('ratio') || name.includes('percent') || name.includes('share') || name.includes('conversion') || name.includes('margin_pct')) {
             fmt = 'percent';
         } else if (name.includes('sales') || name.includes('revenue') || name.includes('price') || name.includes('cost') || name.includes('amount') || name.includes('profit') || name.includes('margin')) {
             fmt = 'currency_usd';
@@ -345,7 +346,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const isCurrency = metricRef.includes('sales') || metricRef.includes('revenue') ||
             metricRef.includes('price') || metricRef.includes('cost') ||
             metricRef.includes('amount') || metricRef.includes('profit');
-        const isPercent = metricRef.includes('percent') || metricRef.includes('rate') ||
+        const isPercent = metricRef.includes('percent') || (metricRef.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(metricRef)) ||
             metricRef.includes('ratio') || metricRef.includes('share');
 
         if (isPercent) {

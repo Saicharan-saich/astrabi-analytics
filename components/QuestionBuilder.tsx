@@ -566,14 +566,15 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                     {/* Secondary Metric Chips (display only — add button moved to Options row) */}
                     {secondaryMetrics.map((sm, i) => (
-                        <span key={sm} className="inline-flex items-center gap-1 bg-teal-500/20 text-teal-300 font-bold text-xs border border-teal-400/30 rounded-lg px-2 py-1 shadow-sm hover:scale-[1.02] transition-all">
+                        <span key={sm} className="inline-flex items-center gap-1.5 bg-teal-500/20 text-teal-300 font-bold text-xs border border-teal-400/30 rounded-lg px-2.5 py-1.5 shadow-sm hover:scale-[1.02] transition-all relative overflow-visible">
                             <span className="text-teal-500 font-normal text-xs">+</span>
                             <span>{sm.replace(/_/g, ' ')}</span>
-                            <span className="text-teal-400 mx-0.5">│</span>
+                            <span className="text-teal-400/40 mx-0.5">│</span>
                             <select
                                 value={secondaryMetricAggregations[sm] || 'SUM'}
                                 onChange={e => setSecondaryMetricAggregations(prev => ({ ...prev, [sm]: e.target.value }))}
-                                className="bg-white/10 text-teal-200 text-[11px] font-bold rounded border border-teal-400/30 px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400/50 hover:bg-white/15 transition-colors"
+                                className="bg-teal-500/20 text-teal-200 text-xs font-bold rounded-md border border-teal-400/30 pl-1.5 pr-5 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400/50 hover:bg-teal-500/30 transition-colors appearance-none"
+                                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center', backgroundSize: '12px' }}
                                 title="Aggregation for this metric"
                             >
                                 <option value="SUM">Σ Sum</option>
@@ -586,7 +587,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             <select
                                 value={secondaryMetricVisuals[sm] || 'line'}
                                 onChange={e => setSecondaryMetricVisuals(prev => ({ ...prev, [sm]: e.target.value }))}
-                                className="bg-white/10 text-teal-200 text-[11px] font-bold rounded border border-teal-400/30 px-1 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400/50 hover:bg-white/15 transition-colors"
+                                className="bg-teal-500/20 text-teal-200 text-xs font-bold rounded-md border border-teal-400/30 pl-1.5 pr-5 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400/50 hover:bg-teal-500/30 transition-colors appearance-none"
+                                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center', backgroundSize: '12px' }}
                                 title="Visual type for this metric"
                             >
                                 <option value="line">📈 Line</option>
