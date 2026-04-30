@@ -6,7 +6,8 @@
 
 import {
     QueryPlan, Expression, Metric, Dimension, RowFilter, RangeFilter, DateFilter,
-    GroupFilter, OrderBy, AggregationType, dimensionId
+    GroupFilter, OrderBy, AggregationType, dimensionId,
+    EnrichedQuery, ComparisonConfig, TableCalculation
 } from './types';
 import { sanitizeIdentifier, escapeStringValue } from '../analysisValidator';
 
@@ -266,4 +267,204 @@ export function compileSQL(plan: QueryPlan): string {
     }
 
     return parts.join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// ENRICHED SQL — Wraps base query with CTEs for comparisons + table calcs
+// Targets: Postgres / DuckDB
+// ═══════════════════════════════════════════════════════════════════
+
+export function compileEnrichedSQL(enriched: EnrichedQuery): string {
+    const plan = enriched.basePlan;
+    const baseSQL = compileSQL(plan);
+    const hasComparison = !!enriched.comparison;
+    const hasCalcs = enriched.calculations && enriched.calculations.length > 0;
+
+    // If no enrichment needed, return base SQL
+    if (!hasComparison && !hasCalcs) return baseSQL;
+
+    // ── Identify time vs categorical dimensions ──────────────────
+    const timeDim = plan.dimensions.find(d => d.type === 'time_bucket');
+    const partitionDims = plan.dimensions.filter(d => d.type === 'column');
+    const primaryMetric = plan.metrics[0];
+
+    if (!primaryMetric) return baseSQL; // No metric → nothing to enrich
+
+    const metricAlias = safeId(primaryMetric.alias);
+    const timeDimAlias = timeDim ? safeId(timeDim.alias) : null;
+    const partitionCols = partitionDims.map(d => safeId(d.column));
+
+    // Build PARTITION BY clause (empty if no categorical dims)
+    const partitionClause = partitionCols.length > 0
+        ? `PARTITION BY ${partitionCols.join(', ')} `
+        : '';
+
+    // Build ORDER BY clause for windows (must use time dim)
+    // If no time dim, windows are not safe → skip
+    const windowOrderClause = timeDimAlias
+        ? `ORDER BY ${timeDimAlias} ASC`
+        : null;
+
+    // Collect all ORDER BY from the plan for the final output
+    const planOrderClauses = plan.orderBy
+        .map(ob => compileOrderBy(ob, plan))
+        .filter(Boolean);
+    const finalOrderBy = planOrderClauses.length > 0
+        ? `ORDER BY ${planOrderClauses.join(', ')}`
+        : (windowOrderClause ? `ORDER BY ${timeDimAlias} ASC` : '');
+
+    const ctes: string[] = [];
+    const selectExprs: string[] = ['*'];
+    let currentSource = 'base';
+
+    // ── CTE: base ────────────────────────────────────────────────
+    // Strip ORDER BY and LIMIT from the base SQL — they belong in the final SELECT
+    const baseSQLForCTE = baseSQL
+        .replace(/\nORDER BY[^\n]*/i, '')
+        .replace(/\nLIMIT[^\n]*/i, '');
+    ctes.push(`base AS (\n${baseSQLForCTE}\n)`);
+
+    // ── CTE: lagged (comparison) ─────────────────────────────────
+    if (hasComparison && enriched.comparison) {
+        const comp = enriched.comparison;
+
+        if (!timeDimAlias) {
+            // Categorical dimension — cannot use window functions
+            // Return base SQL with a comment
+            return `-- Postgres/DuckDB compatible\n-- Note: Comparison (${comp.type}) computed client-side for categorical dimensions\n${baseSQL}`;
+        }
+
+        const windowSpec = `${partitionClause}${windowOrderClause}`;
+
+        if (comp.type === 'previous_period') {
+            ctes.push(`lagged AS (\n    SELECT *,\n        LAG(${metricAlias}) OVER (${windowSpec}) AS "previous_value"\n    FROM ${currentSource}\n)`);
+            currentSource = 'lagged';
+            selectExprs.length = 0;
+            selectExprs.push('*');
+            selectExprs.push(`(${metricAlias} - "previous_value") / NULLIF(ABS("previous_value"), 0) * 100 AS "growth_pct"`);
+        } else if (comp.type === 'same_period_last_n') {
+            const offset = comp.offset || 1;
+            ctes.push(`lagged AS (\n    SELECT *,\n        LAG(${metricAlias}, ${offset}) OVER (${windowSpec}) AS "previous_value"\n    FROM ${currentSource}\n)`);
+            currentSource = 'lagged';
+            selectExprs.length = 0;
+            selectExprs.push('*');
+            selectExprs.push(`(${metricAlias} - "previous_value") / NULLIF(ABS("previous_value"), 0) * 100 AS "growth_pct"`);
+        } else if (comp.type === 'same_period_last_year') {
+            // SPLY: self-join using grain-shifted key
+            // For year grain → shift key by -1 year
+            // For month grain (YYYY-MM) → shift year part by -1
+            // For quarter grain (YYYY-QN) → shift year part by -1
+            const grain = timeDim!.grain;
+            let shiftExpr: string;
+
+            if (grain === 'year') {
+                shiftExpr = `CAST(CAST(${timeDimAlias} AS INTEGER) - 1 AS TEXT)`;
+            } else if (grain === 'month') {
+                // '2019-03' → '2018-03' : shift year part
+                shiftExpr = `CONCAT(CAST(LEFT(${timeDimAlias}, 4)::INT - 1 AS TEXT), SUBSTRING(${timeDimAlias} FROM 5))`;
+            } else if (grain === 'quarter') {
+                // '2019-Q2' → '2018-Q2' : shift year part
+                shiftExpr = `CONCAT(CAST(LEFT(${timeDimAlias}, 4)::INT - 1 AS TEXT), SUBSTRING(${timeDimAlias} FROM 5))`;
+            } else {
+                // Fallback for week/day: use LAG(12) or LAG(365) as approximation
+                shiftExpr = `LAG(${metricAlias}, ${grain === 'week' ? 52 : 365}) OVER (${windowSpec})`;
+            }
+
+            if (grain === 'year' || grain === 'month' || grain === 'quarter') {
+                // Self-join approach
+                const partJoinConds = partitionCols.map(pc => `c.${pc} = p.${pc}`).join(' AND ');
+                const joinOn = partJoinConds
+                    ? `p.${timeDimAlias} = ${shiftExpr.replace(new RegExp(timeDimAlias!.replace(/"/g, '""'), 'g'), `c.${timeDimAlias}`)} AND ${partJoinConds}`
+                    : `p.${timeDimAlias} = ${shiftExpr.replace(new RegExp(timeDimAlias!.replace(/"/g, '""'), 'g'), `c.${timeDimAlias}`)}`;
+
+                // Simpler: just use aliased references
+                const shiftExprC = grain === 'year'
+                    ? `CAST(CAST(c.${timeDimAlias} AS INTEGER) - 1 AS TEXT)`
+                    : `CONCAT(CAST(LEFT(c.${timeDimAlias}, 4)::INT - 1 AS TEXT), SUBSTRING(c.${timeDimAlias} FROM 5))`;
+
+                const partJoin = partitionCols.length > 0
+                    ? ` AND ${partitionCols.map(pc => `c.${pc} = p.${pc}`).join(' AND ')}`
+                    : '';
+
+                ctes.push(`lagged AS (\n    SELECT c.*, p.${metricAlias} AS "previous_value"\n    FROM ${currentSource} c\n    LEFT JOIN ${currentSource} p ON p.${timeDimAlias} = ${shiftExprC}${partJoin}\n)`);
+                currentSource = 'lagged';
+                selectExprs.length = 0;
+                selectExprs.push('*');
+                selectExprs.push(`(${metricAlias} - "previous_value") / NULLIF(ABS("previous_value"), 0) * 100 AS "growth_pct"`);
+            } else {
+                // Day/week fallback: use LAG with large offset
+                const lagOffset = grain === 'week' ? 52 : 365;
+                ctes.push(`lagged AS (\n    SELECT *,\n        LAG(${metricAlias}, ${lagOffset}) OVER (${windowSpec}) AS "previous_value"\n    FROM ${currentSource}\n)`);
+                currentSource = 'lagged';
+                selectExprs.length = 0;
+                selectExprs.push('*');
+                selectExprs.push(`(${metricAlias} - "previous_value") / NULLIF(ABS("previous_value"), 0) * 100 AS "growth_pct"`);
+            }
+        }
+    }
+
+    // ── CTE: enriched (table calculations) ───────────────────────
+    if (hasCalcs && enriched.calculations && enriched.calculations.length > 0) {
+        const calcs = enriched.calculations;
+        const calcExprs: string[] = [];
+        const windowSpec = windowOrderClause
+            ? `${partitionClause}${windowOrderClause}`
+            : null;
+
+        for (const calc of calcs) {
+            switch (calc) {
+                case 'running_total':
+                    if (windowSpec) {
+                        calcExprs.push(`SUM(${metricAlias}) OVER (${windowSpec} ROWS UNBOUNDED PRECEDING) AS "running_total"`);
+                    }
+                    break;
+                case 'pct_of_total': {
+                    const overClause = partitionCols.length > 0
+                        ? `OVER (PARTITION BY ${partitionCols.join(', ')})`
+                        : 'OVER ()';
+                    calcExprs.push(`${metricAlias} / NULLIF(SUM(${metricAlias}) ${overClause}, 0) * 100 AS "pct_of_total"`);
+                    break;
+                }
+                case 'moving_avg': {
+                    const w = enriched.movingAvgWindow || 3;
+                    if (windowSpec) {
+                        calcExprs.push(`AVG(${metricAlias}) OVER (${windowSpec} ROWS BETWEEN ${w - 1} PRECEDING AND CURRENT ROW) AS "moving_avg_${w}"`);
+                    }
+                    break;
+                }
+                case 'pct_change':
+                    if (windowSpec) {
+                        calcExprs.push(`(${metricAlias} - LAG(${metricAlias}) OVER (${windowSpec})) / NULLIF(ABS(LAG(${metricAlias}) OVER (${windowSpec})), 0) * 100 AS "pct_change"`);
+                    }
+                    break;
+                case 'rank':
+                    calcExprs.push(`ROW_NUMBER() OVER (${partitionClause}ORDER BY ${metricAlias} DESC) AS "rank"`);
+                    break;
+                case 'difference':
+                    if (windowSpec) {
+                        calcExprs.push(`${metricAlias} - LAG(${metricAlias}) OVER (${windowSpec}) AS "difference"`);
+                    }
+                    break;
+            }
+        }
+
+        if (calcExprs.length > 0) {
+            ctes.push(`enriched AS (\n    SELECT *,\n        ${calcExprs.join(',\n        ')}\n    FROM ${currentSource}\n)`);
+            currentSource = 'enriched';
+            selectExprs.length = 0;
+            selectExprs.push('*');
+        }
+    }
+
+    // ── Final SELECT ─────────────────────────────────────────────
+    const limitClause = plan.limit && plan.limit > 0
+        ? `\nLIMIT ${Math.min(plan.limit, 10000)}`
+        : '';
+
+    const header = '-- Postgres/DuckDB compatible';
+    const withClause = `WITH ${ctes.join(',\n')}`;
+    const finalSelect = `SELECT ${selectExprs.join(',\n       ')}\nFROM ${currentSource}`;
+    const finalOrder = finalOrderBy ? `\n${finalOrderBy}` : '';
+
+    return `${header}\n${withClause}\n${finalSelect}${finalOrder}${limitClause}`;
 }

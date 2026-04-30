@@ -134,3 +134,29 @@ export interface QueryPlan {
     _dateColumnKey?: string;         // Resolved date column for time bucketing
     _emptyBucketMode?: 'include' | 'exclude'; // time → include, categorical → exclude
 }
+
+// ── ENRICHED QUERY (Feature Layer) ──────────────────────────────
+// Wraps the base QueryPlan with comparison + table calculation config.
+// The enriched SQL compiler reads this to generate CTEs + window functions.
+
+export interface ComparisonConfig {
+    type: 'previous_period' | 'same_period_last_year' | 'same_period_last_n';
+    offset?: number;        // For last_n: how many periods back
+    grain?: string;         // For last_n: the grain of the offset
+    dateRange?: { start: string; end: string };  // Resolved time filter bounds
+}
+
+export type TableCalculation =
+    | 'running_total'
+    | 'pct_of_total'
+    | 'moving_avg'
+    | 'pct_change'
+    | 'rank'
+    | 'difference';
+
+export interface EnrichedQuery {
+    basePlan: QueryPlan;
+    comparison?: ComparisonConfig;
+    calculations?: TableCalculation[];
+    movingAvgWindow?: number;         // Default: 3
+}

@@ -1,5 +1,6 @@
 ﻿import { CanonicalMapping, Dataset, DimDateRow, QuestionTemplate, QueryConfig } from "../types";
-import { buildQueryPlan, compileSQL, executeQueryPlan, validatePlan, dimensionId } from './queryPlan';
+import { buildQueryPlan, compileSQL, compileEnrichedSQL, executeQueryPlan, validatePlan, dimensionId } from './queryPlan';
+import type { EnrichedQuery, ComparisonConfig, TableCalculation } from './queryPlan';
 import { DateRange, pad, getISOWeek } from './dateHelpers';
 
 // --- VALIDATION & SAFETY LAYERS ---
@@ -166,420 +167,178 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 console.warn(`[QueryPlan] Validation warnings:`, validation.warnings);
             }
 
-            // 3. EXECUTE QUERY PLAN (WHERE â†’ GROUP â†’ AGG â†’ HAVING â†’ ORDER â†’ LIMIT)
+            // 3. EXECUTE QUERY PLAN (WHERE → GROUP → AGG → HAVING → ORDER → LIMIT)
             const result = executeQueryPlan(plan, rows, dimDate);
 
-            // 4. COMPILE SQL from the same plan
-            const sql = compileSQL(plan);
+            // 4. BUILD ENRICHED QUERY and COMPILE SQL
+            // The enriched query wraps the base plan with comparison + table calc config.
+            // compileEnrichedSQL produces CTEs + window functions that match JS logic.
+            const enrichedComparison: ComparisonConfig | undefined = query.comparison && isTimeDim ? {
+                type: query.comparison as 'previous_period' | 'same_period_last_year' | 'same_period_last_n',
+                offset: query.comparisonOffset,
+                grain: query.comparisonGrain,
+            } : undefined;
+
+            const enrichedCalcs: TableCalculation[] = [];
+            // Table calculations would be populated from formatting config if present
+            // (reserved for future use — the SQL compiler already supports them)
+
+            const enriched: EnrichedQuery = {
+                basePlan: plan,
+                comparison: enrichedComparison,
+                calculations: enrichedCalcs.length > 0 ? enrichedCalcs : undefined,
+            };
+
+            const sql = compileEnrichedSQL(enriched);
 
             // Bridge variables: map plan aliases back to names used by comparison code
             const planDimKey = result.xKey;            // dimension output key (alias or column name)
             const planMetricKey = result.yKey;         // primary metric alias
             const secMetrics = result.secondaryYKeys || [];
-            const aggType = plan.metrics[0]?.aggregation || 'SUM';
-
-            // Extract resolved time filter boundaries from the plan (for comparison)
-            let timeFilterStart = '1970-01-01';
-            let timeFilterEnd = dates.today;
-            const timeRangeFilter = plan.filters.range.find(f => {
-                const fCol = f.column.toLowerCase().replace(/[_\s]+/g, '');
-                const dCol = dateColKey.toLowerCase().replace(/[_\s]+/g, '');
-                return fCol === dCol;
-            });
-            if (timeRangeFilter) {
-                timeFilterStart = timeRangeFilter.start || '1970-01-01';
-                timeFilterEnd = timeRangeFilter.end || dates.today;
-            }
-
-            // Build context-filtered rows (dimension/measure filters but NO time filter)
-            // Used by comparison blocks to access historical data
-            let contextFilteredRows = [...rows];
-            if (query.filters) {
-                Object.entries(query.filters).forEach(([col, allowedValues]) => {
-                    let effectiveCol = col;
-                    if (contextFilteredRows.length > 0 && !(col in contextFilteredRows[0])) {
-                        const keys = Object.keys(contextFilteredRows[0]);
-                        const normalize = (s: string) => s.toLowerCase().replace(/[_\s]+/g, '');
-                        const target = normalize(col);
-                        const match = keys.find(k => normalize(k) === target);
-                        if (match) effectiveCol = match;
-                    }
-                    contextFilteredRows = contextFilteredRows.filter(r => {
-                        const val = String(r[effectiveCol] || '').trim();
-                        return (allowedValues as string[]).some(allowed => val.toLowerCase() === String(allowed).toLowerCase());
-                    });
-                });
-            }
 
             // Use the executed data (already sorted and limited by the plan engine)
             data = result.data;
 
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-            // COMPARISON â€” Post-Processing (v1: stays outside the plan)
-            // This block injects previous_value and growth_pct into data rows.
-            // Uses planDimKey/planMetricKey (the alias keys) for data access.
-            // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+            // ═══════════════════════════════════════════════════════════════════
+            // POST-AGGREGATE COMPARISON — Unified with SQL (LAG on grouped data)
+            // Both JS and SQL operate on the same grouped results using identical
+            // windowing semantics: LAG(metric) OVER (PARTITION BY cats ORDER BY time)
+            // ═══════════════════════════════════════════════════════════════════
 
-            // --- TREND COMPARISON MODE (Dual-Line Time Series) ---
-            if ((query.comparison === 'previous_period' || query.comparison === 'same_period_last_year' || query.comparison === 'same_period_last_n')
-                && isTimeDim) {
+            if (query.comparison && isTimeDim && data.length > 1) {
+                const timeDim = plan.dimensions.find(d => d.type === 'time_bucket');
+                const partDims = plan.dimensions.filter(d => d.type === 'column');
 
-                console.log(`[Engine Comparison] ENTERED trend comparison block. comparison=${query.comparison}, dim=${query.dimension}, isTimeDim=${isTimeDim}, data.length=${data.length}`);
-                console.log(`[Engine Comparison] timeFilterStart=${timeFilterStart}, timeFilterEnd=${timeFilterEnd}`);
-                console.log(`[Engine Comparison] contextFilteredRows.length=${contextFilteredRows.length}`);
-
-                const grain = query.dimension || 'day';
-                const allRows = contextFilteredRows;
-
-                const formatBucket = (dateStr: string): string => {
-                    const parts = dateStr.split('-').map(Number);
-                    const d = new Date(parts[0], parts[1] - 1, parts[2] || 1, 12);
-                    const y = d.getFullYear();
-                    const m = d.getMonth() + 1;
-                    const dy = d.getDate();
-
-                    if (grain === 'day') return `${y}-${pad(m)}-${pad(dy)}`;
-                    if (grain === 'week') {
-                        const week = getISOWeek(d);
-                        return `${y}-W${pad(week)}`;
+                // Time-aware sort: PARTITION BY categorical dims, ORDER BY time dim
+                data.sort((a: any, b: any) => {
+                    // First sort by partition (categorical) dims
+                    for (const pd of partDims) {
+                        const aVal = String(a[pd.column] || '');
+                        const bVal = String(b[pd.column] || '');
+                        if (aVal < bVal) return -1;
+                        if (aVal > bVal) return 1;
                     }
-                    if (grain === 'month') return `${y}-${pad(m)}`;
-                    if (grain === 'quarter') {
-                        const q = Math.ceil(m / 3);
-                        return `${y}-Q${q}`;
-                    }
-                    if (grain === 'year') return `${y}`;
-                    return dateStr;
-                };
-
-                const currentGroups: Record<string, number> = {};
-                data.forEach((d: any) => {
-                    const key = String(d[planDimKey] || '');
-                    currentGroups[key] = (currentGroups[key] || 0) + (Number(d[planMetricKey]) || 0);
+                    // Then sort by time dim (zero-padded strings = safe lexicographic)
+                    const aTime = String(a[planDimKey] || '');
+                    const bTime = String(b[planDimKey] || '');
+                    return aTime < bTime ? -1 : aTime > bTime ? 1 : 0;
                 });
 
-                const minDate = timeFilterStart;
-                const maxDate = timeFilterEnd;
+                // Build partition key for each row (categorical dims concatenated)
+                const partKey = (row: any): string =>
+                    partDims.map(pd => String(row[pd.column] || '')).join('||');
 
-                console.log(`[Engine Comparison] currentGroups:`, JSON.stringify(currentGroups), `minDate=${minDate}, maxDate=${maxDate}`);
-
-                const compGroups: Record<string, number> = {};
-                const prevLabelMap: Record<string, string> = {};
-
-                if (query.comparison === 'same_period_last_year' && minDate && maxDate) {
-                    const shiftDate = (ds: string, years: number): string => {
-                        const d = new Date(`${ds}T00:00:00Z`);
-                        d.setUTCFullYear(d.getUTCFullYear() + years);
-                        return d.toISOString().split('T')[0];
-                    };
-                    const lyStart = shiftDate(minDate, -1);
-                    const lyEnd = shiftDate(maxDate, -1);
-
-                    allRows.forEach(r => {
-                        const dStr = date(r);
-                        if (dStr >= lyStart && dStr <= lyEnd) {
-                            const bucket = formatBucket(dStr);
-                            const shiftedBucket = formatBucket(shiftDate(dStr, 1));
-                            compGroups[shiftedBucket] = (compGroups[shiftedBucket] || 0) + (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
-                            prevLabelMap[shiftedBucket] = bucket;
+                if (query.comparison === 'previous_period') {
+                    // LAG(1): previous row's metric within partition group
+                    let prevPartKey = '';
+                    let prevValue: number | undefined = undefined;
+                    for (let i = 0; i < data.length; i++) {
+                        const pk = partKey(data[i]);
+                        if (pk !== prevPartKey) {
+                            // New partition group — reset
+                            prevPartKey = pk;
+                            prevValue = undefined;
                         }
-                    });
-                } else if (query.comparison === 'previous_period' && minDate && maxDate) {
-                    const startD = new Date(`${minDate}T00:00:00Z`);
-                    const endD = new Date(`${maxDate}T00:00:00Z`);
-                    const periodMs = endD.getTime() - startD.getTime();
-                    const periodDays = Math.max(1, Math.round(periodMs / 86400000));
-
-                    const prevEndD = new Date(startD.getTime() - 86400000);
-                    const prevStartD = new Date(prevEndD.getTime() - (periodDays - 1) * 86400000);
-                    const prevStart = prevStartD.toISOString().split('T')[0];
-                    const prevEnd = prevEndD.toISOString().split('T')[0];
-
-                    const shiftForward = (d: string): string => {
-                        const dt = new Date(`${d}T00:00:00Z`);
-                        dt.setUTCDate(dt.getUTCDate() + periodDays);
-                        return dt.toISOString().split('T')[0];
-                    };
-
-                    allRows.forEach(r => {
-                        const dStr = date(r);
-                        if (dStr >= prevStart && dStr <= prevEnd) {
-                            const bucket = formatBucket(dStr);
-                            const shiftedBucket = formatBucket(shiftForward(dStr));
-                            compGroups[shiftedBucket] = (compGroups[shiftedBucket] || 0) + (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
-                            prevLabelMap[shiftedBucket] = bucket;
-                        }
-                    });
-                } else if (query.comparison === 'same_period_last_n' && minDate && maxDate) {
-                    const compGrain = query.comparisonGrain || 'day';
-                    const compOffset = query.comparisonOffset || 1;
-                    const asOf = new Date(`${dates.today}T00:00:00Z`);
-                    const fmt = (d: Date) => d.toISOString().split('T')[0];
-
-                    let prevStart: string, prevEnd: string;
-                    if (compGrain === 'day') {
-                        const end = new Date(asOf); end.setUTCDate(end.getUTCDate() - 1);
-                        const start = new Date(asOf); start.setUTCDate(start.getUTCDate() - compOffset);
-                        prevStart = fmt(start); prevEnd = fmt(end);
-                    } else if (compGrain === 'week') {
-                        const dow = asOf.getUTCDay();
-                        const monday = new Date(asOf); monday.setUTCDate(monday.getUTCDate() - ((dow + 6) % 7));
-                        const end = new Date(monday); end.setUTCDate(end.getUTCDate() - 1);
-                        const start = new Date(end); start.setUTCDate(start.getUTCDate() - (compOffset * 7) + 1);
-                        prevStart = fmt(start); prevEnd = fmt(end);
-                    } else if (compGrain === 'month') {
-                        const endD = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 0));
-                        const startD = new Date(Date.UTC(endD.getUTCFullYear(), endD.getUTCMonth() - (compOffset - 1), 1));
-                        prevStart = fmt(startD); prevEnd = fmt(endD);
-                    } else if (compGrain === 'quarter') {
-                        const curQ = Math.floor(asOf.getUTCMonth() / 3);
-                        const endD = new Date(Date.UTC(asOf.getUTCFullYear(), curQ * 3, 0));
-                        const startD = new Date(Date.UTC(endD.getUTCFullYear(), endD.getUTCMonth() + 1 - (compOffset * 3), 1));
-                        prevStart = fmt(startD); prevEnd = fmt(endD);
-                    } else {
-                        const endD = new Date(Date.UTC(asOf.getUTCFullYear() - 1, 11, 31));
-                        const startD = new Date(Date.UTC(asOf.getUTCFullYear() - compOffset, 0, 1));
-                        prevStart = fmt(startD); prevEnd = fmt(endD);
-                    }
-
-                    allRows.forEach(r => {
-                        const dStr = date(r);
-                        if (dStr >= prevStart && dStr <= prevEnd) {
-                            const bucket = formatBucket(dStr);
-                            compGroups[bucket] = (compGroups[bucket] || 0) + (Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0);
-                        }
-                    });
-                }
-
-                // Merge comparison data into result
-                data.forEach((d: any) => {
-                    const key = String(d[planDimKey] || '');
-                    const prevVal = compGroups[key];
-                    const current = Number(d[planMetricKey]) || 0;
-                    d.previous_value = prevVal !== undefined ? prevVal : undefined;
-                    d.previous_label = prevLabelMap[key] || undefined;
-                    if (prevVal !== undefined && prevVal !== 0) {
-                        d.growth_pct = ((current - prevVal) / Math.abs(prevVal)) * 100;
-                    } else if (current !== 0 && prevVal !== undefined) {
-                        d.growth_pct = 100;
-                    } else {
-                        d.growth_pct = undefined;
-                    }
-                });
-            }
-
-            // --- NON-TIME DIMENSION COMPARISON ---
-            if (query.comparison === 'previous_period' && !isTimeDim) {
-                const effStart = timeFilterStart;
-                const effEnd = timeFilterEnd;
-
-                const allRows = contextFilteredRows;
-                const startD = new Date(`${effStart}T00:00:00Z`);
-                const endD = new Date(`${effEnd}T00:00:00Z`);
-                const periodMs = endD.getTime() - startD.getTime();
-                const periodDays = Math.max(1, Math.round(periodMs / 86400000));
-
-                const prevEndD = new Date(startD.getTime() - 86400000);
-                const prevStartD = new Date(prevEndD.getTime() - (periodDays - 1) * 86400000);
-                const prevStart = prevStartD.toISOString().split('T')[0];
-                const prevEnd = prevEndD.toISOString().split('T')[0];
-
-                console.log(`[Engine Comparison] Previous period: ${prevStart} â†’ ${prevEnd} (${periodDays} days)`);
-
-                const prevGroups: Record<string, { sum: number; count: number; min: number; max: number; distinct: Set<string> }> = {};
-                allRows.forEach(r => {
-                    const d = date(r);
-                    if (d >= prevStart && d <= prevEnd) {
-                        const key = dimCol ? String(r[dimCol] || 'Unknown') : '__total__';
-                        const v = Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0;
-                        if (!prevGroups[key]) {
-                            prevGroups[key] = { sum: v, count: 1, min: v, max: v, distinct: new Set([String(r[metricCol])]) };
+                        const curr = Number(data[i][planMetricKey]) || 0;
+                        data[i].previous_value = prevValue;
+                        if (prevValue !== undefined && prevValue !== 0) {
+                            data[i].growth_pct = ((curr - prevValue) / Math.abs(prevValue)) * 100;
+                        } else if (prevValue !== undefined) {
+                            data[i].growth_pct = curr !== 0 ? 100 : 0;
                         } else {
-                            prevGroups[key].sum += v;
-                            prevGroups[key].count += 1;
-                            prevGroups[key].min = Math.min(prevGroups[key].min, v);
-                            prevGroups[key].max = Math.max(prevGroups[key].max, v);
-                            if (r[metricCol] !== undefined && r[metricCol] !== null) prevGroups[key].distinct.add(String(r[metricCol]));
+                            data[i].growth_pct = undefined;
                         }
+                        prevValue = curr;
                     }
-                });
-
-                data.forEach((d: any) => {
-                    const key = dimCol ? String(d[planDimKey] || '') : '__total__';
-                    const stats = prevGroups[key];
-                    if (stats) {
-                        let prevVal: number;
-                        switch (aggType) {
-                            case 'AVG': prevVal = stats.sum / (stats.count || 1); break;
-                            case 'COUNT': prevVal = stats.count; break;
-                            case 'COUNT_DISTINCT': prevVal = stats.distinct.size; break;
-                            case 'MAX': prevVal = stats.max; break;
-                            case 'MIN': prevVal = stats.min; break;
-                            case 'SUM': default: prevVal = stats.sum; break;
-                        }
-                        d.previous_value = prevVal;
-                        const current = Number(d[planMetricKey]) || 0;
-                        if (prevVal !== 0) {
-                            d.growth_pct = ((current - prevVal) / Math.abs(prevVal)) * 100;
-                        } else if (current !== 0) {
-                            d.growth_pct = 100;
-                        } else {
-                            d.growth_pct = 0;
-                        }
-                    } else {
-                        d.previous_value = undefined;
-                        d.growth_pct = undefined;
+                } else if (query.comparison === 'same_period_last_n') {
+                    // LAG(N): offset rows back within partition
+                    const offset = query.comparisonOffset || 1;
+                    // Group by partition key, then apply lag within each group
+                    const partitionGroups = new Map<string, any[]>();
+                    for (const row of data) {
+                        const pk = partKey(row);
+                        if (!partitionGroups.has(pk)) partitionGroups.set(pk, []);
+                        partitionGroups.get(pk)!.push(row);
                     }
-                });
-            }
-
-            // --- SAME PERIOD LAST YEAR (Non-Time-Dim) ---
-            if (query.comparison === 'same_period_last_year' && !isTimeDim) {
-                const allRows = contextFilteredRows;
-                const lyGroups: Record<string, { sum: number; count: number; min: number; max: number; distinct: Set<string> }> = {};
-                const minDate = timeFilterStart;
-                const maxDate = timeFilterEnd;
-
-                if (minDate && maxDate) {
-                    const shiftYear = (dateStr: string) => {
-                        const d = new Date(`${dateStr}T00:00:00Z`);
-                        d.setUTCFullYear(d.getUTCFullYear() - 1);
-                        return d.toISOString().split('T')[0];
-                    };
-                    const lyStartStr = shiftYear(minDate);
-                    const lyEndStr = shiftYear(maxDate);
-
-                    allRows.forEach(r => {
-                        const d = date(r);
-                        if (d >= lyStartStr && d <= lyEndStr) {
-                            const key = dimCol ? String(r[dimCol] || 'Unknown') : '__total__';
-                            const v = Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0;
-                            if (!lyGroups[key]) {
-                                lyGroups[key] = { sum: v, count: 1, min: v, max: v, distinct: new Set([String(r[metricCol])]) };
+                    for (const group of partitionGroups.values()) {
+                        for (let i = 0; i < group.length; i++) {
+                            const curr = Number(group[i][planMetricKey]) || 0;
+                            const prev = i >= offset ? Number(group[i - offset][planMetricKey]) || 0 : undefined;
+                            group[i].previous_value = prev;
+                            if (prev !== undefined && prev !== 0) {
+                                group[i].growth_pct = ((curr - prev) / Math.abs(prev)) * 100;
+                            } else if (prev !== undefined) {
+                                group[i].growth_pct = curr !== 0 ? 100 : 0;
                             } else {
-                                lyGroups[key].sum += v;
-                                lyGroups[key].count += 1;
-                                lyGroups[key].min = Math.min(lyGroups[key].min, v);
-                                lyGroups[key].max = Math.max(lyGroups[key].max, v);
-                                if (r[metricCol] !== undefined && r[metricCol] !== null) lyGroups[key].distinct.add(String(r[metricCol]));
+                                group[i].growth_pct = undefined;
                             }
-                        }
-                    });
-
-                    data.forEach((d: any) => {
-                        const key = dimCol ? String(d[planDimKey] || '') : '__total__';
-                        const stats = lyGroups[key];
-                        if (stats) {
-                            let lyVal: number;
-                            switch (aggType) {
-                                case 'AVG': lyVal = stats.sum / (stats.count || 1); break;
-                                case 'COUNT': lyVal = stats.count; break;
-                                case 'COUNT_DISTINCT': lyVal = stats.distinct.size; break;
-                                case 'MAX': lyVal = stats.max; break;
-                                case 'MIN': lyVal = stats.min; break;
-                                case 'SUM': default: lyVal = stats.sum; break;
-                            }
-                            const current = Number(d[planMetricKey]) || 0;
-                            d.previous_value = lyVal;
-                            if (lyVal !== 0) {
-                                d.growth_pct = ((current - lyVal) / Math.abs(lyVal)) * 100;
-                            } else if (current !== 0) {
-                                d.growth_pct = 100;
-                            } else {
-                                d.growth_pct = undefined;
-                            }
-                        } else {
-                            d.previous_value = undefined;
-                            d.growth_pct = undefined;
-                        }
-                    });
-                }
-            }
-
-            // --- SAME PERIOD LAST N (Non-Time-Dim) ---
-            if (query.comparison === 'same_period_last_n' && !isTimeDim) {
-                const allRows = contextFilteredRows;
-                const compGrain = query.comparisonGrain || 'day';
-                const compOffset = query.comparisonOffset || 1;
-                const nGroups: Record<string, { sum: number; count: number; min: number; max: number; distinct: Set<string> }> = {};
-                const totalFallbackKey = '__total__';
-                const asOf = new Date(`${dates.today}T00:00:00Z`);
-                const fmt = (d: Date) => d.toISOString().split('T')[0];
-
-                let prevStart: string, prevEnd: string;
-                if (compGrain === 'day') {
-                    const end = new Date(asOf); end.setUTCDate(end.getUTCDate() - 1);
-                    const start = new Date(asOf); start.setUTCDate(start.getUTCDate() - compOffset);
-                    prevStart = fmt(start); prevEnd = fmt(end);
-                } else if (compGrain === 'week') {
-                    const dow = asOf.getUTCDay();
-                    const monday = new Date(asOf); monday.setUTCDate(monday.getUTCDate() - ((dow + 6) % 7));
-                    const end = new Date(monday); end.setUTCDate(end.getUTCDate() - 1);
-                    const start = new Date(end); start.setUTCDate(start.getUTCDate() - (compOffset * 7) + 1);
-                    prevStart = fmt(start); prevEnd = fmt(end);
-                } else if (compGrain === 'month') {
-                    const endD = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 0));
-                    const startD = new Date(Date.UTC(endD.getUTCFullYear(), endD.getUTCMonth() - (compOffset - 1), 1));
-                    prevStart = fmt(startD); prevEnd = fmt(endD);
-                } else if (compGrain === 'quarter') {
-                    const curQ = Math.floor(asOf.getUTCMonth() / 3);
-                    const endD = new Date(Date.UTC(asOf.getUTCFullYear(), curQ * 3, 0));
-                    const startD = new Date(Date.UTC(endD.getUTCFullYear(), endD.getUTCMonth() + 1 - (compOffset * 3), 1));
-                    prevStart = fmt(startD); prevEnd = fmt(endD);
-                } else {
-                    const endD = new Date(Date.UTC(asOf.getUTCFullYear() - 1, 11, 31));
-                    const startD = new Date(Date.UTC(asOf.getUTCFullYear() - compOffset, 0, 1));
-                    prevStart = fmt(startD); prevEnd = fmt(endD);
-                }
-
-                allRows.forEach(r => {
-                    const d = date(r);
-                    if (d >= prevStart && d <= prevEnd) {
-                        const key = dimCol ? String(r[dimCol] || 'Unknown') : totalFallbackKey;
-                        const v = Number(String(r[metricCol] || 0).replace(/[$,]/g, '')) || 0;
-                        if (!nGroups[key]) {
-                            nGroups[key] = { sum: v, count: 1, min: v, max: v, distinct: new Set([String(r[metricCol])]) };
-                        } else {
-                            nGroups[key].sum += v;
-                            nGroups[key].count += 1;
-                            nGroups[key].min = Math.min(nGroups[key].min, v);
-                            nGroups[key].max = Math.max(nGroups[key].max, v);
-                            if (r[metricCol] !== undefined && r[metricCol] !== null) nGroups[key].distinct.add(String(r[metricCol]));
                         }
                     }
-                });
+                } else if (query.comparison === 'same_period_last_year') {
+                    // SPLY: For each bucket (e.g., "2019-Q1"), find "2018-Q1" in the data
+                    // First, build a map of ALL buckets → metric value (from unfiltered data)
 
-                data.forEach((d: any) => {
-                    const key = dimCol ? String(d[planDimKey] || '') : totalFallbackKey;
-                    const stats = nGroups[key];
-                    const effectiveStats = stats || (key === totalFallbackKey ? undefined : nGroups[totalFallbackKey]);
-                    const current = Number(d[planMetricKey]) || 0;
-                    if (effectiveStats) {
-                        let prevVal: number;
-                        switch (aggType) {
-                            case 'AVG': prevVal = effectiveStats.sum / (effectiveStats.count || 1); break;
-                            case 'COUNT': prevVal = effectiveStats.count; break;
-                            case 'COUNT_DISTINCT': prevVal = effectiveStats.distinct.size; break;
-                            case 'MAX': prevVal = effectiveStats.max; break;
-                            case 'MIN': prevVal = effectiveStats.min; break;
-                            case 'SUM': default: prevVal = effectiveStats.sum; break;
+                    // Re-run the base plan WITHOUT time filter to get all periods
+                    const unfilteredPlan = {
+                        ...plan, filters: {
+                            ...plan.filters,
+                            range: plan.filters.range.filter(f => {
+                                const fCol = f.column.toLowerCase().replace(/[_\s]+/g, '');
+                                const dCol = dateColKey.toLowerCase().replace(/[_\s]+/g, '');
+                                return fCol !== dCol; // Remove date range filter
+                            }),
+                            date: [] // Remove date hierarchy filters too
                         }
-                        d.previous_value = prevVal;
-                        if (prevVal !== 0) {
-                            d.growth_pct = ((current - prevVal) / Math.abs(prevVal)) * 100;
-                        } else if (current !== 0) {
-                            d.growth_pct = 100;
-                        } else {
-                            d.growth_pct = undefined;
-                        }
-                    } else {
-                        d.previous_value = undefined;
-                        d.growth_pct = undefined;
+                    };
+                    const allPeriodsResult = executeQueryPlan(unfilteredPlan, rows, dimDate);
+
+                    // Build lookup map: grainKey|partKey → metric value
+                    const allPeriodsMap = new Map<string, number>();
+                    for (const row of allPeriodsResult.data) {
+                        const gk = String(row[planDimKey] || '');
+                        const pk = partKey(row);
+                        const mapKey = pk ? `${pk}||${gk}` : gk;
+                        allPeriodsMap.set(mapKey, Number(row[planMetricKey]) || 0);
                     }
-                });
+
+                    // Shift grain key by -1 year
+                    const shiftKey = (key: string): string => {
+                        // "2019" → "2018", "2019-Q1" → "2018-Q1", "2019-03" → "2018-03"
+                        const yearMatch = key.match(/^(\d{4})(.*)$/);
+                        if (yearMatch) {
+                            return `${parseInt(yearMatch[1]) - 1}${yearMatch[2]}`;
+                        }
+                        return key;
+                    };
+
+                    for (const row of data) {
+                        const gk = String(row[planDimKey] || '');
+                        const pk = partKey(row);
+                        const shiftedGk = shiftKey(gk);
+                        const mapKey = pk ? `${pk}||${shiftedGk}` : shiftedGk;
+                        const prevVal = allPeriodsMap.get(mapKey);
+                        const curr = Number(row[planMetricKey]) || 0;
+                        row.previous_value = prevVal ?? undefined;
+                        row.previous_label = prevVal !== undefined ? shiftedGk : undefined;
+                        if (prevVal !== undefined && prevVal !== 0) {
+                            row.growth_pct = ((curr - prevVal) / Math.abs(prevVal)) * 100;
+                        } else if (prevVal !== undefined) {
+                            row.growth_pct = curr !== 0 ? 100 : 0;
+                        } else {
+                            row.growth_pct = undefined;
+                        }
+                    }
+                }
+
+                console.log(`[Engine Comparison] ${query.comparison} applied to ${data.length} grouped rows (post-aggregate)`);
             }
 
-            // â”€â”€ Auto-axis detection for multi-metric â”€â”€
+            // Non-time dimension with comparison: disable (not semantically meaningful)
+            if (query.comparison && !isTimeDim) {
+                console.log(`[Engine Comparison] Comparison '${query.comparison}' skipped: requires time dimension`);
+            }
+
+            // ─── Auto-axis detection for multi-metric ───
             let detectedAxisMode: 'single' | 'dual' | 'blended' = 'single';
             if (secMetrics.length > 0 && data.length > 0) {
                 const primaryMax = Math.max(...data.map((d: any) => Math.abs(d[planMetricKey] || 0)));
