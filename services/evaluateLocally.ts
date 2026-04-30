@@ -179,17 +179,39 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 grain: query.comparisonGrain,
             } : undefined;
 
-            const enrichedCalcs: TableCalculation[] = [];
-            // Table calculations would be populated from formatting config if present
-            // (reserved for future use — the SQL compiler already supports them)
+            // Map UI table calculation names → queryPlan TableCalculation type
+            const uiToSqlCalcMap: Record<string, import('./queryPlan').TableCalculation> = {
+                'percent_of_total': 'pct_of_total',
+                'rank_desc': 'rank',
+                'rank_asc': 'rank',
+                'running_total': 'running_total',
+                'moving_avg': 'moving_avg',
+                'pct_diff_from_prev': 'pct_change',
+                'diff_from_prev': 'difference',
+            };
+            const uiCalcs: string[] = (query.tableCalculations || []).filter((c: string) => c !== 'none');
+            const enrichedCalcs: import('./queryPlan').TableCalculation[] = uiCalcs
+                .map(c => uiToSqlCalcMap[c])
+                .filter((c): c is import('./queryPlan').TableCalculation => !!c);
 
-            const enriched: EnrichedQuery = {
+            // Base enriched query (comparison only, no table calcs) → base SQL
+            const baseEnriched: EnrichedQuery = {
                 basePlan: plan,
                 comparison: enrichedComparison,
-                calculations: enrichedCalcs.length > 0 ? enrichedCalcs : undefined,
             };
+            const sql = compileEnrichedSQL(baseEnriched);
 
-            const sql = compileEnrichedSQL(enriched);
+            // Calculated enriched query (comparison + table calcs) → calculatedSql
+            let calculatedSql: string | undefined;
+            if (enrichedCalcs.length > 0) {
+                const calcEnriched: EnrichedQuery = {
+                    basePlan: plan,
+                    comparison: enrichedComparison,
+                    calculations: enrichedCalcs,
+                    movingAvgWindow: 3,
+                };
+                calculatedSql = compileEnrichedSQL(calcEnriched);
+            }
 
             // Bridge variables: map plan aliases back to names used by comparison code
             const planDimKey = result.xKey;            // dimension output key (alias or column name)
@@ -360,6 +382,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             return {
                 data, xKey: planDimKey || 'metric', yKey: planMetricKey,
                 yLabel: yLabelStr, sql,
+                ...(calculatedSql ? { calculatedSql } : {}),
                 ...(secMetrics.length > 0 ? { secondaryYKeys: secMetrics, axisMode: finalAxisMode } : {})
             };
 

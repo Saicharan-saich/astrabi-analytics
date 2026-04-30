@@ -123,7 +123,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 comparisonGrain: ('comparisonGrain' in config) ? config.comparisonGrain : (result?.config?.comparisonGrain),
                 comparisonOffset: ('comparisonOffset' in config) ? config.comparisonOffset : (result?.config?.comparisonOffset),
                 ...(config.secondaryMetrics?.length > 0 ? { secondaryMetrics: config.secondaryMetrics, axisMode: config.axisMode || 'auto', secondaryMetricVisuals: config.secondaryMetricVisuals || {}, secondaryMetricAggregations: config.secondaryMetricAggregations || {} } : {}),
-                ...(config.secondaryDimensions?.length > 0 ? { secondaryDimensions: config.secondaryDimensions } : {})
+                ...(config.secondaryDimensions?.length > 0 ? { secondaryDimensions: config.secondaryDimensions } : {}),
+                tableCalculations: (formatting?.tableCalculations || []).filter(c => c !== 'none'),
             };
 
             const res = runAnalysis(dataset, query);
@@ -668,7 +669,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                             <div className="space-y-4">
                                 <div className="bg-gray-100 dark:bg-slate-900 rounded-xl p-4 shadow-inner overflow-hidden relative">
                                     <div className="absolute top-2 right-2 text-[10px] text-gray-500 dark:text-slate-500 font-mono uppercase flex items-center bg-gray-200 dark:bg-slate-800 px-2 py-1 rounded"><Code className="w-3 h-3 mr-1" /> Generated SQL</div>
-                                    <pre className="text-sm text-green-400 font-mono overflow-auto whitespace-pre-wrap p-2 min-h-[200px]">{result.sql}</pre>
+                                    <pre className="text-sm text-green-400 font-mono overflow-auto whitespace-pre-wrap p-2 min-h-[200px]">{showGrowthChart && result.calculatedSql ? result.calculatedSql : result.sql}</pre>
                                 </div>
                                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
                                     <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Query Config</h4>

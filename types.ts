@@ -256,7 +256,8 @@ export interface AnalysisResult {
   yKey: string;
   yLabel: string;
   insight: string;
-  sql: string; // Generated SQL query
+  sql: string; // Generated SQL query (base — no table calculations)
+  calculatedSql?: string; // Enriched SQL with table calculations (CTE + window functions)
   config: QueryConfig;
   error?: string; // If mapping failed
   kpi?: number | string; // Optional override for the main KPI number
