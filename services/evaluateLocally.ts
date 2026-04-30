@@ -173,7 +173,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             // 4. BUILD ENRICHED QUERY and COMPILE SQL
             // The enriched query wraps the base plan with comparison + table calc config.
             // compileEnrichedSQL produces CTEs + window functions that match JS logic.
-            const enrichedComparison: ComparisonConfig | undefined = query.comparison && isTimeDim ? {
+            const enrichedComparison: ComparisonConfig | undefined = query.comparison ? {
                 type: query.comparison as 'previous_period' | 'same_period_last_year' | 'same_period_last_n',
                 offset: query.comparisonOffset,
                 grain: query.comparisonGrain,
@@ -355,9 +355,119 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 console.log(`[Engine Comparison] ${query.comparison} applied to ${data.length} grouped rows (post-aggregate)`);
             }
 
-            // Non-time dimension with comparison: disable (not semantically meaningful)
+            // ═══════════════════════════════════════════════════════════════════
+            // NON-TIME DIMENSION COMPARISON (categorical dim, e.g., type/region)
+            // Re-run the base plan with shifted date filters, then merge results.
+            // This mirrors a SQL self-join on different date ranges.
+            // ═══════════════════════════════════════════════════════════════════
             if (query.comparison && !isTimeDim) {
-                console.log(`[Engine Comparison] Comparison '${query.comparison}' skipped: requires time dimension`);
+                // Extract the resolved time filter boundaries from the plan
+                let timeFilterStart = '1970-01-01';
+                let timeFilterEnd = dates.today;
+                const timeRangeFilter = plan.filters.range.find(f => {
+                    const fCol = f.column.toLowerCase().replace(/[_\s]+/g, '');
+                    const dCol = dateColKey.toLowerCase().replace(/[_\s]+/g, '');
+                    return fCol === dCol;
+                });
+                if (timeRangeFilter) {
+                    timeFilterStart = timeRangeFilter.start || '1970-01-01';
+                    timeFilterEnd = timeRangeFilter.end || dates.today;
+                }
+                // Also try to derive from actual data if no explicit range filter
+                if (timeFilterStart === '1970-01-01') {
+                    let minD = '9999-12-31', maxD = '0000-01-01';
+                    for (const r of rows) {
+                        const d = date(r);
+                        if (d > '1970-01-01' && d < '9999-01-01') {
+                            if (d < minD) minD = d;
+                            if (d > maxD) maxD = d;
+                        }
+                    }
+                    if (minD < '9999-12-31') { timeFilterStart = minD; timeFilterEnd = maxD; }
+                }
+
+                const aggType = plan.metrics[0]?.aggregation || 'SUM';
+                const startD = new Date(`${timeFilterStart}T00:00:00Z`);
+                const endD = new Date(`${timeFilterEnd}T00:00:00Z`);
+                const periodMs = endD.getTime() - startD.getTime();
+                const periodDays = Math.max(1, Math.round(periodMs / 86400000));
+
+                // Build comparison period boundaries
+                let prevStart: string, prevEnd: string;
+                if (query.comparison === 'previous_period') {
+                    const prevEndD = new Date(startD.getTime() - 86400000);
+                    const prevStartD = new Date(prevEndD.getTime() - (periodDays - 1) * 86400000);
+                    prevStart = prevStartD.toISOString().split('T')[0];
+                    prevEnd = prevEndD.toISOString().split('T')[0];
+                } else if (query.comparison === 'same_period_last_year') {
+                    const lyStart = new Date(startD);
+                    lyStart.setUTCFullYear(lyStart.getUTCFullYear() - 1);
+                    const lyEnd = new Date(endD);
+                    lyEnd.setUTCFullYear(lyEnd.getUTCFullYear() - 1);
+                    prevStart = lyStart.toISOString().split('T')[0];
+                    prevEnd = lyEnd.toISOString().split('T')[0];
+                } else {
+                    // same_period_last_n
+                    const compGrain = query.comparisonGrain || 'month';
+                    const compOffset = query.comparisonOffset || 1;
+                    const asOf = new Date(`${dates.today}T00:00:00Z`);
+                    const fmt = (d: Date) => d.toISOString().split('T')[0];
+                    if (compGrain === 'day') {
+                        const end = new Date(asOf); end.setUTCDate(end.getUTCDate() - 1);
+                        const start = new Date(asOf); start.setUTCDate(start.getUTCDate() - compOffset);
+                        prevStart = fmt(start); prevEnd = fmt(end);
+                    } else if (compGrain === 'week') {
+                        const dow = asOf.getUTCDay();
+                        const monday = new Date(asOf); monday.setUTCDate(monday.getUTCDate() - ((dow + 6) % 7));
+                        const end = new Date(monday); end.setUTCDate(end.getUTCDate() - 1);
+                        const start = new Date(end); start.setUTCDate(start.getUTCDate() - (compOffset * 7) + 1);
+                        prevStart = fmt(start); prevEnd = fmt(end);
+                    } else if (compGrain === 'month') {
+                        const endD2 = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 0));
+                        const startD2 = new Date(Date.UTC(endD2.getUTCFullYear(), endD2.getUTCMonth() - (compOffset - 1), 1));
+                        prevStart = fmt(startD2); prevEnd = fmt(endD2);
+                    } else if (compGrain === 'quarter') {
+                        const curQ = Math.floor(asOf.getUTCMonth() / 3);
+                        const endD2 = new Date(Date.UTC(asOf.getUTCFullYear(), curQ * 3, 0));
+                        const startD2 = new Date(Date.UTC(endD2.getUTCFullYear(), endD2.getUTCMonth() + 1 - (compOffset * 3), 1));
+                        prevStart = fmt(startD2); prevEnd = fmt(endD2);
+                    } else {
+                        const endD2 = new Date(Date.UTC(asOf.getUTCFullYear() - 1, 11, 31));
+                        const startD2 = new Date(Date.UTC(asOf.getUTCFullYear() - compOffset, 0, 1));
+                        prevStart = fmt(startD2); prevEnd = fmt(endD2);
+                    }
+                }
+
+                // Filter raw rows for the comparison period and re-aggregate
+                const prevRows = rows.filter(r => {
+                    const d = date(r);
+                    return d >= prevStart && d <= prevEnd;
+                });
+
+                // Re-run the base plan on comparison-period rows
+                const compResult = executeQueryPlan(plan, prevRows, dimDate);
+                const compMap = new Map<string, number>();
+                for (const row of compResult.data) {
+                    const key = String(row[planDimKey] || '');
+                    compMap.set(key, Number(row[planMetricKey]) || 0);
+                }
+
+                // Merge comparison data into current result
+                for (const row of data) {
+                    const key = String(row[planDimKey] || '');
+                    const prevVal = compMap.get(key);
+                    const curr = Number(row[planMetricKey]) || 0;
+                    row.previous_value = prevVal ?? undefined;
+                    if (prevVal !== undefined && prevVal !== 0) {
+                        row.growth_pct = ((curr - prevVal) / Math.abs(prevVal)) * 100;
+                    } else if (prevVal !== undefined) {
+                        row.growth_pct = curr !== 0 ? 100 : 0;
+                    } else {
+                        row.growth_pct = undefined;
+                    }
+                }
+
+                console.log(`[Engine Comparison] ${query.comparison} applied on non-time dim (${dimCol}): ${data.length} rows, prevRange=${prevStart} → ${prevEnd}, matched=${compMap.size}`);
             }
 
             // ─── Auto-axis detection for multi-metric ───
