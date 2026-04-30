@@ -344,11 +344,18 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                         yLabel: firstCol.label,
                                         vis: calcChartType,
                                         formatting: calcFormatting,
-                                        config: result.config ? { ...result.config, comparison: 'none' as any } : result.config,
+                                        config: lastRunConfig ? { ...lastRunConfig, comparison: 'none' } : undefined,
+                                        queryConfig: lastRunConfig ? { ...lastRunConfig, comparison: 'none' } : undefined,
                                     });
                                 } else {
-                                    // Pin the ORIGINAL view
-                                    onPin(result.yLabel, { ...result, vis: chartType, formatting: { ...formatting, tableCalculations: [] } as any });
+                                    // Pin the ORIGINAL view — preserve config (comparison, filters, etc.)
+                                    onPin(result.yLabel, {
+                                        ...result,
+                                        vis: chartType,
+                                        formatting: { ...formatting, tableCalculations: [] } as any,
+                                        config: lastRunConfig || undefined,
+                                        queryConfig: lastRunConfig || undefined,
+                                    });
                                 }
                             }} className={`flex items-center text-sm font-bold text-white ${showGrowthChart && tableData.columns.length > 0 ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'} px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap`} title={showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated View to Dashboard' : 'Pin to Dashboard'}>
                                 <Pin className="w-4 h-4 mr-1" /> {showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated' : 'Pin'}
