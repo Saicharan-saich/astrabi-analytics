@@ -1029,6 +1029,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     <div className="w-full h-full">
                       <ErrorBoundary compact label={item.title || 'Chart'}>
                         <ChartVisualization
+                          config={item.result.config}
                           data={(() => {
                             // ── Skip filters when this card has opted out ──
                             if (item.ignoreGlobalFilter) return item.result.data;

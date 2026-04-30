@@ -15,9 +15,11 @@ interface BuilderViewProps {
     formatting?: FormattingConfig;
     onUpdateFormatting?: (config: FormattingConfig) => void;
     onPin?: (title: string, result: AnalysisResult) => void;
+    initialConfig?: any; // QueryConfig from dashboard edit
+    editingItemId?: string | null; // ID of dashboard item being edited
 }
 
-export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin }) => {
+export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId }) => {
     const [result, setResult] = useState<AnalysisResult | undefined>(undefined);
     const [error, setError] = useState<string | null>(null);
     const [chartType, setChartType] = useState<any>('bar');
@@ -84,6 +86,17 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             }
         }
     }, [dataset.timeContext]);
+
+    // Auto-run when editing from dashboard (initialConfig changes)
+    React.useEffect(() => {
+        if (initialConfig && editingItemId) {
+            // Small delay to let QuestionBuilder remount with new initial values
+            const timer = setTimeout(() => {
+                handleRun(initialConfig);
+            }, 100);
+            return () => clearTimeout(timer);
+        }
+    }, [editingItemId]);
 
     // User manually changes AS OF date
     const handleAsOfDateChange = (date: string) => {
@@ -211,8 +224,15 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             {/* â”€â”€â”€ COLLAPSIBLE BUILDER â”€â”€â”€ */}
             <div className={`bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible'}`}>
                 <QuestionBuilder
+                    key={editingItemId || 'default'}
                     dataset={dataset}
                     onRun={handleRun}
+                    initialMetric={initialConfig?.metric || ''}
+                    initialAggregation={initialConfig?.aggregation || 'SUM'}
+                    initialDimension={initialConfig?.dimension || ''}
+                    initialTimeFilter={initialConfig?.timeFilter || 'all_time'}
+                    initialLimit={initialConfig?.limit || 0}
+                    initialSort={initialConfig?.sort || 'desc'}
                     asOfDate={asOfDate}
                     onDateChange={handleAsOfDateChange}
                     anchorColumn={anchorColumn}

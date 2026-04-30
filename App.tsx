@@ -933,6 +933,8 @@ function App() {
                       onPin={(title, result) => handlePin({ ...result, insight: title })}
                       formatting={formatting}
                       onUpdateFormatting={updateFormatting}
+                      initialConfig={workbenchConfig}
+                      editingItemId={editingDashboardItemId}
                     />
                   )}
                 </div>
