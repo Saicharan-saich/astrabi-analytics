@@ -33,18 +33,26 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
 
     // Get distinct values at each grain (filtered by parent selection)
     const years = useMemo(() => filter.column ? getDateValues(filter.column, 'year') : [], [filter.column]);
-    const quarters = useMemo(() => (filter.column && selectedYears.length > 0) ? getDateValues(filter.column, 'quarter', selectedYears) : [], [filter.column, selectedYears.join(',')]);
+    const quarters = useMemo(() => {
+        if (!filter.column) return [];
+        // If year selected, filter by year; otherwise show ALL quarters
+        return selectedYears.length > 0
+            ? getDateValues(filter.column, 'quarter', selectedYears)
+            : getDateValues(filter.column, 'quarter');
+    }, [filter.column, selectedYears.join(',')]);
     const months = useMemo(() => {
         if (!filter.column) return [];
         if (selectedQuarters.length > 0) return getDateValues(filter.column, 'month', selectedQuarters);
         if (selectedYears.length > 0) return getDateValues(filter.column, 'month', selectedYears);
-        return [];
+        return getDateValues(filter.column, 'month');
     }, [filter.column, selectedYears.join(','), selectedQuarters.join(',')]);
     const days = useMemo(() => {
         if (!filter.column) return [];
         if (selectedMonths.length > 0) return getDateValues(filter.column, 'day', selectedMonths);
+        if (selectedQuarters.length > 0) return getDateValues(filter.column, 'day', selectedQuarters);
+        if (selectedYears.length > 0) return getDateValues(filter.column, 'day', selectedYears);
         return [];
-    }, [filter.column, selectedMonths.join(',')]);
+    }, [filter.column, selectedYears.join(','), selectedQuarters.join(','), selectedMonths.join(',')]);
 
     // Toggle mode
     const toggleMode = () => {
@@ -191,8 +199,8 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
                         color="teal"
                     />
 
-                    {/* Quarter — only if year is selected */}
-                    {selectedYears.length > 0 && quarters.length > 0 && (
+                    {/* Quarter — always visible when data available */}
+                    {quarters.length > 0 && (
                         <>
                             <span className="text-slate-500 self-center">/</span>
                             <MultiSelectPicker
@@ -208,8 +216,8 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
                         </>
                     )}
 
-                    {/* Month — if year or quarter selected */}
-                    {(selectedYears.length > 0 || selectedQuarters.length > 0) && months.length > 0 && (
+                    {/* Month — always visible when data available */}
+                    {months.length > 0 && (
                         <>
                             <span className="text-slate-500 self-center">/</span>
                             <MultiSelectPicker
@@ -225,8 +233,8 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
                         </>
                     )}
 
-                    {/* Day — if month selected */}
-                    {selectedMonths.length > 0 && days.length > 0 && (
+                    {/* Day — visible when month or higher selected */}
+                    {days.length > 0 && (
                         <>
                             <span className="text-slate-500 self-center">/</span>
                             <MultiSelectPicker
