@@ -268,6 +268,16 @@ export function executeQueryPlan(
         for (const dr of dimDate) {
             if (dr.date_key < rangeStart || dr.date_key > rangeEnd) continue;
 
+            // Also respect date filters (hierarchy filters like year=2016)
+            // so we don't create empty buckets outside the filtered scope
+            if (plan.filters.date.length > 0) {
+                const passesDateFilters = plan.filters.date.every(df => {
+                    const formatted = formatTimeBucket(dr.date_key, df.timeGrain);
+                    return df.values.some(v => formatted.toLowerCase() === v.toLowerCase());
+                });
+                if (!passesDateFilters) continue;
+            }
+
             const bucketKey = formatTimeBucket(dr.date_key, grain);
             if (!groups.has(bucketKey)) {
                 const dimValues: Record<string, string> = { [dimAlias]: bucketKey };
