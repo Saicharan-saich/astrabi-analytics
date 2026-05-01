@@ -1,4 +1,4 @@
-﻿import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { QuestionBuilder } from './QuestionBuilder';
 import { ChartVisualization } from './ChartVisualization';
 import { AnalysisResult, Dataset, QueryConfig, FormattingConfig, AggregationType, TimeGrain, AnalysisType, ColumnType } from '../types';
@@ -233,6 +233,9 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     initialTimeFilter={initialConfig?.timeFilter || 'all_time'}
                     initialLimit={initialConfig?.limit || 0}
                     initialSort={initialConfig?.sort || 'desc'}
+                    initialComparison={initialConfig?.comparison || ''}
+                    initialComparisonGrain={initialConfig?.comparisonGrain || 'month'}
+                    initialComparisonOffset={initialConfig?.comparisonOffset || 1}
                     asOfDate={asOfDate}
                     onDateChange={handleAsOfDateChange}
                     anchorColumn={anchorColumn}

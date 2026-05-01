@@ -15,6 +15,9 @@ interface QuestionBuilderProps {
     initialTimeFilter?: string;
     initialLimit?: number;
     initialSort?: 'desc' | 'asc';
+    initialComparison?: string;
+    initialComparisonGrain?: string;
+    initialComparisonOffset?: number;
     asOfDate: string;
     onDateChange: (date: string) => void;
     anchorColumn?: string;
@@ -65,6 +68,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     initialTimeFilter = 'all_time',
     initialLimit = 0,
     initialSort = 'desc',
+    initialComparison = '',
+    initialComparisonGrain = 'month',
+    initialComparisonOffset = 1,
     asOfDate,
     onDateChange,
     anchorColumn,
@@ -89,9 +95,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const [secondaryDimensions, setSecondaryDimensions] = useState<string[]>([]);
 
     // Comparison state
-    const [comparison, setComparison] = useState<string>('');
-    const [comparisonGrain, setComparisonGrain] = useState<string>('month');
-    const [comparisonOffset, setComparisonOffset] = useState<number>(1);
+    const [comparison, setComparison] = useState<string>(initialComparison);
+    const [comparisonGrain, setComparisonGrain] = useState<string>(initialComparisonGrain);
+    const [comparisonOffset, setComparisonOffset] = useState<number>(initialComparisonOffset);
 
     // UI Enhancement states
     const [showOptions, setShowOptions] = useState(false);
