@@ -354,6 +354,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             </div>
             <div className="h-[calc(100%-52px)]">
               <ChartVisualization
+                config={item.result.config}
                 data={item.result.data}
                 xKey={item.result.xKey}
                 yKey={item.result.yKey}
