@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Play, Pin, BarChart2, LineChart as LineChartIcon, TrendingUp, PieChart as PieIcon,
     Activity, Grid, Palette, ChevronLeft, ChevronRight, X, Sparkles,
@@ -1154,7 +1154,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                 )}
                             </div>
                             <div className="ml-auto flex items-center gap-1.5 shrink-0">
-                                <button onClick={() => onPin(currentQuestionLabel, { ...result, vis: chartType, formatting: { ...formatting, tableCalculations: [] } as any })} className={`flex items-center text-sm font-bold text-white ${pinLabel ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'} px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap`} title={pinLabel || 'Pin to Dashboard'}>
+                                <button onClick={() => onPin(currentQuestionLabel, { ...result, vis: chartType, formatting: { ...formatting, tableCalculations: [] } as any, config: config || result.config || undefined, queryConfig: config || result.config || undefined })} className={`flex items-center text-sm font-bold text-white ${pinLabel ? 'bg-amber-600 hover:bg-amber-700' : 'bg-indigo-600 hover:bg-indigo-700'} px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap`} title={pinLabel || 'Pin to Dashboard'}>
                                     <Pin className="w-4 h-4 mr-1" /> Pin
                                 </button>
                                 <button
