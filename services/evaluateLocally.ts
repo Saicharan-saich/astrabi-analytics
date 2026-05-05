@@ -1,7 +1,21 @@
-﻿import { CanonicalMapping, Dataset, DimDateRow, QuestionTemplate, QueryConfig } from "../types";
+import { CanonicalMapping, Dataset, DimDateRow, QuestionTemplate, QueryConfig } from "../types";
 import { buildQueryPlan, compileSQL, compileEnrichedSQL, executeQueryPlan, validatePlan, dimensionId } from './queryPlan';
 import type { EnrichedQuery, ComparisonConfig, TableCalculation } from './queryPlan';
 import { DateRange, pad, getISOWeek } from './dateHelpers';
+import { applyComparison } from './evaluation/comparisonEngine';
+import { executeViaDuckDB, isDuckDBReady, type DuckDBResult } from './duckdbEngine';
+
+// ── DuckDB Verification Cache (async, non-blocking) ──────────────
+// Since evaluateLocally is synchronous, DuckDB execution runs in the
+// background. The UI polls this cache to display verification badges.
+let _lastDuckDBVerification: {
+    sql: string;
+    result: DuckDBResult | null;
+    pending: boolean;
+    timestamp: number;
+} = { sql: '', result: null, pending: false, timestamp: 0 };
+
+export function getLastDuckDBVerification() { return _lastDuckDBVerification; }
 
 // --- VALIDATION & SAFETY LAYERS ---
 export const validateRequirements = (q: QuestionTemplate, mapping: CanonicalMapping): { valid: boolean; error?: string } => {
@@ -201,6 +215,30 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             };
             const sql = compileEnrichedSQL(baseEnriched);
 
+            // ─── DuckDB-WASM Verification (fire-and-forget, non-blocking) ───
+            // Execute the same SQL against DuckDB-WASM in the background to
+            // verify SQL parity with the JS engine. Results are stored in
+            // _lastDuckDBVerification so the UI can display a "Verified" badge.
+            _lastDuckDBVerification = { sql, result: null, pending: true, timestamp: Date.now() };
+            executeViaDuckDB(sql, datasetName || 'dataset', rows)
+                .then(duckRes => {
+                    _lastDuckDBVerification = {
+                        sql,
+                        result: duckRes,
+                        pending: false,
+                        timestamp: Date.now(),
+                    };
+                    if (duckRes.success) {
+                        console.log(`[QueryPlan] DuckDB verification: ${duckRes.rowCount} rows in ${duckRes.executionTimeMs}ms ✓`);
+                    } else {
+                        console.warn(`[QueryPlan] DuckDB execution failed (non-fatal): ${duckRes.error}`);
+                    }
+                })
+                .catch(err => {
+                    _lastDuckDBVerification = { sql, result: null, pending: false, timestamp: Date.now() };
+                    console.warn(`[QueryPlan] DuckDB unavailable (non-fatal):`, err);
+                });
+
             // Calculated enriched query (comparison + table calcs) → calculatedSql
             let calculatedSql: string | undefined;
             if (enrichedCalcs.length > 0) {
@@ -222,252 +260,26 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             data = result.data;
 
             // ═══════════════════════════════════════════════════════════════════
-            // POST-AGGREGATE COMPARISON — Unified with SQL (LAG on grouped data)
-            // Both JS and SQL operate on the same grouped results using identical
-            // windowing semantics: LAG(metric) OVER (PARTITION BY cats ORDER BY time)
+            // POST-AGGREGATE COMPARISON — Delegated to comparisonEngine module
+            // Handles: previous_period, same_period_last_n, same_period_last_year
+            // Works for both time and non-time (categorical) dimensions.
             // ═══════════════════════════════════════════════════════════════════
-
-            if (query.comparison && isTimeDim && data.length > 1) {
-                const timeDim = plan.dimensions.find(d => d.type === 'time_bucket');
-                const partDims = plan.dimensions.filter(d => d.type === 'column');
-
-                // Time-aware sort: PARTITION BY categorical dims, ORDER BY time dim
-                data.sort((a: any, b: any) => {
-                    // First sort by partition (categorical) dims
-                    for (const pd of partDims) {
-                        const aVal = String(a[pd.column] || '');
-                        const bVal = String(b[pd.column] || '');
-                        if (aVal < bVal) return -1;
-                        if (aVal > bVal) return 1;
-                    }
-                    // Then sort by time dim (zero-padded strings = safe lexicographic)
-                    const aTime = String(a[planDimKey] || '');
-                    const bTime = String(b[planDimKey] || '');
-                    return aTime < bTime ? -1 : aTime > bTime ? 1 : 0;
+            if (query.comparison) {
+                applyComparison({
+                    data,
+                    plan,
+                    planDimKey,
+                    planMetricKey,
+                    comparison: query.comparison,
+                    comparisonGrain: query.comparisonGrain,
+                    comparisonOffset: query.comparisonOffset,
+                    isTimeDim: !!isTimeDim,
+                    dateColKey,
+                    dateExtractor: date,
+                    dates,
+                    allRows: rows,
+                    dimDate,
                 });
-
-                // Build partition key for each row (categorical dims concatenated)
-                const partKey = (row: any): string =>
-                    partDims.map(pd => String(row[pd.column] || '')).join('||');
-
-                if (query.comparison === 'previous_period') {
-                    // LAG(1): previous row's metric within partition group
-                    let prevPartKey = '';
-                    let prevValue: number | undefined = undefined;
-                    for (let i = 0; i < data.length; i++) {
-                        const pk = partKey(data[i]);
-                        if (pk !== prevPartKey) {
-                            // New partition group — reset
-                            prevPartKey = pk;
-                            prevValue = undefined;
-                        }
-                        const curr = Number(data[i][planMetricKey]) || 0;
-                        data[i].previous_value = prevValue;
-                        if (prevValue !== undefined && prevValue !== 0) {
-                            data[i].growth_pct = ((curr - prevValue) / Math.abs(prevValue)) * 100;
-                        } else if (prevValue !== undefined) {
-                            data[i].growth_pct = curr !== 0 ? 100 : 0;
-                        } else {
-                            data[i].growth_pct = undefined;
-                        }
-                        prevValue = curr;
-                    }
-                } else if (query.comparison === 'same_period_last_n') {
-                    // LAG(N): offset rows back within partition
-                    const offset = query.comparisonOffset || 1;
-                    // Group by partition key, then apply lag within each group
-                    const partitionGroups = new Map<string, any[]>();
-                    for (const row of data) {
-                        const pk = partKey(row);
-                        if (!partitionGroups.has(pk)) partitionGroups.set(pk, []);
-                        partitionGroups.get(pk)!.push(row);
-                    }
-                    for (const group of partitionGroups.values()) {
-                        for (let i = 0; i < group.length; i++) {
-                            const curr = Number(group[i][planMetricKey]) || 0;
-                            const prev = i >= offset ? Number(group[i - offset][planMetricKey]) || 0 : undefined;
-                            group[i].previous_value = prev;
-                            if (prev !== undefined && prev !== 0) {
-                                group[i].growth_pct = ((curr - prev) / Math.abs(prev)) * 100;
-                            } else if (prev !== undefined) {
-                                group[i].growth_pct = curr !== 0 ? 100 : 0;
-                            } else {
-                                group[i].growth_pct = undefined;
-                            }
-                        }
-                    }
-                } else if (query.comparison === 'same_period_last_year') {
-                    // SPLY: For each bucket (e.g., "2019-Q1"), find "2018-Q1" in the data
-                    // First, build a map of ALL buckets → metric value (from unfiltered data)
-
-                    // Re-run the base plan WITHOUT time filter to get all periods
-                    const unfilteredPlan = {
-                        ...plan, filters: {
-                            ...plan.filters,
-                            range: plan.filters.range.filter(f => {
-                                const fCol = f.column.toLowerCase().replace(/[_\s]+/g, '');
-                                const dCol = dateColKey.toLowerCase().replace(/[_\s]+/g, '');
-                                return fCol !== dCol; // Remove date range filter
-                            }),
-                            date: [] // Remove date hierarchy filters too
-                        }
-                    };
-                    const allPeriodsResult = executeQueryPlan(unfilteredPlan, rows, dimDate);
-
-                    // Build lookup map: grainKey|partKey → metric value
-                    const allPeriodsMap = new Map<string, number>();
-                    for (const row of allPeriodsResult.data) {
-                        const gk = String(row[planDimKey] || '');
-                        const pk = partKey(row);
-                        const mapKey = pk ? `${pk}||${gk}` : gk;
-                        allPeriodsMap.set(mapKey, Number(row[planMetricKey]) || 0);
-                    }
-
-                    // Shift grain key by -1 year
-                    const shiftKey = (key: string): string => {
-                        // "2019" → "2018", "2019-Q1" → "2018-Q1", "2019-03" → "2018-03"
-                        const yearMatch = key.match(/^(\d{4})(.*)$/);
-                        if (yearMatch) {
-                            return `${parseInt(yearMatch[1]) - 1}${yearMatch[2]}`;
-                        }
-                        return key;
-                    };
-
-                    for (const row of data) {
-                        const gk = String(row[planDimKey] || '');
-                        const pk = partKey(row);
-                        const shiftedGk = shiftKey(gk);
-                        const mapKey = pk ? `${pk}||${shiftedGk}` : shiftedGk;
-                        const prevVal = allPeriodsMap.get(mapKey);
-                        const curr = Number(row[planMetricKey]) || 0;
-                        row.previous_value = prevVal ?? undefined;
-                        row.previous_label = prevVal !== undefined ? shiftedGk : undefined;
-                        if (prevVal !== undefined && prevVal !== 0) {
-                            row.growth_pct = ((curr - prevVal) / Math.abs(prevVal)) * 100;
-                        } else if (prevVal !== undefined) {
-                            row.growth_pct = curr !== 0 ? 100 : 0;
-                        } else {
-                            row.growth_pct = undefined;
-                        }
-                    }
-                }
-
-                console.log(`[Engine Comparison] ${query.comparison} applied to ${data.length} grouped rows (post-aggregate)`);
-            }
-
-            // ═══════════════════════════════════════════════════════════════════
-            // NON-TIME DIMENSION COMPARISON (categorical dim, e.g., type/region)
-            // Re-run the base plan with shifted date filters, then merge results.
-            // This mirrors a SQL self-join on different date ranges.
-            // ═══════════════════════════════════════════════════════════════════
-            if (query.comparison && !isTimeDim) {
-                // Extract the resolved time filter boundaries from the plan
-                let timeFilterStart = '1970-01-01';
-                let timeFilterEnd = dates.today;
-                const timeRangeFilter = plan.filters.range.find(f => {
-                    const fCol = f.column.toLowerCase().replace(/[_\s]+/g, '');
-                    const dCol = dateColKey.toLowerCase().replace(/[_\s]+/g, '');
-                    return fCol === dCol;
-                });
-                if (timeRangeFilter) {
-                    timeFilterStart = timeRangeFilter.start || '1970-01-01';
-                    timeFilterEnd = timeRangeFilter.end || dates.today;
-                }
-                // Also try to derive from actual data if no explicit range filter
-                if (timeFilterStart === '1970-01-01') {
-                    let minD = '9999-12-31', maxD = '0000-01-01';
-                    for (const r of rows) {
-                        const d = date(r);
-                        if (d > '1970-01-01' && d < '9999-01-01') {
-                            if (d < minD) minD = d;
-                            if (d > maxD) maxD = d;
-                        }
-                    }
-                    if (minD < '9999-12-31') { timeFilterStart = minD; timeFilterEnd = maxD; }
-                }
-
-                const aggType = plan.metrics[0]?.aggregation || 'SUM';
-                const startD = new Date(`${timeFilterStart}T00:00:00Z`);
-                const endD = new Date(`${timeFilterEnd}T00:00:00Z`);
-                const periodMs = endD.getTime() - startD.getTime();
-                const periodDays = Math.max(1, Math.round(periodMs / 86400000));
-
-                // Build comparison period boundaries
-                let prevStart: string, prevEnd: string;
-                if (query.comparison === 'previous_period') {
-                    const prevEndD = new Date(startD.getTime() - 86400000);
-                    const prevStartD = new Date(prevEndD.getTime() - (periodDays - 1) * 86400000);
-                    prevStart = prevStartD.toISOString().split('T')[0];
-                    prevEnd = prevEndD.toISOString().split('T')[0];
-                } else if (query.comparison === 'same_period_last_year') {
-                    const lyStart = new Date(startD);
-                    lyStart.setUTCFullYear(lyStart.getUTCFullYear() - 1);
-                    const lyEnd = new Date(endD);
-                    lyEnd.setUTCFullYear(lyEnd.getUTCFullYear() - 1);
-                    prevStart = lyStart.toISOString().split('T')[0];
-                    prevEnd = lyEnd.toISOString().split('T')[0];
-                } else {
-                    // same_period_last_n
-                    const compGrain = query.comparisonGrain || 'month';
-                    const compOffset = query.comparisonOffset || 1;
-                    const asOf = new Date(`${dates.today}T00:00:00Z`);
-                    const fmt = (d: Date) => d.toISOString().split('T')[0];
-                    if (compGrain === 'day') {
-                        const end = new Date(asOf); end.setUTCDate(end.getUTCDate() - 1);
-                        const start = new Date(asOf); start.setUTCDate(start.getUTCDate() - compOffset);
-                        prevStart = fmt(start); prevEnd = fmt(end);
-                    } else if (compGrain === 'week') {
-                        const dow = asOf.getUTCDay();
-                        const monday = new Date(asOf); monday.setUTCDate(monday.getUTCDate() - ((dow + 6) % 7));
-                        const end = new Date(monday); end.setUTCDate(end.getUTCDate() - 1);
-                        const start = new Date(end); start.setUTCDate(start.getUTCDate() - (compOffset * 7) + 1);
-                        prevStart = fmt(start); prevEnd = fmt(end);
-                    } else if (compGrain === 'month') {
-                        const endD2 = new Date(Date.UTC(asOf.getUTCFullYear(), asOf.getUTCMonth(), 0));
-                        const startD2 = new Date(Date.UTC(endD2.getUTCFullYear(), endD2.getUTCMonth() - (compOffset - 1), 1));
-                        prevStart = fmt(startD2); prevEnd = fmt(endD2);
-                    } else if (compGrain === 'quarter') {
-                        const curQ = Math.floor(asOf.getUTCMonth() / 3);
-                        const endD2 = new Date(Date.UTC(asOf.getUTCFullYear(), curQ * 3, 0));
-                        const startD2 = new Date(Date.UTC(endD2.getUTCFullYear(), endD2.getUTCMonth() + 1 - (compOffset * 3), 1));
-                        prevStart = fmt(startD2); prevEnd = fmt(endD2);
-                    } else {
-                        const endD2 = new Date(Date.UTC(asOf.getUTCFullYear() - 1, 11, 31));
-                        const startD2 = new Date(Date.UTC(asOf.getUTCFullYear() - compOffset, 0, 1));
-                        prevStart = fmt(startD2); prevEnd = fmt(endD2);
-                    }
-                }
-
-                // Filter raw rows for the comparison period and re-aggregate
-                const prevRows = rows.filter(r => {
-                    const d = date(r);
-                    return d >= prevStart && d <= prevEnd;
-                });
-
-                // Re-run the base plan on comparison-period rows
-                const compResult = executeQueryPlan(plan, prevRows, dimDate);
-                const compMap = new Map<string, number>();
-                for (const row of compResult.data) {
-                    const key = String(row[planDimKey] || '');
-                    compMap.set(key, Number(row[planMetricKey]) || 0);
-                }
-
-                // Merge comparison data into current result
-                for (const row of data) {
-                    const key = String(row[planDimKey] || '');
-                    const prevVal = compMap.get(key);
-                    const curr = Number(row[planMetricKey]) || 0;
-                    row.previous_value = prevVal ?? undefined;
-                    if (prevVal !== undefined && prevVal !== 0) {
-                        row.growth_pct = ((curr - prevVal) / Math.abs(prevVal)) * 100;
-                    } else if (prevVal !== undefined) {
-                        row.growth_pct = curr !== 0 ? 100 : 0;
-                    } else {
-                        row.growth_pct = undefined;
-                    }
-                }
-
-                console.log(`[Engine Comparison] ${query.comparison} applied on non-time dim (${dimCol}): ${data.length} rows, prevRange=${prevStart} → ${prevEnd}, matched=${compMap.size}`);
             }
 
             // ─── Auto-axis detection for multi-metric ───
