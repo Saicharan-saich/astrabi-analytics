@@ -12,7 +12,7 @@ import { Dataset, ColumnType } from '../types';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-const MODEL = 'deepseek/deepseek-r1';
+const MODEL = 'google/gemma-3-27b-it:free';
 const TIMEOUT_MS = 25000;
 
 export interface SQLGenerationResult {

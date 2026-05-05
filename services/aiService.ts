@@ -9,7 +9,7 @@
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-const MODEL = 'deepseek/deepseek-r1'; // Note: if image-based chart interpretation is needed, use a vision-capable model
+const MODEL = 'google/gemma-3-27b-it:free'; // Free tier — vision-capable model for chart interpretation
 const TIMEOUT_MS = 20000;
 
 // Simple cache to avoid redundant API calls for the same chart

@@ -18,7 +18,7 @@ import { serializeSemanticModel } from './semanticLayer';
 
 const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-export const MODEL = 'deepseek/deepseek-r1';
+export const MODEL = 'google/gemma-3-27b-it:free';
 const TIMEOUT_MS = 20000;
 
 /**

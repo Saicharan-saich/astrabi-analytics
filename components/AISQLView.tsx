@@ -349,6 +349,22 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     </p>
                 </div>
 
+                {/* Experimental Stage Banner */}
+                <div className="shrink-0 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 dark:from-indigo-500/15 dark:via-purple-500/15 dark:to-pink-500/15 border border-indigo-200/60 dark:border-indigo-500/20 rounded-xl px-4 py-2.5 flex items-center gap-3">
+                    <span className="text-lg shrink-0">🚀</span>
+                    <div className="flex-1 min-w-0">
+                        <span className="text-[13px] font-semibold text-indigo-700 dark:text-indigo-300">
+                            Early Access Preview
+                        </span>
+                        <span className="text-[12px] text-indigo-600/70 dark:text-indigo-400/70 ml-1.5">
+                            — AI-powered analytics is actively evolving. Results improve continuously as the engine learns your data patterns.
+                        </span>
+                    </div>
+                    <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-300/40 dark:border-indigo-500/30">
+                        Beta
+                    </span>
+                </div>
+
                 {/* Collapsible Input */}
                 <div className={`shrink-0 overflow-hidden transition-all duration-300 ease-in-out ${isInputCollapsed ? 'max-h-0' : 'max-h-[400px]'}`}>
                     <div className="relative group">
