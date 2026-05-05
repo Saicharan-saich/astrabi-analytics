@@ -71,23 +71,23 @@ function compileDimensionSelect(dim: Dimension): string {
     if (dim.type === 'column') {
         return safeId(dim.column);
     }
-    // Time bucket: emit DATE_TRUNC with format normalization
+    // Time bucket: emit DATE_TRUNC for proper date semantics
+    // Cast to string only at SELECT level to preserve JS engine format parity
     const grain = dim.grain;
     const src = safeId(dim.sourceColumn);
     const alias = safeId(dim.alias);
 
-    // Use TO_CHAR to ensure string format matches JS output
     switch (grain) {
         case 'year':
             return `EXTRACT(YEAR FROM ${src})::TEXT AS ${alias}`;
         case 'quarter':
             return `(EXTRACT(YEAR FROM ${src})::TEXT || '-Q' || EXTRACT(QUARTER FROM ${src})::TEXT) AS ${alias}`;
         case 'month':
-            return `TO_CHAR(${src}, 'YYYY-MM') AS ${alias}`;
+            return `TO_CHAR(DATE_TRUNC('month', ${src}), 'YYYY-MM') AS ${alias}`;
         case 'week':
-            return `(EXTRACT(YEAR FROM ${src})::TEXT || '-W' || LPAD(EXTRACT(WEEK FROM ${src})::TEXT, 2, '0')) AS ${alias}`;
+            return `(EXTRACT(ISOYEAR FROM ${src})::TEXT || '-W' || LPAD(EXTRACT(WEEK FROM ${src})::TEXT, 2, '0')) AS ${alias}`;
         case 'day':
-            return `TO_CHAR(${src}, 'YYYY-MM-DD') AS ${alias}`;
+            return `DATE_TRUNC('day', ${src})::DATE::TEXT AS ${alias}`;
         default:
             return `${src} AS ${alias}`;
     }
@@ -98,6 +98,7 @@ function compileDimensionGroupBy(dim: Dimension): string {
         return safeId(dim.column);
     }
     // GROUP BY uses the expression, NOT the alias (SQL standard)
+    // Use DATE_TRUNC for index-friendly grouping on date columns
     const src = safeId(dim.sourceColumn);
     switch (dim.grain) {
         case 'year':
@@ -105,11 +106,11 @@ function compileDimensionGroupBy(dim: Dimension): string {
         case 'quarter':
             return `EXTRACT(YEAR FROM ${src}), EXTRACT(QUARTER FROM ${src})`;
         case 'month':
-            return `TO_CHAR(${src}, 'YYYY-MM')`;
+            return `DATE_TRUNC('month', ${src})`;
         case 'week':
-            return `EXTRACT(YEAR FROM ${src}), EXTRACT(WEEK FROM ${src})`;
+            return `EXTRACT(ISOYEAR FROM ${src}), EXTRACT(WEEK FROM ${src})`;
         case 'day':
-            return `TO_CHAR(${src}, 'YYYY-MM-DD')`;
+            return `DATE_TRUNC('day', ${src})`;
         default:
             return src;
     }
@@ -164,11 +165,11 @@ function compileDateFilter(df: DateFilter): string {
         case 'quarter':
             return `(EXTRACT(YEAR FROM ${col})::TEXT || '-Q' || EXTRACT(QUARTER FROM ${col})::TEXT) IN (${vals})`;
         case 'month':
-            return `TO_CHAR(${col}, 'YYYY-MM') IN (${vals})`;
+            return `TO_CHAR(DATE_TRUNC('month', ${col}), 'YYYY-MM') IN (${vals})`;
         case 'week':
-            return `(EXTRACT(YEAR FROM ${col})::TEXT || '-W' || LPAD(EXTRACT(WEEK FROM ${col})::TEXT, 2, '0')) IN (${vals})`;
+            return `(EXTRACT(ISOYEAR FROM ${col})::TEXT || '-W' || LPAD(EXTRACT(WEEK FROM ${col})::TEXT, 2, '0')) IN (${vals})`;
         case 'day':
-            return `TO_CHAR(${col}, 'YYYY-MM-DD') IN (${vals})`;
+            return `DATE_TRUNC('day', ${col})::DATE::TEXT IN (${vals})`;
         default:
             return `${col} IN (${vals})`;
     }
@@ -350,56 +351,46 @@ export function compileEnrichedSQL(enriched: EnrichedQuery): string {
             selectExprs.push('*');
             selectExprs.push(`(${metricAlias} - "previous_value") / NULLIF(ABS("previous_value"), 0) * 100 AS "growth_pct"`);
         } else if (comp.type === 'same_period_last_year') {
-            // SPLY: self-join using grain-shifted key
-            // For year grain → shift key by -1 year
-            // For month grain (YYYY-MM) → shift year part by -1
-            // For quarter grain (YYYY-QN) → shift year part by -1
+            // ═══════════════════════════════════════════════════════════
+            // SPLY: Same Period Last Year — Self-join with date shifting
+            // All grains use self-join (no LAG fallback) for correctness:
+            // - LAG(365) fails on leap years (366 days)
+            // - LAG(52) fails on 53-week years
+            // - Self-join with INTERVAL is always correct
+            // ═══════════════════════════════════════════════════════════
             const grain = timeDim!.grain;
-            let shiftExpr: string;
+
+            // Build the shift expression for the current row's time key
+            // This maps current period → previous year's equivalent period
+            let shiftExprC: string;
 
             if (grain === 'year') {
-                shiftExpr = `CAST(CAST(${timeDimAlias} AS INTEGER) - 1 AS TEXT)`;
+                // '2019' → '2018'
+                shiftExprC = `CAST(CAST(c.${timeDimAlias} AS INTEGER) - 1 AS TEXT)`;
             } else if (grain === 'month') {
-                // '2019-03' → '2018-03' : shift year part
-                shiftExpr = `CONCAT(CAST(LEFT(${timeDimAlias}, 4)::INT - 1 AS TEXT), SUBSTRING(${timeDimAlias} FROM 5))`;
+                // '2019-03' → '2018-03' : shift year part, keep month
+                shiftExprC = `CONCAT(CAST(LEFT(c.${timeDimAlias}, 4)::INT - 1 AS TEXT), SUBSTRING(c.${timeDimAlias} FROM 5))`;
             } else if (grain === 'quarter') {
-                // '2019-Q2' → '2018-Q2' : shift year part
-                shiftExpr = `CONCAT(CAST(LEFT(${timeDimAlias}, 4)::INT - 1 AS TEXT), SUBSTRING(${timeDimAlias} FROM 5))`;
+                // '2019-Q2' → '2018-Q2' : shift year part, keep quarter
+                shiftExprC = `CONCAT(CAST(LEFT(c.${timeDimAlias}, 4)::INT - 1 AS TEXT), SUBSTRING(c.${timeDimAlias} FROM 5))`;
+            } else if (grain === 'week') {
+                // '2019-W03' → '2018-W03' : shift year part, keep week number
+                shiftExprC = `CONCAT(CAST(LEFT(c.${timeDimAlias}, 4)::INT - 1 AS TEXT), SUBSTRING(c.${timeDimAlias} FROM 5))`;
             } else {
-                // Fallback for week/day: use LAG(12) or LAG(365) as approximation
-                shiftExpr = `LAG(${metricAlias}, ${grain === 'week' ? 52 : 365}) OVER (${windowSpec})`;
+                // Day grain: '2019-03-15' → subtract exactly 1 year
+                // Uses date arithmetic: DATE - INTERVAL '1 year' handles leap years correctly
+                shiftExprC = `(c.${timeDimAlias}::DATE - INTERVAL '1 year')::DATE::TEXT`;
             }
 
-            if (grain === 'year' || grain === 'month' || grain === 'quarter') {
-                // Self-join approach
-                const partJoinConds = partitionCols.map(pc => `c.${pc} = p.${pc}`).join(' AND ');
-                const joinOn = partJoinConds
-                    ? `p.${timeDimAlias} = ${shiftExpr.replace(new RegExp(timeDimAlias!.replace(/"/g, '""'), 'g'), `c.${timeDimAlias}`)} AND ${partJoinConds}`
-                    : `p.${timeDimAlias} = ${shiftExpr.replace(new RegExp(timeDimAlias!.replace(/"/g, '""'), 'g'), `c.${timeDimAlias}`)}`;
+            const partJoin = partitionCols.length > 0
+                ? ` AND ${partitionCols.map(pc => `c.${pc} = p.${pc}`).join(' AND ')}`
+                : '';
 
-                // Simpler: just use aliased references
-                const shiftExprC = grain === 'year'
-                    ? `CAST(CAST(c.${timeDimAlias} AS INTEGER) - 1 AS TEXT)`
-                    : `CONCAT(CAST(LEFT(c.${timeDimAlias}, 4)::INT - 1 AS TEXT), SUBSTRING(c.${timeDimAlias} FROM 5))`;
-
-                const partJoin = partitionCols.length > 0
-                    ? ` AND ${partitionCols.map(pc => `c.${pc} = p.${pc}`).join(' AND ')}`
-                    : '';
-
-                ctes.push(`lagged AS (\n    SELECT c.*, p.${metricAlias} AS "previous_value"\n    FROM ${currentSource} c\n    LEFT JOIN ${currentSource} p ON p.${timeDimAlias} = ${shiftExprC}${partJoin}\n)`);
-                currentSource = 'lagged';
-                selectExprs.length = 0;
-                selectExprs.push('*');
-                selectExprs.push(`(${metricAlias} - "previous_value") / NULLIF(ABS("previous_value"), 0) * 100 AS "growth_pct"`);
-            } else {
-                // Day/week fallback: use LAG with large offset
-                const lagOffset = grain === 'week' ? 52 : 365;
-                ctes.push(`lagged AS (\n    SELECT *,\n        LAG(${metricAlias}, ${lagOffset}) OVER (${windowSpec}) AS "previous_value"\n    FROM ${currentSource}\n)`);
-                currentSource = 'lagged';
-                selectExprs.length = 0;
-                selectExprs.push('*');
-                selectExprs.push(`(${metricAlias} - "previous_value") / NULLIF(ABS("previous_value"), 0) * 100 AS "growth_pct"`);
-            }
+            ctes.push(`lagged AS (\n    SELECT c.*, p.${metricAlias} AS "previous_value"\n    FROM ${currentSource} c\n    LEFT JOIN ${currentSource} p ON p.${timeDimAlias} = ${shiftExprC}${partJoin}\n)`);
+            currentSource = 'lagged';
+            selectExprs.length = 0;
+            selectExprs.push('*');
+            selectExprs.push(`(${metricAlias} - "previous_value") / NULLIF(ABS("previous_value"), 0) * 100 AS "growth_pct"`);
         }
     }
 
