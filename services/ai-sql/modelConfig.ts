@@ -15,14 +15,13 @@ export const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
 
 /**
  * Ordered fallback chain of free models.
- * Best SQL reasoning models first, general-purpose fallbacks after.
+ * If any returns 429/502/503, the next one is tried automatically.
+ * `openrouter/free` is a meta-router that auto-picks any available free model.
  */
 export const MODEL_CHAIN: string[] = [
-    'google/gemma-3-27b-it:free',       // Strong structured output
-    'deepseek/deepseek-r1-0528:free',    // Excellent SQL reasoning
-    'qwen/qwen3-30b-a3b:free',          // Good coding/SQL
-    'meta-llama/llama-4-maverick:free',  // Reliable fallback
-    'microsoft/mai-ds-r1:free',          // Additional fallback
+    'google/gemma-3-27b-it:free',       // Primary — strong structured output
+    'meta-llama/llama-4-maverick:free',  // Fast, reliable fallback
+    'openrouter/free',                    // Meta-router — picks ANY available free model
 ];
 
 /** The primary model (for UI display) */
@@ -59,7 +58,7 @@ export async function fetchWithFallback(
     const max_tokens = options?.max_tokens ?? 1500;
     const timeout = options?.timeout ?? DEFAULT_TIMEOUT_MS;
 
-    const retryableStatuses = new Set([429, 503, 502]);
+    const retryableStatuses = new Set([429, 502, 503, 404]);
     const errors: string[] = [];
 
     for (const model of MODEL_CHAIN) {
