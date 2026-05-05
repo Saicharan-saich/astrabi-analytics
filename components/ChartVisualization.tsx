@@ -49,6 +49,7 @@ import {
     formatNumber as formatNum, formatDateLabel
 } from '../utils/chartUtils';
 import { MapChart } from './MapChart';
+import { CHART_TYPE_OPTIONS } from './charts/chartRegistry';
 
 interface ChartVisualizationProps {
     data: any[];
@@ -72,8 +73,8 @@ interface ChartVisualizationProps {
     chartContainerRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-// ── Chart Type Registry ──────────────────────────────────────────────
-const CHART_TYPE_OPTIONS = [
+// Chart type registry now imported from ./charts/chartRegistry
+const _CHART_TYPE_OPTIONS_REMOVED = [
     {
         category: 'Bar Charts',
         items: [
