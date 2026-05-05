@@ -20,7 +20,6 @@ export const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
  */
 export const MODEL_CHAIN: string[] = [
     'google/gemma-3-27b-it:free',       // Primary — strong structured output
-    'meta-llama/llama-4-maverick:free',  // Fast, reliable fallback
     'openrouter/free',                    // Meta-router — picks ANY available free model
 ];
 

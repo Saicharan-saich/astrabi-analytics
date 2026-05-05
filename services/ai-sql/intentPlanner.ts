@@ -666,9 +666,22 @@ export async function generatePlan(
             throw new Error('Empty response from intent planner');
         }
 
-        // Parse the JSON response
+        // Robust JSON extraction — free models often wrap JSON in markdown or add extra text
         const cleaned = content.replace(/```json\s*|```\s*/g, '').trim();
-        const parsed = JSON.parse(cleaned);
+        let parsed: any;
+        try {
+            parsed = JSON.parse(cleaned);
+        } catch {
+            // Fallback: extract first { ... } block via brace matching
+            const start = cleaned.indexOf('{');
+            if (start === -1) throw new Error('No JSON object found in AI response');
+            let depth = 0, end = start;
+            for (let i = start; i < cleaned.length; i++) {
+                if (cleaned[i] === '{') depth++;
+                else if (cleaned[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
+            }
+            parsed = JSON.parse(cleaned.substring(start, end + 1));
+        }
 
         // Validate required fields
         const plan: AnalysisPlan = {
