@@ -7,9 +7,8 @@
  * The AI model interprets purely what it sees in the visual.
  */
 
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-const MODEL = 'google/gemma-3-27b-it:free'; // Free tier — vision-capable model for chart interpretation
+import { fetchWithFallback, API_KEY } from './ai-sql/modelConfig';
+
 const TIMEOUT_MS = 20000;
 
 // Simple cache to avoid redundant API calls for the same chart
@@ -132,35 +131,14 @@ Keep your response under 200 words. Use bullet points for clarity. Be direct and
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
-        const response = await fetch(OPENROUTER_API_URL, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': window.location.origin,
-                'X-Title': 'QuickInsight'
-            },
-            body: JSON.stringify({
-                model: MODEL,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: userContent }
-                ],
-                max_tokens: 500,
-                temperature: 0.3  // Lower temperature for factual interpretation
-            }),
-            signal: controller.signal
-        });
+        const { data } = await fetchWithFallback(
+            [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userContent }
+            ],
+            { temperature: 0.3, max_tokens: 500, timeout: TIMEOUT_MS }
+        );
 
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            const errorText = await response.text().catch(() => 'Unknown error');
-            console.error('[AI Service] API error:', response.status, errorText);
-            return `⚠️ Insight service returned an error (${response.status}). Please try again.`;
-        }
-
-        const data = await response.json();
         const insight = data?.choices?.[0]?.message?.content || '⚠️ No interpretation was generated.';
 
         // Cache the result

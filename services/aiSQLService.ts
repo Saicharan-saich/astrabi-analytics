@@ -9,10 +9,8 @@
  */
 
 import { Dataset, ColumnType } from '../types';
+import { fetchWithFallback, API_KEY } from './ai-sql/modelConfig';
 
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-const MODEL = 'google/gemma-3-27b-it:free';
 const TIMEOUT_MS = 25000;
 
 export interface SQLGenerationResult {
@@ -165,37 +163,11 @@ export async function generateSQL(
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
-        const response = await fetch(OPENROUTER_API_URL, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': window.location.origin,
-                'X-Title': 'QuickInsight - SQL Generator'
-            },
-            body: JSON.stringify({
-                model: MODEL,
-                messages,
-                max_tokens: 1000,
-                temperature: 0.1
-            }),
-            signal: controller.signal
-        });
+        const { data } = await fetchWithFallback(
+            messages as any,
+            { temperature: 0.1, max_tokens: 1000, timeout: TIMEOUT_MS }
+        );
 
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-            const errorText = await response.text().catch(() => 'Unknown error');
-            console.error('[AI SQL] API error:', response.status, errorText);
-            return {
-                sql: '',
-                explanation: '',
-                columnsUsed: [],
-                error: `API error (${response.status}). Please try again.`
-            };
-        }
-
-        const data = await response.json();
         const rawContent = data?.choices?.[0]?.message?.content || '';
 
         try {

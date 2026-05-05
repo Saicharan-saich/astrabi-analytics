@@ -8,11 +8,9 @@
 
 import { SemanticModel, AnalysisPlan, ValidationResult } from './types';
 import { serializeSemanticModel } from './semanticLayer';
+import { fetchWithFallback } from './modelConfig';
 import type { DerivedMetric } from './derivedMetricEngine';
 
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-const MODEL = 'google/gemma-3-27b-it:free';
 const TIMEOUT_MS = 20000;
 
 /**
@@ -454,32 +452,15 @@ Respond with ONLY a JSON object:
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
-        const response = await fetch(OPENROUTER_API_URL, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': window.location.origin,
-            },
-            body: JSON.stringify({
-                model: MODEL,
-                messages: [
-                    { role: 'system', content: prompt },
-                    { role: 'user', content: `Generate SQL for: "${plan.originalQuestion}"` }
-                ],
-                temperature: 0.1,
-                max_tokens: 2000,
-            }),
-            signal: controller.signal,
-        });
+        const { data } = await fetchWithFallback(
+            [
+                { role: 'system', content: prompt },
+                { role: 'user', content: `Generate SQL for: "${plan.originalQuestion}"` }
+            ],
+            { temperature: 0.1, max_tokens: 2000, timeout: TIMEOUT_MS }
+        );
 
         clearTimeout(timeout);
-
-        if (!response.ok) {
-            throw new Error(`API error (${response.status})`);
-        }
-
-        const data = await response.json();
         const content = data.choices?.[0]?.message?.content?.trim();
         const cleaned = content?.replace(/```json\s*|```\s*/g, '').trim();
         const parsed = JSON.parse(cleaned || '{}');
@@ -542,30 +523,15 @@ Respond with ONLY a JSON object:
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
-        const response = await fetch(OPENROUTER_API_URL, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': window.location.origin,
-            },
-            body: JSON.stringify({
-                model: MODEL,
-                messages: [
-                    { role: 'system', content: prompt },
-                    { role: 'user', content: 'Fix the SQL error' }
-                ],
-                temperature: 0,
-                max_tokens: 2000,
-            }),
-            signal: controller.signal,
-        });
+        const { data } = await fetchWithFallback(
+            [
+                { role: 'system', content: prompt },
+                { role: 'user', content: 'Fix the SQL error' }
+            ],
+            { temperature: 0, max_tokens: 2000, timeout: TIMEOUT_MS }
+        );
 
         clearTimeout(timeout);
-
-        if (!response.ok) throw new Error(`API error (${response.status})`);
-
-        const data = await response.json();
         const content = data.choices?.[0]?.message?.content?.trim();
         const cleaned = content?.replace(/```json\s*|```\s*/g, '').trim();
         const parsed = JSON.parse(cleaned || '{}');

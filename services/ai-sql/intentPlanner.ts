@@ -15,10 +15,10 @@
 
 import { SemanticModel, SemanticField, AnalysisPlan, AnalysisIntent } from './types';
 import { serializeSemanticModel } from './semanticLayer';
+import { fetchWithFallback, PRIMARY_MODEL, API_KEY } from './modelConfig';
 
-const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
-export const MODEL = 'google/gemma-3-27b-it:free';
+/** Exported for UI display (shows which model family is active) */
+export const MODEL = PRIMARY_MODEL;
 const TIMEOUT_MS = 20000;
 
 /**
@@ -651,33 +651,15 @@ export async function generatePlan(
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
-        const response = await fetch(OPENROUTER_API_URL, {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${API_KEY}`,
-                'Content-Type': 'application/json',
-                'HTTP-Referer': window.location.origin,
-            },
-            body: JSON.stringify({
-                model: MODEL,
-                messages: [
-                    { role: 'system', content: systemPrompt },
-                    { role: 'user', content: question }
-                ],
-                temperature: 0.0,  // Zero temperature for maximum determinism
-                max_tokens: 1500,
-            }),
-            signal: controller.signal,
-        });
+        const { data } = await fetchWithFallback(
+            [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: question }
+            ],
+            { temperature: 0.0, max_tokens: 1500, timeout: TIMEOUT_MS }
+        );
 
         clearTimeout(timeout);
-
-        if (!response.ok) {
-            const errorBody = await response.text();
-            throw new Error(`API error (${response.status}): ${errorBody}`);
-        }
-
-        const data = await response.json();
         const content = data.choices?.[0]?.message?.content?.trim();
 
         if (!content) {
