@@ -10,7 +10,7 @@
  * 2. Generate Analysis Plan → Step A (LLM intent extraction)
  * 3. Generate SQL → Step B (deterministic + LLM fallback)
  * 4. Validate SQL → pre-execution checks
- * 5. Execute SQL → alasql on local data
+ * 5. Execute SQL → DuckDB-WASM on local data
  * 6. Validate Result → post-execution sanity checks
  * 7. Profile Result → analyze shape for chart selection
  * 8. Recommend Chart → deterministic rules
@@ -26,7 +26,7 @@ import { generatePlan } from './intentPlanner';
 import { generateSQLFromPlan, repairSQL } from './sqlGenerator';
 import { correctSQL } from './sqlCorrectionEngine';
 import { validateSQL, validateResult } from './sqlValidator';
-import { executeSQL } from '../sqlExecutor';
+import { executeSQLViaDuckDB } from '../duckdbEngine';
 import { profileResult } from './resultProfiler';
 import { recommendChart } from './chartRecommender';
 import { reshapeData } from './dataReshaper';
@@ -206,7 +206,7 @@ export async function runAISQLPipeline(
     // ─── Step 5: Execute SQL ─────────────────────────────────────
     reportProgress('Executing SQL...', 7);
     console.log('[Pipeline] Step 5: Executing SQL...');
-    let execResult = executeSQL(dataset.rows, currentSQL, semanticModel.timeContext);
+    let execResult = await executeSQLViaDuckDB(dataset.rows, currentSQL, semanticModel.timeContext);
 
     // ─── Step 5b: Repair Loop (max 2 attempts) ──────────────────
     while (execResult.error && repairAttempts < 2) {
@@ -216,7 +216,7 @@ export async function runAISQLPipeline(
             const repaired = await repairSQL(currentSQL, execResult.error, plan, semanticModel, repairAttempts);
             currentSQL = repaired.sql;
             sqlResult.explanation = repaired.explanation;
-            execResult = executeSQL(dataset.rows, currentSQL, semanticModel.timeContext);
+            execResult = await executeSQLViaDuckDB(dataset.rows, currentSQL, semanticModel.timeContext);
         } catch (repairErr: any) {
             console.warn(`[Pipeline] Repair attempt ${repairAttempts} failed:`, repairErr.message);
             break;
@@ -231,7 +231,7 @@ export async function runAISQLPipeline(
     const columns = execResult.columns || [];
 
     // ─── Step 5c: Time Intelligence Engine ─────────────────────────
-    // AlaSQL doesn't support LAG/LEAD/ROW_NUMBER/SUM OVER window functions.
+    // Post-SQL time intelligence (LAG/running totals computed in JS for consistency).
     // This JS engine computes ALL time intelligence post-SQL:
     //   A) Total period comparison (this year vs last year → growth badge)
     //   B) Trend growth (MoM, QoQ, YoY → LAG emulation)
@@ -590,7 +590,7 @@ export async function runAISQLPipeline(
                 }).join(' AND ')
                 : '';
             const grandTotalSQL = `SELECT ${primaryAgg.toUpperCase()}(${primaryMetricField}) AS grand_total FROM data${filterClause}`;
-            const grandResult = executeSQL(dataset.rows, grandTotalSQL, semanticModel.timeContext);
+            const grandResult = await executeSQLViaDuckDB(dataset.rows, grandTotalSQL, semanticModel.timeContext);
 
             if (grandResult.data && grandResult.data.length > 0) {
                 const grandTotal = Number(grandResult.data[0].grand_total) || 0;

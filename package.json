@@ -11,7 +11,6 @@
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.33.1-dev45.0",
-    "alasql": "^4.17.0",
     "chart.js": "^4.5.1",
     "chartjs-chart-treemap": "^3.1.0",
     "clsx": "^2.1.1",

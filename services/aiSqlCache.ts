@@ -91,8 +91,9 @@ export function computeSchemaHash(dataset: Dataset): string {
 /**
  * Build the cache key from normalised question + schema hash.
  */
-function buildCacheKey(normalizedQ: string, schemaHash: string): string {
-    return `${schemaHash}::${normalizedQ}`;
+function buildCacheKey(normalizedQ: string, schemaHash: string, grain?: string): string {
+    const grainSuffix = grain ? `::grain_${grain}` : '';
+    return `${schemaHash}::${normalizedQ}${grainSuffix}`;
 }
 
 // ─── IndexedDB Helpers ──────────────────────────────────────────
@@ -121,13 +122,14 @@ function openDB(): Promise<IDBDatabase> {
  */
 export async function getCachedResult(
     question: string,
-    dataset: Dataset
+    dataset: Dataset,
+    grain?: string
 ): Promise<CacheEntry | null> {
     try {
         const db = await openDB();
         const norm = normalizeQuestion(question);
         const hash = computeSchemaHash(dataset);
-        const key = buildCacheKey(norm, hash);
+        const key = buildCacheKey(norm, hash, grain);
 
         return new Promise((resolve) => {
             const tx = db.transaction(STORE_NAME, 'readwrite');
@@ -164,13 +166,14 @@ export async function getCachedResult(
 export async function setCachedResult(
     question: string,
     dataset: Dataset,
-    result: AISQLPipelineResult
+    result: AISQLPipelineResult,
+    grain?: string
 ): Promise<void> {
     try {
         const db = await openDB();
         const norm = normalizeQuestion(question);
         const hash = computeSchemaHash(dataset);
-        const key = buildCacheKey(norm, hash);
+        const key = buildCacheKey(norm, hash, grain);
 
         const entry = {
             key,

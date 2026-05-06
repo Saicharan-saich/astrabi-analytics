@@ -57,7 +57,7 @@ const COMPARISON_ROWS = [
 describe('evaluateLocally — previous_period comparison', () => {
     const ds = makeDataset(COMPARISON_ROWS);
 
-    it('adds previous_value and growth_pct when comparison = previous_period', () => {
+    it('adds previous_value and growth_pct when comparison = previous_period', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -70,7 +70,7 @@ describe('evaluateLocally — previous_period comparison', () => {
             comparison: 'previous_period' as any,
         };
 
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         expect(result.data.length).toBeGreaterThanOrEqual(2);
 
         // In trend comparison mode, at least some rows should have previous_value
@@ -82,7 +82,7 @@ describe('evaluateLocally — previous_period comparison', () => {
         expect(rowsWithGrowth.length).toBeGreaterThan(0);
     });
 
-    it('calculates positive growth correctly', () => {
+    it('calculates positive growth correctly', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -95,7 +95,7 @@ describe('evaluateLocally — previous_period comparison', () => {
             comparison: 'previous_period' as any,
         };
 
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         // Find rows where growth_pct is defined (positive or negative)
         const rowsWithGrowth = result.data.filter(
             (r: any) => r.growth_pct !== undefined && r.previous_value !== undefined
@@ -113,7 +113,7 @@ describe('evaluateLocally — previous_period comparison', () => {
         }
     });
 
-    it('calculates negative growth correctly', () => {
+    it('calculates negative growth correctly', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -126,7 +126,7 @@ describe('evaluateLocally — previous_period comparison', () => {
             comparison: 'previous_period' as any,
         };
 
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         // Find a row where growth is negative
         const negativeGrowthRows = result.data.filter(
             (r: any) => r.growth_pct !== undefined && r.growth_pct < 0
@@ -142,7 +142,7 @@ describe('evaluateLocally — previous_period comparison', () => {
         }
     });
 
-    it('without comparison flag, no growth_pct is added', () => {
+    it('without comparison flag, no growth_pct is added', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -153,12 +153,12 @@ describe('evaluateLocally — previous_period comparison', () => {
             asOfDate: '2025-06-30',
         };
 
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         const hasGrowth = result.data.some((r: any) => r.growth_pct !== undefined);
         expect(hasGrowth).toBe(false);
     });
 
-    it('sorts chronologically before comparison for time dimensions', () => {
+    it('sorts chronologically before comparison for time dimensions', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -172,13 +172,13 @@ describe('evaluateLocally — previous_period comparison', () => {
             sort: 'desc',
         };
 
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         // In trend mode, data should have previous_value for comparison
         const hasComparison = result.data.some((r: any) => r.previous_value !== undefined);
         expect(hasComparison).toBe(true);
     });
 
-    it('handles dimension-based comparison', () => {
+    it('handles dimension-based comparison', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -191,7 +191,7 @@ describe('evaluateLocally — previous_period comparison', () => {
             comparison: 'previous_period' as any,
         };
 
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         // With non-time dimension + time filter, comparison uses time-based previous period per category
         expect(result.data.length).toBeGreaterThanOrEqual(2);
         // Categories should have previous_value from prior period data

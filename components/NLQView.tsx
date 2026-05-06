@@ -58,7 +58,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
     ];
 
     // Run a question from the registry by ID
-    const runRegistryQuestion = (questionId: string, label?: string) => {
+    const runRegistryQuestion = async (questionId: string, label?: string) => {
         if (!dataset) return;
         setIsParsing(true);
         setError(null);
@@ -101,7 +101,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                 asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || new Date().toISOString().split('T')[0],
             };
 
-            const res = runAnalysis(dataset, config);
+            const res = await runAnalysis(dataset, config);
             if (res.error) {
                 setError(res.error);
             } else {
@@ -114,7 +114,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
         }
     };
 
-    const handleParseAndRun = () => {
+    const handleParseAndRun = async () => {
         if (!dataset || !query.trim()) return;
 
         setIsParsing(true);
@@ -179,8 +179,8 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                 const configA: QueryConfig = { ...baseConfig, timeFilter: parsed.comparison.periodA, questionId: 'nlq_cmp_a_' + Date.now() };
                 const configB: QueryConfig = { ...baseConfig, timeFilter: parsed.comparison.periodB, questionId: 'nlq_cmp_b_' + Date.now() };
 
-                const resA = runAnalysis(dataset, configA);
-                const resB = runAnalysis(dataset, configB);
+                const resA = await runAnalysis(dataset, configA);
+                const resB = await runAnalysis(dataset, configB);
 
                 if (resA.error && resB.error) {
                     setError(`Comparison failed: ${resA.error}`);
@@ -221,7 +221,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                     ? { ...config, tableCalculations: undefined }
                     : config;
 
-                const res = runAnalysis(dataset, runConfig);
+                const res = await runAnalysis(dataset, runConfig);
 
                 if (res.error) {
                     setError(res.error);

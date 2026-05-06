@@ -237,7 +237,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
         }
     };
 
-    const handleRunAnalysis = (config: QueryConfig) => {
+    const handleRunAnalysis = async (config: QueryConfig) => {
         // Reset AI insight panel when switching questions
         setIsAIInsightOpen(false);
 
@@ -277,7 +277,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             dateFilters: fullConfig.dateFilters
         }));
         try {
-            let analysisResult = runAnalysis(dataset, {
+            let analysisResult = await runAnalysis(dataset, {
                 ...fullConfig,
                 asOfDate: config.asOfDate || asOfDate,
                 // CRITICAL FIX: Use filters from config if present, otherwise state filters
@@ -557,7 +557,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
             }
 
             // Run the actual CLICKED question logic
-            // If custom question has aiSql, pass it directly for alasql execution
+            // If custom question has aiSql, pass it directly for DuckDB execution
             const runConfig = {
                 ...config,
                 metric: inferredMetric || config.metric,

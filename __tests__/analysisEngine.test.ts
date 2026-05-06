@@ -26,7 +26,7 @@ const ROWS = [
 describe('runAnalysis — custom builder', () => {
     const ds = makeDataset(ROWS);
 
-    it('aggregates SUM by dimension', () => {
+    it('aggregates SUM by dimension', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -37,13 +37,13 @@ describe('runAnalysis — custom builder', () => {
             asOfDate: '2025-03-03',
         };
 
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         expect(result.data.length).toBeGreaterThanOrEqual(3); // A, B, C
         const aRow = result.data.find((d: any) => d.category === 'A');
         expect(aRow?.revenue).toBe(300);
     });
 
-    it('aggregates COUNT by dimension', () => {
+    it('aggregates COUNT by dimension', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -54,12 +54,12 @@ describe('runAnalysis — custom builder', () => {
             asOfDate: '2025-03-03',
         };
 
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         const aRow = result.data.find((d: any) => d.category === 'A');
         expect(aRow?.revenue).toBe(2);
     });
 
-    it('aggregates AVG by dimension', () => {
+    it('aggregates AVG by dimension', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -70,12 +70,12 @@ describe('runAnalysis — custom builder', () => {
             asOfDate: '2025-03-03',
         };
 
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         const aRow = result.data.find((d: any) => d.category === 'A');
         expect(aRow?.revenue).toBe(150);
     });
 
-    it('aggregates MAX by dimension', () => {
+    it('aggregates MAX by dimension', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -85,12 +85,12 @@ describe('runAnalysis — custom builder', () => {
             analysisType: AnalysisType.STANDARD,
             asOfDate: '2025-03-03',
         };
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         const bRow = result.data.find((d: any) => d.category === 'B');
         expect(bRow?.revenue).toBe(250);
     });
 
-    it('aggregates MIN by dimension', () => {
+    it('aggregates MIN by dimension', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -100,12 +100,12 @@ describe('runAnalysis — custom builder', () => {
             analysisType: AnalysisType.STANDARD,
             asOfDate: '2025-03-03',
         };
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         const bRow = result.data.find((d: any) => d.category === 'B');
         expect(bRow?.revenue).toBe(150);
     });
 
-    it('applies limit', () => {
+    it('applies limit', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -116,11 +116,11 @@ describe('runAnalysis — custom builder', () => {
             asOfDate: '2025-03-03',
             limit: 2,
         };
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         expect(result.data.length).toBe(2);
     });
 
-    it('applies ascending sort', () => {
+    it('applies ascending sort', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -131,14 +131,14 @@ describe('runAnalysis — custom builder', () => {
             asOfDate: '2025-03-03',
             sort: 'asc' as any,
         };
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         const values = result.data.map((d: any) => d.revenue);
         for (let i = 1; i < values.length; i++) {
             expect(values[i]).toBeGreaterThanOrEqual(values[i - 1]);
         }
     });
 
-    it('applies dimension filter', () => {
+    it('applies dimension filter', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -149,13 +149,13 @@ describe('runAnalysis — custom builder', () => {
             asOfDate: '2025-03-03',
             filters: { category: ['A'] },
         };
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         expect(result.data.length).toBe(1);
         expect(result.data[0].category).toBe('A');
         expect(result.data[0].revenue).toBe(300);
     });
 
-    it('returns SQL preview', () => {
+    it('returns SQL preview', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -165,12 +165,12 @@ describe('runAnalysis — custom builder', () => {
             analysisType: AnalysisType.STANDARD,
             asOfDate: '2025-03-03',
         };
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         expect(result.sql).toBeDefined();
         expect(result.sql.length).toBeGreaterThan(0);
     });
 
-    it('returns empty when no questionId', () => {
+    it('returns empty when no questionId', async () => {
         const query: QueryConfig = {
             questionId: '',
             metric: 'revenue',
@@ -179,7 +179,7 @@ describe('runAnalysis — custom builder', () => {
             timeGrain: TimeGrain.RAW,
             analysisType: AnalysisType.STANDARD,
         };
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         expect(result.data).toEqual([]);
     });
 });
@@ -187,7 +187,7 @@ describe('runAnalysis — custom builder', () => {
 describe('runAnalysis — time dimension', () => {
     const ds = makeDataset(ROWS);
 
-    it('groups by month', () => {
+    it('groups by month', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -197,13 +197,13 @@ describe('runAnalysis — time dimension', () => {
             analysisType: AnalysisType.STANDARD,
             asOfDate: '2025-03-03',
         };
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         expect(result.data.length).toBeGreaterThanOrEqual(1);
         // All March => should collapse to 2025-03
         expect(result.data[0].month).toMatch(/^2025-03/);
     });
 
-    it('applies time filter this_month', () => {
+    it('applies time filter this_month', async () => {
         const query: QueryConfig = {
             questionId: 'custom_builder',
             metric: 'revenue',
@@ -214,7 +214,7 @@ describe('runAnalysis — time dimension', () => {
             timeFilter: 'this_month',
             asOfDate: '2025-03-03',
         };
-        const result = runAnalysis(ds, query);
+        const result = await runAnalysis(ds, query);
         // All rows are in March 2025 so should include all
         const total = result.data.reduce((s: number, d: any) => s + d.revenue, 0);
         expect(total).toBe(750);

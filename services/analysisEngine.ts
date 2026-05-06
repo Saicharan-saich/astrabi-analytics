@@ -14,10 +14,10 @@ import { QUESTION_REGISTRY, getFullRegistry } from './questionRegistry';
 import { getDates, excelDateToJSDate } from './dateHelpers';
 import { evaluateLocally, validateRequirements } from './evaluateLocally';
 import { validateAnalysis } from './analysisValidator';
-import { executeSQL } from './sqlExecutor';
+import { executeSQLViaDuckDB } from './duckdbEngine';
 
 // --- EXECUTION ENGINE ---
-export const runAnalysis = (dataset: Dataset, query: QueryConfig): AnalysisResult => {
+export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise<AnalysisResult> => {
     const mapping = resolveMapping(dataset);
     if (query.semanticRoles) {
         Object.assign(mapping.fields, query.semanticRoles);
@@ -45,7 +45,7 @@ export const runAnalysis = (dataset: Dataset, query: QueryConfig): AnalysisResul
     if ((query as any).aiSql) {
         const aiSql = (query as any).aiSql;
         console.log('[runAnalysis] Direct AI SQL execution:', aiSql);
-        const sqlResult = executeSQL(dataset.rows, aiSql);
+        const sqlResult = await executeSQLViaDuckDB(dataset.rows, aiSql);
 
         if (sqlResult.error) {
             return { data: [], xKey: '', yKey: '', yLabel: 'Error', insight: '', sql: aiSql, config: query, error: `SQL Error: ${sqlResult.error}` };

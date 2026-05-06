@@ -147,7 +147,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
       // Dynamically import the analysis engine to avoid circular deps
       const { runAnalysis } = await import('../services/analysisEngine');
       const config = item.result.queryConfig;
-      const freshResult = runAnalysis(dataset, {
+      const freshResult = await runAnalysis(dataset, {
         ...config,
         asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || new Date().toISOString().split('T')[0],
       });

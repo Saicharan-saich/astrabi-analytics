@@ -329,3 +329,207 @@ export function getDuckDBStatus(): {
         error: initError?.message || null,
     };
 }
+
+// ── Drop-in Replacement for AlaSQL executeSQL ────────────────────
+
+/**
+ * Result type matching the old sqlExecutor.ts interface.
+ */
+export interface SQLExecutionResult {
+    data: any[];
+    columns: string[];
+    error?: string;
+}
+
+/**
+ * Normalize AI-generated SQL for DuckDB compatibility.
+ * DuckDB speaks standard PostgreSQL, so we need far fewer hacks than AlaSQL.
+ * Main job: ensure table references use the correct name.
+ */
+function normalizeSQLForDuckDB(sql: string): string {
+    let normalized = sql;
+
+    // 1. Normalize table names: various forms → "data" (unquoted)
+    //    The AI prompt tells models to use "data" as the table name.
+    normalized = normalized.replace(/FROM\s+["']?orders["']?/gi, 'FROM data');
+    normalized = normalized.replace(/FROM\s+["']?data["']?/gi, 'FROM data');
+
+    // 2. Remove square brackets around column names (SQL Server style) → double quotes
+    normalized = normalized.replace(/\[(\w+)\]/g, '"$1"');
+
+    // 3. Handle SQLite's STRFTIME → DuckDB's strftime (case matters in DuckDB)
+    // DuckDB supports strftime natively, just ensure correct case
+    normalized = normalized.replace(/\bSTRFTIME\b/gi, 'strftime');
+
+    // 4. Handle SUBSTR → SUBSTRING (DuckDB prefers SUBSTRING)
+    normalized = normalized.replace(/\bSUBSTR\s*\(/gi, 'SUBSTRING(');
+
+    // 5. Handle || for string concat (DuckDB supports || natively — no change needed)
+
+    // 6. Handle IFNULL → COALESCE (DuckDB uses standard COALESCE)
+    normalized = normalized.replace(/\bIFNULL\s*\(/gi, 'COALESCE(');
+
+    // 7. Handle JULIANDAY → epoch-based date diff
+    // JULIANDAY(a) - JULIANDAY(b) → DATE_DIFF('day', b::DATE, a::DATE)
+    // This is complex; skip for now — DuckDB has native DATE_DIFF
+
+    // 8. Normalize DATETIME/DATE function calls with modifiers
+    //    SQLite: DATETIME('2023-06-20', '-6 days') → DuckDB: DATE '2023-06-20' - INTERVAL 6 DAY
+    normalized = normalizeDateExpressions(normalized);
+
+    console.log('[DuckDB] Normalized SQL:', normalized);
+    return normalized;
+}
+
+/**
+ * Pre-process SQLite DATETIME('literal', 'modifier') into DuckDB interval syntax.
+ */
+function normalizeDateExpressions(sql: string): string {
+    return sql.replace(
+        /(?:DATETIME|DATE)\s*\(\s*'([^']+)'(?:\s*,\s*'([^']+)')?\s*\)/gi,
+        (match, dateStr, modifier) => {
+            if (!modifier) return `'${dateStr}'`;
+            try {
+                // Parse modifier like '-6 days', '+1 month'
+                const m = modifier.match(/^([+-]?\d+)\s+(day|days|month|months|year|years)$/i);
+                if (m) {
+                    const n = parseInt(m[1], 10);
+                    const unit = m[2].toUpperCase().replace(/S$/, '');
+                    const absN = Math.abs(n);
+                    const op = n >= 0 ? '+' : '-';
+                    if (dateStr.toLowerCase() === 'now') {
+                        return `(CURRENT_DATE ${op} INTERVAL ${absN} ${unit})`;
+                    }
+                    return `(DATE '${dateStr}' ${op} INTERVAL ${absN} ${unit})`;
+                }
+                return match; // Can't parse modifier, leave as-is
+            } catch {
+                return match;
+            }
+        }
+    );
+}
+
+/**
+ * Generate dim_date rows for DuckDB (same logic as dimDateGenerator.ts).
+ * Returns an array of calendar rows between minDate and maxDate.
+ */
+function generateDimDateRows(minDate: string, maxDate: string): any[] {
+    const rows: any[] = [];
+    const start = new Date(minDate + 'T00:00:00');
+    const end = new Date(maxDate + 'T00:00:00');
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return rows;
+
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    const d = new Date(start);
+    while (d <= end) {
+        const y = d.getFullYear();
+        const m = d.getMonth() + 1;
+        const day = d.getDate();
+        const q = Math.ceil(m / 3);
+        const dow = d.getDay(); // 0=Sun
+        const dateKey = `${y}-${pad(m)}-${pad(day)}`;
+
+        rows.push({
+            date_key: dateKey,
+            year: y,
+            quarter: q,
+            month: m,
+            day: day,
+            day_of_week: dow,
+            year_quarter: `${y}-Q${q}`,
+            year_month: `${y}-${pad(m)}`,
+            month_name: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m-1],
+            day_name: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dow],
+            is_weekend: dow === 0 || dow === 6 ? 1 : 0,
+        });
+        d.setDate(d.getDate() + 1);
+    }
+    return rows;
+}
+
+/**
+ * Drop-in async replacement for the old AlaSQL-based executeSQL().
+ *
+ * Same interface: takes (rows, sql, timeContext?) and returns {data, columns, error?}.
+ * Uses DuckDB-WASM for execution — faster, stricter, and runs in a Web Worker.
+ *
+ * The data is loaded into a table called "data" (matching AI prompt conventions).
+ * If timeContext is provided, a dim_date table is also registered.
+ */
+export async function executeSQLViaDuckDB(
+    rows: any[],
+    sql: string,
+    timeContext?: { minDate: string; maxDate: string; primaryDateColumn?: string }
+): Promise<SQLExecutionResult> {
+    try {
+        // 1. Initialize DuckDB
+        await initDuckDB();
+        if (!conn) throw new Error('DuckDB connection not available');
+
+        // 2. Load data into "data" table (the standard table name used by AI prompts)
+        const tableName = 'data';
+        if (!loadedTables.has(tableName)) {
+            await loadDataIntoTable(tableName, rows);
+        }
+
+        // 3. Load dim_date if time context provided
+        if (timeContext?.minDate && timeContext?.maxDate) {
+            const dimDateName = 'dim_date';
+            if (!loadedTables.has(dimDateName)) {
+                const dimRows = generateDimDateRows(timeContext.minDate, timeContext.maxDate);
+                if (dimRows.length > 0) {
+                    await loadDataIntoTable(dimDateName, dimRows);
+                    console.log(`[DuckDB] dim_date loaded: ${dimRows.length} rows (${timeContext.minDate} → ${timeContext.maxDate})`);
+                }
+            }
+        }
+
+        // 4. Normalize SQL for DuckDB
+        const normalizedSQL = normalizeSQLForDuckDB(sql);
+
+        // 5. Execute
+        console.log('[DuckDB] Original SQL:', sql);
+        const result = await executeSQLQuery(normalizedSQL);
+
+        if (!result.success) {
+            console.error('[DuckDB] Query failed:', result.error);
+            return { data: [], columns: [], error: result.error };
+        }
+
+        console.log(`[DuckDB] Result: ${result.rowCount} rows, ${result.columns.length} columns`);
+        return { data: result.data, columns: result.columns };
+    } catch (err) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        console.error('[DuckDB] executeSQLViaDuckDB error:', errorMsg);
+        return { data: [], columns: [], error: errorMsg };
+    }
+}
+
+/**
+ * Pre-load DuckDB and a dataset table so the first query has zero cold-start.
+ * Call this after ETL completes to warm up the engine.
+ */
+export async function preloadDuckDB(tableName: string, rows: any[]): Promise<void> {
+    try {
+        await initDuckDB();
+        await loadDataIntoTable(tableName, rows);
+        // Also pre-load as "data" (the AI SQL standard table name)
+        if (tableName !== 'data') {
+            await loadDataIntoTable('data', rows);
+        }
+        console.log(`[DuckDB] Pre-loaded: ${rows.length} rows into "${tableName}" + "data"`);
+    } catch (err) {
+        console.warn('[DuckDB] Pre-load failed (non-fatal):', err);
+    }
+}
+
+/**
+ * Force reload the "data" table with new rows.
+ * Call this when the active dataset changes.
+ */
+export async function reloadDataTable(rows: any[]): Promise<void> {
+    loadedTables.delete('data');
+    loadedTables.delete('dim_date');
+    await loadDataIntoTable('data', rows);
+}

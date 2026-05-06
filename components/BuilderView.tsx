@@ -111,7 +111,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         if (maxForCol && !isUserOverride) setAsOfDate(maxForCol);
     };
 
-    const handleRun = (config: any) => {
+    const handleRun = async (config: any) => {
         try {
             setError(null);
             setIsLoading(true);
@@ -140,7 +140,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 tableCalculations: (formatting?.tableCalculations || []).filter(c => c !== 'none'),
             };
 
-            const res = runAnalysis(dataset, query);
+            const res = await runAnalysis(dataset, query);
 
             // Apply the recommended chart type from the question/registry
             // Override: when comparison is active with few data points, force bar chart
