@@ -239,7 +239,7 @@ function applyTimeGrain(field: string, grain: string): string {
     switch (grain) {
         case 'year': return `YEAR(${field})`;
         case 'quarter': return `CONCAT(YEAR(${field}), '-Q', QUARTER(${field}))`;
-        case 'month': return `FORMAT_MONTH(${field})`;
+        case 'month': return `STRFTIME('%Y-%m', ${field})`;
         case 'week': return `CONCAT(YEAR(${field}), '-W', LPAD(WEEK(${field}), 2, '0'))`;
         default: return field;
     }

@@ -783,7 +783,7 @@ function getMetricAlias(met: PlanMetric, model: SemanticModel, apdmeMetrics?: De
 
 /**
  * Convert a date field to a time grain expression.
- * Uses functions available in alasql: YEAR(), MONTH(), QUARTER().
+ * Uses DuckDB-compatible functions: YEAR(), QUARTER(), STRFTIME(), etc.
  */
 function timeGrainExpr(field: string, grain: string): string {
     switch (grain) {
@@ -792,7 +792,7 @@ function timeGrainExpr(field: string, grain: string): string {
         case 'quarter':
             return `CONCAT(YEAR(${field}), '-Q', QUARTER(${field}))`;
         case 'month':
-            return `FORMAT_MONTH(${field})`;
+            return `STRFTIME('%Y-%m', ${field})`;
         case 'week':
             return `CONCAT(YEAR(${field}), '-W', LPAD(WEEK(${field}), 2, '0'))`;
         case 'day_of_week':
