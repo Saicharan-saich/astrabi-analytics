@@ -808,8 +808,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // ── SECONDARY METRIC DATASETS (multi-metric overlay) ──
         // Auto-detect additional numeric keys in data beyond xKey, yKey, and known metadata keys
         const knownKeys = new Set([xKey, yKey, 'previous_value', 'previous_period_label', 'growth_pct', 'difference', 'raw_value', 'rawValue', '__original_value', '_original', 'x', 'value', 'period', 'metric']);
+        // Also exclude table-calculation derived fields so they don't spawn phantom chart series
+        const isTableCalcKey = (k: string) => /running_total|cumulative|percent_of_total|pct_of_total|rank|percentile|moving_avg|pct_diff|diff_from_prev|_sum$|_count$|_avg$|_min$|_max$/i.test(k);
         const secondaryKeys = data.length > 0
-            ? Object.keys(data[0]).filter(k => !knownKeys.has(k) && typeof data[0][k] === 'number')
+            ? Object.keys(data[0]).filter(k => !knownKeys.has(k) && !isTableCalcKey(k) && typeof data[0][k] === 'number')
             : [];
 
         const SECONDARY_COLORS = [
@@ -1033,8 +1035,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             const metaKeys = new Set([xKey, yKey, 'previous_value', 'previous_period_label', 'growth_pct',
                                 'difference', 'raw_value', 'rawValue', '__original_value', '_original',
                                 'x', 'value', 'period', 'metric']);
+                            const isCalcKey = (k: string) => /running_total|cumulative|percent_of_total|pct_of_total|rank|percentile|moving_avg|pct_diff|diff_from_prev|_sum$|_count$|_avg$|_min$|_max$/i.test(k);
                             Object.keys(dp).forEach(k => {
-                                if (!metaKeys.has(k) && typeof dp[k] === 'number') {
+                                if (!metaKeys.has(k) && !isCalcKey(k) && typeof dp[k] === 'number') {
                                     const humanName = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
                                     const formatted = formatForMetricName(dp[k], k);
                                     lines.push(`  ● ${humanName}: ${formatted}`);
