@@ -287,7 +287,26 @@ function applyNonTimeComparison(
     });
 
     // Re-run the base plan on comparison-period rows
-    const compResult = executeQueryPlan(plan, prevRows, dimDate);
+    // CRITICAL: Strip date filters from plan — the prevRows are already date-filtered,
+    // and the original plan's date range (e.g., 2017-10-01 to 2017-12-30) would
+    // exclude the comparison-period rows (e.g., 2016-10-01 to 2016-12-30).
+    const compPlan = {
+        ...plan,
+        filters: {
+            ...plan.filters,
+            range: plan.filters.range.filter(f => {
+                const fCol = f.column.toLowerCase().replace(/[_\s]+/g, '');
+                const dCol = (dateColKey || '').toLowerCase().replace(/[_\s]+/g, '');
+                return fCol !== dCol;
+            }),
+            date: (plan.filters.date || []).filter((f: any) => {
+                const fCol = (f.column || '').toLowerCase().replace(/[_\s]+/g, '');
+                const dCol = (dateColKey || '').toLowerCase().replace(/[_\s]+/g, '');
+                return fCol !== dCol;
+            }),
+        }
+    };
+    const compResult = executeQueryPlan(compPlan, prevRows, dimDate);
     const compMap = new Map<string, number>();
     for (const row of compResult.data) {
         const key = String(row[dimKey] || '');
