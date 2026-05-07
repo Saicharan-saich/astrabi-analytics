@@ -668,9 +668,7 @@ export async function runAISQLPipeline(
 
     // ─── Step 10: Score Confidence ───────────────────────────────
     console.log('[Pipeline] Step 10: Scoring confidence...');
-    // Format SQL for display (post-processing readability layer)
-    const formattedSQL = formatSQL(currentSQL);
-    const confidence = scoreConfidence(plan, semanticModel, validation, sqlMethod, repairAttempts, formattedSQL);
+    const confidence = scoreConfidence(plan, semanticModel, validation, sqlMethod, repairAttempts, currentSQL);
     // Apply APDME guardrail penalties (e.g., -50 for SUM on a date column)
     if (apdmeResult.confidencePenalty > 0) {
         confidence.score = Math.max(0, confidence.score - apdmeResult.confidencePenalty);
@@ -715,7 +713,7 @@ export async function runAISQLPipeline(
 
     const pipelineResult: AISQLPipelineResult = {
         plan,
-        sql: formattedSQL,
+        sql: currentSQL,
         validation,
         rawData,
         chartData: reshaped.data,

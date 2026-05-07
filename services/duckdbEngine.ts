@@ -271,9 +271,24 @@ export async function executeViaDuckDB(
         }
 
         // 3. Rewrite the SQL to use the sanitized table name
-        // The SQL compiler uses the original dataset name, so we need to replace it
-        const rewrittenSQL = sql.replace(
-            new RegExp(`"${tableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, 'g'),
+        // The SQL compiler may use sanitizeIdentifier(name) which strips dots but keeps spaces/case
+        // e.g., "Amazon Retail Sales.xlsx" → "Amazon Retail Salesxlsx" in SQL
+        // DuckDB uses sanitizeTableName → "amazon_retail_sales_xlsx"
+        // We need to match BOTH the original name and the sanitized-identifier form
+        const sanitizedIdForm = tableName.replace(/[^a-zA-Z0-9_ ]/g, ''); // mirrors sanitizeIdentifier
+        let rewrittenSQL = sql;
+
+        // Try replacing the sanitized-identifier form first (most common in compiled SQL)
+        if (sanitizedIdForm !== tableName) {
+            rewrittenSQL = rewrittenSQL.replace(
+                new RegExp(`"${sanitizedIdForm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, 'gi'),
+                `"${safeName}"`
+            );
+        }
+
+        // Also try replacing the original name (in case it wasn't sanitized)
+        rewrittenSQL = rewrittenSQL.replace(
+            new RegExp(`"${tableName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"`, 'gi'),
             `"${safeName}"`
         );
 

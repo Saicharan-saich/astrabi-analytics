@@ -34,11 +34,26 @@ const SORTED_KEYWORDS = [...MAJOR_KEYWORDS].sort((a, b) => b.length - a.length);
 export function formatSQL(sql: string): string {
     if (!sql || typeof sql !== 'string') return sql;
 
-    // Normalize whitespace
-    let formatted = sql.trim().replace(/\s+/g, ' ');
+    // ── Step 0: Extract and preserve -- comments ─────────────────
+    // Comments must be separated BEFORE whitespace normalization,
+    // otherwise collapsing \n turns everything after -- into a comment.
+    const lines = sql.split('\n');
+    const commentLines: string[] = [];
+    const sqlLines: string[] = [];
+
+    for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith('--')) {
+            commentLines.push(trimmed);
+        } else if (trimmed) {
+            sqlLines.push(trimmed);
+        }
+    }
+
+    // Rejoin only the SQL parts and normalize whitespace
+    let formatted = sqlLines.join(' ').replace(/\s+/g, ' ').trim();
 
     // ── Step 1: Handle CTEs (WITH ... AS (...)) ──────────────────
-    // Match WITH cte_name AS ( ... ) patterns
     const cteMatch = formatted.match(/^WITH\s+/i);
     if (cteMatch) {
         formatted = formatCTEQuery(formatted);
@@ -47,13 +62,15 @@ export function formatSQL(sql: string): string {
     }
 
     // ── Step 2: Clean up ─────────────────────────────────────────
-    // Remove multiple blank lines
     formatted = formatted.replace(/\n{3,}/g, '\n\n');
-
-    // Ensure trailing semicolon
     formatted = formatted.trimEnd();
     if (!formatted.endsWith(';')) {
         formatted += ';';
+    }
+
+    // Re-prepend comments at the top
+    if (commentLines.length > 0) {
+        formatted = commentLines.join('\n') + '\n' + formatted;
     }
 
     return formatted;
