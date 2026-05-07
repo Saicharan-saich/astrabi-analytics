@@ -134,17 +134,44 @@ export function scoreConfidence(
         semanticMatch = Math.max(0, semanticMatch - warnCount * 3);
     }
 
-    // ─── 6. SQL Readability (bonus up to +10, not counted in base 100) ──
-    let readabilityBonus = 0;
+    // ─── 6. SQL Quality Signals (penalty up to -15) ────────────────
+    let sqlQualityPenalty = 0;
     if (sql) {
+        // Penalize SQL that doesn't quote identifiers (columns with spaces will break)
+        const hasUnquotedSpacedCol = /\b(SELECT|FROM|WHERE|GROUP BY|ORDER BY)\b[^"]*\b\w+ \w+\b/i.test(sql);
+        if (hasUnquotedSpacedCol && !sql.includes('"')) {
+            sqlQualityPenalty += 3;
+            reasons.push('[SQL Quality] No quoted identifiers detected — may break on columns with spaces');
+        }
+
+        // Penalize missing aliases (SELECT SUM(x) without AS)
+        const aggWithoutAlias = /\b(SUM|AVG|COUNT|MIN|MAX)\([^)]+\)(?!\s+AS\b)/i.test(sql);
+        if (aggWithoutAlias) {
+            sqlQualityPenalty += 3;
+            reasons.push('[SQL Quality] Aggregation without alias — column name will be engine-dependent');
+        }
+
+        // Penalize very long single-line SQL (readability issue, potential comment corruption)
+        const lines = sql.split('\n');
+        const maxLineLen = Math.max(...lines.map(l => l.length));
+        if (maxLineLen > 300) {
+            sqlQualityPenalty += 3;
+            reasons.push('[SQL Quality] SQL contains lines >300 chars — readability concern');
+        }
+
+        // Bonus for using CTEs (WITH clause) — indicates well-structured SQL
+        if (/\bWITH\b/i.test(sql)) {
+            sqlQualityPenalty -= 2; // negative penalty = bonus
+        }
+
+        // SQL readability score
         const readability = scoreSQLReadability(sql);
-        readabilityBonus = readability.score;
         if (readability.reasons.length > 0) {
             reasons.push(...readability.reasons.map(r => `[Readability] ${r}`));
         }
     }
 
-    const totalScore = semanticMatch + filterClarity + aggregationCertainty + planComplexity + repairScore;
+    const totalScore = semanticMatch + filterClarity + aggregationCertainty + planComplexity + repairScore - sqlQualityPenalty;
 
     // Determine level
     let level: 'high' | 'medium' | 'low';

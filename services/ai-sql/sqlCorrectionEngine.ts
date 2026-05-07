@@ -22,16 +22,29 @@
 import { SemanticModel, AnalysisPlan, PlanMetric, PlanDimension, PlanFilter, DerivedMetricDefinition } from './types';
 import type { DerivedMetric } from './derivedMetricEngine';
 
-// ─── Public API ──────────────────────────────────────────────────
+// â”€â”€â”€ Table Reference â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Set dynamically by correctSQL() so all builder functions use the
+// actual dataset name instead of hardcoded "data".
+let TABLE_REF = '"data"';
+
+function fromTable(): string {
+    return `FROM ${TABLE_REF}`;
+}
+
+// â”€â”€â”€ Public API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Generate 100% correct SQL from a structured AnalysisPlan.
  * This REPLACES whatever SQL the AI produced.
  */
 export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
-    console.log(`[SQL Correction Engine] Building SQL for intent="${plan.intent}"`);
+    // Set the table reference from the dataset name so all generated SQL
+    // uses the real table name instead of hardcoded "data"
+    const dsName = model.datasetName || 'data';
+    TABLE_REF = `"${dsName.replace(/"/g, '""')}"`;
+    console.log(`[SQL Correction Engine] Building SQL for intent="${plan.intent}" table=${TABLE_REF}`);
 
-    // ── Intercept hour/time-of-day grain: check if dataset has time data ──
+    // â”€â”€ Intercept hour/time-of-day grain: check if dataset has time data â”€â”€
     const hourDim = plan.dimensions.find(d => ['hour', 'time_of_day', 'hour_of_day'].includes((d as any).timeGrain || ''));
     if (hourDim) {
         const dateField = model.fields.find(f => f.name.toLowerCase() === hourDim.field.toLowerCase());
@@ -42,7 +55,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
 
             // Annotate the plan with a fallback reason so the pipeline can surface it
             (plan as any)._fallbackReason =
-                `⚠️ This dataset's "${hourDim.field}" column contains only dates (e.g., "2025-12-31"), not date-times (e.g., "2025-12-31 14:30:00"). ` +
+                `âš ï¸ This dataset's "${hourDim.field}" column contains only dates (e.g., "2025-12-31"), not date-times (e.g., "2025-12-31 14:30:00"). ` +
                 `Time-of-day analysis requires timestamps with hours/minutes. ` +
                 `Showing today's total sales instead.`;
 
@@ -55,7 +68,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
 
             return [
                 `SELECT '${anchorStr}' AS date, ${metExprs.join(', ')}`,
-                'FROM data',
+                fromTable(),
                 `WHERE ${fullWhere}`,
             ].join('\n');
         }
@@ -69,7 +82,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
         return buildDerivedMetricSQL(plan, model, derivedMetric);
     }
 
-    // Check for compound average (legacy path — avg per day/week/month)
+    // Check for compound average (legacy path â€” avg per day/week/month)
     const hasCompound = plan.metrics.some((m: any) => m.compoundAgg);
     if (hasCompound) {
         return buildCompoundAverageSQL(plan, model);
@@ -81,7 +94,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     // compute growth/LAG post-SQL from the time-grouped results.
     if (plan.comparison) {
         if (apdmeMetrics && apdmeMetrics.length > 0) {
-            console.log(`[SQL Correction Engine] MSARE: APDME + comparison detected — routing to buildTrendSQL with derived expressions`);
+            console.log(`[SQL Correction Engine] MSARE: APDME + comparison detected â€” routing to buildTrendSQL with derived expressions`);
             return buildTrendSQL(plan, model, apdmeMetrics);
         }
         return buildComparisonSQL(plan, model);
@@ -92,7 +105,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
         case 'single_metric':
             return buildSingleMetricSQL(plan, model, apdmeMetrics);
         case 'derived_metric':
-            // If we get here, findDerivedMetric() didn't match — fallback to single
+            // If we get here, findDerivedMetric() didn't match â€” fallback to single
             return buildSingleMetricSQL(plan, model, apdmeMetrics);
         case 'breakdown':
             return buildBreakdownSQL(plan, model, apdmeMetrics);
@@ -159,7 +172,7 @@ function findDerivedMetric(plan: AnalysisPlan, model: SemanticModel): DerivedMet
 
 /**
  * Build SQL for a derived metric (two-stage aggregation).
- * Example: avg_daily_sales → 
+ * Example: avg_daily_sales â†’ 
  *   SELECT AVG(daily_total) AS avg_daily_sales
  *   FROM (SELECT order_date, SUM(sales) AS daily_total 
  *         FROM data WHERE ... GROUP BY order_date) sub
@@ -202,7 +215,7 @@ function buildDerivedMetricSQL(
     // Inner query: Stage 1 aggregation per group
     const innerSQL = [
         `SELECT ${grainExpr} AS period_key, ${baseAgg}(${baseField}) AS period_total`,
-        `FROM data`,
+        fromTable(),
         where,
         `GROUP BY ${grainExpr}`
     ].filter(Boolean).join('\n  ');
@@ -215,10 +228,10 @@ function buildDerivedMetricSQL(
 }
 
 
-// ─── Intent-Specific Builders ────────────────────────────────────
+// â”€â”€â”€ Intent-Specific Builders â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
- * single_metric: "What is total sales?" → SELECT SUM(sales) AS sales_sum FROM data
+ * single_metric: "What is total sales?" â†’ SELECT SUM(sales) AS sales_sum FROM data
  */
 function buildSingleMetricSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
     const selects = buildMetricExpressions(plan.metrics, model, apdmeMetrics);
@@ -226,7 +239,7 @@ function buildSingleMetricSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMet
 
     const parts = [
         `SELECT ${selects.join(', ')}`,
-        'FROM data',
+        fromTable(),
     ];
     if (where) parts.push(`WHERE ${where}`);
 
@@ -234,10 +247,10 @@ function buildSingleMetricSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMet
 }
 
 /**
- * breakdown: "Sales by category" → SELECT category, SUM(sales) FROM data GROUP BY category
+ * breakdown: "Sales by category" â†’ SELECT category, SUM(sales) FROM data GROUP BY category
  */
 function buildBreakdownSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
-    // ── Special handling for day_of_week ──
+    // â”€â”€ Special handling for day_of_week â”€â”€
     const dowDim = plan.dimensions.find(d => (d as any).timeGrain === 'day_of_week');
     if (dowDim) {
         return buildDayOfWeekSQL(plan, model, dowDim, 'breakdown');
@@ -254,7 +267,7 @@ function buildBreakdownSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
 
     const parts = [
         `SELECT ${selects.join(', ')}`,
-        'FROM data',
+        fromTable(),
     ];
     if (where) parts.push(`WHERE ${where}`);
     if (groupBy) parts.push(`GROUP BY ${groupBy}`);
@@ -265,10 +278,10 @@ function buildBreakdownSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
 }
 
 /**
- * trend: "Monthly sales for 2017" → SELECT time_grain, SUM(sales) ... ORDER BY time ASC
+ * trend: "Monthly sales for 2017" â†’ SELECT time_grain, SUM(sales) ... ORDER BY time ASC
  */
 function buildTrendSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
-    // ── Special handling for day_of_week ──
+    // â”€â”€ Special handling for day_of_week â”€â”€
     const dowDim = plan.dimensions.find(d => (d as any).timeGrain === 'day_of_week');
     if (dowDim) {
         return buildDayOfWeekSQL(plan, model, dowDim, 'trend');
@@ -291,7 +304,7 @@ function buildTrendSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: 
 
     const parts = [
         `SELECT ${selects.join(', ')}`,
-        'FROM data',
+        fromTable(),
     ];
     if (where) parts.push(`WHERE ${where}`);
     if (groupBy) parts.push(`GROUP BY ${groupBy}`);
@@ -301,11 +314,11 @@ function buildTrendSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: 
 }
 
 /**
- * ranking: "Which day had the lowest sales?" → SUM + GROUP BY + ORDER BY ASC + LIMIT 1
- * "Top 10 products by revenue" → SUM + GROUP BY + ORDER BY DESC + LIMIT 10
+ * ranking: "Which day had the lowest sales?" â†’ SUM + GROUP BY + ORDER BY ASC + LIMIT 1
+ * "Top 10 products by revenue" â†’ SUM + GROUP BY + ORDER BY DESC + LIMIT 10
  */
 function buildRankingSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
-    // ── Special handling for day_of_week: scope to current week ──
+    // â”€â”€ Special handling for day_of_week: scope to current week â”€â”€
     const dowDim = plan.dimensions.find(d => (d as any).timeGrain === 'day_of_week');
     if (dowDim) {
         return buildDayOfWeekSQL(plan, model, dowDim, 'ranking');
@@ -327,7 +340,7 @@ function buildRankingSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?
 
     const parts = [
         `SELECT ${selects.join(', ')}`,
-        'FROM data',
+        fromTable(),
     ];
     if (where) parts.push(`WHERE ${where}`);
     if (groupBy) parts.push(`GROUP BY ${groupBy}`);
@@ -363,7 +376,7 @@ function buildDayOfWeekSQL(
     const anchor = new Date(anchorStr + 'T12:00:00Z');
     const dayOfWeek = anchor.getUTCDay(); // 0=Sun, 6=Sat
 
-    // Week runs Sunday → Saturday
+    // Week runs Sunday â†’ Saturday
     const weekStart = new Date(anchor);
     weekStart.setUTCDate(anchor.getUTCDate() - dayOfWeek);
     const weekEnd = new Date(weekStart);
@@ -375,7 +388,7 @@ function buildDayOfWeekSQL(
     const weekStartStr = fmtDate(weekStart);
     const weekEndStr = fmtDate(weekEnd);
 
-    // Build WHERE — merge any existing filters with the week filter
+    // Build WHERE â€” merge any existing filters with the week filter
     const existingWhere = buildWhereClause(plan.filters);
     const weekFilter = `${dateField} BETWEEN '${weekStartStr}' AND '${weekEndStr}'`;
     const fullWhere = existingWhere
@@ -395,7 +408,7 @@ function buildDayOfWeekSQL(
 
     const parts = [
         `SELECT ${selects.join(', ')}`,
-        'FROM data',
+        fromTable(),
         `WHERE ${fullWhere}`,
         `GROUP BY ${dateField}`,
     ];
@@ -407,13 +420,13 @@ function buildDayOfWeekSQL(
         parts.push(`ORDER BY ${dateField} ASC`);
     }
 
-    console.log(`[SQL Correction] day_of_week: scoped to week ${weekStartStr} → ${weekEndStr} (anchor: ${anchorStr})`);
+    console.log(`[SQL Correction] day_of_week: scoped to week ${weekStartStr} â†’ ${weekEndStr} (anchor: ${anchorStr})`);
     return parts.join('\n');
 }
 
 /**
  * share_of_total: "What percent of sales is each region?"
- * → SELECT region, SUM(sales), SUM(sales) * 100.0 / (SELECT SUM(sales) FROM data) AS share_pct
+ * â†’ SELECT region, SUM(sales), SUM(sales) * 100.0 / (SELECT SUM(sales) FROM data) AS share_pct
  */
 function buildShareOfTotalSQL(plan: AnalysisPlan, model: SemanticModel): string {
     const dimExprs = buildDimensionExpressions(plan.dimensions);
@@ -429,14 +442,14 @@ function buildShareOfTotalSQL(plan: AnalysisPlan, model: SemanticModel): string 
         metExprParts.push(`${aggExpr} AS ${alias}`);
         // Add percentage column
         metExprParts.push(
-            `ROUND(${aggExpr} * 100.0 / (SELECT ${met.agg.toUpperCase()}(${met.field}) FROM data ${whereClause}), 2) AS ${met.field}_pct`
+            `ROUND(${aggExpr} * 100.0 / (SELECT ${met.agg.toUpperCase()}(${met.field}) ${fromTable()} ${whereClause}), 2) AS ${met.field}_pct`
         );
     }
 
     const selects = [...dimExprs, ...metExprParts];
     const parts = [
         `SELECT ${selects.join(', ')}`,
-        'FROM data',
+        fromTable(),
     ];
     if (where) parts.push(`WHERE ${where}`);
     if (groupBy) parts.push(`GROUP BY ${groupBy}`);
@@ -447,7 +460,7 @@ function buildShareOfTotalSQL(plan: AnalysisPlan, model: SemanticModel): string 
 
 /**
  * correlation: "Sales vs profit by product"
- * → SELECT product, SUM(sales) AS sales_sum, SUM(profit) AS profit_sum ... GROUP BY product
+ * â†’ SELECT product, SUM(sales) AS sales_sum, SUM(profit) AS profit_sum ... GROUP BY product
  */
 function buildCorrelationSQL(plan: AnalysisPlan, model: SemanticModel): string {
     // Same as breakdown but with multiple metrics
@@ -456,7 +469,7 @@ function buildCorrelationSQL(plan: AnalysisPlan, model: SemanticModel): string {
 
 /**
  * distribution: "Distribution of order values"
- * → Histogram with fixed-width buckets
+ * â†’ Histogram with fixed-width buckets
  */
 function buildDistributionSQL(plan: AnalysisPlan, model: SemanticModel): string {
     const met = plan.metrics[0];
@@ -470,8 +483,8 @@ function buildDistributionSQL(plan: AnalysisPlan, model: SemanticModel): string 
         `SELECT`,
         `  CONCAT(CAST(FLOOR(${field} / bucket_width) * bucket_width AS TEXT), ' - ', CAST(FLOOR(${field} / bucket_width) * bucket_width + bucket_width AS TEXT)) AS ${field}_range,`,
         `  COUNT(*) AS count`,
-        `FROM data,`,
-        `  (SELECT (MAX(${field}) - MIN(${field})) / 10.0 AS bucket_width FROM data${where ? ` WHERE ${where}` : ''}) bw`,
+        fromTable() + `,`,
+        `  (SELECT (MAX(${field}) - MIN(${field})) / 10.0 AS bucket_width ${fromTable()}${where ? ` WHERE ${where}` : ''}) bw`,
     ];
     if (where) sql.push(`WHERE ${where}`);
     sql.push(`GROUP BY FLOOR(${field} / bucket_width)`);
@@ -482,7 +495,7 @@ function buildDistributionSQL(plan: AnalysisPlan, model: SemanticModel): string 
 
 /**
  * Compound average: "Average daily sales this month"
- * → SELECT AVG(daily_total) FROM (SELECT date, SUM(sales) AS daily_total FROM data WHERE ... GROUP BY date) sub
+ * â†’ SELECT AVG(daily_total) FROM (SELECT date, SUM(sales) AS daily_total FROM data WHERE ... GROUP BY date) sub
  */
 function buildCompoundAverageSQL(plan: AnalysisPlan, model: SemanticModel): string {
     // Find the date dimension
@@ -521,7 +534,7 @@ function buildCompoundAverageSQL(plan: AnalysisPlan, model: SemanticModel): stri
         `SELECT ${outerSelects.join(', ')}`,
         `FROM (`,
         `  SELECT ${innerSelects.join(', ')}`,
-        `  FROM data`,
+        `  ${fromTable()}`,
     ];
     if (where) parts.push(`  WHERE ${where}`);
     parts.push(`  GROUP BY ${innerGroupBy}`);
@@ -532,8 +545,8 @@ function buildCompoundAverageSQL(plan: AnalysisPlan, model: SemanticModel): stri
 
 /**
  * comparison: "Sales this month vs last month"
- * total_comparison → two aggregated values with period labels
- * trend_comparison → two time series with period labels overlaid
+ * total_comparison â†’ two aggregated values with period labels
+ * trend_comparison â†’ two time series with period labels overlaid
  */
 function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
     if (!plan.comparison) return buildBreakdownSQL(plan, model);
@@ -545,7 +558,7 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
     });
 
     if (!dateFilter || dateFilter.op !== 'between' || !Array.isArray(dateFilter.value)) {
-        // No proper date filter — fall back to regular breakdown
+        // No proper date filter â€” fall back to regular breakdown
         return buildBreakdownSQL(plan, model);
     }
 
@@ -568,11 +581,11 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
         // Total comparison: two rows (current + previous) with a period label
         const sql = [
             `SELECT 'Current' AS period, ${metExprs.join(', ')}`,
-            `FROM data`,
+            fromTable(),
             `WHERE ${dateField} BETWEEN '${currentStart}' AND '${currentEnd}'`,
             `UNION ALL`,
             `SELECT 'Previous' AS period, ${metExprs.join(', ')}`,
-            `FROM data`,
+            fromTable(),
             `WHERE ${dateField} BETWEEN '${prevDates.start}' AND '${prevDates.end}'`,
         ];
         return sql.join('\n');
@@ -587,12 +600,12 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
 
     const sql = [
         `SELECT 'Current' AS period, ${grainExpr} AS ${grainAlias}, ${metExprs.join(', ')}`,
-        `FROM data`,
+        fromTable(),
         `WHERE ${dateField} BETWEEN '${currentStart}' AND '${currentEnd}'`,
         `GROUP BY ${grainExpr}`,
         `UNION ALL`,
         `SELECT 'Previous' AS period, ${grainExpr} AS ${grainAlias}, ${metExprs.join(', ')}`,
-        `FROM data`,
+        fromTable(),
         `WHERE ${dateField} BETWEEN '${prevDates.start}' AND '${prevDates.end}'`,
         `GROUP BY ${grainExpr}`,
         `ORDER BY ${grainAlias} ASC`,
@@ -602,7 +615,7 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
 }
 
 
-// ─── SQL Safety Helpers ──────────────────────────────────────────
+// â”€â”€â”€ SQL Safety Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /** Quote a SQL identifier with double quotes (safe for spaces, dots, reserved words) */
 function q(name: string): string {
@@ -614,7 +627,7 @@ function esc(val: string): string {
     return val.replace(/'/g, "''");
 }
 
-// ─── Shared Helpers ──────────────────────────────────────────────
+// â”€â”€â”€ Shared Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Build SELECT expressions for metrics.
@@ -624,7 +637,7 @@ function buildMetricExpressions(metrics: PlanMetric[], model: SemanticModel, apd
     const exprs: string[] = [];
 
     for (const met of metrics) {
-        // ─── APDME Derived Metrics (highest priority) ───
+        // â”€â”€â”€ APDME Derived Metrics (highest priority) â”€â”€â”€
         // If this metric has a derivedMetricId, use the pre-built expression
         // from the APDME engine (e.g., AVG(JULIANDAY(x) - JULIANDAY(y)))
         if (met.derivedMetricId && apdmeMetrics?.length) {
@@ -645,7 +658,7 @@ function buildMetricExpressions(metrics: PlanMetric[], model: SemanticModel, apd
             }
         }
 
-        // Standard aggregation — quote all identifiers for safety
+        // Standard aggregation â€” quote all identifiers for safety
         const fld = q(met.field);
         switch (met.agg) {
             case 'count_distinct':
@@ -844,7 +857,7 @@ function calculatePreviousPeriod(
 
     if (isMonthAligned) {
         // Use proper calendar month arithmetic
-        // Current: Dec 1 → Dec 31  →  Previous: Nov 1 → Nov 30
+        // Current: Dec 1 â†’ Dec 31  â†’  Previous: Nov 1 â†’ Nov 30
         const prevStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 1, 1));
         const prevEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 0)); // last day of prev month
         return { start: fmtDate(prevStart), end: fmtDate(prevEnd) };
