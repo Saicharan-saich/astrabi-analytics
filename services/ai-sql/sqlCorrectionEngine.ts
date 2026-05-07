@@ -21,6 +21,7 @@
 
 import { SemanticModel, AnalysisPlan, PlanMetric, PlanDimension, PlanFilter, DerivedMetricDefinition } from './types';
 import type { DerivedMetric } from './derivedMetricEngine';
+import { logger } from '../logger';
 
 // â”€â”€â”€ Table Reference â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Set dynamically by correctSQL() so all builder functions use the
@@ -42,7 +43,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     // uses the real table name instead of hardcoded "data"
     const dsName = model.datasetName || 'data';
     TABLE_REF = `"${dsName.replace(/"/g, '""')}"`;
-    console.log(`[SQL Correction Engine] Building SQL for intent="${plan.intent}" table=${TABLE_REF}`);
+    logger.info('[SQL Correction]', `Building SQL for intent="${plan.intent}" table=${TABLE_REF}`);
 
     // â”€â”€ Intercept hour/time-of-day grain: check if dataset has time data â”€â”€
     const hourDim = plan.dimensions.find(d => ['hour', 'time_of_day', 'hour_of_day'].includes((d as any).timeGrain || ''));
@@ -51,7 +52,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
         const hasTimeData = dateField?.sampleValues?.some(v => String(v).includes(':')) ?? false;
 
         if (!hasTimeData) {
-            console.warn(`[SQL Correction Engine] hour grain requested but date column "${hourDim.field}" has no time data. Falling back to today's sales.`);
+            logger.warn('[SQL Correction]', `hour grain requested but date column "${hourDim.field}" has no time data. Falling back to today's sales.`);
 
             // Annotate the plan with a fallback reason so the pipeline can surface it
             (plan as any)._fallbackReason =
@@ -78,7 +79,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     // references a derived metric OR where the LLM set intent=derived_metric
     const derivedMetric = findDerivedMetric(plan, model);
     if (derivedMetric) {
-        console.log(`[SQL Correction Engine] Found derived metric: ${derivedMetric.id}`);
+        logger.info('[SQL Correction]', `Found derived metric: ${derivedMetric.id}`);
         return buildDerivedMetricSQL(plan, model, derivedMetric);
     }
 
@@ -94,7 +95,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     // compute growth/LAG post-SQL from the time-grouped results.
     if (plan.comparison) {
         if (apdmeMetrics && apdmeMetrics.length > 0) {
-            console.log(`[SQL Correction Engine] MSARE: APDME + comparison detected â€” routing to buildTrendSQL with derived expressions`);
+            logger.info('[SQL Correction]', `MSARE: APDME + comparison detected â€” routing to buildTrendSQL with derived expressions`);
             return buildTrendSQL(plan, model, apdmeMetrics);
         }
         return buildComparisonSQL(plan, model);
@@ -223,7 +224,7 @@ function buildDerivedMetricSQL(
     // Outer query: Stage 2 final aggregation
     const sql = `SELECT ${finalAgg}(period_total) AS ${alias}\nFROM (\n  ${innerSQL}\n) sub`;
 
-    console.log(`[SQL Correction Engine] Derived metric SQL for ${dm.id}:\n${sql}`);
+    logger.debug('[SQL Correction]', `Derived metric SQL for ${dm.id}:\n${sql}`);
     return sql;
 }
 
@@ -644,7 +645,7 @@ function buildMetricExpressions(metrics: PlanMetric[], model: SemanticModel, apd
             const derived = apdmeMetrics.find(d => d.name === met.derivedMetricId);
             if (derived) {
                 exprs.push(`${derived.aggregatedExpression} AS ${derived.alias}`);
-                console.log(`[SQL Correction] Using APDME derived metric: ${derived.aggregatedExpression}`);
+                logger.debug('[SQL Correction]', `Using APDME derived metric: ${derived.aggregatedExpression}`);
                 continue;
             }
         }
@@ -762,7 +763,7 @@ function buildWhereClause(filters: PlanFilter[]): string {
                 parts.push(`${fld(f.field)} LIKE ${strVal(f.value)}`);
                 break;
             default:
-                console.warn(`[SQL Correction Engine] Unknown filter op: "${f.op}" for field "${f.field}". Filter skipped.`);
+                logger.warn('[SQL Correction]', `Unknown filter op: "${f.op}" for field "${f.field}". Filter skipped.`);
                 break;
         }
     }

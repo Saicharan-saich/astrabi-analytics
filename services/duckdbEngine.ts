@@ -16,6 +16,7 @@
 // ═══════════════════════════════════════════════════════════════════
 
 import * as duckdb from '@duckdb/duckdb-wasm';
+import { logger } from './logger';
 
 // ── Singleton State ──────────────────────────────────────────────
 
@@ -34,7 +35,7 @@ async function initDuckDB(): Promise<void> {
 
     initPromise = (async () => {
         try {
-            console.log('[DuckDB] Initializing WASM engine...');
+            logger.info('[DuckDB]', 'Initializing WASM engine...');
             const startTime = performance.now();
 
             // Use CDN bundles for simplicity — no Vite WASM config needed
@@ -48,19 +49,19 @@ async function initDuckDB(): Promise<void> {
             );
 
             const worker = new Worker(worker_url);
-            const logger = new duckdb.ConsoleLogger();
-            db = new duckdb.AsyncDuckDB(logger, worker);
+            const duckdbLogger = new duckdb.ConsoleLogger();
+            db = new duckdb.AsyncDuckDB(duckdbLogger, worker);
             await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
 
             conn = await db.connect();
 
             const elapsed = Math.round(performance.now() - startTime);
-            console.log(`[DuckDB] WASM engine ready in ${elapsed}ms`);
+            logger.info('[DuckDB]', `WASM engine ready in ${elapsed}ms`);
 
             URL.revokeObjectURL(worker_url);
         } catch (err) {
             initError = err as Error;
-            console.error('[DuckDB] Failed to initialize:', err);
+            logger.error('[DuckDB]', 'Failed to initialize:', err);
             throw err;
         }
     })();
@@ -166,7 +167,7 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
             await conn!.query(insertSQL);
         }
 
-        console.log(`[DuckDB] Loaded ${rows.length} rows into table "${safeName}" (${columns.length} columns)`);
+        logger.info('[DuckDB]', `Loaded ${rows.length} rows into table "${safeName}" (${columns.length} columns)`);
     })();
 
     loadedTables.set(safeName, loadPromise);
@@ -229,7 +230,7 @@ async function executeSQLQuery(sql: string): Promise<DuckDBResult> {
             data.push(row);
         }
 
-        console.log(`[DuckDB] Query executed in ${executionTimeMs}ms, ${data.length} rows returned`);
+        logger.debug('[DuckDB]', `Query executed in ${executionTimeMs}ms, ${data.length} rows returned`);
 
         return {
             success: true,
@@ -241,7 +242,7 @@ async function executeSQLQuery(sql: string): Promise<DuckDBResult> {
     } catch (err) {
         const executionTimeMs = Math.round(performance.now() - startTime);
         const errorMsg = err instanceof Error ? err.message : String(err);
-        console.error(`[DuckDB] Query failed (${executionTimeMs}ms):`, errorMsg);
+        logger.error('[DuckDB]', `Query failed (${executionTimeMs}ms):`, errorMsg);
 
         return {
             success: false,
@@ -407,7 +408,7 @@ function normalizeSQLForDuckDB(sql: string): string {
     //    SQLite: DATETIME('2023-06-20', '-6 days') → DuckDB: DATE '2023-06-20' - INTERVAL 6 DAY
     normalized = normalizeDateExpressions(normalized);
 
-    console.log('[DuckDB] Normalized SQL:', normalized);
+    logger.debug('[DuckDB]', 'Normalized SQL:', normalized);
     return normalized;
 }
 
@@ -510,7 +511,7 @@ export async function executeSQLViaDuckDB(
                 const dimRows = generateDimDateRows(timeContext.minDate, timeContext.maxDate);
                 if (dimRows.length > 0) {
                     await loadDataIntoTable(dimDateName, dimRows);
-                    console.log(`[DuckDB] dim_date loaded: ${dimRows.length} rows (${timeContext.minDate} → ${timeContext.maxDate})`);
+                    logger.info('[DuckDB]', `dim_date loaded: ${dimRows.length} rows (${timeContext.minDate} → ${timeContext.maxDate})`);
                 }
             }
         }
@@ -519,19 +520,19 @@ export async function executeSQLViaDuckDB(
         const normalizedSQL = normalizeSQLForDuckDB(sql);
 
         // 5. Execute
-        console.log('[DuckDB] Original SQL:', sql);
+        logger.debug('[DuckDB]', 'Original SQL:', sql);
         const result = await executeSQLQuery(normalizedSQL);
 
         if (!result.success) {
-            console.error('[DuckDB] Query failed:', result.error);
+            logger.error('[DuckDB]', 'Query failed:', result.error);
             return { data: [], columns: [], error: result.error };
         }
 
-        console.log(`[DuckDB] Result: ${result.rowCount} rows, ${result.columns.length} columns`);
+        logger.debug('[DuckDB]', `Result: ${result.rowCount} rows, ${result.columns.length} columns`);
         return { data: result.data, columns: result.columns };
     } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
-        console.error('[DuckDB] executeSQLViaDuckDB error:', errorMsg);
+        logger.error('[DuckDB]', 'executeSQLViaDuckDB error:', errorMsg);
         return { data: [], columns: [], error: errorMsg };
     }
 }
@@ -548,9 +549,9 @@ export async function preloadDuckDB(tableName: string, rows: any[]): Promise<voi
         if (tableName !== 'data') {
             await loadDataIntoTable('data', rows);
         }
-        console.log(`[DuckDB] Pre-loaded: ${rows.length} rows into "${tableName}" + "data"`);
+        logger.info('[DuckDB]', `Pre-loaded: ${rows.length} rows into "${tableName}" + "data"`);
     } catch (err) {
-        console.warn('[DuckDB] Pre-load failed (non-fatal):', err);
+        logger.warn('[DuckDB]', 'Pre-load failed (non-fatal):', err);
     }
 }
 
