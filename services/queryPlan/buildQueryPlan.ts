@@ -118,7 +118,7 @@ function resolveTimeFilter(
     }
 
     if (!start) return null;
-    return { column: dateColumn, start, end };
+    return { column: dateColumn, start, end, _isTimeFilter: true };
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -295,6 +295,9 @@ function applyNonTimeComparison(
         filters: {
             ...plan.filters,
             range: plan.filters.range.filter(f => {
+                // Prefer the explicit _isTimeFilter tag set by buildQueryPlan
+                if ((f as any)._isTimeFilter) return false;
+                // Fallback: fuzzy column name match for plans built without the tag
                 const fCol = f.column.toLowerCase().replace(/[_\s]+/g, '');
                 const dCol = (dateColKey || '').toLowerCase().replace(/[_\s]+/g, '');
                 return fCol !== dCol;

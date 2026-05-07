@@ -67,6 +67,7 @@ export interface RangeFilter {
     start?: string;   // If only start → >=
     end?: string;      // If only end → <=
     // Both present → BETWEEN (inclusive)
+    _isTimeFilter?: boolean;  // Set by buildQueryPlan when this range came from a time filter resolution
 }
 
 /** Date-hierarchy filter: compares row dates formatted at the given grain.

@@ -602,6 +602,18 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
 }
 
 
+// ─── SQL Safety Helpers ──────────────────────────────────────────
+
+/** Quote a SQL identifier with double quotes (safe for spaces, dots, reserved words) */
+function q(name: string): string {
+    return `"${name.replace(/"/g, '""')}"`;
+}
+
+/** Escape a string literal value (prevents SQL injection from values like O'Brien) */
+function esc(val: string): string {
+    return val.replace(/'/g, "''");
+}
+
 // ─── Shared Helpers ──────────────────────────────────────────────
 
 /**
@@ -633,28 +645,29 @@ function buildMetricExpressions(metrics: PlanMetric[], model: SemanticModel, apd
             }
         }
 
-        // Standard aggregation
+        // Standard aggregation — quote all identifiers for safety
+        const fld = q(met.field);
         switch (met.agg) {
             case 'count_distinct':
-                exprs.push(`COUNT(DISTINCT ${met.field}) AS ${met.field}_count_distinct`);
+                exprs.push(`COUNT(DISTINCT ${fld}) AS ${q(met.field + '_count_distinct')}`);
                 break;
             case 'count':
-                exprs.push(`COUNT(${met.field}) AS ${met.field}_count`);
+                exprs.push(`COUNT(${fld}) AS ${q(met.field + '_count')}`);
                 break;
             case 'sum':
-                exprs.push(`SUM(${met.field}) AS ${met.field}_sum`);
+                exprs.push(`SUM(${fld}) AS ${q(met.field + '_sum')}`);
                 break;
             case 'avg':
-                exprs.push(`AVG(${met.field}) AS ${met.field}_avg`);
+                exprs.push(`AVG(${fld}) AS ${q(met.field + '_avg')}`);
                 break;
             case 'min':
-                exprs.push(`MIN(${met.field}) AS ${met.field}_min`);
+                exprs.push(`MIN(${fld}) AS ${q(met.field + '_min')}`);
                 break;
             case 'max':
-                exprs.push(`MAX(${met.field}) AS ${met.field}_max`);
+                exprs.push(`MAX(${fld}) AS ${q(met.field + '_max')}`);
                 break;
             default:
-                exprs.push(`SUM(${met.field}) AS ${met.field}_sum`);
+                exprs.push(`SUM(${fld}) AS ${q(met.field + '_sum')}`);
         }
     }
 
@@ -669,9 +682,9 @@ function buildDimensionExpressions(dimensions: PlanDimension[]): string[] {
     return dimensions.map(dim => {
         if (dim.timeGrain && dim.timeGrain !== 'day') {
             const expr = timeGrainExpr(dim.field, dim.timeGrain);
-            return `${expr} AS ${dim.field}_${dim.timeGrain}`;
+            return `${expr} AS ${q(dim.field + '_' + dim.timeGrain)}`;
         }
-        return dim.field;
+        return q(dim.field);
     });
 }
 
@@ -686,7 +699,7 @@ function buildGroupByClause(dimensions: PlanDimension[]): string {
         if (dim.timeGrain && dim.timeGrain !== 'day') {
             return timeGrainExpr(dim.field, dim.timeGrain);
         }
-        return dim.field;
+        return q(dim.field);
     });
 
     return parts.join(', ');
@@ -700,46 +713,42 @@ function buildWhereClause(filters: PlanFilter[]): string {
     if (filters.length === 0) return '';
 
     const parts: string[] = [];
+    const fld = (name: string) => q(name);
+    const strVal = (v: any) => `'${esc(String(v))}'`;
+    const val = (v: any) => typeof v === 'string' ? strVal(v) : String(v);
 
     for (const f of filters) {
         switch (f.op) {
             case '=':
-                parts.push(typeof f.value === 'string'
-                    ? `${f.field} = '${f.value}'`
-                    : `${f.field} = ${f.value}`);
+                parts.push(`${fld(f.field)} = ${val(f.value)}`);
                 break;
             case '!=':
-                parts.push(typeof f.value === 'string'
-                    ? `${f.field} != '${f.value}'`
-                    : `${f.field} != ${f.value}`);
+                parts.push(`${fld(f.field)} != ${val(f.value)}`);
                 break;
             case '>': case '<': case '>=': case '<=':
-                parts.push(typeof f.value === 'string'
-                    ? `${f.field} ${f.op} '${f.value}'`
-                    : `${f.field} ${f.op} ${f.value}`);
+                parts.push(`${fld(f.field)} ${f.op} ${val(f.value)}`);
                 break;
             case 'between':
                 if (Array.isArray(f.value) && f.value.length === 2) {
-                    parts.push(`${f.field} BETWEEN '${f.value[0]}' AND '${f.value[1]}'`);
+                    parts.push(`${fld(f.field)} BETWEEN ${strVal(f.value[0])} AND ${strVal(f.value[1])}`);
                 }
                 break;
             case 'in':
                 if (Array.isArray(f.value)) {
-                    const vals = f.value.map(v => typeof v === 'string' ? `'${v}'` : v).join(', ');
-                    parts.push(`${f.field} IN (${vals})`);
+                    const vals = f.value.map(v => val(v)).join(', ');
+                    parts.push(`${fld(f.field)} IN (${vals})`);
                 }
                 break;
             case 'not_in':
                 if (Array.isArray(f.value)) {
-                    const vals = f.value.map(v => typeof v === 'string' ? `'${v}'` : v).join(', ');
-                    parts.push(`${f.field} NOT IN (${vals})`);
+                    const vals = f.value.map(v => val(v)).join(', ');
+                    parts.push(`${fld(f.field)} NOT IN (${vals})`);
                 }
                 break;
             case 'like':
-                parts.push(`${f.field} LIKE '${f.value}'`);
+                parts.push(`${fld(f.field)} LIKE ${strVal(f.value)}`);
                 break;
             default:
-                // Unknown operator — log a warning so this never silently drops a filter
                 console.warn(`[SQL Correction Engine] Unknown filter op: "${f.op}" for field "${f.field}". Filter skipped.`);
                 break;
         }
@@ -758,9 +767,9 @@ function buildOrderByClause(plan: AnalysisPlan): string {
         // Check if sorting by a dimension with time grain
         const dimMatch = plan.dimensions.find(d => d.field === s.field);
         if (dimMatch && dimMatch.timeGrain && dimMatch.timeGrain !== 'day') {
-            return `${dimMatch.field}_${dimMatch.timeGrain} ${s.dir.toUpperCase()}`;
+            return `${q(dimMatch.field + '_' + dimMatch.timeGrain)} ${s.dir.toUpperCase()}`;
         }
-        return `${s.field} ${s.dir.toUpperCase()}`;
+        return `${q(s.field)} ${s.dir.toUpperCase()}`;
     }).join(', ');
 }
 
@@ -776,9 +785,9 @@ function getMetricAlias(met: PlanMetric, model: SemanticModel, apdmeMetrics?: De
         return met.compositeId;
     }
     if (met.agg === 'count_distinct') {
-        return `${met.field}_count_distinct`;
+        return q(`${met.field}_count_distinct`);
     }
-    return `${met.field}_${met.agg}`;
+    return q(`${met.field}_${met.agg}`);
 }
 
 /**
