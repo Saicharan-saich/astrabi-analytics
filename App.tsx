@@ -38,6 +38,7 @@ import { DomainReviewModal } from './components/DomainReviewModal';
 import { ColumnMappingWizard } from './components/ColumnMappingWizard';
 import { SplashScreen } from './components/SplashScreen';
 import { SmartQuestionsView } from './components/SmartQuestionsView';
+import { PinToDashboardModal } from './components/PinToDashboardModal';
 
 // ── Heuristic domain detection (fallback when AI profiling unavailable) ──
 function detectDomainFromColumns(columns: { name: string }[], fileName: string): string {
@@ -162,6 +163,7 @@ function App() {
   const [pendingProfile, setPendingProfile] = useState<any>(null);
   const [showSplash, setShowSplash] = useState(true);
   const [smartQuestionQuery, setSmartQuestionQuery] = useState<string | null>(null);
+  const [pendingPinItem, setPendingPinItem] = useState<any>(null);
 
   // Smart Questions → AI SQL routing
   const handleSmartQuestion = (question: string) => {
@@ -525,8 +527,8 @@ function App() {
       datasetId: dataset?.id,
       datasetName: dataset?.name,
     };
-    addItem(newItem);
-    showToast("Pinned to Dashboard!");
+    // Open Pin-to-Dashboard modal instead of adding directly
+    setPendingPinItem(newItem);
   };
 
   const handleEditAnalysis = (item: any) => {
@@ -1085,6 +1087,18 @@ function App() {
             <OnboardingTour />
 
             {/* Toast Notifications */}
+            {/* ── Pin-to-Dashboard Modal ── */}
+            {pendingPinItem && (
+              <PinToDashboardModal
+                item={pendingPinItem}
+                onClose={() => setPendingPinItem(null)}
+                onPinned={(dashboardName) => {
+                  setPendingPinItem(null);
+                  showToast(`Pinned to "${dashboardName}"!`);
+                }}
+              />
+            )}
+
             <AnimatePresence>
               {toastMsg && (
                 <motion.div

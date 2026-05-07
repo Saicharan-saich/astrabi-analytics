@@ -1,7 +1,10 @@
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { Dataset, DashboardItem, AnalysisResult, QueryConfig, FormattingConfig, Tab } from '../types';
+import { Dataset, DashboardItem, DashboardDefinition, AnalysisResult, QueryConfig, FormattingConfig, Tab } from '../types';
+
+// ── Helpers ──────────────────────────────────────────────────────
+const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
 interface UIState {
     activeTab: Tab;
@@ -41,13 +44,44 @@ interface WorkbenchState {
     updateFormatting: (formatting: FormattingConfig) => void;
 }
 
-interface DashboardState {
-    items: DashboardItem[];
+// ── Multi-Dashboard State ────────────────────────────────────────
+interface MultiDashboardState {
+    dashboards: DashboardDefinition[];
+    activeDashboardId: string | null;
+
+    // Dashboard CRUD
+    createDashboard: (name: string) => string; // returns new dashboard ID
+    renameDashboard: (id: string, name: string) => void;
+    deleteDashboard: (id: string) => void;
+    duplicateDashboard: (id: string) => string; // returns new dashboard ID
+    setActiveDashboard: (id: string) => void;
+
+    // Item operations (scoped to a target dashboard)
+    addItemToDashboard: (dashboardId: string, item: DashboardItem) => void;
+    removeItemFromDashboard: (dashboardId: string, itemId: string) => void;
+    updateItemInDashboard: (dashboardId: string, item: DashboardItem) => void;
+    setDashboardLayout: (dashboardId: string, layout: any[]) => void;
+    setDashboardFilters: (dashboardId: string, filters: any[]) => void;
+
+    // Backward-compat convenience — operates on activeDashboardId
     addItem: (item: DashboardItem) => void;
     removeItem: (id: string) => void;
     updateItem: (item: DashboardItem) => void;
     setItems: (items: DashboardItem[]) => void;
     clearAllItems: () => void;
+}
+
+// Legacy items/layout/filters kept as computed getters via the active dashboard
+interface LegacyDashboardCompat {
+    /** items[] from the active dashboard (backward compat) */
+    items: DashboardItem[];
+    /** layout from the active dashboard (backward compat) */
+    dashboardLayout: any[] | null;
+    /** filters from the active dashboard (backward compat) */
+    dashboardFilters: DashboardFilter[];
+    /** Legacy setters that proxy to active dashboard */
+    setDashboardLayout_legacy: (layout: any[]) => void;
+    setDashboardFilters_legacy: (filters: DashboardFilter[]) => void;
 }
 
 interface HistoryEntry {
@@ -75,11 +109,6 @@ interface SavedQuestionsState {
     deleteQuestion: (id: string) => void;
 }
 
-interface DashboardLayoutState {
-    dashboardLayout: any[] | null;
-    setDashboardLayout: (layout: any[]) => void;
-}
-
 export interface DashboardFilter {
     column: string;
     /** 'dimension' = categorical / 'measure' = numeric comparison */
@@ -93,17 +122,29 @@ export interface DashboardFilter {
 }
 
 interface DashboardFilterState {
-    dashboardFilters: DashboardFilter[];
-    setDashboardFilters: (filters: DashboardFilter[]) => void;
     selectedDatasetId: string | null;
     setSelectedDatasetId: (id: string | null) => void;
 }
 
-type AppStore = UIState & DataState & WorkbenchState & DashboardState & HistoryState & SavedQuestionsState & DashboardLayoutState & DashboardFilterState;
+type AppStore = UIState & DataState & WorkbenchState & MultiDashboardState & LegacyDashboardCompat & HistoryState & SavedQuestionsState & DashboardFilterState;
+
+// ── Helper: find the active dashboard or return undefined ──
+function getActiveDashboard(state: { dashboards: DashboardDefinition[]; activeDashboardId: string | null }): DashboardDefinition | undefined {
+    if (!state.activeDashboardId) return state.dashboards[0];
+    return state.dashboards.find(d => d.id === state.activeDashboardId) || state.dashboards[0];
+}
+
+function updateDashboard(
+    dashboards: DashboardDefinition[],
+    id: string,
+    updater: (d: DashboardDefinition) => DashboardDefinition
+): DashboardDefinition[] {
+    return dashboards.map(d => d.id === id ? updater(d) : d);
+}
 
 export const useAppStore = create<AppStore>()(
     persist(
-        (set) => ({
+        (set, get) => ({
             // UI Slice
             activeTab: Tab.UPLOAD,
             isSidebarOpen: true,
@@ -165,15 +206,174 @@ export const useAppStore = create<AppStore>()(
             setWorkbenchState: (config, result) => set({ config, result }),
             updateFormatting: (formatting) => set({ formatting }),
 
-            // Dashboard Slice
-            items: [],
-            addItem: (item) => set((state) => ({ items: [...state.items, item] })),
-            removeItem: (id) => set((state) => ({ items: state.items.filter((i) => i.id !== id) })),
-            updateItem: (updatedItem) => set((state) => ({
-                items: state.items.map((i) => (i.id === updatedItem.id ? updatedItem : i))
+            // ── Multi-Dashboard Slice ────────────────────────────────
+            dashboards: [],
+            activeDashboardId: null,
+
+            createDashboard: (name: string) => {
+                const id = generateId();
+                set((state) => ({
+                    dashboards: [...state.dashboards, {
+                        id,
+                        name,
+                        items: [],
+                        layout: null,
+                        filters: [],
+                        createdAt: Date.now(),
+                    }],
+                    activeDashboardId: id,
+                }));
+                return id;
+            },
+
+            renameDashboard: (id, name) => set((state) => ({
+                dashboards: updateDashboard(state.dashboards, id, d => ({ ...d, name })),
             })),
-            setItems: (items) => set({ items }),
-            clearAllItems: () => set({ items: [] }),
+
+            deleteDashboard: (id) => set((state) => {
+                const remaining = state.dashboards.filter(d => d.id !== id);
+                return {
+                    dashboards: remaining,
+                    activeDashboardId: state.activeDashboardId === id
+                        ? (remaining[0]?.id || null)
+                        : state.activeDashboardId,
+                };
+            }),
+
+            duplicateDashboard: (id) => {
+                const newId = generateId();
+                set((state) => {
+                    const source = state.dashboards.find(d => d.id === id);
+                    if (!source) return {};
+                    return {
+                        dashboards: [...state.dashboards, {
+                            ...source,
+                            id: newId,
+                            name: `${source.name} (Copy)`,
+                            items: source.items.map(item => ({ ...item, id: generateId() })),
+                            createdAt: Date.now(),
+                        }],
+                        activeDashboardId: newId,
+                    };
+                });
+                return newId;
+            },
+
+            setActiveDashboard: (id) => set({ activeDashboardId: id }),
+
+            addItemToDashboard: (dashboardId, item) => set((state) => ({
+                dashboards: updateDashboard(state.dashboards, dashboardId, d => ({
+                    ...d,
+                    items: [...d.items, item],
+                })),
+            })),
+
+            removeItemFromDashboard: (dashboardId, itemId) => set((state) => ({
+                dashboards: updateDashboard(state.dashboards, dashboardId, d => ({
+                    ...d,
+                    items: d.items.filter(i => i.id !== itemId),
+                })),
+            })),
+
+            updateItemInDashboard: (dashboardId, item) => set((state) => ({
+                dashboards: updateDashboard(state.dashboards, dashboardId, d => ({
+                    ...d,
+                    items: d.items.map(i => i.id === item.id ? item : i),
+                })),
+            })),
+
+            setDashboardLayout: (dashboardId, layout) => set((state) => ({
+                dashboards: updateDashboard(state.dashboards, dashboardId, d => ({
+                    ...d,
+                    layout,
+                })),
+            })),
+
+            setDashboardFilters: (dashboardId, filters) => set((state) => ({
+                dashboards: updateDashboard(state.dashboards, dashboardId, d => ({
+                    ...d,
+                    filters,
+                })),
+            })),
+
+            // ── Backward-Compat Convenience (operates on active dashboard) ──
+            get items() {
+                const state = get();
+                const active = getActiveDashboard(state);
+                return active?.items || [];
+            },
+
+            get dashboardLayout() {
+                const state = get();
+                const active = getActiveDashboard(state);
+                return active?.layout || null;
+            },
+
+            get dashboardFilters() {
+                const state = get();
+                const active = getActiveDashboard(state);
+                return (active?.filters || []) as DashboardFilter[];
+            },
+
+            addItem: (item) => {
+                const state = get();
+                const active = getActiveDashboard(state);
+                if (active) {
+                    state.addItemToDashboard(active.id, item);
+                }
+            },
+
+            removeItem: (id) => {
+                const state = get();
+                const active = getActiveDashboard(state);
+                if (active) {
+                    state.removeItemFromDashboard(active.id, id);
+                }
+            },
+
+            updateItem: (item) => {
+                const state = get();
+                const active = getActiveDashboard(state);
+                if (active) {
+                    state.updateItemInDashboard(active.id, item);
+                }
+            },
+
+            setItems: (items) => {
+                const state = get();
+                const active = getActiveDashboard(state);
+                if (active) {
+                    set((s) => ({
+                        dashboards: updateDashboard(s.dashboards, active.id, d => ({ ...d, items })),
+                    }));
+                }
+            },
+
+            clearAllItems: () => {
+                const state = get();
+                const active = getActiveDashboard(state);
+                if (active) {
+                    set((s) => ({
+                        dashboards: updateDashboard(s.dashboards, active.id, d => ({ ...d, items: [] })),
+                    }));
+                }
+            },
+
+            setDashboardLayout_legacy: (layout) => {
+                const state = get();
+                const active = getActiveDashboard(state);
+                if (active) {
+                    state.setDashboardLayout(active.id, layout);
+                }
+            },
+
+            setDashboardFilters_legacy: (filters) => {
+                const state = get();
+                const active = getActiveDashboard(state);
+                if (active) {
+                    state.setDashboardFilters(active.id, filters);
+                }
+            },
 
             // History Slice
             queryHistory: [],
@@ -191,30 +391,53 @@ export const useAppStore = create<AppStore>()(
                 savedQuestions: state.savedQuestions.filter(q => q.id !== id)
             })),
 
-            // Dashboard Layout Slice
-            dashboardLayout: null,
-            setDashboardLayout: (layout) => set({ dashboardLayout: layout }),
-
-            // Dashboard Filter Slice
-            dashboardFilters: [],
-            setDashboardFilters: (filters) => set({ dashboardFilters: filters }),
+            // Dataset Filter Slice
             selectedDatasetId: null,
             setSelectedDatasetId: (id) => set({ selectedDatasetId: id }),
         }),
         {
-            name: 'QuickInsight-storage-v3', // unique name
-            storage: createJSONStorage(() => localStorage), // (optional) by default, 'localStorage' is used
+            name: 'QuickInsight-storage-v4', // Bumped version for migration
+            storage: createJSONStorage(() => localStorage),
             partialize: (state) => ({
-                items: state.items,
+                dashboards: state.dashboards,
+                activeDashboardId: state.activeDashboardId,
                 formatting: state.formatting,
                 queryHistory: state.queryHistory,
                 savedQuestions: state.savedQuestions,
-                dashboardLayout: state.dashboardLayout,
-                dashboardFilters: state.dashboardFilters,
                 theme: state.theme,
                 // NOTE: datasets are persisted via IndexedDB (see datasetDB.ts), NOT localStorage
                 // localStorage has a 5MB cap which is too small for real datasets
             }),
+            // ── Migration: v3 (single dashboard) → v4 (multi-dashboard) ──
+            migrate: (persisted: any, version: number) => {
+                if (persisted && !persisted.dashboards) {
+                    // Old format had items[], dashboardLayout, dashboardFilters at root
+                    const legacyItems = persisted.items || [];
+                    const legacyLayout = persisted.dashboardLayout || null;
+                    const legacyFilters = persisted.dashboardFilters || [];
+
+                    const defaultDashboard: DashboardDefinition = {
+                        id: generateId(),
+                        name: 'Dashboard 1',
+                        items: legacyItems,
+                        layout: legacyLayout,
+                        filters: legacyFilters,
+                        createdAt: Date.now(),
+                    };
+
+                    persisted.dashboards = legacyItems.length > 0 ? [defaultDashboard] : [];
+                    persisted.activeDashboardId = legacyItems.length > 0 ? defaultDashboard.id : null;
+
+                    // Clean up old keys
+                    delete persisted.items;
+                    delete persisted.dashboardLayout;
+                    delete persisted.dashboardFilters;
+
+                    console.log(`[Store] Migrated v3 → v4: ${legacyItems.length} items → Dashboard 1`);
+                }
+                return persisted;
+            },
+            version: 4,
         }
     )
 );

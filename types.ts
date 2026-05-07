@@ -299,6 +299,15 @@ export interface DashboardItem {
   ignoreGlobalFilter?: boolean;
 }
 
+export interface DashboardDefinition {
+  id: string;
+  name: string;
+  items: DashboardItem[];
+  layout: any[] | null;
+  filters: any[];
+  createdAt: number;
+}
+
 export interface Connector {
   id: string;
   name: string;

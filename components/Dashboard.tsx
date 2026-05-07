@@ -9,7 +9,8 @@ import {
   Trash2, Edit, AlertTriangle, X, FileDown, Presentation,
   ChevronLeft, ChevronRight, Maximize2, LayoutDashboard, GripVertical,
   BarChart3, PieChart, LineChart, Activity,
-  Eye, Filter, ChevronDown, RefreshCw, SlidersHorizontal, Database
+  Eye, Filter, ChevronDown, RefreshCw, SlidersHorizontal, Database,
+  Plus, Pencil, Copy, MoreHorizontal, Check
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Dataset, DashboardItem } from '../types';
@@ -106,7 +107,55 @@ const DATASET_COLORS = [
 ];
 
 export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit }) => {
-  const { items, removeItem, updateItem, formatting, clearAllItems, dashboardLayout, setDashboardLayout, dashboardFilters, setDashboardFilters, selectedDatasetId, setSelectedDatasetId } = useAppStore();
+  const {
+    dashboards, activeDashboardId, setActiveDashboard, createDashboard, renameDashboard, deleteDashboard, duplicateDashboard,
+    items, removeItem, updateItem, formatting, clearAllItems,
+    dashboardLayout, dashboardFilters,
+    setDashboardLayout_legacy: setDashboardLayout,
+    setDashboardFilters_legacy: setDashboardFilters,
+    selectedDatasetId, setSelectedDatasetId,
+  } = useAppStore();
+
+  // ── Multi-Dashboard Tab State ────────────────────────────────
+  const [renamingDashboardId, setRenamingDashboardId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [contextMenuId, setContextMenuId] = useState<string | null>(null);
+  const [contextMenuPos, setContextMenuPos] = useState({ x: 0, y: 0 });
+
+  const activeDashboard = dashboards.find(d => d.id === activeDashboardId) || dashboards[0];
+
+  const handleCreateDashboard = () => {
+    const count = dashboards.length + 1;
+    createDashboard(`Dashboard ${count}`);
+  };
+
+  const handleTabContextMenu = (e: React.MouseEvent, dbId: string) => {
+    e.preventDefault();
+    setContextMenuId(dbId);
+    setContextMenuPos({ x: e.clientX, y: e.clientY });
+  };
+
+  const handleStartRename = (dbId: string) => {
+    const db = dashboards.find(d => d.id === dbId);
+    setRenamingDashboardId(dbId);
+    setRenameValue(db?.name || '');
+    setContextMenuId(null);
+  };
+
+  const handleFinishRename = () => {
+    if (renamingDashboardId && renameValue.trim()) {
+      renameDashboard(renamingDashboardId, renameValue.trim());
+    }
+    setRenamingDashboardId(null);
+  };
+
+  // Close context menu on click outside
+  useEffect(() => {
+    if (!contextMenuId) return;
+    const close = () => setContextMenuId(null);
+    window.addEventListener('click', close);
+    return () => window.removeEventListener('click', close);
+  }, [contextMenuId]);
 
   // ── Dataset scoping ─────────────────────────────────────────
   const uniqueDatasets = useMemo(() => {
@@ -402,6 +451,97 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     <div className="h-full overflow-y-auto" ref={containerRef}>
       <div className="max-w-[1900px] mx-auto px-6 py-6 pb-24" ref={dashboardRef}>
 
+        {/* ─── Dashboard Tab Bar ─── */}
+        <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-1 print:hidden">
+          {dashboards.map(db => (
+            <button
+              key={db.id}
+              onClick={() => setActiveDashboard(db.id)}
+              onContextMenu={(e) => handleTabContextMenu(e, db.id)}
+              onDoubleClick={() => handleStartRename(db.id)}
+              className={`group relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
+                db.id === (activeDashboardId || dashboards[0]?.id)
+                  ? 'bg-gradient-to-r from-violet-500/15 to-indigo-500/10 text-violet-300 border border-violet-500/25 shadow-sm shadow-violet-500/10'
+                  : 'text-gray-400 hover:text-gray-200 hover:bg-white/[0.04] border border-transparent'
+              }`}
+            >
+              <LayoutDashboard className="w-3.5 h-3.5 opacity-60" />
+              {renamingDashboardId === db.id ? (
+                <input
+                  autoFocus
+                  value={renameValue}
+                  onChange={e => setRenameValue(e.target.value)}
+                  onBlur={handleFinishRename}
+                  onKeyDown={e => { if (e.key === 'Enter') handleFinishRename(); if (e.key === 'Escape') setRenamingDashboardId(null); }}
+                  className="bg-transparent border-b border-violet-400 outline-none text-sm font-semibold text-white w-28"
+                  onClick={e => e.stopPropagation()}
+                />
+              ) : (
+                <span>{db.name}</span>
+              )}
+              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${
+                db.id === (activeDashboardId || dashboards[0]?.id)
+                  ? 'bg-violet-500/20 text-violet-300'
+                  : 'bg-white/[0.06] text-gray-500'
+              }`}>
+                {db.items.length}
+              </span>
+              {/* More menu button */}
+              <button
+                onClick={(e) => { e.stopPropagation(); handleTabContextMenu(e, db.id); }}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/[0.1] transition-all"
+              >
+                <MoreHorizontal className="w-3.5 h-3.5" />
+              </button>
+            </button>
+          ))}
+
+          {/* + New Dashboard */}
+          <button
+            onClick={handleCreateDashboard}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-violet-300 hover:bg-violet-500/10 border border-dashed border-white/[0.08] hover:border-violet-500/25 transition-all whitespace-nowrap"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            New
+          </button>
+        </div>
+
+        {/* ─── Tab Context Menu ─── */}
+        {contextMenuId && (
+          <div
+            className="fixed z-[200] min-w-[160px] rounded-xl border bg-[#1e2134] border-white/[0.08] shadow-2xl py-1.5 text-sm"
+            style={{ left: contextMenuPos.x, top: contextMenuPos.y }}
+            onClick={e => e.stopPropagation()}
+          >
+            <button
+              onClick={() => handleStartRename(contextMenuId)}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-300 hover:bg-white/[0.06] hover:text-white transition-colors"
+            >
+              <Pencil className="w-3.5 h-3.5" />
+              Rename
+            </button>
+            <button
+              onClick={() => { duplicateDashboard(contextMenuId); setContextMenuId(null); }}
+              className="w-full flex items-center gap-2.5 px-4 py-2 text-gray-300 hover:bg-white/[0.06] hover:text-white transition-colors"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              Duplicate
+            </button>
+            {dashboards.length > 1 && (
+              <>
+                <div className="mx-3 my-1 border-t border-white/[0.06]" />
+                <button
+                  onClick={() => { deleteDashboard(contextMenuId); setContextMenuId(null); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2 text-red-400 hover:bg-red-500/10 hover:text-red-300 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  Delete
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {/* ─── Dashboard Header ─── */}
         <div className="flex flex-col gap-4 mb-6">
           <div className="flex justify-between items-center">
@@ -410,7 +550,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                 <LayoutDashboard className="w-5 h-5 text-white" />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">Dashboard</h2>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">{activeDashboard?.name || 'Dashboard'}</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   {filteredItems.length > 0
                     ? `${filteredItems.length} visual${filteredItems.length !== 1 ? 's' : ''}${selectedDatasetId ? ` · Filtered by dataset` : ''} · Drag to rearrange`
