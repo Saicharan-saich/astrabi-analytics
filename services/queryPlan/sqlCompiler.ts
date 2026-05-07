@@ -332,9 +332,73 @@ export function compileEnrichedSQL(enriched: EnrichedQuery): string {
         const comp = enriched.comparison;
 
         if (!timeDimAlias) {
-            // Categorical dimension — cannot use window functions
-            // Return base SQL with a comment
-            return `-- Postgres/DuckDB compatible\n-- Note: Comparison (${comp.type}) computed client-side for categorical dimensions\n${baseSQL}`;
+            // Categorical dimension — cannot use LAG window functions.
+            // Generate a UNION ALL query showing current period vs comparison period side by side.
+            const comp = enriched.comparison!;
+            const dateRange = comp.dateRange;
+
+            if (dateRange && dateRange.start && dateRange.end) {
+                // Calculate the comparison period date range
+                const curStart = new Date(`${dateRange.start}T00:00:00Z`);
+                const curEnd = new Date(`${dateRange.end}T00:00:00Z`);
+                const rangeDays = Math.round((curEnd.getTime() - curStart.getTime()) / (86400000)) + 1;
+
+                let prevStart: string, prevEnd: string;
+                if (comp.type === 'same_period_last_year') {
+                    const ps = new Date(curStart); ps.setUTCFullYear(ps.getUTCFullYear() - 1);
+                    const pe = new Date(curEnd); pe.setUTCFullYear(pe.getUTCFullYear() - 1);
+                    prevStart = ps.toISOString().split('T')[0];
+                    prevEnd = pe.toISOString().split('T')[0];
+                } else {
+                    // previous_period: shift back by the range length
+                    const pe = new Date(curStart); pe.setUTCDate(pe.getUTCDate() - 1);
+                    const ps = new Date(pe); ps.setUTCDate(ps.getUTCDate() - rangeDays + 1);
+                    prevStart = ps.toISOString().split('T')[0];
+                    prevEnd = pe.toISOString().split('T')[0];
+                }
+
+                // Build the categorical comparison SQL with a proper UNION ALL
+                const dateCol = plan._dateColumnKey || 'date';
+                const safeDate = safeId(dateCol);
+
+                // Strip the date range filter from baseSQL and re-add with explicit periods
+                const baseSQLNoOrder = baseSQL
+                    .replace(/\nORDER BY[^\n]*/i, '')
+                    .replace(/\nLIMIT[^\n]*/i, '');
+
+                const catCompSQL = [
+                    `-- Postgres/DuckDB compatible`,
+                    `-- Categorical comparison: ${comp.type}`,
+                    `-- Current period:    ${dateRange.start} to ${dateRange.end}`,
+                    `-- Comparison period: ${prevStart} to ${prevEnd}`,
+                    ``,
+                    `WITH current_period AS (`,
+                    `${baseSQLNoOrder}`,
+                    `),`,
+                    ``,
+                    `previous_period AS (`,
+                    `${baseSQLNoOrder}`
+                        .replace(
+                            new RegExp(`BETWEEN '${dateRange.start}' AND '${dateRange.end}'`, 'g'),
+                            `BETWEEN '${prevStart}' AND '${prevEnd}'`
+                        ),
+                    `)`,
+                    ``,
+                    `SELECT`,
+                    `  c.*,`,
+                    `  p.${metricAlias} AS "previous_value",`,
+                    `  ROUND((c.${metricAlias} - p.${metricAlias}) / NULLIF(ABS(p.${metricAlias}), 0) * 100, 2) AS "growth_pct"`,
+                    `FROM current_period c`,
+                    `LEFT JOIN previous_period p`,
+                    `  ON ${partitionCols.map(col => `c.${col} = p.${col}`).join(' AND ')}`,
+                    finalOrderBy ? finalOrderBy : '',
+                ].filter(Boolean).join('\n');
+
+                return catCompSQL;
+            }
+
+            // Fallback: no date range available — show the base query with a note
+            return `-- Postgres/DuckDB compatible\n-- Note: Comparison (${comp.type}) applied client-side (no date range resolved)\n${baseSQL}`;
         }
 
         const windowSpec = `${partitionClause}${windowOrderClause}`;
