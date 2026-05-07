@@ -10,7 +10,7 @@ interface UIState {
     activeTab: Tab;
     isSidebarOpen: boolean;
     showAbout: boolean;
-    appFontSize: number; // Numeric font size in pixels (e.g. 14, 16)
+    appFontSize: number;
     appFontBold: boolean;
     theme: 'dark' | 'light';
     setActiveTab: (tab: Tab) => void;
@@ -50,10 +50,10 @@ interface MultiDashboardState {
     activeDashboardId: string | null;
 
     // Dashboard CRUD
-    createDashboard: (name: string) => string; // returns new dashboard ID
+    createDashboard: (name: string) => string;
     renameDashboard: (id: string, name: string) => void;
     deleteDashboard: (id: string) => void;
-    duplicateDashboard: (id: string) => string; // returns new dashboard ID
+    duplicateDashboard: (id: string) => string;
     setActiveDashboard: (id: string) => void;
 
     // Item operations (scoped to a target dashboard)
@@ -64,22 +64,16 @@ interface MultiDashboardState {
     setDashboardFilters: (dashboardId: string, filters: any[]) => void;
 
     // Backward-compat convenience — operates on activeDashboardId
+    // These are SYNCED properties, not getters
+    items: DashboardItem[];
+    dashboardLayout: any[] | null;
+    dashboardFilters: DashboardFilter[];
+
     addItem: (item: DashboardItem) => void;
     removeItem: (id: string) => void;
     updateItem: (item: DashboardItem) => void;
     setItems: (items: DashboardItem[]) => void;
     clearAllItems: () => void;
-}
-
-// Legacy items/layout/filters kept as computed getters via the active dashboard
-interface LegacyDashboardCompat {
-    /** items[] from the active dashboard (backward compat) */
-    items: DashboardItem[];
-    /** layout from the active dashboard (backward compat) */
-    dashboardLayout: any[] | null;
-    /** filters from the active dashboard (backward compat) */
-    dashboardFilters: DashboardFilter[];
-    /** Legacy setters that proxy to active dashboard */
     setDashboardLayout_legacy: (layout: any[]) => void;
     setDashboardFilters_legacy: (filters: DashboardFilter[]) => void;
 }
@@ -126,12 +120,12 @@ interface DashboardFilterState {
     setSelectedDatasetId: (id: string | null) => void;
 }
 
-type AppStore = UIState & DataState & WorkbenchState & MultiDashboardState & LegacyDashboardCompat & HistoryState & SavedQuestionsState & DashboardFilterState;
+type AppStore = UIState & DataState & WorkbenchState & MultiDashboardState & HistoryState & SavedQuestionsState & DashboardFilterState;
 
-// ── Helper: find the active dashboard or return undefined ──
-function getActiveDashboard(state: { dashboards: DashboardDefinition[]; activeDashboardId: string | null }): DashboardDefinition | undefined {
-    if (!state.activeDashboardId) return state.dashboards[0];
-    return state.dashboards.find(d => d.id === state.activeDashboardId) || state.dashboards[0];
+// ── Helper: find active dashboard ──
+function getActive(dashboards: DashboardDefinition[], activeDashboardId: string | null): DashboardDefinition | undefined {
+    if (!activeDashboardId) return dashboards[0];
+    return dashboards.find(d => d.id === activeDashboardId) || dashboards[0];
 }
 
 function updateDashboard(
@@ -142,6 +136,19 @@ function updateDashboard(
     return dashboards.map(d => d.id === id ? updater(d) : d);
 }
 
+/**
+ * After any dashboard mutation, sync the backward-compat `items`, `dashboardLayout`,
+ * and `dashboardFilters` from the active dashboard so existing components see the data.
+ */
+function syncFromActive(dashboards: DashboardDefinition[], activeDashboardId: string | null) {
+    const active = getActive(dashboards, activeDashboardId);
+    return {
+        items: active?.items || [],
+        dashboardLayout: active?.layout || null,
+        dashboardFilters: (active?.filters || []) as DashboardFilter[],
+    };
+}
+
 export const useAppStore = create<AppStore>()(
     persist(
         (set, get) => ({
@@ -149,7 +156,7 @@ export const useAppStore = create<AppStore>()(
             activeTab: Tab.UPLOAD,
             isSidebarOpen: true,
             showAbout: false,
-            appFontSize: 14, // Default 14px
+            appFontSize: 14,
             appFontBold: false,
             theme: 'dark',
             setActiveTab: (tab) => set({ activeTab: tab }),
@@ -160,7 +167,6 @@ export const useAppStore = create<AppStore>()(
             toggleAppFontBold: () => set((state) => ({ appFontBold: !state.appFontBold })),
             setTheme: (theme) => set({ theme }),
             toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
-
 
             // Data Slice
             dataset: null,
@@ -194,13 +200,13 @@ export const useAppStore = create<AppStore>()(
             result: undefined,
             formatting: {
                 colorMode: 'vibrant',
-                numberFormat: 'auto', // Default to Intelligent Auto
+                numberFormat: 'auto',
                 fontSize: 'md',
                 headerSize: 'lg',
                 headerBold: true,
                 showLabels: true,
                 showDataLabels: false,
-                showAxis: false, // Explicitly default to hidden
+                showAxis: false,
                 tableCalculations: []
             },
             setWorkbenchState: (config, result) => set({ config, result }),
@@ -210,33 +216,45 @@ export const useAppStore = create<AppStore>()(
             dashboards: [],
             activeDashboardId: null,
 
+            // Synced backward-compat properties (updated after every mutation)
+            items: [],
+            dashboardLayout: null,
+            dashboardFilters: [],
+
             createDashboard: (name: string) => {
                 const id = generateId();
-                set((state) => ({
-                    dashboards: [...state.dashboards, {
+                set((state) => {
+                    const newDashboards = [...state.dashboards, {
                         id,
                         name,
                         items: [],
                         layout: null,
                         filters: [],
                         createdAt: Date.now(),
-                    }],
-                    activeDashboardId: id,
-                }));
+                    }];
+                    return {
+                        dashboards: newDashboards,
+                        activeDashboardId: id,
+                        ...syncFromActive(newDashboards, id),
+                    };
+                });
                 return id;
             },
 
-            renameDashboard: (id, name) => set((state) => ({
-                dashboards: updateDashboard(state.dashboards, id, d => ({ ...d, name })),
-            })),
+            renameDashboard: (id, name) => set((state) => {
+                const newDashboards = updateDashboard(state.dashboards, id, d => ({ ...d, name }));
+                return { dashboards: newDashboards };
+            }),
 
             deleteDashboard: (id) => set((state) => {
                 const remaining = state.dashboards.filter(d => d.id !== id);
+                const newActiveId = state.activeDashboardId === id
+                    ? (remaining[0]?.id || null)
+                    : state.activeDashboardId;
                 return {
                     dashboards: remaining,
-                    activeDashboardId: state.activeDashboardId === id
-                        ? (remaining[0]?.id || null)
-                        : state.activeDashboardId,
+                    activeDashboardId: newActiveId,
+                    ...syncFromActive(remaining, newActiveId),
                 };
             }),
 
@@ -245,79 +263,86 @@ export const useAppStore = create<AppStore>()(
                 set((state) => {
                     const source = state.dashboards.find(d => d.id === id);
                     if (!source) return {};
+                    const newDashboards = [...state.dashboards, {
+                        ...source,
+                        id: newId,
+                        name: `${source.name} (Copy)`,
+                        items: source.items.map(item => ({ ...item, id: generateId() })),
+                        createdAt: Date.now(),
+                    }];
                     return {
-                        dashboards: [...state.dashboards, {
-                            ...source,
-                            id: newId,
-                            name: `${source.name} (Copy)`,
-                            items: source.items.map(item => ({ ...item, id: generateId() })),
-                            createdAt: Date.now(),
-                        }],
+                        dashboards: newDashboards,
                         activeDashboardId: newId,
+                        ...syncFromActive(newDashboards, newId),
                     };
                 });
                 return newId;
             },
 
-            setActiveDashboard: (id) => set({ activeDashboardId: id }),
+            setActiveDashboard: (id) => set((state) => ({
+                activeDashboardId: id,
+                ...syncFromActive(state.dashboards, id),
+            })),
 
-            addItemToDashboard: (dashboardId, item) => set((state) => ({
-                dashboards: updateDashboard(state.dashboards, dashboardId, d => ({
+            addItemToDashboard: (dashboardId, item) => set((state) => {
+                const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
                     ...d,
                     items: [...d.items, item],
-                })),
-            })),
+                }));
+                return {
+                    dashboards: newDashboards,
+                    ...syncFromActive(newDashboards, state.activeDashboardId),
+                };
+            }),
 
-            removeItemFromDashboard: (dashboardId, itemId) => set((state) => ({
-                dashboards: updateDashboard(state.dashboards, dashboardId, d => ({
+            removeItemFromDashboard: (dashboardId, itemId) => set((state) => {
+                const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
                     ...d,
                     items: d.items.filter(i => i.id !== itemId),
-                })),
-            })),
+                }));
+                return {
+                    dashboards: newDashboards,
+                    ...syncFromActive(newDashboards, state.activeDashboardId),
+                };
+            }),
 
-            updateItemInDashboard: (dashboardId, item) => set((state) => ({
-                dashboards: updateDashboard(state.dashboards, dashboardId, d => ({
+            updateItemInDashboard: (dashboardId, item) => set((state) => {
+                const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
                     ...d,
                     items: d.items.map(i => i.id === item.id ? item : i),
-                })),
-            })),
+                }));
+                return {
+                    dashboards: newDashboards,
+                    ...syncFromActive(newDashboards, state.activeDashboardId),
+                };
+            }),
 
-            setDashboardLayout: (dashboardId, layout) => set((state) => ({
-                dashboards: updateDashboard(state.dashboards, dashboardId, d => ({
+            setDashboardLayout: (dashboardId, layout) => set((state) => {
+                const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
                     ...d,
                     layout,
-                })),
-            })),
+                }));
+                return {
+                    dashboards: newDashboards,
+                    ...syncFromActive(newDashboards, state.activeDashboardId),
+                };
+            }),
 
-            setDashboardFilters: (dashboardId, filters) => set((state) => ({
-                dashboards: updateDashboard(state.dashboards, dashboardId, d => ({
+            setDashboardFilters: (dashboardId, filters) => set((state) => {
+                const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
                     ...d,
                     filters,
-                })),
-            })),
+                }));
+                return {
+                    dashboards: newDashboards,
+                    ...syncFromActive(newDashboards, state.activeDashboardId),
+                };
+            }),
 
             // ── Backward-Compat Convenience (operates on active dashboard) ──
-            get items() {
-                const state = get();
-                const active = getActiveDashboard(state);
-                return active?.items || [];
-            },
-
-            get dashboardLayout() {
-                const state = get();
-                const active = getActiveDashboard(state);
-                return active?.layout || null;
-            },
-
-            get dashboardFilters() {
-                const state = get();
-                const active = getActiveDashboard(state);
-                return (active?.filters || []) as DashboardFilter[];
-            },
-
             addItem: (item) => {
                 const state = get();
-                const active = getActiveDashboard(state);
+                const active = getActive(state.dashboards, state.activeDashboardId);
                 if (active) {
                     state.addItemToDashboard(active.id, item);
                 }
@@ -325,7 +350,7 @@ export const useAppStore = create<AppStore>()(
 
             removeItem: (id) => {
                 const state = get();
-                const active = getActiveDashboard(state);
+                const active = getActive(state.dashboards, state.activeDashboardId);
                 if (active) {
                     state.removeItemFromDashboard(active.id, id);
                 }
@@ -333,7 +358,7 @@ export const useAppStore = create<AppStore>()(
 
             updateItem: (item) => {
                 const state = get();
-                const active = getActiveDashboard(state);
+                const active = getActive(state.dashboards, state.activeDashboardId);
                 if (active) {
                     state.updateItemInDashboard(active.id, item);
                 }
@@ -341,27 +366,31 @@ export const useAppStore = create<AppStore>()(
 
             setItems: (items) => {
                 const state = get();
-                const active = getActiveDashboard(state);
+                const active = getActive(state.dashboards, state.activeDashboardId);
                 if (active) {
-                    set((s) => ({
-                        dashboards: updateDashboard(s.dashboards, active.id, d => ({ ...d, items })),
-                    }));
+                    const newDashboards = updateDashboard(state.dashboards, active.id, d => ({ ...d, items }));
+                    set({
+                        dashboards: newDashboards,
+                        items,
+                    });
                 }
             },
 
             clearAllItems: () => {
                 const state = get();
-                const active = getActiveDashboard(state);
+                const active = getActive(state.dashboards, state.activeDashboardId);
                 if (active) {
-                    set((s) => ({
-                        dashboards: updateDashboard(s.dashboards, active.id, d => ({ ...d, items: [] })),
-                    }));
+                    const newDashboards = updateDashboard(state.dashboards, active.id, d => ({ ...d, items: [] }));
+                    set({
+                        dashboards: newDashboards,
+                        items: [],
+                    });
                 }
             },
 
             setDashboardLayout_legacy: (layout) => {
                 const state = get();
-                const active = getActiveDashboard(state);
+                const active = getActive(state.dashboards, state.activeDashboardId);
                 if (active) {
                     state.setDashboardLayout(active.id, layout);
                 }
@@ -369,7 +398,7 @@ export const useAppStore = create<AppStore>()(
 
             setDashboardFilters_legacy: (filters) => {
                 const state = get();
-                const active = getActiveDashboard(state);
+                const active = getActive(state.dashboards, state.activeDashboardId);
                 if (active) {
                     state.setDashboardFilters(active.id, filters);
                 }
@@ -396,7 +425,7 @@ export const useAppStore = create<AppStore>()(
             setSelectedDatasetId: (id) => set({ selectedDatasetId: id }),
         }),
         {
-            name: 'QuickInsight-storage-v4', // Bumped version for migration
+            name: 'QuickInsight-storage-v4',
             storage: createJSONStorage(() => localStorage),
             partialize: (state) => ({
                 dashboards: state.dashboards,
@@ -406,12 +435,10 @@ export const useAppStore = create<AppStore>()(
                 savedQuestions: state.savedQuestions,
                 theme: state.theme,
                 // NOTE: datasets are persisted via IndexedDB (see datasetDB.ts), NOT localStorage
-                // localStorage has a 5MB cap which is too small for real datasets
             }),
             // ── Migration: v3 (single dashboard) → v4 (multi-dashboard) ──
             migrate: (persisted: any, version: number) => {
                 if (persisted && !persisted.dashboards) {
-                    // Old format had items[], dashboardLayout, dashboardFilters at root
                     const legacyItems = persisted.items || [];
                     const legacyLayout = persisted.dashboardLayout || null;
                     const legacyFilters = persisted.dashboardFilters || [];
@@ -428,13 +455,21 @@ export const useAppStore = create<AppStore>()(
                     persisted.dashboards = legacyItems.length > 0 ? [defaultDashboard] : [];
                     persisted.activeDashboardId = legacyItems.length > 0 ? defaultDashboard.id : null;
 
-                    // Clean up old keys
                     delete persisted.items;
                     delete persisted.dashboardLayout;
                     delete persisted.dashboardFilters;
 
                     console.log(`[Store] Migrated v3 → v4: ${legacyItems.length} items → Dashboard 1`);
                 }
+
+                // After hydration, sync the backward-compat properties
+                if (persisted?.dashboards) {
+                    const active = getActive(persisted.dashboards, persisted.activeDashboardId);
+                    persisted.items = active?.items || [];
+                    persisted.dashboardLayout = active?.layout || null;
+                    persisted.dashboardFilters = active?.filters || [];
+                }
+
                 return persisted;
             },
             version: 4,
