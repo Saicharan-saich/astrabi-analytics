@@ -187,11 +187,20 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             // 4. BUILD ENRICHED QUERY and COMPILE SQL
             // The enriched query wraps the base plan with comparison + table calc config.
             // compileEnrichedSQL produces CTEs + window functions that match JS logic.
-            const enrichedComparison: ComparisonConfig | undefined = query.comparison ? {
-                type: query.comparison as 'previous_period' | 'same_period_last_year' | 'same_period_last_n',
-                offset: query.comparisonOffset,
-                grain: query.comparisonGrain,
-            } : undefined;
+            const enrichedComparison: ComparisonConfig | undefined = query.comparison ? (() => {
+                // Extract the resolved date range from the plan's time-tagged range filter
+                const timeRangeFilter = plan.filters.range.find((f: any) => f._isTimeFilter);
+                const dateRange = timeRangeFilter
+                    ? { start: timeRangeFilter.start!, end: timeRangeFilter.end! }
+                    : undefined;
+
+                return {
+                    type: query.comparison as 'previous_period' | 'same_period_last_year' | 'same_period_last_n',
+                    offset: query.comparisonOffset,
+                    grain: query.comparisonGrain,
+                    dateRange,
+                };
+            })() : undefined;
 
             // Map UI table calculation names → queryPlan TableCalculation type
             const uiToSqlCalcMap: Record<string, import('./queryPlan').TableCalculation> = {
