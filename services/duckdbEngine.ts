@@ -23,7 +23,7 @@ let db: duckdb.AsyncDuckDB | null = null;
 let conn: duckdb.AsyncDuckDBConnection | null = null;
 let initPromise: Promise<void> | null = null;
 let initError: Error | null = null;
-const loadedTables = new Set<string>();
+const loadedTables = new Map<string, Promise<void>>();
 
 // ── Initialization ───────────────────────────────────────────────
 
@@ -90,79 +90,94 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
 
     const safeName = sanitizeTableName(tableName);
 
-    // If table already loaded with this name, drop and recreate
+    // If a load is already in flight for this table, await it and return
     if (loadedTables.has(safeName)) {
-        await conn.query(`DROP TABLE IF EXISTS "${safeName}"`);
-        loadedTables.delete(safeName);
+        await loadedTables.get(safeName);
+        return;
     }
 
-    // Infer schema from first row
-    const sampleRow = rows[0];
-    const columns = Object.keys(sampleRow);
+    // Start the actual load and register the promise so concurrent callers await it
+    const loadPromise = (async () => {
+        // Drop any existing table to ensure fresh data
+        await conn!.query(`DROP TABLE IF EXISTS "${safeName}"`);
 
-    const colDefs = columns.map(col => {
-        // Sample up to 100 rows to infer type
-        const sampleSize = Math.min(rows.length, 100);
-        let hasDate = false;
-        let hasNumber = false;
-        let hasString = false;
+        // Infer schema from first row
+        const sampleRow = rows[0];
+        const columns = Object.keys(sampleRow);
 
-        for (let i = 0; i < sampleSize; i++) {
-            const val = rows[i][col];
-            if (val === null || val === undefined || val === '') continue;
-            const strVal = String(val);
+        const colDefs = columns.map(col => {
+            // Sample up to 100 rows to infer type
+            const sampleSize = Math.min(rows.length, 100);
+            let hasDate = false;
+            let hasNumber = false;
+            let hasString = false;
 
-            // Check if it's a date
-            if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(strVal)) {
-                hasDate = true;
-            }
-            // Check if it's a number
-            else if (!isNaN(Number(strVal.replace(/[$,]/g, ''))) && strVal.trim() !== '') {
-                hasNumber = true;
-            } else {
-                hasString = true;
-            }
-        }
+            for (let i = 0; i < sampleSize; i++) {
+                const val = rows[i][col];
+                if (val === null || val === undefined || val === '') continue;
+                const strVal = String(val);
 
-        // Priority: if any strings found, use VARCHAR; otherwise prefer number > date
-        let sqlType = 'VARCHAR';
-        if (!hasString && !hasDate && hasNumber) sqlType = 'DOUBLE';
-        else if (!hasString && hasDate && !hasNumber) sqlType = 'VARCHAR'; // Keep dates as strings to match JS engine behavior
-
-        const safCol = `"${col.replace(/"/g, '""')}"`;
-        return `${safCol} ${sqlType}`;
-    });
-
-    // Create table
-    const createSQL = `CREATE TABLE "${safeName}" (${colDefs.join(', ')})`;
-    await conn.query(createSQL);
-
-    // Batch insert using prepared statements for performance
-    // DuckDB-WASM supports inserting from Arrow, but for simplicity use SQL batches
-    const BATCH_SIZE = 1000;
-    for (let batchStart = 0; batchStart < rows.length; batchStart += BATCH_SIZE) {
-        const batch = rows.slice(batchStart, batchStart + BATCH_SIZE);
-        const valueRows = batch.map(row => {
-            const vals = columns.map(col => {
-                const v = row[col];
-                if (v === null || v === undefined) return 'NULL';
-                const s = String(v).replace(/'/g, "''");
-                // Try to keep numbers as numbers
-                const cleaned = s.replace(/[$,]/g, '');
-                if (!isNaN(Number(cleaned)) && cleaned.trim() !== '') {
-                    return cleaned;
+                // Check if it's a date
+                if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(strVal)) {
+                    hasDate = true;
                 }
-                return `'${s}'`;
-            });
-            return `(${vals.join(', ')})`;
+                // Check if it's a number
+                else if (!isNaN(Number(strVal.replace(/[$,]/g, ''))) && strVal.trim() !== '') {
+                    hasNumber = true;
+                } else {
+                    hasString = true;
+                }
+            }
+
+            // Priority: if any strings found, use VARCHAR; otherwise prefer number > date
+            let sqlType = 'VARCHAR';
+            if (!hasString && !hasDate && hasNumber) sqlType = 'DOUBLE';
+            else if (!hasString && hasDate && !hasNumber) sqlType = 'VARCHAR'; // Keep dates as strings to match JS engine behavior
+
+            const safCol = `"${col.replace(/"/g, '""')}"`;
+            return `${safCol} ${sqlType}`;
         });
 
-        const insertSQL = `INSERT INTO "${safeName}" VALUES ${valueRows.join(', ')}`;
-        await conn.query(insertSQL);
-    }
+        // Create table
+        const createSQL = `CREATE TABLE "${safeName}" (${colDefs.join(', ')})`;
+        await conn!.query(createSQL);
 
-    loadedTables.add(safeName);
-    console.log(`[DuckDB] Loaded ${rows.length} rows into table "${safeName}" (${columns.length} columns)`);
+        // Batch insert using prepared statements for performance
+        // DuckDB-WASM supports inserting from Arrow, but for simplicity use SQL batches
+        const BATCH_SIZE = 1000;
+        for (let batchStart = 0; batchStart < rows.length; batchStart += BATCH_SIZE) {
+            const batch = rows.slice(batchStart, batchStart + BATCH_SIZE);
+            const valueRows = batch.map(row => {
+                const vals = columns.map(col => {
+                    const v = row[col];
+                    if (v === null || v === undefined) return 'NULL';
+                    const s = String(v).replace(/'/g, "''");
+                    // Try to keep numbers as numbers
+                    const cleaned = s.replace(/[$,]/g, '');
+                    if (!isNaN(Number(cleaned)) && cleaned.trim() !== '') {
+                        return cleaned;
+                    }
+                    return `'${s}'`;
+                });
+                return `(${vals.join(', ')})`;
+            });
+
+            const insertSQL = `INSERT INTO "${safeName}" VALUES ${valueRows.join(', ')}`;
+            await conn!.query(insertSQL);
+        }
+
+        console.log(`[DuckDB] Loaded ${rows.length} rows into table "${safeName}" (${columns.length} columns)`);
+    })();
+
+    loadedTables.set(safeName, loadPromise);
+
+    try {
+        await loadPromise;
+    } catch (err) {
+        // If loading fails, remove from map so it can be retried
+        loadedTables.delete(safeName);
+        throw err;
+    }
 }
 
 // ── SQL Execution ────────────────────────────────────────────────
@@ -340,7 +355,7 @@ export function getDuckDBStatus(): {
 } {
     return {
         initialized: db !== null,
-        tablesLoaded: Array.from(loadedTables),
+        tablesLoaded: Array.from(loadedTables.keys()),
         error: initError?.message || null,
     };
 }

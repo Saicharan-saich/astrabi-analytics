@@ -53,72 +53,18 @@ function timeBucketAlias(grain: TimeGrain): string {
 }
 
 // ── TIME FILTER RESOLVER ─────────────────────────────────────────
-// Resolves symbolic time filters (e.g. "this_month") into concrete
-// date start/end strings. This happens ONCE in the plan builder.
+// Delegates to the centralized resolveTimeRange() — single source of truth.
+
+import { resolveTimeRange } from '../resolveTimeRange';
 
 function resolveTimeFilter(
     timeFilter: string,
     dates: DateRange,
     dateColumn: string
 ): RangeFilter | null {
-    if (!timeFilter || timeFilter === 'all_time') return null;
-
-    const today = new Date(`${dates.today}T00:00:00Z`);
-    const fmt = (d: Date) => d.toISOString().split('T')[0];
-
-    let start: string | undefined;
-    let end: string | undefined = dates.today;
-
-    if (timeFilter === 'today') {
-        start = dates.today;
-        end = dates.today;
-    } else if (timeFilter === 'yesterday') {
-        start = dates.yesterday;
-        end = dates.yesterday;
-    } else if (timeFilter === 'this_week') {
-        start = dates.monday;
-    } else if (timeFilter === 'this_month') {
-        start = dates.this_month_start;
-    } else if (timeFilter === 'this_quarter') {
-        const qMonth = Math.floor(today.getUTCMonth() / 3) * 3;
-        const d = new Date(Date.UTC(today.getUTCFullYear(), qMonth, 1));
-        start = fmt(d);
-    } else if (timeFilter === 'this_year') {
-        start = dates.year_start;
-    } else if (timeFilter === 'last_year') {
-        start = dates.last_year_start;
-        end = fmt(new Date(Date.UTC(today.getUTCFullYear() - 1, 11, 31)));
-    } else if (timeFilter === 'last_7_days') {
-        start = dates.last_7_days;
-    } else if (timeFilter === 'last_30_days') {
-        start = dates.last_30_days;
-    } else if (timeFilter === 'last_90_days') {
-        const d = new Date(today);
-        d.setUTCDate(d.getUTCDate() - 90);
-        start = fmt(d);
-    } else {
-        // Dynamic: last_N_unit (e.g. last_5_days, last_2_weeks, last_3_months, last_1_cyears)
-        const match = timeFilter.match(/^last_(\d+)_(c?[a-z]+)$/);
-        if (match) {
-            const n = Math.min(parseInt(match[1], 10), 3650);
-            const unit = match[2];
-            if (unit === 'cyears') {
-                const asOfYear = today.getUTCFullYear();
-                start = fmt(new Date(Date.UTC(asOfYear - n, 0, 1)));
-                end = fmt(new Date(Date.UTC(asOfYear - 1, 11, 31)));
-            } else {
-                const target = new Date(today);
-                if (unit === 'days') target.setUTCDate(today.getUTCDate() - n);
-                else if (unit === 'weeks') target.setUTCDate(today.getUTCDate() - n * 7);
-                else if (unit === 'months') target.setUTCMonth(today.getUTCMonth() - n);
-                else if (unit === 'years') target.setUTCFullYear(today.getUTCFullYear() - n);
-                start = fmt(target);
-            }
-        }
-    }
-
-    if (!start) return null;
-    return { column: dateColumn, start, end, _isTimeFilter: true };
+    const range = resolveTimeRange(timeFilter, dates);
+    if (!range) return null;
+    return { column: dateColumn, start: range.start, end: range.end, _isTimeFilter: true };
 }
 
 // ═══════════════════════════════════════════════════════════════════
