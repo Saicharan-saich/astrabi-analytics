@@ -221,7 +221,9 @@ export function compileSQL(plan: QueryPlan): string {
     parts.push(`SELECT ${selectCols.join(', ')}`);
 
     // ── FROM ─────────────────────────────────────────────────────
-    parts.push(`FROM ${safeId(plan.source)}`);
+    // Use original source name (inside double quotes, any character is valid SQL)
+    // Don't sanitize — the DuckDB rewrite layer handles name matching
+    parts.push(`FROM "${plan.source.replace(/"/g, '""')}"`);
 
     // ── WHERE (row filters + range filters + date filters) ───────
     const whereClauses: string[] = [];
