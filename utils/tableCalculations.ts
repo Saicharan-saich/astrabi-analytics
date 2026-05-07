@@ -7,7 +7,11 @@ export type TableCalculation =
     | 'moving_avg'
     | 'pct_diff_from_prev'
     | 'diff_from_prev'
-    | 'percentile';
+    | 'percentile'
+    | 'std_dev'
+    | 'z_score'
+    | 'variance'
+    | 'linear_forecast';
 
 export interface CalculationResult {
     transformedData: any[];
@@ -142,6 +146,67 @@ export function applyTableCalculation(
             break;
         }
 
+        case 'std_dev': {
+            const values = data.map(row => Number(row[yKey]) || 0);
+            const mean = values.reduce((s, v) => s + v, 0) / values.length;
+            const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / values.length;
+            const stdDev = Math.sqrt(variance);
+            transformedData = data.map(row => {
+                const value = Number(row[yKey]) || 0;
+                const deviations = (value - mean) / (stdDev || 1);
+                return { ...row, [targetKey]: Number(deviations.toFixed(3)) };
+            });
+            yLabel = `Std Deviations from Mean (${originalYLabel})`;
+            suggestedNumberFormat = 'raw';
+            break;
+        }
+
+        case 'z_score': {
+            const vals = data.map(row => Number(row[yKey]) || 0);
+            const mu = vals.reduce((s, v) => s + v, 0) / vals.length;
+            const sigma = Math.sqrt(vals.reduce((s, v) => s + (v - mu) ** 2, 0) / vals.length);
+            transformedData = data.map(row => {
+                const value = Number(row[yKey]) || 0;
+                return { ...row, [targetKey]: sigma !== 0 ? Number(((value - mu) / sigma).toFixed(3)) : 0 };
+            });
+            yLabel = `Z-Score of ${originalYLabel}`;
+            suggestedNumberFormat = 'raw';
+            break;
+        }
+
+        case 'variance': {
+            const valsV = data.map(row => Number(row[yKey]) || 0);
+            const meanV = valsV.reduce((s, v) => s + v, 0) / valsV.length;
+            transformedData = data.map(row => {
+                const value = Number(row[yKey]) || 0;
+                return { ...row, [targetKey]: Number(((value - meanV) ** 2).toFixed(2)) };
+            });
+            yLabel = `Variance of ${originalYLabel}`;
+            suggestedNumberFormat = 'raw';
+            break;
+        }
+
+        case 'linear_forecast': {
+            // Linear regression: y = mx + b
+            const n = data.length;
+            const xs = data.map((_, i) => i);
+            const ys = data.map(row => Number(row[yKey]) || 0);
+            const sumX = xs.reduce((s, x) => s + x, 0);
+            const sumY = ys.reduce((s, y) => s + y, 0);
+            const sumXY = xs.reduce((s, x, i) => s + x * ys[i], 0);
+            const sumXX = xs.reduce((s, x) => s + x * x, 0);
+            const m = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX || 1);
+            const b = (sumY - m * sumX) / n;
+
+            transformedData = data.map((row, i) => ({
+                ...row,
+                [targetKey]: Number((m * i + b).toFixed(2)),
+            }));
+            yLabel = `Trend Line (${originalYLabel})`;
+            suggestedNumberFormat = originalNumberFormat as any;
+            break;
+        }
+
         default:
             transformedData = data;
             yLabel = originalYLabel;
@@ -168,7 +233,11 @@ export function getCalculationDisplayName(calculation: TableCalculation): string
         'moving_avg': 'Moving Average',
         'pct_diff_from_prev': '% Difference from Previous',
         'diff_from_prev': 'Difference from Previous',
-        'percentile': 'Percentile'
+        'percentile': 'Percentile',
+        'std_dev': 'Standard Deviation',
+        'z_score': 'Z-Score',
+        'variance': 'Variance',
+        'linear_forecast': 'Trend Line (Forecast)',
     };
     return names[calculation] || 'Unknown';
 }
@@ -186,7 +255,11 @@ export function getCalculationDescription(calculation: TableCalculation): string
         'moving_avg': 'Smooth values with N-period average',
         'pct_diff_from_prev': 'Show % change from previous value',
         'diff_from_prev': 'Show absolute change from previous value',
-        'percentile': 'Show statistical percentile ranking'
+        'percentile': 'Show statistical percentile ranking',
+        'std_dev': 'Distance from mean in standard deviations',
+        'z_score': 'Normalized distance from mean (µ=0, σ=1)',
+        'variance': 'Squared deviation from the mean',
+        'linear_forecast': 'Linear regression trend line overlay',
     };
     return descriptions[calculation] || '';
 }

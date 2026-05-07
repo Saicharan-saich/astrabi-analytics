@@ -34,6 +34,7 @@ import { scoreConfidence } from './confidenceScorer';
 import { logAuditEntry } from './auditLogger';
 import { resolveTimeContext, augmentQuestionWithTime } from './timeResolver';
 import { processPlan } from './derivedMetricEngine';
+import { formatSQL } from '../sqlFormatter';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -667,7 +668,9 @@ export async function runAISQLPipeline(
 
     // ─── Step 10: Score Confidence ───────────────────────────────
     console.log('[Pipeline] Step 10: Scoring confidence...');
-    const confidence = scoreConfidence(plan, semanticModel, validation, sqlMethod, repairAttempts);
+    // Format SQL for display (post-processing readability layer)
+    const formattedSQL = formatSQL(currentSQL);
+    const confidence = scoreConfidence(plan, semanticModel, validation, sqlMethod, repairAttempts, formattedSQL);
     // Apply APDME guardrail penalties (e.g., -50 for SUM on a date column)
     if (apdmeResult.confidencePenalty > 0) {
         confidence.score = Math.max(0, confidence.score - apdmeResult.confidencePenalty);
@@ -712,7 +715,7 @@ export async function runAISQLPipeline(
 
     const pipelineResult: AISQLPipelineResult = {
         plan,
-        sql: currentSQL,
+        sql: formattedSQL,
         validation,
         rawData,
         chartData: reshaped.data,

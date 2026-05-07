@@ -172,7 +172,7 @@ export type FormattingConfig = {
   headerBold: boolean;
   showLabels: boolean;
   showDataLabels: boolean;
-  tableCalculations: ('none' | 'percent_of_total' | 'rank_asc' | 'rank_desc' | 'running_total' | 'moving_avg' | 'pct_diff_from_prev' | 'diff_from_prev' | 'percentile')[];
+  tableCalculations: import('./utils/tableCalculations').TableCalculation[];
   movingAvgWindow?: number; // Dynamic window size for moving average (default: 3)
   decimals?: number; // 0, 1, 2, or undefined (auto)
   dateFormat?: 'raw' | 'yyyy-mm-dd' | 'mm/dd/yyyy' | 'month_name_year' | 'month_short_year' | 'month_number' | 'month_name_only';

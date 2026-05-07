@@ -10,6 +10,7 @@
  */
 
 import { AnalysisPlan, SemanticModel, ConfidenceScore, ValidationResult } from './types';
+import { scoreSQLReadability } from '../sqlFormatter';
 
 /**
  * Calculate a confidence score for the pipeline result.
@@ -19,7 +20,8 @@ export function scoreConfidence(
     model: SemanticModel,
     validation: ValidationResult,
     sqlMethod: 'deterministic' | 'llm',
-    repairAttempts: number
+    repairAttempts: number,
+    sql?: string
 ): ConfidenceScore {
     let semanticMatch = 30;     // Start at max, subtract for issues
     let filterClarity = 20;
@@ -130,6 +132,16 @@ export function scoreConfidence(
     }
     if (warnCount > 0) {
         semanticMatch = Math.max(0, semanticMatch - warnCount * 3);
+    }
+
+    // ─── 6. SQL Readability (bonus up to +10, not counted in base 100) ──
+    let readabilityBonus = 0;
+    if (sql) {
+        const readability = scoreSQLReadability(sql);
+        readabilityBonus = readability.score;
+        if (readability.reasons.length > 0) {
+            reasons.push(...readability.reasons.map(r => `[Readability] ${r}`));
+        }
     }
 
     const totalScore = semanticMatch + filterClarity + aggregationCertainty + planComplexity + repairScore;
