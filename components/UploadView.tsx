@@ -1,14 +1,14 @@
 import React from 'react';
 import { Upload, FileSpreadsheet, Database, Zap, FileText, Trash2, FolderOpen, Clock } from 'lucide-react';
 import { ConnectorsPanel } from './ConnectorsPanel';
-import { Dataset } from '../types';
+import { Dataset, LiveConnectionInfo } from '../types';
 
 interface UploadViewProps {
     onFileUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onSampleLoad: () => void;
     processing: boolean;
     error: string | null;
-    onConnectorLoad: (data: any, name: string, sourceSchema?: any) => void;
+    onConnectorLoad: (data: any, name: string, sourceSchema?: any, liveInfo?: LiveConnectionInfo) => void;
     datasets?: Dataset[];
     onLoadDataset?: (id: string) => void;
     onDeleteDataset?: (id: string) => void;

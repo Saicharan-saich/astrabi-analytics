@@ -55,6 +55,16 @@ export interface DimDateRow {
   fiscal_quarter: number;
 }
 
+// ─── Connection Mode Types ───────────────────────────────────────
+export type ConnectionMode = 'import' | 'live';
+
+export interface LiveConnectionInfo {
+  connectionId: string;      // Backend connection ID (kept alive for live mode)
+  dbType: 'mssql' | 'pg';   // Database engine type
+  tables: string[];          // Selected source tables
+  joinEdges: any[];          // Join edges for multi-table merging
+}
+
 // ─── AI Semantic Profiling Types ─────────────────────────────────
 export interface ColumnSemantic {
   role: ColumnType;
@@ -104,6 +114,9 @@ export interface Dataset {
   dimDate?: DimDateRow[];
   sourceSchema?: SourceSchema;
   domainProfile?: DatasetDomainProfile;  // AI-generated domain context
+  // ── Connection Mode ──
+  connectionMode?: ConnectionMode;       // 'import' (default/snapshot) or 'live' (real-time)
+  liveConnection?: LiveConnectionInfo;   // Only present when connectionMode === 'live'
   // ── System Correction Directive additions ──
   semanticModel?: import('./services/semanticModel').SemanticModel; // Deterministic semantic model (MANDATORY for analysis)
   version?: number;            // Incremented on every re-upload or re-ETL

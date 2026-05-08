@@ -2,9 +2,9 @@ import React, { useState, useMemo } from 'react';
 import {
     Database, ShoppingBag, Server, Loader2, X, AlertCircle, Shield, ShieldCheck,
     ChevronDown, ChevronRight, Key, Hash, Type, Calendar, CheckCircle2,
-    GitMerge, ArrowRight, Table2, Columns3, Link2, Eye, Zap
+    GitMerge, ArrowRight, Table2, Columns3, Link2, Eye, Zap, Download, Radio
 } from 'lucide-react';
-import { Connector, Dataset } from '../types';
+import { Connector, Dataset, ConnectionMode, LiveConnectionInfo } from '../types';
 import {
     getMockConnectorData, getMockDatabaseSchema, connectToDatabase,
     fetchTableColumns, fetchForeignKeys, buildJoinStrategy, autoJoinDatasets,
@@ -12,7 +12,7 @@ import {
 } from '../services/analysisEngine';
 
 interface ConnectorsPanelProps {
-    onDataReady: (dataset: any, name: string, sourceSchema?: any) => void;
+    onDataReady: (dataset: any, name: string, sourceSchema?: any, liveInfo?: LiveConnectionInfo) => void;
 }
 
 const AVAILABLE_CONNECTORS: Connector[] = [
@@ -42,6 +42,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
     const [foreignKeys, setForeignKeys] = useState<ForeignKeyInfo[]>([]);
     const [joinEdges, setJoinEdges] = useState<JoinEdge[]>([]);
     const [loadingColumns, setLoadingColumns] = useState<string | null>(null);
+    const [connectionMode, setConnectionMode] = useState<ConnectionMode>('import');
 
     const handleConnect = () => {
         setConfiguringId(selectedConnectorId);
@@ -167,13 +168,22 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
         setIsLoading(true);
 
         const active = AVAILABLE_CONNECTORS.find(c => c.id === configuringId);
+        const isPostgres = configuringId === 'postgres';
+        const dbType: 'mssql' | 'pg' = isPostgres ? 'pg' : 'mssql';
         const data = await getMockConnectorData(connectionId, selectedTables);
+
+        // Build live connection info (only used if connectionMode === 'live')
+        const liveInfo: LiveConnectionInfo | undefined = connectionMode === 'live' ? {
+            connectionId,
+            dbType,
+            tables: [...selectedTables],
+            joinEdges: joinEdges.map(e => ({ leftTable: e.leftTable, rightTable: e.rightTable, leftColumn: e.leftColumn, rightColumn: e.rightColumn, type: e.type })),
+        } : undefined;
 
         if (selectedTables.length === 1) {
             // Single table — direct import (still build basic schema info)
             const rows = Array.isArray(data) ? data : data[selectedTables[0]] || [];
             const name = `${active?.name} · ${selectedTables[0]}`;
-            const tblInfo = availableTables.find(t => t.name === selectedTables[0]);
             const singleSchema = {
                 tables: [{
                     name: selectedTables[0],
@@ -187,8 +197,9 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
             };
             setIsLoading(false);
             setConfiguringId(null);
-            setConnectionId(null);
-            onDataReady(rows, name, singleSchema);
+            // In live mode, keep connectionId alive; in import mode, clear it
+            if (connectionMode !== 'live') setConnectionId(null);
+            onDataReady(rows, name, singleSchema, liveInfo);
         } else {
             // Multiple tables — auto-join into master table
             const tableData = typeof data === 'object' && !Array.isArray(data) ? data : {};
@@ -217,8 +228,9 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
 
             setIsLoading(false);
             setConfiguringId(null);
-            setConnectionId(null);
-            onDataReady(mergedRows, name, multiSchema);
+            // In live mode, keep connectionId alive; in import mode, clear it
+            if (connectionMode !== 'live') setConnectionId(null);
+            onDataReady(mergedRows, name, multiSchema, liveInfo);
         }
     };
 
@@ -665,20 +677,72 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                                         </div>
                                     </div>
 
+                                    {/* ── CONNECTION MODE TOGGLE ── */}
+                                    <div className="mt-1">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <Radio className="w-4 h-4 text-indigo-500" />
+                                            <h4 className="text-sm font-bold text-slate-800">Connection Mode</h4>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <button
+                                                onClick={() => setConnectionMode('import')}
+                                                className={`relative p-3.5 rounded-xl border-2 text-left transition-all ${
+                                                    connectionMode === 'import'
+                                                        ? 'border-indigo-500 bg-indigo-50 shadow-md shadow-indigo-100'
+                                                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                {connectionMode === 'import' && (
+                                                    <div className="absolute top-2 right-2">
+                                                        <CheckCircle2 className="w-4 h-4 text-indigo-600" />
+                                                    </div>
+                                                )}
+                                                <Download className={`w-5 h-5 mb-1.5 ${connectionMode === 'import' ? 'text-indigo-600' : 'text-slate-400'}`} />
+                                                <div className={`text-xs font-bold ${connectionMode === 'import' ? 'text-indigo-900' : 'text-slate-700'}`}>Import (Snapshot)</div>
+                                                <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">Copies data into browser for fast offline analysis</div>
+                                            </button>
+                                            <button
+                                                onClick={() => setConnectionMode('live')}
+                                                className={`relative p-3.5 rounded-xl border-2 text-left transition-all ${
+                                                    connectionMode === 'live'
+                                                        ? 'border-emerald-500 bg-emerald-50 shadow-md shadow-emerald-100'
+                                                        : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50'
+                                                }`}
+                                            >
+                                                {connectionMode === 'live' && (
+                                                    <div className="absolute top-2 right-2">
+                                                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                                                    </div>
+                                                )}
+                                                <Zap className={`w-5 h-5 mb-1.5 ${connectionMode === 'live' ? 'text-emerald-600' : 'text-slate-400'}`} />
+                                                <div className={`text-xs font-bold ${connectionMode === 'live' ? 'text-emerald-900' : 'text-slate-700'}`}>Live Connection</div>
+                                                <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">Queries run against live database — refresh fetches latest data</div>
+                                            </button>
+                                        </div>
+                                    </div>
+
                                     {/* Actions */}
                                     <div className="pt-2 flex items-center justify-between">
                                         <span className="text-xs text-slate-500">
                                             {selectedTables.length} table{selectedTables.length !== 1 ? 's' : ''} → 1 master table
+                                            {connectionMode === 'live' && <span className="ml-1 text-emerald-600 font-semibold">⚡ Live</span>}
                                         </span>
                                         <div className="flex space-x-3">
                                             <button type="button" onClick={() => setStep('tables')} className="text-slate-600 font-medium text-sm px-4 py-2 hover:bg-slate-100 rounded-lg">Back</button>
                                             <button
                                                 onClick={handleImport}
                                                 disabled={isLoading}
-                                                className="bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium text-sm px-6 py-2.5 rounded-lg hover:from-indigo-700 hover:to-purple-700 disabled:opacity-70 flex items-center shadow-lg shadow-indigo-200"
+                                                className={`text-white font-medium text-sm px-6 py-2.5 rounded-lg disabled:opacity-70 flex items-center shadow-lg ${
+                                                    connectionMode === 'live'
+                                                        ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-200'
+                                                        : 'bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 shadow-indigo-200'
+                                                }`}
                                             >
                                                 {isLoading && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                                                {isLoading ? 'Importing & Joining...' : 'Import & Join Master Table'}
+                                                {isLoading
+                                                    ? (connectionMode === 'live' ? 'Connecting Live...' : 'Importing & Joining...')
+                                                    : (connectionMode === 'live' ? '⚡ Connect Live' : 'Import & Join Master Table')
+                                                }
                                             </button>
                                         </div>
                                     </div>

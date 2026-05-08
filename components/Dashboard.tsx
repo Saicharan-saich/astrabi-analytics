@@ -8,9 +8,9 @@ import { ErrorBoundary } from './ErrorBoundary';
 import {
   Trash2, Edit, AlertTriangle, X, FileDown, Presentation,
   ChevronLeft, ChevronRight, Maximize2, LayoutDashboard, GripVertical,
-  BarChart3, PieChart, LineChart, Activity,
+  BarChart3, PieChart, LineChart, Activity, Zap,
   Eye, Filter, ChevronDown, RefreshCw, SlidersHorizontal, Database,
-  Plus, Pencil, Copy, MoreHorizontal, Check
+  Plus, Pencil, Copy, MoreHorizontal, Check, Loader2
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Dataset, DashboardItem } from '../types';
@@ -20,6 +20,8 @@ interface DashboardProps {
   dataset?: Dataset;
   onAddResult?: any;
   onEdit?: (item: any) => void;
+  onLiveRefresh?: () => void;
+  isLiveRefreshing?: boolean;
 }
 
 // Format large numbers compactly
@@ -106,7 +108,7 @@ const DATASET_COLORS = [
   { bg: 'bg-orange-500/15', text: 'text-orange-400', dot: 'bg-orange-400' },
 ];
 
-export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit, onLiveRefresh, isLiveRefreshing }) => {
   const {
     dashboards, activeDashboardId, setActiveDashboard, createDashboard, renameDashboard, deleteDashboard, duplicateDashboard,
     items, removeItem, updateItem, formatting, clearAllItems,
@@ -557,6 +559,29 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     : 'Pin visuals from Builder, NLQ, or Workbench'}
                 </p>
               </div>
+
+              {/* ⚡ Live Connection Badge + Refresh */}
+              {dataset?.connectionMode === 'live' && (
+                <div className="flex items-center gap-2 ml-3">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/25 rounded-lg animate-pulse">
+                    <Zap className="w-3.5 h-3.5 text-emerald-400" />
+                    <span className="text-xs font-bold text-emerald-400">Live</span>
+                  </div>
+                  <button
+                    onClick={onLiveRefresh}
+                    disabled={isLiveRefreshing}
+                    className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded-lg transition-all border border-emerald-200 dark:border-emerald-500/20 text-xs font-semibold disabled:opacity-50"
+                    title="Refresh data from live database"
+                  >
+                    {isLiveRefreshing ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    )}
+                    {isLiveRefreshing ? 'Refreshing...' : 'Refresh Data'}
+                  </button>
+                </div>
+              )}
 
               {/* Inline stats badges — adjacent to Dashboard title */}
               {kpiSummary && (

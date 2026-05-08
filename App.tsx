@@ -10,6 +10,7 @@ import {
 import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, getSampleData } from './services/analysisEngine';
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
 import { buildSemanticModel } from './services/semanticModel';
+import { refreshLiveDataset } from './services/liveRefreshService';
 import { Sidebar } from './components/Sidebar';
 import { UploadView } from './components/UploadView';
 import { ETLView } from './components/ETLView';
@@ -450,7 +451,7 @@ function App() {
     worker.postMessage({ type: 'PROCESS_FILE', rawData: csvContent, fileName: 'sample_sales_data.csv' });
   };
 
-  const handleConnectorData = (rawData: any, name: string, sourceSchema?: any) => {
+  const handleConnectorData = (rawData: any, name: string, sourceSchema?: any, liveInfo?: any) => {
     setProcessing(true);
     const worker = new Worker(new URL('./workers/etl.worker.ts', import.meta.url), { type: 'module' });
 
@@ -489,6 +490,8 @@ function App() {
           dimDate,
           sourceSchema: resultSchema,
           domainProfile: connProfile,
+          connectionMode: liveInfo ? 'live' : 'import',
+          liveConnection: liveInfo || undefined,
           version: 1,
           createdAt: Date.now(),
         };
@@ -512,6 +515,59 @@ function App() {
     };
 
     worker.postMessage({ type: 'PROCESS_FILE', rawData, fileName: name, isConnector: true, sourceSchema });
+  };
+
+  // ── LIVE REFRESH — Re-fetch data from the source database ──
+  const [isLiveRefreshing, setIsLiveRefreshing] = useState(false);
+  const handleLiveRefresh = async () => {
+    if (!dataset?.liveConnection || dataset.connectionMode !== 'live') return;
+    setIsLiveRefreshing(true);
+    try {
+      const { rows: freshRows, executionTimeMs } = await refreshLiveDataset(dataset.liveConnection);
+      console.log(`[App] Live refresh complete: ${freshRows.length} rows in ${executionTimeMs}ms`);
+
+      // Re-run ETL on fresh data via worker
+      const worker = new Worker(new URL('./workers/etl.worker.ts', import.meta.url), { type: 'module' });
+      worker.onmessage = (event) => {
+        if (event.data.type === 'SUCCESS') {
+          const { rows, columns, timeContext, dimDate, rawRows, logs } = event.data.result;
+          const refreshedDs: Dataset = {
+            ...dataset,
+            rows,
+            rawRows,
+            columns,
+            totalRows: rows.length,
+            etlLogs: logs,
+            timeContext,
+            dimDate,
+            version: (dataset.version || 1) + 1,
+          };
+          // Rebuild semantic model
+          try {
+            const model = buildSemanticModel(refreshedDs);
+            (refreshedDs as any).semanticModel = model;
+          } catch (err) {
+            console.warn('[App] Semantic model rebuild failed on refresh:', err);
+          }
+          setDataset(refreshedDs);
+          saveDatasetToDB(refreshedDs);
+          showToast(`⚡ Live data refreshed — ${rows.length} rows (${executionTimeMs}ms)`);
+          setIsLiveRefreshing(false);
+          worker.terminate();
+        }
+      };
+      worker.postMessage({
+        type: 'PROCESS_FILE',
+        rawData: freshRows,
+        fileName: dataset.name,
+        isConnector: true,
+        sourceSchema: dataset.sourceSchema,
+      });
+    } catch (err: any) {
+      console.error('[App] Live refresh failed:', err);
+      showToast(`❌ Refresh failed: ${err.message || 'Unknown error'}`);
+      setIsLiveRefreshing(false);
+    }
   };
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -967,6 +1023,8 @@ function App() {
                     dataset={dataset}
                     onAddResult={handlePin}
                     onEdit={handleEditAnalysis}
+                    onLiveRefresh={handleLiveRefresh}
+                    isLiveRefreshing={isLiveRefreshing}
                   />
                 </div>
 

@@ -869,6 +869,163 @@ app.post('/api/pg/execute-sql', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════
+// MSSQL LIVE SQL EXECUTION
+// ═══════════════════════════════════════════
+// Mirrors /api/pg/execute-sql for MSSQL connections.
+// Safety: Only SELECT statements, 30s timeout, 50K row limit.
+
+app.post('/api/execute-sql', async (req, res) => {
+    try {
+        const { connectionId, sql } = req.body;
+
+        if (!connectionId || !sql) {
+            return res.status(400).json({
+                success: false,
+                error: 'connectionId and sql are required'
+            });
+        }
+
+        const connection = connections.get(connectionId);
+        if (!connection || (connection.type !== 'mssql' && connection.type !== 'raw')) {
+            return res.status(400).json({
+                success: false,
+                error: 'Invalid or expired MSSQL connection'
+            });
+        }
+
+        // ── Safety: Only allow SELECT statements ──
+        const trimmedSQL = sql.trim().toUpperCase();
+        if (!trimmedSQL.startsWith('SELECT') && !trimmedSQL.startsWith('WITH')) {
+            return res.status(400).json({
+                success: false,
+                error: 'Only SELECT queries are allowed for live execution'
+            });
+        }
+
+        // Block dangerous keywords
+        const dangerousKeywords = ['DROP', 'DELETE', 'INSERT', 'UPDATE', 'ALTER', 'CREATE', 'TRUNCATE', 'GRANT', 'REVOKE'];
+        const sqlUpper = sql.toUpperCase();
+        for (const keyword of dangerousKeywords) {
+            const regex = new RegExp(`\\b${keyword}\\b`);
+            if (regex.test(sqlUpper)) {
+                return res.status(400).json({
+                    success: false,
+                    error: `Blocked: SQL contains disallowed keyword "${keyword}"`
+                });
+            }
+        }
+
+        // ── Execute ──
+        const startTime = Date.now();
+
+        // Add row limit if not present
+        let safeSql = sql;
+        if (!sql.toUpperCase().includes('TOP') && !sql.toUpperCase().includes('FETCH')) {
+            safeSql = sql.replace(/^SELECT/i, 'SELECT TOP 50000');
+        }
+
+        const result = await queryConnection(connection, safeSql);
+        const executionTimeMs = Date.now() - startTime;
+        const rows = result.recordset || [];
+        const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+        console.log(`[LiveSQL-MSSQL] Executed in ${executionTimeMs}ms: ${rows.length} rows, ${columns.length} columns`);
+
+        res.json({
+            success: true,
+            rows,
+            columns,
+            rowCount: rows.length,
+            executionTimeMs,
+        });
+    } catch (error) {
+        console.error('[LiveSQL-MSSQL] Execution error:', error);
+        const errMsg = error.message || 'SQL execution failed';
+
+        let friendlyError = errMsg;
+        if (errMsg.includes('timeout')) {
+            friendlyError = 'Query timed out. Try adding filters or reducing data scope.';
+        } else if (errMsg.includes('Invalid object name')) {
+            friendlyError = `Table not found: ${errMsg}`;
+        }
+
+        res.status(500).json({
+            success: false,
+            error: friendlyError,
+        });
+    }
+});
+
+// ═══════════════════════════════════════════
+// UNIVERSAL LIVE REFRESH — Re-fetch table data for live datasets
+// ═══════════════════════════════════════════
+// Used by the frontend to refresh a live dataset's data from the source DB.
+// Works for both MSSQL and PostgreSQL connections.
+
+app.post('/api/refresh-data', async (req, res) => {
+    try {
+        const { connectionId, tables, dbType } = req.body;
+
+        if (!connectionId || !tables || !Array.isArray(tables) || tables.length === 0) {
+            return res.status(400).json({
+                success: false,
+                error: 'connectionId and tables[] are required'
+            });
+        }
+
+        const connection = connections.get(connectionId);
+        if (!connection) {
+            return res.status(400).json({
+                success: false,
+                error: 'Connection expired or invalid. Please reconnect to the database.'
+            });
+        }
+
+        const startTime = Date.now();
+        const result = {};
+
+        for (const tableName of tables) {
+            const sanitized = tableName.replace(/[^a-zA-Z0-9_.]/g, '');
+            let query;
+
+            if (connection.type === 'pg') {
+                query = `SELECT * FROM ${sanitized} LIMIT 50000`;
+            } else {
+                // MSSQL
+                query = `SELECT TOP 50000 * FROM [${sanitized.replace(/[^a-zA-Z0-9_]/g, '')}]`;
+            }
+
+            const tableResult = await queryConnection(connection, query);
+            result[tableName] = tableResult.recordset || [];
+        }
+
+        const executionTimeMs = Date.now() - startTime;
+        const totalRows = Object.values(result).reduce((sum, rows) => sum + rows.length, 0);
+
+        console.log(`[LiveRefresh] Refreshed ${tables.length} tables (${totalRows} total rows) in ${executionTimeMs}ms`);
+
+        res.json({
+            success: true,
+            data: result,
+            executionTimeMs,
+            totalRows,
+        });
+    } catch (error) {
+        console.error('[LiveRefresh] Error:', error);
+
+        let friendlyError = error.message || 'Refresh failed';
+        if (friendlyError.includes('ECONN') || friendlyError.includes('terminated')) {
+            friendlyError = 'Database connection lost. Please reconnect.';
+        }
+
+        res.status(500).json({
+            success: false,
+            error: friendlyError,
+        });
+    }
+});
+
+// ═══════════════════════════════════════════
 // LLM PROXY ENDPOINT (Fix #5: API key security)
 // ═══════════════════════════════════════════
 // Routes OpenRouter API calls through the backend so the API key
