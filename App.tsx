@@ -490,8 +490,8 @@ function App() {
           dimDate,
           sourceSchema: resultSchema,
           domainProfile: connProfile,
-          connectionMode: liveInfo ? 'live' : 'import',
-          liveConnection: liveInfo || undefined,
+          connectionMode: liveInfo?.connectionMode || (liveInfo ? 'import' : undefined),
+          liveConnection: liveInfo ? { connectionId: liveInfo.connectionId, dbType: liveInfo.dbType, tables: liveInfo.tables, joinEdges: liveInfo.joinEdges } : undefined,
           version: 1,
           createdAt: Date.now(),
         };
@@ -519,6 +519,19 @@ function App() {
 
   // ── LIVE REFRESH — Re-fetch data from the source database ──
   const [isLiveRefreshing, setIsLiveRefreshing] = useState(false);
+  const [showModeDropdown, setShowModeDropdown] = useState(false);
+
+  // Switch connection mode (Import ↔ Live) on the current dataset
+  const switchConnectionMode = async (newMode: 'import' | 'live') => {
+    if (!dataset || !dataset.liveConnection) return;
+    if (dataset.connectionMode === newMode) { setShowModeDropdown(false); return; }
+
+    const updated: Dataset = { ...dataset, connectionMode: newMode };
+    setDataset(updated);
+    saveDatasetToDB(updated);
+    setShowModeDropdown(false);
+    console.log(`[App] Connection mode switched to: ${newMode}`);
+  };
   const handleLiveRefresh = async () => {
     if (!dataset?.liveConnection || dataset.connectionMode !== 'live') return;
     setIsLiveRefreshing(true);
@@ -708,21 +721,69 @@ function App() {
                         {dataset.domainProfile.domain}
                       </span>
                     )}
-                    {dataset && (
-                      dataset.connectionMode === 'live' ? (
-                        <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-500/20">
-                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                          Live
-                        </span>
-                      ) : dataset.connectionMode === 'import' ? (
+                    {dataset?.liveConnection && (
+                      <div className="relative">
                         <button
-                          onClick={() => setActiveTab(Tab.UPLOAD)}
-                          className="text-[11px] font-semibold text-gray-400 bg-white/[0.06] hover:bg-emerald-500/15 hover:text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1 border border-white/[0.08] hover:border-emerald-500/20 transition-all cursor-pointer"
-                          title="Currently using Import (snapshot) mode. Click to reconnect as Live."
+                          onClick={() => setShowModeDropdown(!showModeDropdown)}
+                          className={`text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 border transition-all cursor-pointer ${
+                            dataset.connectionMode === 'live'
+                              ? 'text-emerald-400 bg-emerald-500/15 border-emerald-500/25 hover:bg-emerald-500/25'
+                              : 'text-gray-400 bg-white/[0.06] border-white/[0.08] hover:bg-white/[0.1]'
+                          }`}
                         >
-                          Import · Switch to ⚡ Live
+                          {dataset.connectionMode === 'live' ? (
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                          ) : (
+                            <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                          )}
+                          {dataset.connectionMode === 'live' ? 'Live' : 'Import'}
+                          <svg className="w-3 h-3 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" /></svg>
                         </button>
-                      ) : null
+                        {showModeDropdown && (
+                          <>
+                            <div className="fixed inset-0 z-30" onClick={() => setShowModeDropdown(false)} />
+                            <div className={`absolute top-full left-0 mt-1 z-40 w-48 rounded-xl shadow-2xl border overflow-hidden ${
+                              theme === 'dark' ? 'bg-[#1e2333] border-white/10' : 'bg-white border-gray-200'
+                            }`}>
+                              <button
+                                onClick={() => switchConnectionMode('import')}
+                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium transition-all ${
+                                  dataset.connectionMode === 'import'
+                                    ? theme === 'dark' ? 'bg-indigo-500/15 text-indigo-300' : 'bg-indigo-50 text-indigo-700'
+                                    : theme === 'dark' ? 'text-gray-400 hover:bg-white/[0.05]' : 'text-gray-600 hover:bg-gray-50'
+                                }`}
+                              >
+                                <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                                <div className="text-left">
+                                  <div className="font-bold">Import</div>
+                                  <div className={`text-[10px] ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Static snapshot of your data</div>
+                                </div>
+                                {dataset.connectionMode === 'import' && (
+                                  <svg className="w-4 h-4 ml-auto text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                )}
+                              </button>
+                              <div className={`h-px ${theme === 'dark' ? 'bg-white/[0.06]' : 'bg-gray-100'}`} />
+                              <button
+                                onClick={() => switchConnectionMode('live')}
+                                className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium transition-all ${
+                                  dataset.connectionMode === 'live'
+                                    ? 'bg-emerald-500/15 text-emerald-300'
+                                    : theme === 'dark' ? 'text-gray-400 hover:bg-white/[0.05]' : 'text-gray-600 hover:bg-gray-50'
+                                }`}
+                              >
+                                <svg className="w-4 h-4 shrink-0 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                                <div className="text-left">
+                                  <div className="font-bold">⚡ Live</div>
+                                  <div className={`text-[10px] ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Real-time data from database</div>
+                                </div>
+                                {dataset.connectionMode === 'live' && (
+                                  <svg className="w-4 h-4 ml-auto text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                )}
+                              </button>
+                            </div>
+                          </>
+                        )}
+                      </div>
                     )}
                   </div>
 

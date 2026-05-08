@@ -172,13 +172,14 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
         const dbType: 'mssql' | 'pg' = isPostgres ? 'pg' : 'mssql';
         const data = await getMockConnectorData(connectionId, selectedTables);
 
-        // Build live connection info (only used if connectionMode === 'live')
-        const liveInfo: LiveConnectionInfo | undefined = connectionMode === 'live' ? {
+        // Always build connection info so user can switch modes later
+        const liveInfo: LiveConnectionInfo & { connectionMode: 'import' | 'live' } = {
             connectionId,
             dbType,
             tables: [...selectedTables],
             joinEdges: joinEdges.map(e => ({ leftTable: e.leftTable, rightTable: e.rightTable, leftColumn: e.leftColumn, rightColumn: e.rightColumn, type: e.type })),
-        } : undefined;
+            connectionMode,
+        };
 
         if (selectedTables.length === 1) {
             // Single table — direct import (still build basic schema info)
