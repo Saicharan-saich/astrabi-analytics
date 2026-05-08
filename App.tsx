@@ -1000,6 +1000,8 @@ function App() {
                       onUpdateFormatting={updateFormatting}
                       initialConfig={workbenchConfig}
                       editingItemId={editingDashboardItemId}
+                      onLiveRefresh={handleLiveRefresh}
+                      isLiveRefreshing={isLiveRefreshing}
                     />
                   )}
                 </div>

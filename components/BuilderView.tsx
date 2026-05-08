@@ -8,7 +8,7 @@ import { Tooltip } from './Tooltip';
 
 import { AIInsightPanel } from './AIInsightPanel';
 
-import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap } from 'lucide-react';
 
 interface BuilderViewProps {
     dataset: Dataset;
@@ -17,9 +17,11 @@ interface BuilderViewProps {
     onPin?: (title: string, result: AnalysisResult) => void;
     initialConfig?: any; // QueryConfig from dashboard edit
     editingItemId?: string | null; // ID of dashboard item being edited
+    onLiveRefresh?: () => Promise<void>;
+    isLiveRefreshing?: boolean;
 }
 
-export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId }) => {
+export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onLiveRefresh, isLiveRefreshing }) => {
     const [result, setResult] = useState<AnalysisResult | undefined>(undefined);
     const [error, setError] = useState<string | null>(null);
     const [chartType, setChartType] = useState<any>('bar');
@@ -365,11 +367,32 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                             </button>
                         )}
                         <button
-                            onClick={() => { if (lastRunConfig) handleRun(lastRunConfig); }}
-                            className="flex items-center text-sm font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap"
-                            title="Refresh — re-run current query"
+                            onClick={async () => {
+                                if (!lastRunConfig) return;
+                                // If live mode, refresh the dataset first, then re-run the query
+                                if (dataset.connectionMode === 'live' && onLiveRefresh) {
+                                    await onLiveRefresh();
+                                    // After live refresh, dataset prop will update, triggering re-run below
+                                }
+                                handleRun(lastRunConfig);
+                            }}
+                            disabled={isLiveRefreshing}
+                            className={`flex items-center text-sm font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap ${
+                                dataset.connectionMode === 'live'
+                                    ? 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300'
+                                    : 'text-slate-600 bg-slate-100 hover:bg-slate-200'
+                            }`}
+                            title={dataset.connectionMode === 'live'
+                                ? 'Refresh — fetch latest data from live database & re-run query'
+                                : 'Refresh — re-run current query'
+                            }
                         >
-                            <RefreshCw className="w-4 h-4 mr-1" /> Refresh
+                            {isLiveRefreshing ? (
+                                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                            ) : (
+                                <RefreshCw className="w-4 h-4 mr-1" />
+                            )}
+                            {isLiveRefreshing ? 'Refreshing...' : (dataset.connectionMode === 'live' ? '⚡ Refresh' : 'Refresh')}
                         </button>
                         <button
                             onClick={() => { setResult(null); setError(null); setLastRunConfig(null); }}
