@@ -708,6 +708,22 @@ function App() {
                         {dataset.domainProfile.domain}
                       </span>
                     )}
+                    {dataset && (
+                      dataset.connectionMode === 'live' ? (
+                        <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/15 px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-500/20">
+                          <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                          Live
+                        </span>
+                      ) : dataset.connectionMode === 'import' ? (
+                        <button
+                          onClick={() => setActiveTab(Tab.UPLOAD)}
+                          className="text-[11px] font-semibold text-gray-400 bg-white/[0.06] hover:bg-emerald-500/15 hover:text-emerald-400 px-2 py-0.5 rounded-full flex items-center gap-1 border border-white/[0.08] hover:border-emerald-500/20 transition-all cursor-pointer"
+                          title="Currently using Import (snapshot) mode. Click to reconnect as Live."
+                        >
+                          Import · Switch to ⚡ Live
+                        </button>
+                      ) : null
+                    )}
                   </div>
 
                   <DatasetSwitcher
