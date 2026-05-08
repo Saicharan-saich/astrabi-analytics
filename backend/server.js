@@ -394,6 +394,8 @@ app.post('/api/connect', async (req, res) => {
                 database: dbName,
                 user: username,
                 password: password,
+                connectionTimeout: 60000, // 60s — Azure SQL free tier can take 30-60s to wake from auto-pause
+                requestTimeout: 30000,    // 30s per query
                 options: {
                     encrypt: true,
                     trustServerCertificate: true,
