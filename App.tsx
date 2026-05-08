@@ -457,31 +457,9 @@ function App() {
     worker.onmessage = (event) => {
       if (event.data.type === 'SUCCESS') {
         const { rows, logs, columns, timeContext, sourceSchema: resultSchema, dimDate, rawRows } = event.data.result;
-        const connDs: Dataset = {
-          id: generateId(),
-          name: name,
-          rows,
-          rawRows,
-          columns,
-          totalRows: rows.length,
-          etlLogs: logs,
-          timeContext,
-          dimDate,
-          sourceSchema: resultSchema,
-          version: 1,
-          createdAt: Date.now(),
-        };
-        // ── BUILD SEMANTIC MODEL ──
-        try {
-          const model = buildSemanticModel(connDs);
-          (connDs as any).semanticModel = model;
-          console.log(`[App] Connector semantic model: ${model.measures.length} measures, ${model.dimensions.length} dimensions`);
-        } catch (err) {
-          console.warn('[App] Semantic model build failed for connector:', err);
-        }
-        setDataset(connDs);
-        saveDatasetToDB(connDs);
-        // Open Column Mapping Wizard
+
+        // ── BUILD DOMAIN PROFILE FIRST (before setDataset) ──
+        // This prevents the useEffect on dataset?.id from nulling pendingProfile
         const colSem: Record<string, any> = {};
         for (const col of columns) {
           colSem[col.name] = {
@@ -496,7 +474,36 @@ function App() {
         }
         const hDomain = detectDomainFromColumns(columns, name);
         const connProfile: any = { domain: hDomain || 'Sales', summary: `Detected as ${hDomain || 'Sales'} domain`, confidence: 0.5, themeColor: '#6366f1', columnSemantics: colSem, detectedAt: Date.now() };
-        (connDs as any).domainProfile = connProfile;
+
+        console.log(`[App] Connector columns (master table): ${columns.length} columns — ${columns.map((c: any) => c.name).join(', ')}`);
+
+        const connDs: Dataset = {
+          id: generateId(),
+          name: name,
+          rows,
+          rawRows,
+          columns,
+          totalRows: rows.length,
+          etlLogs: logs,
+          timeContext,
+          dimDate,
+          sourceSchema: resultSchema,
+          domainProfile: connProfile,
+          version: 1,
+          createdAt: Date.now(),
+        };
+        // ── BUILD SEMANTIC MODEL ──
+        try {
+          const model = buildSemanticModel(connDs);
+          (connDs as any).semanticModel = model;
+          console.log(`[App] Connector semantic model: ${model.measures.length} measures, ${model.dimensions.length} dimensions`);
+        } catch (err) {
+          console.warn('[App] Semantic model build failed for connector:', err);
+        }
+
+        // Set state AFTER domainProfile is attached — prevents useEffect race condition
+        setDataset(connDs);
+        saveDatasetToDB(connDs);
         setPendingProfile(connProfile);
         setActiveTab(Tab.COLUMN_MAPPING);
         setProcessing(false);
