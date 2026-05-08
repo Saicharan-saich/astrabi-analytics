@@ -17,23 +17,92 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
     const [error, setError] = useState('');
     const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
 
-    const handleAddUser = (e: React.FormEvent) => {
+    const [isAdding, setIsAdding] = useState(false);
+
+    const API_BASE = import.meta.env.VITE_API_URL?.replace(/\/api$/, '') || 'http://localhost:5002';
+
+    const AVATAR_COLORS = [
+        '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316',
+        '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
+    ];
+
+    /** Map UserRole enum to backend role string */
+    const roleToBackend = (role: UserRole): string => {
+        switch (role) {
+            case UserRole.ADMIN: return 'admin';
+            case UserRole.CONTRIBUTOR: return 'contributor';
+            case UserRole.VIEWER: return 'viewer';
+            default: return 'viewer';
+        }
+    };
+
+    /** Map backend role string to UserRole enum */
+    const mapRole = (role: string): UserRole => {
+        switch (role) {
+            case 'admin': return UserRole.ADMIN;
+            case 'contributor': return UserRole.CONTRIBUTOR;
+            default: return UserRole.VIEWER;
+        }
+    };
+
+    const handleAddUser = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
         if (!newEmail.trim() || !newName.trim() || !newPassword.trim()) {
             setError('All fields are required');
             return;
         }
-        const result = addUser(newEmail, newName, newPassword, newRole);
-        if (!result.success) {
-            setError(result.error || 'Failed to add user');
-        } else {
+
+        setIsAdding(true);
+        try {
+            // Call backend API to register the user in PostgreSQL
+            const res = await fetch(`${API_BASE}/api/auth/register`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: newEmail.trim(),
+                    name: newName.trim(),
+                    password: newPassword,
+                    role: roleToBackend(newRole),
+                }),
+            });
+
+            const data = await res.json();
+
+            if (!res.ok || !data.success) {
+                setError(data.error || 'Failed to add user');
+                setIsAdding(false);
+                return;
+            }
+
+            // Sync the new user into the local Zustand store for immediate UI display
+            const backendUser = data.user;
+            const storeUser = {
+                id: backendUser.id,
+                email: backendUser.email,
+                name: backendUser.name,
+                role: mapRole(backendUser.role),
+                passwordHash: '',
+                createdAt: Date.now(),
+                avatar: AVATAR_COLORS[users.length % AVATAR_COLORS.length],
+            };
+
+            useAuthStore.setState((state) => ({
+                users: state.users.some(u => u.email === storeUser.email)
+                    ? state.users.map(u => u.email === storeUser.email ? storeUser : u)
+                    : [...state.users, storeUser],
+            }));
+
             setNewEmail('');
             setNewName('');
             setNewPassword('');
             setNewRole(UserRole.VIEWER);
             setShowAddForm(false);
+        } catch (err: any) {
+            console.error('[UserManagement] Add user failed:', err);
+            setError('Could not connect to the server. Make sure the backend is running.');
         }
+        setIsAdding(false);
     };
 
     const handleRemove = (id: string) => {
@@ -239,10 +308,15 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                                 </button>
                                 <button
                                     type="submit"
-                                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-lg transition-all flex items-center gap-2"
+                                    disabled={isAdding}
+                                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold rounded-lg transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                 >
-                                    <Check className="w-4 h-4" />
-                                    Add User
+                                    {isAdding ? (
+                                        <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    ) : (
+                                        <Check className="w-4 h-4" />
+                                    )}
+                                    {isAdding ? 'Adding...' : 'Add User'}
                                 </button>
                             </div>
                         </form>
