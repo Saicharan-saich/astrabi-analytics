@@ -961,6 +961,7 @@ function App() {
                       saveDatasetToDB(updated);
                       console.log(`[App] Recovered ${recoveredRows.length} rows. New total: ${updatedRows.length}`);
                     }}
+                    onSwitchToLive={() => setActiveTab(Tab.UPLOAD)}
                   />
                 </div>
 

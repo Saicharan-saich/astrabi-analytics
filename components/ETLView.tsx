@@ -3,7 +3,8 @@ import {
   CheckCircle, XCircle, AlertTriangle, Info, Database,
   ChevronDown, ChevronRight, Filter, BarChart3, Shield,
   Sparkles, Layers, ArrowDownUp, Clock, Download, Eye, Table,
-  ToggleLeft, ToggleRight, Edit3, Check, SkipForward, X, Save
+  ToggleLeft, ToggleRight, Edit3, Check, SkipForward, X, Save,
+  Zap, Upload
 } from 'lucide-react';
 import { Dataset, ETLLog, ColumnType } from '../types';
 
@@ -11,6 +12,7 @@ interface ETLViewProps {
   dataset: Dataset;
   onSchemaOverride?: (columnName: string, newType: ColumnType) => void;
   onRowsRecovered?: (recoveredRows: Record<string, any>[]) => void;
+  onSwitchToLive?: () => void;
 }
 
 type LogFilter = 'all' | 'applied' | 'skipped' | 'info';
@@ -121,7 +123,7 @@ const RowEditorModal: React.FC<RowEditorProps> = ({ rows, onClose, onSave }) => 
 };
 
 // ─── Main ETL View ──────────────────────────────────────────
-export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onRowsRecovered }) => {
+export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onRowsRecovered, onSwitchToLive }) => {
   const [editingColumn, setEditingColumn] = useState<string | null>(null);
   const [logFilter, setLogFilter] = useState<LogFilter>('all');
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
@@ -319,6 +321,37 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
                 Download Cleaned Data
               </button>
             </div>
+
+            {/* Connection Mode Badge */}
+            {dataset.connectionMode && (
+              <div className="flex items-center gap-3 mt-2 ml-[52px]">
+                {dataset.connectionMode === 'live' ? (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                    <Zap className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="text-xs font-bold text-emerald-700">Live Connection</span>
+                    <span className="text-[10px] text-emerald-500 ml-1">Real-time data from {dataset.liveConnection?.dbType || 'database'}</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg">
+                      <Upload className="w-3.5 h-3.5 text-slate-400" />
+                      <span className="text-xs font-bold text-slate-600">Import Mode</span>
+                      <span className="text-[10px] text-slate-400 ml-1">Static snapshot</span>
+                    </div>
+                    {onSwitchToLive && (
+                      <button
+                        onClick={onSwitchToLive}
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-semibold text-emerald-700 transition-all hover:shadow-sm"
+                        title="Reconnect to the database in Live mode for real-time data"
+                      >
+                        <Zap className="w-3.5 h-3.5" />
+                        Switch to Live
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* ─── Summary Cards ─────────────────────────────────────────── */}
