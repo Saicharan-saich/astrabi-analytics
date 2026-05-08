@@ -395,7 +395,7 @@ app.post('/api/connect', async (req, res) => {
                 user: username,
                 password: password,
                 options: {
-                    encrypt: false,
+                    encrypt: true,
                     trustServerCertificate: true,
                     enableArithAbort: true
                 }
