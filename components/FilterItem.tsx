@@ -68,9 +68,10 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                         <select
                             value={filter.column}
                             onChange={e => onUpdate(id, 'column', e.target.value)}
-                            className="appearance-none bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 font-bold border-b-2 border-purple-400/40 rounded-lg px-3 py-1 pr-8 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50"
+                            className="appearance-none font-bold border-b-2 border-purple-400/40 rounded-lg px-3 py-1 pr-8 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50"
+                            style={{ backgroundColor: '#1e1b4b', color: '#c4b5fd' }}
                         >
-                            {columnOptions.map(d => <option key={d} value={d}>{d.replace(/_/g, ' ')}</option>)}
+                            {columnOptions.map(d => <option key={d} value={d} style={{ backgroundColor: '#1e1b4b', color: '#e2e8f0' }}>{d.replace(/_/g, ' ')}</option>)}
                         </select>
                         <ChevronDown className="w-4 h-4 text-purple-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
@@ -95,12 +96,13 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                         {isOpen && ReactDOM.createPortal(
                             <div
                                 ref={dropdownRef}
-                                className="fixed z-[9999] bg-slate-800 border border-purple-400/30 rounded-xl shadow-2xl"
+                                className="fixed z-[9999] border border-purple-400/30 rounded-xl shadow-2xl"
                                 style={{
                                     top: dropdownPos.top,
                                     left: dropdownPos.left,
                                     width: dropdownPos.width,
-                                    maxWidth: 320
+                                    maxWidth: 320,
+                                    backgroundColor: '#0f172a'
                                 }}
                             >
                                 {/* Search */}
@@ -148,9 +150,10 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                         <select
                             value={filter.column}
                             onChange={e => onUpdate(id, 'column', e.target.value)}
-                            className="appearance-none bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 font-bold border-b-2 border-blue-400/40 rounded-lg px-3 py-1 pr-8 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
+                            className="appearance-none font-bold border-b-2 border-blue-400/40 rounded-lg px-3 py-1 pr-8 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
+                            style={{ backgroundColor: '#1e3a5f', color: '#93c5fd' }}
                         >
-                            {columnOptions.map(m => <option key={m} value={m}>{m.replace(/_/g, ' ')}</option>)}
+                            {columnOptions.map(m => <option key={m} value={m} style={{ backgroundColor: '#1e3a5f', color: '#e2e8f0' }}>{m.replace(/_/g, ' ')}</option>)}
                         </select>
                         <ChevronDown className="w-4 h-4 text-blue-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>
@@ -159,14 +162,15 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                         <select
                             value={filter.operator}
                             onChange={e => onUpdate(id, 'operator', e.target.value)}
-                            className="appearance-none bg-white/10 hover:bg-white/15 text-slate-300 font-bold border-2 border-blue-400/30 rounded-lg px-2 py-1 pr-6 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400/50"
+                            className="appearance-none font-bold border-2 border-blue-400/30 rounded-lg px-2 py-1 pr-6 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400/50"
+                            style={{ backgroundColor: '#1e293b', color: '#cbd5e1' }}
                         >
-                            <option value=">=">&gt;=</option>
-                            <option value="<=">&lt;=</option>
-                            <option value="=">=</option>
-                            <option value="!=">!=</option>
-                            <option value=">">&gt;</option>
-                            <option value="<">&lt;</option>
+                            <option value=">=" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>&gt;=</option>
+                            <option value="<=" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>&lt;=</option>
+                            <option value="=" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>=</option>
+                            <option value="!=" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>!=</option>
+                            <option value=">" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>&gt;</option>
+                            <option value="<" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>&lt;</option>
                         </select>
                         <ChevronDown className="w-3 h-3 text-slate-500 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
                     </div>

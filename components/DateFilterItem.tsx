@@ -164,9 +164,10 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
                 <select
                     value={filter.column}
                     onChange={e => { onUpdate(id, 'column', e.target.value); onUpdate(id, 'year', []); onUpdate(id, 'quarter', []); onUpdate(id, 'month', []); onUpdate(id, 'day', []); onUpdate(id, 'values', []); }}
-                    className="appearance-none bg-teal-500/20 hover:bg-teal-500/30 text-teal-300 font-bold border-b-2 border-teal-400/40 rounded-lg px-3 py-1 pr-8 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/50"
+                    className="appearance-none font-bold border-b-2 border-teal-400/40 rounded-lg px-3 py-1 pr-8 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/50"
+                    style={{ backgroundColor: '#134e4a', color: '#5eead4' }}
                 >
-                    {dateColumns.map(d => <option key={d} value={d}>{d.replace(/_/g, ' ')}</option>)}
+                    {dateColumns.map(d => <option key={d} value={d} style={{ backgroundColor: '#134e4a', color: '#e2e8f0' }}>{d.replace(/_/g, ' ')}</option>)}
                 </select>
                 <ChevronDown className="w-4 h-4 text-teal-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
@@ -360,8 +361,8 @@ const MultiSelectPicker: React.FC<{
             {open && ReactDOM.createPortal(
                 <div
                     ref={dropRef}
-                    className="fixed z-[9999] bg-slate-800 border border-white/15 rounded-xl shadow-2xl max-h-64 overflow-auto"
-                    style={{ top: pos.top, left: pos.left, minWidth: 140 }}
+                    className="fixed z-[9999] border border-white/15 rounded-xl shadow-2xl max-h-64 overflow-auto"
+                    style={{ top: pos.top, left: pos.left, minWidth: 140, backgroundColor: '#0f172a' }}
                 >
                     {/* Clear all */}
                     {selected.length > 0 && (
@@ -383,8 +384,9 @@ const MultiSelectPicker: React.FC<{
                                     onClick={() => onToggle(opt)}
                                     className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors ${isChecked
                                         ? `${c.selected} ${c.text} font-bold`
-                                        : 'text-slate-400 hover:bg-white/10'
+                                        : 'hover:bg-white/10'
                                         }`}
+                                    style={!isChecked ? { color: '#e2e8f0' } : undefined}
                                 >
                                     <span className={`w-4 h-4 rounded border flex items-center justify-center flex-shrink-0 ${isChecked
                                         ? `${c.border} ${c.selected}`

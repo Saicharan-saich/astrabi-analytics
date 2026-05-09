@@ -817,7 +817,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             </button>
 
                             {showFilterMenu && (
-                                <div className="absolute top-full right-0 mt-1 bg-slate-800 backdrop-blur-xl rounded-xl shadow-2xl border border-white/10 py-1 z-50 min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200">
+                                <div className="absolute top-full right-0 mt-1 rounded-xl shadow-2xl border border-white/10 py-1 z-50 min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200" style={{ backgroundColor: '#0f172a' }}>
                                     <button
                                         onClick={() => { addFilter('dimension'); setShowFilterMenu(false); }}
                                         className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-purple-500/20 hover:text-purple-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
