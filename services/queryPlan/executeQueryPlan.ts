@@ -38,36 +38,47 @@ function resolveColumnKey(row: Record<string, any>, column: string): string {
     return match || column;
 }
 
-/** Extract a date string (YYYY-MM-DD) from a row */
+/** Extract a date/datetime string from a row. Preserves time portion if present. */
 function extractDateStr(row: Record<string, any>, dateCol: string): string {
     const raw = row[dateCol];
-    if (!raw || raw === 'null' || raw === 'undefined') return '1970-01-01';
+    if (!raw || raw === 'null' || raw === 'undefined') return '1970-01-01T00:00:00';
     const s = String(raw);
-    // Already ISO format
-    if (s.match(/^\d{4}-\d{2}-\d{2}/)) return s.substring(0, 10);
+    // Already ISO format with time
+    if (s.match(/^\d{4}-\d{2}-\d{2}[T ]/)) return s;
+    // Date-only ISO format
+    if (s.match(/^\d{4}-\d{2}-\d{2}$/)) return s + 'T00:00:00';
     // MM/DD/YYYY
     if (s.includes('/')) {
         const parts = s.split('/');
         if (parts.length === 3) {
             const [mm, dd, yyyy] = parts;
-            return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+            return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T00:00:00`;
         }
     }
     // Try Date constructor
     const d = new Date(s);
-    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
-    return '1970-01-01';
+    if (!isNaN(d.getTime())) return d.toISOString().replace('Z', '');
+    return '1970-01-01T00:00:00';
 }
 
-/** Format a date string into a time bucket key (matches SQL compiler output) */
+/** Format a date/datetime string into a time bucket key (matches SQL compiler output) */
 function formatTimeBucket(dateStr: string, grain: string): string {
-    const parts = dateStr.split('-').map(Number);
-    const d = new Date(parts[0], parts[1] - 1, parts[2] || 1, 12);
+    // Parse full datetime — support 'YYYY-MM-DD', 'YYYY-MM-DDThh:mm:ss', 'YYYY-MM-DD hh:mm:ss'
+    const cleaned = dateStr.replace('T', ' ').replace('Z', '');
+    const datePart = cleaned.substring(0, 10);
+    const timePart = cleaned.length > 10 ? cleaned.substring(11) : '00:00:00';
+    const dp = datePart.split('-').map(Number);
+    const tp = timePart.split(':').map(Number);
+    const d = new Date(dp[0], dp[1] - 1, dp[2] || 1, tp[0] || 0, tp[1] || 0, tp[2] || 0);
     const y = d.getFullYear();
     const m = d.getMonth() + 1;
     const dy = d.getDate();
+    const h = d.getHours();
+    const mi = d.getMinutes();
 
     switch (grain) {
+        case 'minute': return `${y}-${pad(m)}-${pad(dy)} ${pad(h)}:${pad(mi)}`;
+        case 'hour': return `${y}-${pad(m)}-${pad(dy)} ${pad(h)}:00`;
         case 'day': return `${y}-${pad(m)}-${pad(dy)}`;
         case 'week': {
             const week = getISOWeek(d);

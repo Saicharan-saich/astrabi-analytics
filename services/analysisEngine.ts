@@ -148,7 +148,7 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
         // No dimension = scalar KPI → show as card
         if (!d || d === '') {
             visuals = 'kpiCard';
-        } else if (['day', 'week', 'month', 'year'].includes(d) || query.timeFilter?.startsWith('last_')) {
+        } else if (['minute', 'hour', 'day', 'week', 'month', 'year'].includes(d) || query.timeFilter?.startsWith('last_')) {
             visuals = 'line';
         } else if (d === 'status' || d === 'source') {
             visuals = 'pie';
@@ -322,7 +322,7 @@ export const inferColumnType = (key: string, sampleValues: any[]): ColumnType =>
     // 2. FORCE DATE - Comprehensive date/time patterns
     const datePatterns = [
         'date', 'time', 'timestamp', 'datetime',
-        'day', 'week', 'month', 'quarter', 'year',
+        'minute', 'hour', 'day', 'week', 'month', 'quarter', 'year',
         'created', 'updated', 'modified', 'deleted',
         'start', 'end', 'begin', 'finish',
         'due', 'expiry', 'expires', 'expired',

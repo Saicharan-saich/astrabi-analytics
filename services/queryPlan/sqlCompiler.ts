@@ -78,6 +78,10 @@ function compileDimensionSelect(dim: Dimension): string {
     const alias = safeId(dim.alias);
 
     switch (grain) {
+        case 'minute':
+            return `TO_CHAR(DATE_TRUNC('minute', ${src}::TIMESTAMP), 'YYYY-MM-DD HH24:MI') AS ${alias}`;
+        case 'hour':
+            return `TO_CHAR(DATE_TRUNC('hour', ${src}::TIMESTAMP), 'YYYY-MM-DD HH24:00') AS ${alias}`;
         case 'year':
             return `EXTRACT(YEAR FROM ${src})::TEXT AS ${alias}`;
         case 'quarter':
@@ -101,6 +105,10 @@ function compileDimensionGroupBy(dim: Dimension): string {
     // Use DATE_TRUNC for index-friendly grouping on date columns
     const src = safeId(dim.sourceColumn);
     switch (dim.grain) {
+        case 'minute':
+            return `DATE_TRUNC('minute', ${src}::TIMESTAMP)`;
+        case 'hour':
+            return `DATE_TRUNC('hour', ${src}::TIMESTAMP)`;
         case 'year':
             return `EXTRACT(YEAR FROM ${src})`;
         case 'quarter':
@@ -160,6 +168,10 @@ function compileDateFilter(df: DateFilter): string {
     const vals = df.values.map(v => `'${escapeStringValue(v)}'`).join(', ');
 
     switch (df.timeGrain) {
+        case 'minute':
+            return `TO_CHAR(DATE_TRUNC('minute', ${col}::TIMESTAMP), 'YYYY-MM-DD HH24:MI') IN (${vals})`;
+        case 'hour':
+            return `TO_CHAR(DATE_TRUNC('hour', ${col}::TIMESTAMP), 'YYYY-MM-DD HH24:00') IN (${vals})`;
         case 'year':
             return `EXTRACT(YEAR FROM ${col})::TEXT IN (${vals})`;
         case 'quarter':

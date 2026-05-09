@@ -36,7 +36,7 @@ export interface Metric {
 
 // ── DIMENSIONS ───────────────────────────────────────────────────
 
-export type TimeGrain = 'day' | 'week' | 'month' | 'quarter' | 'year';
+export type TimeGrain = 'minute' | 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year';
 
 export type Dimension =
     | { type: 'column'; column: string }

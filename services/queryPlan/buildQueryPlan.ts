@@ -35,7 +35,7 @@ function normalizeAgg(raw: string | undefined): AggregationType {
 }
 
 // ── TIME GRAINS ──────────────────────────────────────────────────
-const TIME_GRAINS: TimeGrain[] = ['day', 'week', 'month', 'quarter', 'year'];
+const TIME_GRAINS: TimeGrain[] = ['minute', 'hour', 'day', 'week', 'month', 'quarter', 'year'];
 
 function isTimeGrain(s: string): s is TimeGrain {
     return TIME_GRAINS.includes(s as TimeGrain);

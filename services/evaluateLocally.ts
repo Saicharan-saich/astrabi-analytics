@@ -151,7 +151,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
 
             const metricCol = query.metric;
             const dimCol = query.dimension;
-            const timeGrains = ['day', 'week', 'month', 'quarter', 'year'];
+            const timeGrains = ['minute', 'hour', 'day', 'week', 'month', 'quarter', 'year'];
             const isTimeDim = dimCol && timeGrains.includes(dimCol);
 
             // 1. BUILD QUERY PLAN from UI config
@@ -359,7 +359,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
 
             // â”€â”€ CENTRALIZED DIMENSION RESOLVER â”€â”€
             // User's Group By override takes priority over question default
-            const timeGrains = ['day', 'week', 'month', 'quarter', 'year'];
+            const timeGrains = ['minute', 'hour', 'day', 'week', 'month', 'quarter', 'year'];
             const userDimOverride = query.dimension && query.dimension !== '' && !timeGrains.includes(query.dimension) ? query.dimension : null;
             const defaultDimRole = dq.req.find(r => r !== 'revenue' && r !== 'quantity' && r !== 'order_id' && r !== 'order_date' && r !== 'customer_id') || 'product_name';
             const resolvedDim = userDimOverride || defaultDimRole;
@@ -645,7 +645,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 // If the user has overridden the time filter (e.g., "This Week" on a daily question),
                 // use the time-filtered rows as the current period and compute the previous period
                 // based on the filter's date range. This ensures the user's time selection is respected.
-                const timeGrains = ['day', 'week', 'month', 'quarter', 'year'];
+                const timeGrains = ['minute', 'hour', 'day', 'week', 'month', 'quarter', 'year'];
                 const trendDim = query.dimension;
                 const isTrendMode = trendDim && timeGrains.includes(trendDim);
 
@@ -1614,7 +1614,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
     }
 
     // Detect xKey: first check for time grain dims from trend mode, then x, then metric
-    const trendGrains = ['day', 'week', 'month', 'quarter', 'year'];
+    const trendGrains = ['minute', 'hour', 'day', 'week', 'month', 'quarter', 'year'];
     const detectedXKey = data[0] ? (trendGrains.find(g => data[0][g] !== undefined) || (data[0].x !== undefined ? 'x' : 'metric')) : 'metric';
     return { data, xKey: detectedXKey, yKey: 'value', kpi, growth, sql };
 };
