@@ -638,6 +638,69 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             };
         }
 
+        // ═══ MULTI-SERIES DETECTION & SPLITTING ═══════════════════════════
+        // When data has a secondary dimension (e.g., product_name alongside time_hour),
+        // split into separate datasets — one line/bar per dimension value.
+        // This enables multi-line charts for "Sales by Hour, split by Product".
+        const seriesCol = (() => {
+            if (transformedData.length === 0 || isPieChart) return null;
+            const candidateCols = Object.keys(transformedData[0]).filter(k =>
+                k !== xKey && k !== yKey &&
+                typeof transformedData[0][k] === 'string' &&
+                !k.startsWith('previous_') && !k.startsWith('comparison_') &&
+                k !== '__comparison_label'
+            );
+            return candidateCols.find(col => {
+                const unique = new Set(transformedData.map(d => d[col]));
+                return unique.size > 1 && unique.size <= 50;
+            }) || null;
+        })();
+
+        if (seriesCol && !isPieChart) {
+            // Get unique series values and x-axis labels
+            const seriesValues = [...new Set(transformedData.map(d => String(d[seriesCol])))];
+            const uniqueLabels = [...new Set(transformedData.map(d => formatDate(String(d[xKey] ?? ''))))];
+            const seriesColors = genColors(seriesValues.length, PALETTES.vibrant, false);
+            const isFillChart = chartType === 'area' || chartType === 'stackedArea';
+            const isCurved = chartType === 'curvedLine' || chartType === 'area';
+            const isStepped = chartType === 'steppedLine';
+
+            const multiDatasets = seriesValues.map((sv, idx) => {
+                const seriesRows = transformedData.filter(d => String(d[seriesCol]) === sv);
+                // Build a map of xLabel → value for this series
+                const valMap = new Map<string, number>();
+                seriesRows.forEach(d => {
+                    const lbl = formatDate(String(d[xKey] ?? ''));
+                    valMap.set(lbl, (valMap.get(lbl) || 0) + (Number(d[yKey]) || 0));
+                });
+                const seriesData = uniqueLabels.map(lbl => valMap.get(lbl) ?? null);
+                const color = seriesColors[idx % seriesColors.length];
+
+                return {
+                    label: sv,
+                    data: seriesData,
+                    backgroundColor: isFillChart ? `${color}30` : isBarVariant ? color : `${color}DD`,
+                    borderColor: color,
+                    borderWidth: isLineVariant ? 3 : 1.5,
+                    fill: isFillChart,
+                    tension: isCurved ? 0.4 : isStepped ? 0 : (isLineVariant ? 0.35 : 0),
+                    stepped: isStepped ? 'middle' as const : false,
+                    pointRadius: isLineVariant ? 4 : 0,
+                    pointHoverRadius: isLineVariant ? 7 : 0,
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: color,
+                    pointBorderWidth: 2,
+                    borderRadius: isBarVariant ? 4 : 0,
+                    maxBarThickness: isBarVariant ? Math.max(20, Math.floor(200 / seriesValues.length)) : undefined,
+                    yAxisID: 'y',
+                    spanGaps: true,
+                };
+            });
+
+            return { labels: uniqueLabels, datasets: multiDatasets };
+        }
+        // ═══ END MULTI-SERIES ═════════════════════════════════════════════
+
         // Standard dataset construction for all other types
         const isFillChart = chartType === 'area' || chartType === 'stackedArea';
         const isStepped = chartType === 'steppedLine';
