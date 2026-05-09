@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { QuestionBuilder } from './QuestionBuilder';
 import { ChartVisualization } from './ChartVisualization';
+import { SmallMultiplesGrid } from './SmallMultiplesGrid';
 import { AnalysisResult, Dataset, QueryConfig, FormattingConfig, AggregationType, TimeGrain, AnalysisType, ColumnType } from '../types';
 import { runAnalysis } from '../services/analysisEngine';
 import { getCalculationDisplayName, applyMultipleCalculations, type TableCalculation, type CalculatedColumn } from '../utils/tableCalculations';
@@ -8,7 +9,7 @@ import { Tooltip } from './Tooltip';
 
 import { AIInsightPanel } from './AIInsightPanel';
 
-import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap } from 'lucide-react';
+import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers } from 'lucide-react';
 
 interface BuilderViewProps {
     dataset: Dataset;
@@ -34,6 +35,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [isBuilderCollapsed, setIsBuilderCollapsed] = useState(false);
     const [contentTab, setContentTab] = useState<'visual' | 'sql' | 'data'>('visual');
     const chartContainerRef = useRef<HTMLDivElement>(null);
+    const [forceGridMode, setForceGridMode] = useState<'auto' | 'grid' | 'combined'>('auto');
 
     // Export CSV helper
     const exportToCSV = () => {
@@ -297,6 +299,54 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     </>
                 )}
 
+                {/* Small Multiples Toggle */}
+                {result && !error && contentTab === 'visual' && (() => {
+                    const xk = result.xKey;
+                    const yk = result.yKey;
+                    const candidateCols = Object.keys(result.data[0] || {}).filter(k =>
+                        k !== xk && k !== yk && typeof result.data[0]?.[k] === 'string'
+                    );
+                    const splitCol = candidateCols.find(col => {
+                        const unique = new Set(result.data.map((r: any) => r[col]));
+                        return unique.size > 1 && unique.size <= 50;
+                    });
+                    if (!splitCol) return null;
+                    const seriesCount = new Set(result.data.map((r: any) => r[splitCol])).size;
+                    if (seriesCount < 2) return null;
+                    const isGridActive = forceGridMode === 'grid' || (forceGridMode === 'auto' && seriesCount > 4);
+                    return (
+                        <>
+                            <div className="w-px h-5 bg-slate-200 mx-1" />
+                            <div className="flex items-center gap-0.5 border border-slate-200 rounded-lg overflow-hidden">
+                                <button
+                                    onClick={() => setForceGridMode(isGridActive ? 'combined' : 'grid')}
+                                    className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold transition-all ${
+                                        isGridActive
+                                            ? 'bg-indigo-100 text-indigo-700'
+                                            : 'text-slate-500 hover:bg-slate-50'
+                                    }`}
+                                    title="Small Multiples Grid"
+                                >
+                                    <LayoutGrid className="w-3.5 h-3.5" />
+                                    Grid
+                                </button>
+                                <button
+                                    onClick={() => setForceGridMode(isGridActive ? 'combined' : 'grid')}
+                                    className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold transition-all ${
+                                        !isGridActive
+                                            ? 'bg-indigo-100 text-indigo-700'
+                                            : 'text-slate-500 hover:bg-slate-50'
+                                    }`}
+                                    title="Combined Chart"
+                                >
+                                    <Layers className="w-3.5 h-3.5" />
+                                    Combined
+                                </button>
+                            </div>
+                        </>
+                    );
+                })()}
+
                 {/* X/Y Axis Toggles */}
                 {result && !error && contentTab === 'visual' && formatting && onUpdateFormatting && (
                     <div className="flex items-center gap-1.5 ml-1 border border-slate-300 rounded-lg px-2 py-0.5 bg-white">
@@ -523,6 +573,37 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                             />
                                         );
                                     }
+                                    // ── Small Multiples Detection ──
+                                    const xk = result.xKey;
+                                    const yk = result.yKey;
+                                    const candidateCols = Object.keys(result.data[0] || {}).filter(k =>
+                                        k !== xk && k !== yk && typeof result.data[0]?.[k] === 'string'
+                                    );
+                                    const splitCol = candidateCols.find(col => {
+                                        const unique = new Set(result.data.map((r: any) => r[col]));
+                                        return unique.size > 1 && unique.size <= 50;
+                                    });
+                                    const seriesCount = splitCol ? new Set(result.data.map((r: any) => r[splitCol])).size : 0;
+                                    const shouldUseGrid = splitCol && (
+                                        forceGridMode === 'grid' ||
+                                        (forceGridMode === 'auto' && seriesCount > 4)
+                                    ) && forceGridMode !== 'combined';
+
+                                    if (shouldUseGrid && splitCol) {
+                                        return (
+                                            <SmallMultiplesGrid
+                                                data={result.data}
+                                                xKey={result.xKey}
+                                                yKey={result.yKey}
+                                                yLabel={result.yLabel}
+                                                splitKey={splitCol}
+                                                chartType={chartType}
+                                                formatting={{ ...formatting, tableCalculations: [] }}
+                                                config={result.config}
+                                            />
+                                        );
+                                    }
+
                                     return (
                                         <ChartVisualization
                                             data={result.data}
