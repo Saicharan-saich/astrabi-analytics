@@ -15,6 +15,7 @@ import { getDates, excelDateToJSDate } from './dateHelpers';
 import { evaluateLocally, validateRequirements } from './evaluateLocally';
 import { validateAnalysis } from './analysisValidator';
 import { executeSQLViaDuckDB } from './duckdbEngine';
+import { pruneRowsForQuery } from './queryPruner';
 
 // --- EXECUTION ENGINE ---
 export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise<AnalysisResult> => {
@@ -138,7 +139,19 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
     }
     // ═══ END AGGREGATION SAFETY GUARD ════════════════════════════════
 
-    const { data, xKey, yKey, kpi, growth, sql: generatedSQL } = evaluateLocally(activeQ as any, dataset.rows, mapping, dates, query, dataset.name, dataset.dimDate);
+    // ═══ SOURCE-SCHEMA QUERY PRUNING ═════════════════════════════════
+    // If ALL queried columns come from a single dimension table (not the
+    // fact table), deduplicate rows to eliminate join fan-out before
+    // aggregation. e.g., current_quantity grouped by product_name →
+    // both from Products → dedup 29 joined rows → 10 unique products.
+    let activeRows = dataset.rows;
+    const pruneResult = pruneRowsForQuery(dataset.rows, query, dataset.sourceSchema);
+    if (pruneResult.pruned) {
+        activeRows = pruneResult.rows;
+        console.log(`[runAnalysis] 🔀 QUERY PRUNING: ${pruneResult.log}`);
+    }
+
+    const { data, xKey, yKey, kpi, growth, sql: generatedSQL } = evaluateLocally(activeQ as any, activeRows, mapping, dates, query, dataset.name, dataset.dimDate);
 
     // INJECT DATE FILTERS INTO SQL PREVIEW
     let finalSQL = generatedSQL || sql;
