@@ -262,10 +262,12 @@ function tryParseDateWithFormat(raw: any, formatId: string): string | null {
         const [y, m, d] = s.split('-').map(Number);
         return isValidDate(y, m, d) ? s : null;
     }
-    // ISO datetime
-    if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
-        const [y, m, d] = s.split('T')[0].split('-').map(Number);
-        return isValidDate(y, m, d) ? toISO(y, m, d) : null;
+    // ISO datetime (with T or space separator)
+    if (/^\d{4}-\d{2}-\d{2}[T ]/.test(s)) {
+        const datePart = s.substring(0, 10);
+        const [y, m, d] = datePart.split('-').map(Number);
+        // Preserve full datetime string (crucial for hour/minute grains)
+        return isValidDate(y, m, d) ? s.replace(' ', 'T').split('.')[0] : null;
     }
     // Find matching format
     for (const fmt of DATE_FORMATS) {
@@ -308,9 +310,11 @@ function tryParseDateAny(raw: any): { iso: string; formatId: string } | null {
         return isValidDate(y, m, d) ? { iso: s, formatId: 'YYYY-MM-DD' } : null;
     }
     // ISO datetime
-    if (/^\d{4}-\d{2}-\d{2}T/.test(s)) {
-        const [y, m, d] = s.split('T')[0].split('-').map(Number);
-        return isValidDate(y, m, d) ? { iso: toISO(y, m, d), formatId: 'YYYY-MM-DD' } : null;
+    if (/^\d{4}-\d{2}-\d{2}[T ]\d{2}/.test(s)) {
+        const datePart = s.substring(0, 10);
+        const [y, m, d] = datePart.split('-').map(Number);
+        // Preserve full datetime (crucial for hour/minute grains)
+        return isValidDate(y, m, d) ? { iso: s.replace(' ', 'T').split('.')[0], formatId: 'YYYY-MM-DD' } : null;
     }
     // Try native JS Date parsing for long strings like "Tue Nov 08 2016 00:00:00 GMT..."
     // Only for strings that look like they might be dates (not pure numbers or short text)
