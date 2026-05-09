@@ -102,8 +102,8 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
             {/* POPOVER DROPDOWN */}
             {isOpen && (
                 <div
-                    className="absolute z-[100] top-full mt-2 left-0 min-w-[240px] max-w-[320px] bg-slate-900 border border-slate-600 flex flex-col rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200"
-                    style={{ transformOrigin: 'top left' }}
+                    className="absolute z-[100] top-full mt-2 left-0 min-w-[240px] max-w-[320px] flex flex-col rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200"
+                    style={{ transformOrigin: 'top left', backgroundColor: '#0f172a', border: '1px solid #475569' }}
                 >
                     {searchable && (
                         <div className="p-2 border-b border-white/5">
@@ -138,8 +138,9 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
                                             onClick={() => handleSelect(opt.value)}
                                             className={`w-full flex items-center justify-between text-left px-3 py-2 rounded-lg text-sm font-semibold transition-all ${value === opt.value
                                                     ? `bg-white/10 ${colorTextClass}`
-                                                    : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                                                    : 'hover:bg-white/10'
                                                 }`}
+                                            style={value !== opt.value ? { color: '#e2e8f0' } : undefined}
                                         >
                                             {opt.label}
                                             {value === opt.value && <Check className="w-4 h-4" />}
