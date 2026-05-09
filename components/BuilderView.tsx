@@ -243,7 +243,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         <div className="flex flex-col h-full bg-slate-50">
 
             {/* â”€â”€â”€ COLLAPSIBLE BUILDER â”€â”€â”€ */}
-            <div className={`bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible'}`}>
+            <div className={`relative bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible'}`}>
                 <QuestionBuilder
                     key={editingItemId || 'default'}
                     dataset={dataset}
@@ -265,7 +265,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             </div>
 
             {/* â”€â”€â”€ TOOLBAR â”€â”€â”€ */}
-            <div className="flex items-center gap-2 bg-white border-b border-slate-200 px-3 py-1.5 shrink-0 shadow-sm z-10">
+            <div className="relative flex items-center gap-2 bg-white border-b border-slate-200 px-3 py-1.5 shrink-0 shadow-sm z-10">
                 {/* Builder Toggle */}
                 <button
                     onClick={() => setIsBuilderCollapsed(!isBuilderCollapsed)}
