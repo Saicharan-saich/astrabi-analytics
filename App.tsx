@@ -597,7 +597,7 @@ function App() {
 
   // ── RECONNECT — Re-establish expired live database connection ──
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.quickinsight.co.uk';
-  const handleReconnect = async (password: string) => {
+  const handleReconnect = async (config: { host: string; port: string; database: string; username: string; password: string; ssl: boolean }) => {
     if (!dataset?.liveConnection) return;
     const lc = dataset.liveConnection;
     const isPostgres = lc.dbType === 'pg';
@@ -610,12 +610,12 @@ function App() {
         'x-api-key': import.meta.env.VITE_API_KEY || '',
       },
       body: JSON.stringify({
-        host: lc.host,
-        port: lc.port,
-        database: lc.database,
-        username: lc.username,
-        password,
-        ssl: lc.ssl,
+        host: config.host,
+        port: config.port,
+        database: config.database,
+        username: config.username,
+        password: config.password,
+        ssl: config.ssl,
       }),
     });
 
@@ -625,8 +625,16 @@ function App() {
       throw new Error(data.error);
     }
 
-    // Update the connectionId on the dataset
-    const updatedLc = { ...lc, connectionId: data.connectionId };
+    // Update connectionId AND persist non-sensitive metadata for future reconnects
+    const updatedLc = {
+      ...lc,
+      connectionId: data.connectionId,
+      host: config.host,
+      port: config.port,
+      database: config.database,
+      username: config.username,
+      ssl: config.ssl,
+    };
     const updatedDs: Dataset = { ...dataset, liveConnection: updatedLc };
     setDataset(updatedDs);
     saveDatasetToDB(updatedDs);
