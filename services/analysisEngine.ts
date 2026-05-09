@@ -136,14 +136,6 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
             }
         }
     }
-    // Also re-check via metricRegistry for datasets that haven't rebuilt their semantic model yet
-    if (query.metric && query.aggregation === 'SUM') {
-        const freshClassification = classifyMetric(query.metric);
-        if (freshClassification && freshClassification.behavior === 'non_additive') {
-            console.warn(`[runAnalysis] ⚠️ REGISTRY GUARD: "${query.metric}" classified as non-additive by registry. Auto-correcting SUM → ${freshClassification.aggregation}`);
-            query = { ...query, aggregation: freshClassification.aggregation as any };
-        }
-    }
     // ═══ END AGGREGATION SAFETY GUARD ════════════════════════════════
 
     const { data, xKey, yKey, kpi, growth, sql: generatedSQL } = evaluateLocally(activeQ as any, dataset.rows, mapping, dates, query, dataset.name, dataset.dimDate);
