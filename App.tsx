@@ -851,6 +851,24 @@ function App() {
                                   <svg className="w-4 h-4 ml-auto text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
                                 )}
                               </button>
+                              {/* Reconnect option — always visible for live connections */}
+                              {dataset.liveConnection?.host && (
+                                <>
+                                  <div className={`h-px ${theme === 'dark' ? 'bg-white/[0.06]' : 'bg-gray-100'}`} />
+                                  <button
+                                    onClick={() => { setShowModeDropdown(false); setReconnectError(undefined); setShowReconnectModal(true); }}
+                                    className={`w-full flex items-center gap-2.5 px-3 py-2.5 text-xs font-medium transition-all ${
+                                      theme === 'dark' ? 'text-amber-400 hover:bg-amber-500/10' : 'text-amber-600 hover:bg-amber-50'
+                                    }`}
+                                  >
+                                    <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                                    <div className="text-left">
+                                      <div className="font-bold">🔌 Reconnect</div>
+                                      <div className={`text-[10px] ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Re-enter password to reconnect</div>
+                                    </div>
+                                  </button>
+                                </>
+                              )}
                             </div>
                           </>
                         )}
