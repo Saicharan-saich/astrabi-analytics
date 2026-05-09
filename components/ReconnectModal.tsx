@@ -43,7 +43,7 @@ export default function ReconnectModal({
   const [database, setDatabase] = useState(initialDatabase || '');
   const [username, setUsername] = useState(initialUsername || '');
   const [password, setPassword] = useState('');
-  const [ssl, setSsl] = useState(initialSsl ?? true);
+  const [ssl, setSsl] = useState(initialSsl ?? false);
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
