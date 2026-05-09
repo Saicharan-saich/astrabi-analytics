@@ -185,11 +185,30 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     // --- Click-to-Drill ---
     const handleDrillDown = useCallback((dimensionValue: string) => {
         if (!result || !lastRunConfig) return;
-        const dimCol = result.xKey;
+
+        // Use the original dimension from config, not the calculated xKey
+        // (% of Total pie uses a calculated xKey that doesn't map to raw data)
+        const dimCol = lastRunConfig.dimension || result.xKey;
+        if (!dimCol) return;
+
         const currentFilters = lastRunConfig.filters || {};
-        const updatedFilters = { ...currentFilters, [dimCol]: [dimensionValue] };
-        const drillConfig = { ...lastRunConfig, filters: updatedFilters };
-        handleRun(drillConfig);
+        const existingFilter = currentFilters[dimCol] || [];
+
+        // Toggle: if already filtering on this value, remove it (Power BI-style deselect)
+        if (existingFilter.includes(dimensionValue)) {
+            const remaining = existingFilter.filter((v: string) => v !== dimensionValue);
+            const updatedFilters = { ...currentFilters };
+            if (remaining.length === 0) {
+                delete updatedFilters[dimCol];
+            } else {
+                updatedFilters[dimCol] = remaining;
+            }
+            handleRun({ ...lastRunConfig, filters: updatedFilters });
+        } else {
+            // Add filter on this dimension value
+            const updatedFilters = { ...currentFilters, [dimCol]: [dimensionValue] };
+            handleRun({ ...lastRunConfig, filters: updatedFilters });
+        }
     }, [result, lastRunConfig]);
 
     const tableData = useMemo(() => {
