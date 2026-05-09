@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers, MapPin, Clock } from 'lucide-react';
+import ReactDOM from 'react-dom';
+import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers, MapPin, Clock, Check, Search } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
 import { FilterItem } from './FilterItem';
 import { DateFilterItem } from './DateFilterItem';
@@ -658,6 +659,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             onChange={newDim => {
                                 setDimension(newDim);
                                 if (newDim && !timeGrain) setSort('desc');
+                                // Remove any existing auto-filter for the old dimension
+                                setFilters(prev => prev.filter(f => !(f.type === 'dimension' && f._autoDim)));
                             }}
                             options={[
                                 { label: '(None)', value: '' },
@@ -669,6 +672,63 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             placeholder="Dimension"
                         />
                     </Tooltip>
+
+                    {/* Dimension Value Picker — appears when dimension is selected */}
+                    {dimension && (() => {
+                        // Find or create the auto-filter for this dimension
+                        const autoFilter = filters.find(f => f.type === 'dimension' && f.column === dimension && f._autoDim);
+                        const selectedValues: string[] = autoFilter ? (Array.isArray(autoFilter.value) ? autoFilter.value : []) : [];
+                        const allValues = getColumnValues(dimension);
+                        const isFiltered = selectedValues.length > 0 && selectedValues.length < allValues.length;
+
+                        return (
+                            <DimensionValuePicker
+                                dimension={dimension}
+                                allValues={allValues}
+                                selectedValues={selectedValues}
+                                isFiltered={isFiltered}
+                                onToggleValue={(val: string) => {
+                                    if (autoFilter) {
+                                        const current = Array.isArray(autoFilter.value) ? autoFilter.value : [];
+                                        const newVals = current.includes(val)
+                                            ? current.filter((v: string) => v !== val)
+                                            : [...current, val];
+                                        updateFilter(autoFilter.id, 'value', newVals);
+                                    } else {
+                                        // Create new auto-filter
+                                        setFilters(prev => [...prev, {
+                                            id: nextFilterId,
+                                            type: 'dimension' as const,
+                                            column: dimension,
+                                            value: [val],
+                                            _autoDim: true
+                                        }]);
+                                        setNextFilterId(prev => prev + 1);
+                                    }
+                                }}
+                                onSelectAll={() => {
+                                    if (autoFilter) {
+                                        // Remove the filter entirely (show all)
+                                        removeFilter(autoFilter.id);
+                                    }
+                                }}
+                                onClearAll={() => {
+                                    if (autoFilter) {
+                                        updateFilter(autoFilter.id, 'value', []);
+                                    } else {
+                                        setFilters(prev => [...prev, {
+                                            id: nextFilterId,
+                                            type: 'dimension' as const,
+                                            column: dimension,
+                                            value: [],
+                                            _autoDim: true
+                                        }]);
+                                        setNextFilterId(prev => prev + 1);
+                                    }
+                                }}
+                            />
+                        );
+                    })()}
 
                     {/* Date/Time Grain Selector (separate) */}
                     <Tooltip text="Group by a time grain to see trends over time. Can be combined with a dimension." position="bottom">
@@ -1042,3 +1102,145 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         </div>
     );
 };
+
+/**
+ * Inline dimension value picker — shows a clickable chip next to the dimension selector.
+ * Opens a portalled multi-select dropdown to pick which values to include.
+ */
+const DimensionValuePicker: React.FC<{
+    dimension: string;
+    allValues: string[];
+    selectedValues: string[];
+    isFiltered: boolean;
+    onToggleValue: (val: string) => void;
+    onSelectAll: () => void;
+    onClearAll: () => void;
+}> = ({ dimension, allValues, selectedValues, isFiltered, onToggleValue, onSelectAll, onClearAll }) => {
+    const [open, setOpen] = React.useState(false);
+    const [search, setSearch] = React.useState('');
+    const btnRef = React.useRef<HTMLButtonElement>(null);
+    const dropRef = React.useRef<HTMLDivElement>(null);
+    const [pos, setPos] = React.useState({ top: 0, left: 0 });
+
+    React.useEffect(() => {
+        if (!open) return;
+        const handle = (e: MouseEvent) => {
+            if (dropRef.current && !dropRef.current.contains(e.target as Node) &&
+                btnRef.current && !btnRef.current.contains(e.target as Node)) {
+                setOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handle);
+        return () => document.removeEventListener('mousedown', handle);
+    }, [open]);
+
+    React.useEffect(() => {
+        if (open && btnRef.current) {
+            const r = btnRef.current.getBoundingClientRect();
+            setPos({ top: r.bottom + 4, left: r.left });
+        }
+    }, [open]);
+
+    const filtered = allValues.filter(v => v.toLowerCase().includes(search.toLowerCase()));
+    const label = !isFiltered
+        ? `All (${allValues.length})`
+        : `${selectedValues.length} of ${allValues.length}`;
+
+    return (
+        <div className="relative inline-block">
+            <button
+                ref={btnRef}
+                onClick={() => setOpen(!open)}
+                className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-bold border transition-all cursor-pointer ${
+                    isFiltered
+                        ? 'bg-blue-500/20 text-blue-300 border-blue-400/30 hover:bg-blue-500/30'
+                        : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10 hover:text-slate-300'
+                }`}
+                title={`Pick which ${dimension.replace(/_/g, ' ')} values to include`}
+            >
+                <Filter className="w-3 h-3" />
+                {label}
+                <ChevronDown className="w-3 h-3 opacity-60" />
+            </button>
+
+            {open && ReactDOM.createPortal(
+                <div
+                    ref={dropRef}
+                    className="fixed z-[9999] rounded-xl shadow-2xl border border-blue-400/30 overflow-hidden"
+                    style={{ top: pos.top, left: pos.left, minWidth: 220, maxWidth: 320, backgroundColor: '#0f172a' }}
+                >
+                    {/* Search */}
+                    <div className="px-2 pt-2 pb-1 border-b border-white/10">
+                        <div className="relative">
+                            <Search className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2" style={{ color: '#94a3b8' }} />
+                            <input
+                                type="text"
+                                placeholder={`Search ${dimension.replace(/_/g, ' ')}...`}
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                className="w-full pl-7 pr-2 py-1.5 text-xs rounded border border-white/15 focus:outline-none focus:ring-1 focus:ring-blue-400 placeholder-slate-500"
+                                style={{ backgroundColor: 'rgba(255,255,255,0.1)', color: '#e2e8f0' }}
+                                onClick={e => e.stopPropagation()}
+                            />
+                        </div>
+                    </div>
+
+                    {/* Select All / Clear All */}
+                    <div className="flex items-center gap-1 px-2 py-1.5 border-b border-white/10">
+                        <button
+                            onClick={() => onSelectAll()}
+                            className="text-[10px] font-bold px-2 py-0.5 rounded hover:bg-white/10 transition-colors"
+                            style={{ color: '#94a3b8' }}
+                        >
+                            Select All
+                        </button>
+                        <span style={{ color: '#334155' }}>│</span>
+                        <button
+                            onClick={() => onClearAll()}
+                            className="text-[10px] font-bold px-2 py-0.5 rounded hover:bg-red-500/20 transition-colors"
+                            style={{ color: '#f87171' }}
+                        >
+                            Clear All
+                        </button>
+                    </div>
+
+                    {/* Values list */}
+                    <div className="max-h-52 overflow-auto">
+                        {filtered.length === 0 ? (
+                            <div className="px-3 py-2 text-xs" style={{ color: '#94a3b8' }}>No matches</div>
+                        ) : (
+                            filtered.map(val => {
+                                const isChecked = selectedValues.includes(val);
+                                // When no filter is active (selectedValues empty), show all as "included"
+                                const showAsIncluded = selectedValues.length === 0 || isChecked;
+                                return (
+                                    <button
+                                        key={val}
+                                        onClick={() => onToggleValue(val)}
+                                        className={`w-full text-left px-3 py-2 text-sm flex items-center gap-2 transition-colors ${
+                                            showAsIncluded ? 'hover:bg-blue-500/20' : 'hover:bg-white/10'
+                                        }`}
+                                        style={{ color: showAsIncluded ? '#e2e8f0' : '#64748b' }}
+                                    >
+                                        <span
+                                            className="w-4 h-4 rounded border flex items-center justify-center flex-shrink-0"
+                                            style={{
+                                                borderColor: showAsIncluded ? '#60a5fa' : '#475569',
+                                                backgroundColor: showAsIncluded ? 'rgba(96,165,250,0.2)' : 'transparent'
+                                            }}
+                                        >
+                                            {showAsIncluded && <Check className="w-3 h-3" style={{ color: '#60a5fa' }} />}
+                                        </span>
+                                        <span className="truncate">{val}</span>
+                                    </button>
+                                );
+                            })
+                        )}
+                    </div>
+                </div>,
+                document.body
+            )}
+        </div>
+    );
+};
+
