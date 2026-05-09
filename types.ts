@@ -162,7 +162,8 @@ export enum AggregationType {
   COUNT = 'COUNT',
   MAX = 'MAX',
   MIN = 'MIN',
-  COUNT_DISTINCT = 'COUNT_DISTINCT'
+  COUNT_DISTINCT = 'COUNT_DISTINCT',
+  NONE = 'NONE'
 }
 
 export enum TimeGrain {

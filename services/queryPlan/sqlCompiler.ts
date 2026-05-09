@@ -61,6 +61,7 @@ function compileAggregation(agg: AggregationType, expr: string): string {
         case 'AVG': return `AVG(${expr})`;
         case 'MIN': return `MIN(${expr})`;
         case 'MAX': return `MAX(${expr})`;
+        case 'NONE': return expr; // Raw column — no aggregation
         default: return `SUM(${expr})`;
     }
 }

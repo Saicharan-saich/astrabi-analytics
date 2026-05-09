@@ -137,7 +137,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const summaryText = useMemo(() => {
         if (!metric) return '';
         const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        const aggLabel = aggregation === 'SUM' ? 'total' : aggregation === 'AVG' ? 'average' : aggregation === 'COUNT' ? 'count of' : aggregation === 'COUNT_DISTINCT' ? 'unique count of' : aggregation === 'MAX' ? 'maximum' : aggregation === 'MIN' ? 'minimum' : aggregation.toLowerCase();
+        const aggLabel = aggregation === 'SUM' ? 'total' : aggregation === 'AVG' ? 'average' : aggregation === 'COUNT' ? 'count of' : aggregation === 'COUNT_DISTINCT' ? 'unique count of' : aggregation === 'MAX' ? 'maximum' : aggregation === 'MIN' ? 'minimum' : aggregation === 'NONE' ? 'raw' : aggregation.toLowerCase();
         const metricLabel = titleCase(metric);
         let text = `Showing the ${aggLabel} of ${metricLabel}`;
         const dimParts: string[] = [];
@@ -579,7 +579,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             options={isDimensionMetric
                                 ? [
                                     { label: 'Count', value: 'COUNT' },
-                                    { label: 'Unique Count', value: 'COUNT_DISTINCT' }
+                                    { label: 'Unique Count', value: 'COUNT_DISTINCT' },
+                                    { label: 'None (Raw)', value: 'NONE' }
                                 ]
                                 : [
                                     { label: 'Sum', value: 'SUM' },
@@ -587,7 +588,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     { label: 'Max', value: 'MAX' },
                                     { label: 'Min', value: 'MIN' },
                                     { label: 'Count', value: 'COUNT' },
-                                    { label: 'Unique Count', value: 'COUNT_DISTINCT' }
+                                    { label: 'Unique Count', value: 'COUNT_DISTINCT' },
+                                    { label: 'None (Raw)', value: 'NONE' }
                                 ]}
                             icon={<span className="font-bold text-xs px-0.5">{isDimensionMetric ? '#' : 'Σ'}</span>}
                             colorTextClass="text-purple-400"

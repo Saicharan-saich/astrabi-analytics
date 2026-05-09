@@ -135,11 +135,12 @@ interface MetricStats {
     countAll: number;     // Total count including nulls
     min: number;
     max: number;
+    first: number | null; // First non-null value (for NONE aggregation)
     distinct: Set<string>;
 }
 
 function emptyStats(): MetricStats {
-    return { sum: 0, count: 0, countAll: 0, min: Infinity, max: -Infinity, distinct: new Set() };
+    return { sum: 0, count: 0, countAll: 0, min: Infinity, max: -Infinity, first: null, distinct: new Set() };
 }
 
 function accumulateStats(stats: MetricStats, rawValue: any): void {
@@ -154,6 +155,7 @@ function accumulateStats(stats: MetricStats, rawValue: any): void {
     stats.sum += numV;
     stats.min = Math.min(stats.min, numV);
     stats.max = Math.max(stats.max, numV);
+    if (stats.first === null) stats.first = numV; // Track first value for NONE
     stats.distinct.add(String(rawValue));
 }
 
@@ -166,6 +168,7 @@ function resolveAggregation(stats: MetricStats, agg: AggregationType): number {
         case 'COUNT_DISTINCT': return stats.distinct.size;
         case 'MIN': return stats.min === Infinity ? 0 : stats.min;
         case 'MAX': return stats.max === -Infinity ? 0 : stats.max;
+        case 'NONE': return stats.first !== null ? stats.first : 0; // Raw first value
         default: return stats.sum;
     }
 }

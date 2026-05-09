@@ -27,7 +27,7 @@ export interface UIQueryConfig {
 }
 
 // ── AGGREGATION NORMALIZER ───────────────────────────────────────
-const VALID_AGGS = new Set<AggregationType>(['SUM', 'AVG', 'MIN', 'MAX', 'COUNT', 'COUNT_ALL', 'COUNT_DISTINCT']);
+const VALID_AGGS = new Set<AggregationType>(['SUM', 'AVG', 'MIN', 'MAX', 'COUNT', 'COUNT_ALL', 'COUNT_DISTINCT', 'NONE']);
 
 function normalizeAgg(raw: string | undefined): AggregationType {
     const upper = (raw || 'SUM').toUpperCase() as AggregationType;

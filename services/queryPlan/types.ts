@@ -21,7 +21,8 @@ export type AggregationType =
     | 'MAX'
     | 'COUNT'           // COUNT(column) — skips nulls
     | 'COUNT_ALL'       // COUNT(*) — includes nulls
-    | 'COUNT_DISTINCT'; // COUNT(DISTINCT column)
+    | 'COUNT_DISTINCT'  // COUNT(DISTINCT column)
+    | 'NONE';           // Raw value — no aggregation (first non-null value)
 
 // ── METRICS ──────────────────────────────────────────────────────
 // Each metric has a unique id, a display alias (used in SQL AS and JS keys),
