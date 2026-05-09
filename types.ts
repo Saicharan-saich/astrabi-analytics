@@ -222,7 +222,7 @@ export interface AlertConfig {
 
 export interface DateFilter {
   column: string; // Date column name (e.g., 'order_date')
-  timeGrain: 'year' | 'quarter' | 'month' | 'week' | 'day';
+  timeGrain: 'minute' | 'hour' | 'year' | 'quarter' | 'month' | 'week' | 'day';
   values: string[]; // Selected values (e.g., ['2023', '2024'] or ['2023-Q1', '2023-Q2'])
 }
 

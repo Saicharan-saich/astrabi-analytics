@@ -192,7 +192,9 @@ function applyRowFilter(row: Record<string, any>, f: RowFilter): boolean {
 function applyRangeFilter(row: Record<string, any>, f: RangeFilter, dateColKey: string): boolean {
     // Use the filter column if specified, otherwise fall back to date column
     const key = resolveColumnKey(row, f.column || dateColKey);
-    const dateStr = extractDateStr(row, key);
+    const fullDateStr = extractDateStr(row, key);
+    // Range boundaries are date-only (YYYY-MM-DD), so compare only the date portion
+    const dateStr = fullDateStr.substring(0, 10);
 
     if (f.start && f.end) return dateStr >= f.start && dateStr <= f.end;
     if (f.start) return dateStr >= f.start;
@@ -248,7 +250,7 @@ export function executeQueryPlan(
             return plan.filters.date.every(df => {
                 const key = resolveColumnKey(r, df.column || effectiveDateCol);
                 const dateStr = extractDateStr(r, key);
-                if (dateStr === '1970-01-01') return false;
+                if (dateStr.startsWith('1970-01-01')) return false;
                 const formatted = formatTimeBucket(dateStr, df.timeGrain);
                 return df.values.some(v => formatted.toLowerCase() === v.toLowerCase());
             });
