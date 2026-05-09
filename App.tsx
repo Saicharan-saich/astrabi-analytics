@@ -585,7 +585,7 @@ function App() {
       // Detect expired/invalid connection errors
       const isConnectionExpired = msg.includes('expired') || msg.includes('invalid') || msg.includes('ECONNRESET')
         || msg.includes('Failed to refresh') || msg.includes('Connection');
-      if (isConnectionExpired && dataset?.liveConnection?.host) {
+      if (isConnectionExpired && dataset?.liveConnection) {
         setReconnectError(msg);
         setShowReconnectModal(true);
       } else {
@@ -852,7 +852,7 @@ function App() {
                                 )}
                               </button>
                               {/* Reconnect option — always visible for live connections */}
-                              {dataset.liveConnection?.host && (
+                              {dataset.liveConnection && (
                                 <>
                                   <div className={`h-px ${theme === 'dark' ? 'bg-white/[0.06]' : 'bg-gray-100'}`} />
                                   <button

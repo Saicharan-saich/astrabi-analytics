@@ -271,8 +271,13 @@ export function executeQueryPlan(
     const groups = new Map<string, { metricStats: MetricStats[]; dimValues: Record<string, string> }>();
 
     // Pre-populate time bucket groups from dim date spine (empty buckets)
+    // Skip for sub-day grains (hour/minute) — dimDate only has daily entries
     const hasTimeBucket = plan.dimensions.some(d => d.type === 'time_bucket');
-    if (hasTimeBucket && plan._emptyBucketMode === 'include' && dimDate && dimDate.length > 0) {
+    const timeBucketGrain = hasTimeBucket
+        ? (plan.dimensions.find(d => d.type === 'time_bucket') as Extract<Dimension, { type: 'time_bucket' }>).grain
+        : null;
+    const isSubDayGrain = timeBucketGrain === 'hour' || timeBucketGrain === 'minute';
+    if (hasTimeBucket && !isSubDayGrain && plan._emptyBucketMode === 'include' && dimDate && dimDate.length > 0) {
         const timeDim = plan.dimensions.find(d => d.type === 'time_bucket') as Extract<Dimension, { type: 'time_bucket' }>;
         const grain = timeDim.grain;
         const dimAlias = timeDim.alias;
