@@ -240,7 +240,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     }, [result, formatting?.tableCalculations, formatting?.numberFormat, formatting?.movingAvgWindow]);
 
     return (
-        <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
+        <div className="flex flex-col h-full bg-slate-50">
 
             {/* â”€â”€â”€ COLLAPSIBLE BUILDER â”€â”€â”€ */}
             <div className={`bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible'}`}>
