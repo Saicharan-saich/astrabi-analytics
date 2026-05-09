@@ -83,15 +83,15 @@ function compileDimensionSelect(dim: Dimension): string {
         case 'hour':
             return `strftime('%-I %p', DATE_TRUNC('hour', ${src}::TIMESTAMP)) AS ${alias}`;
         case 'year':
-            return `EXTRACT(YEAR FROM ${src})::TEXT AS ${alias}`;
+            return `EXTRACT(YEAR FROM ${src}::TIMESTAMP)::TEXT AS ${alias}`;
         case 'quarter':
-            return `(EXTRACT(YEAR FROM ${src})::TEXT || '-Q' || EXTRACT(QUARTER FROM ${src})::TEXT) AS ${alias}`;
+            return `(EXTRACT(YEAR FROM ${src}::TIMESTAMP)::TEXT || '-Q' || EXTRACT(QUARTER FROM ${src}::TIMESTAMP)::TEXT) AS ${alias}`;
         case 'month':
-            return `TO_CHAR(DATE_TRUNC('month', ${src}), 'YYYY-MM') AS ${alias}`;
+            return `strftime('%Y-%m', DATE_TRUNC('month', ${src}::TIMESTAMP)) AS ${alias}`;
         case 'week':
-            return `(EXTRACT(ISOYEAR FROM ${src})::TEXT || '-W' || LPAD(EXTRACT(WEEK FROM ${src})::TEXT, 2, '0')) AS ${alias}`;
+            return `(EXTRACT(ISOYEAR FROM ${src}::TIMESTAMP)::TEXT || '-W' || LPAD(EXTRACT(WEEK FROM ${src}::TIMESTAMP)::TEXT, 2, '0')) AS ${alias}`;
         case 'day':
-            return `DATE_TRUNC('day', ${src})::DATE::TEXT AS ${alias}`;
+            return `DATE_TRUNC('day', ${src}::TIMESTAMP)::DATE::TEXT AS ${alias}`;
         default:
             return `${src} AS ${alias}`;
     }
@@ -110,15 +110,15 @@ function compileDimensionGroupBy(dim: Dimension): string {
         case 'hour':
             return `strftime('%-I %p', DATE_TRUNC('hour', ${src}::TIMESTAMP))`;
         case 'year':
-            return `EXTRACT(YEAR FROM ${src})`;
+            return `EXTRACT(YEAR FROM ${src}::TIMESTAMP)`;
         case 'quarter':
-            return `EXTRACT(YEAR FROM ${src}), EXTRACT(QUARTER FROM ${src})`;
+            return `EXTRACT(YEAR FROM ${src}::TIMESTAMP), EXTRACT(QUARTER FROM ${src}::TIMESTAMP)`;
         case 'month':
-            return `DATE_TRUNC('month', ${src})`;
+            return `DATE_TRUNC('month', ${src}::TIMESTAMP)`;
         case 'week':
-            return `EXTRACT(ISOYEAR FROM ${src}), EXTRACT(WEEK FROM ${src})`;
+            return `EXTRACT(ISOYEAR FROM ${src}::TIMESTAMP), EXTRACT(WEEK FROM ${src}::TIMESTAMP)`;
         case 'day':
-            return `DATE_TRUNC('day', ${src})`;
+            return `DATE_TRUNC('day', ${src}::TIMESTAMP)`;
         default:
             return src;
     }
@@ -143,14 +143,16 @@ function compileRowFilter(f: RowFilter): string {
 
 function compileRangeFilter(f: RangeFilter): string {
     const col = safeId(f.column);
+    // Cast to TIMESTAMP so DuckDB can compare VARCHAR date strings
+    const colTs = `${col}::TIMESTAMP`;
     if (f.start && f.end) {
-        return `${col} BETWEEN ${safeDate(f.start)} AND ${safeDate(f.end)}`;
+        return `${colTs} BETWEEN ${safeDate(f.start)} AND ${safeDate(f.end)}`;
     }
     if (f.start) {
-        return `${col} >= ${safeDate(f.start)}`;
+        return `${colTs} >= ${safeDate(f.start)}`;
     }
     if (f.end) {
-        return `${col} <= ${safeDate(f.end)}`;
+        return `${colTs} <= ${safeDate(f.end)}`;
     }
     return '1=1'; // Should not happen — validator catches this
 }
@@ -173,15 +175,15 @@ function compileDateFilter(df: DateFilter): string {
         case 'hour':
             return `strftime('%-I %p', DATE_TRUNC('hour', ${col}::TIMESTAMP)) IN (${vals})`;
         case 'year':
-            return `EXTRACT(YEAR FROM ${col})::TEXT IN (${vals})`;
+            return `EXTRACT(YEAR FROM ${col}::TIMESTAMP)::TEXT IN (${vals})`;
         case 'quarter':
-            return `(EXTRACT(YEAR FROM ${col})::TEXT || '-Q' || EXTRACT(QUARTER FROM ${col})::TEXT) IN (${vals})`;
+            return `(EXTRACT(YEAR FROM ${col}::TIMESTAMP)::TEXT || '-Q' || EXTRACT(QUARTER FROM ${col}::TIMESTAMP)::TEXT) IN (${vals})`;
         case 'month':
-            return `TO_CHAR(DATE_TRUNC('month', ${col}), 'YYYY-MM') IN (${vals})`;
+            return `strftime('%Y-%m', DATE_TRUNC('month', ${col}::TIMESTAMP)) IN (${vals})`;
         case 'week':
-            return `(EXTRACT(ISOYEAR FROM ${col})::TEXT || '-W' || LPAD(EXTRACT(WEEK FROM ${col})::TEXT, 2, '0')) IN (${vals})`;
+            return `(EXTRACT(ISOYEAR FROM ${col}::TIMESTAMP)::TEXT || '-W' || LPAD(EXTRACT(WEEK FROM ${col}::TIMESTAMP)::TEXT, 2, '0')) IN (${vals})`;
         case 'day':
-            return `DATE_TRUNC('day', ${col})::DATE::TEXT IN (${vals})`;
+            return `DATE_TRUNC('day', ${col}::TIMESTAMP)::DATE::TEXT IN (${vals})`;
         default:
             return `${col} IN (${vals})`;
     }
