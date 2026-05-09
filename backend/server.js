@@ -329,6 +329,57 @@ app.get('/api/auth/verify', (req, res) => {
 // Value: { type: 'mssql'|'raw'|'pg', pool: ConnectionPool|PgPool, rawConn: Connection, config: Object }
 const connections = new Map();
 
+// ── Connection Health Check ──────────────────────────────────────
+app.post('/api/check-connection', (req, res) => {
+    const { connectionId } = req.body;
+    const connection = connections.get(connectionId);
+    res.json({ active: !!connection });
+});
+
+// ── AST-Based SQL Validation ─────────────────────────────────────
+// Uses node-sql-parser for definitive statement-type checking.
+// Falls back to regex if the parser doesn't support the dialect.
+let sqlParser = null;
+try {
+    const { Parser } = require('node-sql-parser');
+    sqlParser = new Parser();
+    console.log('[Security] AST SQL parser loaded — using node-sql-parser for statement validation');
+} catch (e) {
+    console.warn('[Security] node-sql-parser not installed — falling back to regex SQL validation');
+}
+
+function validateSQL(sql) {
+    // 1. Try AST-based validation (definitive)
+    if (sqlParser) {
+        try {
+            const ast = sqlParser.astify(sql, { database: 'PostgreSQL' });
+            const stmts = Array.isArray(ast) ? ast : [ast];
+            for (const stmt of stmts) {
+                if (stmt.type !== 'select') {
+                    return { safe: false, reason: `Only SELECT statements allowed. Found: ${stmt.type.toUpperCase()}` };
+                }
+            }
+            return { safe: true };
+        } catch (parseErr) {
+            // Parser failed (dialect mismatch) — fall through to regex
+            console.warn(`[Security] AST parse failed, using regex fallback: ${parseErr.message}`);
+        }
+    }
+
+    // 2. Regex fallback (for T-SQL or unparseable queries)
+    const upper = sql.toUpperCase();
+    if (!upper.trimStart().startsWith('SELECT') && !upper.trimStart().startsWith('WITH')) {
+        return { safe: false, reason: 'Only SELECT queries are allowed for live execution' };
+    }
+    const blocked = ['DROP', 'DELETE', 'INSERT', 'UPDATE', 'ALTER', 'CREATE', 'TRUNCATE', 'GRANT', 'REVOKE'];
+    for (const kw of blocked) {
+        if (new RegExp(`\\b${kw}\\b`).test(upper)) {
+            return { safe: false, reason: `Blocked: SQL contains disallowed keyword "${kw}"` };
+        }
+    }
+    return { safe: true };
+}
+
 // Helper to query any connection type
 function queryConnection(connection, query) {
     return new Promise((resolve, reject) => {
@@ -797,27 +848,10 @@ app.post('/api/pg/execute-sql', async (req, res) => {
             });
         }
 
-        // ── Safety: Only allow SELECT statements ──
-        const trimmedSQL = sql.trim().toUpperCase();
-        if (!trimmedSQL.startsWith('SELECT') && !trimmedSQL.startsWith('WITH') && !trimmedSQL.startsWith('-- POSTGRES')) {
-            return res.status(400).json({
-                success: false,
-                error: 'Only SELECT queries are allowed for live execution'
-            });
-        }
-
-        // Block dangerous keywords
-        const dangerousKeywords = ['DROP', 'DELETE', 'INSERT', 'UPDATE', 'ALTER', 'CREATE', 'TRUNCATE', 'GRANT', 'REVOKE'];
-        const sqlUpper = sql.toUpperCase();
-        for (const keyword of dangerousKeywords) {
-            // Check for keyword as whole word (not inside column names)
-            const regex = new RegExp(`\\b${keyword}\\b`);
-            if (regex.test(sqlUpper) && keyword !== 'CREATE') { // Allow CTE's "CREATE" appearing in comments
-                return res.status(400).json({
-                    success: false,
-                    error: `Blocked: SQL contains disallowed keyword "${keyword}"`
-                });
-            }
+        // ── AST-Based SQL Safety Validation ──
+        const validation = validateSQL(sql);
+        if (!validation.safe) {
+            return res.status(400).json({ success: false, error: validation.reason });
         }
 
         // ── Execute with timeout ──
@@ -895,26 +929,10 @@ app.post('/api/execute-sql', async (req, res) => {
             });
         }
 
-        // ── Safety: Only allow SELECT statements ──
-        const trimmedSQL = sql.trim().toUpperCase();
-        if (!trimmedSQL.startsWith('SELECT') && !trimmedSQL.startsWith('WITH')) {
-            return res.status(400).json({
-                success: false,
-                error: 'Only SELECT queries are allowed for live execution'
-            });
-        }
-
-        // Block dangerous keywords
-        const dangerousKeywords = ['DROP', 'DELETE', 'INSERT', 'UPDATE', 'ALTER', 'CREATE', 'TRUNCATE', 'GRANT', 'REVOKE'];
-        const sqlUpper = sql.toUpperCase();
-        for (const keyword of dangerousKeywords) {
-            const regex = new RegExp(`\\b${keyword}\\b`);
-            if (regex.test(sqlUpper)) {
-                return res.status(400).json({
-                    success: false,
-                    error: `Blocked: SQL contains disallowed keyword "${keyword}"`
-                });
-            }
+        // ── AST-Based SQL Safety Validation ──
+        const validation = validateSQL(sql);
+        if (!validation.safe) {
+            return res.status(400).json({ success: false, error: validation.reason });
         }
 
         // ── Execute ──

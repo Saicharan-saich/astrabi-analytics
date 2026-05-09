@@ -63,6 +63,12 @@ export interface LiveConnectionInfo {
   dbType: 'mssql' | 'pg';   // Database engine type
   tables: string[];          // Selected source tables
   joinEdges: any[];          // Join edges for multi-table merging
+  // Non-sensitive metadata for reconnection (password is NEVER stored)
+  host?: string;
+  port?: string;
+  database?: string;
+  username?: string;
+  ssl?: boolean;
 }
 
 // ─── AI Semantic Profiling Types ─────────────────────────────────

@@ -40,6 +40,7 @@ import { ColumnMappingWizard } from './components/ColumnMappingWizard';
 import { SplashScreen } from './components/SplashScreen';
 import { SmartQuestionsView } from './components/SmartQuestionsView';
 import { PinToDashboardModal } from './components/PinToDashboardModal';
+import ReconnectModal from './components/ReconnectModal';
 
 // ── Heuristic domain detection (fallback when AI profiling unavailable) ──
 function detectDomainFromColumns(columns: { name: string }[], fileName: string): string {
@@ -520,6 +521,8 @@ function App() {
   // ── LIVE REFRESH — Re-fetch data from the source database ──
   const [isLiveRefreshing, setIsLiveRefreshing] = useState(false);
   const [showModeDropdown, setShowModeDropdown] = useState(false);
+  const [showReconnectModal, setShowReconnectModal] = useState(false);
+  const [reconnectError, setReconnectError] = useState<string | undefined>(undefined);
 
   // Switch connection mode (Import ↔ Live) on the current dataset
   const switchConnectionMode = async (newMode: 'import' | 'live') => {
@@ -578,9 +581,62 @@ function App() {
       });
     } catch (err: any) {
       console.error('[App] Live refresh failed:', err);
-      showToast(`❌ Refresh failed: ${err.message || 'Unknown error'}`);
+      const msg = err.message || 'Unknown error';
+      // Detect expired/invalid connection errors
+      const isConnectionExpired = msg.includes('expired') || msg.includes('invalid') || msg.includes('ECONNRESET')
+        || msg.includes('Failed to refresh') || msg.includes('Connection');
+      if (isConnectionExpired && dataset?.liveConnection?.host) {
+        setReconnectError(msg);
+        setShowReconnectModal(true);
+      } else {
+        showToast(`❌ Refresh failed: ${msg}`);
+      }
       setIsLiveRefreshing(false);
     }
+  };
+
+  // ── RECONNECT — Re-establish expired live database connection ──
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.quickinsight.co.uk';
+  const handleReconnect = async (password: string) => {
+    if (!dataset?.liveConnection) return;
+    const lc = dataset.liveConnection;
+    const isPostgres = lc.dbType === 'pg';
+    const endpoint = isPostgres ? '/api/pg/connect' : '/api/connect';
+
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': import.meta.env.VITE_API_KEY || '',
+      },
+      body: JSON.stringify({
+        host: lc.host,
+        port: lc.port,
+        database: lc.database,
+        username: lc.username,
+        password,
+        ssl: lc.ssl,
+      }),
+    });
+
+    const data = await response.json();
+    if (!data.success) {
+      setReconnectError(data.error || 'Reconnection failed');
+      throw new Error(data.error);
+    }
+
+    // Update the connectionId on the dataset
+    const updatedLc = { ...lc, connectionId: data.connectionId };
+    const updatedDs: Dataset = { ...dataset, liveConnection: updatedLc };
+    setDataset(updatedDs);
+    saveDatasetToDB(updatedDs);
+
+    // Close modal and re-trigger refresh
+    setShowReconnectModal(false);
+    setReconnectError(undefined);
+    showToast('🔗 Reconnected successfully — refreshing data...');
+    // Small delay then refresh
+    setTimeout(() => handleLiveRefresh(), 500);
   };
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
@@ -652,6 +708,21 @@ function App() {
     <ErrorBoundary>
       {/* ── Splash / Boot Screen ── */}
       {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+
+      {/* ── Reconnect Modal (connection expired) ── */}
+      {showReconnectModal && dataset?.liveConnection && (
+        <ReconnectModal
+          dbType={dataset.liveConnection.dbType}
+          host={dataset.liveConnection.host}
+          port={dataset.liveConnection.port}
+          database={dataset.liveConnection.database}
+          username={dataset.liveConnection.username}
+          ssl={dataset.liveConnection.ssl}
+          error={reconnectError}
+          onReconnect={handleReconnect}
+          onCancel={() => { setShowReconnectModal(false); setReconnectError(undefined); }}
+        />
+      )}
 
       <ThemeProvider theme={theme} toggleTheme={toggleTheme} setTheme={setTheme}>
 
