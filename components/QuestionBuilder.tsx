@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers, MapPin } from 'lucide-react';
+import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers, MapPin, Clock } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
 import { FilterItem } from './FilterItem';
 import { DateFilterItem } from './DateFilterItem';
@@ -78,7 +78,12 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 }) => {
     const [metric, setMetric] = useState<string>(initialMetric);
     const [aggregation, setAggregation] = useState<string>(initialAggregation);
-    const [dimension, setDimension] = useState<string>(initialDimension);
+    const [dimension, setDimension] = useState<string>(
+        initialDimension && !['day','week','month','quarter','year','hour','minute'].includes(initialDimension) ? initialDimension : ''
+    );
+    const [timeGrain, setTimeGrain] = useState<string>(
+        initialDimension && ['day','week','month','quarter','year','hour','minute'].includes(initialDimension) ? initialDimension : ''
+    );
     const [timeFilter, setTimeFilter] = useState(initialTimeFilter);
     const [sort, setSort] = useState<'desc' | 'asc' | 'oldest' | 'newest'>(initialSort as any || 'desc');
     const [limit, setLimit] = useState<number>(initialLimit);
@@ -104,15 +109,17 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const [showFilterMenu, setShowFilterMenu] = useState(false);
     const filterMenuRef = useRef<HTMLDivElement>(null);
 
-    // Computed: is the current dimension a time grain?
-    const isTimeDimension = ['day', 'week', 'month', 'quarter', 'year'].includes(dimension);
+    // Computed: is the current grouping a time grain?
+    const isTimeDimension = !!timeGrain;
+    // Effective dimension sent to the engine (timeGrain takes priority)
+    const effectiveDimension = timeGrain || dimension;
 
     // Auto-expand options row when any refinement is active
     useEffect(() => {
         if (comparison || (limit > 0) || (isTimeDimension && sort !== 'oldest') || (!isTimeDimension && sort !== 'desc')) {
             setShowOptions(true);
         }
-    }, [comparison, limit, sort, isTimeDimension]);
+    }, [comparison, limit, sort, isTimeDimension, timeGrain]);
 
     // Close filter menu on outside click
     useEffect(() => {
@@ -132,8 +139,11 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         const aggLabel = aggregation === 'SUM' ? 'total' : aggregation === 'AVG' ? 'average' : aggregation === 'COUNT' ? 'count of' : aggregation === 'COUNT_DISTINCT' ? 'unique count of' : aggregation === 'MAX' ? 'maximum' : aggregation === 'MIN' ? 'minimum' : aggregation.toLowerCase();
         const metricLabel = titleCase(metric);
         let text = `Showing the ${aggLabel} of ${metricLabel}`;
-        if (dimension && dimension !== '(Total)') {
-            text += ` by ${titleCase(dimension)}`;
+        const dimParts: string[] = [];
+        if (dimension) dimParts.push(titleCase(dimension));
+        if (timeGrain) dimParts.push(timeGrain);
+        if (dimParts.length > 0) {
+            text += ` by ${dimParts.join(' over ')}`;
         } else {
             text += ' (overall total)';
         }
@@ -155,7 +165,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         else if (comparison === 'same_period_last_n') text += `, compared to the last ${comparisonOffset} ${comparisonGrain}${comparisonOffset > 1 ? 's' : ''}`;
         text += '.';
         return text;
-    }, [metric, aggregation, dimension, timeFilter, comparison, comparisonGrain, comparisonOffset]);
+    }, [metric, aggregation, dimension, timeGrain, timeFilter, comparison, comparisonGrain, comparisonOffset]);
 
     // Auto-sync comparison grain with time filter
     useEffect(() => {
@@ -212,7 +222,15 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     useEffect(() => {
         if (initialMetric) setMetric(initialMetric);
         if (initialAggregation) setAggregation(initialAggregation);
-        if (initialDimension) setDimension(initialDimension);
+        if (initialDimension) {
+            if (['day','week','month','quarter','year','hour','minute'].includes(initialDimension)) {
+                setTimeGrain(initialDimension);
+                setDimension('');
+            } else {
+                setDimension(initialDimension);
+                setTimeGrain('');
+            }
+        }
         if (initialTimeFilter) setTimeFilter(initialTimeFilter);
         setLimit(initialLimit);
         if (initialSort) setSort(initialSort);
@@ -420,10 +438,17 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             }
         });
 
+        // When both timeGrain and dimension are set, timeGrain is primary and column becomes secondary
+        const allSecondaryDims = [...secondaryDimensions];
+        let activeDimension = timeGrain || dimension;
+        if (timeGrain && dimension && !allSecondaryDims.includes(dimension)) {
+            allSecondaryDims.push(dimension);
+        }
+
         const config: any = {
             metric,
             aggregation,
-            dimension,
+            dimension: activeDimension,
             timeFilter,
             filters: dimensionFilters,
             measureFilters,
@@ -434,7 +459,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             comparisonGrain: comparison ? comparisonGrain : undefined,
             comparisonOffset: comparison ? comparisonOffset : undefined,
             ...(secondaryMetrics.length > 0 ? { secondaryMetrics, axisMode: 'auto', secondaryMetricVisuals, secondaryMetricAggregations } : {}),
-            ...(secondaryDimensions.length > 0 ? { secondaryDimensions } : {})
+            ...(allSecondaryDims.length > 0 ? { secondaryDimensions: allSecondaryDims } : {})
         };
 
         onRunRef.current(config);
@@ -455,7 +480,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             const timer = setTimeout(() => handleRun(), 400);
             return () => clearTimeout(timer);
         }
-    }, [metric, aggregation, dimension, timeFilter, filters, sort, limit, comparison, comparisonGrain, comparisonOffset, secondaryMetrics, secondaryMetricVisuals, secondaryMetricAggregations, secondaryDimensions]);
+    }, [metric, aggregation, dimension, timeGrain, timeFilter, filters, sort, limit, comparison, comparisonGrain, comparisonOffset, secondaryMetrics, secondaryMetricVisuals, secondaryMetricAggregations, secondaryDimensions]);
 
     // (Auto-drill cascade removed — the new DateFilterItem handles hierarchy internally)
 
@@ -626,51 +651,51 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                     <span className="text-slate-400 text-sm">by</span>
 
-                    {/* Dimension Selector */}
-                    <Tooltip text="How to group or break down the metric. Choose a time grain (day/month/year) for trends, or a column (product, region) for comparisons." position="bottom">
+                    {/* Dimension Selector (columns only) */}
+                    <Tooltip text="Group by a categorical column like product, region, or category." position="bottom">
                         <QuerySelect
                             value={dimension}
                             onChange={newDim => {
                                 setDimension(newDim);
-                                if (['day', 'week', 'month', 'quarter', 'year'].includes(newDim)) {
-                                    setSort('oldest');
-                                } else {
-                                    setSort('desc');
-                                }
+                                if (newDim && !timeGrain) setSort('desc');
                             }}
                             options={[
-                                { label: '(Total)', value: '' },
-                                ...['day', 'week', 'month', 'quarter', 'year'].map(t => ({ label: t, value: t, group: 'Time' })),
-                                ...dims.map(d => ({ label: d.replace(/_/g, ' '), value: d, group: 'Columns' }))
+                                { label: '(None)', value: '' },
+                                ...dims.map(d => ({ label: d.replace(/_/g, ' '), value: d, group: 'Dimensions' }))
                             ]}
                             icon={<MapPin className="w-3.5 h-3.5" />}
                             colorTextClass="text-blue-400"
                             colorRingClass="focus:ring-blue-500/30"
-                            placeholder="Select Dimension"
+                            placeholder="Dimension"
                         />
                     </Tooltip>
 
-                    {/* Total / Trend */}
-                    <div className="flex bg-white/5 rounded-xl p-0.5 border border-white/10">
-                        <button
-                            onClick={() => setDimension('')}
-                            title="View Total"
-                            className={`px-3 py-1.5 text-sm font-semibold rounded-lg transition-all duration-200 ${!dimension ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                        >
-                            Total
-                        </button>
-                        <button
-                            onClick={() => {
-                                if (!isTimeDimension) setDimension('day');
-                                setSort('oldest');
+                    {/* Date/Time Grain Selector (separate) */}
+                    <Tooltip text="Group by a time grain to see trends over time. Can be combined with a dimension." position="bottom">
+                        <QuerySelect
+                            value={timeGrain}
+                            onChange={newGrain => {
+                                setTimeGrain(newGrain);
+                                if (newGrain) setSort('oldest');
+                                else if (dimension) setSort('desc');
                             }}
-                            title="View Trend"
-                            className={`flex items-center gap-1 px-3 py-1.5 text-sm font-semibold rounded-lg transition-all duration-200 ${isTimeDimension ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-                        >
-                            <TrendingUp className="w-3.5 h-3.5" />
-                            Trend
-                        </button>
-                    </div>
+                            options={[
+                                { label: '(None)', value: '' },
+                                { label: 'Minute', value: 'minute', group: 'Sub-Day' },
+                                { label: 'Hour', value: 'hour', group: 'Sub-Day' },
+                                { label: 'Day', value: 'day', group: 'Standard' },
+                                { label: 'Week', value: 'week', group: 'Standard' },
+                                { label: 'Month', value: 'month', group: 'Standard' },
+                                { label: 'Quarter', value: 'quarter', group: 'Standard' },
+                                { label: 'Year', value: 'year', group: 'Standard' },
+                            ]}
+                            icon={<Clock className="w-3.5 h-3.5" />}
+                            colorTextClass="text-cyan-400"
+                            colorRingClass="focus:ring-cyan-500/30"
+                            placeholder="Date / Time"
+                            searchable={false}
+                        />
+                    </Tooltip>
 
                     <span className="text-slate-400 text-sm">where</span>
 
