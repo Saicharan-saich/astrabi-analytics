@@ -79,9 +79,9 @@ function compileDimensionSelect(dim: Dimension): string {
 
     switch (grain) {
         case 'minute':
-            return `TO_CHAR(DATE_TRUNC('minute', ${src}::TIMESTAMP), 'YYYY-MM-DD HH24:MI') AS ${alias}`;
+            return `TO_CHAR(DATE_TRUNC('minute', ${src}::TIMESTAMP), 'FMHH12:MI AM') AS ${alias}`;
         case 'hour':
-            return `TO_CHAR(DATE_TRUNC('hour', ${src}::TIMESTAMP), 'YYYY-MM-DD HH24:00') AS ${alias}`;
+            return `TO_CHAR(DATE_TRUNC('hour', ${src}::TIMESTAMP), 'FMHH12 AM') AS ${alias}`;
         case 'year':
             return `EXTRACT(YEAR FROM ${src})::TEXT AS ${alias}`;
         case 'quarter':
@@ -106,9 +106,9 @@ function compileDimensionGroupBy(dim: Dimension): string {
     const src = safeId(dim.sourceColumn);
     switch (dim.grain) {
         case 'minute':
-            return `DATE_TRUNC('minute', ${src}::TIMESTAMP)`;
+            return `TO_CHAR(DATE_TRUNC('minute', ${src}::TIMESTAMP), 'FMHH12:MI AM')`;
         case 'hour':
-            return `DATE_TRUNC('hour', ${src}::TIMESTAMP)`;
+            return `TO_CHAR(DATE_TRUNC('hour', ${src}::TIMESTAMP), 'FMHH12 AM')`;
         case 'year':
             return `EXTRACT(YEAR FROM ${src})`;
         case 'quarter':
@@ -169,9 +169,9 @@ function compileDateFilter(df: DateFilter): string {
 
     switch (df.timeGrain) {
         case 'minute':
-            return `TO_CHAR(DATE_TRUNC('minute', ${col}::TIMESTAMP), 'YYYY-MM-DD HH24:MI') IN (${vals})`;
+            return `TO_CHAR(DATE_TRUNC('minute', ${col}::TIMESTAMP), 'FMHH12:MI AM') IN (${vals})`;
         case 'hour':
-            return `TO_CHAR(DATE_TRUNC('hour', ${col}::TIMESTAMP), 'YYYY-MM-DD HH24:00') IN (${vals})`;
+            return `TO_CHAR(DATE_TRUNC('hour', ${col}::TIMESTAMP), 'FMHH12 AM') IN (${vals})`;
         case 'year':
             return `EXTRACT(YEAR FROM ${col})::TEXT IN (${vals})`;
         case 'quarter':

@@ -77,8 +77,16 @@ function formatTimeBucket(dateStr: string, grain: string): string {
     const mi = d.getMinutes();
 
     switch (grain) {
-        case 'minute': return `${y}-${pad(m)}-${pad(dy)} ${pad(h)}:${pad(mi)}`;
-        case 'hour': return `${y}-${pad(m)}-${pad(dy)} ${pad(h)}:00`;
+        case 'minute': {
+            const hr12 = h % 12 || 12;
+            const ampm = h < 12 ? 'AM' : 'PM';
+            return `${hr12}:${pad(mi)} ${ampm}`;
+        }
+        case 'hour': {
+            const hr12 = h % 12 || 12;
+            const ampm = h < 12 ? 'AM' : 'PM';
+            return `${hr12} ${ampm}`;
+        }
         case 'day': return `${y}-${pad(m)}-${pad(dy)}`;
         case 'week': {
             const week = getISOWeek(d);

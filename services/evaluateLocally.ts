@@ -121,6 +121,28 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
         return '1970-01-01';
     };
 
+    // Full datetime extractor — preserves time portion for hour/minute bucketing
+    const fullDateTime = (r: any): string => {
+        let raw = String(r[dateColKey]);
+        if (!raw || raw === 'undefined' || raw === 'null') return '1970-01-01T00:00:00';
+        if (raw.match(/^\d{4}-\d{2}-\d{2}[T ]/)) return raw;
+        if (raw.match(/^\d{4}-\d{2}-\d{2}$/)) return raw + 'T00:00:00';
+        if (raw.indexOf('/') > -1) {
+            const parts = raw.split('/');
+            if (parts.length === 3) {
+                const m = parts[0].padStart(2, '0');
+                const d = parts[1].padStart(2, '0');
+                const rest = parts[2].split(' ');
+                const y = rest[0];
+                const time = rest[1] || '00:00:00';
+                return `${y}-${m}-${d}T${time}`;
+            }
+        }
+        const d = new Date(raw);
+        if (!isNaN(d.getTime())) return d.toISOString().replace('Z', '');
+        return '1970-01-01T00:00:00';
+    };
+
     // --- GENERIC DATE HELPERS ---
     const isToday = (r: any) => date(r) === dates.today;
     const isYesterday = (r: any) => date(r) === dates.yesterday;
@@ -703,7 +725,20 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 // â”€â”€ TREND MODE: Dual-line time series â”€â”€
                 if (isTrendMode && currSet.length > 0) {
                     // Bucket function matching the same format as custom_builder
-                    const trendBucket = (dateStr: string): string => {
+                    const trendBucket = (dateStr: string, row?: any): string => {
+                        // For hour/minute grains, use full datetime from the row
+                        if ((trendDim === 'hour' || trendDim === 'minute') && row) {
+                            const fullDt = fullDateTime(row);
+                            const cleaned = fullDt.replace('T', ' ').replace('Z', '');
+                            const timePart = cleaned.length > 10 ? cleaned.substring(11) : '00:00:00';
+                            const tp = timePart.split(':').map(Number);
+                            const hr = tp[0] || 0;
+                            const mins = tp[1] || 0;
+                            const hr12 = hr % 12 || 12;
+                            const ampm = hr < 12 ? 'AM' : 'PM';
+                            if (trendDim === 'minute') return `${hr12}:${String(mins).padStart(2, '0')} ${ampm}`;
+                            return `${hr12} ${ampm}`;
+                        }
                         const parts = dateStr.split('-').map(Number);
                         const d = new Date(parts[0], parts[1] - 1, parts[2] || 1, 12);
                         const y = d.getFullYear();
@@ -754,7 +789,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     currSet.forEach((r: any) => {
                         const d = date(r);
                         if (d && d !== '1970-01-01') {
-                            const bucket = trendBucket(d);
+                            const bucket = trendBucket(d, r);
                             currGroups[bucket] = (currGroups[bucket] || 0) + val(r, metricName);
                             // Aggregate secondary metrics with sum+count
                             for (const sm of specSecMetrics) {
@@ -775,7 +810,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     prevSet.forEach((r: any) => {
                         const d = date(r);
                         if (d && d !== '1970-01-01') {
-                            const bucket = trendBucket(d);
+                            const bucket = trendBucket(d, r);
                             prevGroups[bucket] = (prevGroups[bucket] || 0) + val(r, metricName);
                         }
                     });
@@ -858,9 +893,24 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 const isMonthly = explicitGrain === 'month' || (!explicitGrain && (dq.id.startsWith('m_') || dq.id.startsWith('all_')));
                 const isQuarterly = explicitGrain === 'quarter';
                 const isYearly = explicitGrain === 'year';
+                const isHourly = explicitGrain === 'hour';
+                const isMinutely = explicitGrain === 'minute';
 
                 // Bucket function: group by proper grain
                 const bucket = (r: any): string => {
+                    // Sub-day grains: use full datetime and format as 12h AM/PM
+                    if (isHourly || isMinutely) {
+                        const fullDt = fullDateTime(r);
+                        const cleaned = fullDt.replace('T', ' ').replace('Z', '');
+                        const timePart = cleaned.length > 10 ? cleaned.substring(11) : '00:00:00';
+                        const tp = timePart.split(':').map(Number);
+                        const hr = tp[0] || 0;
+                        const mins = tp[1] || 0;
+                        const hr12 = hr % 12 || 12;
+                        const ampm = hr < 12 ? 'AM' : 'PM';
+                        if (isMinutely) return `${hr12}:${String(mins).padStart(2, '0')} ${ampm}`;
+                        return `${hr12} ${ampm}`;
+                    }
                     const d = date(r);
                     if (isYearly) {
                         return d.substring(0, 4); // "YYYY"
