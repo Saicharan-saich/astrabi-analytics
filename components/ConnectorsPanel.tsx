@@ -43,7 +43,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
     const [joinEdges, setJoinEdges] = useState<JoinEdge[]>([]);
     const [loadingColumns, setLoadingColumns] = useState<string | null>(null);
     const [connectionMode, setConnectionMode] = useState<ConnectionMode>('import');
-    const [connConfig, setConnConfig] = useState<{ host: string; port: string; database: string; username: string; ssl: boolean } | null>(null);
+    const [connConfig, setConnConfig] = useState<{ host: string; port: string; database: string; username: string; ssl: boolean; password?: string } | null>(null);
 
     const handleConnect = () => {
         setConfiguringId(selectedConnectorId);
@@ -99,8 +99,8 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
         }
 
         setConnectionId(result.connectionId!);
-        // Store non-sensitive config for reconnection
-        setConnConfig({ host: config.host, port: config.port, database: config.database, username: config.username, ssl: config.ssl });
+        // Store config (including password for session caching) for reconnection
+        setConnConfig({ host: config.host, port: config.port, database: config.database, username: config.username, ssl: config.ssl, password: config.password });
 
         // Fetch tables + FK relationships in parallel
         const [tables, fks] = await Promise.all([
@@ -188,6 +188,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
             database: connConfig?.database,
             username: connConfig?.username,
             ssl: connConfig?.ssl,
+            _sessionPassword: connConfig?.password, // Ephemeral — for session caching only, never persisted
         };
 
         if (selectedTables.length === 1) {

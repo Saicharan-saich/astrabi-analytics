@@ -42,6 +42,37 @@ import { SmartQuestionsView } from './components/SmartQuestionsView';
 import { PinToDashboardModal } from './components/PinToDashboardModal';
 import ReconnectModal from './components/ReconnectModal';
 
+// ── SESSION CREDENTIAL CACHE (auto-reconnect without re-entering password) ──
+// Stored in sessionStorage: survives page refresh but cleared on tab close or logout.
+// Never persisted to localStorage/IndexedDB — password stays ephemeral.
+interface CachedCredentials { host: string; port: string; database: string; username: string; password: string; ssl: boolean }
+
+function cacheSessionCredentials(datasetId: string, creds: CachedCredentials): void {
+  try {
+    sessionStorage.setItem(`db_creds_${datasetId}`, JSON.stringify(creds));
+    console.log('[Session] Cached DB credentials for auto-reconnect');
+  } catch { /* sessionStorage unavailable — silent fallback */ }
+}
+
+function getSessionCredentials(datasetId: string): CachedCredentials | null {
+  try {
+    const raw = sessionStorage.getItem(`db_creds_${datasetId}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch { return null; }
+}
+
+function clearSessionCredentials(datasetId?: string): void {
+  try {
+    if (datasetId) {
+      sessionStorage.removeItem(`db_creds_${datasetId}`);
+    } else {
+      // Clear ALL cached credentials (used on logout)
+      const keys = Object.keys(sessionStorage).filter(k => k.startsWith('db_creds_'));
+      keys.forEach(k => sessionStorage.removeItem(k));
+    }
+  } catch { /* silent */ }
+}
+
 // ── Heuristic domain detection (fallback when AI profiling unavailable) ──
 function detectDomainFromColumns(columns: { name: string }[], fileName: string): string {
   const allText = [...columns.map(c => c.name.toLowerCase()), fileName.toLowerCase()].join(' ');
@@ -508,6 +539,19 @@ function App() {
         // Set state AFTER domainProfile is attached — prevents useEffect race condition
         setDataset(connDs);
         saveDatasetToDB(connDs);
+
+        // ── CACHE CREDENTIALS for session auto-reconnect ──
+        if (liveInfo?._sessionPassword && liveInfo.host && liveInfo.username) {
+          cacheSessionCredentials(connDs.id, {
+            host: liveInfo.host,
+            port: liveInfo.port || '1433',
+            database: liveInfo.database || '',
+            username: liveInfo.username,
+            password: liveInfo._sessionPassword,
+            ssl: liveInfo.ssl ?? false,
+          });
+        }
+
         setPendingProfile(connProfile);
         setActiveTab(Tab.COLUMN_MAPPING);
         setProcessing(false);
@@ -586,6 +630,19 @@ function App() {
       const isConnectionExpired = msg.includes('expired') || msg.includes('invalid') || msg.includes('ECONNRESET')
         || msg.includes('Failed to refresh') || msg.includes('Connection');
       if (isConnectionExpired && dataset?.liveConnection) {
+        // ── AUTO-RECONNECT: Try cached credentials first ──
+        const cached = getSessionCredentials(dataset.id);
+        if (cached) {
+          console.log('[App] Auto-reconnecting with cached session credentials...');
+          try {
+            await handleReconnect(cached);
+            return; // Success — refresh was re-triggered inside handleReconnect
+          } catch (autoErr: any) {
+            console.warn('[App] Auto-reconnect failed, showing modal:', autoErr.message);
+            // Clear stale cached credentials
+            clearSessionCredentials(dataset.id);
+          }
+        }
         setReconnectError(msg);
         setShowReconnectModal(true);
       } else {
@@ -638,6 +695,9 @@ function App() {
     const updatedDs: Dataset = { ...dataset, liveConnection: updatedLc };
     setDataset(updatedDs);
     saveDatasetToDB(updatedDs);
+
+    // ── CACHE CREDENTIALS in sessionStorage for auto-reconnect ──
+    cacheSessionCredentials(dataset.id, config);
 
     // Close modal and re-trigger refresh
     setShowReconnectModal(false);
@@ -942,7 +1002,7 @@ function App() {
                         {currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
                       </div>
                       <button
-                        onClick={logout}
+                        onClick={() => { clearSessionCredentials(); logout(); }}
                         className={`p-1.5 rounded-lg transition-all duration-200 ${theme === 'dark' ? 'text-gray-500 hover:text-red-400 hover:bg-red-500/10' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
                           }`}
                         title="Sign Out"
