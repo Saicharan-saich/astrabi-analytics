@@ -116,6 +116,36 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
 
     let sql = activeQ.sql || `-- Dynamic SQL generated for ${activeQ.id}`;
 
+    // ═══ AGGREGATION SAFETY GUARD ═══════════════════════════════════
+    // If the semantic model says a metric is non-additive (e.g., current_quantity,
+    // unit_price), auto-correct SUM to the model's recommended aggregation.
+    // This prevents join-inflated numbers (e.g., 220 stock × 3 rows = 660).
+    if (query.metric && dataset.semanticModel) {
+        const semMeasure = findMeasure(dataset.semanticModel, query.metric);
+        if (semMeasure && semMeasure.behavior === 'non_additive' && query.aggregation === 'SUM') {
+            console.warn(`[runAnalysis] ⚠️ AGGREGATION GUARD: "${query.metric}" is non-additive (${semMeasure.behavior}). Auto-correcting SUM → ${semMeasure.aggregation}`);
+            query = { ...query, aggregation: semMeasure.aggregation as any };
+        }
+        // Also guard semi-additive metrics when grouped by time
+        if (semMeasure && semMeasure.behavior === 'semi_additive' && query.aggregation === 'SUM') {
+            const timeGrains = ['minute', 'hour', 'day', 'week', 'month', 'quarter', 'year'];
+            const dimIsTime = query.dimension && timeGrains.includes(query.dimension);
+            if (dimIsTime) {
+                console.warn(`[runAnalysis] ⚠️ AGGREGATION GUARD: "${query.metric}" is semi-additive — correcting SUM → MAX for time dimension`);
+                query = { ...query, aggregation: 'MAX' as any };
+            }
+        }
+    }
+    // Also re-check via metricRegistry for datasets that haven't rebuilt their semantic model yet
+    if (query.metric && query.aggregation === 'SUM') {
+        const freshClassification = classifyMetric(query.metric);
+        if (freshClassification && freshClassification.behavior === 'non_additive') {
+            console.warn(`[runAnalysis] ⚠️ REGISTRY GUARD: "${query.metric}" classified as non-additive by registry. Auto-correcting SUM → ${freshClassification.aggregation}`);
+            query = { ...query, aggregation: freshClassification.aggregation as any };
+        }
+    }
+    // ═══ END AGGREGATION SAFETY GUARD ════════════════════════════════
+
     const { data, xKey, yKey, kpi, growth, sql: generatedSQL } = evaluateLocally(activeQ as any, dataset.rows, mapping, dates, query, dataset.name, dataset.dimDate);
 
     // INJECT DATE FILTERS INTO SQL PREVIEW

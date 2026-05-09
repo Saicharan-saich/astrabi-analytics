@@ -61,6 +61,13 @@ const METRIC_RULES: { pattern: RegExp; result: MetricClassification }[] = [
         result: { aggregation: AggregationType.SUM, behavior: 'additive', format: 'currency_usd', requiresWeighting: false },
     },
 
+    // Quantity SNAPSHOT (inventory levels) — non-additive, use MAX to avoid join inflation
+    // MUST come BEFORE the generic quantity pattern to win first-match priority
+    {
+        pattern: /(?:^|[_\s])(current_quantity|current_qty|available_quantity|available_qty|remaining_quantity|remaining_qty|quantity_on_hand|qty_on_hand|quantity_available|qty_available|quantity_remaining|qty_remaining|current_stock|available_stock|stock_quantity|stock_qty|stock_on_hand|reorder_level|reorder_point|safety_stock|min_quantity|max_quantity|min_qty|max_qty)(?:[_\s]|$)/i,
+        result: { aggregation: AggregationType.MAX, behavior: 'non_additive', format: 'raw', requiresWeighting: false },
+    },
+
     // Quantity / Units / Volume — always SUM, raw format
     {
         pattern: /(?:^|[_\s])(quantity|qty|units|unit_count|units_sold|volume|items|line_items|pieces|pcs)(?:[_\s]|$)/i,
