@@ -18,11 +18,13 @@ interface BuilderViewProps {
     onPin?: (title: string, result: AnalysisResult) => void;
     initialConfig?: any; // QueryConfig from dashboard edit
     editingItemId?: string | null; // ID of dashboard item being edited
+    onSaveBackToDashboard?: (result: AnalysisResult) => void; // Save edits back to dashboard
+    onCancelEdit?: () => void; // Cancel editing and return to dashboard
     onLiveRefresh?: () => Promise<void>;
     isLiveRefreshing?: boolean;
 }
 
-export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onLiveRefresh, isLiveRefreshing }) => {
+export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing }) => {
     const [result, setResult] = useState<AnalysisResult | undefined>(undefined);
     const [error, setError] = useState<string | null>(null);
     const [chartType, setChartType] = useState<any>('bar');
@@ -394,9 +396,17 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                             <Download className="w-4 h-4 mr-1" /> Export
                         </button>
 
-                        {onPin && (
+                        {/* Cancel Edit button — only in edit mode */}
+                        {editingItemId && onCancelEdit && (
+                            <button onClick={onCancelEdit} className="flex items-center text-sm font-bold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-all border border-slate-300 shadow-sm whitespace-nowrap" title="Cancel editing and return to Dashboard">
+                                <X className="w-4 h-4 mr-1" /> Cancel
+                            </button>
+                        )}
+                        {(onPin || (editingItemId && onSaveBackToDashboard)) && (
                             <button onClick={() => {
                                 const firstCol = tableData.columns[0];
+                                let pinResult: AnalysisResult;
+                                let pinTitle: string;
                                 if (showGrowthChart && firstCol) {
                                     // Pin the CALCULATED view (e.g., % of Total pie chart)
                                     const calcColumnKeys = new Set([result.xKey, ...tableData.columns.map(c => c.key)]);
@@ -411,7 +421,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                     });
                                     const calcChartType = firstCol.calculation === 'percent_of_total' ? 'pie' : chartType;
                                     const calcFormatting = { ...formatting, tableCalculations: [], numberFormat: (firstCol.format || formatting?.numberFormat), showDataLabels: true } as any;
-                                    onPin(firstCol.label || result.yLabel, {
+                                    pinTitle = firstCol.label || result.yLabel;
+                                    pinResult = {
                                         ...result,
                                         data: calcCleanData,
                                         yKey: firstCol.key,
@@ -420,19 +431,31 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                         formatting: calcFormatting,
                                         config: lastRunConfig ? { ...lastRunConfig, comparison: 'none' } : undefined,
                                         queryConfig: lastRunConfig ? { ...lastRunConfig, comparison: 'none' } : undefined,
-                                    });
+                                    };
                                 } else {
                                     // Pin the ORIGINAL view — preserve config (comparison, filters, etc.)
-                                    onPin(result.yLabel, {
+                                    pinTitle = result.yLabel;
+                                    pinResult = {
                                         ...result,
                                         vis: chartType,
                                         formatting: { ...formatting, tableCalculations: [] } as any,
                                         config: lastRunConfig || undefined,
                                         queryConfig: lastRunConfig || undefined,
-                                    });
+                                    };
                                 }
-                            }} className={`flex items-center text-sm font-bold text-white ${showGrowthChart && tableData.columns.length > 0 ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'} px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap`} title={showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated View to Dashboard' : 'Pin to Dashboard'}>
-                                <Pin className="w-4 h-4 mr-1" /> {showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated' : 'Pin'}
+                                // Edit mode: save back to dashboard (UPDATE existing item)
+                                if (editingItemId && onSaveBackToDashboard) {
+                                    onSaveBackToDashboard({ ...pinResult, insight: pinTitle });
+                                } else if (onPin) {
+                                    // Normal mode: pin as new item
+                                    onPin(pinTitle, pinResult);
+                                }
+                            }} className={`flex items-center text-sm font-bold text-white ${
+                                editingItemId
+                                    ? 'bg-amber-600 hover:bg-amber-700'
+                                    : showGrowthChart && tableData.columns.length > 0 ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'
+                            } px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap`} title={editingItemId ? 'Save changes back to Dashboard' : showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated View to Dashboard' : 'Pin to Dashboard'}>
+                                <Pin className="w-4 h-4 mr-1" /> {editingItemId ? '💾 Save to Dashboard' : showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated' : 'Pin'}
                             </button>
                         )}
                         <button

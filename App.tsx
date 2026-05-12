@@ -1235,6 +1235,8 @@ function App() {
                       onUpdateFormatting={updateFormatting}
                       initialConfig={workbenchConfig}
                       editingItemId={editingDashboardItemId}
+                      onSaveBackToDashboard={handleSaveBackToDashboard}
+                      onCancelEdit={() => { setEditingDashboardItemId(null); setActiveTab(Tab.DASHBOARD); }}
                       onLiveRefresh={handleLiveRefresh}
                       isLiveRefreshing={isLiveRefreshing}
                     />
