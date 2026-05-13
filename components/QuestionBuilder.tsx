@@ -137,9 +137,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const summaryText = useMemo(() => {
         if (!metric) return '';
         const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        const aggLabel = aggregation === 'SUM' ? 'total' : aggregation === 'AVG' ? 'average' : aggregation === 'COUNT' ? 'count of' : aggregation === 'COUNT_DISTINCT' ? 'unique count of' : aggregation === 'MAX' ? 'maximum' : aggregation === 'MIN' ? 'minimum' : aggregation === 'NONE' ? 'raw' : aggregation.toLowerCase();
+        const aggLabelMap: Record<string, string> = { 'SUM': 'total', 'AVG': 'average', 'COUNT': 'count of', 'COUNT_DISTINCT': 'number of unique', 'MAX': 'highest', 'MIN': 'lowest', 'NONE': '' };
+        const aggLabel = aggLabelMap[aggregation] || aggregation.toLowerCase();
         const metricLabel = titleCase(metric);
-        let text = `Showing the ${aggLabel} of ${metricLabel}`;
+        let text = aggregation === 'NONE' ? `Showing ${metricLabel} values` : `Showing the ${aggLabel} ${metricLabel}`;
         const dimParts: string[] = [];
         if (dimension) dimParts.push(titleCase(dimension));
         if (timeGrain) dimParts.push(timeGrain);
@@ -578,18 +579,18 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             onChange={setAggregation}
                             options={isDimensionMetric
                                 ? [
-                                    { label: 'Count', value: 'COUNT' },
-                                    { label: 'Unique Count', value: 'COUNT_DISTINCT' },
-                                    { label: 'None (Raw)', value: 'NONE' }
+                                    { label: 'Count  (#)', value: 'COUNT' },
+                                    { label: 'Unique Count  (∩)', value: 'COUNT_DISTINCT' },
+                                    { label: 'Raw Values', value: 'NONE' }
                                 ]
                                 : [
-                                    { label: 'Sum', value: 'SUM' },
-                                    { label: 'Average', value: 'AVG' },
-                                    { label: 'Max', value: 'MAX' },
-                                    { label: 'Min', value: 'MIN' },
-                                    { label: 'Count', value: 'COUNT' },
-                                    { label: 'Unique Count', value: 'COUNT_DISTINCT' },
-                                    { label: 'None (Raw)', value: 'NONE' }
+                                    { label: 'Total  (Σ)', value: 'SUM' },
+                                    { label: 'Average  (μ)', value: 'AVG' },
+                                    { label: 'Highest  (↑)', value: 'MAX' },
+                                    { label: 'Lowest  (↓)', value: 'MIN' },
+                                    { label: 'Count  (#)', value: 'COUNT' },
+                                    { label: 'Unique Count  (∩)', value: 'COUNT_DISTINCT' },
+                                    { label: 'Raw Values', value: 'NONE' }
                                 ]}
                             icon={<span className="font-bold text-xs px-0.5">{isDimensionMetric ? '#' : 'Σ'}</span>}
                             colorTextClass="text-purple-400"
@@ -611,12 +612,12 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center', backgroundSize: '12px' }}
                                 title="Aggregation for this metric"
                             >
-                                <option value="SUM">Σ Sum</option>
-                                <option value="AVG">μ Avg</option>
-                                <option value="MAX">↑ Max</option>
-                                <option value="MIN">↓ Min</option>
+                                <option value="SUM">Σ Total</option>
+                                <option value="AVG">μ Average</option>
+                                <option value="MAX">↑ Highest</option>
+                                <option value="MIN">↓ Lowest</option>
                                 <option value="COUNT"># Count</option>
-                                <option value="COUNT_DISTINCT">⊕ Unique</option>
+                                <option value="COUNT_DISTINCT">∩ Unique Count</option>
                             </select>
                             <select
                                 value={secondaryMetricVisuals[sm] || 'line'}
