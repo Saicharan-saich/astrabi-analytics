@@ -4,10 +4,12 @@
  * Alerts generate QueryPlans → evaluateLocally() → compare against conditions.
  * NO separate SQL generation — reuses the existing semantic query pipeline.
  */
-import { AlertRule, AlertEvent, AlertCondition, AlertTimeRange, Dataset } from '../types';
+import { AlertRule, AlertEvent, AlertCondition, AlertTimeRange, Dataset, AggregationType } from '../types';
 import { buildQueryPlan, UIQueryConfig } from './queryPlan/buildQueryPlan';
 import { executeQueryPlan } from './queryPlan/executeQueryPlan';
 import { getDates } from './dateHelpers';
+import { findMeasure } from './semanticModel';
+import { pruneRowsForQuery } from './queryPruner';
 
 // ── TIME RANGE RESOLVER ──────────────────────────────────────────
 // Maps AlertTimeRange → the timeFilter string used by buildQueryPlan
@@ -143,10 +145,37 @@ export async function evaluateAlertRule(
             return { event: null };
         }
 
-        // Build QueryPlan and execute for CURRENT period
-        const config = buildAlertQueryConfig(rule);
+        // ── AGGREGATION SAFETY GUARD ─────────────────────────────
+        // Mirrors the guard in analysisEngine.ts — auto-correct SUM on
+        // non-additive metrics (e.g., current_quantity → use MAX instead)
+        let effectiveAggregation = rule.aggregation;
+        if (dataset.semanticModel) {
+            const semMeasure = findMeasure(dataset.semanticModel, rule.metric);
+            if (semMeasure && semMeasure.behavior === 'non_additive' && effectiveAggregation === 'SUM') {
+                console.warn(`[Alerts] ⚠️ AGGREGATION GUARD: "${rule.metric}" is non-additive. Auto-correcting SUM → ${semMeasure.aggregation}`);
+                effectiveAggregation = semMeasure.aggregation as typeof effectiveAggregation;
+            }
+        }
+
+        // Build QueryPlan with corrected aggregation
+        const config = buildAlertQueryConfig({ ...rule, aggregation: effectiveAggregation });
         const plan = buildQueryPlan(config, dateCol, dates, dataset.name);
-        const result = executeQueryPlan(plan, dataset.rows);
+
+        // ── QUERY PRUNING (dimension-table dedup) ────────────────
+        // If all queried columns belong to a dimension table, dedup
+        // joined rows to prevent fan-out inflation (e.g., 29 → 10)
+        let activeRows = dataset.rows;
+        const pruneResult = pruneRowsForQuery(
+            dataset.rows,
+            { metric: rule.metric, aggregation: effectiveAggregation },
+            dataset.sourceSchema
+        );
+        if (pruneResult.pruned) {
+            activeRows = pruneResult.rows;
+            console.log(`[Alerts] 🔀 QUERY PRUNING: ${pruneResult.log}`);
+        }
+
+        const result = executeQueryPlan(plan, activeRows);
 
         if (!result || !result.data || result.data.length === 0) return { event: null };
 
