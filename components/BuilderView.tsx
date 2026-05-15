@@ -104,6 +104,17 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         }
     }, [editingItemId]);
 
+    // Auto-re-run analysis when dataset refreshes (version changes)
+    // This handles live refresh: worker updates dataset.rows → version increments → re-run query
+    const prevVersionRef = useRef(dataset.version);
+    React.useEffect(() => {
+        if (dataset.version !== prevVersionRef.current && lastRunConfig) {
+            prevVersionRef.current = dataset.version;
+            console.log(`[BuilderView] Dataset version changed (v${dataset.version}) — re-running analysis`);
+            handleRun(lastRunConfig);
+        }
+    }, [dataset.version]);
+
     // User manually changes AS OF date
     const handleAsOfDateChange = (date: string) => {
         setAsOfDate(date);
@@ -461,11 +472,13 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         <button
                             onClick={async () => {
                                 if (!lastRunConfig) return;
-                                // If live mode, refresh the dataset first, then re-run the query
+                                // If live mode, refresh the dataset — the useEffect on dataset.version
+                                // will automatically re-run the analysis once the worker completes
                                 if (dataset.connectionMode === 'live' && onLiveRefresh) {
                                     await onLiveRefresh();
-                                    // After live refresh, dataset prop will update, triggering re-run below
+                                    return; // Don't call handleRun here — wait for dataset.version change
                                 }
+                                // Import mode: just re-run with current data
                                 handleRun(lastRunConfig);
                             }}
                             disabled={isLiveRefreshing}
