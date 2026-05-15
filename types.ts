@@ -220,11 +220,74 @@ export interface ChartConfig {
   decimals: number;
 }
 
+/** @deprecated Use AlertRule for the new monitoring system */
 export interface AlertConfig {
   enabled: boolean;
   threshold: number;
   operator: '>' | '<';
   color: string;
+}
+
+// ─── Monitoring Alert System Types ──────────────────────────────
+export type AlertSeverity = 'critical' | 'warning' | 'info';
+export type AlertStatus = 'active' | 'snoozed' | 'resolved' | 'disabled';
+
+export type AlertTimeRange =
+  | { type: 'today' }
+  | { type: 'yesterday' }
+  | { type: 'last_n_days'; value: number }
+  | { type: 'this_month' }
+  | { type: 'this_quarter' }
+  | { type: 'this_year' }
+  | { type: 'all_time' };
+
+export type AlertCondition =
+  | { type: 'threshold'; operator: '>' | '<' | '>=' | '<=' | '==' | '!='; value: number }
+  | { type: 'trend'; direction: 'increases' | 'decreases'; changePercent: number;
+      comparisonPeriod: 'previous_day' | 'previous_week' | 'previous_month' | 'previous_quarter' };
+
+export interface AlertRule {
+  id: string;
+  name: string;
+  description?: string;
+  severity: AlertSeverity;
+  status: AlertStatus;
+  // What to monitor (QueryPlan-compatible)
+  datasetId: string;
+  datasetName: string;
+  metric: string;
+  aggregation: 'SUM' | 'AVG' | 'COUNT' | 'COUNT_DISTINCT' | 'MIN' | 'MAX';
+  // Dimension scope (optional filters)
+  filters?: { column: string; operator: string; value: string }[];
+  // Time range
+  timeRange: AlertTimeRange;
+  // Condition
+  condition: AlertCondition;
+  // Metadata
+  createdAt: number;
+  updatedAt: number;
+  lastEvaluatedAt?: number;
+  lastTriggeredAt?: number;
+  lastValue?: number;
+  snoozedUntil?: number;
+  // UI
+  icon?: string;
+  color?: string;
+}
+
+export interface AlertEvent {
+  id: string;
+  ruleId: string;
+  ruleName: string;
+  severity: AlertSeverity;
+  triggeredAt: number;
+  currentValue: number;
+  previousValue?: number;
+  thresholdValue?: number;
+  changePercent?: number;
+  message: string;
+  acknowledged: boolean;
+  acknowledgedAt?: number;
 }
 
 export interface DateFilter {
@@ -405,7 +468,8 @@ export enum Tab {
   AI_SQL = 'AI_SQL',
   CUSTOM_QUESTIONS = 'CUSTOM_QUESTIONS',
   DATASET_SUMMARY = 'DATASET_SUMMARY',
-  SMART_QUESTIONS = 'SMART_QUESTIONS'
+  SMART_QUESTIONS = 'SMART_QUESTIONS',
+  ALERTS = 'ALERTS'
 }
 
 // ─── Authentication & RBAC ───────────────────────────────────────

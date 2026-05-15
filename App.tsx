@@ -41,6 +41,10 @@ import { SplashScreen } from './components/SplashScreen';
 import { SmartQuestionsView } from './components/SmartQuestionsView';
 import { PinToDashboardModal } from './components/PinToDashboardModal';
 import ReconnectModal from './components/ReconnectModal';
+import { AlertsView } from './components/AlertsView';
+import { NotificationCenter } from './components/NotificationCenter';
+import { useAlertStore } from './store/useAlertStore';
+import { evaluateAllAlerts } from './services/alertEngine';
 
 // ── SESSION CREDENTIAL CACHE (auto-reconnect without re-entering password) ──
 // Stored in sessionStorage: survives page refresh but cleared on tab close or logout.
@@ -197,6 +201,24 @@ function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [smartQuestionQuery, setSmartQuestionQuery] = useState<string | null>(null);
   const [pendingPinItem, setPendingPinItem] = useState<any>(null);
+
+  // Alert evaluation on dataset load/refresh
+  const alertStore = useAlertStore();
+  useEffect(() => {
+    if (!dataset || !dataset.rows.length) return;
+    const runAlerts = async () => {
+      const activeRules = alertStore.rules.filter(r => r.datasetId === dataset.id);
+      if (activeRules.length === 0) return;
+      try {
+        const { events: newEvents, updatedRules } = await evaluateAllAlerts(activeRules, [dataset]);
+        for (const rule of updatedRules) alertStore.updateRule(rule);
+        for (const evt of newEvents) alertStore.addEvent(evt);
+        if (newEvents.length > 0) console.log(`[Alerts] ${newEvents.length} alert(s) triggered`);
+      } catch (err) { console.warn('[Alerts] Evaluation error:', err); }
+    };
+    const timer = setTimeout(runAlerts, 1500);
+    return () => clearTimeout(timer);
+  }, [dataset?.id, dataset?.version, dataset?.totalRows]);
 
   // Smart Questions → AI SQL routing
   const handleSmartQuestion = (question: string) => {
@@ -954,6 +976,8 @@ function App() {
                 </div>
 
                 <div className="flex items-center gap-1.5">
+                  {/* Notification Center (Alert Bell) */}
+                  <NotificationCenter onNavigateToAlerts={() => setActiveTab(Tab.ALERTS)} />
                   {/* Re-open Column Mapping */}
                   {dataset?.domainProfile && (
                     <button
@@ -1269,6 +1293,10 @@ function App() {
 
                 <div className={`h-full w-full ${activeTab === Tab.CUSTOM_QUESTIONS ? '' : 'hidden'}`}>
                   <AdminQuestionBuilder dataset={dataset} />
+                </div>
+
+                <div className={`h-full w-full ${activeTab === Tab.ALERTS ? '' : 'hidden'}`}>
+                  <AlertsView dataset={dataset} />
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.SMART_QUESTIONS ? '' : 'hidden'}`}>

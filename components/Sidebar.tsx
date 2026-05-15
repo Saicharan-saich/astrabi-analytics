@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb } from 'lucide-react';
+import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb, Bell } from 'lucide-react';
 import { Tab, UserRole } from '../types';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
+import { useAlertStore } from '../store/useAlertStore';
 import { Tooltip } from './Tooltip';
 import classNames from 'clsx';
 import { useTheme } from './ThemeProvider';
@@ -15,6 +16,7 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onToggle, onOpenUserManagement }) => {
     const { currentUser, logout } = useAuthStore();
+    const { unreadCount } = useAlertStore();
     const { theme } = useTheme();
     const isDark = theme === 'dark';
     const userRole = currentUser?.role || UserRole.VIEWER;
@@ -88,6 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
 
     const viewSection = [
         { id: Tab.DASHBOARD, label: 'Dashboard', icon: Layout, tooltip: 'View all your pinned analyses in a dashboard layout with drag-and-drop arrangement.' },
+        { id: Tab.ALERTS, label: 'Monitoring', icon: Bell, badge: unreadCount, tooltip: 'Create business rules to monitor metrics. Get alerted when thresholds are crossed or trends change.' },
     ];
 
     const filterItems = (items: any[]) => items.filter(item => {
@@ -151,6 +154,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                             : isDark ? "text-gray-500" : "text-gray-400"
                     )} />
                     <span>{item.label}</span>
+                    {item.badge > 0 && (
+                        <span className="ml-auto flex items-center gap-1">
+                            <span className="relative flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
+                            </span>
+                            <span className={`text-[10px] font-bold ${isDark ? 'text-red-400' : 'text-red-500'}`}>{item.badge}</span>
+                        </span>
+                    )}
                 </button>
             </Tooltip>
         );
