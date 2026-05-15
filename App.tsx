@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Upload, Database, Settings, Play, Layout, Plus, Search, FileText, BarChart2, Shield, Menu, LogOut, Users, Brain } from 'lucide-react';
 import {
   Dataset,
@@ -589,6 +589,7 @@ function App() {
   const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [showReconnectModal, setShowReconnectModal] = useState(false);
   const [reconnectError, setReconnectError] = useState<string | undefined>(undefined);
+  const autoReconnectAttempts = useRef(0);
 
   // Switch connection mode (Import ↔ Live) on the current dataset
   const switchConnectionMode = async (newMode: 'import' | 'live') => {
@@ -652,10 +653,11 @@ function App() {
       const isConnectionExpired = msg.includes('expired') || msg.includes('invalid') || msg.includes('ECONNRESET')
         || msg.includes('Failed to refresh') || msg.includes('Connection');
       if (isConnectionExpired && dataset?.liveConnection) {
-        // ── AUTO-RECONNECT: Try cached credentials first ──
+        // ── AUTO-RECONNECT: Try cached credentials first (max 2 attempts) ──
         const cached = getSessionCredentials(dataset.id);
-        if (cached) {
-          console.log('[App] Auto-reconnecting with cached session credentials...');
+        if (cached && autoReconnectAttempts.current < 2) {
+          autoReconnectAttempts.current += 1;
+          console.log(`[App] Auto-reconnecting with cached session credentials... (attempt ${autoReconnectAttempts.current}/2)`);
           try {
             await handleReconnect(cached);
             return; // Success — refresh was re-triggered inside handleReconnect
@@ -664,6 +666,10 @@ function App() {
             // Clear stale cached credentials
             clearSessionCredentials(dataset.id);
           }
+        } else if (autoReconnectAttempts.current >= 2) {
+          console.warn('[App] Auto-reconnect limit reached (2 attempts). Showing manual reconnect modal.');
+          clearSessionCredentials(dataset.id);
+          autoReconnectAttempts.current = 0;
         }
         setReconnectError(msg);
         setShowReconnectModal(true);
@@ -724,6 +730,7 @@ function App() {
     // Close modal and re-trigger refresh
     setShowReconnectModal(false);
     setReconnectError(undefined);
+    autoReconnectAttempts.current = 0; // Reset counter on successful reconnect
     showToast('🔗 Reconnected successfully — refreshing data...');
     // Small delay then refresh
     setTimeout(() => handleLiveRefresh(), 500);
