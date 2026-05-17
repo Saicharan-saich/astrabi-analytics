@@ -10,6 +10,7 @@ import { Tooltip } from './Tooltip';
 import { AIInsightPanel } from './AIInsightPanel';
 import { getCalculationDisplayName, type TableCalculation } from '../utils/tableCalculations';
 import { TrustBadge } from './TrustBadge';
+import { FormatPanel } from './FormatPanel';
 
 interface NLQViewProps {
     dataset: Dataset | null;
@@ -702,68 +703,12 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
 
                                                 {/* FLOATING FORMAT PANEL */}
                                                 {isFormatPanelOpen && (
-                                                    <div className="absolute top-4 right-4 w-64 bg-white/95 dark:bg-slate-800/95 backdrop-blur shadow-xl border border-slate-200 dark:border-white/10 rounded-xl p-4 z-20 animate-in fade-in slide-in-from-right-4">
-                                                        <div className="flex justify-between items-center mb-3">
-                                                            <h3 className="font-bold text-slate-700 dark:text-white flex items-center gap-2 text-sm">
-                                                                <Palette className="w-4 h-4 text-indigo-500" />
-                                                                Chart Style
-                                                            </h3>
-                                                            <button onClick={() => setIsFormatPanelOpen(false)} className="text-slate-400 hover:text-slate-600 dark:hover:text-white p-1 rounded hover:bg-slate-100 dark:hover:bg-white/10 transition-colors"><X className="w-4 h-4" /></button>
-                                                        </div>
-                                                        <div className="space-y-4">
-                                                            <div>
-                                                                <label className="text-xs font-semibold text-slate-500 mb-1 block">Color Palette</label>
-                                                                <div className="grid grid-cols-5 gap-1">
-                                                                    {['vibrant', 'electric', 'neon', 'sunset', 'ocean'].map(mode => (
-                                                                        <button key={mode} onClick={() => updateFormatting({ ...formatting, colorMode: mode as any })} className={`h-6 rounded border ${formatting.colorMode === mode ? 'ring-2 ring-indigo-500 border-transparent' : 'border-slate-200 hover:border-slate-300'}`} style={{ background: mode === 'vibrant' ? '#3b82f6' : mode === 'electric' ? '#6366f1' : mode === 'neon' ? '#22c55e' : mode === 'sunset' ? '#f97316' : '#0ea5e9' }} title={mode} />
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                            <div>
-                                                                <label className="text-xs font-semibold text-slate-500 mb-1 block">Number Format</label>
-                                                                <select value={formatting.numberFormat} onChange={e => updateFormatting({ ...formatting, numberFormat: e.target.value as any })} className="w-full text-sm border-slate-200 rounded-md py-1 text-slate-700 bg-white focus:ring-indigo-500 focus:border-indigo-500">
-                                                                    <option value="auto">✨ Intelligent (Auto)</option>
-                                                                    <option value="raw">Raw Number</option>
-                                                                    <option value="currency_usd">Currency (USD)</option>
-                                                                    <option value="currency_eur">Currency (EUR)</option>
-                                                                    <option value="percent">Percentage (%)</option>
-                                                                    <option value="compact">Compact (1k, 1M)</option>
-                                                                </select>
-                                                            </div>
-                                                            <div>
-                                                                <label className="text-xs font-semibold text-slate-500 mb-1 block">Decimals</label>
-                                                                <div className="flex bg-slate-100 rounded p-1">
-                                                                    {([0, 1, 2]).map(d => (
-                                                                        <button key={d} onClick={() => updateFormatting({ ...formatting, decimals: d })} className={`flex-1 text-xs py-1 rounded-md transition-all ${formatting.decimals === d ? 'bg-white text-indigo-600 shadow-sm font-medium' : 'text-slate-500 hover:text-slate-700'}`}>{d}</button>
-                                                                    ))}
-                                                                    <button onClick={() => updateFormatting({ ...formatting, decimals: undefined })} className={`flex-1 text-xs py-1 rounded-md transition-all ${formatting.decimals === undefined ? 'bg-white text-indigo-600 shadow-sm font-medium' : 'text-slate-500 hover:text-slate-700'}`}>Auto</button>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex flex-col gap-2 pt-2 border-t border-slate-100 mt-2">
-                                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                                    <input type="checkbox" checked={formatting.headerBold} onChange={e => updateFormatting({ ...formatting, headerBold: e.target.checked })} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                                    <span className="text-sm text-slate-600 font-medium">Bold Chart Title</span>
-                                                                </label>
-                                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                                    <input type="checkbox" checked={formatting.axisBold ?? false} onChange={e => updateFormatting({ ...formatting, axisBold: e.target.checked })} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                                    <span className="text-sm text-slate-600 font-medium">Bold Axis Labels</span>
-                                                                </label>
-                                                                <div className="flex items-center gap-2">
-                                                                    <label className="text-xs font-semibold text-slate-500">Axis Label Color</label>
-                                                                    <input type="color" value={formatting.axisColor || '#475569'} onChange={e => updateFormatting({ ...formatting, axisColor: e.target.value })} className="w-6 h-6 rounded border border-slate-200 cursor-pointer p-0" />
-                                                                    {formatting.axisColor && (<button onClick={() => updateFormatting({ ...formatting, axisColor: undefined })} className="text-[10px] text-slate-400 hover:text-slate-600">Reset</button>)}
-                                                                </div>
-                                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                                    <input type="checkbox" checked={formatting.showLabels} onChange={e => updateFormatting({ ...formatting, showLabels: e.target.checked })} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                                    <span className="text-sm text-slate-600">Show Legend</span>
-                                                                </label>
-                                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                                    <input type="checkbox" checked={formatting.showDataLabels} onChange={e => updateFormatting({ ...formatting, showDataLabels: e.target.checked })} className="rounded text-indigo-600 focus:ring-indigo-500" />
-                                                                    <span className="text-sm text-slate-600 font-medium">Show Data Labels</span>
-                                                                </label>
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                    <FormatPanel
+                                                        formatting={formatting}
+                                                        onUpdateFormatting={updateFormatting}
+                                                        onClose={() => setIsFormatPanelOpen(false)}
+                                                        chartType={analysisResult?.vis}
+                                                    />
                                                 )}
 
                                                 {/* FLOATING ANALYTICS PANEL */}

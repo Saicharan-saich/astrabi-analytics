@@ -942,6 +942,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const fontSize = formatting ? FONT_SIZES[formatting.fontSize || 'md'] : 12;
         const xVisible = formatting?.showXAxis ?? formatting?.showAxis ?? false;
         const yVisible = formatting?.showYAxis ?? formatting?.showAxis ?? false;
+        // Independent sizing maps for new formatting controls
+        const DATA_LABEL_SIZES: Record<string, number> = { xs: 9, sm: 10, md: 11, lg: 13 };
+        const AXIS_LABEL_SIZES: Record<string, number> = { xs: 9, sm: 10, md: 12, lg: 14 };
+        const dataLabelFontSize = DATA_LABEL_SIZES[formatting?.dataLabelSize || 'md'] || 11;
+        const axisLabelFontSize = AXIS_LABEL_SIZES[formatting?.axisLabelSize || 'md'] || 12;
 
         return {
             responsive: true,
@@ -961,10 +966,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         return formatForMetricName(val, metricName);
                     },
                     primaryLabel: yLabel || yKey || '',
-                    color: '#334155', // Slate 700
+                    color: formatting?.dataLabelColor || '#334155',
                     font: {
-                        weight: 'bold',
-                        size: 11
+                        weight: formatting?.dataLabelBold !== false ? 'bold' : 'normal',
+                        size: dataLabelFontSize
                     },
                     anchor: 'end',
                     align: 'end',
@@ -989,7 +994,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                     formatting?.headerSize === 'xl' ? 22 : 18,
                         weight: formatting?.headerBold ? 'bold' as const : 'normal' as const
                     },
-                    color: '#1e293b',
+                    color: formatting?.headerColor || '#1e293b',
                     padding: {
                         top: 10,
                         bottom: 15
@@ -1118,7 +1123,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     stacked: isStacked,
                     ...(isHorizontal ? { beginAtZero: true, min: 0 } : {}),
                     grid: {
-                        display: isHorizontal, // Show grid on X for horizontal (value axis)
+                        display: formatting?.showGridLines ?? isHorizontal, // Show grid on X for horizontal (value axis)
                         drawBorder: xVisible,
                         borderColor: 'rgba(0, 0, 0, 0.1)',
                         ...(isHorizontal ? { color: 'rgba(148, 163, 184, 0.06)' } : {}),
@@ -1128,7 +1133,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         maxRotation: isHorizontal ? 0 : 45,
                         minRotation: 0,
                         font: {
-                            size: fontSize + 1,
+                            size: axisLabelFontSize,
                             weight: formatting?.axisBold ? 'bold' as const : 'normal' as const
                         },
                         color: formatting?.axisColor || '#475569',
@@ -1146,7 +1151,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     ...(isHorizontal ? {} : { min: 0, beginAtZero: true }),
                     stacked: isStacked,
                     grid: {
-                        display: isHorizontal ? false : yVisible,  // Hide grid on Y for horizontal (category axis)
+                        display: formatting?.showGridLines ?? (isHorizontal ? false : yVisible),
                         color: 'rgba(148, 163, 184, 0.06)',
                         drawBorder: false,
                         tickLength: 0,
@@ -1154,7 +1159,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     ticks: {
                         display: yVisible,
                         font: {
-                            size: isHorizontal ? fontSize : fontSize + 2,
+                            size: axisLabelFontSize,
                             weight: formatting?.axisBold ? 'bold' as const : 'normal' as const
                         },
                         color: formatting?.axisColor || '#475569',

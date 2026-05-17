@@ -199,19 +199,25 @@ export type FormattingConfig = {
   fontSize: 'sm' | 'md' | 'lg';
   headerSize: 'sm' | 'md' | 'lg' | 'xl';
   headerBold: boolean;
+  headerColor?: string; // Hex color for chart title text
   showLabels: boolean;
   showDataLabels: boolean;
+  dataLabelSize?: 'xs' | 'sm' | 'md' | 'lg'; // Independent data label font size
+  dataLabelBold?: boolean; // Bold data labels (default: true for backward compat)
+  dataLabelColor?: string; // Hex color for data labels (default: '#334155')
   tableCalculations: import('./utils/tableCalculations').TableCalculation[];
   movingAvgWindow?: number; // Dynamic window size for moving average (default: 3)
   decimals?: number; // 0, 1, 2, or undefined (auto)
   dateFormat?: 'raw' | 'yyyy-mm-dd' | 'mm/dd/yyyy' | 'month_name_year' | 'month_short_year' | 'month_number' | 'month_name_only';
   axisBold?: boolean;
   axisColor?: string; // Hex color for axis tick labels
+  axisLabelSize?: 'xs' | 'sm' | 'md' | 'lg'; // Independent axis tick label font size
   mapLabelContent?: 'value' | 'name' | 'both';
   showAxis?: boolean; // Default to false (hidden) — legacy combined toggle
   showXAxis?: boolean; // Individual X-axis toggle (overrides showAxis when set)
   showYAxis?: boolean; // Individual Y-axis toggle (overrides showAxis when set)
   yAxisFormat?: 'compact' | 'full' | 'short_currency'; // Y-axis tick format: compact ($2.5K), full ($2,500.00), short_currency ($2.5K)
+  showGridLines?: boolean; // Toggle grid lines visibility (default: auto based on chart type)
 };
 
 export interface ChartConfig {

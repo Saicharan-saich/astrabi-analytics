@@ -8,7 +8,7 @@ import { ChartVisualization } from './ChartVisualization';
 import { Tooltip } from './Tooltip';
 import { AIInsightPanel } from './AIInsightPanel';
 import { getCalculationDisplayName, type TableCalculation } from '../utils/tableCalculations';
-
+import { FormatPanel } from './FormatPanel';
 interface AISQLViewProps {
     dataset: Dataset | null;
     onPin?: (title: string, result: AnalysisResult) => void;
@@ -824,55 +824,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
                                                 {/* FLOATING FORMAT PANEL */}
                                                 {isFormatPanelOpen && (
-                                                    <div className="absolute top-4 right-4 w-64 bg-white/95 dark:bg-slate-800/95 backdrop-blur shadow-xl border border-gray-200 dark:border-white/10 rounded-xl p-4 z-20 animate-in fade-in slide-in-from-right-4">
-                                                        <div className="flex justify-between items-center mb-3">
-                                                            <h3 className="font-bold text-gray-700 dark:text-white flex items-center gap-2 text-sm">
-                                                                <Palette className="w-4 h-4 text-amber-500" />
-                                                                Chart Style
-                                                            </h3>
-                                                            <button onClick={() => setIsFormatPanelOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"><X className="w-4 h-4" /></button>
-                                                        </div>
-                                                        <div className="space-y-4">
-                                                            <div>
-                                                                <label className="text-xs font-semibold text-gray-500 dark:text-slate-500 mb-1 block">Color Palette</label>
-                                                                <div className="grid grid-cols-5 gap-1">
-                                                                    {['vibrant', 'electric', 'neon', 'sunset', 'ocean'].map(mode => (
-                                                                        <button key={mode} onClick={() => updateFormatting({ ...formatting, colorMode: mode as any })} className={`h-6 rounded border ${formatting.colorMode === mode ? 'ring-2 ring-amber-500 border-transparent' : 'border-gray-200 dark:border-slate-600 hover:border-gray-300'}`} style={{ background: mode === 'vibrant' ? '#3b82f6' : mode === 'electric' ? '#6366f1' : mode === 'neon' ? '#22c55e' : mode === 'sunset' ? '#f97316' : '#0ea5e9' }} title={mode} />
-                                                                    ))}
-                                                                </div>
-                                                            </div>
-                                                            <div>
-                                                                <label className="text-xs font-semibold text-gray-500 dark:text-slate-500 mb-1 block">Number Format</label>
-                                                                <select value={formatting.numberFormat} onChange={e => updateFormatting({ ...formatting, numberFormat: e.target.value as any })} className="w-full text-sm border-gray-200 dark:border-slate-600 rounded-md py-1 text-gray-700 dark:text-white bg-white dark:bg-slate-700 focus:ring-amber-500 focus:border-amber-500">
-                                                                    <option value="auto">✨ Intelligent (Auto)</option>
-                                                                    <option value="raw">Raw Number</option>
-                                                                    <option value="currency_usd">Currency (USD)</option>
-                                                                    <option value="currency_eur">Currency (EUR)</option>
-                                                                    <option value="percent">Percentage (%)</option>
-                                                                    <option value="compact">Compact (1k, 1M)</option>
-                                                                </select>
-                                                            </div>
-                                                            <div>
-                                                                <label className="text-xs font-semibold text-gray-500 dark:text-slate-500 mb-1 block">Decimals</label>
-                                                                <div className="flex bg-gray-100 dark:bg-slate-700 rounded p-1">
-                                                                    {([0, 1, 2]).map(d => (
-                                                                        <button key={d} onClick={() => updateFormatting({ ...formatting, decimals: d })} className={`flex-1 text-xs py-1 rounded-md transition-all ${formatting.decimals === d ? 'bg-white dark:bg-slate-600 text-amber-600 dark:text-amber-400 shadow-sm font-medium' : 'text-gray-500 dark:text-slate-400 hover:text-gray-700'}`}>{d}</button>
-                                                                    ))}
-                                                                    <button onClick={() => updateFormatting({ ...formatting, decimals: undefined })} className={`flex-1 text-xs py-1 rounded-md transition-all ${formatting.decimals === undefined ? 'bg-white dark:bg-slate-600 text-amber-600 dark:text-amber-400 shadow-sm font-medium' : 'text-gray-500 dark:text-slate-400 hover:text-gray-700'}`}>Auto</button>
-                                                                </div>
-                                                            </div>
-                                                            <div className="flex flex-col gap-2 pt-2 border-t border-gray-100 dark:border-white/5 mt-2">
-                                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                                    <input type="checkbox" checked={formatting.showDataLabels} onChange={e => updateFormatting({ ...formatting, showDataLabels: e.target.checked })} className="rounded text-amber-600 focus:ring-amber-500" />
-                                                                    <span className="text-sm text-gray-600 dark:text-slate-300 font-medium">Show Data Labels</span>
-                                                                </label>
-                                                                <label className="flex items-center gap-2 cursor-pointer">
-                                                                    <input type="checkbox" checked={formatting.showLabels} onChange={e => updateFormatting({ ...formatting, showLabels: e.target.checked })} className="rounded text-amber-600 focus:ring-amber-500" />
-                                                                    <span className="text-sm text-gray-600 dark:text-slate-300">Show Legend</span>
-                                                                </label>
-                                                            </div>
-                                                        </div>
-                                                    </div>
+                                                    <FormatPanel
+                                                        formatting={formatting}
+                                                        onUpdateFormatting={updateFormatting}
+                                                        onClose={() => setIsFormatPanelOpen(false)}
+                                                        chartType={analysisResult?.vis}
+                                                    />
                                                 )}
 
                                                 {/* FLOATING ANALYTICS PANEL */}
