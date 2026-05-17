@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Upload, Database, Settings, Play, Layout, Plus, Search, FileText, BarChart2, Shield, Menu, LogOut, Users, Brain } from 'lucide-react';
 import {
   Dataset,
+  RefreshSchedule,
   AnalysisResult,
   Tab,
   ColumnType,
@@ -586,6 +587,7 @@ function App() {
 
   // ── LIVE REFRESH — Re-fetch data from the source database ──
   const [isLiveRefreshing, setIsLiveRefreshing] = useState(false);
+  const isRefreshingRef = useRef(false); // Ref for async overlap guard (setInterval can't read state)
   const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [showReconnectModal, setShowReconnectModal] = useState(false);
   const [reconnectError, setReconnectError] = useState<string | undefined>(undefined);
@@ -596,7 +598,14 @@ function App() {
     if (!dataset || !dataset.liveConnection) return;
     if (dataset.connectionMode === newMode) { setShowModeDropdown(false); return; }
 
-    const updated: Dataset = { ...dataset, connectionMode: newMode };
+    // Auto-disable refresh schedule when switching to import mode
+    const updated: Dataset = {
+      ...dataset,
+      connectionMode: newMode,
+      ...(newMode === 'import' && dataset.refreshSchedule?.enabled
+        ? { refreshSchedule: { ...dataset.refreshSchedule, enabled: false } }
+        : {}),
+    };
     setDataset(updated);
     saveDatasetToDB(updated);
     setShowModeDropdown(false);
@@ -604,6 +613,8 @@ function App() {
   };
   const handleLiveRefresh = async () => {
     if (!dataset?.liveConnection || dataset.connectionMode !== 'live') return;
+    if (isRefreshingRef.current) { console.log('[App] Refresh skipped — already in progress'); return; }
+    isRefreshingRef.current = true;
     setIsLiveRefreshing(true);
     try {
       const { rows: freshRows, executionTimeMs } = await refreshLiveDataset(dataset.liveConnection);
@@ -632,9 +643,18 @@ function App() {
           } catch (err) {
             console.warn('[App] Semantic model rebuild failed on refresh:', err);
           }
+          // Update schedule: record success + reset failure counter
+          if (refreshedDs.refreshSchedule?.enabled) {
+            refreshedDs.refreshSchedule = {
+              ...refreshedDs.refreshSchedule,
+              lastRefreshAt: Date.now(),
+              consecutiveFailures: 0,
+            };
+          }
           setDataset(refreshedDs);
           saveDatasetToDB(refreshedDs);
           showToast(`⚡ Live data refreshed — ${rows.length} rows (${executionTimeMs}ms)`);
+          isRefreshingRef.current = false;
           setIsLiveRefreshing(false);
           worker.terminate();
         }
@@ -676,8 +696,61 @@ function App() {
       } else {
         showToast(`❌ Refresh failed: ${msg}`);
       }
+      // Track scheduler failures
+      if (dataset?.refreshSchedule?.enabled) {
+        const failures = (dataset.refreshSchedule.consecutiveFailures || 0) + 1;
+        const updatedSchedule: RefreshSchedule = {
+          ...dataset.refreshSchedule,
+          consecutiveFailures: failures,
+          ...(failures >= 3 ? { enabled: false } : {}),
+        };
+        const updatedDs = { ...dataset, refreshSchedule: updatedSchedule };
+        setDataset(updatedDs);
+        saveDatasetToDB(updatedDs);
+        if (failures >= 3) {
+          showToast('⏸️ Auto-refresh paused after 3 consecutive failures');
+        }
+      }
+      isRefreshingRef.current = false;
       setIsLiveRefreshing(false);
     }
+  };
+
+  // ── DATASET SYNCHRONIZATION SCHEDULER ──────────────────────────
+  // Timer-based scheduler that calls handleLiveRefresh at configured intervals.
+  // Downstream reactivity (dashboards, alerts, KPIs) is triggered automatically
+  // via dataset.version increments — no direct coupling.
+  useEffect(() => {
+    const sched = dataset?.refreshSchedule;
+    if (!sched?.enabled || !sched.intervalMs || !dataset?.liveConnection || dataset.connectionMode !== 'live') {
+      return; // No schedule, not live, or disabled
+    }
+    console.log(`[Scheduler] ▶ Auto-refresh enabled: every ${Math.round(sched.intervalMs / 60000)}min`);
+    const interval = setInterval(() => {
+      if (isRefreshingRef.current) {
+        console.log('[Scheduler] ⏭ Skipped tick — refresh already in progress');
+        return;
+      }
+      console.log('[Scheduler] ⏰ Scheduled refresh triggered');
+      handleLiveRefresh();
+    }, sched.intervalMs);
+    return () => {
+      console.log('[Scheduler] ⏹ Cleared interval');
+      clearInterval(interval);
+    };
+  }, [dataset?.refreshSchedule?.enabled, dataset?.refreshSchedule?.intervalMs, dataset?.connectionMode]);
+
+  // Handler for RefreshSchedulerDropdown to update the schedule
+  const updateRefreshSchedule = (schedule: RefreshSchedule) => {
+    if (!dataset) return;
+    const updated: Dataset = { ...dataset, refreshSchedule: schedule };
+    // If enabling, record first "lastRefreshAt" as now so countdown starts immediately
+    if (schedule.enabled && !schedule.lastRefreshAt) {
+      updated.refreshSchedule = { ...schedule, lastRefreshAt: Date.now() };
+    }
+    setDataset(updated);
+    saveDatasetToDB(updated);
+    console.log(`[Scheduler] Schedule updated:`, schedule.enabled ? `every ${Math.round(schedule.intervalMs / 60000)}min` : 'OFF');
   };
 
   // ── RECONNECT — Re-establish expired live database connection ──
@@ -1270,6 +1343,8 @@ function App() {
                       onCancelEdit={() => { setEditingDashboardItemId(null); setActiveTab(Tab.DASHBOARD); }}
                       onLiveRefresh={handleLiveRefresh}
                       isLiveRefreshing={isLiveRefreshing}
+                      refreshSchedule={dataset.refreshSchedule}
+                      onScheduleChange={updateRefreshSchedule}
                     />
                   )}
                 </div>
@@ -1295,6 +1370,8 @@ function App() {
                     onEdit={handleEditAnalysis}
                     onLiveRefresh={handleLiveRefresh}
                     isLiveRefreshing={isLiveRefreshing}
+                    refreshSchedule={dataset.refreshSchedule}
+                    onScheduleChange={updateRefreshSchedule}
                   />
                 </div>
 

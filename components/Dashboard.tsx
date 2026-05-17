@@ -13,8 +13,9 @@ import {
   Plus, Pencil, Copy, MoreHorizontal, Check, Loader2
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { Dataset, DashboardItem } from '../types';
+import { Dataset, DashboardItem, RefreshSchedule } from '../types';
 import { DashboardFilter } from '../store/useAppStore';
+import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 
 interface DashboardProps {
   dataset?: Dataset;
@@ -22,6 +23,8 @@ interface DashboardProps {
   onEdit?: (item: any) => void;
   onLiveRefresh?: () => void;
   isLiveRefreshing?: boolean;
+  refreshSchedule?: RefreshSchedule;
+  onScheduleChange?: (schedule: RefreshSchedule) => void;
 }
 
 // Format large numbers compactly
@@ -108,7 +111,7 @@ const DATASET_COLORS = [
   { bg: 'bg-orange-500/15', text: 'text-orange-400', dot: 'bg-orange-400' },
 ];
 
-export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit, onLiveRefresh, isLiveRefreshing }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange }) => {
   const {
     dashboards, activeDashboardId, setActiveDashboard, createDashboard, renameDashboard, deleteDashboard, duplicateDashboard,
     items, removeItem, updateItem, formatting, clearAllItems,
@@ -209,6 +212,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
       setRefreshingCards(prev => { const next = new Set(prev); next.delete(item.id); return next; });
     }
   }, [dataset, updateItem]);
+
+  // ── Auto-refresh ALL dashboard cards when dataset.version changes ──
+  const prevDashVersionRef = useRef(dataset?.version);
+  useEffect(() => {
+    if (!dataset || dataset.version === prevDashVersionRef.current) return;
+    prevDashVersionRef.current = dataset.version;
+    console.log(`[Dashboard] Dataset v${dataset.version} — refreshing all cards`);
+    items.forEach(item => {
+      if (item.datasetId === dataset.id && item.result?.queryConfig) {
+        handleRefreshCard(item);
+      }
+    });
+  }, [dataset?.version]);
 
   // Measure container width for ResponsiveGridLayout
   const containerRef = useRef<HTMLDivElement>(null);
@@ -567,6 +583,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     <Zap className="w-3.5 h-3.5 text-emerald-400" />
                     <span className="text-xs font-bold text-emerald-400">Live</span>
                   </div>
+                  {onScheduleChange && (
+                    <RefreshSchedulerDropdown
+                      schedule={refreshSchedule}
+                      onScheduleChange={onScheduleChange}
+                      isRefreshing={isLiveRefreshing || false}
+                    />
+                  )}
                   <button
                     onClick={onLiveRefresh}
                     disabled={isLiveRefreshing}
@@ -578,7 +601,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     ) : (
                       <RefreshCw className="w-3.5 h-3.5" />
                     )}
-                    {isLiveRefreshing ? 'Refreshing...' : 'Refresh Data'}
+                    {isLiveRefreshing ? 'Refreshing...' : 'Refresh Now'}
                   </button>
                 </div>
               )}

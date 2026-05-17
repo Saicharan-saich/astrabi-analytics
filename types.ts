@@ -127,6 +127,15 @@ export interface Dataset {
   semanticModel?: import('./services/semanticModel').SemanticModel; // Deterministic semantic model (MANDATORY for analysis)
   version?: number;            // Incremented on every re-upload or re-ETL
   createdAt?: number;          // Timestamp of dataset creation
+  refreshSchedule?: RefreshSchedule;     // Auto-refresh configuration for live connections
+}
+
+/** Dataset-level refresh scheduler configuration */
+export interface RefreshSchedule {
+  enabled: boolean;
+  intervalMs: number;              // Refresh interval in ms (min 300000 = 5min)
+  lastRefreshAt?: number;          // Unix timestamp of last successful refresh
+  consecutiveFailures?: number;    // Pause scheduler after 3 consecutive failures
 }
 
 export interface SourceSchema {

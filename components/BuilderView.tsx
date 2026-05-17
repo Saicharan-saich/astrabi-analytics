@@ -2,10 +2,11 @@ import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { QuestionBuilder } from './QuestionBuilder';
 import { ChartVisualization } from './ChartVisualization';
 import { SmallMultiplesGrid } from './SmallMultiplesGrid';
-import { AnalysisResult, Dataset, QueryConfig, FormattingConfig, AggregationType, TimeGrain, AnalysisType, ColumnType } from '../types';
+import { AnalysisResult, Dataset, QueryConfig, FormattingConfig, AggregationType, TimeGrain, AnalysisType, ColumnType, RefreshSchedule } from '../types';
 import { runAnalysis } from '../services/analysisEngine';
 import { getCalculationDisplayName, applyMultipleCalculations, type TableCalculation, type CalculatedColumn } from '../utils/tableCalculations';
 import { Tooltip } from './Tooltip';
+import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 
 import { AIInsightPanel } from './AIInsightPanel';
 
@@ -22,9 +23,11 @@ interface BuilderViewProps {
     onCancelEdit?: () => void; // Cancel editing and return to dashboard
     onLiveRefresh?: () => Promise<void>;
     isLiveRefreshing?: boolean;
+    refreshSchedule?: RefreshSchedule;
+    onScheduleChange?: (schedule: RefreshSchedule) => void;
 }
 
-export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing }) => {
+export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange }) => {
     const [result, setResult] = useState<AnalysisResult | undefined>(undefined);
     const [error, setError] = useState<string | null>(null);
     const [chartType, setChartType] = useState<any>('bar');
@@ -499,6 +502,13 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                             )}
                             {isLiveRefreshing ? 'Refreshing...' : (dataset.connectionMode === 'live' ? '⚡ Refresh' : 'Refresh')}
                         </button>
+                        {dataset.connectionMode === 'live' && onScheduleChange && (
+                            <RefreshSchedulerDropdown
+                                schedule={refreshSchedule}
+                                onScheduleChange={onScheduleChange}
+                                isRefreshing={isLiveRefreshing || false}
+                            />
+                        )}
                         <button
                             onClick={() => { setResult(null); setError(null); setLastRunConfig(null); }}
                             className="flex items-center text-sm font-bold text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap"
