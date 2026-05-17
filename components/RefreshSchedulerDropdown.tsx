@@ -98,9 +98,9 @@ export const RefreshSchedulerDropdown: React.FC<RefreshSchedulerDropdownProps> =
 
   const buttonColor = enabled
     ? isPaused
-      ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200 dark:text-amber-300 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 dark:border-amber-500/20'
-      : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 dark:border-emerald-500/20'
-    : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 dark:border-emerald-500/20';
+      ? 'text-amber-800 bg-amber-100 hover:bg-amber-200 border-amber-300 dark:text-amber-200 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 dark:border-amber-500/30'
+      : 'text-indigo-800 bg-indigo-100 hover:bg-indigo-200 border-indigo-300 dark:text-indigo-200 dark:bg-indigo-500/20 dark:hover:bg-indigo-500/30 dark:border-indigo-500/30'
+    : 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200 dark:text-indigo-300 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:border-indigo-500/25';
 
   return (
     <div className="relative" ref={dropdownRef}>
@@ -111,8 +111,8 @@ export const RefreshSchedulerDropdown: React.FC<RefreshSchedulerDropdownProps> =
       >
         {enabled && !isPaused && (
           <span className="relative flex h-2 w-2">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500" />
           </span>
         )}
         {isPaused && <Pause className="w-3.5 h-3.5" />}
