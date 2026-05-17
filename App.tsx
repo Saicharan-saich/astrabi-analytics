@@ -1343,7 +1343,7 @@ function App() {
                       onCancelEdit={() => { setEditingDashboardItemId(null); setActiveTab(Tab.DASHBOARD); }}
                       onLiveRefresh={handleLiveRefresh}
                       isLiveRefreshing={isLiveRefreshing}
-                      refreshSchedule={dataset.refreshSchedule}
+                      refreshSchedule={dataset?.refreshSchedule}
                       onScheduleChange={updateRefreshSchedule}
                     />
                   )}
@@ -1370,7 +1370,7 @@ function App() {
                     onEdit={handleEditAnalysis}
                     onLiveRefresh={handleLiveRefresh}
                     isLiveRefreshing={isLiveRefreshing}
-                    refreshSchedule={dataset.refreshSchedule}
+                    refreshSchedule={dataset?.refreshSchedule}
                     onScheduleChange={updateRefreshSchedule}
                   />
                 </div>
