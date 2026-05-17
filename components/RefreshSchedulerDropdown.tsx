@@ -87,7 +87,7 @@ export const RefreshSchedulerDropdown: React.FC<RefreshSchedulerDropdownProps> =
     }
   };
 
-  // Button appearance
+  // Button appearance — matches the adjacent "Refresh Now" button styling
   const buttonLabel = enabled
     ? isPaused
       ? 'Paused'
@@ -98,16 +98,16 @@ export const RefreshSchedulerDropdown: React.FC<RefreshSchedulerDropdownProps> =
 
   const buttonColor = enabled
     ? isPaused
-      ? 'text-amber-600 bg-amber-50 border-amber-300 dark:text-amber-300 dark:bg-amber-500/10 dark:border-amber-500/25'
-      : 'text-emerald-700 bg-emerald-50 border-emerald-300 dark:text-emerald-300 dark:bg-emerald-500/10 dark:border-emerald-500/25'
-    : 'text-slate-600 bg-white border-slate-300 dark:text-slate-300 dark:bg-slate-800 dark:border-white/10';
+      ? 'text-amber-700 bg-amber-50 hover:bg-amber-100 border-amber-200 dark:text-amber-300 dark:bg-amber-500/10 dark:hover:bg-amber-500/20 dark:border-amber-500/20'
+      : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 dark:border-emerald-500/20'
+    : 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200 dark:text-emerald-300 dark:bg-emerald-500/10 dark:hover:bg-emerald-500/20 dark:border-emerald-500/20';
 
   return (
     <div className="relative" ref={dropdownRef}>
       {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border hover:shadow-sm ${buttonColor}`}
+        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${buttonColor}`}
       >
         {enabled && !isPaused && (
           <span className="relative flex h-2 w-2">
