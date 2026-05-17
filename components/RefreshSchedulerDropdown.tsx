@@ -98,16 +98,16 @@ export const RefreshSchedulerDropdown: React.FC<RefreshSchedulerDropdownProps> =
 
   const buttonColor = enabled
     ? isPaused
-      ? 'text-amber-800 bg-amber-100 hover:bg-amber-200 border-amber-300 dark:text-amber-200 dark:bg-amber-500/20 dark:hover:bg-amber-500/30 dark:border-amber-500/30'
-      : 'text-indigo-800 bg-indigo-100 hover:bg-indigo-200 border-indigo-300 dark:text-indigo-200 dark:bg-indigo-500/20 dark:hover:bg-indigo-500/30 dark:border-indigo-500/30'
-    : 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200 dark:text-indigo-300 dark:bg-indigo-500/10 dark:hover:bg-indigo-500/20 dark:border-indigo-500/25';
+      ? 'text-amber-700 bg-amber-100 hover:bg-amber-200 border border-amber-300'
+      : 'text-violet-700 bg-violet-100 hover:bg-violet-200 border border-violet-300'
+    : 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300';
 
   return (
     <div className="relative" ref={dropdownRef}>
       {/* Trigger Button */}
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${buttonColor}`}
+        className={`flex items-center gap-1.5 text-sm font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap ${buttonColor}`}
       >
         {enabled && !isPaused && (
           <span className="relative flex h-2 w-2">
