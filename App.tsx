@@ -706,6 +706,9 @@ function App() {
           autoReconnectAttempts.current += 1;
           console.log(`[App] Auto-reconnecting with cached session credentials... (attempt ${autoReconnectAttempts.current}/2)`);
           try {
+            // Reset refresh lock BEFORE reconnect so the re-triggered refresh can proceed
+            isRefreshingRef.current = false;
+            setIsLiveRefreshing(false);
             await handleReconnect(cached);
             return; // Success — refresh was re-triggered inside handleReconnect
           } catch (autoErr: any) {
@@ -790,7 +793,8 @@ function App() {
     console.log(`[Scheduler] Schedule updated:`, schedule.enabled ? `every ${Math.round(schedule.intervalMs / 60000)}min` : 'OFF');
 
     // BUG 5 FIX: Fire immediate first refresh when enabling auto-refresh
-    if (schedule.enabled && schedule.intervalMs > 0) {
+    // Guard: skip if a refresh is already running (e.g. during auto-reconnect flow)
+    if (schedule.enabled && schedule.intervalMs > 0 && !isRefreshingRef.current) {
       console.log('[Scheduler] ▶ Firing immediate first refresh on enable');
       // Small delay so state updates propagate before refresh reads datasetRef
       setTimeout(() => handleLiveRefresh(), 100);
