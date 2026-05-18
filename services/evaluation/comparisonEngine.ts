@@ -166,8 +166,24 @@ function applySPLY(
         allPeriodsMap.set(mapKey, Number(row[metricKey]) || 0);
     }
 
-    // Shift grain key by -1 year
+    // Shift grain key by -1 year (handles leap year edge case)
     const shiftKey = (key: string): string => {
+        // Day-level grain: YYYY-MM-DD — validate the shifted date exists
+        const dayMatch = key.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (dayMatch) {
+            const shiftedYear = parseInt(dayMatch[1]) - 1;
+            const month = parseInt(dayMatch[2]);
+            const day = parseInt(dayMatch[3]);
+            // Check if the shifted date is valid (handles Feb 29 → Feb 28)
+            const shiftedDate = new Date(Date.UTC(shiftedYear, month - 1, day));
+            if (shiftedDate.getUTCMonth() !== month - 1) {
+                // Date overflowed (e.g., Feb 29 → Mar 1) — use last valid day
+                const lastDay = new Date(Date.UTC(shiftedYear, month, 0)).getUTCDate();
+                return `${shiftedYear}-${dayMatch[2]}-${String(lastDay).padStart(2, '0')}`;
+            }
+            return `${shiftedYear}-${dayMatch[2]}-${dayMatch[3]}`;
+        }
+        // Week/month/quarter/year grains: simple year decrement
         const yearMatch = key.match(/^(\d{4})(.*)$/);
         if (yearMatch) {
             return `${parseInt(yearMatch[1]) - 1}${yearMatch[2]}`;

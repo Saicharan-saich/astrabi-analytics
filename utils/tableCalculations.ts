@@ -59,10 +59,14 @@ export function applyTableCalculation(
         }
 
         case 'rank_asc': {
-            const sorted = [...data].sort((a, b) => (Number(a[yKey]) || 0) - (Number(b[yKey]) || 0));
-            transformedData = data.map(row => ({
+            // Build rank map using original indices to survive object cloning
+            const indexed = data.map((row, i) => ({ i, v: Number(row[yKey]) || 0 }));
+            indexed.sort((a, b) => a.v - b.v);
+            const rankMap = new Map<number, number>();
+            indexed.forEach((item, rank) => rankMap.set(item.i, rank + 1));
+            transformedData = data.map((row, i) => ({
                 ...row,
-                [targetKey]: sorted.findIndex(r => r === row) + 1
+                [targetKey]: rankMap.get(i) || 0
             }));
             yLabel = `Rank (Ascending) of ${originalYLabel}`;
             suggestedNumberFormat = 'raw';
@@ -70,10 +74,13 @@ export function applyTableCalculation(
         }
 
         case 'rank_desc': {
-            const sorted = [...data].sort((a, b) => (Number(b[yKey]) || 0) - (Number(a[yKey]) || 0));
-            transformedData = data.map(row => ({
+            const indexed = data.map((row, i) => ({ i, v: Number(row[yKey]) || 0 }));
+            indexed.sort((a, b) => b.v - a.v);
+            const rankMap = new Map<number, number>();
+            indexed.forEach((item, rank) => rankMap.set(item.i, rank + 1));
+            transformedData = data.map((row, i) => ({
                 ...row,
-                [targetKey]: sorted.findIndex(r => r === row) + 1
+                [targetKey]: rankMap.get(i) || 0
             }));
             yLabel = `Rank (Descending) of ${originalYLabel}`;
             suggestedNumberFormat = 'raw';

@@ -26,7 +26,16 @@ import type { DimDateRow } from '../../types';
 function parseNum(raw: any): number {
     if (raw === null || raw === undefined || raw === '') return NaN;
     if (typeof raw === 'number') return raw;
-    return Number(String(raw).replace(/[$,]/g, '')) || 0;
+    // Strip all common currency symbols, commas, whitespace
+    let cleaned = String(raw).replace(/[$€£¥,\s]/g, '');
+    // Handle parenthetical negatives: (500) → -500
+    if (cleaned.startsWith('(') && cleaned.endsWith(')')) {
+        cleaned = '-' + cleaned.slice(1, -1);
+    }
+    // Strip trailing % (value already numeric, percent is a format concern)
+    cleaned = cleaned.replace(/%$/, '');
+    const num = Number(cleaned);
+    return isNaN(num) ? NaN : num; // Let NaN propagate — don't convert to 0
 }
 
 /** Resolve the actual column key from a row (case-insensitive) */
@@ -39,7 +48,7 @@ function resolveColumnKey(row: Record<string, any>, column: string): string {
 }
 
 /** Extract a date/datetime string from a row. Preserves time portion if present. */
-function extractDateStr(row: Record<string, any>, dateCol: string): string {
+function extractDateStr(row: Record<string, any>, dateCol: string, dayFirst: boolean = false): string {
     const raw = row[dateCol];
     if (!raw || raw === 'null' || raw === 'undefined') return '1970-01-01T00:00:00';
     const s = String(raw);
@@ -47,12 +56,16 @@ function extractDateStr(row: Record<string, any>, dateCol: string): string {
     if (s.match(/^\d{4}-\d{2}-\d{2}[T ]/)) return s;
     // Date-only ISO format
     if (s.match(/^\d{4}-\d{2}-\d{2}$/)) return s + 'T00:00:00';
-    // MM/DD/YYYY
+    // Slash-separated: auto-detect DD/MM/YYYY vs MM/DD/YYYY
     if (s.includes('/')) {
         const parts = s.split('/');
         if (parts.length === 3) {
-            const [mm, dd, yyyy] = parts;
-            return `${yyyy}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}T00:00:00`;
+            const p0 = parts[0].padStart(2, '0');
+            const p1 = parts[1].padStart(2, '0');
+            const yyyy = parts[2].split(' ')[0];
+            const mm = dayFirst ? p1 : p0;
+            const dd = dayFirst ? p0 : p1;
+            return `${yyyy}-${mm}-${dd}T00:00:00`;
         }
     }
     // Try Date constructor
@@ -69,12 +82,13 @@ function formatTimeBucket(dateStr: string, grain: string): string {
     const timePart = cleaned.length > 10 ? cleaned.substring(11) : '00:00:00';
     const dp = datePart.split('-').map(Number);
     const tp = timePart.split(':').map(Number);
-    const d = new Date(dp[0], dp[1] - 1, dp[2] || 1, tp[0] || 0, tp[1] || 0, tp[2] || 0);
-    const y = d.getFullYear();
-    const m = d.getMonth() + 1;
-    const dy = d.getDate();
-    const h = d.getHours();
-    const mi = d.getMinutes();
+    // CRITICAL: Use UTC to prevent timezone-dependent ±1 day shifts
+    const d = new Date(Date.UTC(dp[0], dp[1] - 1, dp[2] || 1, tp[0] || 0, tp[1] || 0, tp[2] || 0));
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth() + 1;
+    const dy = d.getUTCDate();
+    const h = d.getUTCHours();
+    const mi = d.getUTCMinutes();
 
     switch (grain) {
         case 'minute': {
@@ -148,15 +162,19 @@ function accumulateStats(stats: MetricStats, rawValue: any): void {
     const isNull = rawValue === null || rawValue === undefined || rawValue === '';
     if (isNull) return; // COUNT skips nulls (SQL semantics)
 
+    // Always track distinct values (for COUNT_DISTINCT, which counts strings too)
+    stats.distinct.add(String(rawValue));
+
     const v = parseNum(rawValue);
-    const numV = isNaN(v) ? 0 : v;
+    // CRITICAL: Skip non-numeric values for numeric aggregations (SUM/AVG/MIN/MAX)
+    // Previously NaN was converted to 0, inflating AVG denominators and corrupting MIN
+    if (isNaN(v)) return;
 
     stats.count += 1;
-    stats.sum += numV;
-    stats.min = Math.min(stats.min, numV);
-    stats.max = Math.max(stats.max, numV);
-    if (stats.first === null) stats.first = numV; // Track first value for NONE
-    stats.distinct.add(String(rawValue));
+    stats.sum += v;
+    stats.min = Math.min(stats.min, v);
+    stats.max = Math.max(stats.max, v);
+    if (stats.first === null) stats.first = v; // Track first value for NONE
 }
 
 function resolveAggregation(stats: MetricStats, agg: AggregationType): number {
@@ -200,10 +218,10 @@ function applyRowFilter(row: Record<string, any>, f: RowFilter): boolean {
     }
 }
 
-function applyRangeFilter(row: Record<string, any>, f: RangeFilter, dateColKey: string): boolean {
+function applyRangeFilter(row: Record<string, any>, f: RangeFilter, dateColKey: string, dayFirst: boolean = false): boolean {
     // Use the filter column if specified, otherwise fall back to date column
     const key = resolveColumnKey(row, f.column || dateColKey);
-    const fullDateStr = extractDateStr(row, key);
+    const fullDateStr = extractDateStr(row, key, dayFirst);
     // Range boundaries are date-only (YYYY-MM-DD), so compare only the date portion
     const dateStr = fullDateStr.substring(0, 10);
 
@@ -238,6 +256,26 @@ export function executeQueryPlan(
         effectiveDateCol = resolveColumnKey(rows[0], dateColKey);
     }
 
+    // ── DATE FORMAT AUTO-DETECTION ──
+    // Detect DD/MM vs MM/DD in slash-separated dates (same logic as evaluateLocally)
+    let _dayFirst = false;
+    if (effectiveDateCol && rows.length > 0) {
+        const sample = rows.slice(0, 100);
+        let hasSlash = false, p0Above12 = false, p1Above12 = false;
+        for (const r of sample) {
+            const raw = String(r[effectiveDateCol] || '');
+            if (raw.includes('/')) {
+                hasSlash = true;
+                const parts = raw.split('/');
+                if (parts.length === 3) {
+                    if (parseInt(parts[0]) > 12) p0Above12 = true;
+                    if (parseInt(parts[1]) > 12) p1Above12 = true;
+                }
+            }
+        }
+        if (hasSlash && p0Above12 && !p1Above12) _dayFirst = true;
+    }
+
     // ── STEP 1: WHERE — Apply row filters + range filters ────────
     let filtered = rows;
 
@@ -251,7 +289,7 @@ export function executeQueryPlan(
     // Range filters (time ranges, date ranges)
     if (plan.filters.range.length > 0) {
         filtered = filtered.filter(r =>
-            plan.filters.range.every(f => applyRangeFilter(r, f, effectiveDateCol))
+            plan.filters.range.every(f => applyRangeFilter(r, f, effectiveDateCol, _dayFirst))
         );
     }
 
@@ -260,7 +298,7 @@ export function executeQueryPlan(
         filtered = filtered.filter(r => {
             return plan.filters.date.every(df => {
                 const key = resolveColumnKey(r, df.column || effectiveDateCol);
-                const dateStr = extractDateStr(r, key);
+                const dateStr = extractDateStr(r, key, _dayFirst);
                 if (dateStr.startsWith('1970-01-01')) return false;
                 const formatted = formatTimeBucket(dateStr, df.timeGrain);
                 return df.values.some(v => formatted.toLowerCase() === v.toLowerCase());
@@ -326,7 +364,7 @@ export function executeQueryPlan(
         for (const dim of plan.dimensions) {
             let val: string;
             if (dim.type === 'time_bucket') {
-                const dateStr = extractDateStr(row, effectiveDateCol);
+                const dateStr = extractDateStr(row, effectiveDateCol, _dayFirst);
                 val = formatTimeBucket(dateStr, dim.grain);
                 dimValues[dim.alias] = val;
             } else {

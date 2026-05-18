@@ -77,14 +77,37 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
         if (sqlResult.data.length === 1 && cols.length === 1) vis = 'kpiCard';
         else if (cols.length === 1) vis = 'table';
 
+        // ═══ POST-VALIDATE AI SQL AGAINST SEMANTIC MODEL ═══════════════
+        // AI-generated SQL bypasses the semantic model's aggregation guards.
+        // Check if the SQL incorrectly uses SUM on non-additive metrics.
+        const aiWarnings: string[] = [];
+        if (semModel) {
+            const sqlUpper = aiSql.toUpperCase();
+            for (const measure of semModel.measures) {
+                if (measure.behavior === 'non_additive') {
+                    // Check if SUM is applied to this non-additive column
+                    const colPattern = new RegExp(`SUM\\s*\\(\\s*["\`]?${measure.column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["\`]?\\s*\\)`, 'i');
+                    if (colPattern.test(aiSql)) {
+                        aiWarnings.push(
+                            `⚠️ AI used SUM("${measure.column}") but this metric is non-additive (should use ${measure.aggregation}). Values may be incorrect.`
+                        );
+                        console.warn(`[runAnalysis] AI SQL VALIDATION: SUM used on non-additive metric "${measure.column}" (expected ${measure.aggregation})`);
+                    }
+                }
+            }
+        }
+
         return {
             data: sqlResult.data, xKey, yKey,
             yLabel: query.questionId || 'AI Query',
-            insight: `AI SQL Query Result`,
+            insight: aiWarnings.length > 0
+                ? `⚠️ ${aiWarnings.join(' | ')}`
+                : `AI SQL Query Result`,
             sql: aiSql, // Show the ORIGINAL AI SQL
             config: query,
             vis,
             kpi: sqlResult.data.length === 1 ? sqlResult.data[0][yKey] : undefined,
+            ...(aiWarnings.length > 0 ? { warnings: aiWarnings } : {}),
         };
     }
 
@@ -271,6 +294,35 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
     if (dataset.sourceSchema?.joinEdges && dataset.sourceSchema.joinEdges.length > 0) {
         confidence -= 0.05;
         resultWarnings.push('Data includes joined tables — verify no row duplication');
+
+        // ═══ POST-AGGREGATION SANITY CHECK (P2 #7) ═══════════════════
+        // Compare aggregated total against raw column total to detect join inflation.
+        // If aggregated sum > 150% of raw unique-dimension sum, flag it.
+        if (query.metric && query.aggregation !== 'COUNT' && query.aggregation !== 'COUNT_DISTINCT' && data.length > 1) {
+            const aggTotal = data.reduce((s: number, r: any) => s + (Number(r[yKey]) || 0), 0);
+            // Compute a reference: sum only unique dimension values from raw data
+            const rawTotal = activeRows.reduce((s: number, r: any) => {
+                const v = r[query.metric];
+                return s + (typeof v === 'number' ? v : (Number(String(v || '0').replace(/[$€£¥,]/g, '')) || 0));
+            }, 0);
+            if (rawTotal > 0 && aggTotal > rawTotal * 1.5) {
+                const inflationPct = Math.round((aggTotal / rawTotal) * 100);
+                confidence -= 0.15;
+                resultWarnings.push(`Possible join inflation: aggregated total (${aggTotal.toLocaleString()}) is ${inflationPct}% of raw total (${rawTotal.toLocaleString()})`);
+                console.warn(`[runAnalysis] ⚠️ JOIN INFLATION DETECTED: agg=${aggTotal}, raw=${rawTotal}, ratio=${inflationPct}%`);
+            }
+        }
+    }
+
+    // ═══ POST-VALIDATION CONFIDENCE INTEGRATION (P3 #11) ═════════
+    // Integrate the validator's post-execution checks into confidence scoring
+    const postValCheck = validateAnalysis.post(analysisResult, dataset);
+    if (postValCheck.status === 'error') {
+        confidence -= 0.2;
+        resultWarnings.push(...postValCheck.checks.filter(c => c.status === 'fail').map(c => c.message));
+    } else if (postValCheck.status === 'warning') {
+        confidence -= 0.05;
+        resultWarnings.push(...postValCheck.checks.filter(c => c.status === 'warn').map(c => c.message));
     }
 
     analysisResult.confidence = Math.max(0, Math.min(1, confidence));
@@ -319,13 +371,11 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
         };
     }
 
-    // ─── VALIDATOR: Post-execution ───────────────────────────────
-    const postValidation = validateAnalysis.post(analysisResult, dataset);
-
+    // ─── VALIDATOR: Attach validation results ───────────────────
     analysisResult.validation = {
         pre: preValidation,
         sql: sqlValidation,
-        post: postValidation
+        post: postValCheck
     };
 
     return analysisResult;

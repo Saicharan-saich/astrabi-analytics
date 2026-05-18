@@ -84,8 +84,54 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
     const dateColKey = cols['order_date'] || Object.keys(sampleRow).find(k => k.toLowerCase().includes('date') && !k.toLowerCase().includes('updated')) || 'order_date';
 
     // Memoize column lookups for other roles if needed, though they usually use direct mapping
-    const val = (r: any, role: string) => { const k = cols[role]; return k ? (Number(String(r[k] || 0).replace(/[$,]/g, '')) || 0) : 0; };
+    const val = (r: any, role: string) => {
+        const k = cols[role] || (r.hasOwnProperty(role) ? role : null);
+        if (!k) return 0;
+        const raw = r[k];
+        if (raw === null || raw === undefined || raw === '') return 0;
+        if (typeof raw === 'number') return raw;
+        // Strip currency symbols ($ € £ ¥), commas, whitespace
+        let cleaned = String(raw).replace(/[$€£¥,\s]/g, '');
+        // Handle parenthetical negatives: (500) → -500
+        if (cleaned.startsWith('(') && cleaned.endsWith(')')) {
+            cleaned = '-' + cleaned.slice(1, -1);
+        }
+        cleaned = cleaned.replace(/%$/, '');
+        const num = Number(cleaned);
+        return isNaN(num) ? 0 : num;
+    };
     const str = (r: any, role: string) => { const k = cols[role]; return k ? String(r[k] || 'Unknown') : 'Unknown'; };
+    // ── DATE FORMAT AUTO-DETECTION (P1 #3) ──
+    // Sample first 100 rows to detect if slash-separated dates use DD/MM or MM/DD.
+    // If any first-position value > 12, it MUST be DD/MM (day first).
+    let _slashDateIsDayFirst = false;
+    if (rows.length > 0) {
+        const sample = rows.slice(0, 100);
+        let hasSlashDates = false;
+        let firstPartAbove12 = false;
+        let secondPartAbove12 = false;
+        for (const r of sample) {
+            const raw = String(r[dateColKey] || '');
+            if (raw.indexOf('/') > -1) {
+                hasSlashDates = true;
+                const parts = raw.split('/');
+                if (parts.length === 3) {
+                    const p0 = parseInt(parts[0], 10);
+                    const p1 = parseInt(parts[1], 10);
+                    if (p0 > 12) firstPartAbove12 = true;
+                    if (p1 > 12) secondPartAbove12 = true;
+                }
+            }
+        }
+        if (hasSlashDates) {
+            if (firstPartAbove12 && !secondPartAbove12) {
+                _slashDateIsDayFirst = true; // DD/MM/YYYY format confirmed
+                console.log(`[Engine] Date format detected: DD/MM/YYYY (European)`);
+            } else {
+                console.log(`[Engine] Date format detected: MM/DD/YYYY (US)`);
+            }
+        }
+    }
 
     // Optimized Date Extractor (No per-row generic lookup)
     const date = (r: any) => {
@@ -101,13 +147,16 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             return raw.split('T')[0];
         }
 
-        // Handle MM/DD/YYYY or M/D/YYYY
+        // Handle MM/DD/YYYY or DD/MM/YYYY (auto-detected format)
         if (raw.indexOf('/') > -1) {
             const parts = raw.split('/');
             if (parts.length === 3) {
-                const m = parts[0].padStart(2, '0');
-                const d = parts[1].padStart(2, '0');
+                const p0 = parts[0].padStart(2, '0');
+                const p1 = parts[1].padStart(2, '0');
                 const y = parts[2].split(' ')[0];
+                // Use detected format: DD/MM/YYYY vs MM/DD/YYYY
+                const m = _slashDateIsDayFirst ? p1 : p0;
+                const d = _slashDateIsDayFirst ? p0 : p1;
                 return `${y}-${m}-${d}`;
             }
         }
@@ -370,13 +419,33 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                 if (dq.id.includes('cust') || dq.req.includes('customer_id')) metricName = 'customer_id';
             }
 
-            // Helper for Aggregation
+            // Helper for Aggregation — respects query.aggregation for correct non-additive handling
             const aggregate = (dataset: any[]) => {
                 if (metricName === 'order_id' || metricName === 'customer_id') {
                     const unique = new Set(dataset.map(r => str(r, metricName)));
                     return unique.size;
                 }
-                return dataset.reduce((a, r) => a + val(r, metricName), 0);
+                const agg = (query.aggregation || 'SUM').toUpperCase();
+                const values = dataset.map(r => val(r, metricName)).filter(v => v !== 0 || dataset.some(r2 => {
+                    const k = cols[metricName] || metricName;
+                    const raw = r2[k];
+                    return raw === 0 || raw === '0';
+                }));
+                switch (agg) {
+                    case 'AVG':
+                        return values.length > 0 ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+                    case 'COUNT':
+                        return dataset.length;
+                    case 'COUNT_DISTINCT':
+                        return new Set(dataset.map(r => str(r, metricName))).size;
+                    case 'MIN':
+                        return values.length > 0 ? Math.min(...values) : 0;
+                    case 'MAX':
+                        return values.length > 0 ? Math.max(...values) : 0;
+                    case 'SUM':
+                    default:
+                        return dataset.reduce((a, r) => a + val(r, metricName), 0);
+                }
             };
 
             // â”€â”€ CENTRALIZED DIMENSION RESOLVER â”€â”€
@@ -1251,8 +1320,11 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                         .slice(0, pctLimit);
 
                     const topPct = items.reduce((s, i) => s + i.value, 0);
-                    if (total > 0 && topPct < 100) {
-                        items.push({ x: 'Other', value: Math.round((100 - topPct) * 100) / 100, rawValue: total - items.reduce((s, i) => s + i.rawValue, 0) });
+                    // ACCURACY FIX: Compute "Other" from raw values, not from (100 - topPct)
+                    // which accumulates rounding errors from per-item Math.round
+                    const otherRaw = total - items.reduce((s, i) => s + i.rawValue, 0);
+                    if (total > 0 && otherRaw > 0) {
+                        items.push({ x: 'Other', value: Math.round((otherRaw / total) * 10000) / 100, rawValue: otherRaw });
                     }
 
                     data = items;
