@@ -162,6 +162,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     return () => window.removeEventListener('click', close);
   }, [contextMenuId]);
 
+
   // ── Dataset scoping ─────────────────────────────────────────
   const uniqueDatasets = useMemo(() => {
     const map = new Map<string, string>();

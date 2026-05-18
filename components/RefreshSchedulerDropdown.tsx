@@ -187,10 +187,10 @@ export const RefreshSchedulerDropdown: React.FC<RefreshSchedulerDropdownProps> =
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-500 dark:text-slate-400 font-medium flex items-center gap-1">
                     <Clock className="w-3 h-3" />
-                    Next refresh in
+                    {isRefreshing ? 'Refreshing' : 'Next refresh in'}
                   </span>
-                  <span className="text-emerald-600 dark:text-emerald-400 font-bold font-mono">
-                    {timeRemaining > 0 ? formatCountdown(timeRemaining) : 'now'}
+                  <span className={`font-bold font-mono ${isRefreshing ? 'text-blue-500 dark:text-blue-400 animate-pulse' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                    {isRefreshing ? '⏳' : timeRemaining > 0 ? formatCountdown(timeRemaining) : 'starting...'}
                   </span>
                 </div>
               )}

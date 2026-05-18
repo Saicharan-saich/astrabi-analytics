@@ -588,6 +588,8 @@ function App() {
   // ── LIVE REFRESH — Re-fetch data from the source database ──
   const [isLiveRefreshing, setIsLiveRefreshing] = useState(false);
   const isRefreshingRef = useRef(false); // Ref for async overlap guard (setInterval can't read state)
+  const datasetRef = useRef(dataset); // BUG 1 FIX: Always-current dataset for async/interval callbacks
+  datasetRef.current = dataset; // Keep ref synced on every render
   const [showModeDropdown, setShowModeDropdown] = useState(false);
   const [showReconnectModal, setShowReconnectModal] = useState(false);
   const [reconnectError, setReconnectError] = useState<string | undefined>(undefined);
@@ -612,21 +614,36 @@ function App() {
     console.log(`[App] Connection mode switched to: ${newMode}`);
   };
   const handleLiveRefresh = async () => {
-    if (!dataset?.liveConnection || dataset.connectionMode !== 'live') return;
+    // BUG 1 FIX: Read from ref to always get latest dataset (not stale closure)
+    const ds = datasetRef.current;
+    if (!ds?.liveConnection || ds.connectionMode !== 'live') return;
     if (isRefreshingRef.current) { console.log('[App] Refresh skipped — already in progress'); return; }
     isRefreshingRef.current = true;
     setIsLiveRefreshing(true);
     try {
-      const { rows: freshRows, executionTimeMs } = await refreshLiveDataset(dataset.liveConnection);
+      const { rows: freshRows, executionTimeMs } = await refreshLiveDataset(ds.liveConnection);
       console.log(`[App] Live refresh complete: ${freshRows.length} rows in ${executionTimeMs}ms`);
 
       // Re-run ETL on fresh data via worker
       const worker = new Worker(new URL('./workers/etl.worker.ts', import.meta.url), { type: 'module' });
+
+      // BUG 3 FIX: Handle worker errors to prevent stuck isRefreshingRef
+      worker.onerror = (err) => {
+        console.error('[App] ETL worker error during refresh:', err);
+        isRefreshingRef.current = false;
+        setIsLiveRefreshing(false);
+        showToast('❌ Refresh failed: ETL processing error');
+        worker.terminate();
+      };
+
       worker.onmessage = (event) => {
         if (event.data.type === 'SUCCESS') {
+          // BUG 1 FIX: Use datasetRef.current (not closure 'ds') for the spread
+          // so we don't revert any state changes that happened during the async refresh
+          const latestDs = datasetRef.current || ds;
           const { rows, columns, timeContext, dimDate, rawRows, logs } = event.data.result;
           const refreshedDs: Dataset = {
-            ...dataset,
+            ...latestDs,
             rows,
             rawRows,
             columns,
@@ -634,7 +651,7 @@ function App() {
             etlLogs: logs,
             timeContext,
             dimDate,
-            version: (dataset.version || 1) + 1,
+            version: (latestDs.version || 1) + 1,
           };
           // Rebuild semantic model
           try {
@@ -658,23 +675,33 @@ function App() {
           setIsLiveRefreshing(false);
           worker.terminate();
         }
+        // BUG 3 FIX: Handle worker ERROR messages
+        if (event.data.type === 'ERROR') {
+          console.error('[App] ETL worker reported error:', event.data.error);
+          isRefreshingRef.current = false;
+          setIsLiveRefreshing(false);
+          showToast(`❌ Refresh failed: ${event.data.error || 'ETL processing error'}`);
+          worker.terminate();
+        }
       };
       worker.postMessage({
         type: 'PROCESS_FILE',
         rawData: freshRows,
-        fileName: dataset.name,
+        fileName: ds.name,
         isConnector: true,
-        sourceSchema: dataset.sourceSchema,
+        sourceSchema: ds.sourceSchema,
       });
     } catch (err: any) {
       console.error('[App] Live refresh failed:', err);
       const msg = err.message || 'Unknown error';
+      // BUG 1 FIX: Re-read latest dataset from ref for error handling
+      const latestDs = datasetRef.current;
       // Detect expired/invalid connection errors
       const isConnectionExpired = msg.includes('expired') || msg.includes('invalid') || msg.includes('ECONNRESET')
         || msg.includes('Failed to refresh') || msg.includes('Connection');
-      if (isConnectionExpired && dataset?.liveConnection) {
+      if (isConnectionExpired && latestDs?.liveConnection) {
         // ── AUTO-RECONNECT: Try cached credentials first (max 2 attempts) ──
-        const cached = getSessionCredentials(dataset.id);
+        const cached = getSessionCredentials(latestDs.id);
         if (cached && autoReconnectAttempts.current < 2) {
           autoReconnectAttempts.current += 1;
           console.log(`[App] Auto-reconnecting with cached session credentials... (attempt ${autoReconnectAttempts.current}/2)`);
@@ -684,11 +711,11 @@ function App() {
           } catch (autoErr: any) {
             console.warn('[App] Auto-reconnect failed, showing modal:', autoErr.message);
             // Clear stale cached credentials
-            clearSessionCredentials(dataset.id);
+            clearSessionCredentials(latestDs.id);
           }
         } else if (autoReconnectAttempts.current >= 2) {
           console.warn('[App] Auto-reconnect limit reached (2 attempts). Showing manual reconnect modal.');
-          clearSessionCredentials(dataset.id);
+          clearSessionCredentials(latestDs.id);
           autoReconnectAttempts.current = 0;
         }
         setReconnectError(msg);
@@ -697,18 +724,21 @@ function App() {
         showToast(`❌ Refresh failed: ${msg}`);
       }
       // Track scheduler failures
-      if (dataset?.refreshSchedule?.enabled) {
-        const failures = (dataset.refreshSchedule.consecutiveFailures || 0) + 1;
+      // BUG 2 FIX: Keep enabled: true so the scheduler loop can resume.
+      // The UI uses consecutiveFailures >= 3 to show "Paused" state.
+      if (latestDs?.refreshSchedule?.enabled) {
+        const failures = (latestDs.refreshSchedule.consecutiveFailures || 0) + 1;
         const updatedSchedule: RefreshSchedule = {
-          ...dataset.refreshSchedule,
+          ...latestDs.refreshSchedule,
           consecutiveFailures: failures,
-          ...(failures >= 3 ? { enabled: false } : {}),
+          // BUG 2 FIX: Do NOT set enabled: false — keep the loop alive
+          // The interval guard at line 730 will skip ticks while paused
         };
-        const updatedDs = { ...dataset, refreshSchedule: updatedSchedule };
+        const updatedDs = { ...latestDs, refreshSchedule: updatedSchedule };
         setDataset(updatedDs);
         saveDatasetToDB(updatedDs);
         if (failures >= 3) {
-          showToast('⏸️ Auto-refresh paused after 3 consecutive failures');
+          showToast('⏸️ Auto-refresh paused after 3 consecutive failures. Select an interval to retry.');
         }
       }
       isRefreshingRef.current = false;
@@ -725,6 +755,12 @@ function App() {
     if (!sched?.enabled || !sched.intervalMs || !dataset?.liveConnection || dataset.connectionMode !== 'live') {
       return; // No schedule, not live, or disabled
     }
+    // BUG 2 FIX: Don't start interval if paused due to consecutive failures
+    const MAX_FAILURES = 3;
+    if ((sched.consecutiveFailures || 0) >= MAX_FAILURES) {
+      console.log(`[Scheduler] ⏸ Paused — ${sched.consecutiveFailures} consecutive failures`);
+      return;
+    }
     console.log(`[Scheduler] ▶ Auto-refresh enabled: every ${Math.round(sched.intervalMs / 60000)}min`);
     const interval = setInterval(() => {
       if (isRefreshingRef.current) {
@@ -732,13 +768,14 @@ function App() {
         return;
       }
       console.log('[Scheduler] ⏰ Scheduled refresh triggered');
+      // BUG 1 FIX: handleLiveRefresh reads from datasetRef, so it's always fresh
       handleLiveRefresh();
     }, sched.intervalMs);
     return () => {
       console.log('[Scheduler] ⏹ Cleared interval');
       clearInterval(interval);
     };
-  }, [dataset?.refreshSchedule?.enabled, dataset?.refreshSchedule?.intervalMs, dataset?.connectionMode]);
+  }, [dataset?.refreshSchedule?.enabled, dataset?.refreshSchedule?.intervalMs, dataset?.refreshSchedule?.consecutiveFailures, dataset?.connectionMode]);
 
   // Handler for RefreshSchedulerDropdown to update the schedule
   const updateRefreshSchedule = (schedule: RefreshSchedule) => {
@@ -751,6 +788,13 @@ function App() {
     setDataset(updated);
     saveDatasetToDB(updated);
     console.log(`[Scheduler] Schedule updated:`, schedule.enabled ? `every ${Math.round(schedule.intervalMs / 60000)}min` : 'OFF');
+
+    // BUG 5 FIX: Fire immediate first refresh when enabling auto-refresh
+    if (schedule.enabled && schedule.intervalMs > 0) {
+      console.log('[Scheduler] ▶ Firing immediate first refresh on enable');
+      // Small delay so state updates propagate before refresh reads datasetRef
+      setTimeout(() => handleLiveRefresh(), 100);
+    }
   };
 
   // ── RECONNECT — Re-establish expired live database connection ──
