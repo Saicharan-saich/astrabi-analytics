@@ -1,31 +1,32 @@
 /**
  * AI Model Configuration — Shared across all AI services
  *
- * Uses meta-llama/llama-3.3-70b-instruct:free as the sole model.
- * If rate-limited (429), retries with delay. If unavailable,
- * shows a clean user-facing error message.
+ * Uses Google Gemini 2.5 Flash (paid) for best SQL generation quality
+ * at minimal cost (~$0.0005 per query).
+ *
+ * $5 budget ≈ 10,000 queries.
  */
 
 export const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
 export const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
 
 /** The model to use for all AI requests */
-export const PRIMARY_MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
+export const PRIMARY_MODEL = 'google/gemini-2.5-flash-preview';
 
 /** Default timeout for AI requests */
 export const DEFAULT_TIMEOUT_MS = 30000;
 
-/** Delay before retrying a 429'd request */
-const RATE_LIMIT_RETRY_DELAY_MS = 5000;
+/** Delay before retrying a rate-limited request */
+const RATE_LIMIT_RETRY_DELAY_MS = 2000;
 
 /** Max retries for 429 errors */
-const MAX_429_RETRIES = 5;
+const MAX_429_RETRIES = 3;
 
 /**
- * Fetch from the AI model with 429 retry logic.
+ * Fetch from the AI model with retry logic.
  *
  * 1. Send request to PRIMARY_MODEL
- * 2. If 429 (rate limited) → wait 3s and retry up to 3 times
+ * 2. If 429 (rate limited) → wait 2s and retry up to 3 times
  * 3. If any other error → throw clean user-facing message
  */
 export async function fetchWithFallback(
@@ -90,7 +91,7 @@ export async function fetchWithFallback(
                     continue;
                 }
                 throw new Error(
-                    'AI model is currently busy (rate limited). Please wait 30-60 seconds and try again.'
+                    'AI model is currently busy (rate limited). Please wait a moment and try again.'
                 );
             }
 
@@ -98,6 +99,12 @@ export async function fetchWithFallback(
             if (response.status === 404) {
                 throw new Error(
                     'AI model is temporarily unavailable. Please try again later.'
+                );
+            }
+
+            if (response.status === 402) {
+                throw new Error(
+                    'OpenRouter credits exhausted. Please add more credits at openrouter.ai.'
                 );
             }
 
@@ -123,6 +130,5 @@ export async function fetchWithFallback(
         }
     }
 
-    // Should never reach here, but just in case
     throw new Error('AI model is currently unavailable. Please try again later.');
 }
