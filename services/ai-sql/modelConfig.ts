@@ -16,10 +16,10 @@ export const PRIMARY_MODEL = 'meta-llama/llama-3.3-70b-instruct:free';
 export const DEFAULT_TIMEOUT_MS = 30000;
 
 /** Delay before retrying a 429'd request */
-const RATE_LIMIT_RETRY_DELAY_MS = 3000;
+const RATE_LIMIT_RETRY_DELAY_MS = 5000;
 
 /** Max retries for 429 errors */
-const MAX_429_RETRIES = 3;
+const MAX_429_RETRIES = 5;
 
 /**
  * Fetch from the AI model with 429 retry logic.
