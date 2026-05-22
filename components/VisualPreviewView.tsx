@@ -50,6 +50,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartHeight, setChartHeight] = useState(500);
   const [chartType, setChartType] = useState<string>((result.vis as string) || 'bar');
+  const [localFormatting, setLocalFormatting] = useState<FormattingConfig>(formatting);
 
   const sql = result.sql || pipelineResult?.sql || '';
   const explanation = result.insight || pipelineResult?.explanation || '';
@@ -112,6 +113,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   };
 
   const updateFormatting = useCallback((f: FormattingConfig) => {
+    setLocalFormatting(f);
     onFormatChange?.(f);
   }, [onFormatChange]);
 
@@ -244,7 +246,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 yLabel={result.yLabel}
                 chartType={chartType as any}
                 onChartTypeChange={(type) => setChartType(type)}
-                formatting={formatting}
+                formatting={localFormatting}
                 hideControls
                 chartContainerRef={chartContainerRef}
               />
@@ -316,9 +318,10 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
             isDark ? 'border-white/[0.06] bg-[#0f1219]' : 'border-gray-200 bg-white'
           }`}>
             <FormatPanel
-              formatting={formatting}
-              onUpdate={updateFormatting}
+              formatting={localFormatting}
+              onUpdateFormatting={updateFormatting}
               onClose={() => setIsFormatPanelOpen(false)}
+              chartType={chartType}
             />
           </div>
         )}
