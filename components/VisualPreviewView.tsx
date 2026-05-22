@@ -49,6 +49,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const [isPinned, setIsPinned] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartHeight, setChartHeight] = useState(500);
+  const [chartType, setChartType] = useState<string>((result.vis as string) || 'bar');
 
   const sql = result.sql || pipelineResult?.sql || '';
   const explanation = result.insight || pipelineResult?.explanation || '';
@@ -237,9 +238,15 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           {activeTab === 'chart' && (
             <div className="h-full p-6 overflow-hidden" ref={chartContainerRef}>
               <ChartVisualization
-                result={result}
+                data={result.data}
+                xKey={result.xKey}
+                yKey={result.yKey}
+                yLabel={result.yLabel}
+                chartType={chartType as any}
+                onChartTypeChange={(type) => setChartType(type)}
                 formatting={formatting}
-                height={chartHeight}
+                hideControls
+                chartContainerRef={chartContainerRef}
               />
             </div>
           )}
