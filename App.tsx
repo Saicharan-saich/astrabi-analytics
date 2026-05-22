@@ -21,6 +21,7 @@ import { WorkbenchView } from './components/WorkbenchView';
 import { BuilderView } from './components/BuilderView';
 import { NLQView } from './components/NLQView';
 import { AISQLView } from './components/AISQLView';
+import { VisualPreviewView } from './components/VisualPreviewView';
 import { Dashboard } from './components/Dashboard';
 import { SchemaView } from './components/SchemaView';
 import { QuestionBuilder } from './components/QuestionBuilder';
@@ -202,6 +203,16 @@ function App() {
   const [showSplash, setShowSplash] = useState(true);
   const [smartQuestionQuery, setSmartQuestionQuery] = useState<string | null>(null);
   const [pendingPinItem, setPendingPinItem] = useState<any>(null);
+
+  // ── Visual Preview state (full-page AI SQL result view) ──
+  const [visualPreviewResult, setVisualPreviewResult] = useState<AnalysisResult | null>(null);
+  const [visualPreviewPipeline, setVisualPreviewPipeline] = useState<any>(null);
+  const [visualPreviewQuery, setVisualPreviewQuery] = useState('');
+  const [visualPreviewFormatting, setVisualPreviewFormatting] = useState<any>({
+    colorMode: 'vibrant', numberFormat: 'auto', fontSize: 'md', headerSize: 'md',
+    headerBold: true, showLabels: true, showDataLabels: false, tableCalculations: [],
+    showXAxis: true, showYAxis: true,
+  });
 
   // Alert evaluation on dataset load/refresh
   const alertStore = useAlertStore();
@@ -1375,7 +1386,29 @@ function App() {
                     dataset={dataset}
                     onPin={(title, result) => handlePin({ ...result, insight: title })}
                     initialQuery={smartQuestionQuery}
+                    onViewFullPage={(result, pipelineResult, query, fmt) => {
+                      setVisualPreviewResult(result);
+                      setVisualPreviewPipeline(pipelineResult);
+                      setVisualPreviewQuery(query);
+                      setVisualPreviewFormatting(fmt);
+                      setActiveTab(Tab.VISUAL_PREVIEW);
+                    }}
                   />
+                </div>
+
+                <div className={`h-full w-full ${activeTab === Tab.VISUAL_PREVIEW ? '' : 'hidden'}`}>
+                  {visualPreviewResult && (
+                    <VisualPreviewView
+                      dataset={dataset}
+                      result={visualPreviewResult}
+                      pipelineResult={visualPreviewPipeline}
+                      query={visualPreviewQuery}
+                      formatting={visualPreviewFormatting}
+                      onBack={() => setActiveTab(Tab.AI_SQL)}
+                      onPin={(title, result) => handlePin({ ...result, insight: title })}
+                      onFormatChange={setVisualPreviewFormatting}
+                    />
+                  )}
                 </div>
 
                 <div className={`h-full w-full overflow-hidden ${activeTab === Tab.BUILDER ? '' : 'hidden'}`}>

@@ -13,9 +13,10 @@ interface AISQLViewProps {
     dataset: Dataset | null;
     onPin?: (title: string, result: AnalysisResult) => void;
     initialQuery?: string | null;
+    onViewFullPage?: (result: AnalysisResult, pipelineResult: AISQLPipelineResult, query: string, formatting: FormattingConfig) => void;
 }
 
-export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQuery }) => {
+export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQuery, onViewFullPage }) => {
     const [query, setQuery] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
@@ -204,6 +205,37 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     : undefined,
                 secondaryYKeys: result.chart.secondaryYKeys,
             });
+
+            // ── Navigate to full-page Visual Preview immediately ──
+            // Build the final AnalysisResult to pass to the preview
+            const finalResult: AnalysisResult = {
+                data: result.chartData,
+                xKey: result.chart.xKey,
+                yKey: result.chart.yKey,
+                yLabel: query,
+                insight: result.explanation,
+                sql: result.sql,
+                config: {
+                    metric: result.plan.metrics[0]?.field || result.chart.yKey,
+                    dimension: result.plan.dimensions[0]?.field || result.chart.xKey,
+                    aggregation: AggregationType.SUM,
+                    timeGrain: TimeGrain.RAW,
+                    analysisType: AnalysisType.STANDARD,
+                    questionId: 'ai_sql_' + Date.now(),
+                    questionLabel: query,
+                    secondaryMetrics: result.chart.secondaryYKeys,
+                    axisMode: result.chart.useDualAxis ? 'dual' : 'auto',
+                },
+                vis: (chartTypeMap[result.chart.chartType] || 'bar') as any,
+                kpi: result.chart.chartType === 'kpiCard' && result.chartData.length > 0
+                    ? result.chartData[0][result.chart.yKey] : undefined,
+                growth: result.chart.growth
+                    ? { diff: result.chart.growth.diff, pct: result.chart.growth.pct } : undefined,
+                secondaryYKeys: result.chart.secondaryYKeys,
+            };
+            if (onViewFullPage) {
+                onViewFullPage(finalResult, result, query, formatting);
+            }
 
         } catch (err: any) {
             console.error('[AI SQL Pipeline] Error:', err);
