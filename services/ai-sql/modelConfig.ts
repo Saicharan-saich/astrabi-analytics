@@ -11,7 +11,7 @@ export const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions
 export const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
 
 /** The model to use for all AI requests */
-export const PRIMARY_MODEL = 'google/gemini-2.5-flash-preview';
+export const PRIMARY_MODEL = 'google/gemini-2.5-flash';
 
 /** Default timeout for AI requests */
 export const DEFAULT_TIMEOUT_MS = 30000;
