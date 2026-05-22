@@ -1094,6 +1094,11 @@ function validateFieldReferences(plan: AnalysisPlan, model: SemanticModel): void
     const fieldNames = new Set(model.fields.map(f => f.name.toLowerCase()));
     const compositeIds = new Set(model.compositeMetrics.map(m => m.id.toLowerCase()));
 
+    // Pre-filter: remove any malformed entries with missing field names
+    plan.dimensions = plan.dimensions.filter(d => d && typeof d.field === 'string' && d.field.trim());
+    plan.metrics = plan.metrics.filter(m => m && typeof m.field === 'string' && m.field.trim());
+    plan.filters = plan.filters.filter(f => f && typeof f.field === 'string' && f.field.trim());
+
     // Build a synonym → field name lookup
     const synonymLookup = new Map<string, string>();
     for (const f of model.fields) {

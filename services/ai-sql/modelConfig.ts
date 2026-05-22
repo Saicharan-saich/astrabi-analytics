@@ -21,8 +21,10 @@ export const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
  * The `openrouter/free` meta-router auto-picks any available free model.
  */
 export const MODEL_CHAIN: string[] = [
-    'meta-llama/llama-3.3-70b-instruct:free', // Primary — confirmed working (429 = exists)
-    'openrouter/free',                          // Meta-router — picks ANY available free model
+    'qwen/qwen3-32b:free',                     // Primary — fast, great for analytics/SQL
+    'meta-llama/llama-3.3-70b-instruct:free',   // Fallback 1 — strong reasoning
+    'deepseek/deepseek-r1:free',                // Fallback 2 — complex reasoning
+    'openrouter/free',                           // Meta-router — picks ANY available free model
 ];
 
 /** The primary model (for UI display) */
