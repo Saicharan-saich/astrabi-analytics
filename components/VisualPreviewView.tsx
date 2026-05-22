@@ -5,7 +5,7 @@
  * full-page view where they can interact with the chart, format it, pin it
  * to a dashboard, view the generated SQL, and explore the data table.
  */
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ArrowLeft, Pin, Code, Table2, BarChart2, Palette, Activity, Download,
   Sparkles, Copy, Check, X, Eye, EyeOff, RotateCcw, Maximize2
@@ -48,10 +48,30 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const [copiedSQL, setCopiedSQL] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
+  const [chartHeight, setChartHeight] = useState(500);
 
   const sql = result.sql || pipelineResult?.sql || '';
   const explanation = result.insight || pipelineResult?.explanation || '';
-  const confidence = pipelineResult?.confidence;
+
+  // Confidence: handle both 0-1 and 0-100 ranges, guard against NaN
+  const rawConfidence = pipelineResult?.confidence;
+  const confidencePct = typeof rawConfidence === 'number' && !isNaN(rawConfidence)
+    ? (rawConfidence <= 1 ? Math.round(rawConfidence * 100) : Math.round(rawConfidence))
+    : null;
+
+  // Measure chart container height dynamically with ResizeObserver
+  useEffect(() => {
+    const el = chartContainerRef.current;
+    if (!el) return;
+    const measure = () => {
+      const h = el.clientHeight;
+      if (h > 0) setChartHeight(h - 48);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [activeTab]);
 
   const handleCopySQL = () => {
     if (sql) {
@@ -131,15 +151,15 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               {query}
             </span>
           </div>
-          {confidence !== undefined && (
+          {confidencePct !== null && (
             <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-              confidence >= 0.8
+              confidencePct >= 80
                 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                : confidence >= 0.5
+                : confidencePct >= 50
                   ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                   : 'bg-red-500/10 text-red-400 border border-red-500/20'
             }`}>
-              {Math.round(confidence * 100)}% confidence
+              {confidencePct}% confidence
             </span>
           )}
         </div>
@@ -219,7 +239,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               <ChartVisualization
                 result={result}
                 formatting={formatting}
-                height={chartContainerRef.current?.clientHeight ? chartContainerRef.current.clientHeight - 48 : 500}
+                height={chartHeight}
               />
             </div>
           )}
