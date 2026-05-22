@@ -19,9 +19,10 @@ export const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
  * `openrouter/free` is a meta-router that auto-picks any available free model.
  */
 export const MODEL_CHAIN: string[] = [
-    'google/gemma-3-27b-it:free',       // Primary — strong structured output
-    'meta-llama/llama-4-maverick:free',  // Fallback 1 — Meta Llama 4 Maverick
+    'google/gemma-3-27b-it:free',        // Primary — strong structured output
+    'meta-llama/llama-3.3-70b-instruct:free', // Fallback 1 — Llama 3.3 70B
     'deepseek/deepseek-r1:free',         // Fallback 2 — DeepSeek R1
+    'google/gemma-3-12b-it:free',        // Fallback 3 — Gemma 3 12B (smaller)
     'openrouter/free',                    // Meta-router — picks ANY available free model
 ];
 
@@ -88,6 +89,13 @@ export async function fetchWithFallback(
 
             if (response.ok) {
                 const data = await response.json();
+                // Check for empty content — some models return 200 but with no actual completion
+                const content = data.choices?.[0]?.message?.content?.trim();
+                if (!content && MODEL_CHAIN.indexOf(model) < MODEL_CHAIN.length - 1) {
+                    console.warn(`[AI] ${model} returned 200 but empty content — trying next model`);
+                    errors.push(`${model}: empty content`);
+                    continue;
+                }
                 if (model !== MODEL_CHAIN[0]) {
                     console.log(`[AI] Primary model unavailable — used fallback: ${model}`);
                 }
