@@ -1,22 +1,18 @@
 /**
- * VisualPreviewView.tsx — Full-page visual preview for AI SQL results.
- *
- * When AI SQL generates a result, the user is immediately navigated to this
- * full-page view where they can interact with the chart, format it, pin it
- * to a dashboard, view the generated SQL, and explore the data table.
+ * VisualPreviewView.tsx — Full-page persistent result view for AI SQL.
+ * Contains: chart, table, SQL tabs + formatting, analytics, confidence, growth, time grain.
  */
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
-  ArrowLeft, Pin, Code, Table2, BarChart2, Palette, Activity, Download,
-  Sparkles, Copy, Check, X, Eye, EyeOff, RotateCcw, Maximize2
+  ArrowLeft, Pin, Code, Table2, BarChart2, Palette, Activity, Sparkles,
+  Copy, Check, X, RefreshCw, Play, Database, Loader2
 } from 'lucide-react';
-import { AnalysisResult, Dataset, FormattingConfig } from '../types';
+import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { ChartVisualization } from './ChartVisualization';
 import { FormatPanel } from './FormatPanel';
 import { AIInsightPanel } from './AIInsightPanel';
-import { Tooltip } from './Tooltip';
 import { getCalculationDisplayName, type TableCalculation } from '../utils/tableCalculations';
-import { AISQLPipelineResult } from '../services/ai-sql';
+import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { useTheme } from './ThemeProvider';
 
 interface VisualPreviewViewProps {
@@ -31,309 +27,265 @@ interface VisualPreviewViewProps {
 }
 
 export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
-  dataset,
-  result,
-  pipelineResult,
-  query,
-  formatting,
-  onBack,
-  onPin,
-  onFormatChange,
+  dataset, result: initialResult, pipelineResult: initialPipeline, query,
+  formatting, onBack, onPin, onFormatChange,
 }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [activeTab, setActiveTab] = useState<'chart' | 'table' | 'sql'>('chart');
   const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
+  const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);
   const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
   const [copiedSQL, setCopiedSQL] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
+  const [showConfidence, setShowConfidence] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const [chartHeight, setChartHeight] = useState(500);
-  const [chartType, setChartType] = useState<string>((result.vis as string) || 'bar');
+  const [chartType, setChartType] = useState<string>((initialResult.vis as string) || 'bar');
   const [localFormatting, setLocalFormatting] = useState<FormattingConfig>(formatting);
+  const [result, setResult] = useState<AnalysisResult>(initialResult);
+  const [pipeline, setPipeline] = useState<AISQLPipelineResult | null | undefined>(initialPipeline);
+  const [isReloading, setIsReloading] = useState(false);
+  const [timeGrain, setTimeGrain] = useState<'day'|'week'|'month'|'quarter'|'year'>('month');
 
-  const sql = result.sql || pipelineResult?.sql || '';
-  const explanation = result.insight || pipelineResult?.explanation || '';
-
-  // Confidence: handle both 0-1 and 0-100 ranges, guard against NaN
-  const rawConfidence = pipelineResult?.confidence;
-  const confidencePct = typeof rawConfidence === 'number' && !isNaN(rawConfidence)
-    ? (rawConfidence <= 1 ? Math.round(rawConfidence * 100) : Math.round(rawConfidence))
-    : null;
-
-  // Measure chart container height dynamically with ResizeObserver
-  useEffect(() => {
-    const el = chartContainerRef.current;
-    if (!el) return;
-    const measure = () => {
-      const h = el.clientHeight;
-      if (h > 0) setChartHeight(h - 48);
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [activeTab]);
-
-  const handleCopySQL = () => {
-    if (sql) {
-      navigator.clipboard.writeText(sql);
-      setCopiedSQL(true);
-      setTimeout(() => setCopiedSQL(false), 2000);
-    }
-  };
-
-  const handlePin = () => {
-    if (onPin && result) {
-      onPin(query, { ...result, formatting });
-      setIsPinned(true);
-      setTimeout(() => setIsPinned(false), 2500);
-    }
-  };
-
-  const handleExportCSV = () => {
-    if (!result?.data?.length) return;
-    const data = result.data;
-    const keys = Object.keys(data[0]);
-    const csvRows = [
-      keys.join(','),
-      ...data.map(row => keys.map(k => {
-        const val = row[k];
-        const str = String(val ?? '');
-        return str.includes(',') ? `"${str}"` : str;
-      }).join(','))
-    ];
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${query.replace(/[^a-z0-9]/gi, '_').slice(0, 40)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-  };
+  const sql = result.sql || pipeline?.sql || '';
+  const explanation = result.insight || pipeline?.explanation || '';
 
   const updateFormatting = useCallback((f: FormattingConfig) => {
     setLocalFormatting(f);
     onFormatChange?.(f);
   }, [onFormatChange]);
 
-  const tabBtnClass = (tab: string) =>
-    `flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-lg transition-all ${
-      activeTab === tab
-        ? isDark
-          ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
-          : 'bg-violet-50 text-violet-700 border border-violet-200'
-        : isDark
-          ? 'text-gray-400 hover:text-gray-200 hover:bg-white/5 border border-transparent'
-          : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100 border border-transparent'
-    }`;
+  const handleCopySQL = () => {
+    if (sql) { navigator.clipboard.writeText(sql); setCopiedSQL(true); setTimeout(() => setCopiedSQL(false), 2000); }
+  };
+
+  const handlePin = () => {
+    if (onPin) { onPin(query, result); setIsPinned(true); setTimeout(() => setIsPinned(false), 2000); }
+  };
+
+  const handleRegenerate = async () => {
+    if (!dataset || isReloading) return;
+    setIsReloading(true);
+    try {
+      const res = await runAISQLPipeline(query, dataset, undefined, undefined, timeGrain, true);
+      if (res.rawData.length === 0) { setIsReloading(false); return; }
+      setPipeline(res);
+      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'comboChart', multiLine:'line', donut:'donut', heatmap:'heatmap', table:'table' };
+      setResult({
+        data: res.chartData, xKey: res.chart.xKey, yKey: res.chart.yKey, yLabel: query,
+        insight: res.explanation, sql: res.sql,
+        config: { metric: res.plan.metrics[0]?.field || res.chart.yKey, dimension: res.plan.dimensions[0]?.field || res.chart.xKey, aggregation: AggregationType.SUM, timeGrain: TimeGrain.RAW, analysisType: AnalysisType.STANDARD, questionId: 'regen_' + Date.now(), questionLabel: query, secondaryMetrics: res.chart.secondaryYKeys, axisMode: res.chart.useDualAxis ? 'dual' : 'auto' },
+        vis: (chartMap[res.chart.chartType] || 'bar') as any,
+        kpi: res.chart.chartType === 'kpiCard' && res.chartData.length > 0 ? res.chartData[0][res.chart.yKey] : undefined,
+        growth: res.chart.growth ? { diff: res.chart.growth.diff, pct: res.chart.growth.pct } : undefined,
+        secondaryYKeys: res.chart.secondaryYKeys,
+      });
+      setChartType((chartMap[res.chart.chartType] || 'bar'));
+    } catch { /* ignore */ } finally { setIsReloading(false); }
+  };
+
+  const tabBtnClass = (t: string) => `flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${activeTab === t ? 'bg-amber-50 dark:bg-amber-500/20 text-amber-600 dark:text-amber-300 ring-1 ring-amber-400/30' : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700/50'}`;
+
+  const confLevel = pipeline?.confidence?.level;
+  const confScore = pipeline?.confidence?.score;
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* ── Top Bar ─────────────────────────────────────────── */}
-      <div className={`shrink-0 flex items-center justify-between px-5 py-3 border-b ${
-        isDark ? 'bg-[#0f1219] border-white/[0.06]' : 'bg-white border-gray-200'
-      }`}>
-        {/* Left: Back + Query */}
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <button
-            onClick={onBack}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
-              isDark
-                ? 'text-gray-400 hover:text-white hover:bg-white/10 border border-white/10'
-                : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100 border border-gray-200'
-            }`}
-          >
-            <ArrowLeft className="w-3.5 h-3.5" />
-            AI SQL
-          </button>
-          <div className={`h-5 w-px ${isDark ? 'bg-white/10' : 'bg-gray-200'}`} />
-          <div className="flex items-center gap-2 min-w-0">
-            <Sparkles className={`w-4 h-4 shrink-0 ${isDark ? 'text-violet-400' : 'text-violet-500'}`} />
-            <span className={`text-sm font-semibold truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>
-              {query}
-            </span>
+    <div className={`flex flex-col h-full ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
+      {/* ── Top Bar ───────────────────────────────────────── */}
+      <div className={`flex items-center justify-between px-5 py-3 border-b shrink-0 ${isDark ? 'border-white/[0.06] bg-[#0d1117]' : 'border-gray-200 bg-white'}`}>
+        <div className="flex items-center gap-3 min-w-0">
+          <button onClick={onBack} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}><ArrowLeft className="w-4 h-4" /></button>
+          <div className="min-w-0">
+            <div className="text-sm font-bold truncate max-w-md">{query}</div>
+            <div className="text-[11px] text-gray-400 dark:text-slate-500 flex items-center gap-2">
+              <span>{result.data.length} rows</span>
+              {pipeline && <span>· {pipeline.executionTimeMs}ms</span>}
+              {pipeline?.chart?.growth && (
+                <span className={pipeline.chart.growth.pct >= 0 ? 'text-emerald-500' : 'text-red-500'}>
+                  {pipeline.chart.growth.pct >= 0 ? '▲' : '▼'} {pipeline.chart.growth.pct >= 0 ? '+' : ''}{pipeline.chart.growth.pct.toFixed(1)}%
+                </span>
+              )}
+            </div>
           </div>
-          {confidencePct !== null && (
-            <span className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-full ${
-              confidencePct >= 80
-                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                : confidencePct >= 50
-                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                  : 'bg-red-500/10 text-red-400 border border-red-500/20'
-            }`}>
-              {confidencePct}% confidence
-            </span>
-          )}
         </div>
-
-        {/* Right: Actions */}
-        <div className="flex items-center gap-1.5 shrink-0 ml-4">
-          <button onClick={handlePin} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
-            isPinned
-              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25'
-              : isDark
-                ? 'text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/20'
-                : 'text-amber-600 bg-amber-50 hover:bg-amber-100 border border-amber-200'
-          }`}>
-            {isPinned ? <Check className="w-3.5 h-3.5" /> : <Pin className="w-3.5 h-3.5" />}
-            {isPinned ? 'Pinned!' : 'Pin'}
+        <div className="flex items-center gap-2">
+          {/* Confidence Badge */}
+          {pipeline?.confidence && (
+            <button onClick={() => setShowConfidence(!showConfidence)} className={`text-[10px] font-bold px-2.5 py-1 rounded-full border cursor-pointer transition-all ${confLevel === 'high' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' : confLevel === 'medium' ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-500/20' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20'}`}>
+              {confLevel === 'high' ? '✓' : confLevel === 'medium' ? '⚠' : '✗'} {confScore}%
+            </button>
+          )}
+          <button onClick={handleRegenerate} disabled={isReloading} className="flex items-center gap-1 text-[12px] font-bold text-cyan-600 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 px-2.5 py-1.5 rounded-lg transition-all border border-cyan-200 dark:border-cyan-500/20 disabled:opacity-50">
+            {isReloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Regen
           </button>
-          <button onClick={handleExportCSV} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
-            isDark ? 'text-gray-400 hover:text-white hover:bg-white/10 border border-white/10' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100 border border-gray-200'
-          }`}>
-            <Download className="w-3.5 h-3.5" />
-          </button>
-          <button onClick={() => setIsFormatPanelOpen(!isFormatPanelOpen)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
-            isFormatPanelOpen
-              ? isDark ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30' : 'bg-violet-50 text-violet-700 border border-violet-200'
-              : isDark ? 'text-gray-400 hover:text-white hover:bg-white/10 border border-white/10' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100 border border-gray-200'
-          }`}>
-            <Palette className="w-3.5 h-3.5" />
-            Style
-          </button>
-          <button onClick={() => setIsAIInsightOpen(!isAIInsightOpen)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all active:scale-95 ${
-            isAIInsightOpen
-              ? isDark ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-              : isDark ? 'text-gray-400 hover:text-white hover:bg-white/10 border border-white/10' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100 border border-gray-200'
-          }`}>
-            <Activity className="w-3.5 h-3.5" />
-            Insight
+          <button onClick={handlePin} className="flex items-center gap-1.5 text-[12px] font-bold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 px-3 py-1.5 rounded-lg transition-all border border-amber-200 dark:border-amber-500/20">
+            <Pin className="w-3.5 h-3.5" /> {isPinned ? 'Pinned!' : 'Pin'}
           </button>
         </div>
       </div>
 
-      {/* ── AI Explanation Banner ─────────────────────────── */}
-      {explanation && (
-        <div className={`shrink-0 px-5 py-2.5 text-xs border-b ${
-          isDark ? 'bg-violet-500/5 border-white/[0.04] text-gray-300' : 'bg-violet-50/50 border-gray-100 text-gray-600'
-        }`}>
-          <span className={`font-bold mr-1.5 ${isDark ? 'text-violet-400' : 'text-violet-600'}`}>AI:</span>
-          {explanation}
+      {/* ── Confidence Breakdown (expandable) ───────────── */}
+      {showConfidence && pipeline?.confidence && (
+        <div className={`px-5 py-3 border-b ${isDark ? 'border-white/[0.06] bg-slate-800/50' : 'border-gray-200 bg-white'}`}>
+          <div className="max-w-2xl mx-auto grid grid-cols-5 gap-3">
+            {[
+              { label: 'Semantic', value: pipeline.confidence.factors.semanticMatch, max: 30 },
+              { label: 'Filters', value: pipeline.confidence.factors.filterClarity, max: 20 },
+              { label: 'Aggregation', value: pipeline.confidence.factors.aggregationCertainty, max: 20 },
+              { label: 'Complexity', value: pipeline.confidence.factors.planComplexity, max: 15 },
+              { label: 'SQL Quality', value: pipeline.confidence.factors.repairAttempts, max: 15 },
+            ].map(f => (
+              <div key={f.label}>
+                <div className="flex justify-between text-[10px] mb-0.5"><span className="text-gray-500 dark:text-slate-400">{f.label}</span><span className={`font-bold ${f.value >= f.max * 0.8 ? 'text-emerald-500' : f.value >= f.max * 0.5 ? 'text-yellow-500' : 'text-red-500'}`}>{f.value}/{f.max}</span></div>
+                <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/[0.06] overflow-hidden"><div className={`h-full rounded-full ${f.value >= f.max * 0.8 ? 'bg-emerald-500' : f.value >= f.max * 0.5 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${(f.value / f.max) * 100}%` }} /></div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {/* ── Tab Bar ───────────────────────────────────────── */}
-      <div className={`shrink-0 flex items-center gap-1.5 px-5 py-2 border-b ${
-        isDark ? 'bg-[#0f1219]/50 border-white/[0.04]' : 'bg-gray-50/50 border-gray-100'
-      }`}>
-        <button onClick={() => setActiveTab('chart')} className={tabBtnClass('chart')}>
-          <BarChart2 className="w-3.5 h-3.5" /> Chart
-        </button>
-        <button onClick={() => setActiveTab('table')} className={tabBtnClass('table')}>
-          <Table2 className="w-3.5 h-3.5" /> Table
-        </button>
-        <button onClick={() => setActiveTab('sql')} className={tabBtnClass('sql')}>
-          <Code className="w-3.5 h-3.5" /> SQL
-        </button>
+      {/* ── Tab Bar ────────────────────────────────────── */}
+      <div className={`flex items-center gap-2 px-5 py-2 border-b shrink-0 ${isDark ? 'border-white/[0.06] bg-[#0f1219]/50' : 'bg-gray-50/50 border-gray-100'}`}>
+        <button onClick={() => setActiveTab('chart')} className={tabBtnClass('chart')}><BarChart2 className="w-3.5 h-3.5" /> Chart</button>
+        <button onClick={() => setActiveTab('table')} className={tabBtnClass('table')}><Table2 className="w-3.5 h-3.5" /> Table</button>
+        <button onClick={() => setActiveTab('sql')} className={tabBtnClass('sql')}><Code className="w-3.5 h-3.5" /> SQL</button>
+        <div className="w-px h-5 bg-gray-200 dark:bg-white/10 mx-1" />
+        <button onClick={() => setIsFormatPanelOpen(!isFormatPanelOpen)} className={`px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${isFormatPanelOpen ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 ring-1 ring-indigo-400/30' : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}><Palette className="w-3.5 h-3.5 inline mr-1" />Format</button>
+        <button onClick={() => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen)} className={`px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${isAnalyticsPanelOpen ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 ring-1 ring-emerald-400/30' : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}><Activity className="w-3.5 h-3.5 inline mr-1" />Analytics</button>
         <div className="flex-1" />
-        <span className={`text-[11px] font-medium ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-          {result.data.length} rows
-        </span>
+        {/* KPI badge */}
+        {result.kpi !== undefined && (
+          <span className="text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-600 to-orange-500">
+            {typeof result.kpi === 'number' ? result.kpi.toLocaleString(undefined, { maximumFractionDigits: 2 }) : result.kpi}
+          </span>
+        )}
       </div>
 
-      {/* ── Content Area ─────────────────────────────────── */}
+      {/* ── Content Area ──────────────────────────────── */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
-        {/* Main Content */}
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* Chart Tab */}
           {activeTab === 'chart' && (
-            <div className="h-full p-6 overflow-hidden" ref={chartContainerRef}>
+            <div className="h-full p-6 overflow-hidden relative" ref={chartContainerRef}>
               <ChartVisualization
-                data={result.data}
-                xKey={result.xKey}
-                yKey={result.yKey}
-                yLabel={result.yLabel}
-                chartType={chartType as any}
-                onChartTypeChange={(type) => setChartType(type)}
+                data={result.data} xKey={result.xKey} yKey={result.yKey} yLabel={result.yLabel}
+                chartType={chartType as any} onChartTypeChange={(type) => setChartType(type)}
                 formatting={localFormatting}
-                hideControls
+                onToggleFormat={() => setIsFormatPanelOpen(!isFormatPanelOpen)} isFormatOpen={isFormatPanelOpen}
+                onToggleAnalytics={() => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen)} isAnalyticsOpen={isAnalyticsPanelOpen}
+                onToggleLabels={() => updateFormatting({ ...localFormatting, showDataLabels: !localFormatting.showDataLabels })}
+                onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)} isAIInsightOpen={isAIInsightOpen}
                 chartContainerRef={chartContainerRef}
               />
+              <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={result.yLabel} />
             </div>
           )}
 
           {/* Table Tab */}
           {activeTab === 'table' && (
             <div className="h-full overflow-auto p-4">
-              <div className={`rounded-xl border overflow-hidden ${
-                isDark ? 'border-white/[0.06]' : 'border-gray-200'
-              }`}>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className={isDark ? 'bg-white/[0.03]' : 'bg-gray-50'}>
-                      {result.data.length > 0 && Object.keys(result.data[0]).map(key => (
-                        <th key={key} className={`px-4 py-3 text-left text-xs font-bold uppercase tracking-wider ${
-                          isDark ? 'text-gray-400 border-b border-white/[0.06]' : 'text-gray-500 border-b border-gray-200'
-                        }`}>
-                          {key}
-                        </th>
+              <div className={`rounded-xl border overflow-hidden ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
+                <table className="w-full text-sm border-collapse">
+                  <thead><tr className={isDark ? 'bg-slate-800/80' : 'bg-gray-50'}>
+                    {result.data.length > 0 && Object.keys(result.data[0]).map(col => (
+                      <th key={col} className={`text-left text-xs uppercase tracking-wider px-3 py-2.5 font-bold sticky top-0 ${isDark ? 'text-slate-400 bg-slate-800/80' : 'text-gray-500 bg-gray-50'}`}>{col}</th>
+                    ))}
+                  </tr></thead>
+                  <tbody>{result.data.map((row: any, i: number) => (
+                    <tr key={i} className={`border-t ${isDark ? 'border-white/[0.04] hover:bg-white/[0.02]' : 'border-gray-100 hover:bg-gray-50'}`}>
+                      {Object.values(row).map((val: any, j: number) => (
+                        <td key={j} className="px-3 py-2 font-mono text-xs">{typeof val === 'number' ? val.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(val ?? '')}</td>
                       ))}
                     </tr>
-                  </thead>
-                  <tbody>
-                    {result.data.map((row, i) => (
-                      <tr key={i} className={`${
-                        isDark ? 'hover:bg-white/[0.02] border-b border-white/[0.03]' : 'hover:bg-gray-50 border-b border-gray-100'
-                      } transition-colors`}>
-                        {Object.values(row).map((val, j) => (
-                          <td key={j} className={`px-4 py-2.5 text-xs ${
-                            isDark ? 'text-gray-300' : 'text-gray-700'
-                          } ${typeof val === 'number' ? 'font-mono tabular-nums text-right' : ''}`}>
-                            {typeof val === 'number' ? val.toLocaleString() : String(val ?? '')}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
+                  ))}</tbody>
                 </table>
               </div>
+              <div className="text-xs text-gray-400 dark:text-slate-500 mt-3 text-center">{result.data.length} rows</div>
             </div>
           )}
 
           {/* SQL Tab */}
-          {activeTab === 'sql' && sql && (
-            <div className="h-full p-6 overflow-auto">
-              <div className={`rounded-xl border overflow-hidden ${
-                isDark ? 'bg-[#0d1117] border-white/[0.06]' : 'bg-gray-900 border-gray-200'
-              }`}>
-                <div className="flex items-center justify-between px-4 py-2.5 border-b border-white/[0.06]">
-                  <span className="text-xs font-bold text-gray-400">Generated SQL</span>
-                  <button onClick={handleCopySQL} className="flex items-center gap-1.5 text-xs font-medium text-gray-400 hover:text-white transition-colors">
-                    {copiedSQL ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copiedSQL ? 'Copied!' : 'Copy'}
+          {activeTab === 'sql' && (
+            <div className="h-full overflow-auto p-4 space-y-4">
+              <div className={`rounded-xl border p-4 ${isDark ? 'bg-slate-800/50 border-white/[0.06]' : 'bg-white border-gray-200'}`}>
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2"><Sparkles className="w-3.5 h-3.5 text-amber-400" /> AI-Generated SQL</span>
+                  <button onClick={handleCopySQL} className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-500 flex items-center gap-1">
+                    {copiedSQL ? <><Check className="w-3 h-3" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy</>}
                   </button>
                 </div>
-                <pre className="p-4 text-sm text-emerald-300 font-mono overflow-auto whitespace-pre-wrap leading-relaxed">
-                  {sql}
-                </pre>
+                <pre className="text-sm text-emerald-700 dark:text-emerald-300 font-mono whitespace-pre-wrap leading-relaxed">{sql || 'No SQL generated.'}</pre>
               </div>
+              {explanation && (
+                <div className={`rounded-xl border p-4 ${isDark ? 'bg-amber-500/5 border-amber-500/10' : 'bg-amber-50 border-amber-200'}`}>
+                  <div className="text-xs font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-2"><Database className="w-3.5 h-3.5" /> Explanation</div>
+                  <p className="text-sm text-amber-800 dark:text-amber-200/80 leading-relaxed">{explanation}</p>
+                </div>
+              )}
+              {pipeline && (
+                <div className={`rounded-xl border p-4 space-y-3 ${isDark ? 'bg-slate-800/50 border-white/[0.06]' : 'bg-slate-50 border-slate-200'}`}>
+                  <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">🔍 Query Trace</div>
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div><span className="text-slate-400">Intent:</span><span className="ml-1.5 font-bold">{pipeline.plan.intent}</span></div>
+                    <div><span className="text-slate-400">Grain:</span><span className="ml-1.5 font-bold">{pipeline.plan.resultGrain}</span></div>
+                    <div><span className="text-slate-400">Chart:</span><span className="ml-1.5 font-bold">{pipeline.chart.chartType}</span></div>
+                    <div><span className="text-slate-400">Time:</span><span className="ml-1.5 font-bold">{pipeline.executionTimeMs}ms</span></div>
+                    {pipeline.repairAttempts > 0 && <div className="col-span-2 text-yellow-500">⚠ SQL required {pipeline.repairAttempts} repair attempt(s)</div>}
+                  </div>
+                  {pipeline.validation?.checks && (
+                    <div className="pt-2 border-t border-slate-100 dark:border-white/5">
+                      <div className="text-[10px] text-slate-400 font-bold uppercase mb-1.5">Validation</div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {pipeline.validation.checks.slice(0, 6).map((c, i) => (
+                          <span key={i} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${c.status === 'pass' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : c.status === 'warn' ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600' : 'bg-red-50 dark:bg-red-900/20 text-red-600'}`} title={c.message}>
+                            {c.status === 'pass' ? '✓' : c.status === 'warn' ? '⚠' : '✗'} {c.name}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
         </div>
 
-        {/* Side Panels */}
+        {/* ── Side Panels ─────────────────────────────── */}
         {isFormatPanelOpen && (
-          <div className={`w-72 shrink-0 border-l overflow-y-auto ${
-            isDark ? 'border-white/[0.06] bg-[#0f1219]' : 'border-gray-200 bg-white'
-          }`}>
-            <FormatPanel
-              formatting={localFormatting}
-              onUpdateFormatting={updateFormatting}
-              onClose={() => setIsFormatPanelOpen(false)}
-              chartType={chartType}
-            />
+          <div className={`w-[300px] shrink-0 border-l overflow-y-auto ${isDark ? 'border-white/[0.06] bg-[#0f1219]' : 'border-gray-200 bg-white'}`}>
+            <FormatPanel formatting={localFormatting} onUpdateFormatting={updateFormatting} onClose={() => setIsFormatPanelOpen(false)} chartType={chartType} />
           </div>
         )}
-        {isAIInsightOpen && dataset && (
-          <div className={`w-80 shrink-0 border-l overflow-y-auto ${
-            isDark ? 'border-white/[0.06] bg-[#0f1219]' : 'border-gray-200 bg-white'
-          }`}>
-            <AIInsightPanel
-              dataset={dataset}
-              result={result}
-              onClose={() => setIsAIInsightOpen(false)}
-            />
+        {isAnalyticsPanelOpen && (
+          <div className={`w-72 shrink-0 border-l overflow-y-auto ${isDark ? 'border-white/[0.06] bg-[#0f1219]' : 'border-gray-200 bg-white'}`}>
+            <div className="p-4 border-b border-gray-100 dark:border-white/5">
+              <div className="flex justify-between items-center">
+                <h3 className="font-bold text-sm flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-500" /> Analytics</h3>
+                <button onClick={() => setIsAnalyticsPanelOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded hover:bg-gray-100 dark:hover:bg-white/10"><X className="w-4 h-4" /></button>
+              </div>
+            </div>
+            <div className="p-4 space-y-1">
+              {([
+                { id: 'percent_of_total', desc: 'Each value as % of column total' },
+                { id: 'rank_desc', desc: 'Rank highest to lowest' },
+                { id: 'rank_asc', desc: 'Rank lowest to highest' },
+                { id: 'running_total', desc: 'Cumulative sum across rows' },
+                { id: 'moving_avg', desc: 'N-period moving average' },
+                { id: 'pct_diff_from_prev', desc: '% change from previous row' },
+                { id: 'diff_from_prev', desc: 'Absolute diff from previous' },
+              ] as { id: TableCalculation; desc: string }[]).map(({ id: calc, desc }) => {
+                const isSelected = (localFormatting.tableCalculations || []).includes(calc);
+                return (
+                  <label key={calc} className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all ${isSelected ? 'bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-400 ring-1 ring-emerald-400 shadow-sm' : 'hover:bg-gray-50 dark:hover:bg-white/5 border border-transparent hover:border-gray-200 dark:hover:border-white/10'}`}>
+                    <input type="checkbox" checked={isSelected} onChange={() => { const cur = localFormatting.tableCalculations || []; updateFormatting({ ...localFormatting, tableCalculations: isSelected ? cur.filter(c => c !== calc) : [...cur, calc] }); }} className="rounded text-emerald-600 focus:ring-emerald-500" />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-xs font-bold leading-tight block">{getCalculationDisplayName(calc)}</span>
+                      <span className="text-[10px] text-gray-500 dark:text-slate-500 leading-tight">{desc}</span>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

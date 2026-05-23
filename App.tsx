@@ -974,6 +974,7 @@ function App() {
                     onTabChange={setActiveTab}
                     onToggle={() => toggleSidebar()}
                     onOpenUserManagement={() => setShowUserMgmt(true)}
+                    hasVisualResult={!!visualPreviewResult}
                   />
                 </motion.div>
               )}
