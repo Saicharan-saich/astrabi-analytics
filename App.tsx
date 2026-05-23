@@ -258,7 +258,7 @@ function App() {
 
   // Pre-warm DuckDB when dataset is loaded (eliminates cold-start on first AI SQL query)
   useEffect(() => {
-    if (dataset && dataset.data.length > 0) {
+    if (dataset && dataset.data && dataset.data.length > 0) {
       preloadDuckDB(dataset.name, dataset.data).catch(() => {/* non-fatal */});
     }
   }, [dataset?.name]);
