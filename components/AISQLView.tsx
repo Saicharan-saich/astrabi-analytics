@@ -66,7 +66,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         setNoDataSQL(null);
 
         try {
-            const result = await runAISQLPipeline(query, dataset);
+            const timeoutMs = 60000;
+            const result = await Promise.race([
+                runAISQLPipeline(query, dataset),
+                new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Query timed out after 60 seconds. Please try again.')), timeoutMs))
+            ]);
 
             // Empty-result handling — show banner, don't navigate
             if (result.rawData.length === 0 && result.explanation) {

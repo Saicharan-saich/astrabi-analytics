@@ -12,6 +12,7 @@ import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, g
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
 import { buildSemanticModel } from './services/semanticModel';
 import { refreshLiveDataset } from './services/liveRefreshService';
+import { preloadDuckDB } from './services/duckdbEngine';
 import { Sidebar } from './components/Sidebar';
 import { UploadView } from './components/UploadView';
 import { ETLView } from './components/ETLView';
@@ -254,6 +255,13 @@ function App() {
       }
     });
   }, []);
+
+  // Pre-warm DuckDB when dataset is loaded (eliminates cold-start on first AI SQL query)
+  useEffect(() => {
+    if (dataset && dataset.data.length > 0) {
+      preloadDuckDB(dataset.name, dataset.data).catch(() => {/* non-fatal */});
+    }
+  }, [dataset?.name]);
 
   // Auto-collapse sidebar when entering the builder
   useEffect(() => {
