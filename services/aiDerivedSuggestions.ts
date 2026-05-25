@@ -198,6 +198,17 @@ export function validateDerivedColumn(
 }
 
 /**
+ * Robust number parser — handles formatted values like "$1,234.56", "45%", "  123 "
+ */
+function parseNumber(raw: any): number {
+    if (raw === null || raw === undefined) return NaN;
+    if (typeof raw === 'number') return raw;
+    const cleaned = String(raw).replace(/[$€£¥,\s%]/g, '').trim();
+    if (cleaned === '') return NaN;
+    return Number(cleaned);
+}
+
+/**
  * Compute a derived column value for a single row.
  * Supports both simple 2-column formulas and multi-term expressions.
  * Multi-term expressions use standard math precedence (× ÷ before + −).
@@ -212,8 +223,8 @@ export function computeDerivedColumn(
     }
 
     // Simple 2-column path
-    const a = Number(row[suggestion.columnA]);
-    const b = Number(row[suggestion.columnB]);
+    const a = parseNumber(row[suggestion.columnA]);
+    const b = parseNumber(row[suggestion.columnB]);
     if (isNaN(a) || isNaN(b)) return null;
 
     let result: number;
@@ -246,8 +257,11 @@ export function computeExpression(
     const operators: string[] = [];
 
     for (const term of terms) {
-        const val = Number(row[term.column]);
-        if (isNaN(val)) return null;
+        const val = parseNumber(row[term.column]);
+        if (isNaN(val)) {
+            console.warn(`[DerivedCol] parseNumber failed for column "${term.column}": raw value =`, row[term.column]);
+            return null;
+        }
         values.push(val);
         if (term.operator) operators.push(term.operator);
     }
@@ -288,10 +302,25 @@ export function materializeDerivedColumns(
 ): Record<string, any>[] {
     if (accepted.length === 0) return rows;
 
-    return rows.map(row => {
+    // Debug: log what we're computing
+    for (const col of accepted) {
+        console.log('[DerivedCol] Materializing:', col.id, {
+            formula: col.formula,
+            columnA: col.columnA,
+            columnB: col.columnB,
+            expression: col.expression,
+            firstRowKeys: rows[0] ? Object.keys(rows[0]).slice(0, 10) : [],
+            colAValue: rows[0] ? rows[0][col.columnA] : 'NO_ROW',
+            colBValue: rows[0] ? rows[0][col.columnB] : 'NO_ROW',
+        });
+    }
+
+    return rows.map((row, idx) => {
         const enriched = { ...row };
         for (const col of accepted) {
-            enriched[col.id] = computeDerivedColumn(row, col);
+            const val = computeDerivedColumn(row, col);
+            enriched[col.id] = val;
+            if (idx === 0) console.log(`[DerivedCol] Row 0 → ${col.id} =`, val);
         }
         return enriched;
     });
