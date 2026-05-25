@@ -1424,7 +1424,7 @@ function App() {
                 <div className={`h-full w-full overflow-hidden ${activeTab === Tab.DERIVED_COLUMNS ? '' : 'hidden'}`}>
                   <DerivedColumnsView
                     dataset={dataset}
-                    onDatasetUpdate={(updated) => setDataset(updated)}
+                    onDatasetUpdate={(updated) => { setDataset(updated); saveDatasetToDB(updated); }}
                   />
                 </div>
 
