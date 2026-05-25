@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Sparkles, Plus, Check, X, Loader2, RefreshCw, Calculator, Trash2, AlertTriangle } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
-import { DerivedColumnSuggestion, getAIDerivedSuggestions, computeDerivedColumn, materializeDerivedColumns } from '../services/aiDerivedSuggestions';
+import { DerivedColumnSuggestion, getAIDerivedSuggestions, computeDerivedColumn, materializeDerivedColumns, validateDerivedColumn, registerDerivedInSemanticModel } from '../services/aiDerivedSuggestions';
 import { useTheme } from './ThemeProvider';
 
 interface DerivedColumnsViewProps {
@@ -56,7 +56,13 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
       name: s.id, type: ColumnType.MEASURE as any, originalName: s.id,
       semanticRole: 'derived_metric' as any, label: s.label,
     }))];
-    onDatasetUpdate({ ...dataset, data: newRows, columns: newCols, version: (dataset.version || 1) + 1 });
+    // Auto-register in semantic model so AI SQL, Builder, Alerts understand them
+    const updatedModel = (dataset as any).semanticModel
+      ? registerDerivedInSemanticModel((dataset as any).semanticModel, toApply)
+      : undefined;
+    const updated = { ...dataset, data: newRows, columns: newCols, version: (dataset.version || 1) + 1 };
+    if (updatedModel) (updated as any).semanticModel = updatedModel;
+    onDatasetUpdate(updated);
     setApplied(prev => [...prev, ...toApply]);
     setSuggestions(prev => prev.filter(s => !selected.has(s.id)));
     setSelected(new Set());
@@ -72,9 +78,21 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
       category: 'custom', confidence: 100, format: 'number',
       preview: `${customColA} ${customFormula === 'multiply' ? '×' : customFormula === 'subtract' ? '−' : customFormula === 'divide' ? '÷' : '+'} ${customColB}`,
     };
+    // Validate custom column before materializing
+    const validation = validateDerivedColumn(custom, dataset);
+    if (!validation.valid) {
+      setAiError(validation.errors.join('; '));
+      return;
+    }
     const newRows = materializeDerivedColumns(dataset.data, [custom]);
     const newCols = [...dataset.columns, { name: id, type: ColumnType.MEASURE as any, originalName: id, semanticRole: 'derived_metric' as any, label: customLabel }];
-    onDatasetUpdate({ ...dataset, data: newRows, columns: newCols, version: (dataset.version || 1) + 1 });
+    // Auto-register in semantic model
+    const updatedModel = (dataset as any).semanticModel
+      ? registerDerivedInSemanticModel((dataset as any).semanticModel, [custom])
+      : undefined;
+    const updated = { ...dataset, data: newRows, columns: newCols, version: (dataset.version || 1) + 1 };
+    if (updatedModel) (updated as any).semanticModel = updatedModel;
+    onDatasetUpdate(updated);
     setApplied(prev => [...prev, custom]);
     setCustomLabel(''); setCustomColA(''); setCustomColB(''); setCustomMultiplier(''); setShowCustom(false);
   };

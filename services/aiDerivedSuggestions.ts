@@ -90,13 +90,13 @@ Return ONLY the JSON array, no markdown, no explanation.`;
         const jsonStr = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
         const suggestions: DerivedColumnSuggestion[] = JSON.parse(jsonStr);
 
-        // Validate each suggestion references real columns
-        const colNames = new Set(dataset.columns.map(c => c.name));
+        // Validate each suggestion — structural + semantic
         const valid = suggestions.filter(s =>
             s.id && s.label && s.formula && s.columnA && s.columnB &&
             colNames.has(s.columnA) && colNames.has(s.columnB) &&
             ['multiply', 'subtract', 'divide', 'add'].includes(s.formula) &&
-            typeof s.confidence === 'number' && s.confidence >= 0 && s.confidence <= 100
+            typeof s.confidence === 'number' && s.confidence >= 0 && s.confidence <= 100 &&
+            validateDerivedColumn(s, dataset).valid
         );
 
         return valid.map(s => ({
@@ -107,6 +107,86 @@ Return ONLY the JSON array, no markdown, no explanation.`;
         console.error('[DerivedSuggestions] AI call failed:', err);
         return [];
     }
+}
+
+// ── Semantic Validation ──────────────────────────────────────────
+
+export interface ValidationResult {
+    valid: boolean;
+    errors: string[];
+    warnings: string[];
+}
+
+/**
+ * Validate a derived column suggestion against semantic rules.
+ *
+ * Rejects:
+ *   - ID columns in formulas (unit_price × customer_id = nonsense)
+ *   - Non-numeric columns in math operations
+ *   - Division where denominator is likely zero
+ *   - Same column on both sides (a - a = always 0)
+ */
+export function validateDerivedColumn(
+    suggestion: DerivedColumnSuggestion,
+    dataset: Dataset
+): ValidationResult {
+    const errors: string[] = [];
+    const warnings: string[] = [];
+    const colA = dataset.columns.find(c => c.name === suggestion.columnA);
+    const colB = dataset.columns.find(c => c.name === suggestion.columnB);
+
+    if (!colA || !colB) {
+        errors.push(`Column not found: ${!colA ? suggestion.columnA : suggestion.columnB}`);
+        return { valid: false, errors, warnings };
+    }
+
+    // ── Rule 1: Reject ID columns in math operations ──
+    const idTypes = [ColumnType.ID, ColumnType.IDENTIFIER];
+    const idRoles = ['identifier', 'id', 'primary_key', 'foreign_key'];
+
+    if (idTypes.includes(colA.type as any) || idRoles.includes(String(colA.semanticRole || '').toLowerCase())) {
+        errors.push(`"${colA.name}" is an identifier — math on IDs is semantically invalid`);
+    }
+    if (idTypes.includes(colB.type as any) || idRoles.includes(String(colB.semanticRole || '').toLowerCase())) {
+        errors.push(`"${colB.name}" is an identifier — math on IDs is semantically invalid`);
+    }
+
+    // ── Rule 2: Reject non-numeric columns ──
+    const nonNumericTypes = [ColumnType.DIMENSION, ColumnType.DATE, ColumnType.TEXT];
+    const isNumericCol = (col: any) => {
+        if ([ColumnType.MEASURE, ColumnType.METRIC].includes(col.type)) return true;
+        // Check sample data for numeric content
+        const samples = dataset.data.slice(0, 10).map(r => r[col.name]).filter(v => v != null);
+        return samples.length > 0 && samples.every(v => !isNaN(Number(String(v).replace(/[$,]/g, ''))));
+    };
+
+    if (!isNumericCol(colA)) {
+        errors.push(`"${colA.name}" does not contain numeric values — cannot use in formula`);
+    }
+    if (!isNumericCol(colB)) {
+        errors.push(`"${colB.name}" does not contain numeric values — cannot use in formula`);
+    }
+
+    // ── Rule 3: Same column on both sides ──
+    if (suggestion.columnA === suggestion.columnB && suggestion.formula === 'subtract') {
+        errors.push(`"${colA.name}" − "${colB.name}" will always equal zero`);
+    }
+    if (suggestion.columnA === suggestion.columnB && suggestion.formula === 'divide') {
+        warnings.push(`"${colA.name}" ÷ "${colB.name}" will always equal 1`);
+    }
+
+    // ── Rule 4: Division by column that contains zeros ──
+    if (suggestion.formula === 'divide') {
+        const zeros = dataset.data.slice(0, 100).filter(r => {
+            const v = Number(r[suggestion.columnB]);
+            return v === 0;
+        }).length;
+        if (zeros > 10) {
+            warnings.push(`"${colB.name}" has many zero values — division will produce nulls`);
+        }
+    }
+
+    return { valid: errors.length === 0, errors, warnings };
 }
 
 /**
@@ -151,3 +231,66 @@ export function materializeDerivedColumns(
         return enriched;
     });
 }
+
+// ── Semantic Registry Integration ────────────────────────────────
+
+import type { SemanticModel, SemanticMeasure, MetricBehavior } from './semanticModel';
+
+/**
+ * Register derived columns as first-class SemanticMeasures in the model.
+ * After this call, AI SQL, QueryPlan, Question Builder, and Alerts
+ * all understand the derived column's type, aggregation, and format.
+ *
+ * Infers:
+ *   - behavior: multiply/add → additive; divide → non_additive
+ *   - aggregation: additive → SUM; non_additive → AVG
+ *   - format: from suggestion.format → currency_usd | percent | raw
+ */
+export function registerDerivedInSemanticModel(
+    model: SemanticModel,
+    accepted: DerivedColumnSuggestion[]
+): SemanticModel {
+    if (accepted.length === 0) return model;
+
+    const existingCols = new Set(model.measures.map(m => m.column));
+    const newMeasures: SemanticMeasure[] = [];
+
+    for (const col of accepted) {
+        if (existingCols.has(col.id)) continue; // already registered
+
+        // Infer behavior from formula type
+        const behavior: MetricBehavior =
+            col.formula === 'divide' ? 'non_additive' :
+            col.formula === 'multiply' && col.multiplier ? 'non_additive' : // percentage-like
+            'additive';
+
+        // Infer aggregation from behavior
+        const aggregation = behavior === 'additive' ? 'SUM' as any : 'AVG' as any;
+
+        // Map format
+        const format =
+            col.format === 'currency' ? 'currency_usd' as const :
+            col.format === 'percent' ? 'percent' as const :
+            'raw' as const;
+
+        newMeasures.push({
+            name: col.label,
+            column: col.id,
+            aggregation,
+            behavior,
+            format,
+            requiresWeighting: behavior === 'non_additive',
+            weightColumn: behavior === 'non_additive' ? col.columnB : undefined,
+            label: col.label,
+            isHidden: false,
+        });
+    }
+
+    return {
+        ...model,
+        measures: [...model.measures, ...newMeasures],
+        version: model.version + 1,
+        builtAt: Date.now(),
+    };
+}
+
