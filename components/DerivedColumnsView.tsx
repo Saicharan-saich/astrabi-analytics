@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Sparkles, Plus, Check, X, Loader2, RefreshCw, Calculator, Trash2, AlertTriangle } from 'lucide-react';
+import { Sparkles, Plus, Check, X, Loader2, RefreshCw, Calculator, Trash2, AlertTriangle, ChevronDown } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
-import { DerivedColumnSuggestion, getAIDerivedSuggestions, computeDerivedColumn, materializeDerivedColumns, validateDerivedColumn, registerDerivedInSemanticModel } from '../services/aiDerivedSuggestions';
+import { DerivedColumnSuggestion, ExpressionTerm, getAIDerivedSuggestions, computeDerivedColumn, materializeDerivedColumns, validateDerivedColumn, registerDerivedInSemanticModel } from '../services/aiDerivedSuggestions';
 import { useTheme } from './ThemeProvider';
 
 interface DerivedColumnsViewProps {
   dataset: Dataset | null;
   onDatasetUpdate: (dataset: Dataset) => void;
 }
+
+const OP_SYMBOLS: Record<string, string> = { multiply: '×', subtract: '−', divide: '÷', add: '+' };
 
 export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset, onDatasetUpdate }) => {
   const { theme } = useTheme();
@@ -19,15 +21,12 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
   const [applied, setApplied] = useState<DerivedColumnSuggestion[]>([]);
   const [showCustom, setShowCustom] = useState(false);
   const [customLabel, setCustomLabel] = useState('');
-  const [customColA, setCustomColA] = useState('');
-  const [customColB, setCustomColB] = useState('');
-  const [customFormula, setCustomFormula] = useState<'multiply' | 'subtract' | 'divide' | 'add'>('multiply');
-  const [customMultiplier, setCustomMultiplier] = useState<string>('');
-
-  const numericColumns = dataset?.columns.filter(c => c.type === ColumnType.MEASURE || c.type === ColumnType.METRIC || /number|numeric|decimal|float|int|double|currency/i.test(c.type)) || [];
+  const [customFormat, setCustomFormat] = useState<'number' | 'currency' | 'percent'>('number');
+  // Multi-term expression: [{column, operator}, {column, operator}, {column}]
+  const [terms, setTerms] = useState<ExpressionTerm[]>([{ column: '' }, { column: '' }]);
 
   const fetchSuggestions = useCallback(async () => {
-    if (!dataset) return;
+    if (!dataset || !dataset.data || dataset.data.length === 0) return;
     setIsLoadingAI(true);
     setAiError(null);
     try {
@@ -42,7 +41,11 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
     }
   }, [dataset]);
 
-  useEffect(() => { if (dataset && suggestions.length === 0 && !isLoadingAI) fetchSuggestions(); }, [dataset]);
+  useEffect(() => {
+    if (dataset && dataset.data && dataset.data.length > 0 && suggestions.length === 0 && !isLoadingAI) {
+      fetchSuggestions();
+    }
+  }, [dataset]);
 
   const toggleSelect = (id: string) => {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -56,7 +59,6 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
       name: s.id, type: ColumnType.MEASURE as any, originalName: s.id,
       semanticRole: 'derived_metric' as any, label: s.label,
     }))];
-    // Auto-register in semantic model so AI SQL, Builder, Alerts understand them
     const updatedModel = (dataset as any).semanticModel
       ? registerDerivedInSemanticModel((dataset as any).semanticModel, toApply)
       : undefined;
@@ -68,25 +70,82 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
     setSelected(new Set());
   };
 
+  // ── Multi-term expression helpers ──
+  const updateTerm = (idx: number, field: 'column' | 'operator', value: string) => {
+    setTerms(prev => prev.map((t, i) => i === idx ? { ...t, [field]: value || undefined } : t));
+  };
+
+  const addTerm = () => {
+    setTerms(prev => {
+      const last = prev[prev.length - 1];
+      // Set operator on the last term if missing, then add new term
+      const updated = [...prev];
+      if (!last.operator) updated[updated.length - 1] = { ...last, operator: 'add' };
+      return [...updated, { column: '' }];
+    });
+  };
+
+  const removeTerm = (idx: number) => {
+    if (terms.length <= 2) return; // minimum 2 terms
+    setTerms(prev => {
+      const updated = prev.filter((_, i) => i !== idx);
+      // Remove operator from last term
+      if (updated.length > 0) {
+        updated[updated.length - 1] = { ...updated[updated.length - 1], operator: undefined };
+      }
+      return updated;
+    });
+  };
+
+  const buildPreview = (): string => {
+    return terms
+      .map((t, i) => {
+        const name = t.column || '?';
+        return i < terms.length - 1 && t.operator
+          ? `${name} ${OP_SYMBOLS[t.operator] || '?'}`
+          : name;
+      })
+      .join(' ');
+  };
+
   const addCustomColumn = () => {
-    if (!dataset || !customLabel.trim() || !customColA || !customColB) return;
+    if (!dataset || !customLabel.trim()) return;
+    const validTerms = terms.filter(t => t.column);
+    if (validTerms.length < 2) { setAiError('Need at least 2 columns'); return; }
+
     const id = customLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_');
+
+    // Build the expression
+    const expression: ExpressionTerm[] = validTerms.map((t, i) => ({
+      column: t.column,
+      operator: i < validTerms.length - 1 ? (t.operator || 'add') : undefined,
+    }));
+
     const custom: DerivedColumnSuggestion = {
       id, label: customLabel, description: 'Custom derived column',
-      formula: customFormula, columnA: customColA, columnB: customColB,
-      multiplier: customMultiplier ? Number(customMultiplier) : undefined,
-      category: 'custom', confidence: 100, format: 'number',
-      preview: `${customColA} ${customFormula === 'multiply' ? '×' : customFormula === 'subtract' ? '−' : customFormula === 'divide' ? '÷' : '+'} ${customColB}`,
+      formula: expression[0].operator || 'add',
+      columnA: expression[0].column,
+      columnB: expression[1].column,
+      expression,
+      category: 'custom', confidence: 100, format: customFormat,
+      preview: buildPreview(),
     };
-    // Validate custom column before materializing
-    const validation = validateDerivedColumn(custom, dataset);
-    if (!validation.valid) {
-      setAiError(validation.errors.join('; '));
-      return;
+
+    // Validate each pair semantically
+    for (const term of expression) {
+      const col = dataset.columns.find(c => c.name === term.column);
+      if (!col) { setAiError(`Column "${term.column}" not found`); return; }
+      const idTypes = [ColumnType.ID, ColumnType.IDENTIFIER];
+      const idRoles = ['identifier', 'id', 'primary_key', 'foreign_key'];
+      if (idTypes.includes(col.type as any) || idRoles.includes(String((col as any).semanticRole || '').toLowerCase())) {
+        setAiError(`"${col.name}" is an identifier — math on IDs is semantically invalid`);
+        return;
+      }
     }
-    const newRows = materializeDerivedColumns(dataset.data, [custom]);
+    setAiError(null);
+
+    const newRows = materializeDerivedColumns(dataset.data || [], [custom]);
     const newCols = [...dataset.columns, { name: id, type: ColumnType.MEASURE as any, originalName: id, semanticRole: 'derived_metric' as any, label: customLabel }];
-    // Auto-register in semantic model
     const updatedModel = (dataset as any).semanticModel
       ? registerDerivedInSemanticModel((dataset as any).semanticModel, [custom])
       : undefined;
@@ -94,12 +153,12 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
     if (updatedModel) (updated as any).semanticModel = updatedModel;
     onDatasetUpdate(updated);
     setApplied(prev => [...prev, custom]);
-    setCustomLabel(''); setCustomColA(''); setCustomColB(''); setCustomMultiplier(''); setShowCustom(false);
+    setCustomLabel(''); setTerms([{ column: '' }, { column: '' }]); setShowCustom(false);
   };
 
   const removeApplied = (col: DerivedColumnSuggestion) => {
     if (!dataset) return;
-    const newRows = dataset.data.map(r => { const n = { ...r }; delete n[col.id]; return n; });
+    const newRows = (dataset.data || []).map(r => { const n = { ...r }; delete n[col.id]; return n; });
     const newCols = dataset.columns.filter(c => c.name !== col.id);
     onDatasetUpdate({ ...dataset, data: newRows, columns: newCols, version: (dataset.version || 1) + 1 });
     setApplied(prev => prev.filter(a => a.id !== col.id));
@@ -110,6 +169,7 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
   const confColor = (c: number) => c >= 85 ? 'text-emerald-500' : c >= 60 ? 'text-yellow-500' : 'text-red-400';
   const confBg = (c: number) => c >= 85 ? 'bg-emerald-500/10 border-emerald-500/20' : c >= 60 ? 'bg-yellow-500/10 border-yellow-500/20' : 'bg-red-500/10 border-red-500/20';
   const catIcon: Record<string, string> = { financial: '💰', unit_economics: '📊', time_intelligence: '🕐', segmentation: '🏷️', custom: '🛠️' };
+  const inputCls = `w-full px-2.5 py-2 rounded-lg border text-sm ${isDark ? 'bg-slate-700 border-white/10 text-white' : 'bg-gray-50 border-gray-200'}`;
 
   return (
     <div className={`flex flex-col h-full ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900'} overflow-hidden`}>
@@ -120,7 +180,7 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
           Derived Columns
           <span className="text-xs font-medium bg-purple-500/15 text-purple-600 dark:text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/20">AI-Powered</span>
         </h2>
-        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">AI suggests business metrics from your data. You can also create custom formulas.</p>
+        <p className="text-sm text-gray-500 dark:text-slate-400 mt-1">AI suggests business metrics from your data. Create custom multi-column formulas too.</p>
       </div>
 
       <div className="flex-1 overflow-y-auto p-6 space-y-6">
@@ -159,9 +219,10 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
           )}
 
           {aiError && (
-            <div className={`rounded-xl border p-4 flex items-start gap-3 ${isDark ? 'bg-red-500/10 border-red-500/20' : 'bg-red-50 border-red-200'}`}>
-              <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
+            <div className={`rounded-xl border p-4 flex items-start gap-3 mb-3 ${isDark ? 'bg-red-500/10 border-red-500/20' : 'bg-red-50 border-red-200'}`}>
+              <AlertTriangle className="w-5 h-5 text-red-500 shrink-0 mt-0.5" />
               <div className="text-sm text-red-700 dark:text-red-300">{aiError}</div>
+              <button onClick={() => setAiError(null)} className="ml-auto text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>
             </div>
           )}
 
@@ -193,7 +254,7 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
           )}
         </div>
 
-        {/* Custom Column Builder */}
+        {/* Custom Column Builder — Multi-Term Expression */}
         <div>
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400 flex items-center gap-2"><Plus className="w-4 h-4 text-cyan-500" /> Custom Column</h3>
@@ -202,47 +263,105 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
 
           {showCustom && (
             <div className={`rounded-xl border p-5 space-y-4 ${isDark ? 'bg-slate-800/50 border-white/[0.06]' : 'bg-white border-gray-200'}`}>
-              <div>
-                <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">Column Name</label>
-                <input value={customLabel} onChange={e => setCustomLabel(e.target.value)} placeholder="e.g. Total Sales" className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm ${isDark ? 'bg-slate-700 border-white/10 text-white' : 'bg-gray-50 border-gray-200'}`} />
-              </div>
+              {/* Name + Format */}
               <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">Column A</label>
-                  <select value={customColA} onChange={e => setCustomColA(e.target.value)} className={`w-full mt-1 px-2 py-2 rounded-lg border text-sm ${isDark ? 'bg-slate-700 border-white/10 text-white' : 'bg-gray-50 border-gray-200'}`}>
-                    <option value="">Select...</option>
-                    {dataset.columns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
-                  </select>
+                <div className="col-span-2">
+                  <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">Column Name</label>
+                  <input value={customLabel} onChange={e => setCustomLabel(e.target.value)} placeholder="e.g. Total Sales" className={`mt-1 ${inputCls}`} />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">Operation</label>
-                  <select value={customFormula} onChange={e => setCustomFormula(e.target.value as any)} className={`w-full mt-1 px-2 py-2 rounded-lg border text-sm ${isDark ? 'bg-slate-700 border-white/10 text-white' : 'bg-gray-50 border-gray-200'}`}>
-                    <option value="multiply">× Multiply</option>
-                    <option value="add">+ Add</option>
-                    <option value="subtract">− Subtract</option>
-                    <option value="divide">÷ Divide</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">Column B</label>
-                  <select value={customColB} onChange={e => setCustomColB(e.target.value)} className={`w-full mt-1 px-2 py-2 rounded-lg border text-sm ${isDark ? 'bg-slate-700 border-white/10 text-white' : 'bg-gray-50 border-gray-200'}`}>
-                    <option value="">Select...</option>
-                    {dataset.columns.map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">Format</label>
+                  <select value={customFormat} onChange={e => setCustomFormat(e.target.value as any)} className={`mt-1 ${inputCls}`}>
+                    <option value="number">Number</option>
+                    <option value="currency">Currency</option>
+                    <option value="percent">Percent</option>
                   </select>
                 </div>
               </div>
+
+              {/* Expression Terms */}
               <div>
-                <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">Multiplier (optional, e.g. 100 for %)</label>
-                <input value={customMultiplier} onChange={e => setCustomMultiplier(e.target.value)} placeholder="Leave empty for none" type="number" className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm ${isDark ? 'bg-slate-700 border-white/10 text-white' : 'bg-gray-50 border-gray-200'}`} />
+                <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-2 block">Formula Expression</label>
+                <div className="space-y-2">
+                  {terms.map((term, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      {/* Column selector */}
+                      <select
+                        value={term.column}
+                        onChange={e => updateTerm(idx, 'column', e.target.value)}
+                        className={`flex-1 ${inputCls}`}
+                      >
+                        <option value="">Select column...</option>
+                        {dataset.columns.map(c => <option key={c.name} value={c.name}>{c.label || c.name}</option>)}
+                      </select>
+
+                      {/* Operator (not on last term) */}
+                      {idx < terms.length - 1 && (
+                        <select
+                          value={term.operator || 'multiply'}
+                          onChange={e => updateTerm(idx, 'operator', e.target.value)}
+                          className={`w-24 shrink-0 text-center font-bold ${inputCls}`}
+                        >
+                          <option value="multiply">×</option>
+                          <option value="add">+</option>
+                          <option value="subtract">−</option>
+                          <option value="divide">÷</option>
+                        </select>
+                      )}
+
+                      {/* Remove button (only if >2 terms) */}
+                      {terms.length > 2 && (
+                        <button onClick={() => removeTerm(idx)} className="text-red-400 hover:text-red-600 p-1 shrink-0"><X className="w-4 h-4" /></button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Add term */}
+                <button onClick={addTerm} className="mt-2 text-xs text-cyan-600 dark:text-cyan-400 flex items-center gap-1 hover:underline">
+                  <Plus className="w-3 h-3" /> Add another column
+                </button>
               </div>
-              {customColA && customColB && (
-                <div className={`text-xs font-mono px-3 py-2 rounded-lg ${isDark ? 'bg-slate-900 text-purple-300' : 'bg-gray-100 text-purple-700'}`}>
-                  Preview: {customLabel || 'result'} = {customColA} {customFormula === 'multiply' ? '×' : customFormula === 'subtract' ? '−' : customFormula === 'divide' ? '÷' : '+'} {customColB}{customMultiplier ? ` × ${customMultiplier}` : ''}
+
+              {/* Live Preview */}
+              {terms.some(t => t.column) && (
+                <div className={`text-xs font-mono px-3 py-2.5 rounded-lg flex items-center gap-2 ${isDark ? 'bg-slate-900 text-purple-300' : 'bg-gray-100 text-purple-700'}`}>
+                  <Calculator className="w-3.5 h-3.5 shrink-0" />
+                  <span>{customLabel || 'result'} = {buildPreview()}</span>
                 </div>
               )}
+
+              {/* Sample output */}
+              {terms.filter(t => t.column).length >= 2 && dataset.data && dataset.data.length > 0 && (
+                <div className={`text-xs rounded-lg overflow-hidden border ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
+                  <div className={`px-3 py-1.5 font-bold uppercase tracking-wider ${isDark ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-500'}`}>Sample Output (first 3 rows)</div>
+                  <div className={`divide-y ${isDark ? 'divide-white/[0.04]' : 'divide-gray-100'}`}>
+                    {dataset.data.slice(0, 3).map((row, i) => {
+                      const mockSuggestion: DerivedColumnSuggestion = {
+                        id: '_preview', label: '', description: '', formula: 'add',
+                        columnA: terms[0]?.column || '', columnB: terms[1]?.column || '',
+                        expression: terms.filter(t => t.column).map((t, idx, arr) => ({
+                          column: t.column,
+                          operator: idx < arr.length - 1 ? (t.operator || 'add') : undefined,
+                        })),
+                        category: 'custom', confidence: 100, format: 'number',
+                      };
+                      const val = computeDerivedColumn(row, mockSuggestion);
+                      return (
+                        <div key={i} className={`px-3 py-1.5 flex justify-between ${isDark ? 'text-slate-300' : 'text-gray-700'}`}>
+                          <span className="text-gray-500">{terms.filter(t => t.column).map(t => row[t.column]).join(', ')}</span>
+                          <span className="font-bold text-emerald-500">{val !== null ? (customFormat === 'currency' ? `$${val.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}` : customFormat === 'percent' ? `${val.toFixed(1)}%` : val.toLocaleString(undefined, {maximumFractionDigits: 2})) : 'null'}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Actions */}
               <div className="flex gap-2">
-                <button onClick={addCustomColumn} disabled={!customLabel.trim() || !customColA || !customColB} className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-lg transition-all disabled:opacity-40 flex items-center justify-center gap-2 text-sm"><Plus className="w-4 h-4" /> Create Column</button>
-                <button onClick={() => setShowCustom(false)} className="px-4 py-2.5 rounded-lg border border-gray-200 dark:border-white/10 text-sm hover:bg-gray-50 dark:hover:bg-white/5"><X className="w-4 h-4" /></button>
+                <button onClick={addCustomColumn} disabled={!customLabel.trim() || terms.filter(t => t.column).length < 2} className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-2.5 rounded-lg transition-all disabled:opacity-40 flex items-center justify-center gap-2 text-sm"><Plus className="w-4 h-4" /> Create Column</button>
+                <button onClick={() => { setShowCustom(false); setTerms([{ column: '' }, { column: '' }]); }} className="px-4 py-2.5 rounded-lg border border-gray-200 dark:border-white/10 text-sm hover:bg-gray-50 dark:hover:bg-white/5"><X className="w-4 h-4" /></button>
               </div>
             </div>
           )}

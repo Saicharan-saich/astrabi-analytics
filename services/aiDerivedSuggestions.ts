@@ -22,6 +22,14 @@ export interface DerivedColumnSuggestion {
     confidence: number;    // 0-100
     format: 'currency' | 'percent' | 'number' | 'integer';
     preview?: string;      // e.g. "unit_price × quantity"
+    /** Multi-term expression (optional — overrides columnA/B/formula when present) */
+    expression?: ExpressionTerm[];
+}
+
+/** A single term in a multi-column expression chain */
+export interface ExpressionTerm {
+    column: string;
+    operator?: 'multiply' | 'subtract' | 'divide' | 'add'; // operator AFTER this term
 }
 
 /**
@@ -31,7 +39,7 @@ export interface DerivedColumnSuggestion {
 export async function getAIDerivedSuggestions(dataset: Dataset): Promise<DerivedColumnSuggestion[]> {
     const columnMeta = dataset.columns.map(col => {
         // Get 3 sample values for context
-        const samples = dataset.data
+        const samples = (dataset.data || [])
             .slice(0, 5)
             .map(row => row[col.name])
             .filter(v => v !== null && v !== undefined)
@@ -156,7 +164,7 @@ export function validateDerivedColumn(
     const isNumericCol = (col: any) => {
         if ([ColumnType.MEASURE, ColumnType.METRIC].includes(col.type)) return true;
         // Check sample data for numeric content
-        const samples = dataset.data.slice(0, 10).map(r => r[col.name]).filter(v => v != null);
+        const samples = (dataset.data || []).slice(0, 10).map(r => r[col.name]).filter(v => v != null);
         return samples.length > 0 && samples.every(v => !isNaN(Number(String(v).replace(/[$,]/g, ''))));
     };
 
@@ -177,7 +185,7 @@ export function validateDerivedColumn(
 
     // ── Rule 4: Division by column that contains zeros ──
     if (suggestion.formula === 'divide') {
-        const zeros = dataset.data.slice(0, 100).filter(r => {
+        const zeros = (dataset.data || []).slice(0, 100).filter(r => {
             const v = Number(r[suggestion.columnB]);
             return v === 0;
         }).length;
@@ -191,11 +199,19 @@ export function validateDerivedColumn(
 
 /**
  * Compute a derived column value for a single row.
+ * Supports both simple 2-column formulas and multi-term expressions.
+ * Multi-term expressions use standard math precedence (× ÷ before + −).
  */
 export function computeDerivedColumn(
     row: Record<string, any>,
     suggestion: DerivedColumnSuggestion
 ): number | null {
+    // Multi-term expression path
+    if (suggestion.expression && suggestion.expression.length >= 2) {
+        return computeExpression(row, suggestion.expression);
+    }
+
+    // Simple 2-column path
     const a = Number(row[suggestion.columnA]);
     const b = Number(row[suggestion.columnB]);
     if (isNaN(a) || isNaN(b)) return null;
@@ -210,6 +226,55 @@ export function computeDerivedColumn(
     }
 
     if (suggestion.multiplier) result *= suggestion.multiplier;
+    return result;
+}
+
+/**
+ * Evaluate a multi-term expression with standard math precedence.
+ * Example: [price, ×, qty, −, cost, ×, qty]
+ * First pass: resolve × and ÷ → [price*qty, −, cost*qty]
+ * Second pass: resolve + and − → price*qty - cost*qty
+ */
+export function computeExpression(
+    row: Record<string, any>,
+    terms: ExpressionTerm[]
+): number | null {
+    if (terms.length === 0) return null;
+
+    // Build values and operators arrays
+    const values: number[] = [];
+    const operators: string[] = [];
+
+    for (const term of terms) {
+        const val = Number(row[term.column]);
+        if (isNaN(val)) return null;
+        values.push(val);
+        if (term.operator) operators.push(term.operator);
+    }
+
+    // Pass 1: resolve multiply and divide (higher precedence)
+    const addValues: number[] = [values[0]];
+    const addOps: string[] = [];
+
+    for (let i = 0; i < operators.length; i++) {
+        const op = operators[i];
+        if (op === 'multiply' || op === 'divide') {
+            const left = addValues.pop()!;
+            const right = values[i + 1];
+            if (op === 'divide' && right === 0) return null;
+            addValues.push(op === 'multiply' ? left * right : left / right);
+        } else {
+            addValues.push(values[i + 1]);
+            addOps.push(op);
+        }
+    }
+
+    // Pass 2: resolve add and subtract (lower precedence)
+    let result = addValues[0];
+    for (let i = 0; i < addOps.length; i++) {
+        result = addOps[i] === 'add' ? result + addValues[i + 1] : result - addValues[i + 1];
+    }
+
     return result;
 }
 
