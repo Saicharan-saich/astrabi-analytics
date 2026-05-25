@@ -485,7 +485,8 @@ export enum Tab {
   DATASET_SUMMARY = 'DATASET_SUMMARY',
   SMART_QUESTIONS = 'SMART_QUESTIONS',
   ALERTS = 'ALERTS',
-  VISUAL_PREVIEW = 'VISUAL_PREVIEW'
+  VISUAL_PREVIEW = 'VISUAL_PREVIEW',
+  DERIVED_COLUMNS = 'DERIVED_COLUMNS'
 }
 
 // ─── Authentication & RBAC ───────────────────────────────────────

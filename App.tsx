@@ -23,6 +23,7 @@ import { BuilderView } from './components/BuilderView';
 import { NLQView } from './components/NLQView';
 import { AISQLView } from './components/AISQLView';
 import { VisualPreviewView } from './components/VisualPreviewView';
+import { DerivedColumnsView } from './components/DerivedColumnsView';
 import { Dashboard } from './components/Dashboard';
 import { SchemaView } from './components/SchemaView';
 import { QuestionBuilder } from './components/QuestionBuilder';
@@ -1418,6 +1419,13 @@ function App() {
                       onFormatChange={setVisualPreviewFormatting}
                     />
                   )}
+                </div>
+
+                <div className={`h-full w-full overflow-hidden ${activeTab === Tab.DERIVED_COLUMNS ? '' : 'hidden'}`}>
+                  <DerivedColumnsView
+                    dataset={dataset}
+                    onDatasetUpdate={(updated) => setDataset(updated)}
+                  />
                 </div>
 
                 <div className={`h-full w-full overflow-hidden ${activeTab === Tab.BUILDER ? '' : 'hidden'}`}>
