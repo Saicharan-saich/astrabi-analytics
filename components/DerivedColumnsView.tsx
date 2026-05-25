@@ -20,6 +20,25 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [applied, setApplied] = useState<DerivedColumnSuggestion[]>([]);
+
+  // Detect existing derived columns from persisted dataset on mount
+  useEffect(() => {
+    if (!dataset) return;
+    const existing = dataset.columns
+      .filter(c => (c as any).semanticRole === 'derived_metric')
+      .map(c => ({
+        id: c.name,
+        label: (c as any).label || c.name,
+        description: 'Previously created derived column',
+        formula: 'multiply' as const,
+        columnA: '', columnB: '',
+        category: 'custom' as const,
+        confidence: 100,
+        format: 'number' as const,
+        preview: (c as any).label || c.name,
+      }));
+    if (existing.length > 0 && applied.length === 0) setApplied(existing);
+  }, [dataset?.columns.length]);
   const [showCustom, setShowCustom] = useState(false);
   const [customLabel, setCustomLabel] = useState('');
   const [customFormat, setCustomFormat] = useState<'number' | 'currency' | 'percent'>('number');
@@ -61,7 +80,7 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
     const toApply = suggestions.filter(s => selected.has(s.id));
     const newRows = materializeDerivedColumns(dataset.rows || [], toApply);
     const newCols = [...dataset.columns, ...toApply.map(s => ({
-      name: s.id, type: ColumnType.MEASURE as any, originalName: s.id,
+      name: s.id, type: ColumnType.METRIC, originalName: s.id,
       semanticRole: 'derived_metric' as any, label: s.label,
     }))];
     const updatedModel = (dataset as any).semanticModel
@@ -183,7 +202,7 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
     }
 
     const newRows = materializeDerivedColumns(baseData, [custom]);
-    const newCols = [...baseCols, { name: id, type: ColumnType.MEASURE as any, originalName: id, semanticRole: 'derived_metric' as any, label: customLabel }];
+    const newCols = [...baseCols, { name: id, type: ColumnType.METRIC, originalName: id, semanticRole: 'derived_metric' as any, label: customLabel }];
     const updatedModel = (dataset as any).semanticModel
       ? registerDerivedInSemanticModel((dataset as any).semanticModel, [custom])
       : undefined;
