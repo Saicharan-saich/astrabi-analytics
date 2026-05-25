@@ -31,7 +31,7 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
   ]);
 
   const fetchSuggestions = useCallback(async () => {
-    if (!dataset || !dataset.data || dataset.data.length === 0) return;
+    if (!dataset || !dataset.rows || dataset.rows.length === 0) return;
     setIsLoadingAI(true);
     setAiError(null);
     try {
@@ -47,7 +47,7 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
   }, [dataset]);
 
   useEffect(() => {
-    if (dataset && dataset.data && dataset.data.length > 0 && suggestions.length === 0 && !isLoadingAI) {
+    if (dataset && dataset.rows && dataset.rows.length > 0 && suggestions.length === 0 && !isLoadingAI) {
       fetchSuggestions();
     }
   }, [dataset]);
@@ -59,7 +59,7 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
   const applySelected = () => {
     if (!dataset) return;
     const toApply = suggestions.filter(s => selected.has(s.id));
-    const newRows = materializeDerivedColumns(dataset.data || [], toApply);
+    const newRows = materializeDerivedColumns(dataset.rows || [], toApply);
     const newCols = [...dataset.columns, ...toApply.map(s => ({
       name: s.id, type: ColumnType.MEASURE as any, originalName: s.id,
       semanticRole: 'derived_metric' as any, label: s.label,
@@ -67,7 +67,7 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
     const updatedModel = (dataset as any).semanticModel
       ? registerDerivedInSemanticModel((dataset as any).semanticModel, toApply)
       : undefined;
-    const updated = { ...dataset, data: newRows, columns: newCols, version: (dataset.version || 1) + 1 };
+    const updated = { ...dataset, rows: newRows, columns: newCols, version: (dataset.version || 1) + 1 };
     if (updatedModel) (updated as any).semanticModel = updatedModel;
     onDatasetUpdate(updated);
     setApplied(prev => [...prev, ...toApply]);
@@ -175,7 +175,7 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
     setAiError(null);
 
     // If editing, remove old column first
-    let baseData = dataset.data || [];
+    let baseData = dataset.rows || [];
     let baseCols = dataset.columns;
     if (editingId) {
       baseData = baseData.map(r => { const n = { ...r }; delete n[editingId]; return n; });
@@ -187,7 +187,7 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
     const updatedModel = (dataset as any).semanticModel
       ? registerDerivedInSemanticModel((dataset as any).semanticModel, [custom])
       : undefined;
-    const updated = { ...dataset, data: newRows, columns: newCols, version: (dataset.version || 1) + 1 };
+    const updated = { ...dataset, rows: newRows, columns: newCols, version: (dataset.version || 1) + 1 };
     if (updatedModel) (updated as any).semanticModel = updatedModel;
     onDatasetUpdate(updated);
 
@@ -202,9 +202,9 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
 
   const removeApplied = (col: DerivedColumnSuggestion) => {
     if (!dataset) return;
-    const newRows = (dataset.data || []).map(r => { const n = { ...r }; delete n[col.id]; return n; });
+    const newRows = (dataset.rows || []).map(r => { const n = { ...r }; delete n[col.id]; return n; });
     const newCols = dataset.columns.filter(c => c.name !== col.id);
-    onDatasetUpdate({ ...dataset, data: newRows, columns: newCols, version: (dataset.version || 1) + 1 });
+    onDatasetUpdate({ ...dataset, rows: newRows, columns: newCols, version: (dataset.version || 1) + 1 });
     setApplied(prev => prev.filter(a => a.id !== col.id));
   };
 
@@ -378,11 +378,11 @@ export const DerivedColumnsView: React.FC<DerivedColumnsViewProps> = ({ dataset,
               )}
 
               {/* Sample output */}
-              {terms.filter(t => t.column).length >= 2 && dataset.data && dataset.data.length > 0 && (
+              {terms.filter(t => t.column).length >= 2 && dataset.rows && dataset.rows.length > 0 && (
                 <div className={`text-xs rounded-lg overflow-hidden border ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
                   <div className={`px-3 py-1.5 font-bold uppercase tracking-wider ${isDark ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-500'}`}>Sample Output (first 3 rows)</div>
                   <div className={`divide-y ${isDark ? 'divide-white/[0.04]' : 'divide-gray-100'}`}>
-                    {dataset.data.slice(0, 3).map((row, i) => {
+                    {dataset.rows.slice(0, 3).map((row, i) => {
                       const filledTerms = terms.filter(t => t.column);
                       const expr: ExpressionTerm[] = filledTerms.map((t, idx, arr) => ({
                         column: t.column,

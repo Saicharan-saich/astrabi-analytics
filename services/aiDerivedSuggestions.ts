@@ -39,7 +39,7 @@ export interface ExpressionTerm {
 export async function getAIDerivedSuggestions(dataset: Dataset): Promise<DerivedColumnSuggestion[]> {
     const columnMeta = dataset.columns.map(col => {
         // Get 3 sample values for context
-        const samples = (dataset.data || [])
+        const samples = (dataset.rows || [])
             .slice(0, 5)
             .map(row => row[col.name])
             .filter(v => v !== null && v !== undefined)
@@ -164,7 +164,7 @@ export function validateDerivedColumn(
     const isNumericCol = (col: any) => {
         if ([ColumnType.MEASURE, ColumnType.METRIC].includes(col.type)) return true;
         // Check sample data for numeric content
-        const samples = (dataset.data || []).slice(0, 10).map(r => r[col.name]).filter(v => v != null);
+        const samples = (dataset.rows || []).slice(0, 10).map(r => r[col.name]).filter(v => v != null);
         return samples.length > 0 && samples.every(v => !isNaN(Number(String(v).replace(/[$,]/g, ''))));
     };
 
@@ -185,7 +185,7 @@ export function validateDerivedColumn(
 
     // ── Rule 4: Division by column that contains zeros ──
     if (suggestion.formula === 'divide') {
-        const zeros = (dataset.data || []).slice(0, 100).filter(r => {
+        const zeros = (dataset.rows || []).slice(0, 100).filter(r => {
             const v = Number(r[suggestion.columnB]);
             return v === 0;
         }).length;
