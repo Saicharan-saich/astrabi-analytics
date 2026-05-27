@@ -51,7 +51,7 @@ const DOMAIN_TO_INDUSTRY: Record<string, Industry> = {
 
 /** Resolve detected domain profile to industry key */
 export function resolveIndustry(domainProfile?: string): Industry | null {
-    if (!domainProfile) return null;
+    if (!domainProfile || typeof domainProfile !== 'string') return null;
     const key = domainProfile.toLowerCase().trim();
     return DOMAIN_TO_INDUSTRY[key] || null;
 }

@@ -37,7 +37,8 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
   const [terms, setTerms] = useState<ExpressionTerm[]>([{ column: '', operator: 'multiply' }, { column: '' }]);
 
   // Domain-aware industry detection
-  const domainProfile = (dataset as any)?.domainProfile || (dataset as any)?.semanticModel?.domainProfile || '';
+  const rawProfile = (dataset as any)?.domainProfile || (dataset as any)?.semanticModel?.domainProfile || '';
+  const domainProfile = typeof rawProfile === 'string' ? rawProfile : String(rawProfile?.name || rawProfile?.label || '');
   const { primary, others } = useMemo(() => getTemplatesForDomain(domainProfile), [domainProfile]);
   const industries = useMemo(() => {
     const all = primary ? [primary, ...others] : others;
