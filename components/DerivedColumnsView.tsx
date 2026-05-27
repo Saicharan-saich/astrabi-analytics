@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, Check, X, Trash2, Pencil, Calculator, BookOpen, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
-import { MetricTemplate, MetricCategory, CATEGORY_META, METRIC_TEMPLATES, getTemplatesByCategory, searchTemplates, autoSuggestMappings } from '../services/metricTemplates';
+import { MetricTemplate, Industry, INDUSTRY_META, getTemplatesForDomain, searchTemplates, autoSuggestMappings, ALL_TEMPLATES } from '../services/metricTemplates';
 import { ExpressionTerm, DerivedColumnSuggestion, computeDerivedColumn, materializeDerivedColumns, registerDerivedInSemanticModel } from '../services/aiDerivedSuggestions';
 import { useTheme } from './ThemeProvider';
 
@@ -25,7 +25,8 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
   // ── State ──
   const [subTab, setSubTab] = useState<SubTab>('library');
   const [search, setSearch] = useState('');
-  const [expanded, setExpanded] = useState<Set<string>>(new Set(['financial', 'unit_economics']));
+  const [activeIndustry, setActiveIndustry] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [mapping, setMapping] = useState<{ template: MetricTemplate; columns: Record<string, string> } | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [applied, setApplied] = useState<Array<{ id: string; label: string; preview: string; category: string }>>([]);
@@ -34,6 +35,20 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
   const [customLabel, setCustomLabel] = useState('');
   const [customFormat, setCustomFormat] = useState<'number' | 'currency' | 'percent'>('number');
   const [terms, setTerms] = useState<ExpressionTerm[]>([{ column: '', operator: 'multiply' }, { column: '' }]);
+
+  // Domain-aware industry detection
+  const domainProfile = (dataset as any)?.domainProfile || (dataset as any)?.semanticModel?.domainProfile || '';
+  const { primary, others } = useMemo(() => getTemplatesForDomain(domainProfile), [domainProfile]);
+  const industries = useMemo(() => {
+    const all = primary ? [primary, ...others] : others;
+    return all;
+  }, [primary, others]);
+
+  // Auto-select detected industry on mount
+  useEffect(() => {
+    if (primary && !activeIndustry) setActiveIndustry(primary.industry);
+    else if (!activeIndustry && industries.length > 0) setActiveIndustry(industries[0].industry);
+  }, [primary?.industry]);
 
   // Detect existing derived columns
   useEffect(() => {
@@ -44,7 +59,9 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
     if (existing.length > 0 && applied.length === 0) setApplied(existing);
   }, [dataset?.columns.length]);
 
-  const filtered = useMemo(() => search ? searchTemplates(search) : METRIC_TEMPLATES, [search]);
+  const currentIndustry = industries.find(i => i.industry === activeIndustry) || industries[0];
+  const currentTemplates = currentIndustry?.templates || [];
+  const filtered = useMemo(() => search ? searchTemplates(search, currentTemplates) : currentTemplates, [search, currentTemplates]);
   const grouped = useMemo(() => {
     const g: Record<string, MetricTemplate[]> = {};
     filtered.forEach(t => (g[t.category] ||= []).push(t));
@@ -168,8 +185,7 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
   if (!dataset) return <div className="flex items-center justify-center h-full text-slate-400"><p>Load a dataset first.</p></div>;
 
   const inputCls = `w-full px-2.5 py-2 rounded-lg border text-sm ${isDark ? 'bg-slate-700 border-white/10 text-white' : 'bg-gray-50 border-gray-200'}`;
-  const catIcon = (cat: string) => CATEGORY_META[cat as MetricCategory]?.icon || '📊';
-  const catLabel = (cat: string) => CATEGORY_META[cat as MetricCategory]?.label || cat;
+  const catLabel = (cat: string) => cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ');
 
   return (
     <div className={`flex flex-col h-full ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900'} overflow-hidden`}>
@@ -208,9 +224,30 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
         {/* ── Library Tab ── */}
         {subTab === 'library' && (
           <>
+            {/* Industry tabs */}
+            <div className="flex gap-1.5 flex-wrap">
+              {industries.map(ind => (
+                <button key={ind.industry} onClick={() => { setActiveIndustry(ind.industry); setSearch(''); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    activeIndustry === ind.industry
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg'
+                      : isDark ? 'text-slate-400 hover:text-white hover:bg-white/5 border border-white/[0.06]' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100 border border-gray-200'
+                  } ${ind.industry === primary?.industry ? 'ring-1 ring-purple-400/30' : ''}`}>
+                  <span>{ind.icon}</span> {ind.label}
+                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeIndustry === ind.industry ? 'bg-white/20' : isDark ? 'bg-white/5' : 'bg-gray-100'}`}>{ind.templates.length}</span>
+                </button>
+              ))}
+            </div>
+
+            {primary && activeIndustry === primary.industry && (
+              <div className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs ${isDark ? 'bg-purple-500/10 border border-purple-500/20 text-purple-300' : 'bg-purple-50 border border-purple-200 text-purple-700'}`}>
+                ✨ Recommended for your <strong>{domainProfile}</strong> dataset
+              </div>
+            )}
+
             <div className="relative">
               <Search className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" />
-              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search metrics..."
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder={`Search ${currentIndustry?.label || ''} metrics...`}
                 className={`${inputCls} pl-9`} />
             </div>
 
@@ -219,7 +256,7 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
                 <button onClick={() => setExpanded(prev => { const n = new Set(prev); n.has(cat) ? n.delete(cat) : n.add(cat); return n; })}
                   className="flex items-center gap-2 w-full text-left py-2">
                   {expanded.has(cat) ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
-                  <span className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400">{catIcon(cat)} {catLabel(cat)}</span>
+                  <span className="text-sm font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400">{catLabel(cat)}</span>
                   <span className="text-xs text-gray-400">({templates.length})</span>
                 </button>
                 {expanded.has(cat) && (
