@@ -90,6 +90,22 @@ Instead, recognize these as derived metric patterns:
      - "total value" → needs (quantity * unit_price)
      Detection: keywords "times", "multiplied by", "total value"
 
+VALID TIME GRAINS for dimensions with timeGrain:
+- "year" — group by calendar year
+- "quarter" — group by calendar quarter
+- "month" — group by calendar month (YYYY-MM)
+- "week" — group by calendar week
+- "day" — group by individual date
+- "day_of_week" — group by weekday name (Monday, Tuesday, etc.) — USE THIS for "days of the week", "busiest day", "sales by weekday", "which day of the week"
+- "month_of_year" — group by month name (January, February, etc.) — USE THIS for "which month", "busiest month"
+- "hour" — group by hour of day
+
+CRITICAL TIME GRAIN RULES:
+- "days of the week" / "by day of week" / "busiest day" / "which weekday" → timeGrain MUST be "day_of_week" (NOT "day")
+- "which month" / "busiest month" / "by month of year" → timeGrain MUST be "month_of_year" (NOT "month")
+- "monthly trend" / "month over month" / "by month" → timeGrain should be "month"
+- "daily trend" / "day by day" → timeGrain should be "day"
+
 VALID INTENTS:
 - "single_metric" — user wants a single number (e.g., "what is total sales?", "average daily sales")
 - "derived_metric" — user wants a computed value from two columns (e.g., "average length of stay", "profit margin")
@@ -278,6 +294,77 @@ function detectCurrentPeriod(question: string): 'year' | 'quarter' | 'month' | '
     if (/\b(this|current)\s+week\b/.test(q)) return 'week';
     if (/\b(today|this\s+day)\b/.test(q)) return 'day';
     return null;
+}
+
+/**
+ * Detect "day of week" / "month of year" patterns in the question.
+ * The LLM often misclassifies these as plain "day" or "month" grains.
+ * This deterministic detector forcefully corrects timeGrain.
+ *
+ * Patterns detected:
+ *   - "days of the week", "by day of week", "busiest day", "which weekday"
+ *   - "months of the year", "busiest month", "by month of year"
+ */
+function enforceCyclicGrain(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    const q = question.toLowerCase();
+
+    // ── Day-of-week detection ──
+    const isDayOfWeek =
+        /\bday(s)?\s+(of\s+)?(the\s+)?week\b/.test(q) ||
+        /\bweekday(s)?\b/.test(q) ||
+        /\bbusiest\s+(sales\s+)?day(s)?\b/.test(q) ||
+        /\bslowest\s+(sales\s+)?day(s)?\b/.test(q) ||
+        /\bby\s+day\s+of\s+week\b/.test(q) ||
+        /\bwhich\s+day\b/.test(q) && /\bweek\b/.test(q);
+
+    if (isDayOfWeek) {
+        const dateField = model.fields.find(f => f.semanticType === 'date' && f.role === 'dimension')?.name
+            || model.timeContext?.primaryDateColumn
+            || 'order_date';
+
+        // Find existing time dimension and override its grain
+        const timeDim = plan.dimensions.find(d => (d as any).timeGrain);
+        if (timeDim) {
+            console.log(`[Intent Planner] Day-of-week override: timeGrain "${(timeDim as any).timeGrain}" → "day_of_week"`);
+            (timeDim as any).timeGrain = 'day_of_week';
+        } else {
+            // No time dimension — inject one
+            plan.dimensions = [{ field: dateField, timeGrain: 'day_of_week' } as any];
+            console.log(`[Intent Planner] Day-of-week override: injected dimension ${dateField} with grain day_of_week`);
+        }
+
+        // Set limit to 7 (7 days in a week) if not already set
+        if (!plan.limit || plan.limit > 7) {
+            plan.limit = 7;
+        }
+        return;
+    }
+
+    // ── Month-of-year detection ──
+    const isMonthOfYear =
+        /\bmonth(s)?\s+(of\s+)?(the\s+)?year\b/.test(q) ||
+        /\bbusiest\s+month(s)?\b/.test(q) ||
+        /\bslowest\s+month(s)?\b/.test(q) ||
+        /\bby\s+month\s+of\s+year\b/.test(q);
+
+    if (isMonthOfYear) {
+        const dateField = model.fields.find(f => f.semanticType === 'date' && f.role === 'dimension')?.name
+            || model.timeContext?.primaryDateColumn
+            || 'order_date';
+
+        const timeDim = plan.dimensions.find(d => (d as any).timeGrain);
+        if (timeDim) {
+            console.log(`[Intent Planner] Month-of-year override: timeGrain "${(timeDim as any).timeGrain}" → "month_of_year"`);
+            (timeDim as any).timeGrain = 'month_of_year';
+        } else {
+            plan.dimensions = [{ field: dateField, timeGrain: 'month_of_year' } as any];
+            console.log(`[Intent Planner] Month-of-year override: injected dimension ${dateField} with grain month_of_year`);
+        }
+
+        if (!plan.limit || plan.limit > 12) {
+            plan.limit = 12;
+        }
+    }
 }
 
 /**
@@ -706,6 +793,7 @@ export async function generatePlan(
         // these functions forcefully correct the plan metadata.
         enforceAggregation(plan, question, model);
         enforceTimeContext(plan, question, model);
+        enforceCyclicGrain(plan, question, model); // Fix: detect day-of-week / month-of-year patterns
         enforceComparison(plan, question, model); // Fix: detect comparison patterns
         enforceTimeComparison(plan, question, model); // MSARE: detect YoY/MoM/QoQ + derived metric combos
 
