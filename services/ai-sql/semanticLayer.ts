@@ -12,6 +12,7 @@
  */
 
 import { Dataset, ColumnType } from '../../types';
+import { classifyShape } from '../dataMasker';
 import {
     SemanticField, SemanticModel, SemanticType, FieldRole, MetricDefinition
 } from './types';
@@ -122,7 +123,7 @@ function buildColumnStatProfile(
     let numericValues: number[] = [];
     let dateParseCount = 0;
     let integerCount = 0;
-    const sampleValues: any[] = [];
+    let hasTimeComponent = false;
 
     for (let i = 0; i < sampleSize; i++) {
         const val = rows[i]?.[actualKey];
@@ -133,7 +134,7 @@ function buildColumnStatProfile(
             continue;
         }
 
-        if (sampleValues.length < 20) sampleValues.push(val);
+        // NO raw values stored — only statistical signals are extracted
 
         if (typeof val === 'number') {
             numericValues.push(val);
@@ -147,6 +148,10 @@ function buildColumnStatProfile(
             // Quick date parse check
             if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(val) || /^\d{1,2}[-/]\d{1,2}[-/]\d{4}/.test(val)) {
                 dateParseCount++;
+            }
+            // Detect time components (HH:MM) in date values — no raw value stored
+            if (!hasTimeComponent && String(val).includes(':')) {
+                hasTimeComponent = true;
             }
         }
     }
@@ -172,7 +177,7 @@ function buildColumnStatProfile(
         range,
         isIntegerLike,
         dateParseRate,
-        sampleValues,
+        hasTimeComponent,
     };
 }
 
@@ -209,6 +214,73 @@ function generateDisplayLabel(colName: string): string {
 }
 
 /**
+ * Generate privacy-safe structural descriptors for a column's values.
+ * Returns shape descriptions like "capitalized_word", "short_phrase", "integer"
+ * instead of actual raw data values. ZERO real data is exposed.
+ *
+ * This replaces the previous raw sampleValues collection that was a
+ * privacy violation when serialized into LLM prompts.
+ */
+function describeColumnValues(
+    rows: Record<string, any>[],
+    actualKey: string,
+    statProfile: ColumnStatProfile,
+): string[] {
+    const descriptors: string[] = [];
+    const sampleSize = Math.min(rows.length, 200);
+
+    // Collect non-null string representations for shape analysis
+    const strValues: string[] = [];
+    for (let i = 0; i < sampleSize && strValues.length < 100; i++) {
+        const val = rows[i]?.[actualKey];
+        if (val !== null && val !== undefined && val !== '') {
+            strValues.push(String(val));
+        }
+    }
+
+    if (strValues.length === 0) {
+        return ['(all null)'];
+    }
+
+    // 1. Value length range — gives the LLM a sense of content size
+    const lengths = strValues.map(v => v.length);
+    const minLen = Math.min(...lengths);
+    const maxLen = Math.max(...lengths);
+    if (minLen === maxLen) {
+        descriptors.push(`fixed ${minLen}-char values`);
+    } else {
+        descriptors.push(`${minLen}–${maxLen} chars`);
+    }
+
+    // 2. Structural shape distribution — tells the LLM about data patterns
+    const shapes = new Map<string, number>();
+    for (const v of strValues) {
+        const shape = classifyShape(v.substring(0, 50));
+        shapes.set(shape, (shapes.get(shape) || 0) + 1);
+    }
+    const topShapes = [...shapes.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 2)
+        .map(([shape, count]) => {
+            const pct = Math.round((count / strValues.length) * 100);
+            return `${shape} (${pct}%)`;
+        });
+    descriptors.push(...topShapes);
+
+    // 3. Cardinality descriptor — helps LLM understand filter possibilities
+    const ratio = statProfile.totalRows > 0 ? statProfile.distinctCount / statProfile.totalRows : 0;
+    if (ratio > 0.95) {
+        descriptors.push('nearly unique');
+    } else if (ratio < 0.01) {
+        descriptors.push(`very low cardinality (~${statProfile.distinctCount} values)`);
+    } else if (statProfile.distinctCount <= 20) {
+        descriptors.push(`${statProfile.distinctCount} distinct values`);
+    }
+
+    return descriptors;
+}
+
+/**
  * Build a complete SemanticModel from a Dataset.
  *
  * UPGRADED: Now uses the Constrained Probabilistic Decision Engine:
@@ -238,14 +310,8 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
         // ── STEP 1: Build statistical profile ────────────────────
         const statProfile = buildColumnStatProfile(col.name, col.type, rows, actualKey);
 
-        // Collect sample values for display
-        const sampleSet = new Set<string>();
-        for (let i = 0; i < Math.min(totalRows, 500) && sampleSet.size < 10; i++) {
-            const val = rows[i][actualKey];
-            if (val !== null && val !== undefined && val !== '') {
-                sampleSet.add(String(val).substring(0, 50));
-            }
-        }
+        // ── PRIVACY-SAFE: Generate structural descriptors (NEVER raw values) ──
+        const valueDescriptors = describeColumnValues(rows, actualKey, statProfile);
 
         // ── STEP 2: Run constraint gates (hard physics) ──────────
         const constraintResult = runConstraintGates(statProfile);
@@ -288,9 +354,10 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
             defaultAgg,
             timeGrainSupport: timeGrainSupport as any,
             synonyms: generateSynonyms(col.name),
-            sampleValues: Array.from(sampleSet).slice(0, 5),
+            valueDescriptors,
             distinctCount: statProfile.distinctCount,
             hasNulls: nullCount > 0,
+            hasTimeComponent: statProfile.hasTimeComponent,
             range: statProfile.range,
             displayLabel: generateDisplayLabel(col.name),
             formatHint,
@@ -491,15 +558,15 @@ export function serializeSemanticModel(model: SemanticModel): string {
 
     // Fields table — include range for numeric fields so LLM can reason about filtering
     lines.push('Fields:');
-    lines.push('  field | type | semantic | role | default_agg | range | distinct | samples');
+    lines.push('  field | type | semantic | role | default_agg | range | distinct | value_shape');
     lines.push('  ' + '-'.repeat(110));
 
     for (const f of model.fields) {
-        const samples = f.sampleValues.slice(0, 3).map(s => `"${s}"`).join(', ');
+        const descriptors = f.valueDescriptors.slice(0, 3).join(', ');
         const rangeStr = f.range ? `${f.range.min}–${f.range.max}` : '—';
         const distinctStr = String(f.distinctCount);
         lines.push(
-            `  ${f.name} | ${f.physicalType} | ${f.semanticType} | ${f.role} | ${f.defaultAgg} | ${rangeStr} | ${distinctStr} | ${samples}`
+            `  ${f.name} | ${f.physicalType} | ${f.semanticType} | ${f.role} | ${f.defaultAgg} | ${rangeStr} | ${distinctStr} | ${descriptors}`
         );
         if (f.synonyms.length > 0) {
             lines.push(`    synonyms: ${f.synonyms.join(', ')}`);

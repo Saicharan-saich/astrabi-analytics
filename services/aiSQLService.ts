@@ -4,11 +4,14 @@
  * Takes a natural language question + dataset column metadata,
  * sends it to OpenRouter API, and returns a valid SQL query.
  *
- * SECURITY: Only column names, types, and a few sample values are sent.
- * NO raw data is ever transmitted to the AI.
+ * SECURITY: Only column names, types, and structural shape descriptors are sent.
+ * NO raw data values are ever transmitted to the AI.
+ * Raw samples were removed as a privacy violation — replaced with
+ * privacy-safe descriptors (value shapes, length ranges, cardinality).
  */
 
 import { Dataset, ColumnType } from '../types';
+import { classifyShape } from './dataMasker';
 import { fetchWithFallback, API_KEY } from './ai-sql/modelConfig';
 
 const TIMEOUT_MS = 25000;
@@ -33,7 +36,8 @@ export interface ChatMessage {
 
 /**
  * Extract column metadata from the dataset.
- * Only names, types, and sample values are extracted. No actual data rows.
+ * Only names, types, and privacy-safe structural descriptors are extracted.
+ * ZERO raw data values are ever included.
  */
 export function extractMetadata(dataset: Dataset): string {
     const lines: string[] = [
@@ -49,18 +53,47 @@ export function extractMetadata(dataset: Dataset): string {
                 : col.type === ColumnType.ID ? 'ID'
                     : 'TEXT';
 
-        const samples = new Set<string>();
+        // Generate privacy-safe structural descriptors instead of raw samples
         const actualKey = dataset.rows.length > 0
             ? Object.keys(dataset.rows[0]).find(k => k.toLowerCase() === col.name.toLowerCase()) || col.name
             : col.name;
-        for (let i = 0; i < Math.min(dataset.rows.length, 200) && samples.size < 5; i++) {
+
+        const strValues: string[] = [];
+        for (let i = 0; i < Math.min(dataset.rows.length, 200) && strValues.length < 50; i++) {
             const val = dataset.rows[i][actualKey];
             if (val !== null && val !== undefined && val !== '') {
-                samples.add(String(val).substring(0, 50));
+                strValues.push(String(val).substring(0, 50));
             }
         }
 
-        lines.push(`  - ${col.name} (${typeLabel}) — samples: [${Array.from(samples).map(s => `"${s}"`).join(', ')}]`);
+        const descriptors: string[] = [];
+        if (strValues.length > 0) {
+            // Value length range
+            const lengths = strValues.map(v => v.length);
+            const minLen = Math.min(...lengths);
+            const maxLen = Math.max(...lengths);
+            descriptors.push(minLen === maxLen ? `fixed ${minLen}-char` : `${minLen}–${maxLen} chars`);
+
+            // Structural shapes
+            const shapes = new Map<string, number>();
+            for (const v of strValues.slice(0, 50)) {
+                const shape = classifyShape(v);
+                shapes.set(shape, (shapes.get(shape) || 0) + 1);
+            }
+            const topShapes = [...shapes.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 2)
+                .map(([shape]) => shape);
+            descriptors.push(...topShapes);
+
+            // Distinct count
+            const distinct = new Set(strValues).size;
+            descriptors.push(`~${distinct} distinct`);
+        } else {
+            descriptors.push('(all null)');
+        }
+
+        lines.push(`  - ${col.name} (${typeLabel}) — shape: [${descriptors.join(', ')}]`);
     });
 
     // Add date context so the AI knows about temporal scope

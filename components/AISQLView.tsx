@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { Sparkles, Play, AlertTriangle, X, Loader2 } from 'lucide-react';
+import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { MODEL } from '../services/ai-sql/intentPlanner';
 import { Tooltip } from './Tooltip';
+import { checkAiSqlLimit, formatResetTime, AI_SQL_LIMITS } from '../services/aiSqlRateLimiter';
+import { useAuthStore } from '../store/useAuthStore';
 
 interface AISQLViewProps {
     dataset: Dataset | null;
@@ -18,6 +20,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const [error, setError] = useState<string | null>(null);
     const [noDataMsg, setNoDataMsg] = useState<string | null>(null);
     const [noDataSQL, setNoDataSQL] = useState<string | null>(null);
+
+    // Rate limiting
+    const currentUser = useAuthStore(s => s.currentUser);
+    const incrementAiSqlUsage = useAuthStore(s => s.incrementAiSqlUsage);
+    const limitStatus = checkAiSqlLimit(currentUser);
 
     const defaultFormatting: FormattingConfig = {
         colorMode: 'vibrant',
@@ -60,6 +67,18 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
     const handleSubmit = async () => {
         if (!query.trim() || !dataset || isLoading) return;
+
+        // ── Rate limit check ──
+        const currentStatus = checkAiSqlLimit(currentUser);
+        if (!currentStatus.allowed) {
+            if (currentStatus.blocked) {
+                setError('Your account role does not have access to AI SQL.');
+            } else {
+                setError(`You've used all ${currentStatus.limit} AI SQL queries. Your limit resets in ${formatResetTime(currentStatus.resetsInMs)}.`);
+            }
+            return;
+        }
+
         setIsLoading(true);
         setError(null);
         setNoDataMsg(null);
@@ -125,6 +144,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 onViewFullPage(finalResult, result, query, fmt);
             }
 
+            // ── Increment usage AFTER successful query ──
+            incrementAiSqlUsage();
+
         } catch (err: any) {
             console.error('[AI SQL Pipeline] Error:', err);
             setError(err.message || 'An unexpected error occurred.');
@@ -175,6 +197,34 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     </p>
                 </div>
 
+                {/* Usage Badge — only for limited roles */}
+                {!limitStatus.blocked && limitStatus.limit !== Infinity && (
+                    <div className="shrink-0 flex items-center gap-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5">
+                        <div className="relative w-9 h-9">
+                            <svg className="w-9 h-9 -rotate-90" viewBox="0 0 36 36">
+                                <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" className="text-gray-100 dark:text-slate-700" strokeWidth="3" />
+                                <circle cx="18" cy="18" r="15" fill="none"
+                                    stroke={limitStatus.remaining > 3 ? '#22c55e' : limitStatus.remaining > 0 ? '#f59e0b' : '#ef4444'}
+                                    strokeWidth="3" strokeLinecap="round"
+                                    strokeDasharray={`${(limitStatus.used / limitStatus.limit) * 94.2} 94.2`}
+                                />
+                            </svg>
+                            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-gray-700 dark:text-slate-200">
+                                {limitStatus.remaining}
+                            </span>
+                        </div>
+                        <div className="flex flex-col">
+                            <span className="text-sm font-semibold text-gray-800 dark:text-white">
+                                {limitStatus.used}/{limitStatus.limit} queries used
+                            </span>
+                            <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
+                                <Clock className="w-3 h-3" />
+                                Resets in {formatResetTime(limitStatus.resetsInMs)}
+                            </span>
+                        </div>
+                    </div>
+                )}
+
                 {/* Early Access Banner */}
                 <div className="shrink-0 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 dark:from-indigo-500/15 dark:via-purple-500/15 dark:to-pink-500/15 border border-indigo-200/60 dark:border-indigo-500/20 rounded-xl px-4 py-2.5 flex items-center gap-3">
                     <span className="text-lg shrink-0">🚀</span>
@@ -216,11 +266,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                             </div>
                             <button
                                 onClick={handleSubmit}
-                                disabled={!query.trim() || isLoading}
+                                disabled={!query.trim() || isLoading || (!limitStatus.allowed && !limitStatus.blocked)}
                                 className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-md hover:shadow-lg active:scale-95"
                             >
-                                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4 fill-current" />}
-                                {isLoading ? 'Generating...' : 'Send'}
+                                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : !limitStatus.allowed ? <Lock className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
+                                {isLoading ? 'Generating...' : !limitStatus.allowed ? 'Limit Reached' : 'Send'}
                             </button>
                         </div>
                     </div>
@@ -261,6 +311,28 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                             )}
                         </div>
                         <button onClick={() => { setNoDataMsg(null); setNoDataSQL(null); }} className="text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 shrink-0"><X className="w-4 h-4" /></button>
+                    </div>
+                )}
+
+                {/* Rate Limit Reached Banner */}
+                {!limitStatus.allowed && !limitStatus.blocked && !isLoading && (
+                    <div className="shrink-0 bg-gradient-to-r from-red-500/10 via-amber-500/10 to-orange-500/10 dark:from-red-500/15 dark:via-amber-500/15 dark:to-orange-500/15 border border-red-300/60 dark:border-red-500/30 rounded-xl px-5 py-4 flex items-start gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-100 to-amber-100 dark:from-red-500/20 dark:to-amber-500/20 flex items-center justify-center shrink-0">
+                            <Lock className="w-5 h-5 text-red-600 dark:text-red-400" />
+                        </div>
+                        <div className="flex-1">
+                            <div className="font-bold text-red-800 dark:text-red-300 mb-1 text-sm">Query Limit Reached</div>
+                            <p className="text-sm text-red-700 dark:text-red-200/80 leading-relaxed">
+                                You've used all <strong>{limitStatus.limit}</strong> AI SQL queries on your Contributor license.
+                                Your limit resets in <strong>{formatResetTime(limitStatus.resetsInMs)}</strong>.
+                            </p>
+                            <div className="mt-2 flex items-center gap-2">
+                                <div className="h-1.5 flex-1 bg-red-200 dark:bg-red-500/20 rounded-full overflow-hidden">
+                                    <div className="h-full bg-gradient-to-r from-red-500 to-amber-500 rounded-full" style={{ width: '100%' }} />
+                                </div>
+                                <span className="text-[10px] font-bold text-red-600 dark:text-red-400">{limitStatus.used}/{limitStatus.limit}</span>
+                            </div>
+                        </div>
                     </div>
                 )}
 

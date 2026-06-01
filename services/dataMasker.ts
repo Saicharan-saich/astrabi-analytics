@@ -178,7 +178,7 @@ function detectStructuralPatterns(values: any[]): string[] {
 /**
  * Classify the structural shape of a value (no raw data preserved).
  */
-function classifyShape(value: string): string {
+export function classifyShape(value: string): string {
     if (/^\d+$/.test(value)) return 'integer';
     if (/^\d+\.\d+$/.test(value)) return 'decimal';
     if (/^[A-Z]{2,5}$/.test(value)) return 'uppercase_code';

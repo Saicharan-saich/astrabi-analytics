@@ -49,7 +49,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     const hourDim = plan.dimensions.find(d => ['hour', 'time_of_day', 'hour_of_day'].includes((d as any).timeGrain || ''));
     if (hourDim) {
         const dateField = model.fields.find(f => f.name.toLowerCase() === hourDim.field.toLowerCase());
-        const hasTimeData = dateField?.sampleValues?.some(v => String(v).includes(':')) ?? false;
+        const hasTimeData = dateField?.hasTimeComponent ?? false;
 
         if (!hasTimeData) {
             logger.warn('[SQL Correction]', `hour grain requested but date column "${hourDim.field}" has no time data. Falling back to today's sales.`);

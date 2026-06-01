@@ -78,6 +78,8 @@ const AVATAR_COLORS = [
     '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
 ];
 
+const AI_SQL_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 interface AuthState {
     currentUser: User | null;
     users: User[];
@@ -92,6 +94,7 @@ interface AuthState {
     removeUser: (id: string) => { success: boolean; error?: string };
     updateUserRole: (id: string, role: UserRole) => void;
     updateUserPassword: (id: string, newPassword: string) => void;
+    incrementAiSqlUsage: () => void;
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -227,6 +230,28 @@ export const useAuthStore = create<AuthState>()(
                 set(state => ({
                     users: state.users.map(u => u.id === id ? { ...u, passwordHash: secureHash(newPassword) } : u)
                 }));
+            },
+
+            incrementAiSqlUsage: () => {
+                const state = get();
+                if (!state.currentUser) return;
+                const userId = state.currentUser.id;
+                const now = Date.now();
+
+                set(st => {
+                    const updatedUsers = st.users.map(u => {
+                        if (u.id !== userId) return u;
+                        const usage = u.aiSqlUsage;
+                        // If no usage or window expired, start fresh
+                        if (!usage || (now - usage.windowStart >= AI_SQL_WINDOW_MS)) {
+                            return { ...u, aiSqlUsage: { count: 1, windowStart: now } };
+                        }
+                        // Increment within current window
+                        return { ...u, aiSqlUsage: { ...usage, count: usage.count + 1 } };
+                    });
+                    const updatedCurrentUser = updatedUsers.find(u => u.id === userId) || st.currentUser;
+                    return { users: updatedUsers, currentUser: updatedCurrentUser };
+                });
             },
         }),
         {

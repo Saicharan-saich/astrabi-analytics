@@ -27,7 +27,8 @@ export interface ColumnStatProfile {
     range?: { min: number; max: number };
     isIntegerLike: boolean;    // all sampled values are whole numbers
     dateParseRate: number;     // 0–1: fraction of values parseable as dates
-    sampleValues: any[];
+    /** Whether date values contain time components (HH:MM:SS) — avoids storing raw data */
+    hasTimeComponent: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════

@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Copy, Save, Check, Sparkles, AlertCircle, Loader2, Database, X } from 'lucide-react';
+import { Send, Copy, Save, Check, Sparkles, AlertCircle, Loader2, Database, X, Lock, Clock } from 'lucide-react';
 import { Dataset, QuestionTemplate, ColumnType } from '../types';
 import { generateSQL, ChatMessage, extractMetadata } from '../services/aiSQLService';
 import { saveCustomQuestion, getFullRegistry } from '../services/questionRegistry';
+import { checkAiSqlLimit, formatResetTime } from '../services/aiSqlRateLimiter';
+import { useAuthStore } from '../store/useAuthStore';
 
 interface AISQLChatProps {
     dataset: Dataset;
@@ -21,6 +23,11 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLInputElement>(null);
 
+    // Rate limiting
+    const currentUser = useAuthStore(s => s.currentUser);
+    const incrementAiSqlUsage = useAuthStore(s => s.incrementAiSqlUsage);
+    const limitStatus = checkAiSqlLimit(currentUser);
+
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
@@ -32,6 +39,21 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
     const handleSend = async () => {
         const question = input.trim();
         if (!question || isLoading) return;
+
+        // ── Rate limit check ──
+        const currentStatus = checkAiSqlLimit(currentUser);
+        if (!currentStatus.allowed) {
+            const limitMsg: ChatMessage = {
+                id: `limit-${Date.now()}`,
+                role: 'assistant',
+                content: currentStatus.blocked
+                    ? 'Your account role does not have access to AI SQL.'
+                    : `You've used all ${currentStatus.limit} AI SQL queries. Your limit resets in ${formatResetTime(currentStatus.resetsInMs)}.`,
+                timestamp: Date.now()
+            };
+            setMessages(prev => [...prev, limitMsg]);
+            return;
+        }
 
         const userMsg: ChatMessage = {
             id: `user-${Date.now()}`,
@@ -58,6 +80,11 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
             };
 
             setMessages(prev => [...prev, assistantMsg]);
+
+            // ── Increment usage AFTER successful query ──
+            if (!result.error) {
+                incrementAiSqlUsage();
+            }
         } catch (err) {
             const errorMsg: ChatMessage = {
                 id: `err-${Date.now()}`,
@@ -244,6 +271,34 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
 
             {/* Input area */}
             <div className="px-3 py-2.5 border-t border-slate-200 bg-white">
+                {/* Remaining queries indicator */}
+                {!limitStatus.blocked && limitStatus.limit !== Infinity && (
+                    <div className="flex items-center justify-between mb-2 px-1">
+                        <div className="flex items-center gap-1.5 text-[10px]" style={{ color: limitStatus.remaining > 3 ? '#64748b' : limitStatus.remaining > 0 ? '#d97706' : '#dc2626' }}>
+                            {limitStatus.remaining > 0
+                                ? <Clock className="w-3 h-3" />
+                                : <Lock className="w-3 h-3" />
+                            }
+                            <span className="font-semibold">{limitStatus.remaining}/{limitStatus.limit} queries remaining</span>
+                            {limitStatus.used > 0 && (
+                                <span className="text-slate-400"> · Resets in {formatResetTime(limitStatus.resetsInMs)}</span>
+                            )}
+                        </div>
+                        <div className="flex gap-0.5">
+                            {Array.from({ length: limitStatus.limit }, (_, i) => (
+                                <div
+                                    key={i}
+                                    className="w-1.5 h-1.5 rounded-full transition-colors"
+                                    style={{
+                                        backgroundColor: i < limitStatus.used
+                                            ? (limitStatus.remaining > 3 ? '#8b5cf6' : limitStatus.remaining > 0 ? '#f59e0b' : '#ef4444')
+                                            : '#e2e8f0'
+                                    }}
+                                />
+                            ))}
+                        </div>
+                    </div>
+                )}
                 <div className="flex items-center gap-2">
                     <input
                         ref={inputRef}
@@ -251,17 +306,17 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                         value={input}
                         onChange={e => setInput(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                        placeholder="Ask a question about your data..."
+                        placeholder={!limitStatus.allowed ? 'Query limit reached...' : 'Ask a question about your data...'}
                         className="flex-1 text-sm border border-slate-200 rounded-xl px-4 py-2.5 focus:ring-2 focus:ring-violet-100 focus:border-violet-400 outline-none"
-                        style={{ color: '#0f172a', backgroundColor: '#f8fafc', caretColor: '#0f172a' }}
-                        disabled={isLoading}
+                        style={{ color: '#0f172a', backgroundColor: !limitStatus.allowed ? '#fef2f2' : '#f8fafc', caretColor: '#0f172a' }}
+                        disabled={isLoading || !limitStatus.allowed}
                     />
                     <button
                         onClick={handleSend}
-                        disabled={!input.trim() || isLoading}
+                        disabled={!input.trim() || isLoading || !limitStatus.allowed}
                         className="p-2.5 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 text-white hover:from-violet-600 hover:to-indigo-600 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-sm"
                     >
-                        <Send className="w-4 h-4" />
+                        {!limitStatus.allowed ? <Lock className="w-4 h-4" /> : <Send className="w-4 h-4" />}
                     </button>
                 </div>
             </div>

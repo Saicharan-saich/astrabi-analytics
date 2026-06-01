@@ -504,4 +504,8 @@ export interface User {
   passwordHash: string; // simple hash for frontend-only auth
   createdAt: number;
   avatar?: string; // initials-based avatar color
+  aiSqlUsage?: {
+    count: number;           // Number of AI SQL queries used in current 24h window
+    windowStart: number;     // Unix timestamp of when the 24h window started
+  };
 }

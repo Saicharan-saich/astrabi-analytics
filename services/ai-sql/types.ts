@@ -64,12 +64,14 @@ export interface SemanticField {
     timeGrainSupport: ('day' | 'week' | 'month' | 'quarter' | 'year')[];
     /** Synonyms the user might use to refer to this field */
     synonyms: string[];
-    /** Sample values for context */
-    sampleValues: string[];
+    /** Privacy-safe structural descriptors (shapes/patterns — NEVER raw values) */
+    valueDescriptors: string[];
     /** Number of distinct values (cardinality) */
     distinctCount: number;
     /** Whether this field contains nulls */
     hasNulls: boolean;
+    /** Whether date values include time components (HH:MM) — avoids needing raw samples */
+    hasTimeComponent?: boolean;
     /** Value range for numeric fields */
     range?: { min: number; max: number };
     /** Human-friendly display label */
