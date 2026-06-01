@@ -459,6 +459,71 @@ function enforceIntentFromKeywords(plan: AnalysisPlan, question: string): void {
 }
 
 /**
+ * Deterministic composite metric enforcement.
+ * When the user asks about a known business KPI (profit margin, AOV, etc.),
+ * force the plan to use the governed composite metric formula instead of
+ * letting the LLM build its own (often incorrect) formula.
+ *
+ * This ensures weighted formulas like SUM(profit)/SUM(sales) are used
+ * instead of AVG(profit/sales) which gives misleading results.
+ */
+function enforceCompositeMetrics(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    const q = question.toLowerCase();
+
+    // Map of keyword patterns → composite metric IDs
+    const compositePatterns: { pattern: RegExp; metricId: string }[] = [
+        { pattern: /\b(profit\s+margin|net\s+margin|profit\s+pct|margin\s+%|profit\s+percentage)\b/, metricId: 'net_profit_margin_pct' },
+        { pattern: /\b(gross\s+margin|markup|margin\s+percent)\b/, metricId: 'gross_margin_pct' },
+        { pattern: /\b(aov|average\s+order\s+value|avg\s+order|order\s+average)\b/, metricId: 'avg_order_value' },
+        { pattern: /\b(items?\s+per\s+order|basket\s+size|order\s+size)\b/, metricId: 'avg_items_per_order' },
+        { pattern: /\b(revenue\s+per\s+customer|arpu|ltv|clv|customer\s+value|per\s+customer\s+revenue)\b/, metricId: 'revenue_per_customer' },
+        { pattern: /\b(discount\s+rate|markdown\s+rate|discount\s+pct|discount\s+percentage)\b/, metricId: 'discount_rate' },
+    ];
+
+    for (const { pattern, metricId } of compositePatterns) {
+        if (pattern.test(q)) {
+            // Check if this composite metric exists in the model
+            const composite = model.compositeMetrics.find(m => m.id === metricId);
+            if (!composite) continue;
+
+            // Check if the plan already uses this composite
+            const alreadyUsed = plan.metrics.some(m => m.compositeId === metricId);
+            if (alreadyUsed) continue;
+
+            // Replace all metrics with the governed composite metric
+            console.log(`[Intent Planner] Composite override: forcing "${metricId}" (weighted formula: ${composite.formula})`);
+            plan.metrics = [{
+                field: composite.dependsOn[0],
+                agg: 'sum', // Ignored for composite, but required by type
+                compositeId: metricId,
+            }];
+            break;
+        }
+    }
+}
+
+/**
+ * Detect plural nouns in ranking queries to set a sensible limit.
+ * "Which products..." (plural) → top 5
+ * "Which product..." (singular) → top 1
+ */
+function enforcePluralLimit(plan: AnalysisPlan, question: string): void {
+    if (plan.intent !== 'ranking') return;
+    if (plan.limit && plan.limit > 1) return; // Already has a reasonable limit
+
+    const q = question.toLowerCase();
+
+    // Detect plural nouns after "which" or at the start
+    const pluralPattern = /\b(which|what(?: are)?|show|list)\s+(?:the\s+)?(?:top|best|worst|busiest)?\s*(products|categories|regions|customers|items|orders|segments|states|cities|departments|stores|brands|employees|months|days|years)\b/;
+    const match = pluralPattern.test(q);
+
+    if (match && (!plan.limit || plan.limit === 1)) {
+        console.log(`[Intent Planner] Plural noun detected → limit changed from ${plan.limit} to 5`);
+        plan.limit = 5;
+    }
+}
+
+/**
  * Post-process the plan to enforce aggregation correctness.
  * This is the CODE-LEVEL OVERRIDE that runs AFTER the LLM.
  * Even if the LLM returns "sum" when the user said "average",
@@ -892,6 +957,8 @@ export async function generatePlan(
         enforceTimeContext(plan, question, model);
         enforceCyclicGrain(plan, question, model); // Fix: detect day-of-week / month-of-year patterns
         enforceIntentFromKeywords(plan, question); // Fix: enforce intent from keywords (trend/share/top-N)
+        enforceCompositeMetrics(plan, question, model); // Fix: force governed composite metrics (weighted formulas)
+        enforcePluralLimit(plan, question); // Fix: plural nouns → top 5 instead of limit 1
         enforceComparison(plan, question, model); // Fix: detect comparison patterns
         enforceTimeComparison(plan, question, model); // MSARE: detect YoY/MoM/QoQ + derived metric combos
 
