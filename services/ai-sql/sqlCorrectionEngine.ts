@@ -123,6 +123,8 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
             return buildComparisonSQL(plan, model);
         case 'total_comparison':
             return buildComparisonSQL(plan, model);
+        case 'aggregate_filter':
+            return buildAggregateFilterSQL(plan, model, apdmeMetrics);
         default:
             // Fallback: treat as breakdown
             return buildBreakdownSQL(plan, model, apdmeMetrics);
@@ -495,6 +497,112 @@ function buildDistributionSQL(plan: AnalysisPlan, model: SemanticModel): string 
 }
 
 /**
+ * Build SQL for aggregate_filter intent — "products with above-average sales"
+ *
+ * Generates GROUP BY + HAVING with scoped AVG subqueries.
+ * Supports multi-condition HAVING and composite metric references.
+ *
+ * Example output:
+ *   SELECT "product_name", SUM("sales") AS sales_sum,
+ *          SUM("profit") / NULLIF(SUM("sales"), 0) * 100 AS net_profit_margin_pct
+ *   FROM "data"
+ *   WHERE ... (pre-aggregate filters)
+ *   GROUP BY "product_name"
+ *   HAVING SUM("sales") > (SELECT AVG(grp_total) FROM (
+ *              SELECT SUM("sales") AS grp_total FROM "data" WHERE ... GROUP BY "product_name"
+ *          ))
+ *      AND SUM("profit") / NULLIF(SUM("sales"), 0) * 100 < (SELECT AVG(grp_metric) FROM (
+ *              SELECT SUM("profit") / NULLIF(SUM("sales"), 0) * 100 AS grp_metric
+ *              FROM "data" WHERE ... GROUP BY "product_name"
+ *          ))
+ */
+function buildAggregateFilterSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
+    const dimExprs = buildDimensionExpressions(plan.dimensions);
+    const metExprs = buildMetricExpressions(plan.metrics, model, apdmeMetrics);
+    const groupBy = buildGroupByClause(plan.dimensions);
+    const where = buildWhereClause(plan.filters); // Only pre-aggregate filters
+
+    // Collect HAVING filters (above_avg / below_avg)
+    const havingFilters = plan.filters.filter(f =>
+        f.isHaving || ['above_avg', 'below_avg'].includes(f.op)
+    );
+
+    if (havingFilters.length === 0) {
+        // No HAVING conditions — fall back to regular breakdown
+        logger.warn('[SQL Correction]', 'aggregate_filter intent but no HAVING filters found. Falling back to breakdown.');
+        return buildBreakdownSQL(plan, model, apdmeMetrics);
+    }
+
+    // Build the HAVING clause with scoped AVG subqueries
+    const havingParts: string[] = [];
+
+    for (const hf of havingFilters) {
+        // Determine the aggregate expression for this filter
+        let aggExpr: string;
+
+        if (hf.compositeRef) {
+            // Composite metric — use the governed weighted formula
+            const composite = model.compositeMetrics.find(m => m.id === hf.compositeRef);
+            if (composite) {
+                aggExpr = composite.formula;
+                logger.info('[SQL Correction]', `HAVING uses composite metric: ${composite.id} → ${composite.formula}`);
+            } else {
+                logger.warn('[SQL Correction]', `Composite metric "${hf.compositeRef}" not found. Using SUM(${hf.field}).`);
+                aggExpr = `SUM(${q(hf.field)})`;
+            }
+        } else {
+            // Standard field — find its default aggregation from the plan metrics
+            const planMetric = plan.metrics.find(m => m.field.toLowerCase() === hf.field.toLowerCase());
+            const agg = planMetric?.agg || 'sum';
+            aggExpr = `${agg.toUpperCase()}(${q(hf.field)})`;
+        }
+
+        // Build the scoped AVG subquery
+        // Uses the same WHERE filters and GROUP BY as the outer query
+        const subqueryWhere = where ? `WHERE ${where}` : '';
+        const comparison = hf.op === 'above_avg' ? '>' : '<';
+
+        const subquery = [
+            `SELECT AVG(grp_metric) FROM (`,
+            `  SELECT ${aggExpr} AS grp_metric`,
+            `  ${fromTable()}`,
+            subqueryWhere ? `  ${subqueryWhere}` : '',
+            groupBy ? `  GROUP BY ${groupBy}` : '',
+            `)`,
+        ].filter(Boolean).join('\n');
+
+        havingParts.push(`${aggExpr} ${comparison} (${subquery})`);
+        logger.info('[SQL Correction]', `HAVING condition: ${aggExpr} ${comparison} AVG(...)`);
+    }
+
+    // Assemble the full query
+    const selects = [...dimExprs, ...metExprs];
+    const parts = [
+        `SELECT ${selects.join(', ')}`,
+        fromTable(),
+    ];
+    if (where) parts.push(`WHERE ${where}`);
+    if (groupBy) parts.push(`GROUP BY ${groupBy}`);
+    parts.push(`HAVING ${havingParts.join('\n   AND ')}`);
+
+    // Add ORDER BY
+    if (plan.sort.length > 0) {
+        const orderBy = buildOrderByClause(plan);
+        if (orderBy) parts.push(orderBy);
+    } else {
+        // Default: order by first metric DESC
+        const firstAlias = getMetricAlias(plan.metrics[0], model);
+        parts.push(`ORDER BY ${firstAlias} DESC`);
+    }
+
+    if (plan.limit) {
+        parts.push(`LIMIT ${plan.limit}`);
+    }
+
+    return parts.join('\n');
+}
+
+/**
  * Compound average: "Average daily sales this month"
  * â†’ SELECT AVG(daily_total) FROM (SELECT date, SUM(sales) AS daily_total FROM data WHERE ... GROUP BY date) sub
  */
@@ -724,14 +832,16 @@ function buildGroupByClause(dimensions: PlanDimension[]): string {
  * Handles: =, !=, >, <, >=, <=, between, in, not_in, like.
  */
 function buildWhereClause(filters: PlanFilter[]): string {
-    if (filters.length === 0) return '';
+    // Skip HAVING filters — they are handled separately
+    const whereFilters = filters.filter(f => !f.isHaving && !['above_avg', 'below_avg'].includes(f.op));
+    if (whereFilters.length === 0) return '';
 
     const parts: string[] = [];
     const fld = (name: string) => q(name);
     const strVal = (v: any) => `'${esc(String(v))}'`;
     const val = (v: any) => typeof v === 'string' ? strVal(v) : String(v);
 
-    for (const f of filters) {
+    for (const f of whereFilters) {
         switch (f.op) {
             case '=':
                 parts.push(`${fld(f.field)} = ${val(f.value)}`);

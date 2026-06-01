@@ -180,8 +180,13 @@ export interface PlanMetric {
 export interface PlanFilter {
     field: string;
     op: '=' | '!=' | '>' | '<' | '>=' | '<=' | 'in' | 'not_in' | 'between' | 'like'
-    | 'this_month' | 'this_week' | 'this_year' | 'this_quarter' | 'this_day';
+    | 'this_month' | 'this_week' | 'this_year' | 'this_quarter' | 'this_day'
+    | 'above_avg' | 'below_avg';
     value: any;
+    /** Reference to composite metric ID for KPI-based filtering */
+    compositeRef?: string;
+    /** Whether this filter is a HAVING condition (post-aggregate) */
+    isHaving?: boolean;
 }
 
 export interface PlanSort {
@@ -199,7 +204,8 @@ export type AnalysisIntent =
     | 'ranking'            // "Top 10 products by sales"
     | 'share_of_total'     // "Percent of sales by region"
     | 'correlation'        // "Sales vs profit by category"
-    | 'distribution';      // "Distribution of order values"
+    | 'distribution'       // "Distribution of order values"
+    | 'aggregate_filter';  // "Products with above-average sales"
 
 export interface AnalysisPlan {
     /** Detected intent */

@@ -27,6 +27,7 @@ const VALID_AGGS = ['sum', 'avg', 'count', 'count_distinct', 'min', 'max', 'none
 const VALID_INTENTS = [
     'single_metric', 'derived_metric', 'breakdown', 'trend', 'trend_comparison',
     'total_comparison', 'ranking', 'share_of_total', 'correlation', 'distribution',
+    'aggregate_filter',
 ];
 
 export function validatePlan(plan: AnalysisPlan, model: SemanticModel): ValidationResult {
@@ -212,8 +213,9 @@ export function validatePlan(plan: AnalysisPlan, model: SemanticModel): Validati
         }
     }
 
-    // ── Rule 10: Filter fields must exist ──
+    // ── Rule 10: Filter fields must exist (skip HAVING filters — they use compositeRefs) ──
     for (const filter of plan.filters) {
+        if (filter.isHaving || ['above_avg', 'below_avg'].includes(filter.op)) continue;
         const field = fieldMap.get(filter.field.toLowerCase());
         if (!field) {
             const fuzzyMatch = findClosestField(filter.field, model.fields);

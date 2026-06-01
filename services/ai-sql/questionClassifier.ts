@@ -10,7 +10,7 @@
 export type ClassifiedIntent =
     | 'trend' | 'ranking' | 'breakdown' | 'share_of_total'
     | 'single_metric' | 'comparison' | 'distribution' | 'correlation'
-    | 'derived_metric' | 'ambiguous';
+    | 'derived_metric' | 'aggregate_filter' | 'ambiguous';
 
 export interface ClassificationResult {
     intent: ClassifiedIntent;
@@ -73,6 +73,12 @@ const BREAKDOWN_PATTERNS = [
 const DISTRIBUTION_PATTERNS = [
     /\b(distribution|histogram|spread|frequency|bell\s+curve)\b/i,
     /\bhow\s+(are|is)\s+.+\s+distributed\b/i,
+];
+
+const AGGREGATE_FILTER_PATTERNS = [
+    /\b(above|below|over|under|exceed(?:ing|s)?|greater\s+than|higher\s+than|less\s+than|lower\s+than)\s*(?:the\s+)?(?:average|avg|mean)\b/i,
+    /\bwith\s+(high|low|above|below).+(margin|aov|rate|ratio|sales|revenue|profit)\b/i,
+    /\b(outperform|underperform)(?:ing|s|ed)?\b/i,
 ];
 
 const DAY_OF_WEEK_PATTERNS = [
@@ -173,6 +179,20 @@ export function classifyQuestion(question: string): ClassificationResult {
             limit,
             needsLLM: true,
             reason: 'No recognizable intent patterns found',
+        };
+    }
+
+    // Special: aggregate_filter (above/below average) → highest priority
+    const aggFilterScore = matchPatterns(q, AGGREGATE_FILTER_PATTERNS);
+    if (aggFilterScore > 0) {
+        return {
+            intent: 'aggregate_filter',
+            confidence: Math.min(1, 0.7 + aggFilterScore * 0.15),
+            timeGrain,
+            sortDirection: sortDir,
+            limit: undefined,
+            needsLLM: true,
+            reason: 'above/below average comparison detected',
         };
     }
 

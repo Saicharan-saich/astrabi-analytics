@@ -120,6 +120,7 @@ VALID INTENTS:
 - "share_of_total" — user wants percentages
 - "correlation" — user wants to see two metrics together
 - "distribution" — user wants a histogram-like view
+- "aggregate_filter" — user wants entities filtered by aggregate thresholds (e.g., "products with above-average sales", "categories with below-average margin"). Use isHaving=true filters with op "above_avg" or "below_avg".
 
 TIME COMPARISON DETECTION (CRITICAL — NEW):
 When the user asks about growth, change over time, or period comparisons combined with ANY metric (including derived metrics like length of stay, profit, etc.), you MUST:
@@ -215,6 +216,12 @@ A: { "intent": "trend", "dimensions": [{"field": "order_date", "timeGrain": "qua
 
 Q: "Which month has the highest sales?"
 A: { "intent": "ranking", "dimensions": [{"field": "order_date", "timeGrain": "month_of_year"}], "metrics": [{"field": "sales", "agg": "sum"}], "filters": [], "sort": [{"dir": "desc"}], "limit": 1, "resultGrain": "one row per month name" }
+
+Q: "Find products with above-average sales"
+A: { "intent": "aggregate_filter", "dimensions": [{"field": "product_name"}], "metrics": [{"field": "sales", "agg": "sum"}], "filters": [{"field": "sales", "op": "above_avg", "value": null, "isHaving": true}], "sort": [{"dir": "desc"}], "limit": null, "resultGrain": "products where SUM(sales) exceeds the average across all products" }
+
+Q: "Products with above-average sales but below-average profit margin"
+A: { "intent": "aggregate_filter", "dimensions": [{"field": "product_name"}], "metrics": [{"field": "sales", "agg": "sum"}, {"field": "profit", "agg": "sum", "compositeId": "net_profit_margin_pct"}], "filters": [{"field": "sales", "op": "above_avg", "value": null, "isHaving": true}, {"field": "profit", "op": "below_avg", "value": null, "compositeRef": "net_profit_margin_pct", "isHaving": true}], "sort": [{"dir": "desc"}], "limit": null, "resultGrain": "products with high sales volume but low profit margin %" }
 
 CRITICAL RULES:
 - Use ONLY field names that exist in the semantic model above.
@@ -520,6 +527,135 @@ function enforcePluralLimit(plan: AnalysisPlan, question: string): void {
     if (match && (!plan.limit || plan.limit === 1)) {
         console.log(`[Intent Planner] Plural noun detected → limit changed from ${plan.limit} to 5`);
         plan.limit = 5;
+    }
+}
+
+/**
+ * Detect "above average" / "below average" aggregate comparison patterns.
+ * Converts the plan to aggregate_filter intent with HAVING-based filters.
+ *
+ * Handles multi-condition patterns like:
+ *   "products with above-average sales but below-average profit margin"
+ *
+ * Maps KPI keywords (margin, AOV) to composite metric refs so HAVING
+ * uses the governed weighted formula, not raw field comparison.
+ */
+function enforceAggregateFilter(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    const q = question.toLowerCase();
+
+    // Detect "above/below average" patterns
+    const aboveAvgPattern = /\b(above|over|exceed(?:ing|s)?|greater\s+than|higher\s+than|more\s+than)\s*(?:the\s+)?(?:average|avg|mean)\b/;
+    const belowAvgPattern = /\b(below|under|less\s+than|lower\s+than|beneath)\s*(?:the\s+)?(?:average|avg|mean)\b/;
+
+    const hasAbove = aboveAvgPattern.test(q);
+    const hasBelow = belowAvgPattern.test(q);
+
+    if (!hasAbove && !hasBelow) return;
+
+    console.log(`[Intent Planner] Aggregate filter detected: above=${hasAbove}, below=${hasBelow}`);
+
+    // Force intent to aggregate_filter
+    plan.intent = 'aggregate_filter';
+
+    // Remove any existing limit (we want ALL matching entities)
+    plan.limit = null;
+
+    // KPI keyword → composite metric mapping
+    const kpiPatterns: { pattern: RegExp; compositeId: string; fieldHint: string }[] = [
+        { pattern: /\b(profit\s+margin|net\s+margin|margin\s*%?)\b/, compositeId: 'net_profit_margin_pct', fieldHint: 'profit' },
+        { pattern: /\b(gross\s+margin|markup)\b/, compositeId: 'gross_margin_pct', fieldHint: 'sales' },
+        { pattern: /\b(aov|average\s+order\s+value|order\s+value)\b/, compositeId: 'avg_order_value', fieldHint: 'sales' },
+        { pattern: /\b(discount\s+rate|markdown)\b/, compositeId: 'discount_rate', fieldHint: 'discount' },
+        { pattern: /\b(revenue\s+per\s+customer|arpu|clv|ltv)\b/, compositeId: 'revenue_per_customer', fieldHint: 'sales' },
+    ];
+
+    // Parse the question to find WHAT should be above/below average
+    // Strategy: split the question by "but"/"and" to handle multi-condition
+    const clauses = q.split(/\s+(?:but|and)\s+/);
+
+    // Remove existing HAVING filters to rebuild them
+    plan.filters = plan.filters.filter(f => !f.isHaving && !['above_avg', 'below_avg'].includes(f.op));
+
+    for (const clause of clauses) {
+        const isAbove = aboveAvgPattern.test(clause);
+        const isBelow = belowAvgPattern.test(clause);
+        if (!isAbove && !isBelow) continue;
+
+        const op: 'above_avg' | 'below_avg' = isAbove ? 'above_avg' : 'below_avg';
+
+        // Check if this clause refers to a KPI (composite metric)
+        let matched = false;
+        for (const { pattern, compositeId, fieldHint } of kpiPatterns) {
+            if (pattern.test(clause)) {
+                // Verify the composite metric exists in the model
+                const composite = model.compositeMetrics.find(m => m.id === compositeId);
+                if (composite) {
+                    plan.filters.push({
+                        field: fieldHint,
+                        op,
+                        value: null,
+                        compositeRef: compositeId,
+                        isHaving: true,
+                    });
+
+                    // Ensure the composite metric is in the plan's metrics (for SELECT)
+                    if (!plan.metrics.some(m => m.compositeId === compositeId)) {
+                        plan.metrics.push({
+                            field: composite.dependsOn[0],
+                            agg: 'sum',
+                            compositeId: compositeId,
+                        });
+                    }
+
+                    console.log(`[Intent Planner] HAVING: ${compositeId} ${op} (weighted formula: ${composite.formula})`);
+                    matched = true;
+                    break;
+                }
+            }
+        }
+
+        if (!matched) {
+            // Not a KPI — try to match against a raw metric field
+            // Find which metric field the clause refers to
+            const metricFields = model.fields.filter(f => f.role === 'metric');
+            let bestField: string | null = null;
+            let bestScore = 0;
+
+            for (const mf of metricFields) {
+                const nameWords = [mf.name, mf.displayLabel || '', ...(mf.synonyms || [])].map(s => s.toLowerCase());
+                for (const w of nameWords) {
+                    if (w && clause.includes(w) && w.length > bestScore) {
+                        bestField = mf.name;
+                        bestScore = w.length;
+                    }
+                }
+            }
+
+            if (bestField) {
+                plan.filters.push({
+                    field: bestField,
+                    op,
+                    value: null,
+                    isHaving: true,
+                });
+
+                // Ensure this metric is in the plan's metrics
+                if (!plan.metrics.some(m => m.field.toLowerCase() === bestField!.toLowerCase())) {
+                    plan.metrics.push({ field: bestField, agg: 'sum' });
+                }
+
+                console.log(`[Intent Planner] HAVING: ${bestField} ${op}`);
+            }
+        }
+    }
+
+    // Verify we have at least one HAVING filter
+    const havingFilters = plan.filters.filter(f => f.isHaving);
+    if (havingFilters.length === 0) {
+        console.warn('[Intent Planner] aggregate_filter detected but no HAVING filters could be built. Falling back.');
+        plan.intent = 'breakdown';
+    } else {
+        console.log(`[Intent Planner] aggregate_filter: ${havingFilters.length} HAVING condition(s) set`);
     }
 }
 
@@ -958,6 +1094,7 @@ export async function generatePlan(
         enforceCyclicGrain(plan, question, model); // Fix: detect day-of-week / month-of-year patterns
         enforceIntentFromKeywords(plan, question); // Fix: enforce intent from keywords (trend/share/top-N)
         enforceCompositeMetrics(plan, question, model); // Fix: force governed composite metrics (weighted formulas)
+        enforceAggregateFilter(plan, question, model); // Fix: above/below average → HAVING clause with composite KPIs
         enforcePluralLimit(plan, question); // Fix: plural nouns → top 5 instead of limit 1
         enforceComparison(plan, question, model); // Fix: detect comparison patterns
         enforceTimeComparison(plan, question, model); // MSARE: detect YoY/MoM/QoQ + derived metric combos
@@ -1033,7 +1170,8 @@ export async function generatePlan(
 function validateIntent(intent: string): AnalysisIntent {
     const validIntents: AnalysisIntent[] = [
         'single_metric', 'derived_metric', 'breakdown', 'trend', 'trend_comparison',
-        'total_comparison', 'ranking', 'share_of_total', 'correlation', 'distribution'
+        'total_comparison', 'ranking', 'share_of_total', 'correlation', 'distribution',
+        'aggregate_filter'
     ];
     if (validIntents.includes(intent as AnalysisIntent)) {
         return intent as AnalysisIntent;
