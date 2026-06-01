@@ -187,6 +187,32 @@ Respond with ONLY a valid JSON object (no markdown, no code fences):
   "resultGrain": "one row (scalar)"
 }
 
+FEW-SHOT EXAMPLES (follow these patterns precisely):
+
+Q: "What are the busiest sales days of the week?"
+A: { "intent": "ranking", "dimensions": [{"field": "order_date", "timeGrain": "day_of_week"}], "metrics": [{"field": "sales", "agg": "sum"}], "filters": [], "sort": [{"dir": "desc"}], "limit": 7, "resultGrain": "one row per weekday" }
+
+Q: "Show monthly sales trend for the last 12 months"
+A: { "intent": "trend", "dimensions": [{"field": "order_date", "timeGrain": "month"}], "metrics": [{"field": "sales", "agg": "sum"}], "filters": [{"field": "order_date", "op": "between", "value": ["2023-01-01", "2023-12-31"]}], "sort": [], "limit": null, "resultGrain": "one row per month" }
+
+Q: "Which region generated the highest revenue?"
+A: { "intent": "ranking", "dimensions": [{"field": "region"}], "metrics": [{"field": "sales", "agg": "sum"}], "filters": [], "sort": [{"dir": "desc"}], "limit": 1, "resultGrain": "one row per region" }
+
+Q: "Top 5 products by quantity sold"
+A: { "intent": "ranking", "dimensions": [{"field": "product_name"}], "metrics": [{"field": "quantity", "agg": "sum"}], "filters": [], "sort": [{"dir": "desc"}], "limit": 5, "resultGrain": "one row per product" }
+
+Q: "What percentage of sales does each category contribute?"
+A: { "intent": "share_of_total", "dimensions": [{"field": "category"}], "metrics": [{"field": "sales", "agg": "sum"}], "filters": [], "sort": [{"dir": "desc"}], "limit": null, "resultGrain": "one row per category with percentage" }
+
+Q: "Average order value by region"
+A: { "intent": "breakdown", "dimensions": [{"field": "region"}], "metrics": [{"field": "sales", "agg": "avg"}], "filters": [], "sort": [], "limit": null, "resultGrain": "one row per region" }
+
+Q: "Sales trend by quarter this year"
+A: { "intent": "trend", "dimensions": [{"field": "order_date", "timeGrain": "quarter"}], "metrics": [{"field": "sales", "agg": "sum"}], "filters": [{"field": "order_date", "op": "between", "value": ["2023-01-01", "2023-12-31"]}], "sort": [], "limit": null, "resultGrain": "one row per quarter" }
+
+Q: "Which month has the highest sales?"
+A: { "intent": "ranking", "dimensions": [{"field": "order_date", "timeGrain": "month_of_year"}], "metrics": [{"field": "sales", "agg": "sum"}], "filters": [], "sort": [{"dir": "desc"}], "limit": 1, "resultGrain": "one row per month name" }
+
 CRITICAL RULES:
 - Use ONLY field names that exist in the semantic model above.
 - The aggregation MUST match what the user explicitly asked for. "average" ALWAYS means "avg", NEVER "sum". This is non-negotiable.
@@ -195,7 +221,8 @@ CRITICAL RULES:
 - For composite metrics, use the compositeId: { "field": "gross_margin_pct", "agg": "none", "compositeId": "gross_margin_pct" }
 - If the user mentions a synonym (e.g., "revenue"), map it to the actual field name.
 - Always set resultGrain to describe what each row represents.
-- When you detect a derived metric pattern (date-diff, profit, ratio), the downstream APDME engine will intercept and build the correct SQL. Your job is ONLY to map intent + dimensions correctly.`;
+- When you detect a derived metric pattern (date-diff, profit, ratio), the downstream APDME engine will intercept and build the correct SQL. Your job is ONLY to map intent + dimensions correctly.
+- ALL date columns are stored as VARCHAR in DuckDB. The downstream SQL engine handles CAST automatically — you do NOT need to worry about casting.`;
 }
 
 /**
@@ -363,6 +390,65 @@ function enforceCyclicGrain(plan: AnalysisPlan, question: string, model: Semanti
 
         if (!plan.limit || plan.limit > 12) {
             plan.limit = 12;
+        }
+    }
+}
+
+/**
+ * Deterministic intent override based on keywords.
+ * Catches cases where the LLM picks the wrong intent type.
+ */
+function enforceIntentFromKeywords(plan: AnalysisPlan, question: string): void {
+    const q = question.toLowerCase();
+
+    // ── "trend" / "over time" → force trend intent if there's a time dimension ──
+    if (/\b(trend|over\s+time|over\s+the\s+(past|last)|timeline)\b/.test(q)) {
+        const hasTimeDim = plan.dimensions.some(d => (d as any).timeGrain);
+        if (hasTimeDim && plan.intent !== 'trend' && plan.intent !== 'trend_comparison') {
+            console.log(`[Intent Planner] Intent override: "${plan.intent}" → "trend" (keyword: trend/over time)`);
+            plan.intent = 'trend';
+            plan.limit = null;
+        }
+    }
+
+    // ── "share" / "percentage" / "proportion" → force share_of_total ──
+    if (/\b(share|percentage|proportion|percent|what\s+%|contribut)\b/.test(q) &&
+        !/\b(growth|change|trend)\b/.test(q)) {
+        if (plan.intent !== 'share_of_total') {
+            console.log(`[Intent Planner] Intent override: "${plan.intent}" → "share_of_total" (keyword: share/percentage)`);
+            plan.intent = 'share_of_total';
+        }
+    }
+
+    // ── "top N" / "bottom N" extraction → enforce limit ──
+    const topNMatch = q.match(/\b(top|bottom|first|last)\s+(\d+)\b/);
+    if (topNMatch) {
+        const n = parseInt(topNMatch[2]);
+        if (n > 0 && n <= 100) {
+            if (plan.limit !== n) {
+                console.log(`[Intent Planner] Limit override: ${plan.limit} → ${n} (detected "${topNMatch[0]}")`);
+                plan.limit = n;
+            }
+            if (plan.intent !== 'ranking') {
+                plan.intent = 'ranking';
+            }
+            if (topNMatch[1] === 'bottom' || topNMatch[1] === 'last') {
+                plan.sort = plan.sort.length > 0
+                    ? plan.sort.map(s => ({ ...s, dir: 'asc' as const }))
+                    : [{ dir: 'asc' as const }];
+            } else {
+                plan.sort = plan.sort.length > 0
+                    ? plan.sort.map(s => ({ ...s, dir: 'desc' as const }))
+                    : [{ dir: 'desc' as const }];
+            }
+        }
+    }
+
+    // ── "distribution" / "histogram" → force distribution intent ──
+    if (/\b(distribution|histogram|spread|frequency)\b/.test(q)) {
+        if (plan.intent !== 'distribution') {
+            console.log(`[Intent Planner] Intent override: "${plan.intent}" → "distribution" (keyword: distribution)`);
+            plan.intent = 'distribution';
         }
     }
 }
@@ -794,6 +880,7 @@ export async function generatePlan(
         enforceAggregation(plan, question, model);
         enforceTimeContext(plan, question, model);
         enforceCyclicGrain(plan, question, model); // Fix: detect day-of-week / month-of-year patterns
+        enforceIntentFromKeywords(plan, question); // Fix: enforce intent from keywords (trend/share/top-N)
         enforceComparison(plan, question, model); // Fix: detect comparison patterns
         enforceTimeComparison(plan, question, model); // MSARE: detect YoY/MoM/QoQ + derived metric combos
 
