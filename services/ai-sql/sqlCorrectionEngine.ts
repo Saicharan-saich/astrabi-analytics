@@ -39,10 +39,9 @@ function fromTable(): string {
  * This REPLACES whatever SQL the AI produced.
  */
 export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
-    // Set the table reference from the dataset name so all generated SQL
-    // uses the real table name instead of hardcoded "data"
-    const dsName = model.datasetName || 'data';
-    TABLE_REF = `"${dsName.replace(/"/g, '""')}"`;
+    // Always use "data" as the table name — DuckDB loads all data into
+    // a table called "data", NOT the original file name.
+    TABLE_REF = '"data"';
     logger.info('[SQL Correction]', `Building SQL for intent="${plan.intent}" table=${TABLE_REF}`);
 
     // â”€â”€ Intercept hour/time-of-day grain: check if dataset has time data â”€â”€
@@ -193,21 +192,22 @@ function buildDerivedMetricSQL(
 
     // Build the grain expression for GROUP BY
     let grainExpr: string;
+    const d = `CAST(${dateField} AS DATE)`;
     switch (grain) {
         case 'day':
             grainExpr = dateField;
             break;
         case 'week':
-            grainExpr = `STRFTIME('%Y-W%W', ${dateField})`;
+            grainExpr = `STRFTIME('%Y-W%W', ${d})`;
             break;
         case 'month':
-            grainExpr = `STRFTIME('%Y-%m', ${dateField})`;
+            grainExpr = `STRFTIME('%Y-%m', ${d})`;
             break;
         case 'quarter':
-            grainExpr = `STRFTIME('%Y', ${dateField}) || '-Q' || ((CAST(STRFTIME('%m', ${dateField}) AS INTEGER) - 1) / 3 + 1)`;
+            grainExpr = `STRFTIME('%Y', ${d}) || '-Q' || ((CAST(STRFTIME('%m', ${d}) AS INTEGER) - 1) / 3 + 1)`;
             break;
         case 'year':
-            grainExpr = `STRFTIME('%Y', ${dateField})`;
+            grainExpr = `STRFTIME('%Y', ${d})`;
             break;
         default:
             grainExpr = dateField;
@@ -399,7 +399,7 @@ function buildDayOfWeekSQL(
     // SELECT both the raw date and the day name
     const selects = [
         dateField,
-        `DAYNAME(${dateField}) AS day_name`,
+        `DAYNAME(CAST(${dateField} AS DATE)) AS day_name`,
         ...metExprs,
     ];
 
@@ -809,21 +809,23 @@ function getMetricAlias(met: PlanMetric, model: SemanticModel, apdmeMetrics?: De
  * Uses DuckDB-compatible functions: YEAR(), QUARTER(), STRFTIME(), etc.
  */
 function timeGrainExpr(field: string, grain: string): string {
+    // Wrap with CAST to handle VARCHAR date columns in DuckDB
+    const d = `CAST(${q(field)} AS DATE)`;
     switch (grain) {
         case 'year':
-            return `YEAR(${field})`;
+            return `YEAR(${d})`;
         case 'quarter':
-            return `CONCAT(YEAR(${field}), '-Q', QUARTER(${field}))`;
+            return `CONCAT(YEAR(${d}), '-Q', QUARTER(${d}))`;
         case 'month':
-            return `STRFTIME('%Y-%m', ${field})`;
+            return `STRFTIME('%Y-%m', ${d})`;
         case 'week':
-            return `CONCAT(YEAR(${field}), '-W', LPAD(WEEK(${field}), 2, '0'))`;
+            return `CONCAT(YEAR(${d}), '-W', LPAD(WEEK(${d}), 2, '0'))`;
         case 'day_of_week':
-            return `DAYNAME(${field})`;
+            return `DAYNAME(${d})`;
         case 'month_of_year':
-            return `MONTHNAME(${field})`;
+            return `MONTHNAME(${d})`;
         case 'hour':
-            return `HOUR(${field})`;
+            return `HOUR(CAST(${q(field)} AS TIMESTAMP))`;
         default:
             return field;
     }

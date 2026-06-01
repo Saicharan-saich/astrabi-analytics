@@ -237,11 +237,12 @@ FROM (
  */
 function applyTimeGrain(field: string, grain: string): string {
     // Wrap with CAST to handle VARCHAR date columns in DuckDB
+    // DuckDB STRFTIME signature: STRFTIME(format, date)
     const d = `CAST(${field} AS DATE)`;
     switch (grain) {
         case 'year': return `YEAR(${d})`;
         case 'quarter': return `CONCAT(YEAR(${d}), '-Q', QUARTER(${d}))`;
-        case 'month': return `STRFTIME(${d}, '%Y-%m')`;
+        case 'month': return `STRFTIME('%Y-%m', ${d})`;
         case 'week': return `CONCAT(YEAR(${d}), '-W', LPAD(WEEK(${d}), 2, '0'))`;
         default: return field;
     }
