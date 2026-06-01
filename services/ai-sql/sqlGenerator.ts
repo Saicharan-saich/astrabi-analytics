@@ -236,11 +236,13 @@ FROM (
  * Apply time grain transformation to a date column
  */
 function applyTimeGrain(field: string, grain: string): string {
+    // Wrap with CAST to handle VARCHAR date columns in DuckDB
+    const d = `CAST(${field} AS DATE)`;
     switch (grain) {
-        case 'year': return `YEAR(${field})`;
-        case 'quarter': return `CONCAT(YEAR(${field}), '-Q', QUARTER(${field}))`;
-        case 'month': return `STRFTIME('%Y-%m', ${field})`;
-        case 'week': return `CONCAT(YEAR(${field}), '-W', LPAD(WEEK(${field}), 2, '0'))`;
+        case 'year': return `YEAR(${d})`;
+        case 'quarter': return `CONCAT(YEAR(${d}), '-Q', QUARTER(${d}))`;
+        case 'month': return `STRFTIME(${d}, '%Y-%m')`;
+        case 'week': return `CONCAT(YEAR(${d}), '-W', LPAD(WEEK(${d}), 2, '0'))`;
         default: return field;
     }
 }
@@ -437,7 +439,7 @@ RULES:
 1. Use table name "data".
 2. Use exact column names from the semantic model.
 3. For composite metrics, use the formula from the Composite Metrics section.
-4. NEVER use STRFTIME or EXTRACT. Use YEAR(), MONTH(), QUARTER() functions.
+4. NEVER use STRFTIME or EXTRACT. Use YEAR(), MONTH(), QUARTER() functions. Always wrap date columns with CAST(column AS DATE) e.g. YEAR(CAST(order_date AS DATE)).
 5. Use ISO date format (YYYY-MM-DD) for date comparisons.
 6. Always alias calculated columns with meaningful names.
 7. Every dimension must appear in GROUP BY.
@@ -513,7 +515,7 @@ ${error}
 RULES:
 - Use table name "data".
 - Use ONLY column names from the semantic model.
-- Do not use STRFTIME or EXTRACT. Use YEAR(), MONTH(), QUARTER().
+- Do not use STRFTIME or EXTRACT. Use YEAR(), MONTH(), QUARTER(). Always wrap date columns with CAST(column AS DATE) e.g. MONTH(CAST(order_date AS DATE)).
 - Fix ONLY the error. Do not change other parts of the query.
 
 Respond with ONLY a JSON object:

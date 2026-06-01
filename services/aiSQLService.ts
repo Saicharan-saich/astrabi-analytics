@@ -130,7 +130,7 @@ RULES:
 10. If you cannot answer the question with the available columns, say so clearly.
 11. For time-based queries like "today", "this month", "this week", "this year", use the Date Context above to filter by the appropriate date column with WHERE clauses.
 12. Date values are in ISO format (YYYY-MM-DD). Use comparison operators for date filtering (e.g., WHERE order_date = '2017-12-30').
-13. NEVER use STRFTIME or EXTRACT functions. For year filtering use YEAR(column) = 2014, for month filtering use MONTH(column) = 6. For date ranges use BETWEEN e.g., WHERE order_date BETWEEN '2014-01-01' AND '2014-12-31'.
+13. NEVER use STRFTIME or EXTRACT functions. For year filtering use YEAR(CAST(column AS DATE)) = 2014, for month filtering use MONTH(CAST(column AS DATE)) = 6. Always wrap date columns with CAST(column AS DATE) when using date functions. For date ranges use BETWEEN e.g., WHERE order_date BETWEEN '2014-01-01' AND '2014-12-31'.
 
 RESPONSE FORMAT:
 You MUST respond with a JSON object in this exact format (no markdown, no code fences):
