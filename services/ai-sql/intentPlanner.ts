@@ -16,6 +16,9 @@
 import { SemanticModel, SemanticField, AnalysisPlan, AnalysisIntent } from './types';
 import { serializeSemanticModel } from './semanticLayer';
 import { fetchWithFallback, PRIMARY_MODEL, API_KEY } from './modelConfig';
+import { classifyQuestion, ClassificationResult } from './questionClassifier';
+import { mapFieldsFromQuestion } from './fieldMapper';
+import { validatePlan } from './planValidator';
 
 /** Exported for UI display (shows which model family is active) */
 export const MODEL = PRIMARY_MODEL;
@@ -433,13 +436,15 @@ function enforceIntentFromKeywords(plan: AnalysisPlan, question: string): void {
                 plan.intent = 'ranking';
             }
             if (topNMatch[1] === 'bottom' || topNMatch[1] === 'last') {
+                const sortField = plan.metrics.length > 0 ? plan.metrics[0].field : '';
                 plan.sort = plan.sort.length > 0
                     ? plan.sort.map(s => ({ ...s, dir: 'asc' as const }))
-                    : [{ dir: 'asc' as const }];
+                    : [{ field: sortField, dir: 'asc' as const }];
             } else {
+                const sortField = plan.metrics.length > 0 ? plan.metrics[0].field : '';
                 plan.sort = plan.sort.length > 0
                     ? plan.sort.map(s => ({ ...s, dir: 'desc' as const }))
-                    : [{ dir: 'desc' as const }];
+                    : [{ field: sortField, dir: 'desc' as const }];
             }
         }
     }
@@ -818,6 +823,12 @@ export async function generatePlan(
         throw new Error('OpenRouter API key not configured. Set VITE_OPENROUTER_API_KEY in .env');
     }
 
+    // ── PRE-CLASSIFICATION: Deterministic question analysis ──
+    const classification = classifyQuestion(question);
+    const fieldMapping = mapFieldsFromQuestion(question, model);
+    console.log(`[Question Classifier] intent=${classification.intent} confidence=${classification.confidence.toFixed(2)} grain=${classification.timeGrain || 'none'} reason="${classification.reason}"`);
+    console.log(`[Field Mapper] dims=[${fieldMapping.dimensions.map(d => d.name).join(', ')}] mets=[${fieldMapping.metrics.map(m => m.name).join(', ')}] confidence=${fieldMapping.confidence.toFixed(2)}`);
+
     const systemPrompt = buildPlannerPrompt(model);
 
     const controller = new AbortController();
@@ -910,6 +921,31 @@ export async function generatePlan(
             plan.limit = null;
             plan.sort = [];
             console.log('[Intent Planner] Growth ranking: stripped LIMIT and ORDER BY (applied post-collapse)');
+        }
+
+        // ── STEP 7: PLAN VALIDATION GATE ──
+        // Validate the final plan against hard constraints.
+        // Auto-fixes recoverable issues (fuzzy field names, missing metrics).
+        const validation = validatePlan(plan, model);
+        if (!validation.valid) {
+            console.warn(`[Plan Validator] Plan has ${validation.errors.length} unrecoverable error(s). Proceeding with best effort.`);
+        }
+        if (validation.autoFixed > 0) {
+            console.log(`[Plan Validator] Auto-fixed ${validation.autoFixed} issue(s) in the plan.`);
+        }
+
+        // ── STEP 8: APPLY CLASSIFIER HINTS ──
+        // If the deterministic classifier has high confidence on intent/grain,
+        // override the LLM's choices as a safety net.
+        if (classification.confidence >= 0.8) {
+            if (classification.intent !== 'ambiguous' && classification.intent !== plan.intent) {
+                // Only override if classifier is very confident and it's a different intent
+                const validOverrides = ['trend', 'ranking', 'share_of_total', 'distribution'];
+                if (validOverrides.includes(classification.intent) && classification.confidence >= 0.9) {
+                    console.log(`[Classifier Override] intent: "${plan.intent}" → "${classification.intent}" (classifier confidence: ${classification.confidence.toFixed(2)})`);
+                    plan.intent = classification.intent as any;
+                }
+            }
         }
 
         console.log('[Intent Planner] Generated plan:', JSON.stringify(plan, null, 2));
