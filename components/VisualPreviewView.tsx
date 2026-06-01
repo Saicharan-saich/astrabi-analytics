@@ -1,8 +1,4 @@
-/**
- * VisualPreviewView.tsx — Full-page persistent result view for AI SQL.
- * Contains: chart, table, SQL tabs + formatting, analytics, confidence, growth, time grain.
- */
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ArrowLeft, Pin, Code, Table2, BarChart2, Palette, Activity, Sparkles,
   Copy, Check, X, RefreshCw, Play, Database, Loader2
@@ -46,6 +42,24 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const [pipeline, setPipeline] = useState<AISQLPipelineResult | null | undefined>(initialPipeline);
   const [isReloading, setIsReloading] = useState(false);
   const [timeGrain, setTimeGrain] = useState<'day'|'week'|'month'|'quarter'|'year'>('month');
+
+  // ── Sync internal state when new query results arrive ──
+  // useState only uses initialValue on FIRST mount. Since this component
+  // stays mounted (hidden with CSS), we need useEffect to update state
+  // when the parent passes new props from a subsequent AI SQL query.
+  useEffect(() => {
+    setResult(initialResult);
+    setChartType((initialResult.vis as string) || 'bar');
+    setActiveTab('chart');
+  }, [initialResult]);
+
+  useEffect(() => {
+    setPipeline(initialPipeline);
+  }, [initialPipeline]);
+
+  useEffect(() => {
+    setLocalFormatting(formatting);
+  }, [formatting]);
 
   const sql = result.sql || pipeline?.sql || '';
   const explanation = result.insight || pipeline?.explanation || '';
