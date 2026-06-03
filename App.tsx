@@ -902,7 +902,22 @@ function App() {
   };
 
   const handleEditAnalysis = (item: any) => {
-    setWorkbenchConfig(item.result.config);
+    const config = { ...item.result.config };
+    // Backward compat: AI SQL cards pinned before the limit/sort fix
+    if (config.questionId?.startsWith('ai_sql_') || config.questionId?.startsWith('regen_')) {
+      // Infer limit from result data if not stored
+      if (!config.limit && item.result.data?.length > 0 && item.result.data.length <= 20) {
+        config.limit = item.result.data.length;
+      }
+      if (!config.sort) {
+        config.sort = 'desc';
+      }
+      // Forward the SQL for direct re-execution
+      if (item.result.sql) {
+        config.aiSql = item.result.sql;
+      }
+    }
+    setWorkbenchConfig(config);
     setWorkbenchResult(item.result);
     setEditingDashboardItemId(item.id);
     setActiveTab(Tab.BUILDER); // Redirected from WORKBENCH (hidden)
