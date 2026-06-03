@@ -1,166 +1,159 @@
-/**
- * TrustBadge.tsx — Confidence & Warnings UI Component
- *
- * Displays trust indicators for analysis results:
- *   - Confidence score (green/amber/red badge)
- *   - Warning count with expandable list
- *   - Explainability breakdown (metric, aggregation, dimension, filters)
- *
- * RULES:
- *   - Always visible when result has confidence < 1.0
- *   - Warnings expandable on click
- *   - Color-coded: green (>=0.85), amber (0.6-0.84), red (<0.6)
- */
-
 import React, { useState } from 'react';
-import { Shield, AlertTriangle, ChevronDown, ChevronUp, Info, CheckCircle } from 'lucide-react';
+import type { TrustVerification } from '../services/ai-sql/types';
 
 interface TrustBadgeProps {
-    confidence?: number;
-    warnings?: string[];
-    explainability?: {
-        metric: string;
-        aggregation: string;
-        sourceColumn: string;
-        dimension: string;
-        filtersApplied: string[];
-        rowsProcessed: number;
-    };
+    trust?: TrustVerification | null;
+    isDark?: boolean;
     compact?: boolean;
 }
 
-export const TrustBadge: React.FC<TrustBadgeProps> = ({
-    confidence,
-    warnings,
-    explainability,
-    compact = false,
-}) => {
-    const [expanded, setExpanded] = useState(false);
+/**
+ * Trust & Verification Badge — Progressive Disclosure Component
+ * 
+ * Level 1: Colored badge (🟢 Verified / 🟡 Needs Review / 🔴 Validation Issue)
+ * Level 2: Expandable verification summary with business-language checks
+ * Level 3: "Explain This Result" plain-English explanation
+ */
+export default function TrustBadge({ trust, isDark = false, compact = false }: TrustBadgeProps) {
+    const [showSummary, setShowSummary] = useState(false);
+    const [showExplain, setShowExplain] = useState(false);
 
-    // No trust data = no badge
-    if (confidence === undefined && (!warnings || warnings.length === 0)) return null;
+    if (!trust) return null;
 
-    const score = confidence ?? 1.0;
-    const pct = Math.round(score * 100);
-    const warningCount = warnings?.length || 0;
-
-    // Color tiers
-    const tier = score >= 0.85 ? 'high' : score >= 0.6 ? 'medium' : 'low';
-    const colors = {
-        high: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20', icon: 'text-emerald-500' },
-        medium: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20', icon: 'text-amber-500' },
-        low: { bg: 'bg-red-500/10', text: 'text-red-400', border: 'border-red-500/20', icon: 'text-red-500' },
+    const statusConfig = {
+        verified: {
+            icon: '✓',
+            label: 'Verified',
+            badgeBg: isDark ? 'bg-emerald-500/15' : 'bg-emerald-50',
+            badgeText: isDark ? 'text-emerald-400' : 'text-emerald-700',
+            badgeBorder: isDark ? 'border-emerald-500/25' : 'border-emerald-200',
+            dotColor: 'bg-emerald-500',
+        },
+        needs_review: {
+            icon: '⚠',
+            label: 'Needs Review',
+            badgeBg: isDark ? 'bg-amber-500/15' : 'bg-amber-50',
+            badgeText: isDark ? 'text-amber-400' : 'text-amber-700',
+            badgeBorder: isDark ? 'border-amber-500/25' : 'border-amber-200',
+            dotColor: 'bg-amber-500',
+        },
+        validation_issue: {
+            icon: '✗',
+            label: 'Issue Detected',
+            badgeBg: isDark ? 'bg-red-500/15' : 'bg-red-50',
+            badgeText: isDark ? 'text-red-400' : 'text-red-700',
+            badgeBorder: isDark ? 'border-red-500/25' : 'border-red-200',
+            dotColor: 'bg-red-500',
+        },
     };
-    const c = colors[tier];
 
-    if (compact) {
-        return (
-            <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold ${c.bg} ${c.text} ${c.border} border`}>
-                <Shield className="w-3 h-3" />
-                {pct}%
-                {warningCount > 0 && (
-                    <span className="flex items-center gap-0.5 text-amber-400">
-                        <AlertTriangle className="w-3 h-3" />
-                        {warningCount}
-                    </span>
-                )}
-            </div>
-        );
-    }
+    const config = statusConfig[trust.status];
+
+    const checkIcon = (status: string) => {
+        switch (status) {
+            case 'pass': return <span className="text-emerald-500 text-[13px]">✓</span>;
+            case 'warn': return <span className="text-amber-500 text-[13px]">⚠</span>;
+            case 'fail': return <span className="text-red-500 text-[13px]">✗</span>;
+            default: return null;
+        }
+    };
 
     return (
-        <div className={`rounded-lg border ${c.border} ${c.bg} overflow-hidden transition-all`}>
-            {/* Header Row */}
+        <div className="relative inline-flex flex-col items-end">
+            {/* Level 1: Trust Badge */}
             <button
-                onClick={() => setExpanded(!expanded)}
-                className="w-full flex items-center justify-between px-3 py-2 hover:bg-white/5 transition-colors"
+                onClick={() => { setShowSummary(!showSummary); setShowExplain(false); }}
+                className={`
+                    inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold
+                    border cursor-pointer transition-all duration-200
+                    hover:scale-105 active:scale-95
+                    ${config.badgeBg} ${config.badgeText} ${config.badgeBorder}
+                `}
+                title="Click to see verification details"
             >
-                <div className="flex items-center gap-2">
-                    <Shield className={`w-4 h-4 ${c.icon}`} />
-                    <span className={`text-xs font-semibold ${c.text}`}>
-                        Confidence: {pct}%
-                    </span>
-                    {warningCount > 0 && (
-                        <span className="flex items-center gap-1 text-[11px] text-amber-400 bg-amber-500/10 px-1.5 py-0.5 rounded-full">
-                            <AlertTriangle className="w-3 h-3" />
-                            {warningCount} warning{warningCount > 1 ? 's' : ''}
-                        </span>
-                    )}
-                    {warningCount === 0 && score >= 0.85 && (
-                        <span className="flex items-center gap-1 text-[11px] text-emerald-400">
-                            <CheckCircle className="w-3 h-3" />
-                            Verified
-                        </span>
-                    )}
-                </div>
-                {(warningCount > 0 || explainability) && (
-                    expanded
-                        ? <ChevronUp className="w-4 h-4 text-gray-500" />
-                        : <ChevronDown className="w-4 h-4 text-gray-500" />
-                )}
+                <span className={`w-1.5 h-1.5 rounded-full ${config.dotColor} animate-pulse`} />
+                {config.icon} {config.label}
             </button>
 
-            {/* Expanded Details */}
-            {expanded && (
-                <div className="px-3 pb-3 space-y-2 border-t border-white/5">
-                    {/* Warnings */}
-                    {warnings && warnings.length > 0 && (
-                        <div className="mt-2 space-y-1">
-                            {warnings.map((w, i) => (
-                                <div key={i} className="flex items-start gap-1.5 text-[11px] text-amber-300/90">
-                                    <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
-                                    <span>{w}</span>
-                                </div>
-                            ))}
+            {/* Level 2: Verification Summary */}
+            {showSummary && (
+                <div className={`
+                    absolute top-full right-0 mt-2 z-50 w-80
+                    rounded-xl border shadow-xl backdrop-blur-xl
+                    ${isDark ? 'bg-slate-800/95 border-white/10' : 'bg-white/95 border-gray-200'}
+                `}
+                style={{ animation: 'fadeIn 0.2s ease-out' }}
+                >
+                    {/* Header */}
+                    <div className={`px-4 pt-4 pb-2 border-b ${isDark ? 'border-white/5' : 'border-gray-100'}`}>
+                        <div className="flex items-center justify-between">
+                            <h4 className={`text-[13px] font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                                Verification Summary
+                            </h4>
+                            <button
+                                onClick={() => setShowSummary(false)}
+                                className={`p-1 rounded-md text-gray-400 text-xs ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
+                            >
+                                ✕
+                            </button>
                         </div>
-                    )}
+                        <p className={`text-[11px] mt-1 ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                            {trust.summary}
+                        </p>
+                    </div>
 
-                    {/* Explainability */}
-                    {explainability && (
-                        <div className="mt-2 bg-white/5 rounded-md p-2 space-y-1">
-                            <div className="flex items-center gap-1 text-[11px] font-semibold text-gray-300 mb-1">
-                                <Info className="w-3 h-3" />
-                                Computation Trace
-                            </div>
-                            <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 text-[11px]">
-                                <span className="text-gray-500">Metric</span>
-                                <span className="text-gray-300 font-medium">{explainability.metric}</span>
-                                <span className="text-gray-500">Aggregation</span>
-                                <span className="text-gray-300 font-medium">{explainability.aggregation}</span>
-                                <span className="text-gray-500">Dimension</span>
-                                <span className="text-gray-300 font-medium">{explainability.dimension}</span>
-                                <span className="text-gray-500">Rows Processed</span>
-                                <span className="text-gray-300 font-medium">{explainability.rowsProcessed.toLocaleString()}</span>
-                            </div>
-                            {explainability.filtersApplied.length > 0 && (
-                                <div className="mt-1">
-                                    <span className="text-[11px] text-gray-500">Filters: </span>
-                                    <span className="text-[11px] text-violet-400">
-                                        {explainability.filtersApplied.join(' • ')}
-                                    </span>
+                    {/* Checks List */}
+                    <div className="px-4 py-3 space-y-2">
+                        {trust.checks.map((check, i) => (
+                            <div key={i} className="flex items-start gap-2.5">
+                                <div className="mt-0.5 shrink-0">{checkIcon(check.status)}</div>
+                                <div className="min-w-0">
+                                    <div className={`text-[12px] font-medium leading-tight ${isDark ? 'text-slate-200' : 'text-gray-800'}`}>
+                                        {check.label}
+                                    </div>
+                                    {check.detail && (
+                                        <div className={`text-[10px] mt-0.5 leading-snug ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>
+                                            {check.detail}
+                                        </div>
+                                    )}
                                 </div>
-                            )}
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Confidence + Explain Button */}
+                    <div className={`px-4 py-2.5 border-t flex items-center justify-between ${isDark ? 'border-white/5' : 'border-gray-100'}`}>
+                        <span className={`text-[11px] ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                            Confidence: <span className={`font-bold ${
+                                trust.confidence === 'high' ? 'text-emerald-500' :
+                                trust.confidence === 'medium' ? 'text-amber-500' : 'text-red-500'
+                            }`}>{trust.confidence.charAt(0).toUpperCase() + trust.confidence.slice(1)}</span>
+                        </span>
+                        <button
+                            onClick={() => setShowExplain(!showExplain)}
+                            className={`
+                                text-[11px] font-bold px-2.5 py-1 rounded-lg transition-all
+                                ${isDark
+                                    ? 'text-cyan-400 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/20'
+                                    : 'text-cyan-600 bg-cyan-50 hover:bg-cyan-100 border border-cyan-200'
+                                }
+                            `}
+                        >
+                            {showExplain ? 'Hide Explanation' : 'Explain This Result'}
+                        </button>
+                    </div>
+
+                    {/* Level 3: Explain This Result */}
+                    {showExplain && (
+                        <div className={`px-4 py-3 border-t ${isDark ? 'border-white/5 bg-cyan-500/5' : 'border-gray-100 bg-cyan-50/50'}`}>
+                            <p className={`text-[12px] leading-relaxed ${isDark ? 'text-slate-200' : 'text-gray-700'}`}
+                               style={{ fontFamily: "'Georgia', 'Times New Roman', serif" }}>
+                                {trust.explainResult}
+                            </p>
                         </div>
                     )}
                 </div>
             )}
         </div>
     );
-};
-
-/**
- * StaleBadge — Shows when a dashboard item's dataset version doesn't match current.
- */
-export const StaleBadge: React.FC<{ itemVersion?: number; currentVersion?: number }> = ({
-    itemVersion,
-    currentVersion,
-}) => {
-    if (!itemVersion || !currentVersion || itemVersion === currentVersion) return null;
-
-    return (
-        <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-orange-500/10 text-orange-400 border border-orange-500/20">
-            <AlertTriangle className="w-3 h-3" />
-            Stale — data has been updated since this was pinned
-        </div>
-    );
-};
+}

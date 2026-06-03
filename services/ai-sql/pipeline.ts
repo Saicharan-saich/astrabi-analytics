@@ -35,6 +35,7 @@ import { logAuditEntry } from './auditLogger';
 import { resolveTimeContext, augmentQuestionWithTime } from './timeResolver';
 import { processPlan } from './derivedMetricEngine';
 import { formatSQL } from '../sqlFormatter';
+import { generateTrustVerification } from './trustEngine';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -726,6 +727,11 @@ export async function runAISQLPipeline(
         repairAttempts,
     };
 
+
+    // ── Step 10c: Generate Trust Verification ─────────────────────
+    const trust = generateTrustVerification(pipelineResult);
+    pipelineResult.trust = trust;
+    console.log(`[Pipeline] Trust: ${trust.status} (${trust.checks.filter(c => c.status === 'pass').length}/${trust.checks.length} checks passed)`);
 
     return pipelineResult;
 }

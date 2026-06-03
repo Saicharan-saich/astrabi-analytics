@@ -357,6 +357,28 @@ export interface AuditEntry {
 
 // ─── Pipeline Result ─────────────────────────────────────────────
 
+export interface TrustCheck {
+    /** Business-language label */
+    label: string;
+    /** Check status */
+    status: 'pass' | 'warn' | 'fail';
+    /** Optional expanded detail (still business language) */
+    detail?: string;
+}
+
+export interface TrustVerification {
+    /** Overall trust status */
+    status: 'verified' | 'needs_review' | 'validation_issue';
+    /** Confidence level in business language */
+    confidence: 'high' | 'medium' | 'low';
+    /** Business-language verification checks */
+    checks: TrustCheck[];
+    /** Plain-English result explanation */
+    explainResult: string;
+    /** Summary sentence */
+    summary: string;
+}
+
 export interface AISQLPipelineResult {
     /** The structured analysis plan */
     plan: AnalysisPlan;
@@ -382,4 +404,6 @@ export interface AISQLPipelineResult {
     executionTimeMs: number;
     /** Repair attempts used */
     repairAttempts: number;
+    /** Trust & Verification Layer */
+    trust?: TrustVerification;
 }

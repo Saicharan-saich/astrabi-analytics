@@ -19,6 +19,7 @@ export { buildCompositeMetrics, buildDerivedMetrics } from './metricRegistry';
 export { resolveTimeContext, augmentQuestionWithTime } from './timeResolver';
 export { storeUserOverride } from './classificationFeedback';
 export { getClassificationTelemetry } from './arbitrationEngine';
+export { generateTrustVerification } from './trustEngine';
 
 export type {
     SemanticField, SemanticModel, MetricDefinition, DerivedMetricDefinition,
@@ -27,4 +28,5 @@ export type {
     ConfidenceScore, AuditEntry, AISQLPipelineResult,
     ValidationResult, ValidationCheck,
     FieldClassificationSignals,
+    TrustVerification, TrustCheck,
 } from './types';

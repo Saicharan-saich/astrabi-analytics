@@ -9,7 +9,7 @@ import { ChartVisualization } from './ChartVisualization';
 import { Tooltip } from './Tooltip';
 import { AIInsightPanel } from './AIInsightPanel';
 import { getCalculationDisplayName, type TableCalculation } from '../utils/tableCalculations';
-import { TrustBadge } from './TrustBadge';
+import TrustBadge from './TrustBadge';
 import { FormatPanel } from './FormatPanel';
 
 interface NLQViewProps {
@@ -687,16 +687,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                                                     chartContainerRef={chartContainerRef}
                                                 />
 
-                                                {/* Trust Badge — confidence, warnings, explainability */}
-                                                {analysisResult && (analysisResult.confidence !== undefined || (analysisResult.warnings && analysisResult.warnings.length > 0)) && (
-                                                    <div className="mt-2">
-                                                        <TrustBadge
-                                                            confidence={analysisResult.confidence}
-                                                            warnings={analysisResult.warnings}
-                                                            explainability={analysisResult.explainability}
-                                                        />
-                                                    </div>
-                                                )}
+                                                {/* Trust Badge placeholder — NLQ view uses deterministic parsing, not AI SQL pipeline */}
 
                                                 {/* AI Insight Panel */}
                                                 <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={analysisResult?.yLabel} />

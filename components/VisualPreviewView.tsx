@@ -10,6 +10,7 @@ import { AIInsightPanel } from './AIInsightPanel';
 import { getCalculationDisplayName, type TableCalculation } from '../utils/tableCalculations';
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { useTheme } from './ThemeProvider';
+import TrustBadge from './TrustBadge';
 
 interface VisualPreviewViewProps {
   dataset: Dataset | null;
@@ -123,12 +124,8 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* Confidence Badge */}
-          {pipeline?.confidence && (
-            <button onClick={() => setShowConfidence(!showConfidence)} className={`text-[10px] font-bold px-2.5 py-1 rounded-full border cursor-pointer transition-all ${confLevel === 'high' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20' : confLevel === 'medium' ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-500/20' : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-400 border-red-200 dark:border-red-500/20'}`}>
-              {confLevel === 'high' ? '✓' : confLevel === 'medium' ? '⚠' : '✗'} {confScore}%
-            </button>
-          )}
+          {/* Trust Badge */}
+          <TrustBadge trust={pipeline?.trust} isDark={isDark} />
           <button onClick={handleRegenerate} disabled={isReloading} className="flex items-center gap-1 text-[12px] font-bold text-cyan-600 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 px-2.5 py-1.5 rounded-lg transition-all border border-cyan-200 dark:border-cyan-500/20 disabled:opacity-50">
             {isReloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Regen
           </button>
