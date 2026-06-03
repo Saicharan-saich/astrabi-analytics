@@ -89,7 +89,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       setResult({
         data: res.chartData, xKey: res.chart.xKey, yKey: res.chart.yKey, yLabel: query,
         insight: res.explanation, sql: res.sql,
-        config: { metric: res.plan.metrics[0]?.field || res.chart.yKey, dimension: res.plan.dimensions[0]?.field || res.chart.xKey, aggregation: AggregationType.SUM, timeGrain: TimeGrain.RAW, analysisType: AnalysisType.STANDARD, questionId: 'regen_' + Date.now(), questionLabel: query, secondaryMetrics: res.chart.secondaryYKeys, axisMode: res.chart.useDualAxis ? 'dual' : 'auto' },
+        config: { metric: res.plan.metrics[0]?.field || res.chart.yKey, dimension: res.plan.dimensions[0]?.field || res.chart.xKey, aggregation: AggregationType.SUM, timeGrain: TimeGrain.RAW, analysisType: AnalysisType.STANDARD, questionId: 'regen_' + Date.now(), questionLabel: query, secondaryMetrics: res.chart.secondaryYKeys, axisMode: res.chart.useDualAxis ? 'dual' : 'auto', limit: res.plan.limit || 0, sort: res.plan.sort?.[0]?.dir || 'desc' },
         vis: (chartMap[res.chart.chartType] || 'bar') as any,
         kpi: res.chart.chartType === 'kpiCard' && res.chartData.length > 0 ? res.chartData[0][res.chart.yKey] : undefined,
         growth: res.chart.growth ? { diff: res.chart.growth.diff, pct: res.chart.growth.pct } : undefined,

@@ -130,6 +130,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     questionLabel: query,
                     secondaryMetrics: result.chart.secondaryYKeys,
                     axisMode: result.chart.useDualAxis ? 'dual' : 'auto',
+                    limit: result.plan.limit || 0,
+                    sort: result.plan.sort?.[0]?.dir || 'desc',
                 },
                 vis: (chartTypeMap[result.chart.chartType] || 'bar') as any,
                 kpi: result.chart.chartType === 'kpiCard' && result.chartData.length > 0
