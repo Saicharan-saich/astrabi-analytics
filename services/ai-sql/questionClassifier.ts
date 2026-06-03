@@ -10,7 +10,7 @@
 export type ClassifiedIntent =
     | 'trend' | 'ranking' | 'breakdown' | 'share_of_total'
     | 'single_metric' | 'comparison' | 'distribution' | 'correlation'
-    | 'derived_metric' | 'aggregate_filter' | 'ambiguous';
+    | 'derived_metric' | 'aggregate_filter' | 'growth_analysis' | 'ambiguous';
 
 export interface ClassificationResult {
     intent: ClassifiedIntent;
@@ -79,6 +79,16 @@ const AGGREGATE_FILTER_PATTERNS = [
     /\b(above|below|over|under|exceed(?:ing|s)?|greater\s+than|higher\s+than|less\s+than|lower\s+than)\s*(?:the\s+)?(?:average|avg|mean)\b/i,
     /\bwith\s+(high|low|above|below).+(margin|aov|rate|ratio|sales|revenue|profit)\b/i,
     /\b(outperform|underperform)(?:ing|s|ed)?\b/i,
+];
+
+const GROWTH_ANALYSIS_PATTERNS = [
+    /\b(driving|drove|contribut\w+\s+to)\s+(revenue|sales|profit)?\s*growth\b/i,
+    /\b(grow(?:ing|n|th)|grew)\s+(the\s+)?(fastest|most|slowest|least)\b/i,
+    /\b(largest|biggest|smallest|highest|lowest)\s+(increase|decrease|decline|drop|gain|growth)\b/i,
+    /\b(growth|decline)\s+(contribut|driver|leader)\b/i,
+    /\b(revenue|sales|profit)\s+growth\s+by\s+(product|category|region|segment)\b/i,
+    /\bfastest\s+grow(ing|th)\b/i,
+    /\b(increase|decrease|growth|decline)\s+(%|percent|percentage|rate)\b/i,
 ];
 
 const DAY_OF_WEEK_PATTERNS = [
@@ -179,6 +189,20 @@ export function classifyQuestion(question: string): ClassificationResult {
             limit,
             needsLLM: true,
             reason: 'No recognizable intent patterns found',
+        };
+    }
+
+    // Special: growth_analysis (driving growth / fastest growing) → highest priority
+    const growthScore = matchPatterns(q, GROWTH_ANALYSIS_PATTERNS);
+    if (growthScore > 0) {
+        return {
+            intent: 'growth_analysis',
+            confidence: Math.min(1, 0.75 + growthScore * 0.1),
+            timeGrain,
+            sortDirection: sortDir || 'desc',
+            limit: limit || 10,
+            needsLLM: true,
+            reason: 'growth/decline analysis detected',
         };
     }
 

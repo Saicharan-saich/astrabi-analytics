@@ -125,6 +125,8 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
             return buildComparisonSQL(plan, model);
         case 'aggregate_filter':
             return buildAggregateFilterSQL(plan, model, apdmeMetrics);
+        case 'growth_analysis':
+            return buildGrowthAnalysisSQL(plan, model);
         default:
             // Fallback: treat as breakdown
             return buildBreakdownSQL(plan, model, apdmeMetrics);
@@ -600,6 +602,327 @@ function buildAggregateFilterSQL(plan: AnalysisPlan, model: SemanticModel, apdme
     }
 
     return parts.join('\n');
+}
+
+/**
+ * Build SQL for growth_analysis intent — "Which products are driving revenue growth?"
+ *
+ * Splits the dataset timeline into two equal halves (or uses explicit date filters),
+ * computes per-entity totals for each period, then calculates growth percentage.
+ *
+ * Example output:
+ *   SELECT "product_name",
+ *          SUM(CASE WHEN "order_date" >= '2024-07-01' THEN "sales" ELSE 0 END) AS current_period,
+ *          SUM(CASE WHEN "order_date" < '2024-07-01' THEN "sales" ELSE 0 END) AS previous_period,
+ *          ROUND(CASE WHEN SUM(CASE WHEN "order_date" < '2024-07-01' THEN "sales" ELSE 0 END) > 0
+ *              THEN (SUM(CASE WHEN "order_date" >= '2024-07-01' THEN "sales" ELSE 0 END) -
+ *                    SUM(CASE WHEN "order_date" < '2024-07-01' THEN "sales" ELSE 0 END)) /
+ *                    SUM(CASE WHEN "order_date" < '2024-07-01' THEN "sales" ELSE 0 END) * 100
+ *              ELSE NULL END, 2) AS growth_pct
+ *   FROM "data"
+ *   GROUP BY "product_name"
+ *   ORDER BY growth_pct DESC
+ */
+function buildGrowthAnalysisSQL(plan: AnalysisPlan, model: SemanticModel): string {
+    // Find the primary date field
+    const dateField = model.fields.find(f => f.semanticType === 'date' && f.role === 'dimension')?.name
+        || model.timeContext?.primaryDateColumn
+        || 'order_date';
+
+    // Find the metric field
+    const metricField = plan.metrics.length > 0 ? plan.metrics[0].field : 'sales';
+    const metricAgg = plan.metrics.length > 0 ? plan.metrics[0].agg : 'sum';
+    const aggFn = metricAgg.toUpperCase();
+
+    // Determine the dimension (what entities to compare — products, categories, etc.)
+    const dimField = plan.dimensions.length > 0 ? plan.dimensions[0].field : null;
+
+    if (!dimField) {
+        // No dimension — fall back to overall growth as single metric
+        logger.warn('[SQL Correction]', 'growth_analysis without dimension — falling back to breakdown');
+        return buildBreakdownSQL(plan, model);
+    }
+
+    // Determine the midpoint for period splitting
+    // Strategy: use the dataset's date range midpoint
+    const minDate = model.timeContext?.minDate || '2024-01-01';
+    const maxDate = model.timeContext?.maxDate || model.timeContext?.anchorDate || new Date().toISOString().split('T')[0];
+
+    // Calculate midpoint
+    const minMs = new Date(minDate + 'T00:00:00Z').getTime();
+    const maxMs = new Date(maxDate + 'T00:00:00Z').getTime();
+    const midMs = minMs + Math.floor((maxMs - minMs) / 2);
+    const midDate = new Date(midMs).toISOString().split('T')[0];
+
+    logger.info('[SQL Correction]', `Growth analysis: date range ${minDate} → ${maxDate}, midpoint: ${midDate}`);
+
+    // Check for explicit date filter override
+    const dateFilter = plan.filters.find(f =>
+        f.field.toLowerCase() === dateField.toLowerCase() && f.op === 'between'
+    );
+
+    let currentStart: string, previousEnd: string, splitPoint: string;
+    if (dateFilter && Array.isArray(dateFilter.value) && dateFilter.value.length === 2) {
+        // Use explicit filter range — split in half
+        const fMinMs = new Date(dateFilter.value[0] + 'T00:00:00Z').getTime();
+        const fMaxMs = new Date(dateFilter.value[1] + 'T00:00:00Z').getTime();
+        const fMidMs = fMinMs + Math.floor((fMaxMs - fMinMs) / 2);
+        splitPoint = new Date(fMidMs).toISOString().split('T')[0];
+        currentStart = splitPoint;
+        previousEnd = splitPoint;
+    } else {
+        splitPoint = midDate;
+        currentStart = splitPoint;
+        previousEnd = splitPoint;
+    }
+
+    // Build the WHERE clause (excluding date filters since we handle them via CASE)
+    const nonDateFilters = plan.filters.filter(f =>
+        f.field.toLowerCase() !== dateField.toLowerCase() && !f.isHaving
+    );
+    const where = buildWhereClause(nonDateFilters);
+
+    // Build CASE WHEN expressions for period splitting
+    const qDateField = q(dateField);
+    const qMetricField = q(metricField);
+
+    const currentExpr = `${aggFn}(CASE WHEN ${qDateField} >= '${currentStart}' THEN ${qMetricField} ELSE 0 END)`;
+    const previousExpr = `${aggFn}(CASE WHEN ${qDateField} < '${previousEnd}' THEN ${qMetricField} ELSE 0 END)`;
+
+    const growthExpr = `ROUND(CASE WHEN ${previousExpr} > 0 THEN (${currentExpr} - ${previousExpr}) / ${previousExpr} * 100 ELSE NULL END, 2)`;
+
+    const parts = [
+        `SELECT ${q(dimField)},`,
+        `  ${currentExpr} AS current_period,`,
+        `  ${previousExpr} AS previous_period,`,
+        `  ${growthExpr} AS growth_pct`,
+        fromTable(),
+    ];
+    if (where) parts.push(`WHERE ${where}`);
+    parts.push(`GROUP BY ${q(dimField)}`);
+
+    // Sort direction — default DESC (highest growth first)
+    const sortDir = plan.sort.length > 0 ? plan.sort[0].dir.toUpperCase() : 'DESC';
+    parts.push(`ORDER BY growth_pct ${sortDir} NULLS LAST`);
+
+    if (plan.limit) {
+        parts.push(`LIMIT ${plan.limit}`);
+    }
+
+    return parts.join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// WINDOW FUNCTION UTILITIES
+// These helpers generate window-function-enriched SQL for various
+// analytical patterns. They can be invoked by any builder function.
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Build a RANK/DENSE_RANK/ROW_NUMBER window query.
+ * Used for: "Rank products by sales", "Top 3 per category"
+ *
+ * Output:
+ *   SELECT *, RANK() OVER (PARTITION BY category ORDER BY SUM(sales) DESC) AS rank
+ *   FROM (inner grouped query)
+ *   WHERE rank <= N
+ */
+function buildRankWindowSQL(
+    plan: AnalysisPlan,
+    model: SemanticModel,
+    options: {
+        rankFn?: 'RANK' | 'DENSE_RANK' | 'ROW_NUMBER';
+        partitionBy?: string;
+        orderByExpr: string;
+        orderDir?: 'ASC' | 'DESC';
+        topN?: number;
+    }
+): string {
+    const { rankFn = 'RANK', partitionBy, orderByExpr, orderDir = 'DESC', topN } = options;
+
+    const dimExprs = buildDimensionExpressions(plan.dimensions);
+    const metExprs = buildMetricExpressions(plan.metrics, model);
+    const groupBy = buildGroupByClause(plan.dimensions);
+    const where = buildWhereClause(plan.filters);
+
+    const partitionClause = partitionBy ? `PARTITION BY ${q(partitionBy)} ` : '';
+    const windowExpr = `${rankFn}() OVER (${partitionClause}ORDER BY ${orderByExpr} ${orderDir}) AS row_rank`;
+
+    const innerSelects = [...dimExprs, ...metExprs];
+    const innerParts = [
+        `SELECT ${innerSelects.join(', ')}`,
+        fromTable(),
+    ];
+    if (where) innerParts.push(`WHERE ${where}`);
+    if (groupBy) innerParts.push(`GROUP BY ${groupBy}`);
+
+    const innerSQL = innerParts.join('\n');
+
+    if (topN) {
+        return [
+            `SELECT *, ${windowExpr}`,
+            `FROM (${innerSQL}) sub`,
+            `WHERE row_rank <= ${topN}`,
+            `ORDER BY ${partitionBy ? q(partitionBy) + ', ' : ''}row_rank`,
+        ].join('\n');
+    }
+
+    return [
+        `SELECT *, ${windowExpr}`,
+        `FROM (${innerSQL}) sub`,
+        `ORDER BY row_rank`,
+    ].join('\n');
+}
+
+/**
+ * Build a running total / running average window query.
+ * Used for: "Running total of sales by month", "Cumulative revenue"
+ *
+ * Output:
+ *   SELECT month, sales_sum,
+ *          SUM(sales_sum) OVER (ORDER BY month ROWS UNBOUNDED PRECEDING) AS running_total
+ *   FROM (inner grouped query)
+ */
+function buildRunningTotalSQL(
+    plan: AnalysisPlan,
+    model: SemanticModel,
+    options: {
+        windowFn?: 'SUM' | 'AVG' | 'COUNT';
+        orderByField: string;
+        metricAlias: string;
+        partitionBy?: string;
+    }
+): string {
+    const { windowFn = 'SUM', orderByField, metricAlias, partitionBy } = options;
+
+    const dimExprs = buildDimensionExpressions(plan.dimensions);
+    const metExprs = buildMetricExpressions(plan.metrics, model);
+    const groupBy = buildGroupByClause(plan.dimensions);
+    const where = buildWhereClause(plan.filters);
+
+    const partitionClause = partitionBy ? `PARTITION BY ${q(partitionBy)} ` : '';
+    const windowExpr = `${windowFn}(${metricAlias}) OVER (${partitionClause}ORDER BY ${q(orderByField)} ROWS UNBOUNDED PRECEDING) AS running_${windowFn.toLowerCase()}`;
+
+    const innerSelects = [...dimExprs, ...metExprs];
+    const innerParts = [
+        `SELECT ${innerSelects.join(', ')}`,
+        fromTable(),
+    ];
+    if (where) innerParts.push(`WHERE ${where}`);
+    if (groupBy) innerParts.push(`GROUP BY ${groupBy}`);
+
+    const innerSQL = innerParts.join('\n');
+
+    return [
+        `SELECT *, ${windowExpr}`,
+        `FROM (${innerSQL}) sub`,
+        `ORDER BY ${q(orderByField)}`,
+    ].join('\n');
+}
+
+/**
+ * Build a LAG/LEAD window query for period-over-period comparison.
+ * Used for: "Month-over-month sales change", "Previous month comparison"
+ *
+ * Output:
+ *   SELECT month, sales_sum,
+ *          LAG(sales_sum, 1) OVER (ORDER BY month) AS prev_period,
+ *          ROUND((sales_sum - LAG(sales_sum, 1) OVER (ORDER BY month)) /
+ *                NULLIF(LAG(sales_sum, 1) OVER (ORDER BY month), 0) * 100, 2) AS change_pct
+ *   FROM (inner grouped query)
+ */
+function buildLagLeadSQL(
+    plan: AnalysisPlan,
+    model: SemanticModel,
+    options: {
+        windowFn?: 'LAG' | 'LEAD';
+        offset?: number;
+        orderByField: string;
+        metricAlias: string;
+        partitionBy?: string;
+        includeChangePct?: boolean;
+    }
+): string {
+    const { windowFn = 'LAG', offset = 1, orderByField, metricAlias, partitionBy, includeChangePct = true } = options;
+
+    const dimExprs = buildDimensionExpressions(plan.dimensions);
+    const metExprs = buildMetricExpressions(plan.metrics, model);
+    const groupBy = buildGroupByClause(plan.dimensions);
+    const where = buildWhereClause(plan.filters);
+
+    const partitionClause = partitionBy ? `PARTITION BY ${q(partitionBy)} ` : '';
+    const lagExpr = `${windowFn}(${metricAlias}, ${offset}) OVER (${partitionClause}ORDER BY ${q(orderByField)})`;
+
+    const windowSelects = [
+        `${lagExpr} AS prev_period`,
+    ];
+
+    if (includeChangePct) {
+        windowSelects.push(
+            `ROUND(CASE WHEN ${lagExpr} > 0 THEN (${metricAlias} - ${lagExpr}) / ${lagExpr} * 100 ELSE NULL END, 2) AS change_pct`
+        );
+    }
+
+    const innerSelects = [...dimExprs, ...metExprs];
+    const innerParts = [
+        `SELECT ${innerSelects.join(', ')}`,
+        fromTable(),
+    ];
+    if (where) innerParts.push(`WHERE ${where}`);
+    if (groupBy) innerParts.push(`GROUP BY ${groupBy}`);
+
+    const innerSQL = innerParts.join('\n');
+
+    return [
+        `SELECT *, ${windowSelects.join(', ')}`,
+        `FROM (${innerSQL}) sub`,
+        `ORDER BY ${q(orderByField)}`,
+    ].join('\n');
+}
+
+/**
+ * Build NTILE window query for percentile/quartile analysis.
+ * Used for: "Sales quartiles", "Top 25% of products"
+ *
+ * Output:
+ *   SELECT *, NTILE(4) OVER (ORDER BY sales_sum DESC) AS quartile
+ *   FROM (inner grouped query)
+ */
+function buildNtileSQL(
+    plan: AnalysisPlan,
+    model: SemanticModel,
+    options: {
+        buckets?: number;
+        orderByExpr: string;
+        orderDir?: 'ASC' | 'DESC';
+        partitionBy?: string;
+    }
+): string {
+    const { buckets = 4, orderByExpr, orderDir = 'DESC', partitionBy } = options;
+
+    const dimExprs = buildDimensionExpressions(plan.dimensions);
+    const metExprs = buildMetricExpressions(plan.metrics, model);
+    const groupBy = buildGroupByClause(plan.dimensions);
+    const where = buildWhereClause(plan.filters);
+
+    const partitionClause = partitionBy ? `PARTITION BY ${q(partitionBy)} ` : '';
+    const ntileExpr = `NTILE(${buckets}) OVER (${partitionClause}ORDER BY ${orderByExpr} ${orderDir}) AS quartile`;
+
+    const innerSelects = [...dimExprs, ...metExprs];
+    const innerParts = [
+        `SELECT ${innerSelects.join(', ')}`,
+        fromTable(),
+    ];
+    if (where) innerParts.push(`WHERE ${where}`);
+    if (groupBy) innerParts.push(`GROUP BY ${groupBy}`);
+
+    const innerSQL = innerParts.join('\n');
+
+    return [
+        `SELECT *, ${ntileExpr}`,
+        `FROM (${innerSQL}) sub`,
+        `ORDER BY quartile, ${orderByExpr} ${orderDir}`,
+    ].join('\n');
 }
 
 /**

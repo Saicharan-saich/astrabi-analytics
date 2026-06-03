@@ -27,7 +27,7 @@ const VALID_AGGS = ['sum', 'avg', 'count', 'count_distinct', 'min', 'max', 'none
 const VALID_INTENTS = [
     'single_metric', 'derived_metric', 'breakdown', 'trend', 'trend_comparison',
     'total_comparison', 'ranking', 'share_of_total', 'correlation', 'distribution',
-    'aggregate_filter',
+    'aggregate_filter', 'growth_analysis',
 ];
 
 export function validatePlan(plan: AnalysisPlan, model: SemanticModel): ValidationResult {

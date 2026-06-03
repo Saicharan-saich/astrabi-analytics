@@ -510,6 +510,109 @@ function enforceCompositeMetrics(plan: AnalysisPlan, question: string, model: Se
 }
 
 /**
+ * Detect growth/decline analysis patterns and force growth_analysis intent.
+ * "Which products are driving revenue growth?" → growth_analysis
+ * "Fastest growing categories" → growth_analysis
+ * "Products with biggest sales decline" → growth_analysis (sort ASC)
+ *
+ * MUST run BEFORE enforceComparison to intercept "growth" keyword
+ * that would otherwise trigger trend_comparison.
+ */
+function enforceGrowthAnalysis(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    // Already growth_analysis — nothing to do
+    if (plan.intent === 'growth_analysis') return;
+
+    const q = question.toLowerCase();
+
+    // Growth analysis patterns
+    const growthPatterns = [
+        /\b(driving|drove|contribut\w+\s+to)\s+(revenue|sales|profit)?\s*growth\b/,
+        /\b(grow(?:ing|n|th)|grew)\s+(the\s+)?(fastest|most|slowest|least)\b/,
+        /\b(largest|biggest|smallest|highest|lowest)\s+(increase|decrease|decline|drop|gain|growth)\b/,
+        /\b(growth|decline)\s+(contribut|driver|leader)\b/,
+        /\b(revenue|sales|profit)\s+growth\s+by\s+(product|category|region|segment)\b/,
+        /\bfastest\s+grow(ing|th)\b/,
+        /\b(increase|decrease|growth|decline)\s+(%|percent|percentage|rate)\b/,
+    ];
+
+    const isGrowth = growthPatterns.some(p => p.test(q));
+    if (!isGrowth) return;
+
+    // Must have at least one dimension to rank entities by growth
+    if (plan.dimensions.length === 0) {
+        // Try to infer a dimension from the question
+        const dimKeywords: Record<string, string> = {
+            'product': 'product_name',
+            'category': 'category',
+            'region': 'region',
+            'segment': 'segment',
+            'customer': 'customer_name',
+            'city': 'city',
+            'state': 'state',
+            'country': 'country',
+            'sub.category': 'sub_category',
+        };
+        for (const [keyword, fieldName] of Object.entries(dimKeywords)) {
+            if (q.includes(keyword)) {
+                const field = model.fields.find(f =>
+                    f.name.toLowerCase() === fieldName ||
+                    f.name.toLowerCase().replace(/[_-]/g, '') === fieldName.replace(/[_-]/g, '')
+                );
+                if (field) {
+                    plan.dimensions.push({ field: field.name });
+                    break;
+                }
+            }
+        }
+        // If still no dimension, pick the first non-date dimension
+        if (plan.dimensions.length === 0) {
+            const defaultDim = model.fields.find(f => f.role === 'dimension' && f.semanticType !== 'date');
+            if (defaultDim) {
+                plan.dimensions.push({ field: defaultDim.name });
+            }
+        }
+    }
+
+    // Must have at least one metric
+    if (plan.metrics.length === 0) {
+        // Infer from question
+        const metricKeywords: Record<string, string> = {
+            'revenue': 'sales', 'sales': 'sales', 'profit': 'profit', 'quantity': 'quantity',
+        };
+        for (const [keyword, fieldName] of Object.entries(metricKeywords)) {
+            if (q.includes(keyword)) {
+                const field = model.fields.find(f => f.name.toLowerCase() === fieldName);
+                if (field) {
+                    plan.metrics.push({ field: field.name, agg: (field.defaultAgg === 'none' ? 'sum' : field.defaultAgg) || 'sum' });
+                    break;
+                }
+            }
+        }
+        // Default to first metric
+        if (plan.metrics.length === 0) {
+            const defaultMetric = model.fields.find(f => f.role === 'metric');
+            if (defaultMetric) {
+                plan.metrics.push({ field: defaultMetric.name, agg: (defaultMetric.defaultAgg === 'none' ? 'sum' : defaultMetric.defaultAgg) || 'sum' });
+            }
+        }
+    }
+
+    console.log(`[Intent Planner] Growth analysis detected: "${plan.intent}" → "growth_analysis"`);
+    plan.intent = 'growth_analysis';
+
+    // Detect decline direction
+    const sortField = plan.metrics.length > 0 ? plan.metrics[0].field : 'growth_pct';
+    if (/\b(decline|decrease|drop|slowest|least|worst|bottom|lowest)\b/.test(q)) {
+        plan.sort = [{ field: sortField, dir: 'asc' }];
+    } else {
+        plan.sort = [{ field: sortField, dir: 'desc' }];
+    }
+
+    // Remove limit for growth analysis (show all entities by default)
+    plan.limit = plan.limit || 10;
+}
+
+/**
  * Detect plural nouns in ranking queries to set a sensible limit.
  * "Which products..." (plural) → top 5
  * "Which product..." (singular) → top 1
@@ -1095,6 +1198,7 @@ export async function generatePlan(
         enforceIntentFromKeywords(plan, question); // Fix: enforce intent from keywords (trend/share/top-N)
         enforceCompositeMetrics(plan, question, model); // Fix: force governed composite metrics (weighted formulas)
         enforceAggregateFilter(plan, question, model); // Fix: above/below average → HAVING clause with composite KPIs
+        enforceGrowthAnalysis(plan, question, model); // Fix: growth/decline → per-entity growth ranking (MUST run before enforceComparison)
         enforcePluralLimit(plan, question); // Fix: plural nouns → top 5 instead of limit 1
         enforceComparison(plan, question, model); // Fix: detect comparison patterns
         enforceTimeComparison(plan, question, model); // MSARE: detect YoY/MoM/QoQ + derived metric combos
@@ -1171,7 +1275,7 @@ function validateIntent(intent: string): AnalysisIntent {
     const validIntents: AnalysisIntent[] = [
         'single_metric', 'derived_metric', 'breakdown', 'trend', 'trend_comparison',
         'total_comparison', 'ranking', 'share_of_total', 'correlation', 'distribution',
-        'aggregate_filter'
+        'aggregate_filter', 'growth_analysis'
     ];
     if (validIntents.includes(intent as AnalysisIntent)) {
         return intent as AnalysisIntent;

@@ -205,7 +205,8 @@ export type AnalysisIntent =
     | 'share_of_total'     // "Percent of sales by region"
     | 'correlation'        // "Sales vs profit by category"
     | 'distribution'       // "Distribution of order values"
-    | 'aggregate_filter';  // "Products with above-average sales"
+    | 'aggregate_filter'   // "Products with above-average sales"
+    | 'growth_analysis';   // "Which products are driving revenue growth?"
 
 export interface AnalysisPlan {
     /** Detected intent */
