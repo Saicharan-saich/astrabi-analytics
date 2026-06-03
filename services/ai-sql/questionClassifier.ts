@@ -82,13 +82,15 @@ const AGGREGATE_FILTER_PATTERNS = [
 ];
 
 const GROWTH_ANALYSIS_PATTERNS = [
-    /\b(driving|drove|contribut\w+\s+to)\s+(revenue|sales|profit)?\s*growth\b/i,
-    /\b(grow(?:ing|n|th)|grew)\s+(the\s+)?(fastest|most|slowest|least)\b/i,
+    /\b(driving|drove)\s+(?:\w+\s+)*(?:revenue|sales|profit)?\s*growth\b/i,
+    /\bcontribut\w+\s+(?:\w+\s+)*(?:to\s+)?(?:revenue|sales|profit)?\s*growth\b/i,
+    /\b(grow(?:ing|n|th)|grew)\s+(?:the\s+)?(fastest|most|slowest|least)\b/i,
     /\b(largest|biggest|smallest|highest|lowest)\s+(increase|decrease|decline|drop|gain|growth)\b/i,
     /\b(growth|decline)\s+(contribut|driver|leader)\b/i,
     /\b(revenue|sales|profit)\s+growth\s+by\s+(product|category|region|segment)\b/i,
     /\bfastest\s+grow(ing|th)\b/i,
     /\b(increase|decrease|growth|decline)\s+(%|percent|percentage|rate)\b/i,
+    /\bwhich\s+\w+\s+(?:are|is)\s+(?:\w+\s+)*grow/i,
 ];
 
 const DAY_OF_WEEK_PATTERNS = [

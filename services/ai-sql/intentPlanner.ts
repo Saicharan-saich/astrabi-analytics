@@ -526,13 +526,15 @@ function enforceGrowthAnalysis(plan: AnalysisPlan, question: string, model: Sema
 
     // Growth analysis patterns
     const growthPatterns = [
-        /\b(driving|drove|contribut\w+\s+to)\s+(revenue|sales|profit)?\s*growth\b/,
-        /\b(grow(?:ing|n|th)|grew)\s+(the\s+)?(fastest|most|slowest|least)\b/,
+        /\b(driving|drove)\s+(?:\w+\s+)*(?:revenue|sales|profit)?\s*growth\b/,
+        /\bcontribut\w+\s+(?:\w+\s+)*(?:to\s+)?(?:revenue|sales|profit)?\s*growth\b/,
+        /\b(grow(?:ing|n|th)|grew)\s+(?:the\s+)?(fastest|most|slowest|least)\b/,
         /\b(largest|biggest|smallest|highest|lowest)\s+(increase|decrease|decline|drop|gain|growth)\b/,
         /\b(growth|decline)\s+(contribut|driver|leader)\b/,
         /\b(revenue|sales|profit)\s+growth\s+by\s+(product|category|region|segment)\b/,
         /\bfastest\s+grow(ing|th)\b/,
         /\b(increase|decrease|growth|decline)\s+(%|percent|percentage|rate)\b/,
+        /\bwhich\s+\w+\s+(?:are|is)\s+(?:\w+\s+)*grow/,
     ];
 
     const isGrowth = growthPatterns.some(p => p.test(q));
@@ -930,8 +932,8 @@ function enforceTimeContext(plan: AnalysisPlan, question: string, model: Semanti
 function enforceComparison(plan: AnalysisPlan, question: string, model: SemanticModel): void {
     const q = question.toLowerCase();
 
-    // Already a comparison — nothing to do
-    if (plan.comparison || plan.intent === 'total_comparison' || plan.intent === 'trend_comparison') return;
+    // Already a comparison or growth_analysis — nothing to do
+    if (plan.comparison || plan.intent === 'total_comparison' || plan.intent === 'trend_comparison' || plan.intent === 'growth_analysis') return;
 
     // Detect comparison patterns in the question
     const comparisonPatterns = [
@@ -1034,8 +1036,8 @@ function enforceComparison(plan: AnalysisPlan, question: string, model: Semantic
 function enforceTimeComparison(plan: AnalysisPlan, question: string, model: SemanticModel): void {
     const q = question.toLowerCase();
 
-    // Already has comparison from enforceComparison — skip
-    if (plan.comparison && plan.intent === 'trend_comparison') return;
+    // Already has comparison from enforceComparison — skip; also skip growth_analysis
+    if (plan.comparison || plan.intent === 'growth_analysis') return;
 
     // ── Detect time comparison patterns ──
     type TimePattern = { grain: 'year' | 'quarter' | 'month' | 'week' | 'day'; type: 'same_period_last_year' | 'previous_period' };
@@ -1404,6 +1406,9 @@ function validateSemantics(plan: AnalysisPlan, model: SemanticModel): void {
  * can show: "Showing revenue by product (you can change metric)"
  */
 function applySmartDefaults(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    // Skip growth_analysis — it has its own metric/dimension inference
+    if (plan.intent === 'growth_analysis') return;
+
     // Only apply if the plan is ambiguous OR has no metrics
     if (!plan.ambiguous && plan.metrics.length > 0) return;
 
@@ -1550,6 +1555,9 @@ function enforceGrowthTimeDimension(plan: AnalysisPlan, question: string, model:
     const isGrowthQuestion = /\b(grow|growing|growth|growin|growt|increase|increasing|decline|declining|changing|change|faster|fastest|slower|slowest)\b/.test(q);
     const hasComparison = !!plan.comparison;
     const isComparisonIntent = ['trend_comparison', 'total_comparison'].includes(plan.intent);
+
+    // Skip if growth_analysis — it has its own SQL builder
+    if (plan.intent === 'growth_analysis') return;
 
     // Only apply to growth/comparison queries
     if (!isGrowthQuestion && !hasComparison && !isComparisonIntent) return;
