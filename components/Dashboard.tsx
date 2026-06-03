@@ -1338,7 +1338,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                             }
 
                             // Fallback: simple row filtering for charts without config
-                            return item.result.data;
+                            // Safety cap: bar/pie charts with too many rows become unreadable
+                            const chartVis = (item.result.vis as string) || 'bar';
+                            const maxRows = ['bar', 'horizontalBar', 'pie', 'donut', 'groupedBar', 'stackedBar'].includes(chartVis) ? 25 : 500;
+                            const rawData = item.result.data || [];
+                            return rawData.length > maxRows ? rawData.slice(0, maxRows) : rawData;
                           })()}
                           xKey={item.result.xKey}
                           yKey={item.result.yKey}
