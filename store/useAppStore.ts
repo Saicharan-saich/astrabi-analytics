@@ -476,3 +476,22 @@ export const useAppStore = create<AppStore>()(
         }
     )
 );
+
+/** Reset all user-specific data in the app store. Call on login/logout. */
+export function resetUserData(): void {
+    useAppStore.setState({
+        dataset: null,
+        datasets: [],
+        dashboards: [],
+        activeDashboardId: null,
+        items: [],
+        dashboardLayout: null,
+        dashboardFilters: [],
+        queryHistory: [],
+        savedQuestions: [],
+        config: undefined,
+        result: undefined,
+        selectedDatasetId: null,
+        activeTab: 'upload' as any,
+    });
+}

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { User, UserRole } from '../types';
 import { indexedDBStorage } from '../services/indexedDBStorage';
+import { resetUserData } from './useAppStore';
 
 // ── User Data Isolation ──────────────────────────────────────────
 const APP_STORAGE_KEY = 'QuickInsight-storage-v4';
@@ -197,7 +198,7 @@ export const useAuthStore = create<AuthState>()(
                 restoreUserAppData(user.id);
                 set({ currentUser: user, isAuthenticated: true });
                 // Force page reload to rehydrate Zustand from the restored data
-                setTimeout(() => window.location.reload(), 100);
+                resetUserData();
                 return { success: true };
             },
 
@@ -225,7 +226,7 @@ export const useAuthStore = create<AuthState>()(
                 saveUserAppData(get().currentUser?.id || '__anonymous__');
                 clearSharedAppData();
                 set({ currentUser: guestUser, isAuthenticated: true });
-                setTimeout(() => window.location.reload(), 100);
+                resetUserData();
             },
 
             register: (email: string, name: string, password: string) => {
@@ -251,7 +252,7 @@ export const useAuthStore = create<AuthState>()(
                 saveUserAppData(get().currentUser?.id || '__anonymous__');
                 clearSharedAppData();
                 set({ users: [...state.users, newUser], currentUser: newUser, isAuthenticated: true });
-                setTimeout(() => window.location.reload(), 100);
+                resetUserData();
                 return { success: true };
             },
 
