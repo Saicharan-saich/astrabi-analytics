@@ -1035,6 +1035,45 @@ function layer6_dataContractValidation(
             if (futureCount > 0) {
                 violations.push({ column: col, rule: 'FUTURE_DATE', severity: 'soft', message: `${col}: ${futureCount} future date(s) detected.` });
             }
+            // Type consistency: non-date values in DATE column
+            const nonNullVals = values.filter(v => v !== null && v !== undefined && v !== '');
+            const nonDateVals = nonNullVals.filter(v => {
+                if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}/.test(v)) return false; // Valid ISO date
+                return true;
+            });
+            if (nonDateVals.length > 0) {
+                const examples = nonDateVals.slice(0, 5).map(v => `"${String(v)}"`).join(', ');
+                violations.push({ column: col, rule: 'TYPE_CONSISTENCY', severity: 'soft',
+                    message: `${col}: ${nonDateVals.length} non-date value(s) in DATE column. Examples: ${examples}` });
+            }
+        }
+
+        // ── Type Consistency: non-numeric values in METRIC columns ──
+        if (colDef?.type === ColumnType.METRIC) {
+            const nonNullVals = values.filter(v => v !== null && v !== undefined);
+            const nonNumericVals = nonNullVals.filter(v => typeof v !== 'number' || isNaN(v));
+            if (nonNumericVals.length > 0) {
+                const examples = nonNumericVals.slice(0, 5).map(v => `"${String(v)}"`).join(', ');
+                violations.push({ column: col, rule: 'TYPE_CONSISTENCY', severity: 'soft',
+                    message: `${col}: ${nonNumericVals.length} non-numeric value(s) in METRIC column. These cannot be aggregated. Examples: ${examples}` });
+            }
+        }
+
+        // ── Type Consistency: non-numeric values in ID columns ──
+        if (colDef?.type === ColumnType.ID) {
+            const nonNullVals = values.filter(v => v !== null && v !== undefined && v !== '');
+            const nonNumericIds = nonNullVals.filter(v => {
+                const s = String(v).trim();
+                return isNaN(Number(s)) && !/^\d+$/.test(s);
+            });
+            // Only flag if the column is predominantly numeric (>80% numeric IDs)
+            const numericIds = nonNullVals.length - nonNumericIds.length;
+            const numericRate = nonNullVals.length > 0 ? numericIds / nonNullVals.length : 0;
+            if (nonNumericIds.length > 0 && numericRate > 0.8) {
+                const examples = nonNumericIds.slice(0, 5).map(v => `"${String(v)}"`).join(', ');
+                violations.push({ column: col, rule: 'TYPE_CONSISTENCY', severity: 'soft',
+                    message: `${col}: ${nonNumericIds.length} non-numeric value(s) in a numeric ID column (${(numericRate * 100).toFixed(0)}% are numbers). Possible data entry error or column misalignment. Examples: ${examples}` });
+            }
         }
     }
 
