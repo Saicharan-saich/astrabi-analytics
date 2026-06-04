@@ -3,6 +3,7 @@
  * Unlike localStorage (5MB cap), IndexedDB supports 50MB+ and handles large datasets.
  */
 
+import { useAuthStore } from '../store/useAuthStore';
 const DB_NAME = 'QuickInsight-datasets';
 const DB_VERSION = 1;
 const STORE_NAME = 'datasets';
@@ -26,6 +27,13 @@ export async function saveDatasetToDB(dataset: any): Promise<void> {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readwrite');
         const store = tx.objectStore(STORE_NAME);
+        // Stamp ownerId for user data isolation (if not already set)
+        if (!dataset.ownerId) {
+            const userId = useAuthStore.getState().currentUser?.id;
+            if (userId) {
+                dataset = { ...dataset, ownerId: userId };
+            }
+        }
         store.put(dataset);
         return new Promise((resolve, reject) => {
             tx.oncomplete = () => resolve();
@@ -36,14 +44,21 @@ export async function saveDatasetToDB(dataset: any): Promise<void> {
     }
 }
 
-export async function loadAllDatasetsFromDB(): Promise<any[]> {
+export async function loadAllDatasetsFromDB(userId?: string): Promise<any[]> {
     try {
         const db = await openDB();
         const tx = db.transaction(STORE_NAME, 'readonly');
         const store = tx.objectStore(STORE_NAME);
         const request = store.getAll();
         return new Promise((resolve, reject) => {
-            request.onsuccess = () => resolve(request.result || []);
+            request.onsuccess = () => {
+                let results = request.result || [];
+                // User data isolation: filter by ownerId if userId is provided
+                if (userId) {
+                    results = results.filter((ds: any) => !ds.ownerId || ds.ownerId === userId);
+                }
+                resolve(results);
+            };
             request.onerror = () => reject(request.error);
         });
     } catch (err) {

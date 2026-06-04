@@ -3,6 +3,56 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { User, UserRole } from '../types';
 import { indexedDBStorage } from '../services/indexedDBStorage';
 
+// ── User Data Isolation ──────────────────────────────────────────
+const APP_STORAGE_KEY = 'QuickInsight-storage-v4';
+
+/** Save current app state to a user-scoped localStorage key */
+export function saveUserAppData(userId: string): void {
+    try {
+        const appData = localStorage.getItem(APP_STORAGE_KEY);
+        if (appData) {
+            localStorage.setItem(`${APP_STORAGE_KEY}-${userId}`, appData);
+        }
+        // Also save custom questions
+        const customQ = localStorage.getItem('astrabi_custom_questions');
+        if (customQ) {
+            localStorage.setItem(`astrabi_custom_questions-${userId}`, customQ);
+        }
+    } catch (err) {
+        console.warn('[Auth] Failed to save user app data:', err);
+    }
+}
+
+/** Restore app state from a user-scoped localStorage key */
+export function restoreUserAppData(userId: string): void {
+    try {
+        const userData = localStorage.getItem(`${APP_STORAGE_KEY}-${userId}`);
+        if (userData) {
+            localStorage.setItem(APP_STORAGE_KEY, userData);
+        } else {
+            // New user — clear the shared state so they start fresh
+            localStorage.removeItem(APP_STORAGE_KEY);
+        }
+        // Restore custom questions
+        const customQ = localStorage.getItem(`astrabi_custom_questions-${userId}`);
+        if (customQ) {
+            localStorage.setItem('astrabi_custom_questions', customQ);
+        } else {
+            localStorage.removeItem('astrabi_custom_questions');
+        }
+    } catch (err) {
+        console.warn('[Auth] Failed to restore user app data:', err);
+    }
+}
+
+/** Clear the shared app state (call on logout) */
+export function clearSharedAppData(): void {
+    try {
+        localStorage.removeItem(APP_STORAGE_KEY);
+        localStorage.removeItem('astrabi_custom_questions');
+    } catch { /* silent */ }
+}
+
 /**
  * Secure synchronous hash using iterative mixing (SHA-256 style strength).
  * Uses multiple rounds of bit mixing for avalanche effect.
@@ -142,11 +192,21 @@ export const useAuthStore = create<AuthState>()(
                         users: state.users.map(u => u.id === user.id ? { ...u, passwordHash: secureHash(password) } : u)
                     }));
                 }
+                // ── User Data Isolation: restore this user's data ──
+                saveUserAppData(get().currentUser?.id || '__anonymous__'); // Save previous user's data
+                restoreUserAppData(user.id);
                 set({ currentUser: user, isAuthenticated: true });
+                // Force page reload to rehydrate Zustand from the restored data
+                setTimeout(() => window.location.reload(), 100);
                 return { success: true };
             },
 
             logout: () => {
+                const userId = get().currentUser?.id;
+                if (userId) {
+                    saveUserAppData(userId);
+                    clearSharedAppData();
+                }
                 set({ currentUser: null, isAuthenticated: false });
             },
 
@@ -161,7 +221,11 @@ export const useAuthStore = create<AuthState>()(
                     avatar: '#94a3b8',
                 };
                 lastActivityTime = Date.now();
+                // Save previous user's data, clear for guest
+                saveUserAppData(get().currentUser?.id || '__anonymous__');
+                clearSharedAppData();
                 set({ currentUser: guestUser, isAuthenticated: true });
+                setTimeout(() => window.location.reload(), 100);
             },
 
             register: (email: string, name: string, password: string) => {
@@ -183,7 +247,11 @@ export const useAuthStore = create<AuthState>()(
                     avatar: AVATAR_COLORS[state.users.length % AVATAR_COLORS.length],
                 };
                 lastActivityTime = Date.now();
+                // Save previous user's data, clear for new user
+                saveUserAppData(get().currentUser?.id || '__anonymous__');
+                clearSharedAppData();
                 set({ users: [...state.users, newUser], currentUser: newUser, isAuthenticated: true });
+                setTimeout(() => window.location.reload(), 100);
                 return { success: true };
             },
 

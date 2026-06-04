@@ -240,12 +240,14 @@ function App() {
     setActiveTab(Tab.AI_SQL);
   };
 
-  // Hydrate datasets from IndexedDB on mount
+  // Hydrate datasets from IndexedDB on mount (scoped by user)
   useEffect(() => {
-    loadAllDatasetsFromDB().then(saved => {
+    const userId = currentUser?.id;
+    if (!userId) return; // Don't load until authenticated
+    loadAllDatasetsFromDB(userId).then(saved => {
       if (saved.length > 0) {
         const store = useAppStore.getState();
-        // Only hydrate if store has no datasets loaded yet
+        // Clear any stale datasets from previous user and hydrate
         if (store.datasets.length === 0) {
           saved.forEach(ds => store.setDataset(ds));
           // Set the last dataset as active if none active
@@ -255,7 +257,7 @@ function App() {
         }
       }
     });
-  }, []);
+  }, [currentUser?.id]);
 
   // Pre-warm DuckDB when dataset is loaded (eliminates cold-start on first AI SQL query)
   useEffect(() => {
