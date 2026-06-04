@@ -39,6 +39,7 @@ import { ThemeProvider } from './components/ThemeProvider';
 import { OnboardingTour } from './components/OnboardingTour';
 import { DatasetSwitcher } from './components/DatasetSwitcher';
 import { saveDatasetToDB, loadAllDatasetsFromDB, deleteDatasetFromDB } from './services/datasetDB';
+import { inferDefaultAggregation } from './services/smartAggregation';
 import { DomainReviewModal } from './components/DomainReviewModal';
 import { ColumnMappingWizard } from './components/ColumnMappingWizard';
 import { SplashScreen } from './components/SplashScreen';
@@ -369,7 +370,7 @@ function App() {
             for (const col of columns) {
               colSem[col.name] = {
                 role: col.type,
-                aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : 'NONE',
+                aggregation: inferDefaultAggregation(col.name, col.type),
                 format: 'raw',
                 humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
                 description: '',
@@ -401,7 +402,7 @@ function App() {
           for (const col of columns) {
             colSem[col.name] = {
               role: col.type,
-              aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : 'NONE',
+              aggregation: inferDefaultAggregation(col.name, col.type),
               format: 'raw',
               humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
               description: '',
@@ -512,7 +513,7 @@ function App() {
         for (const col of columns) {
           colSem[col.name] = {
             role: col.type,
-            aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : 'NONE',
+            aggregation: inferDefaultAggregation(col.name, col.type),
             format: 'raw',
             humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
             description: '',
@@ -546,7 +547,7 @@ function App() {
         for (const col of columns) {
           colSem[col.name] = {
             role: col.type,
-            aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : 'NONE',
+            aggregation: inferDefaultAggregation(col.name, col.type),
             format: 'raw',
             humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
             description: '',

@@ -6,6 +6,7 @@ import {
     ChevronDown, XCircle
 } from 'lucide-react';
 import { DatasetDomainProfile, ColumnSemantic, ColumnType, ColumnDefinition } from '../types';
+import { inferDefaultAggregation } from '../services/smartAggregation';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -171,7 +172,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             const existing = initialProfile.columnSemantics?.[col.name];
             merged[col.name] = existing || {
                 role: col.type,
-                aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : col.type === ColumnType.BOOLEAN ? 'COUNT' : 'NONE',
+                aggregation: inferDefaultAggregation(col.name, col.type),
                 format: 'raw',
                 humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
                 description: '',
@@ -263,7 +264,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             const existing = initialProfile.columnSemantics?.[col.name];
             merged[col.name] = existing || {
                 role: col.type,
-                aggregation: col.type === ColumnType.METRIC ? 'SUM' : col.type === ColumnType.ID ? 'COUNT_DISTINCT' : 'NONE',
+                aggregation: inferDefaultAggregation(col.name, col.type),
                 format: 'raw',
                 humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
                 description: '',
