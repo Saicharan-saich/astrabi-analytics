@@ -51,11 +51,27 @@ export async function loadAllDatasetsFromDB(userId?: string): Promise<any[]> {
         const store = tx.objectStore(STORE_NAME);
         const request = store.getAll();
         return new Promise((resolve, reject) => {
-            request.onsuccess = () => {
+            request.onsuccess = async () => {
                 let results = request.result || [];
-                // User data isolation: filter by ownerId if userId is provided
+
+                // Migration: assign unowned datasets to the admin user
+                const unowned = results.filter((ds: any) => !ds.ownerId);
+                if (unowned.length > 0) {
+                    const adminId = 'admin_001'; // Seed admin from useAuthStore
+                    for (const ds of unowned) {
+                        ds.ownerId = adminId;
+                        // Re-save with ownerId stamped
+                        try {
+                            const writeTx = db.transaction(STORE_NAME, 'readwrite');
+                            writeTx.objectStore(STORE_NAME).put(ds);
+                        } catch { /* silent */ }
+                    }
+                    console.log(`[IndexedDB] Migrated ${unowned.length} unowned datasets to admin_001`);
+                }
+
+                // Strict filter: only show datasets owned by this user
                 if (userId) {
-                    results = results.filter((ds: any) => !ds.ownerId || ds.ownerId === userId);
+                    results = results.filter((ds: any) => ds.ownerId === userId);
                 }
                 resolve(results);
             };
