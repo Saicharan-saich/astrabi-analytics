@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { User, UserRole } from '../types';
 import { indexedDBStorage } from '../services/indexedDBStorage';
-import { resetUserData } from './useAppStore';
+import { resetUserData, useAppStore } from './useAppStore';
 
 // ── User Data Isolation ──────────────────────────────────────────
 const APP_STORAGE_KEY = 'QuickInsight-storage-v4';
@@ -193,12 +193,17 @@ export const useAuthStore = create<AuthState>()(
                         users: state.users.map(u => u.id === user.id ? { ...u, passwordHash: secureHash(password) } : u)
                     }));
                 }
-                // ── User Data Isolation: restore this user's data ──
-                saveUserAppData(get().currentUser?.id || '__anonymous__'); // Save previous user's data
-                restoreUserAppData(user.id);
-                set({ currentUser: user, isAuthenticated: true });
-                // Force page reload to rehydrate Zustand from the restored data
+                // ── User Data Isolation ──
+                // 1. Save previous user's app data
+                saveUserAppData(get().currentUser?.id || '__anonymous__');
+                // 2. Clear in-memory app state + localStorage
                 resetUserData();
+                // 3. Restore new user's data to localStorage
+                restoreUserAppData(user.id);
+                // 4. Set auth state
+                set({ currentUser: user, isAuthenticated: true });
+                // 5. Rehydrate app store from restored localStorage
+                useAppStore.persist.rehydrate();
                 return { success: true };
             },
 
@@ -206,8 +211,9 @@ export const useAuthStore = create<AuthState>()(
                 const userId = get().currentUser?.id;
                 if (userId) {
                     saveUserAppData(userId);
-                    clearSharedAppData();
                 }
+                resetUserData();
+                clearSharedAppData();
                 set({ currentUser: null, isAuthenticated: false });
             },
 
@@ -222,11 +228,10 @@ export const useAuthStore = create<AuthState>()(
                     avatar: '#94a3b8',
                 };
                 lastActivityTime = Date.now();
-                // Save previous user's data, clear for guest
                 saveUserAppData(get().currentUser?.id || '__anonymous__');
+                resetUserData();
                 clearSharedAppData();
                 set({ currentUser: guestUser, isAuthenticated: true });
-                resetUserData();
             },
 
             register: (email: string, name: string, password: string) => {
@@ -248,11 +253,10 @@ export const useAuthStore = create<AuthState>()(
                     avatar: AVATAR_COLORS[state.users.length % AVATAR_COLORS.length],
                 };
                 lastActivityTime = Date.now();
-                // Save previous user's data, clear for new user
                 saveUserAppData(get().currentUser?.id || '__anonymous__');
+                resetUserData();
                 clearSharedAppData();
                 set({ users: [...state.users, newUser], currentUser: newUser, isAuthenticated: true });
-                resetUserData();
                 return { success: true };
             },
 
