@@ -526,7 +526,68 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
                                   )}
                                 </div>
                               </div>
-                              <p className="text-sm text-slate-600 mt-1 leading-relaxed">{entry.details}</p>
+                              {/* Render log details — Transform Plans get a clean table */}
+                              {entry.step === 'Transform Plans' ? (
+                                <div className="mt-2">
+                                  <p className="text-xs text-slate-500 mb-2">Each column gets a series of cleaning steps applied automatically:</p>
+                                  <div className="overflow-auto max-h-64 rounded-lg border border-slate-200 bg-white">
+                                    <table className="w-full text-[11px]">
+                                      <thead className="bg-slate-50 sticky top-0">
+                                        <tr>
+                                          <th className="px-3 py-2 text-left font-bold text-slate-700 uppercase tracking-wider border-b border-slate-200">Column</th>
+                                          <th className="px-3 py-2 text-left font-bold text-indigo-600 uppercase tracking-wider border-b border-slate-200">Type</th>
+                                          <th className="px-3 py-2 text-left font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">Cleaning Steps</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {entry.details.split('\n').filter(line => line.includes(':')).slice(1).map((line, li) => {
+                                          const match = line.match(/^(.+?)\s*\((\w+)\):\s*(.+)$/);
+                                          if (!match) return null;
+                                          const [, colName, colType, stepsRaw] = match;
+                                          const STEP_LABELS: Record<string, { label: string; icon: string }> = {
+                                            'TITLE_CASE': { label: 'Standardize text casing', icon: '🔤' },
+                                            'SYNONYM_MAP': { label: 'Normalize category names', icon: '🔄' },
+                                            'IMPUTE_UNKNOWN': { label: 'Fill blanks with "Unknown"', icon: '🔲' },
+                                            'PARSE_NUMBER': { label: 'Convert to number', icon: '🔢' },
+                                            'IMPUTE_NULL': { label: 'Handle missing values', icon: '⬜' },
+                                            'REMOVE_CURRENCY': { label: 'Remove currency symbols ($, €)', icon: '💲' },
+                                            'REMOVE_PERCENTAGE': { label: 'Remove % symbols', icon: '📊' },
+                                            'CAST_ID': { label: 'Clean ID format', icon: '🔑' },
+                                            'NORMALIZE_BOOLEAN': { label: 'Standardize yes/no values', icon: '✅' },
+                                            'WORD_TO_NUMBER': { label: 'Convert text to numbers', icon: '🔡' },
+                                          };
+                                          const steps = stepsRaw.split('→').map(s => s.trim());
+                                          return (
+                                            <tr key={li} className="hover:bg-slate-50/50">
+                                              <td className="px-3 py-1.5 font-mono font-medium text-slate-800 whitespace-nowrap">{colName.trim()}</td>
+                                              <td className="px-3 py-1.5">
+                                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${getTypeColor(colType)}`}>{colType}</span>
+                                              </td>
+                                              <td className="px-3 py-1.5">
+                                                <div className="flex flex-wrap gap-1">
+                                                  {steps.map((step, si) => {
+                                                    const dateMatch = step.match(/^PARSE_DATE\((.+)\)$/);
+                                                    const info = dateMatch
+                                                      ? { label: `Parse date (${dateMatch[1]})`, icon: '📅' }
+                                                      : STEP_LABELS[step] || { label: step, icon: '⚙️' };
+                                                    return (
+                                                      <span key={si} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] border border-indigo-100" title={step}>
+                                                        <span>{info.icon}</span> {info.label}
+                                                      </span>
+                                                    );
+                                                  })}
+                                                </div>
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              ) : (
+                                <p className="text-sm text-slate-600 mt-1 leading-relaxed whitespace-pre-wrap">{entry.details}</p>
+                              )}
 
                               {/* Manual Mode: Approval Buttons */}
                               {etlMode === 'manual' && entry.status === 'applied' && (
