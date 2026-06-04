@@ -392,6 +392,12 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                     className="flex-1 bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all"
                                 />
                             </div>
+                            <p className="text-[10px] text-gray-500 mt-1.5 leading-relaxed">
+                                This tells the system the <span className="text-gray-400 font-medium">level of detail</span> in your data.
+                                For example, if each row is an <span className="text-violet-400">Order</span>, metrics like Sales will be summed <em>per order</em>.
+                                If each row is a <span className="text-violet-400">Line Item</span>, the same Sales metric aggregates at a finer level.
+                                Getting this right ensures accurate totals and averages.
+                            </p>
                             <div className="flex flex-wrap gap-1.5 mt-2">
                                 {grainOptions.map(g => (
                                     <button
