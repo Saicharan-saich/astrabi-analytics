@@ -71,7 +71,9 @@ export async function loadAllDatasetsFromDB(userId?: string): Promise<any[]> {
 
                 // Strict filter: only show datasets owned by this user
                 if (userId) {
+                    console.log(`[IndexedDB] Filter: userId=${userId}, total=${results.length}, owners:`, results.map((ds: any) => ({ name: ds.name, ownerId: ds.ownerId })));
                     results = results.filter((ds: any) => ds.ownerId === userId);
+                    console.log(`[IndexedDB] After filter: ${results.length} datasets for user ${userId}`);
                 }
                 resolve(results);
             };

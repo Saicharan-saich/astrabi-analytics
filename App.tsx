@@ -244,16 +244,20 @@ function App() {
   useEffect(() => {
     const userId = currentUser?.id;
     if (!userId) return; // Don't load until authenticated
+
+    // ALWAYS clear datasets first — prevents cross-user data leakage
+    const store = useAppStore.getState();
+    if (store.datasets.length > 0 || store.dataset) {
+      console.log(`[App] Clearing ${store.datasets.length} stale datasets for user switch`);
+      useAppStore.setState({ datasets: [], dataset: null });
+    }
+
     loadAllDatasetsFromDB(userId).then(saved => {
+      console.log(`[App] Loaded ${saved.length} datasets from IndexedDB for user: ${userId}`);
       if (saved.length > 0) {
-        const store = useAppStore.getState();
-        // Clear any stale datasets from previous user and hydrate
-        if (store.datasets.length === 0) {
-          saved.forEach(ds => store.setDataset(ds));
-          // Set the last dataset as active if none active
-          if (!store.dataset) {
-            store.setDataset(saved[saved.length - 1]);
-          }
+        saved.forEach(ds => useAppStore.getState().setDataset(ds));
+        if (!useAppStore.getState().dataset) {
+          useAppStore.getState().setDataset(saved[saved.length - 1]);
         }
       }
     });
