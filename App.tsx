@@ -47,9 +47,11 @@ import { SmartQuestionsView } from './components/SmartQuestionsView';
 import { PinToDashboardModal } from './components/PinToDashboardModal';
 import ReconnectModal from './components/ReconnectModal';
 import { AlertsView } from './components/AlertsView';
+import { UserInsightsView } from './components/UserInsightsView';
 import { NotificationCenter } from './components/NotificationCenter';
 import { useAlertStore } from './store/useAlertStore';
 import { evaluateAllAlerts } from './services/alertEngine';
+import { useActivityStore } from './store/useActivityStore';
 
 // ── SESSION CREDENTIAL CACHE (auto-reconnect without re-entering password) ──
 // Stored in sessionStorage: survives page refresh but cleared on tab close or logout.
@@ -207,6 +209,38 @@ function App() {
   const [smartQuestionQuery, setSmartQuestionQuery] = useState<string | null>(null);
   const [pendingPinItem, setPendingPinItem] = useState<any>(null);
 
+  // ── Activity Tracking ──
+  const { trackActivity } = useActivityStore();
+  const prevAuthRef = useRef(false);
+
+  // Track login events
+  useEffect(() => {
+    if (isAuthenticated && currentUser && !prevAuthRef.current) {
+      trackActivity({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userEmail: currentUser.email,
+        userRole: currentUser.role,
+        action: 'login',
+      });
+    }
+    prevAuthRef.current = isAuthenticated;
+  }, [isAuthenticated, currentUser]);
+
+  // Track tab visits
+  useEffect(() => {
+    if (isAuthenticated && currentUser && activeTab) {
+      trackActivity({
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userEmail: currentUser.email,
+        userRole: currentUser.role,
+        action: 'tab_visit',
+        details: activeTab,
+      });
+    }
+  }, [activeTab]);
+
   // ── Visual Preview state (full-page AI SQL result view) ──
   const [visualPreviewResult, setVisualPreviewResult] = useState<AnalysisResult | null>(null);
   const [visualPreviewPipeline, setVisualPreviewPipeline] = useState<any>(null);
@@ -341,6 +375,18 @@ function App() {
         saveDatasetToDB(newDataset);
         setProcessing(false);
         worker.terminate();
+
+        // Track upload activity
+        if (currentUser) {
+          trackActivity({
+            userId: currentUser.id,
+            userName: currentUser.name,
+            userEmail: currentUser.email,
+            userRole: currentUser.role,
+            action: 'upload_dataset',
+            details: file.name,
+          });
+        }
 
         // ── AI SEMANTIC PROFILING (async, non-blocking) ──
         setIsAIProfiling(true);
@@ -1501,6 +1547,10 @@ function App() {
 
                 <div className={`h-full w-full ${activeTab === Tab.ALERTS ? '' : 'hidden'}`}>
                   <AlertsView dataset={dataset} />
+                </div>
+
+                <div className={`h-full w-full ${activeTab === Tab.USER_INSIGHTS ? '' : 'hidden'}`}>
+                  <UserInsightsView />
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.SMART_QUESTIONS ? '' : 'hidden'}`}>

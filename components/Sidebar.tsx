@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb, Bell } from 'lucide-react';
+import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb, Bell, Activity } from 'lucide-react';
 import { Tab, UserRole } from '../types';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { useAlertStore } from '../store/useAlertStore';
@@ -94,6 +94,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     const viewSection = [
         { id: Tab.DASHBOARD, label: 'Dashboard', icon: Layout, tooltip: 'View all your pinned analyses in a dashboard layout with drag-and-drop arrangement.' },
         { id: Tab.ALERTS, label: 'Monitoring', icon: Bell, badge: unreadCount, tooltip: 'Create business rules to monitor metrics. Get alerted when thresholds are crossed or trends change.' },
+        ...(userRole === UserRole.ADMIN ? [{ id: Tab.USER_INSIGHTS, label: 'User Insights', icon: Activity, requiresManageUsers: true, tooltip: 'View usage analytics per user — logins, queries, uploads, and engagement scores. Admin only.' }] : []),
     ];
 
     const filterItems = (items: any[]) => items.filter(item => {
