@@ -106,6 +106,7 @@ export const AlertRuleWizard: React.FC<Props> = ({ dataset, editingRule, onSave,
   const cardCls = `rounded-2xl border p-5 ${isDark ? 'bg-[#1a1f2e] border-white/[0.06]' : 'bg-white border-gray-200'}`;
   const labelCls = `text-[10px] font-semibold uppercase tracking-wider mb-2 block ${isDark ? 'text-gray-500' : 'text-gray-400'}`;
   const selectCls = `w-full rounded-xl px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-violet-500/40 transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`;
+  const optionStyle = { color: '#0f172a', backgroundColor: '#ffffff' };
   const btnPrimary = 'px-5 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-lg shadow-violet-500/20 transition-all disabled:opacity-40';
   const btnSecondary = `px-4 py-2.5 rounded-xl text-sm font-medium border transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-gray-300 hover:bg-white/[0.08]' : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100'}`;
 
@@ -138,8 +139,8 @@ export const AlertRuleWizard: React.FC<Props> = ({ dataset, editingRule, onSave,
           <div>
             <label className={labelCls}>Metric</label>
             <select value={metric} onChange={e => setMetric(e.target.value)} className={selectCls}>
-              <optgroup label="Measures">{metrics.map(m => <option key={m} value={m}>{titleCase(m)}</option>)}</optgroup>
-              <optgroup label="Countable">{dims.map(d => <option key={d} value={d}>{titleCase(d)}</option>)}</optgroup>
+              <optgroup label="Measures" style={optionStyle}>{metrics.map(m => <option key={m} value={m} style={optionStyle}>{titleCase(m)}</option>)}</optgroup>
+              <optgroup label="Countable" style={optionStyle}>{dims.map(d => <option key={d} value={d} style={optionStyle}>{titleCase(d)}</option>)}</optgroup>
             </select>
           </div>
           <div>
@@ -167,12 +168,12 @@ export const AlertRuleWizard: React.FC<Props> = ({ dataset, editingRule, onSave,
           {filters.map((f, i) => (
             <div key={i} className="flex items-center gap-2">
               <select value={f.column} onChange={e => { const nf = [...filters]; nf[i] = { ...f, column: e.target.value }; setFilters(nf); }} className={`${selectCls} flex-1`}>
-                {dims.map(d => <option key={d} value={d}>{titleCase(d)}</option>)}
+                {dims.map(d => <option key={d} value={d} style={optionStyle}>{titleCase(d)}</option>)}
               </select>
               <span className={`text-xs ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>=</span>
               <select value={f.value} onChange={e => { const nf = [...filters]; nf[i] = { ...f, value: e.target.value }; setFilters(nf); }} className={`${selectCls} flex-1`}>
-                <option value="">Any</option>
-                {getColumnValues(f.column).map(v => <option key={v} value={v}>{v}</option>)}
+                <option value="" style={optionStyle}>Any</option>
+                {getColumnValues(f.column).map(v => <option key={v} value={v} style={optionStyle}>{v}</option>)}
               </select>
               <button onClick={() => setFilters(filters.filter((_, idx) => idx !== i))} className="p-1.5 text-gray-500 hover:text-red-400"><X className="w-4 h-4" /></button>
             </div>
@@ -227,7 +228,7 @@ export const AlertRuleWizard: React.FC<Props> = ({ dataset, editingRule, onSave,
               <div>
                 <label className={labelCls}>Operator</label>
                 <select value={operator} onChange={e => setOperator(e.target.value)} className={selectCls}>
-                  {OPERATORS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  {OPERATORS.map(o => <option key={o.value} value={o.value} style={optionStyle}>{o.label}</option>)}
                 </select>
               </div>
               <div>
@@ -261,10 +262,10 @@ export const AlertRuleWizard: React.FC<Props> = ({ dataset, editingRule, onSave,
               <div>
                 <label className={labelCls}>Compared to</label>
                 <select value={trendPeriod} onChange={e => setTrendPeriod(e.target.value as typeof trendPeriod)} className={selectCls}>
-                  <option value="previous_day">Previous Day</option>
-                  <option value="previous_week">Previous Week</option>
-                  <option value="previous_month">Previous Month</option>
-                  <option value="previous_quarter">Previous Quarter</option>
+                  <option value="previous_day" style={optionStyle}>Previous Day</option>
+                  <option value="previous_week" style={optionStyle}>Previous Week</option>
+                  <option value="previous_month" style={optionStyle}>Previous Month</option>
+                  <option value="previous_quarter" style={optionStyle}>Previous Quarter</option>
                 </select>
               </div>
             </div>
