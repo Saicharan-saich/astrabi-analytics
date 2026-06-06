@@ -73,6 +73,18 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
     dataset?.columns.filter(c => c.type === ColumnType.METRIC) || [],
   [dataset?.columns]);
 
+  // All columns grouped by type for dropdowns
+  const colsByType = useMemo(() => {
+    if (!dataset) return { metrics: [], dimensions: [], ids: [], dates: [], booleans: [] };
+    return {
+      metrics: dataset.columns.filter(c => c.type === ColumnType.METRIC),
+      dimensions: dataset.columns.filter(c => c.type === ColumnType.DIMENSION),
+      ids: dataset.columns.filter(c => c.type === ColumnType.ID),
+      dates: dataset.columns.filter(c => c.type === ColumnType.DATE),
+      booleans: dataset.columns.filter(c => c.type === ColumnType.BOOLEAN),
+    };
+  }, [dataset?.columns]);
+
   // ── Mapping Flow ──
   const startMapping = (t: MetricTemplate) => {
     const auto = autoSuggestMappings(t, dataset?.columns.map(c => ({ name: c.name, type: c.type, semanticRole: (c as any).semanticRole, label: (c as any).label })) || []);
@@ -95,11 +107,6 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
       if (!columns[inp.key]) { setMapError(`"${inp.label}" is not mapped`); return; }
       const col = dataset.columns.find(c => c.name === columns[inp.key]);
       if (!col) { setMapError(`Column "${columns[inp.key]}" not found`); return; }
-      const idRoles = ['identifier', 'id', 'primary_key', 'foreign_key'];
-      if (col.type === ColumnType.ID || idRoles.includes(String((col as any).semanticRole || '').toLowerCase())) {
-        setMapError(`"${col.name}" is an identifier — cannot use in math`);
-        return;
-      }
     }
 
     // Compute values
@@ -312,8 +319,11 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
                     <span className="text-xs font-bold w-28 shrink-0 text-right text-gray-600 dark:text-slate-300">{inp.label}</span>
                     <span className="text-gray-400">→</span>
                     <select value={mapping.columns[inp.key] || ''} onChange={e => updateMapping(inp.key, e.target.value)} className={`flex-1 ${inputCls}`}>
-                      <option value="">Select column...</option>
-                      {numericCols.map(c => <option key={c.name} value={c.name}>{(c as any).label || c.name}</option>)}
+                      <option value="" style={{ color: '#0f172a', backgroundColor: '#fff' }}>Select column...</option>
+                      {colsByType.metrics.length > 0 && <optgroup label="📊 Measures" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.metrics.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
+                      {colsByType.dimensions.length > 0 && <optgroup label="📁 Dimensions" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.dimensions.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
+                      {colsByType.ids.length > 0 && <optgroup label="🔑 IDs" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.ids.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
+                      {colsByType.dates.length > 0 && <optgroup label="📅 Dates" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.dates.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
                     </select>
                   </div>
                 ))}
@@ -376,8 +386,11 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
               {terms.map((term, idx) => (
                 <div key={idx} className="flex items-center gap-2 mb-2">
                   <select value={term.column} onChange={e => updateTerm(idx, 'column', e.target.value)} className={`flex-1 ${inputCls}`}>
-                    <option value="">Select column...</option>
-                    {dataset.columns.map(c => <option key={c.name} value={c.name}>{(c as any).label || c.name}</option>)}
+                    <option value="" style={{ color: '#0f172a', backgroundColor: '#fff' }}>Select column...</option>
+                    {colsByType.metrics.length > 0 && <optgroup label="📊 Measures" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.metrics.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
+                    {colsByType.dimensions.length > 0 && <optgroup label="📁 Dimensions" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.dimensions.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
+                    {colsByType.ids.length > 0 && <optgroup label="🔑 IDs" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.ids.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
+                    {colsByType.dates.length > 0 && <optgroup label="📅 Dates" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.dates.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
                   </select>
                   {idx < terms.length - 1 && (
                     <select value={term.operator || 'multiply'} onChange={e => updateTerm(idx, 'operator', e.target.value)} className={`w-20 shrink-0 text-center font-bold ${inputCls}`}>

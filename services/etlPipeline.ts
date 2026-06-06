@@ -144,6 +144,27 @@ const CATEGORY_SYNONYMS: Record<string, Record<string, string>> = {
         'Se': 'Southeast',
         'Sw': 'Southwest',
     },
+    // Gender / sex synonyms (applied after Title Case, so "m" becomes "M")
+    gender: {
+        'M': 'Male', 'm': 'Male',
+        'F': 'Female', 'f': 'Female',
+        'Male ': 'Male', 'Female ': 'Female',
+        'Man': 'Male', 'Woman': 'Female',
+        'Boy': 'Male', 'Girl': 'Female',
+    },
+    sex: {
+        'M': 'Male', 'm': 'Male',
+        'F': 'Female', 'f': 'Female',
+        'Man': 'Male', 'Woman': 'Female',
+    },
+    // Status synonyms
+    status: {
+        'Active': 'Active', 'Inactive': 'Inactive',
+        'Y': 'Active', 'N': 'Inactive',
+        'Yes': 'Active', 'No': 'Inactive',
+        'Enabled': 'Active', 'Disabled': 'Inactive',
+        'Open': 'Active', 'Closed': 'Inactive',
+    },
 };
 const CURRENCY_STRIP_REGEX = /[$€£¥₹₩₫₽¢,\s]/g;
 
@@ -846,14 +867,25 @@ function layer4_rulePlanner(
             steps.push({ name: 'IMPUTE_UNKNOWN', fn: (v: any) => (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) ? 'Unknown' : v });
         } else if (type === ColumnType.DIMENSION) {
             steps.push({ name: 'TITLE_CASE', fn: (v: any) => typeof v === 'string' && v.trim() !== '' ? toTitleCase(v) : v });
-            // Add synonym normalization step
+            // Add synonym normalization step (case-insensitive column + value matching)
             steps.push({
                 name: 'SYNONYM_MAP', fn: (v: any) => {
                     if (typeof v !== 'string' || v.trim() === '') return v;
-                    const colSynonyms = CATEGORY_SYNONYMS[p.name];
-                    if (colSynonyms && colSynonyms[v]) return colSynonyms[v];
+                    const val = v.trim();
+                    // 1. Match by exact column name (case-insensitive)
+                    const colKey = Object.keys(CATEGORY_SYNONYMS).find(k => k.toLowerCase() === p.name.toLowerCase());
+                    if (colKey) {
+                        const group = CATEGORY_SYNONYMS[colKey];
+                        // Try exact match first, then case-insensitive
+                        if (group[val]) return group[val];
+                        const valKey = Object.keys(group).find(k => k.toLowerCase().trim() === val.toLowerCase());
+                        if (valKey) return group[valKey];
+                    }
+                    // 2. Fallback: scan all groups (case-insensitive value match)
                     for (const group of Object.values(CATEGORY_SYNONYMS)) {
-                        if (group[v]) return group[v];
+                        if (group[val]) return group[val];
+                        const valKey = Object.keys(group).find(k => k.toLowerCase().trim() === val.toLowerCase());
+                        if (valKey) return group[valKey];
                     }
                     return v;
                 }
