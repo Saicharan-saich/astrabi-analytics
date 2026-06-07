@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { UserRole } from '../types';
-import { UserPlus, Trash2, Shield, Edit2, X, Check, Users, Crown, Eye, Pencil, AlertCircle } from 'lucide-react';
+import { UserPlus, Trash2, Shield, Edit2, X, Check, Users, Crown, Eye, Pencil, AlertCircle, LogOut, Loader2 } from 'lucide-react';
 
 interface UserManagementProps {
     onClose: () => void;
@@ -18,6 +18,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
     const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
 
     const [isAdding, setIsAdding] = useState(false);
+    const [logoutAllLoading, setLogoutAllLoading] = useState(false);
+    const [logoutUserId, setLogoutUserId] = useState<string | null>(null);
+    const [logoutSuccess, setLogoutSuccess] = useState('');
 
     const API_BASE = import.meta.env.VITE_API_URL?.replace(/\/api$/, '') || 'http://localhost:5002';
 
@@ -111,6 +114,32 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
             setError(result.error || 'Cannot remove user');
             setTimeout(() => setError(''), 3000);
         }
+    };
+
+    const handleLogoutAllDevices = async (targetUserId?: string) => {
+        if (targetUserId) setLogoutUserId(targetUserId);
+        else setLogoutAllLoading(true);
+        setError('');
+        setLogoutSuccess('');
+        try {
+            const token = localStorage.getItem('qi_token');
+            const res = await fetch(`${API_BASE}/api/auth/logout-all-devices`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+                body: JSON.stringify(targetUserId ? { targetUserId } : {}),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                setError(data.error || 'Failed to logout from all devices');
+            } else {
+                setLogoutSuccess(data.message || 'Sessions revoked successfully');
+                setTimeout(() => setLogoutSuccess(''), 4000);
+            }
+        } catch {
+            setError('Could not connect to server');
+        }
+        setLogoutUserId(null);
+        setLogoutAllLoading(false);
     };
 
     const getRoleIcon = (role: UserRole) => {
@@ -219,7 +248,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                                                 {ROLE_PERMISSIONS[user.role].label}
                                             </span>
 
-                                            {/* Edit/Delete Buttons (not for self) */}
+                                            {/* Edit/Delete/Revoke Buttons (not for self) */}
                                             {user.id !== currentUser?.id && (
                                                 <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <button
@@ -228,6 +257,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                                                         title="Change Role"
                                                     >
                                                         <Edit2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <button
+                                                        onClick={() => handleLogoutAllDevices(user.id)}
+                                                        disabled={logoutUserId === user.id}
+                                                        className="p-1.5 text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors disabled:opacity-50"
+                                                        title="Revoke All Sessions"
+                                                    >
+                                                        {logoutUserId === user.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LogOut className="w-3.5 h-3.5" />}
                                                     </button>
                                                     <button
                                                         onClick={() => handleRemove(user.id)}
@@ -322,14 +359,30 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                         </form>
                     </div>
                 ) : (
-                    <div className="border-t border-white/5 p-4 shrink-0">
-                        <button
-                            onClick={() => setShowAddForm(true)}
-                            className="w-full py-3 border-2 border-dashed border-white/10 hover:border-indigo-500/30 rounded-xl text-slate-400 hover:text-indigo-400 text-sm font-bold transition-all flex items-center justify-center gap-2"
-                        >
-                            <UserPlus className="w-4 h-4" />
-                            Add New User
-                        </button>
+                    <div className="border-t border-white/5 p-4 shrink-0 space-y-3">
+                        {logoutSuccess && (
+                            <div className="p-2.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-300 text-xs flex items-center gap-2">
+                                <Check className="w-3.5 h-3.5" /> {logoutSuccess}
+                            </div>
+                        )}
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setShowAddForm(true)}
+                                className="flex-1 py-3 border-2 border-dashed border-white/10 hover:border-indigo-500/30 rounded-xl text-slate-400 hover:text-indigo-400 text-sm font-bold transition-all flex items-center justify-center gap-2"
+                            >
+                                <UserPlus className="w-4 h-4" />
+                                Add New User
+                            </button>
+                            <button
+                                onClick={() => handleLogoutAllDevices()}
+                                disabled={logoutAllLoading}
+                                className="py-3 px-5 border-2 border-dashed border-red-500/20 hover:border-red-500/40 rounded-xl text-red-400 hover:text-red-300 text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                                title="Invalidate all active sessions for all users"
+                            >
+                                {logoutAllLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogOut className="w-4 h-4" />}
+                                Logout All Devices
+                            </button>
+                        </div>
                     </div>
                 )}
 

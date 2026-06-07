@@ -75,9 +75,14 @@ async function initAuthDatabase() {
                 name TEXT NOT NULL,
                 role TEXT NOT NULL DEFAULT 'viewer',
                 password_hash TEXT NOT NULL,
+                session_version INTEGER NOT NULL DEFAULT 1,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
+        // Add session_version column if it doesn't exist (migration for existing DBs)
+        try {
+            await authPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1`);
+        } catch { /* column already exists */ }
         console.log('[Auth] PostgreSQL users table ready');
 
         // Always ensure admin user exists (upsert — won't overwrite if already present)
@@ -244,7 +249,7 @@ app.post('/api/auth/login', async (req, res) => {
         }
 
         const token = jwt.sign(
-            { userId: user.id, email: user.email, role: user.role },
+            { userId: user.id, email: user.email, role: user.role, sv: user.session_version || 1 },
             JWT_SECRET,
             { expiresIn: '24h' }
         );
@@ -309,8 +314,8 @@ app.post('/api/auth/change-password', async (req, res) => {
     }
 });
 
-// Verify token
-app.get('/api/auth/verify', (req, res) => {
+// Verify token (checks session_version for logout-all support)
+app.get('/api/auth/verify', async (req, res) => {
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
         return res.status(401).json({ success: false, error: 'No token provided' });
@@ -319,9 +324,63 @@ app.get('/api/auth/verify', (req, res) => {
     try {
         const token = authHeader.split(' ')[1];
         const decoded = jwt.verify(token, JWT_SECRET);
+
+        // Check session_version against DB (if DB available)
+        if (authPool && decoded.sv !== undefined) {
+            try {
+                const { rows } = await authPool.query('SELECT session_version FROM users WHERE id = $1', [decoded.userId]);
+                if (rows.length > 0 && rows[0].session_version !== decoded.sv) {
+                    return res.status(401).json({ success: false, error: 'Session invalidated. Please log in again.', code: 'SESSION_REVOKED' });
+                }
+            } catch { /* DB check failed, allow through */ }
+        }
+
         res.json({ success: true, user: decoded });
     } catch {
         res.status(401).json({ success: false, error: 'Invalid or expired token' });
+    }
+});
+
+// ── Admin: Logout user from all devices ──
+app.post('/api/auth/logout-all-devices', async (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ success: false, error: 'Not authenticated' });
+        }
+
+        let decoded;
+        try {
+            decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+        } catch {
+            return res.status(401).json({ success: false, error: 'Invalid or expired token' });
+        }
+
+        // Only admins can force-logout others
+        if (decoded.role !== 'admin') {
+            return res.status(403).json({ success: false, error: 'Admin access required' });
+        }
+
+        if (!authPool) {
+            return res.status(503).json({ success: false, error: 'Database connection not available' });
+        }
+
+        const { targetUserId } = req.body;
+
+        if (targetUserId) {
+            // Logout specific user
+            await authPool.query('UPDATE users SET session_version = session_version + 1 WHERE id = $1', [targetUserId]);
+            console.log(`[Auth] Admin ${decoded.email} revoked all sessions for user ${targetUserId}`);
+            res.json({ success: true, message: 'User logged out from all devices' });
+        } else {
+            // Logout ALL users (including admin — they'll need to re-login)
+            await authPool.query('UPDATE users SET session_version = session_version + 1');
+            console.log(`[Auth] Admin ${decoded.email} revoked ALL user sessions`);
+            res.json({ success: true, message: 'All users logged out from all devices' });
+        }
+    } catch (error) {
+        console.error('Logout all devices error:', error);
+        res.status(500).json({ success: false, error: 'Failed to logout from all devices' });
     }
 });
 
