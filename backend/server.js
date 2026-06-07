@@ -326,11 +326,14 @@ app.get('/api/auth/verify', async (req, res) => {
         const decoded = jwt.verify(token, JWT_SECRET);
 
         // Check session_version against DB (if DB available)
-        if (authPool && decoded.sv !== undefined) {
+        if (authPool) {
             try {
                 const { rows } = await authPool.query('SELECT session_version FROM users WHERE id = $1', [decoded.userId]);
-                if (rows.length > 0 && rows[0].session_version !== decoded.sv) {
-                    return res.status(401).json({ success: false, error: 'Session invalidated. Please log in again.', code: 'SESSION_REVOKED' });
+                if (rows.length > 0) {
+                    // Reject legacy tokens (no sv field) — they were issued before session versioning
+                    if (decoded.sv === undefined || rows[0].session_version !== decoded.sv) {
+                        return res.status(401).json({ success: false, error: 'Session invalidated. Please log in again.', code: 'SESSION_REVOKED' });
+                    }
                 }
             } catch { /* DB check failed, allow through */ }
         }
