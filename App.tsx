@@ -241,6 +241,37 @@ function App() {
     }
   }, [activeTab]);
 
+  // ── Session Heartbeat (validates token against backend every 30s) ──
+  // If admin revokes sessions via "Logout All Devices", this detects it and auto-logouts.
+  const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5002/api';
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    const checkSession = async () => {
+      const token = localStorage.getItem('qi_token');
+      if (!token) return;
+      try {
+        const res = await fetch(`${API_BASE}/auth/verify`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (res.status === 401) {
+            console.warn('[Session] Token revoked or expired — logging out');
+            logout();
+            // Force reload to show login page
+            window.location.reload();
+          }
+        }
+      } catch {
+        // Network error — skip (don't logout on connectivity issues)
+      }
+    };
+    // Check immediately on mount, then every 30 seconds
+    checkSession();
+    const interval = setInterval(checkSession, 30_000);
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
+
   // ── Visual Preview state (full-page AI SQL result view) ──
   const [visualPreviewResult, setVisualPreviewResult] = useState<AnalysisResult | null>(null);
   const [visualPreviewPipeline, setVisualPreviewPipeline] = useState<any>(null);

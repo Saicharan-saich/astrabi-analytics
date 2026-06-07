@@ -214,6 +214,9 @@ export const useAuthStore = create<AuthState>()(
                 }
                 resetUserData();
                 clearSharedAppData();
+                // Clear JWT token and session credentials
+                localStorage.removeItem('qi_token');
+                try { sessionStorage.removeItem('qi_session_creds'); } catch {}
                 set({ currentUser: null, isAuthenticated: false });
             },
 
