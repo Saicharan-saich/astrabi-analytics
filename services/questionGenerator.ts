@@ -142,7 +142,13 @@ RULES:
 - Pick the TOP 6 questions as highest priority (90-100)
 - icon: use relevant emoji (📈 trend, 📊 comparison, 🏆 ranking, 🔢 distribution, 📋 overview, 🔗 correlation)
 - Questions must be self-contained and executable as natural language queries
-- Do NOT generate generic questions — make them SPECIFIC to the columns and domain`;
+- Do NOT generate generic questions — make them SPECIFIC to the columns and domain
+- NEVER use ID columns (patient_id, order_id, room_number, etc.) as metrics — these are identifiers, not measurable values
+- NEVER ask "how has [ID column] changed over time" — IDs don't trend, they identify records
+- NEVER ask "compare [ID column] across [dimension]" — IDs are not meaningful to aggregate
+- Only use ACTUAL business metrics (revenue, cost, billing_amount, quantity, age, duration, etc.) in trend/comparison/ranking questions
+- Dimensions for grouping should be categorical (gender, region, department, category, status) — NOT IDs or dates
+- If a column name contains 'id', 'key', 'code', 'number', 'no', 'num' and it looks like an identifier, EXCLUDE it from metrics`;
 }
 
 /**
@@ -229,12 +235,41 @@ function generateFallbackQuestions(dataset: Dataset): SmartQuestion[] {
     const semantics = dataset.domainProfile?.columnSemantics || {};
     const model = dataset.semanticModel;
 
-    // Gather ALL metrics and dimensions (from semanticModel + domainProfile)
+    // ── Identifier detection: columns that should NEVER be treated as metrics ──
+    const ID_PATTERNS = /^(id|_id|patient_id|user_id|order_id|record_id|row_id|transaction_id|case_id|room_number|room_no|room_num|bed_number|serial|serial_no|index|row_num)/i;
+    const ID_SUFFIX_PATTERNS = /_id$|_key$|_code$|_no$|_num$/i;
+
+    function isIdentifierColumn(col: ColumnDefinition): boolean {
+        // Explicitly typed as ID
+        if (col.type === ColumnType.ID) return true;
+        // Semantic role is identifier
+        const sem = semantics[col.name];
+        if (sem?.role === 'ID' || sem?.semanticRole === 'identifier' || sem?.semanticRole === 'primary_key' || sem?.semanticRole === 'foreign_key') return true;
+        // Semantic model marks it
+        const smMeasure = model?.measures?.find(m => m.column === col.name);
+        if (smMeasure?.semanticRole === 'identifier') return true;
+        // Name-based heuristic
+        const name = col.name.toLowerCase();
+        if (ID_PATTERNS.test(name)) return true;
+        if (ID_SUFFIX_PATTERNS.test(name)) return true;
+        // "Number" in name but only has integer-like unique values → likely an ID
+        if (/number|num|no\b/i.test(name) && col.type === ColumnType.METRIC) {
+            // Heuristic: if a "number" column has high cardinality relative to rows, it's an ID
+            const uniqueValues = new Set(dataset.rows?.slice(0, 200).map(r => r[col.name])).size;
+            if (uniqueValues > (dataset.rows?.slice(0, 200).length || 200) * 0.8) return true;
+        }
+        return false;
+    }
+
+    // Gather REAL metrics and dimensions (excluding identifiers)
     const metrics: { name: string; label: string; agg: string }[] = [];
     const dimensions: { name: string; label: string }[] = [];
     const dates: string[] = model?.dateColumns || [];
 
     for (const col of cols) {
+        // Skip identifiers entirely
+        if (isIdentifierColumn(col)) continue;
+
         const sem = semantics[col.name];
         const smMeasure = model?.measures?.find(m => m.column === col.name);
         const smDim = model?.dimensions?.find(d => d.column === col.name);
@@ -245,7 +280,7 @@ function generateFallbackQuestions(dataset: Dataset): SmartQuestion[] {
                 label: sem?.humanLabel || smMeasure?.label || humanize(col.name),
                 agg: sem?.aggregation || smMeasure?.aggregation || 'SUM',
             });
-        } else if (col.type === ColumnType.DIMENSION || sem?.role === 'DIMENSION' || smDim) {
+        } else if (col.type === ColumnType.DIMENSION || col.type === ColumnType.BOOLEAN || sem?.role === 'DIMENSION' || smDim) {
             dimensions.push({
                 name: col.name,
                 label: sem?.humanLabel || smDim?.label || humanize(col.name),
@@ -256,26 +291,28 @@ function generateFallbackQuestions(dataset: Dataset): SmartQuestion[] {
     }
 
     let priority = 95;
+    const domain = (dataset.domainProfile?.domain || '').toLowerCase();
 
-    // Overview
+    // ── Overview ──
     if (metrics.length > 0) {
         questions.push({
             id: 'fb_overview',
             question: `Give me an overall summary of key metrics`,
-            description: `Summary statistics for ${metrics.slice(0, 3).map(m => m.label).join(', ')}`,
+            description: `Summary statistics for ${metrics.slice(0, 4).map(m => m.label).join(', ')}`,
             category: 'overview',
             icon: '📋',
             priority: priority--,
         });
     }
 
-    // Trends (each metric × first date)
+    // ── Trends (each metric × first date) ──
     if (dates.length > 0) {
+        const dateLabel = humanize(dates[0]);
         for (const m of metrics.slice(0, 3)) {
             questions.push({
                 id: `fb_trend_${m.name}`,
                 question: `How has ${m.label} changed over time?`,
-                description: `${m.agg === 'AVG' ? 'Average' : 'Total'} ${m.label} trend over time`,
+                description: `${m.agg === 'AVG' ? 'Average' : 'Total'} ${m.label} trend by ${dateLabel}`,
                 category: 'trend',
                 icon: '📈',
                 priority: priority--,
@@ -283,13 +320,13 @@ function generateFallbackQuestions(dataset: Dataset): SmartQuestion[] {
         }
     }
 
-    // Comparisons (each metric × each dimension)
+    // ── Comparisons (metric × dimension — meaningful pairs) ──
     for (const m of metrics.slice(0, 3)) {
         for (const d of dimensions.slice(0, 3)) {
             questions.push({
                 id: `fb_comp_${m.name}_${d.name}`,
-                question: `Compare ${m.label} across ${d.label}`,
-                description: `Breakdown of ${m.label} by ${d.label}`,
+                question: `What is the ${m.agg === 'AVG' ? 'average' : 'total'} ${m.label} by ${d.label}?`,
+                description: `${m.label} broken down by ${d.label}`,
                 category: 'comparison',
                 icon: '📊',
                 priority: priority--,
@@ -297,13 +334,13 @@ function generateFallbackQuestions(dataset: Dataset): SmartQuestion[] {
         }
     }
 
-    // Rankings
+    // ── Rankings ──
     for (const m of metrics.slice(0, 2)) {
         for (const d of dimensions.slice(0, 2)) {
             questions.push({
                 id: `fb_rank_${m.name}_${d.name}`,
                 question: `Top 10 ${d.label} by ${m.label}`,
-                description: `Which ${d.label} have the highest ${m.label}`,
+                description: `Which ${d.label} values have the highest ${m.label}`,
                 category: 'ranking',
                 icon: '🏆',
                 priority: priority--,
@@ -311,14 +348,26 @@ function generateFallbackQuestions(dataset: Dataset): SmartQuestion[] {
         }
     }
 
-    // Distributions
-    for (const d of dimensions.slice(0, 3)) {
+    // ── Distributions ──
+    for (const d of dimensions.slice(0, 4)) {
         questions.push({
             id: `fb_dist_${d.name}`,
             question: `How are records distributed across ${d.label}?`,
             description: `Count of records per ${d.label} category`,
             category: 'distribution',
             icon: '🔢',
+            priority: priority--,
+        });
+    }
+
+    // ── Metric distribution (histogram-style) ──
+    for (const m of metrics.slice(0, 2)) {
+        questions.push({
+            id: `fb_metric_dist_${m.name}`,
+            question: `What is the distribution of ${m.label}?`,
+            description: `Histogram showing how ${m.label} values are spread`,
+            category: 'distribution',
+            icon: '📊',
             priority: priority--,
         });
     }
