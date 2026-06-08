@@ -177,9 +177,13 @@ async function callLLM(prompt: string): Promise<any> {
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
+        const token = localStorage.getItem('qi_token') || '';
         const response = await fetch(API_ENDPOINT, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+                'Content-Type': 'application/json',
+                ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
             body: JSON.stringify({ prompt }),
             signal: controller.signal,
         });

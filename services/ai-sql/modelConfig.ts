@@ -1,17 +1,23 @@
 /**
  * AI Model Configuration — Shared across all AI services
  *
- * Uses Google Gemini 2.5 Flash (paid) for best SQL generation quality
- * at minimal cost (~$0.0005 per query).
- *
- * $5 budget ≈ 10,000 queries.
+ * ALL AI requests are routed through the backend proxy (/api/llm/chat)
+ * which handles:
+ *   - API key security (never exposed to frontend)
+ *   - Per-user JWT authentication
+ *   - Daily quota enforcement
+ *   - Usage tracking in PostgreSQL
  */
 
-export const OPENROUTER_API_URL = 'https://openrouter.ai/api/v1/chat/completions';
-export const API_KEY = import.meta.env.VITE_OPENROUTER_API_KEY || '';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5002/api';
+export const BACKEND_LLM_URL = `${API_BASE}/llm/chat`;
+
+// Legacy exports kept for compatibility — NOT used for direct calls
+export const OPENROUTER_API_URL = BACKEND_LLM_URL;
+export const API_KEY = '__ROUTED_THROUGH_BACKEND__';
 
 /** The model to use for all AI requests */
-export const PRIMARY_MODEL = 'openai/gpt-4o-mini';
+export const PRIMARY_MODEL = 'google/gemini-2.0-flash-001';
 
 /** Default timeout for AI requests */
 export const DEFAULT_TIMEOUT_MS = 30000;
@@ -22,12 +28,18 @@ const RATE_LIMIT_RETRY_DELAY_MS = 2000;
 /** Max retries for 429 errors */
 const MAX_429_RETRIES = 3;
 
+/** Get JWT token for authenticated AI requests */
+function getAuthToken(): string {
+    return localStorage.getItem('qi_token') || '';
+}
+
 /**
- * Fetch from the AI model with retry logic.
+ * Fetch from the AI model via backend proxy with retry logic.
  *
- * 1. Send request to PRIMARY_MODEL
- * 2. If 429 (rate limited) → wait 2s and retry up to 3 times
- * 3. If any other error → throw clean user-facing message
+ * 1. Send request to backend proxy with JWT auth
+ * 2. Backend validates user, checks quota, then forwards to OpenRouter
+ * 3. If 429 (rate limited) → wait 2s and retry up to 3 times
+ * 4. If any other error → throw clean user-facing message
  */
 export async function fetchWithFallback(
     messages: Array<{ role: string; content: any }>,
@@ -38,8 +50,9 @@ export async function fetchWithFallback(
     }
 ): Promise<{ data: any; model: string }> {
 
-    if (!API_KEY) {
-        throw new Error('OpenRouter API key not configured. Set VITE_OPENROUTER_API_KEY in .env');
+    const token = getAuthToken();
+    if (!token) {
+        throw new Error('Please log in to use AI features. Your session may have expired.');
     }
 
     const temperature = options?.temperature ?? 0.0;
@@ -51,13 +64,11 @@ export async function fetchWithFallback(
         const timer = setTimeout(() => controller.abort(), timeout);
 
         try {
-            const response = await fetch(OPENROUTER_API_URL, {
+            const response = await fetch(BACKEND_LLM_URL, {
                 method: 'POST',
                 headers: {
-                    'Authorization': `Bearer ${API_KEY}`,
                     'Content-Type': 'application/json',
-                    'HTTP-Referer': typeof window !== 'undefined' ? window.location.origin : 'https://astrabi.app',
-                    'X-Title': 'Astrabi Analytics',
+                    'Authorization': `Bearer ${token}`,
                 },
                 body: JSON.stringify({
                     model: PRIMARY_MODEL,
@@ -83,8 +94,18 @@ export async function fetchWithFallback(
                 return { data, model: PRIMARY_MODEL };
             }
 
-            // 429 Rate Limited — wait and retry
+            // 401 Unauthorized — user not logged in or session revoked
+            if (response.status === 401) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(errData.error || 'Please log in to use AI features.');
+            }
+
+            // 429 Rate Limited or Quota Exceeded
             if (response.status === 429) {
+                const errData = await response.json().catch(() => ({}));
+                if (errData.quotaExceeded) {
+                    throw new Error(errData.error || 'Daily AI quota exceeded. Contact your admin.');
+                }
                 if (attempt < MAX_429_RETRIES) {
                     console.warn(`[AI] Rate limited — waiting ${RATE_LIMIT_RETRY_DELAY_MS}ms before retry ${attempt + 1}/${MAX_429_RETRIES}`);
                     await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_RETRY_DELAY_MS));
@@ -95,17 +116,9 @@ export async function fetchWithFallback(
                 );
             }
 
-            // Other errors — clean message
-            if (response.status === 404) {
-                throw new Error(
-                    'AI model is temporarily unavailable. Please try again later.'
-                );
-            }
-
+            // Other errors
             if (response.status === 402) {
-                throw new Error(
-                    'OpenRouter credits exhausted. Please add more credits at openrouter.ai.'
-                );
+                throw new Error('AI credits exhausted. Please contact admin.');
             }
 
             if (response.status === 502 || response.status === 503) {
@@ -132,3 +145,4 @@ export async function fetchWithFallback(
 
     throw new Error('AI model is currently unavailable. Please try again later.');
 }
+

@@ -79,11 +79,27 @@ async function initAuthDatabase() {
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )
         `);
-        // Add session_version column if it doesn't exist (migration for existing DBs)
-        try {
-            await authPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1`);
-        } catch { /* column already exists */ }
+        // Migrations for existing DBs
+        try { await authPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1`); } catch {}
+        try { await authPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT true`); } catch {}
+        try { await authPool.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS daily_ai_limit INTEGER NOT NULL DEFAULT 50`); } catch {}
         console.log('[Auth] PostgreSQL users table ready');
+
+        // Create usage_logs table for tracking AI consumption per user
+        await authPool.query(`
+            CREATE TABLE IF NOT EXISTS usage_logs (
+                id SERIAL PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                user_email TEXT,
+                action TEXT NOT NULL,
+                tokens_used INTEGER DEFAULT 0,
+                model TEXT,
+                details TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+        try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_usage_user_date ON usage_logs (user_id, created_at)`); } catch {}
+        console.log('[Auth] Usage tracking table ready');
 
         // Always ensure admin user exists (upsert — won't overwrite if already present)
         const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
@@ -1108,30 +1124,86 @@ app.post('/api/refresh-data', async (req, res) => {
 });
 
 // ═══════════════════════════════════════════
-// LLM PROXY ENDPOINT (Fix #5: API key security)
+// JWT AUTH MIDDLEWARE FOR AI ENDPOINTS
 // ═══════════════════════════════════════════
-// Routes OpenRouter API calls through the backend so the API key
-// never appears in the frontend bundle.
+
+/** Extract user from JWT — returns null if no valid token */
+function extractUser(req) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+    try {
+        return jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+    } catch { return null; }
+}
+
+/** Check if user is active and within daily AI quota */
+async function checkAIQuota(userId) {
+    if (!authPool) return { allowed: true, remaining: 999, limit: 999 };
+    try {
+        // Check if user is active
+        const userResult = await authPool.query('SELECT is_active, daily_ai_limit FROM users WHERE id = $1', [userId]);
+        if (userResult.rows.length === 0) return { allowed: false, reason: 'User not found' };
+        const user = userResult.rows[0];
+        if (!user.is_active) return { allowed: false, reason: 'Account suspended. Contact admin.' };
+
+        // Count today's AI calls
+        const todayResult = await authPool.query(
+            `SELECT COUNT(*) as count FROM usage_logs WHERE user_id = $1 AND action = 'ai_query' AND created_at >= CURRENT_DATE`,
+            [userId]
+        );
+        const used = parseInt(todayResult.rows[0].count);
+        const limit = user.daily_ai_limit || 50;
+        if (used >= limit) return { allowed: false, reason: `Daily AI limit reached (${limit}/day). Contact admin.`, used, limit };
+        return { allowed: true, remaining: limit - used, used, limit };
+    } catch (err) {
+        console.error('[Quota] Check failed:', err.message);
+        return { allowed: true, remaining: 999, limit: 999 }; // Fail open if DB issue
+    }
+}
+
+/** Log AI usage to database */
+async function logAIUsage(userId, userEmail, action, tokensUsed, model, details) {
+    if (!authPool) return;
+    try {
+        await authPool.query(
+            'INSERT INTO usage_logs (user_id, user_email, action, tokens_used, model, details) VALUES ($1, $2, $3, $4, $5, $6)',
+            [userId, userEmail, action, tokensUsed || 0, model || '', details || '']
+        );
+    } catch (err) {
+        console.error('[Usage] Log failed:', err.message);
+    }
+}
+
+// ═══════════════════════════════════════════
+// LLM PROXY ENDPOINT (with auth + quota)
+// ═══════════════════════════════════════════
 
 const LLM_RATE_LIMIT = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: 20, // 20 LLM calls per minute per IP
+    windowMs: 60 * 1000,
+    max: 20,
     message: { success: false, error: 'Too many AI requests. Please wait a moment.' }
 });
 
 app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
     const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
     if (!OPENROUTER_KEY) {
-        return res.status(500).json({
-            success: false,
-            error: 'LLM service not configured. Set OPENROUTER_API_KEY in backend .env'
-        });
+        return res.status(500).json({ success: false, error: 'LLM service not configured' });
+    }
+
+    // Require authentication
+    const user = extractUser(req);
+    if (!user) {
+        return res.status(401).json({ success: false, error: 'Authentication required for AI features. Please log in.' });
+    }
+
+    // Check quota
+    const quota = await checkAIQuota(user.userId);
+    if (!quota.allowed) {
+        return res.status(429).json({ success: false, error: quota.reason, quotaExceeded: true });
     }
 
     try {
         const { model, messages, max_tokens, temperature } = req.body;
-
-        // Validate input
         if (!messages || !Array.isArray(messages)) {
             return res.status(400).json({ success: false, error: 'messages array is required' });
         }
@@ -1145,9 +1217,9 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
                 'X-Title': 'QuickInsight'
             },
             body: JSON.stringify({
-                model: model || 'deepseek/deepseek-r1',
+                model: model || 'google/gemini-2.0-flash-001',
                 messages,
-                max_tokens: Math.min(max_tokens || 2000, 4000), // Cap at 4000
+                max_tokens: Math.min(max_tokens || 2000, 4000),
                 temperature: temperature ?? 0.1
             })
         });
@@ -1155,17 +1227,118 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
         if (!response.ok) {
             const errorText = await response.text().catch(() => 'Unknown error');
             console.error('[LLM Proxy] API error:', response.status, errorText);
-            return res.status(response.status).json({
-                success: false,
-                error: `LLM service error (${response.status})`
-            });
+            return res.status(response.status).json({ success: false, error: `LLM service error (${response.status})` });
         }
 
         const data = await response.json();
+        const tokensUsed = data.usage?.total_tokens || data.usage?.completion_tokens || 0;
+
+        // Log usage
+        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, model || 'google/gemini-2.0-flash-001', `tokens:${tokensUsed}`);
+        console.log(`[LLM] User ${user.email} — ${tokensUsed} tokens (${quota.remaining - 1} remaining today)`);
+
+        // Include quota info in response
+        data._quota = { remaining: quota.remaining - 1, limit: quota.limit, used: (quota.used || 0) + 1 };
         res.json(data);
     } catch (error) {
         console.error('[LLM Proxy] Request failed:', error);
         res.status(500).json({ success: false, error: 'LLM request failed' });
+    }
+});
+
+// ═══════════════════════════════════════════
+// ADMIN: Usage Monitoring & User Control
+// ═══════════════════════════════════════════
+
+// Get all users with usage stats (admin only)
+app.get('/api/admin/users', async (req, res) => {
+    const user = extractUser(req);
+    if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    try {
+        const { rows } = await authPool.query(`
+            SELECT u.id, u.email, u.name, u.role, u.is_active, u.daily_ai_limit, u.created_at,
+                   COALESCE(today.count, 0)::int as ai_queries_today,
+                   COALESCE(today.tokens, 0)::int as tokens_today,
+                   COALESCE(total.count, 0)::int as ai_queries_total,
+                   COALESCE(total.tokens, 0)::int as tokens_total,
+                   total.last_used
+            FROM users u
+            LEFT JOIN (
+                SELECT user_id, COUNT(*) as count, SUM(tokens_used) as tokens
+                FROM usage_logs WHERE action = 'ai_query' AND created_at >= CURRENT_DATE
+                GROUP BY user_id
+            ) today ON today.user_id = u.id
+            LEFT JOIN (
+                SELECT user_id, COUNT(*) as count, SUM(tokens_used) as tokens, MAX(created_at) as last_used
+                FROM usage_logs WHERE action = 'ai_query'
+                GROUP BY user_id
+            ) total ON total.user_id = u.id
+            ORDER BY total.tokens DESC NULLS LAST
+        `);
+        res.json({ success: true, users: rows });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Get usage logs (admin only, with optional user filter)
+app.get('/api/admin/usage', async (req, res) => {
+    const user = extractUser(req);
+    if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    try {
+        const { userId, days } = req.query;
+        const d = parseInt(days) || 7;
+        let query = `SELECT * FROM usage_logs WHERE created_at >= NOW() - INTERVAL '${d} days'`;
+        const params = [];
+        if (userId) { query += ` AND user_id = $1`; params.push(userId); }
+        query += ` ORDER BY created_at DESC LIMIT 500`;
+        const { rows } = await authPool.query(query, params);
+        res.json({ success: true, logs: rows });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Suspend/activate user (admin only)
+app.post('/api/admin/toggle-user', async (req, res) => {
+    const user = extractUser(req);
+    if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    try {
+        const { targetUserId, isActive } = req.body;
+        if (!targetUserId) return res.status(400).json({ error: 'targetUserId required' });
+        await authPool.query('UPDATE users SET is_active = $1 WHERE id = $2', [isActive !== false, targetUserId]);
+        // Also bump session_version to force re-login if suspending
+        if (isActive === false) {
+            await authPool.query('UPDATE users SET session_version = session_version + 1 WHERE id = $1', [targetUserId]);
+        }
+        console.log(`[Admin] ${user.email} ${isActive === false ? 'suspended' : 'activated'} user ${targetUserId}`);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update user's daily AI limit (admin only)
+app.post('/api/admin/set-quota', async (req, res) => {
+    const user = extractUser(req);
+    if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    try {
+        const { targetUserId, dailyLimit } = req.body;
+        if (!targetUserId || dailyLimit === undefined) return res.status(400).json({ error: 'targetUserId and dailyLimit required' });
+        const limit = Math.max(0, Math.min(parseInt(dailyLimit), 1000));
+        await authPool.query('UPDATE users SET daily_ai_limit = $1 WHERE id = $2', [limit, targetUserId]);
+        console.log(`[Admin] ${user.email} set daily AI limit to ${limit} for user ${targetUserId}`);
+        res.json({ success: true, dailyLimit: limit });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -1225,21 +1398,32 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
             return res.status(500).json({ error: 'LLM API key not configured. Set OPENROUTER_API_KEY in backend/.env' });
         }
 
+        // Require authentication
+        const user = extractUser(req);
+        if (!user) {
+            return res.status(401).json({ error: 'Authentication required for AI features. Please log in.' });
+        }
+
+        // Check quota
+        const quota = await checkAIQuota(user.userId);
+        if (!quota.allowed) {
+            return res.status(429).json({ error: quota.reason, quotaExceeded: true });
+        }
+
         const { prompt } = req.body;
         if (!prompt || typeof prompt !== 'string') {
             return res.status(400).json({ error: 'Missing or invalid prompt' });
         }
 
-        console.log(`[AI Profile] Sending prompt (${prompt.length} chars) to OpenRouter...`);
+        console.log(`[AI Profile] User ${user.email} — sending prompt (${prompt.length} chars)`);
 
         // Sanitize prompt: Node.js 20 undici fetch rejects non-ASCII in ByteString
         const sanitizedPrompt = prompt.replace(/[^\x00-\x7F]/g, c => {
-            // Replace common Unicode chars with ASCII equivalents
-            if (c === '\u2014' || c === '\u2013') return '-';  // em-dash, en-dash
-            if (c === '\u201C' || c === '\u201D') return '"';  // smart quotes
-            if (c === '\u2018' || c === '\u2019') return "'";  // smart single quotes
-            if (c === '\u2026') return '...';                  // ellipsis
-            return '';  // strip other non-ASCII
+            if (c === '\u2014' || c === '\u2013') return '-';
+            if (c === '\u201C' || c === '\u201D') return '"';
+            if (c === '\u2018' || c === '\u2019') return "'";
+            if (c === '\u2026') return '...';
+            return '';
         });
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
@@ -1251,16 +1435,10 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
                 'X-Title': 'QuickInsight'
             },
             body: JSON.stringify({
-                model: 'deepseek/deepseek-r1',
+                model: 'google/gemini-2.0-flash-001',
                 messages: [
-                    {
-                        role: 'system',
-                        content: 'You are an expert Data Architect. Respond with ONLY valid JSON - no markdown fences, no explanations, no commentary. Just the raw JSON object.'
-                    },
-                    {
-                        role: 'user',
-                        content: sanitizedPrompt
-                    }
+                    { role: 'system', content: 'You are an expert Data Architect. Respond with ONLY valid JSON - no markdown fences, no explanations, no commentary. Just the raw JSON object.' },
+                    { role: 'user', content: sanitizedPrompt }
                 ],
                 temperature: 0.1,
                 max_tokens: 4096
@@ -1275,15 +1453,18 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
 
         const data = await response.json();
         const content = data?.choices?.[0]?.message?.content;
+        const tokensUsed = data?.usage?.total_tokens || 0;
+
+        // Log usage
+        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, 'google/gemini-2.0-flash-001', 'profile-dataset');
 
         if (!content) {
             console.warn('[AI Profile] Empty LLM response');
             return res.status(502).json({ error: 'Empty response from LLM' });
         }
 
-        // Try to parse JSON from the response (strip markdown fences if present)
+        // Try to parse JSON from the response
         let jsonStr = content.trim();
-        // Remove ```json ... ``` wrapper if present
         const fenceMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
         if (fenceMatch) {
             jsonStr = fenceMatch[1].trim();
@@ -1291,7 +1472,7 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
 
         try {
             const parsed = JSON.parse(jsonStr);
-            console.log(`[AI Profile] ✅ Successfully parsed LLM response (domain: ${parsed.domain || 'unknown'})`);
+            console.log(`[AI Profile] ✅ User ${user.email} — ${tokensUsed} tokens (domain: ${parsed.domain || 'unknown'})`);
             return res.json(parsed);
         } catch (parseErr) {
             console.warn('[AI Profile] Failed to parse LLM JSON, returning raw text');
