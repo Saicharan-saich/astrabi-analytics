@@ -101,6 +101,24 @@ async function initAuthDatabase() {
         try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_usage_user_date ON usage_logs (user_id, created_at)`); } catch {}
         console.log('[Auth] Usage tracking table ready');
 
+        // Create dashboards table for cloud persistence
+        await authPool.query(`
+            CREATE TABLE IF NOT EXISTS dashboards (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                name TEXT NOT NULL DEFAULT 'My Dashboard',
+                dataset_id TEXT,
+                items JSONB NOT NULL DEFAULT '[]',
+                layout JSONB,
+                filters JSONB DEFAULT '[]',
+                formatting JSONB DEFAULT '{}',
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+        try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_dashboards_user ON dashboards (user_id)`); } catch {}
+        console.log('[Auth] Dashboards table ready');
+
         // Always ensure admin user exists (upsert — won't overwrite if already present)
         const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
         const upsertResult = await authPool.query(
@@ -1482,6 +1500,107 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
     } catch (error) {
         console.error('[AI Profile] Unexpected error:', error.message);
         res.status(500).json({ error: 'Internal profiling error', details: error.message });
+    }
+});
+
+// ═══════════════════════════════════════════
+// DASHBOARD CLOUD PERSISTENCE
+// ═══════════════════════════════════════════
+
+/** GET /api/dashboards — List all dashboards for the authenticated user */
+app.get('/api/dashboards', async (req, res) => {
+    const user = extractUser(req);
+    if (!user) return res.status(401).json({ error: 'Authentication required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    try {
+        const { rows } = await authPool.query(
+            'SELECT id, name, dataset_id, items, layout, filters, formatting, created_at, updated_at FROM dashboards WHERE user_id = $1 ORDER BY updated_at DESC',
+            [user.id]
+        );
+        res.json({ dashboards: rows });
+    } catch (err) {
+        console.error('[Dashboards] List error:', err.message);
+        res.status(500).json({ error: 'Failed to load dashboards' });
+    }
+});
+
+/** GET /api/dashboards/:id — Get a single dashboard by ID */
+app.get('/api/dashboards/:id', async (req, res) => {
+    const user = extractUser(req);
+    if (!user) return res.status(401).json({ error: 'Authentication required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    try {
+        const { rows } = await authPool.query(
+            'SELECT * FROM dashboards WHERE id = $1 AND user_id = $2',
+            [req.params.id, user.id]
+        );
+        if (rows.length === 0) return res.status(404).json({ error: 'Dashboard not found' });
+        res.json(rows[0]);
+    } catch (err) {
+        console.error('[Dashboards] Get error:', err.message);
+        res.status(500).json({ error: 'Failed to load dashboard' });
+    }
+});
+
+/** POST /api/dashboards — Create or full-save a dashboard */
+app.post('/api/dashboards', async (req, res) => {
+    const user = extractUser(req);
+    if (!user) return res.status(401).json({ error: 'Authentication required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    const { id, name, dataset_id, items, layout, filters, formatting } = req.body;
+    if (!id) return res.status(400).json({ error: 'Dashboard ID is required' });
+
+    try {
+        await authPool.query(
+            `INSERT INTO dashboards (id, user_id, name, dataset_id, items, layout, filters, formatting, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+             ON CONFLICT (id) DO UPDATE SET
+                name = EXCLUDED.name,
+                dataset_id = EXCLUDED.dataset_id,
+                items = EXCLUDED.items,
+                layout = EXCLUDED.layout,
+                filters = EXCLUDED.filters,
+                formatting = EXCLUDED.formatting,
+                updated_at = NOW()`,
+            [
+                id,
+                user.id,
+                name || 'My Dashboard',
+                dataset_id || null,
+                JSON.stringify(items || []),
+                JSON.stringify(layout || null),
+                JSON.stringify(filters || []),
+                JSON.stringify(formatting || {})
+            ]
+        );
+        console.log(`[Dashboards] Saved dashboard "${name || id}" for user ${user.email}`);
+        res.json({ success: true, id });
+    } catch (err) {
+        console.error('[Dashboards] Save error:', err.message);
+        res.status(500).json({ error: 'Failed to save dashboard' });
+    }
+});
+
+/** DELETE /api/dashboards/:id — Delete a dashboard */
+app.delete('/api/dashboards/:id', async (req, res) => {
+    const user = extractUser(req);
+    if (!user) return res.status(401).json({ error: 'Authentication required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    try {
+        const result = await authPool.query(
+            'DELETE FROM dashboards WHERE id = $1 AND user_id = $2',
+            [req.params.id, user.id]
+        );
+        if (result.rowCount === 0) return res.status(404).json({ error: 'Dashboard not found' });
+        console.log(`[Dashboards] Deleted dashboard ${req.params.id} for user ${user.email}`);
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[Dashboards] Delete error:', err.message);
+        res.status(500).json({ error: 'Failed to delete dashboard' });
     }
 });
 

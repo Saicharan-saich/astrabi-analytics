@@ -211,6 +211,11 @@ export const useAuthStore = create<AuthState>()(
                 const userId = get().currentUser?.id;
                 if (userId) {
                     saveUserAppData(userId);
+                    // ── Cloud Sync: push dashboard to PostgreSQL before clearing ──
+                    try {
+                        const { pushToCloud } = require('./useDashboardStore').useDashboardStore.getState();
+                        pushToCloud().catch(() => { /* silent — user is leaving */ });
+                    } catch { /* dashboard store not available */ }
                 }
                 resetUserData();
                 clearSharedAppData();

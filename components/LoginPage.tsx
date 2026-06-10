@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
+import { useDashboardStore } from '../store/useDashboardStore';
 import { UserRole } from '../types';
 import { Eye, EyeOff, LogIn, Sparkles, AlertCircle, UserPlus, Users } from 'lucide-react';
 
@@ -79,6 +80,11 @@ export const LoginPage: React.FC = () => {
                     ? state.users.map(u => u.email === storeUser.email ? storeUser : u)
                     : [...state.users, storeUser],
             }));
+
+            // ── Cloud Sync: pull saved dashboards from PostgreSQL ──
+            useDashboardStore.getState().syncFromCloud().catch(() => {
+                console.warn('[LoginPage] Cloud dashboard sync failed — using local data');
+            });
         } catch (err: any) {
             console.error('[LoginPage] Auth request failed:', err);
             setError('Could not connect to the server. Make sure the backend is running on port 5002.');
