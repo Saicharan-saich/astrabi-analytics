@@ -612,12 +612,12 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center', backgroundSize: '12px' }}
                                 title="Aggregation for this metric"
                             >
-                                <option value="SUM">Σ Total</option>
-                                <option value="AVG">μ Average</option>
-                                <option value="MAX">↑ Highest</option>
-                                <option value="MIN">↓ Lowest</option>
-                                <option value="COUNT"># Count</option>
-                                <option value="COUNT_DISTINCT">∩ Unique Count</option>
+                                <option value="SUM" className="bg-white text-gray-900">Σ Total</option>
+                                <option value="AVG" className="bg-white text-gray-900">μ Average</option>
+                                <option value="MAX" className="bg-white text-gray-900">↑ Highest</option>
+                                <option value="MIN" className="bg-white text-gray-900">↓ Lowest</option>
+                                <option value="COUNT" className="bg-white text-gray-900"># Count</option>
+                                <option value="COUNT_DISTINCT" className="bg-white text-gray-900">∩ Unique Count</option>
                             </select>
                             <select
                                 value={secondaryMetricVisuals[sm] || 'line'}
@@ -626,9 +626,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center', backgroundSize: '12px' }}
                                 title="Visual type for this metric"
                             >
-                                <option value="line">📈 Line</option>
-                                <option value="bar">📊 Bar</option>
-                                <option value="area">📉 Area</option>
+                                <option value="line" className="bg-white text-gray-900">📈 Line</option>
+                                <option value="bar" className="bg-white text-gray-900">📊 Bar</option>
+                                <option value="area" className="bg-white text-gray-900">📉 Area</option>
                             </select>
                             <button onClick={() => {
                                 setSecondaryMetrics(prev => prev.filter((_, idx) => idx !== i));
