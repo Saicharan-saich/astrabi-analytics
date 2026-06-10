@@ -550,7 +550,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                 {/* ═══════════════ PRIMARY ROW: THE CORE QUESTION ═══════════════ */}
                 <div className="flex flex-wrap items-center gap-3 text-sm leading-snug flex-1 pr-4 pt-1 pb-1">
                     <img src="/logo.jpg" alt="QuickInsight" className="w-5 h-5 rounded-md opacity-80" />
-                    <span className="text-slate-400 text-sm">Show me</span>
+                    <span className="text-slate-200 text-base font-bold tracking-wide">Show me</span>
 
                     {/* Metric Selector */}
                     <Tooltip text="Choose the measure to analyze. Pick a numeric metric (e.g. revenue) or a dimension to count (e.g. patient count)." position="bottom">
@@ -653,7 +653,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         </span>
                     ))}
 
-                    <span className="text-slate-400 text-sm">by</span>
+                    <span className="text-slate-200 text-base font-bold tracking-wide">by</span>
 
                     {/* Dimension Selector (columns only) */}
                     <Tooltip text="Group by a categorical column like product, region, or category." position="bottom">
@@ -760,7 +760,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         />
                     </Tooltip>
 
-                    <span className="text-slate-400 text-sm">where</span>
+                    <span className="text-slate-200 text-base font-bold tracking-wide">where</span>
 
                     {/* Time Filter */}
                     <div className="flex items-center gap-2">
