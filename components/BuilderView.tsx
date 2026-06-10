@@ -29,19 +29,29 @@ interface BuilderViewProps {
 }
 
 export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange }) => {
+    // ── Session persistence key (scoped to dataset) ──
+    const storageKey = `qi_builder_${dataset.id}`;
+    const savedSession = useMemo(() => {
+        try {
+            const raw = sessionStorage.getItem(storageKey);
+            return raw ? JSON.parse(raw) : null;
+        } catch { return null; }
+    }, []);
+
     const [result, setResult] = useState<AnalysisResult | undefined>(undefined);
     const [error, setError] = useState<string | null>(null);
-    const [chartType, setChartType] = useState<any>('bar');
+    const [chartType, setChartType] = useState<any>(savedSession?.chartType || 'bar');
     const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
     const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);
     const [showGrowthChart, setShowGrowthChart] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
-    const [lastRunConfig, setLastRunConfig] = useState<any>(null);
+    const [lastRunConfig, setLastRunConfig] = useState<any>(savedSession?.config || null);
     const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
     const [isBuilderCollapsed, setIsBuilderCollapsed] = useState(false);
     const [contentTab, setContentTab] = useState<'visual' | 'sql' | 'data'>('visual');
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const [forceGridMode, setForceGridMode] = useState<'auto' | 'grid' | 'combined'>('auto');
+    const hasAutoRestoredRef = useRef(false);
 
     // Export CSV helper
     const exportToCSV = () => {
@@ -118,6 +128,33 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             handleRun(lastRunConfig);
         }
     }, [dataset.version]);
+
+    // ── Persist builder state to sessionStorage on every successful run ──
+    React.useEffect(() => {
+        if (lastRunConfig) {
+            try {
+                sessionStorage.setItem(storageKey, JSON.stringify({
+                    config: lastRunConfig,
+                    chartType,
+                    timestamp: Date.now()
+                }));
+            } catch { /* quota exceeded — ignore */ }
+        }
+    }, [lastRunConfig, chartType, storageKey]);
+
+    // ── Auto-restore from session on mount (browser refresh) ──
+    React.useEffect(() => {
+        if (hasAutoRestoredRef.current) return;
+        if (editingItemId) return; // Don't auto-restore when editing a dashboard item
+        if (initialConfig) return; // Don't override explicit config from dashboard
+        if (savedSession?.config && dataset.rows.length > 0) {
+            hasAutoRestoredRef.current = true;
+            console.log('[BuilderView] Restoring session — auto-running saved config');
+            // Delay slightly to let QuestionBuilder mount with saved initial values
+            const timer = setTimeout(() => handleRun(savedSession.config), 300);
+            return () => clearTimeout(timer);
+        }
+    }, [dataset.rows.length]);
 
     // User manually changes AS OF date
     const handleAsOfDateChange = (date: string) => {
@@ -267,15 +304,15 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     key={editingItemId || 'default'}
                     dataset={dataset}
                     onRun={handleRun}
-                    initialMetric={initialConfig?.metric || ''}
-                    initialAggregation={initialConfig?.aggregation || 'SUM'}
-                    initialDimension={initialConfig?.dimension || ''}
-                    initialTimeFilter={initialConfig?.timeFilter || 'all_time'}
-                    initialLimit={initialConfig?.limit || 0}
-                    initialSort={initialConfig?.sort || 'desc'}
-                    initialComparison={initialConfig?.comparison || ''}
-                    initialComparisonGrain={initialConfig?.comparisonGrain || 'month'}
-                    initialComparisonOffset={initialConfig?.comparisonOffset || 1}
+                    initialMetric={initialConfig?.metric || savedSession?.config?.metric || ''}
+                    initialAggregation={initialConfig?.aggregation || savedSession?.config?.aggregation || 'SUM'}
+                    initialDimension={initialConfig?.dimension || savedSession?.config?.dimension || ''}
+                    initialTimeFilter={initialConfig?.timeFilter || savedSession?.config?.timeFilter || 'all_time'}
+                    initialLimit={initialConfig?.limit ?? savedSession?.config?.limit ?? 0}
+                    initialSort={initialConfig?.sort || savedSession?.config?.sort || 'desc'}
+                    initialComparison={initialConfig?.comparison || savedSession?.config?.comparison || ''}
+                    initialComparisonGrain={initialConfig?.comparisonGrain || savedSession?.config?.comparisonGrain || 'month'}
+                    initialComparisonOffset={initialConfig?.comparisonOffset ?? savedSession?.config?.comparisonOffset ?? 1}
                     asOfDate={asOfDate}
                     onDateChange={handleAsOfDateChange}
                     anchorColumn={anchorColumn}
