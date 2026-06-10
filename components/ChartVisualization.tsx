@@ -306,26 +306,43 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     const formatForMetricName = (value: number, metricName: string): string => {
         const name = metricName.toLowerCase();
         let fmt: string;
+        let fd: number;
         if (name.includes('count') || name.includes('quantity') || name.includes('units') || name.includes('volume') || name.includes('orders') || name.includes('users') || name.includes('sessions')) {
             fmt = value < 1000 ? 'raw' : 'compact';
+            fd = 0;
         } else if (name.includes('discount') || (name.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(name)) || name.includes('ratio') || name.includes('percent') || name.includes('share') || name.includes('conversion') || name.includes('margin_pct')) {
             fmt = 'percent';
-        } else if (name.includes('sales') || name.includes('revenue') || name.includes('price') || name.includes('cost') || name.includes('amount') || name.includes('profit') || name.includes('margin')) {
+            fd = 2;
+        } else if (name.includes('sales') || name.includes('revenue') || name.includes('price') || name.includes('cost') || name.includes('amount') || name.includes('profit') || name.includes('margin') || name.includes('billing') || name.includes('payment') || name.includes('fee') || name.includes('charge') || name.includes('salary') || name.includes('income') || name.includes('expense')) {
             fmt = 'currency_usd';
+            fd = 2;
+        } else if (name.includes('score') || name.includes('rating') || name.includes('index') || name.includes('grade') || name.includes('satisfaction') || name.includes('nps') || name.includes('csat')) {
+            // Scores/ratings: show with 2 decimal places for precision
+            fmt = 'score';
+            fd = 2;
+        } else if (name.includes('average') || name.includes('avg') || name.includes('mean') || name.includes('median')) {
+            // Averages often have meaningful decimals
+            fmt = 'score';
+            fd = 2;
         } else {
-            fmt = value < 1000 ? 'raw' : 'compact';
+            // For small values with decimals, show decimals; for large values, compact
+            if (Math.abs(value) < 100 && value % 1 !== 0) {
+                fmt = 'score';
+                fd = 2;
+            } else {
+                fmt = value < 1000 ? 'raw' : 'compact';
+                fd = 0;
+            }
         }
-        const fd = fmt === 'currency_usd' || fmt === 'percent' ? 2 : 0;
         try {
             switch (fmt) {
                 case 'currency_usd': return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
                 case 'percent': {
-                    // If the raw value is a fraction (0–1), multiply by 100 to get the actual percentage
-                    // e.g., 0.1 → 10%, 0.8 → 80%. Values > 1 are already in percent form (e.g., 10 → 10%)
                     const pctVal = (Math.abs(value) <= 1 && Math.abs(value) > 0) ? value * 100 : value;
                     return pctVal.toFixed(fd) + '%';
                 }
                 case 'compact': return new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short' }).format(value);
+                case 'score': return new Intl.NumberFormat('en-US', { minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
                 default: return new Intl.NumberFormat('en-US', { minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
             }
         } catch { return value.toLocaleString(); }
