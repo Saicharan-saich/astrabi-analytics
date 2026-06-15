@@ -1467,6 +1467,17 @@ function App() {
                       saveDatasetToDB(updated);
                       console.log(`[App] Recovered ${recoveredRows.length} rows. New total: ${updatedRows.length}`);
                     }}
+                    onDataCleaned={(newRows, log) => {
+                      if (!dataset) return;
+                      const updated: Dataset = {
+                        ...dataset,
+                        rows: newRows,
+                        totalRows: newRows.length,
+                      };
+                      setDataset(updated);
+                      saveDatasetToDB(updated);
+                      console.log(`[App] Data cleaning: ${log.operation} — ${log.rowsAffected} rows affected. New total: ${newRows.length}`);
+                    }}
                     onSwitchToLive={() => setActiveTab(Tab.UPLOAD)}
                   />
                 </div>

@@ -7,11 +7,14 @@ import {
   Zap, Upload
 } from 'lucide-react';
 import { Dataset, ETLLog, ColumnType } from '../types';
+import { DataCleaningPanel } from './DataCleaningPanel';
+import { CleaningLogEntry } from '../services/dataCleaningEngine';
 
 interface ETLViewProps {
   dataset: Dataset;
   onSchemaOverride?: (columnName: string, newType: ColumnType) => void;
   onRowsRecovered?: (recoveredRows: Record<string, any>[]) => void;
+  onDataCleaned?: (newRows: Record<string, any>[], log: CleaningLogEntry) => void;
   onSwitchToLive?: () => void;
 }
 
@@ -123,7 +126,7 @@ const RowEditorModal: React.FC<RowEditorProps> = ({ rows, onClose, onSave }) => 
 };
 
 // ─── Main ETL View ──────────────────────────────────────────
-export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onRowsRecovered, onSwitchToLive }) => {
+export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onRowsRecovered, onDataCleaned, onSwitchToLive }) => {
   const [editingColumn, setEditingColumn] = useState<string | null>(null);
   const [logFilter, setLogFilter] = useState<LogFilter>('all');
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
@@ -352,6 +355,16 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
                 )}
               </div>
             )}
+          </div>
+
+          {/* ─── Data Cleaning Studio ─────────────────────────────────── */}
+          <div className="mb-6">
+            <DataCleaningPanel
+              dataset={dataset}
+              onDataCleaned={(newRows, log) => {
+                if (onDataCleaned) onDataCleaned(newRows, log);
+              }}
+            />
           </div>
 
           {/* ─── Summary Cards ─────────────────────────────────────────── */}
