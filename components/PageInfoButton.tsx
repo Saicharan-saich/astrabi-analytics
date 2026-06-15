@@ -5,6 +5,7 @@
  * Renders a small info icon that opens a modal with page explanation.
  */
 import React, { useState } from 'react';
+import ReactDOM from 'react-dom';
 import { Info, X, Lightbulb, ArrowRight } from 'lucide-react';
 
 export type PageKey =
@@ -292,17 +293,22 @@ export const PageInfoButton: React.FC<PageInfoButtonProps> = ({ pageKey, classNa
                 <Info className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
             </button>
 
-            {/* ── Info Modal ── */}
-            {isOpen && (
-                <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/30 backdrop-blur-sm" onClick={() => setIsOpen(false)}>
+            {/* ── Info Modal (portaled to body) ── */}
+            {isOpen && ReactDOM.createPortal(
+                <div
+                    className="fixed inset-0 z-[99999] flex items-center justify-center"
+                    style={{ backgroundColor: 'rgba(0, 0, 0, 0.5)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+                    onClick={() => setIsOpen(false)}
+                >
                     <div
-                        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[90vw] max-w-lg max-h-[80vh] overflow-hidden animate-scaleIn"
+                        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[90vw] max-w-lg max-h-[80vh] overflow-hidden"
+                        style={{ animation: 'scaleIn 0.2s ease-out' }}
                         onClick={e => e.stopPropagation()}
                     >
                         {/* Header */}
                         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-indigo-50 to-purple-50">
                             <div className="flex items-center gap-3">
-                                <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-200">
+                                <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-200">
                                     <Info className="w-5 h-5 text-white" />
                                 </div>
                                 <div>
@@ -312,7 +318,8 @@ export const PageInfoButton: React.FC<PageInfoButtonProps> = ({ pageKey, classNa
                             </div>
                             <button
                                 onClick={() => setIsOpen(false)}
-                                className="p-1.5 rounded-lg hover:bg-slate-200/80 text-slate-400 hover:text-slate-600 transition-colors"
+                                className="p-2 rounded-xl bg-slate-100 hover:bg-red-100 text-slate-400 hover:text-red-600 transition-all duration-200 shadow-sm"
+                                title="Close"
                             >
                                 <X className="w-5 h-5" />
                             </button>
@@ -354,7 +361,8 @@ export const PageInfoButton: React.FC<PageInfoButtonProps> = ({ pageKey, classNa
                             )}
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </>
     );
