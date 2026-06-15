@@ -4,6 +4,7 @@ import { Tab, UserRole } from '../types';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { useAlertStore } from '../store/useAlertStore';
 import { Tooltip } from './Tooltip';
+import { PageInfoButton, PageKey } from './PageInfoButton';
 import classNames from 'clsx';
 import { useTheme } from './ThemeProvider';
 
@@ -158,6 +159,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                             : isDark ? "text-gray-500" : "text-gray-400"
                     )} />
                     <span>{item.label}</span>
+                    {/* Info button — appears on hover */}
+                    <span
+                        className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <PageInfoButton pageKey={item.id as PageKey} />
+                    </span>
                     {item.badge > 0 && (
                         <span className="ml-auto flex items-center gap-1">
                             <span className="relative flex h-2 w-2">
