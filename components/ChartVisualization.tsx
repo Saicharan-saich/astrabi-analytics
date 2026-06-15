@@ -919,7 +919,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         secondaryKeys.forEach((secKey, idx) => {
             const colorSet = SECONDARY_COLORS[idx % SECONDARY_COLORS.length];
             const secValues = transformedData.map(d => Number(d[secKey]) || 0);
-            const visType = secVisuals[secKey] || 'line';
+            // Look up visual type: try exact key first, then try raw column name
+            // (data keys are aliased like "sum_sale_amt" but visuals map uses raw "sale_amt")
+            const rawColName = secKey.replace(/^(sum|avg|count|count_distinct|min|max)_/i, '');
+            const visType = secVisuals[secKey] || secVisuals[rawColName] || 'line';
             const isBarType = visType === 'bar';
             const isAreaType = visType === 'area';
 
