@@ -20,7 +20,7 @@ export const API_KEY = '__ROUTED_THROUGH_BACKEND__';
 export const PRIMARY_MODEL = 'google/gemini-2.5-flash';
 
 /** Default timeout for AI requests */
-export const DEFAULT_TIMEOUT_MS = 30000;
+export const DEFAULT_TIMEOUT_MS = 60000;
 
 /** Delay before retrying a rate-limited request */
 const RATE_LIMIT_RETRY_DELAY_MS = 2000;
