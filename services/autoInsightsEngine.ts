@@ -68,12 +68,21 @@ function kpiFormat(measure: SemanticMeasure): AutoInsight['kpiFormat'] {
 }
 
 // ── BLACKLIST: columns that should NEVER be used as measures or meaningful dimensions ──
-const ID_PATTERNS = /\b(id|_id|uuid|guid|key|pk|fk|index|row_?num|serial|code)\b/i;
 const NAME_PATTERNS = /\b(name|first_?name|last_?name|full_?name|patient_?name|employee_?name|customer_?name)\b/i;
 
 /** True if column looks like an identifier (not a business metric) */
 function isIdLike(col: string): boolean {
-    return ID_PATTERNS.test(col);
+    const n = col.toLowerCase().replace(/[\s\-]+/g, '_');
+    // Exact "id" or ends with "_id" (catches row_id, order_id, patient_id, etc.)
+    if (n === 'id' || n.endsWith('_id')) return true;
+    // Starts with "id_"
+    if (n.startsWith('id_')) return true;
+    // Row/index/serial patterns (row, row_num, row_number, index, serial, serial_no)
+    if (/^(row|index|serial|uuid|guid|pk|fk|key)(_|$)/.test(n)) return true;
+    if (/_(uuid|guid|pk|fk)$/.test(n)) return true;
+    // "number" or "num" suffix that's clearly an ID (e.g., "room_number", "invoice_number")
+    if (/(^|_)(row|invoice|receipt|ticket|ref|record)_(num|number|no)$/.test(n)) return true;
+    return false;
 }
 
 /** Get meaningful measures — filter out IDs, row numbers, keys */
@@ -239,6 +248,12 @@ function buildInsightDefs(model: SemanticModel, rowCount: number): InsightDef[] 
     const pd = pickPrimaryDim(model);
     const sd = pickSecondaryDim(model, pd);
     const dateCol = model.primaryDateColumn;
+
+    // Debug: show what was selected
+    const bizMeasures = getBusinessMeasures(model);
+    console.log(`[AutoInsights] Business measures (${bizMeasures.length}):`, bizMeasures.map(m => m.column));
+    console.log(`[AutoInsights] Excluded ID measures:`, model.measures.filter(m => isIdLike(m.column)).map(m => m.column));
+    console.log(`[AutoInsights] Picks → pm=${pm?.column}, sm=${sm?.column}, nam=${nam?.column}, pd=${pd?.column}, sd=${sd?.column}, date=${dateCol}`);
 
     if (!pm) {
         console.log('[AutoInsights] No measures found — generating count-based insights from dimensions');
