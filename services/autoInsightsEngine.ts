@@ -93,7 +93,15 @@ function isIdLike(col: string): boolean {
 /** True if column looks like a code/geographic number — not a business metric */
 function isCodeLike(col: string): boolean {
     const n = col.toLowerCase().replace(/[\s\-]+/g, '_');
-    return CODE_BLACKLIST.test(n);
+    // Explicit common codes
+    const EXPLICIT_CODES = ['postal_code', 'zip_code', 'zipcode', 'zip', 'postal', 'phone', 'phone_number',
+        'fax', 'ssn', 'pin', 'pin_code', 'area_code', 'account_number', 'account_no', 'account',
+        'room_number', 'room_no', 'room', 'floor', 'building', 'ward', 'bed', 'seat', 'gate',
+        'flight', 'route', 'version', 'revision', 'batch', 'sequence', 'year', 'month', 'day', 'week'];
+    if (EXPLICIT_CODES.includes(n)) return true;
+    // Regex fallback for compound names
+    if (CODE_BLACKLIST.test(n)) return true;
+    return false;
 }
 
 /** True if column name suggests a real business metric */
@@ -112,23 +120,39 @@ function scoreMeasure(m: SemanticMeasure): number {
     if (isCodeLike(m.column)) return -1;
 
     let score = 0;
-    // Known business metric word → high score
     if (isKnownMetric(m.column)) score += 10;
-    // Currency format → very likely a business metric
     if (m.format === 'currency_usd' || m.format === 'currency_eur') score += 8;
-    // Additive behavior → good for SUM
     if (m.behavior === 'additive') score += 3;
-    // Percent format → good for AVG
     if (m.format === 'percent') score += 5;
 
     return score;
 }
 
-/** Get meaningful measures — scored and sorted by business relevance */
+/**
+ * Get meaningful measures — STRICT filtering.
+ * If known business metrics exist (sales, revenue, cost, quantity...),
+ * ONLY those are used. Unknown numerics are excluded entirely.
+ */
 function getBusinessMeasures(model: SemanticModel): SemanticMeasure[] {
-    return model.measures
-        .filter(m => scoreMeasure(m) >= 0)
-        .sort((a, b) => scoreMeasure(b) - scoreMeasure(a));
+    // Log each measure's classification for debugging
+    for (const m of model.measures) {
+        const id = isIdLike(m.column);
+        const code = isCodeLike(m.column);
+        const known = isKnownMetric(m.column);
+        const score = scoreMeasure(m);
+        console.log(`[AutoInsights]   measure "${m.column}" → id=${id} code=${code} known=${known} score=${score}`);
+    }
+
+    const safe = model.measures.filter(m => scoreMeasure(m) >= 0);
+    // If we have known business metrics, use ONLY those
+    const whitelisted = safe.filter(m => isKnownMetric(m.column));
+    if (whitelisted.length > 0) {
+        console.log(`[AutoInsights] Using ${whitelisted.length} whitelisted metrics only:`, whitelisted.map(m => m.column));
+        return whitelisted.sort((a, b) => scoreMeasure(b) - scoreMeasure(a));
+    }
+    // Fallback: use any safe measures
+    console.log(`[AutoInsights] No whitelisted metrics — using ${safe.length} safe measures:`, safe.map(m => m.column));
+    return safe.sort((a, b) => scoreMeasure(b) - scoreMeasure(a));
 }
 
 /** Pick the primary measure (highest-scored business metric) */
