@@ -67,49 +67,86 @@ function kpiFormat(measure: SemanticMeasure): AutoInsight['kpiFormat'] {
     return 'number';
 }
 
-// ── BLACKLIST: columns that should NEVER be used as measures or meaningful dimensions ──
+// ── SMART COLUMN CLASSIFICATION ──
+// Instead of blacklisting bad columns, WHITELIST known business metrics
+// and exclude everything that looks like a code, ID, or category.
+
 const NAME_PATTERNS = /\b(name|first_?name|last_?name|full_?name|patient_?name|employee_?name|customer_?name)\b/i;
 
-/** True if column looks like an identifier (not a business metric) */
+/** Known business metric keywords — columns worth SUM/AVG/analyzing */
+const METRIC_WHITELIST = /(sales|revenue|cost|price|amount|amt|quantity|qty|profit|margin|score|rating|discount|tax|fee|weight|volume|hours|salary|budget|spend|income|expense|total|balance|payment|charge|wage|commission|bonus|interest|premium|deductible|copay|billing|fare|rent|tip|shipping|freight|age|tenure|duration|count|size|area|distance|speed|rate|pct|percent|value|earnings|loss|debt|credit|refund|return_amt|net|gross|subtotal|unit|units|satisfaction)/;
+
+/** Columns that are numeric but NOT business metrics — codes, identifiers, geographic */
+const CODE_BLACKLIST = /(postal|zip|phone|fax|ssn|pin|area_code|account|badge|license|permit|floor|unit_no|apt|suite|room|building|lot|block|ward|bed|seat|gate|terminal|route|flight|train|bus|locker|bin_no|shelf|rack|slot|booth|stall|bay|dock|port|berth|rank_no|priority_no|level_no|tier_no|step|version|revision|batch|sequence|number_of|no_of|num_of)/;
+
+/** True if column is an ID or code (never aggregate) */
 function isIdLike(col: string): boolean {
     const n = col.toLowerCase().replace(/[\s\-]+/g, '_');
-    // Exact "id" or ends with "_id" (catches row_id, order_id, patient_id, etc.)
     if (n === 'id' || n.endsWith('_id')) return true;
-    // Starts with "id_"
     if (n.startsWith('id_')) return true;
-    // Row/index/serial patterns (row, row_num, row_number, index, serial, serial_no)
     if (/^(row|index|serial|uuid|guid|pk|fk|key)(_|$)/.test(n)) return true;
     if (/_(uuid|guid|pk|fk)$/.test(n)) return true;
-    // "number" or "num" suffix that's clearly an ID (e.g., "room_number", "invoice_number")
     if (/(^|_)(row|invoice|receipt|ticket|ref|record)_(num|number|no)$/.test(n)) return true;
     return false;
 }
 
-/** Get meaningful measures — filter out IDs, row numbers, keys */
+/** True if column looks like a code/geographic number — not a business metric */
+function isCodeLike(col: string): boolean {
+    const n = col.toLowerCase().replace(/[\s\-]+/g, '_');
+    return CODE_BLACKLIST.test(n);
+}
+
+/** True if column name suggests a real business metric */
+function isKnownMetric(col: string): boolean {
+    const n = col.toLowerCase().replace(/[\s\-]+/g, '_');
+    return METRIC_WHITELIST.test(n);
+}
+
+/**
+ * Score a measure by how likely it is to be a meaningful business metric.
+ * Higher = better.  -1 = exclude entirely.
+ */
+function scoreMeasure(m: SemanticMeasure): number {
+    if (m.isHidden) return -1;
+    if (isIdLike(m.column)) return -1;
+    if (isCodeLike(m.column)) return -1;
+
+    let score = 0;
+    // Known business metric word → high score
+    if (isKnownMetric(m.column)) score += 10;
+    // Currency format → very likely a business metric
+    if (m.format === 'currency_usd' || m.format === 'currency_eur') score += 8;
+    // Additive behavior → good for SUM
+    if (m.behavior === 'additive') score += 3;
+    // Percent format → good for AVG
+    if (m.format === 'percent') score += 5;
+
+    return score;
+}
+
+/** Get meaningful measures — scored and sorted by business relevance */
 function getBusinessMeasures(model: SemanticModel): SemanticMeasure[] {
-    return model.measures.filter(m => !m.isHidden && !isIdLike(m.column));
+    return model.measures
+        .filter(m => scoreMeasure(m) >= 0)
+        .sort((a, b) => scoreMeasure(b) - scoreMeasure(a));
 }
 
-/** Pick the primary additive measure (revenue, sales, cost — NOT order_id) */
+/** Pick the primary measure (highest-scored business metric) */
 function pickPrimaryMeasure(model: SemanticModel): SemanticMeasure | null {
-    const biz = getBusinessMeasures(model);
-    // Prefer additive currency measures first (revenue, sales, cost)
-    return biz.find(m => m.behavior === 'additive' && (m.format === 'currency_usd' || m.format === 'currency_eur'))
-        || biz.find(m => m.behavior === 'additive')
-        || biz[0]
-        || null;
+    const ranked = getBusinessMeasures(model);
+    return ranked[0] || null;
 }
 
-/** Pick a secondary measure different from primary (also excluding IDs) */
+/** Pick a secondary measure different from primary */
 function pickSecondaryMeasure(model: SemanticModel, primary: SemanticMeasure | null): SemanticMeasure | null {
-    const biz = getBusinessMeasures(model);
-    return biz.find(m => m.column !== primary?.column) || null;
+    const ranked = getBusinessMeasures(model);
+    return ranked.find(m => m.column !== primary?.column) || null;
 }
 
 /** Pick a non-additive measure (for diagnostic — e.g., discount rate, satisfaction score) */
 function pickNonAdditiveMeasure(model: SemanticModel, primary: SemanticMeasure | null): SemanticMeasure | null {
-    const biz = getBusinessMeasures(model);
-    return biz.find(m => m.behavior === 'non_additive' && m.column !== primary?.column) || null;
+    const ranked = getBusinessMeasures(model);
+    return ranked.find(m => m.behavior === 'non_additive' && m.column !== primary?.column) || null;
 }
 
 /**
