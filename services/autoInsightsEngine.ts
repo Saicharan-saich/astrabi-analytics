@@ -112,6 +112,86 @@ interface InsightDef {
     kpiFormat?: AutoInsight['kpiFormat'];
 }
 
+/**
+ * Generate insights for datasets with NO numeric measures (surveys, categorical).
+ * Uses COUNT-based analytics: frequency distributions, cross-tabs, unique values.
+ */
+function buildDimensionOnlyInsights(model: SemanticModel, rowCount: number): InsightDef[] {
+    const defs: InsightDef[] = [];
+    const dims = model.dimensions.filter(d => d.dataType === 'string' && !d.isHidden);
+    let priority = 1;
+
+    // ── KPI 1: Total record count ──
+    defs.push({
+        id: 'kpi_count',
+        title: 'Total Records',
+        subtitle: `Number of rows in the dataset`,
+        category: 'kpi',
+        priority: priority++,
+        chartType: 'kpiCard',
+        sql: `SELECT COUNT(*) as value FROM data`,
+        xKey: 'metric',
+        yKey: 'value',
+        kpiFormat: 'number',
+    });
+
+    // ── KPI 2-4: Unique value counts for first 3 dimensions ──
+    for (const dim of dims.slice(0, 3)) {
+        const label = humanize(dim.column);
+        defs.push({
+            id: `kpi_unique_${dim.column}`,
+            title: `Unique ${label}`,
+            subtitle: `Distinct ${label.toLowerCase()} values`,
+            category: 'kpi',
+            priority: priority++,
+            chartType: 'kpiCard',
+            sql: `SELECT COUNT(DISTINCT ${q(dim.column)}) as value FROM data`,
+            xKey: 'metric',
+            yKey: 'value',
+            kpiFormat: 'number',
+        });
+    }
+
+    // ── DISTRIBUTIONS 5-10: Frequency distribution for each dimension ──
+    const chartTypes: AutoInsight['chartType'][] = ['donut', 'bar', 'horizontalBar', 'donut', 'bar', 'horizontalBar'];
+    for (let i = 0; i < Math.min(dims.length, 6); i++) {
+        const dim = dims[i];
+        const label = humanize(dim.column);
+        defs.push({
+            id: `dist_${dim.column}`,
+            title: `${label} Distribution`,
+            subtitle: `Record count by ${label.toLowerCase()}`,
+            category: 'distribution',
+            priority: priority++,
+            chartType: chartTypes[i % chartTypes.length],
+            sql: `SELECT ${q(dim.column)} as label, COUNT(*) as value FROM data WHERE ${q(dim.column)} IS NOT NULL GROUP BY ${q(dim.column)} ORDER BY value DESC LIMIT 10`,
+            xKey: 'label',
+            yKey: 'value',
+        });
+    }
+
+    // ── CROSS-TABS 11-15: Two dimensions crossed ──
+    for (let i = 0; i < dims.length - 1 && defs.length < 15; i++) {
+        for (let j = i + 1; j < dims.length && defs.length < 15; j++) {
+            const d1 = dims[i], d2 = dims[j];
+            const l1 = humanize(d1.column), l2 = humanize(d2.column);
+            defs.push({
+                id: `cross_${d1.column}_${d2.column}`,
+                title: `${l1} by ${l2}`,
+                subtitle: `How ${l1.toLowerCase()} values distribute across ${l2.toLowerCase()}`,
+                category: 'comparative',
+                priority: priority++,
+                chartType: 'bar',
+                sql: `SELECT ${q(d1.column)} as label, COUNT(*) as value FROM data WHERE ${q(d1.column)} IS NOT NULL GROUP BY ${q(d1.column)} ORDER BY value DESC LIMIT 8`,
+                xKey: 'label',
+                yKey: 'value',
+            });
+        }
+    }
+
+    return defs.slice(0, 15);
+}
+
 function buildInsightDefs(model: SemanticModel, rowCount: number): InsightDef[] {
     const defs: InsightDef[] = [];
     const pm = pickPrimaryMeasure(model);
@@ -122,8 +202,8 @@ function buildInsightDefs(model: SemanticModel, rowCount: number): InsightDef[] 
     const dateCol = model.primaryDateColumn;
 
     if (!pm) {
-        console.warn('[AutoInsights] No measures found in semantic model');
-        return [];
+        console.log('[AutoInsights] No measures found — generating count-based insights from dimensions');
+        return buildDimensionOnlyInsights(model, rowCount);
     }
 
     const pmLabel = humanize(pm.column);
