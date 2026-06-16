@@ -1235,7 +1235,7 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
                 'X-Title': 'QuickInsight'
             },
             body: JSON.stringify({
-                model: model || 'google/gemini-2.0-flash-001',
+                model: model || 'google/gemini-2.5-flash',
                 messages,
                 max_tokens: Math.min(max_tokens || 2000, 4000),
                 temperature: temperature ?? 0.1
@@ -1252,7 +1252,7 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
         const tokensUsed = data.usage?.total_tokens || data.usage?.completion_tokens || 0;
 
         // Log usage
-        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, model || 'google/gemini-2.0-flash-001', `tokens:${tokensUsed}`);
+        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, model || 'google/gemini-2.5-flash', `tokens:${tokensUsed}`);
         console.log(`[LLM] User ${user.email} — ${tokensUsed} tokens (${quota.remaining - 1} remaining today)`);
 
         // Include quota info in response
@@ -1453,7 +1453,7 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
                 'X-Title': 'QuickInsight'
             },
             body: JSON.stringify({
-                model: 'google/gemini-2.0-flash-001',
+                model: 'google/gemini-2.5-flash',
                 messages: [
                     { role: 'system', content: 'You are an expert Data Architect. Respond with ONLY valid JSON - no markdown fences, no explanations, no commentary. Just the raw JSON object.' },
                     { role: 'user', content: sanitizedPrompt }
@@ -1474,7 +1474,7 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
         const tokensUsed = data?.usage?.total_tokens || 0;
 
         // Log usage
-        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, 'google/gemini-2.0-flash-001', 'profile-dataset');
+        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, 'google/gemini-2.5-flash', 'profile-dataset');
 
         if (!content) {
             console.warn('[AI Profile] Empty LLM response');

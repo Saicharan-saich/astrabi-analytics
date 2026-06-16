@@ -17,7 +17,7 @@ export const OPENROUTER_API_URL = BACKEND_LLM_URL;
 export const API_KEY = '__ROUTED_THROUGH_BACKEND__';
 
 /** The model to use for all AI requests */
-export const PRIMARY_MODEL = 'google/gemini-2.0-flash-001';
+export const PRIMARY_MODEL = 'google/gemini-2.5-flash';
 
 /** Default timeout for AI requests */
 export const DEFAULT_TIMEOUT_MS = 30000;
