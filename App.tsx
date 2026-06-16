@@ -48,6 +48,7 @@ import { PinToDashboardModal } from './components/PinToDashboardModal';
 import ReconnectModal from './components/ReconnectModal';
 import { AlertsView } from './components/AlertsView';
 import { UserInsightsView } from './components/UserInsightsView';
+import { QuickInsightsView } from './components/QuickInsightsView';
 import { NotificationCenter } from './components/NotificationCenter';
 import { useAlertStore } from './store/useAlertStore';
 import { evaluateAllAlerts } from './services/alertEngine';
@@ -436,7 +437,7 @@ function App() {
             setDataset(profiled);
             saveDatasetToDB(profiled);
             setPendingProfile(profile);
-            setActiveTab(Tab.COLUMN_MAPPING);
+            setActiveTab(Tab.QUICK_INSIGHTS);
             console.log(`[App] AI Profile: ${profile.domain} (${(profile.confidence * 100).toFixed(0)}% confidence)`);
           } else {
             // ── HEURISTIC DOMAIN FALLBACK (no AI required) ──
@@ -467,7 +468,7 @@ function App() {
             setDataset(profiled);
             saveDatasetToDB(profiled);
             setPendingProfile(fallbackProfile);
-            setActiveTab(Tab.COLUMN_MAPPING);
+            setActiveTab(Tab.QUICK_INSIGHTS);
             console.log(`[App] Heuristic domain: ${heuristicDomain || 'Sales'}`);
           }
         }).catch(err => {
@@ -499,7 +500,7 @@ function App() {
           setDataset(profiled);
           saveDatasetToDB(profiled);
           setPendingProfile(fallbackProfile);
-          setActiveTab(Tab.COLUMN_MAPPING);
+          setActiveTab(Tab.QUICK_INSIGHTS);
         });
       } else if (type === 'ERROR') {
         setError(error);
@@ -1593,6 +1594,13 @@ function App() {
 
                 <div className={`h-full w-full ${activeTab === Tab.USER_INSIGHTS ? '' : 'hidden'}`}>
                   <UserInsightsView />
+                </div>
+
+                <div className={`h-full w-full ${activeTab === Tab.QUICK_INSIGHTS ? '' : 'hidden'}`}>
+                  <QuickInsightsView
+                    dataset={dataset}
+                    onPin={(title, result) => handlePin(result)}
+                  />
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.SMART_QUESTIONS ? '' : 'hidden'}`}>

@@ -487,7 +487,8 @@ export enum Tab {
   ALERTS = 'ALERTS',
   VISUAL_PREVIEW = 'VISUAL_PREVIEW',
   DERIVED_COLUMNS = 'DERIVED_COLUMNS',
-  USER_INSIGHTS = 'USER_INSIGHTS'
+  USER_INSIGHTS = 'USER_INSIGHTS',
+  QUICK_INSIGHTS = 'QUICK_INSIGHTS'
 }
 
 // ─── Authentication & RBAC ───────────────────────────────────────
