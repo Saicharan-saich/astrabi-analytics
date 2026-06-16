@@ -67,32 +67,71 @@ function kpiFormat(measure: SemanticMeasure): AutoInsight['kpiFormat'] {
     return 'number';
 }
 
-/** Pick the primary additive measure */
+// ── BLACKLIST: columns that should NEVER be used as measures or meaningful dimensions ──
+const ID_PATTERNS = /\b(id|_id|uuid|guid|key|pk|fk|index|row_?num|serial|code)\b/i;
+const NAME_PATTERNS = /\b(name|first_?name|last_?name|full_?name|patient_?name|employee_?name|customer_?name)\b/i;
+
+/** True if column looks like an identifier (not a business metric) */
+function isIdLike(col: string): boolean {
+    return ID_PATTERNS.test(col);
+}
+
+/** Get meaningful measures — filter out IDs, row numbers, keys */
+function getBusinessMeasures(model: SemanticModel): SemanticMeasure[] {
+    return model.measures.filter(m => !m.isHidden && !isIdLike(m.column));
+}
+
+/** Pick the primary additive measure (revenue, sales, cost — NOT order_id) */
 function pickPrimaryMeasure(model: SemanticModel): SemanticMeasure | null {
-    return model.measures.find(m => m.behavior === 'additive' && !m.isHidden)
-        || model.measures.find(m => !m.isHidden)
-        || model.measures[0]
+    const biz = getBusinessMeasures(model);
+    // Prefer additive currency measures first (revenue, sales, cost)
+    return biz.find(m => m.behavior === 'additive' && (m.format === 'currency_usd' || m.format === 'currency_eur'))
+        || biz.find(m => m.behavior === 'additive')
+        || biz[0]
         || null;
 }
 
-/** Pick a secondary measure different from primary */
+/** Pick a secondary measure different from primary (also excluding IDs) */
 function pickSecondaryMeasure(model: SemanticModel, primary: SemanticMeasure | null): SemanticMeasure | null {
-    return model.measures.find(m => m.column !== primary?.column && !m.isHidden) || null;
+    const biz = getBusinessMeasures(model);
+    return biz.find(m => m.column !== primary?.column) || null;
 }
 
-/** Pick a non-additive measure (for diagnostic) */
+/** Pick a non-additive measure (for diagnostic — e.g., discount rate, satisfaction score) */
 function pickNonAdditiveMeasure(model: SemanticModel, primary: SemanticMeasure | null): SemanticMeasure | null {
-    return model.measures.find(m => m.behavior === 'non_additive' && m.column !== primary?.column && !m.isHidden) || null;
+    const biz = getBusinessMeasures(model);
+    return biz.find(m => m.behavior === 'non_additive' && m.column !== primary?.column) || null;
 }
 
-/** Pick primary categorical dimension (non-date, not hidden) */
+/**
+ * Rank dimensions by analytical value.
+ * Prefer: category > region > department > channel > type
+ * Avoid: individual names (high cardinality, not aggregatable)
+ */
+function rankDimensions(dims: SemanticDimension[]): SemanticDimension[] {
+    const GOOD_PATTERNS = /\b(category|region|department|channel|type|status|segment|group|class|tier|brand|market|state|country|city|gender|division|source|platform)\b/i;
+    const BAD_PATTERNS = /\b(name|first_?name|last_?name|full_?name|address|email|phone|description|notes|comment|url)\b/i;
+
+    return [...dims].sort((a, b) => {
+        const aGood = GOOD_PATTERNS.test(a.column) ? 1 : 0;
+        const bGood = GOOD_PATTERNS.test(b.column) ? 1 : 0;
+        const aBad = BAD_PATTERNS.test(a.column) ? 1 : 0;
+        const bBad = BAD_PATTERNS.test(b.column) ? 1 : 0;
+        // Good dimensions first, bad dimensions last
+        return (bGood - aGood) || (aBad - bBad);
+    });
+}
+
+/** Pick primary categorical dimension — prefer category, region over individual names */
 function pickPrimaryDim(model: SemanticModel): SemanticDimension | null {
-    return model.dimensions.find(d => d.dataType === 'string' && !d.isHidden) || null;
+    const ranked = rankDimensions(model.dimensions.filter(d => d.dataType === 'string' && !d.isHidden));
+    return ranked[0] || null;
 }
 
 /** Pick secondary categorical dimension */
 function pickSecondaryDim(model: SemanticModel, primary: SemanticDimension | null): SemanticDimension | null {
-    return model.dimensions.find(d => d.dataType === 'string' && !d.isHidden && d.column !== primary?.column) || null;
+    const ranked = rankDimensions(model.dimensions.filter(d => d.dataType === 'string' && !d.isHidden && d.column !== primary?.column));
+    return ranked[0] || null;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -328,15 +367,15 @@ function buildInsightDefs(model: SemanticModel, rowCount: number): InsightDef[] 
             yKey: 'value',
         });
 
-        // TREND 9: Daily volume
+        // TREND 9: Weekly trend
         defs.push({
-            id: 'trend_daily_count',
-            title: 'Daily Record Volume',
-            subtitle: 'Number of records per day',
+            id: 'trend_weekly',
+            title: `Weekly ${pmLabel} Trend`,
+            subtitle: `${pmLabel} aggregated by week`,
             category: 'trend',
             priority: 9,
             chartType: 'line',
-            sql: `SELECT CAST(${q(dateCol)} AS DATE) as period, COUNT(*) as value FROM data WHERE ${q(dateCol)} IS NOT NULL GROUP BY period ORDER BY period`,
+            sql: `SELECT strftime(CAST(${q(dateCol)} AS DATE), '%Y-W%W') as period, ${aggExpr(pm)} as value FROM data WHERE ${q(dateCol)} IS NOT NULL GROUP BY period ORDER BY period`,
             xKey: 'period',
             yKey: 'value',
         });
@@ -416,20 +455,21 @@ function buildInsightDefs(model: SemanticModel, rowCount: number): InsightDef[] 
         });
     }
 
-    // ── DISTRIBUTION 13: Value histogram ──
-    defs.push({
-        id: 'dist_histogram',
-        title: `${pmLabel} Distribution`,
-        subtitle: `How values of ${pmLabel.toLowerCase()} are spread`,
-        category: 'distribution',
-        priority: 13,
-        chartType: 'bar',
-        sql: `WITH stats AS (SELECT MIN(${q(pm.column)}) as mn, MAX(${q(pm.column)}) as mx FROM data),
-              bins AS (SELECT FLOOR((${q(pm.column)} - stats.mn) / NULLIF((stats.mx - stats.mn) / 8, 0)) as bin FROM data, stats WHERE ${q(pm.column)} IS NOT NULL)
-              SELECT CAST(bin AS INTEGER) as label, COUNT(*) as value FROM bins GROUP BY bin ORDER BY bin`,
-        xKey: 'label',
-        yKey: 'value',
-    });
+    // ── DISTRIBUTION 13: Record count by primary dimension (pie) ──
+    if (sd) {
+        const sdLabel2 = humanize(sd.column);
+        defs.push({
+            id: 'dist_count_dim',
+            title: `Record Count by ${sdLabel2}`,
+            subtitle: `Number of records in each ${sdLabel2.toLowerCase()}`,
+            category: 'distribution',
+            priority: 13,
+            chartType: 'pie',
+            sql: `SELECT ${q(sd.column)} as label, COUNT(*) as value FROM data GROUP BY ${q(sd.column)} ORDER BY value DESC LIMIT 8`,
+            xKey: 'label',
+            yKey: 'value',
+        });
+    }
 
     // ── DIAGNOSTIC 14: Non-additive measure average ──
     if (nam) {
