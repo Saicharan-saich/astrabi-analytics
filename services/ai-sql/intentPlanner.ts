@@ -1123,7 +1123,8 @@ function enforceTimeComparison(plan: AnalysisPlan, question: string, model: Sema
 export async function generatePlan(
     question: string,
     model: SemanticModel,
-    grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+    grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year',
+    conversationHistory?: Array<{ question: string; planSummary: string }>
 ): Promise<AnalysisPlan> {
     if (!API_KEY) {
         throw new Error('OpenRouter API key not configured. Set VITE_OPENROUTER_API_KEY in .env');
@@ -1140,12 +1141,30 @@ export async function generatePlan(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
+    // Build conversation messages with history for follow-up context
+    const llmMessages: Array<{ role: string; content: string }> = [
+        { role: 'system', content: systemPrompt }
+    ];
+
+    // Inject conversation history (last 4 turns) so the LLM understands follow-ups
+    if (conversationHistory && conversationHistory.length > 0) {
+        const recentHistory = conversationHistory.slice(-4);
+        for (const turn of recentHistory) {
+            llmMessages.push({ role: 'user', content: turn.question });
+            llmMessages.push({ role: 'assistant', content: turn.planSummary });
+        }
+        // Add a context hint for the current follow-up question
+        llmMessages.push({
+            role: 'user',
+            content: `Follow-up question (build on the previous context): ${question}`
+        });
+    } else {
+        llmMessages.push({ role: 'user', content: question });
+    }
+
     try {
         const { data } = await fetchWithFallback(
-            [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: question }
-            ],
+            llmMessages as any,
             { temperature: 0.0, max_tokens: 1500, timeout: TIMEOUT_MS }
         );
 

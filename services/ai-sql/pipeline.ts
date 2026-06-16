@@ -63,7 +63,8 @@ export async function runAISQLPipeline(
     externalFilters?: PlanFilter[],
     onProgress?: (progress: PipelineProgress) => void,
     grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year',
-    forceRefresh?: boolean
+    forceRefresh?: boolean,
+    conversationHistory?: Array<{ question: string; planSummary: string }>
 ): Promise<AISQLPipelineResult> {
     const startTime = performance.now();
     let repairAttempts = 0;
@@ -97,7 +98,7 @@ export async function runAISQLPipeline(
     // ─── Step 2: Generate Analysis Plan (Step A — LLM) ───────────
     reportProgress('Generating analysis plan (AI)...', 3);
     console.log('[Pipeline] Step 2: Generating analysis plan...');
-    const plan = await generatePlan(augmentedQuestion, semanticModel, grainOverride);
+    const plan = await generatePlan(augmentedQuestion, semanticModel, grainOverride, conversationHistory);
 
     // Inject the pre-resolved time filter if the LLM didn't include one
     if (resolvedTime.filter) {
