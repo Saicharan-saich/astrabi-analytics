@@ -498,50 +498,64 @@ export async function generateAutoInsights(dataset: Dataset): Promise<AutoInsigh
     const defs = buildInsightDefs(model, dataset.rows.length);
     console.log(`[AutoInsights] Generated ${defs.length} insight definitions`);
 
-    // Execute all queries in parallel
-    const results = await Promise.allSettled(
-        defs.map(async (def): Promise<AutoInsight> => {
-            try {
-                const result = await executeSQLViaDuckDB(
-                    dataset.rows,
-                    def.sql,
-                    dataset.timeContext
-                );
+    if (defs.length === 0) return [];
 
-                if (result.error) {
-                    throw new Error(result.error);
+    // ── PRE-WARM: Run first query synchronously to ensure DuckDB table is loaded ──
+    console.log('[AutoInsights] Pre-warming DuckDB table...');
+    await executeSQLViaDuckDB(dataset.rows, 'SELECT COUNT(*) as n FROM data', dataset.timeContext);
+    console.log('[AutoInsights] DuckDB table ready, executing insight queries...');
+
+    // Execute in batches of 5 to avoid overwhelming DuckDB
+    const insights: AutoInsight[] = [];
+    const BATCH_SIZE = 5;
+
+    for (let i = 0; i < defs.length; i += BATCH_SIZE) {
+        const batch = defs.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+            batch.map(async (def): Promise<AutoInsight> => {
+                try {
+                    const result = await executeSQLViaDuckDB(
+                        dataset.rows,
+                        def.sql,
+                        dataset.timeContext
+                    );
+
+                    if (result.error) {
+                        throw new Error(result.error);
+                    }
+
+                    const data = result.data || [];
+                    const isKpi = def.chartType === 'kpiCard';
+                    const kpiValue = isKpi && data.length > 0 ? data[0]?.value : undefined;
+
+                    return {
+                        ...def,
+                        data,
+                        yLabel: def.title,
+                        kpiValue,
+                        status: 'done',
+                    };
+                } catch (err: any) {
+                    console.warn(`[AutoInsights] Query failed for "${def.id}":`, err.message);
+                    return {
+                        ...def,
+                        data: [],
+                        yLabel: def.title,
+                        status: 'error',
+                        error: err.message,
+                    };
                 }
+            })
+        );
 
-                const data = result.data || [];
-                const isKpi = def.chartType === 'kpiCard';
-                const kpiValue = isKpi && data.length > 0 ? data[0]?.value : undefined;
-
-                return {
-                    ...def,
-                    data,
-                    yLabel: def.title,
-                    kpiValue,
-                    status: 'done',
-                };
-            } catch (err: any) {
-                console.warn(`[AutoInsights] Query failed for "${def.id}":`, err.message);
-                return {
-                    ...def,
-                    data: [],
-                    yLabel: def.title,
-                    status: 'error',
-                    error: err.message,
-                };
+        for (const r of results) {
+            if (r.status === 'fulfilled' && r.value.status === 'done' && r.value.data.length > 0) {
+                insights.push(r.value);
             }
-        })
-    );
+        }
+    }
 
-    // Collect successful insights
-    const insights: AutoInsight[] = results
-        .filter((r): r is PromiseFulfilledResult<AutoInsight> => r.status === 'fulfilled')
-        .map(r => r.value)
-        .filter(i => i.status === 'done' && i.data.length > 0)
-        .sort((a, b) => a.priority - b.priority);
+    insights.sort((a, b) => a.priority - b.priority);
 
     const elapsed = ((performance.now() - startTime) / 1000).toFixed(1);
     console.log(`[AutoInsights] Completed: ${insights.length}/${defs.length} insights in ${elapsed}s`);

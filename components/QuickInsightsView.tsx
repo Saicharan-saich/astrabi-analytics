@@ -288,22 +288,36 @@ const InsightCard: React.FC<{
     const IconComp = style.icon;
 
     const chartData = useMemo(() => {
-        const labels = insight.data.map(d => String(d[insight.xKey] ?? ''));
+        const labels = insight.data.map(d => {
+            const raw = String(d[insight.xKey] ?? '');
+            // Truncate long labels
+            return raw.length > 18 ? raw.substring(0, 16) + '…' : raw;
+        });
         const values = insight.data.map(d => Number(d[insight.yKey]) || 0);
         const colors = labels.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
+        const borderColors = colors.map(c => c.replace('0.85', '1'));
+
+        const isBar = insight.chartType === 'bar' || insight.chartType === 'horizontalBar';
+        const isLine = insight.chartType === 'line' || insight.chartType === 'area';
+        const isDoughnut = insight.chartType === 'donut' || insight.chartType === 'pie';
 
         return {
             labels,
             datasets: [{
                 data: values,
-                backgroundColor: insight.chartType === 'donut' || insight.chartType === 'pie' ? colors : CHART_COLORS[0],
-                borderColor: insight.chartType === 'line' || insight.chartType === 'area' ? CHART_COLORS[0] : 'transparent',
-                borderWidth: insight.chartType === 'line' || insight.chartType === 'area' ? 2.5 : 1,
+                // Bars: each bar gets a unique vibrant color
+                backgroundColor: isDoughnut ? colors : isBar ? colors : 'rgba(16, 185, 129, 0.25)',
+                borderColor: isDoughnut ? borderColors : isLine ? 'rgba(16, 185, 129, 1)' : borderColors,
+                borderWidth: isLine ? 2.5 : isDoughnut ? 2 : 0,
                 fill: insight.chartType === 'area',
-                tension: 0.35,
-                pointRadius: insight.chartType === 'line' || insight.chartType === 'area' ? 2 : 0,
-                pointBackgroundColor: '#fff',
-                borderRadius: 4,
+                tension: 0.4,
+                pointRadius: isLine ? 3 : 0,
+                pointHoverRadius: isLine ? 6 : 0,
+                pointBackgroundColor: isLine ? '#10b981' : '#fff',
+                pointBorderColor: '#fff',
+                pointBorderWidth: 2,
+                borderRadius: isBar ? 6 : 0,
+                hoverBackgroundColor: isDoughnut ? borderColors : undefined,
             }]
         };
     }, [insight]);
