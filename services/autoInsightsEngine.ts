@@ -485,6 +485,28 @@ function buildInsightDefs(model: SemanticModel, rowCount: number): InsightDef[] 
 // MAIN FUNCTION
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * Sanitize rows before loading into DuckDB.
+ * Replaces empty strings, undefined, and NaN with null to prevent
+ * "Could not convert string '' to DOUBLE" errors.
+ */
+function sanitizeRows(rows: any[]): any[] {
+    if (!rows.length) return rows;
+    const keys = Object.keys(rows[0]);
+    return rows.map(row => {
+        const clean: any = {};
+        for (const k of keys) {
+            const v = row[k];
+            if (v === '' || v === undefined || (typeof v === 'number' && isNaN(v))) {
+                clean[k] = null;
+            } else {
+                clean[k] = v;
+            }
+        }
+        return clean;
+    });
+}
+
 export async function generateAutoInsights(dataset: Dataset): Promise<AutoInsight[]> {
     const startTime = performance.now();
     console.log('[AutoInsights] Starting auto-analysis...');
@@ -500,58 +522,50 @@ export async function generateAutoInsights(dataset: Dataset): Promise<AutoInsigh
 
     if (defs.length === 0) return [];
 
-    // ── PRE-WARM: Run first query synchronously to ensure DuckDB table is loaded ──
+    // ── SANITIZE: Clean empty strings / NaN before DuckDB ingestion ──
+    const cleanRows = sanitizeRows(dataset.rows);
+    console.log(`[AutoInsights] Sanitized ${cleanRows.length} rows for DuckDB`);
+
+    // ── PRE-WARM: Load table synchronously and verify it works ──
     console.log('[AutoInsights] Pre-warming DuckDB table...');
-    await executeSQLViaDuckDB(dataset.rows, 'SELECT COUNT(*) as n FROM data', dataset.timeContext);
+    const warmup = await executeSQLViaDuckDB(cleanRows, 'SELECT COUNT(*) as n FROM data', dataset.timeContext);
+    if (warmup.error) {
+        console.error('[AutoInsights] Failed to load data into DuckDB:', warmup.error);
+        return [];
+    }
     console.log('[AutoInsights] DuckDB table ready, executing insight queries...');
 
-    // Execute in batches of 5 to avoid overwhelming DuckDB
+    // ── Execute queries SEQUENTIALLY to prevent race conditions ──
     const insights: AutoInsight[] = [];
-    const BATCH_SIZE = 5;
 
-    for (let i = 0; i < defs.length; i += BATCH_SIZE) {
-        const batch = defs.slice(i, i + BATCH_SIZE);
-        const results = await Promise.allSettled(
-            batch.map(async (def): Promise<AutoInsight> => {
-                try {
-                    const result = await executeSQLViaDuckDB(
-                        dataset.rows,
-                        def.sql,
-                        dataset.timeContext
-                    );
+    for (const def of defs) {
+        try {
+            const result = await executeSQLViaDuckDB(
+                cleanRows,
+                def.sql,
+                dataset.timeContext
+            );
 
-                    if (result.error) {
-                        throw new Error(result.error);
-                    }
-
-                    const data = result.data || [];
-                    const isKpi = def.chartType === 'kpiCard';
-                    const kpiValue = isKpi && data.length > 0 ? data[0]?.value : undefined;
-
-                    return {
-                        ...def,
-                        data,
-                        yLabel: def.title,
-                        kpiValue,
-                        status: 'done',
-                    };
-                } catch (err: any) {
-                    console.warn(`[AutoInsights] Query failed for "${def.id}":`, err.message);
-                    return {
-                        ...def,
-                        data: [],
-                        yLabel: def.title,
-                        status: 'error',
-                        error: err.message,
-                    };
-                }
-            })
-        );
-
-        for (const r of results) {
-            if (r.status === 'fulfilled' && r.value.status === 'done' && r.value.data.length > 0) {
-                insights.push(r.value);
+            if (result.error) {
+                console.warn(`[AutoInsights] Query failed for "${def.id}":`, result.error);
+                continue;
             }
+
+            const data = result.data || [];
+            if (data.length === 0) continue;
+
+            const isKpi = def.chartType === 'kpiCard';
+            const kpiValue = isKpi && data.length > 0 ? data[0]?.value : undefined;
+
+            insights.push({
+                ...def,
+                data,
+                yLabel: def.title,
+                kpiValue,
+                status: 'done',
+            });
+        } catch (err: any) {
+            console.warn(`[AutoInsights] Query failed for "${def.id}":`, err.message);
         }
     }
 
