@@ -8,7 +8,7 @@
 
 import { Dataset } from '../types';
 import { SemanticModel, SemanticMeasure, SemanticDimension } from './semanticModel';
-import { executeSQLViaDuckDB } from './duckdbEngine';
+import { executeSQLViaDuckDB, reloadDataTable } from './duckdbEngine';
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES
@@ -566,14 +566,15 @@ export async function generateAutoInsights(dataset: Dataset): Promise<AutoInsigh
     const cleanRows = sanitizeRows(dataset.rows);
     console.log(`[AutoInsights] Sanitized ${cleanRows.length} rows for DuckDB`);
 
-    // ── PRE-WARM: Load table synchronously and verify it works ──
-    console.log('[AutoInsights] Pre-warming DuckDB table...');
-    const warmup = await executeSQLViaDuckDB(cleanRows, 'SELECT COUNT(*) as n FROM data', dataset.timeContext);
-    if (warmup.error) {
-        console.error('[AutoInsights] Failed to load data into DuckDB:', warmup.error);
+    // ── FORCE RELOAD: Drop stale table and load current dataset ──
+    console.log('[AutoInsights] Force-loading current dataset into DuckDB...');
+    try {
+        await reloadDataTable(cleanRows);
+        console.log('[AutoInsights] DuckDB table ready, executing insight queries...');
+    } catch (err: any) {
+        console.error('[AutoInsights] Failed to load data into DuckDB:', err.message);
         return [];
     }
-    console.log('[AutoInsights] DuckDB table ready, executing insight queries...');
 
     // ── Execute queries SEQUENTIALLY to prevent race conditions ──
     const insights: AutoInsight[] = [];
