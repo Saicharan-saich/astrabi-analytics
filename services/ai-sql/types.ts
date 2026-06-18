@@ -379,6 +379,38 @@ export interface TrustVerification {
     summary: string;
 }
 
+// ─── Pipeline Trace (Transparency Report) ────────────────────────
+
+export interface PipelineStepTrace {
+    /** Step number in the pipeline */
+    stepNumber: number;
+    /** Human-readable step name */
+    name: string;
+    /** Engine identifier */
+    engine: string;
+    /** Emoji icon for visual display */
+    icon: string;
+    /** Milliseconds offset from pipeline start */
+    startMs: number;
+    /** Duration of this step in milliseconds */
+    durationMs: number;
+    /** Step outcome */
+    status: 'pass' | 'warn' | 'skip' | 'fail';
+    /** One-line human-readable summary */
+    summary: string;
+    /** Structured details for expandable view */
+    details: Record<string, any>;
+}
+
+export interface PipelineTrace {
+    /** Original user question */
+    question: string;
+    /** Total pipeline duration in milliseconds */
+    totalDurationMs: number;
+    /** Ordered list of step traces */
+    steps: PipelineStepTrace[];
+}
+
 export interface AISQLPipelineResult {
     /** The structured analysis plan */
     plan: AnalysisPlan;
@@ -406,4 +438,7 @@ export interface AISQLPipelineResult {
     repairAttempts: number;
     /** Trust & Verification Layer */
     trust?: TrustVerification;
+    /** Pipeline transparency trace — step-by-step engine telemetry */
+    trace?: PipelineTrace;
 }
+

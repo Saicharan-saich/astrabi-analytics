@@ -29,4 +29,5 @@ export type {
     ValidationResult, ValidationCheck,
     FieldClassificationSignals,
     TrustVerification, TrustCheck,
+    PipelineTrace, PipelineStepTrace,
 } from './types';

@@ -24,49 +24,94 @@ let db: duckdb.AsyncDuckDB | null = null;
 let conn: duckdb.AsyncDuckDBConnection | null = null;
 let initPromise: Promise<void> | null = null;
 let initError: Error | null = null;
+let initAttempts = 0;
+const MAX_INIT_RETRIES = 3;
 const loadedTables = new Map<string, Promise<void>>();
 
 // ── Initialization ───────────────────────────────────────────────
 
+/**
+ * Initialize DuckDB-WASM with automatic retry and exponential backoff.
+ * If initialization fails due to a transient error (network, WASM compilation),
+ * it resets state and retries up to MAX_INIT_RETRIES times.
+ */
 async function initDuckDB(): Promise<void> {
-    if (db) return;
-    if (initError) throw initError;
+    if (db && conn) return;
     if (initPromise) return initPromise;
 
     initPromise = (async () => {
-        try {
-            logger.info('[DuckDB]', 'Initializing WASM engine...');
-            const startTime = performance.now();
+        let lastError: Error | null = null;
 
-            // Use CDN bundles for simplicity — no Vite WASM config needed
-            const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+        for (let attempt = initAttempts; attempt < MAX_INIT_RETRIES; attempt++) {
+            try {
+                initAttempts = attempt + 1;
+                logger.info('[DuckDB]', `Initializing WASM engine (attempt ${attempt + 1}/${MAX_INIT_RETRIES})...`);
+                const startTime = performance.now();
 
-            // Select a bundle based on browser capabilities
-            const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+                // Use CDN bundles for simplicity — no Vite WASM config needed
+                const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
 
-            const worker_url = URL.createObjectURL(
-                new Blob([`importScripts("${bundle.mainWorker!}");`], { type: 'text/javascript' })
-            );
+                // Select a bundle based on browser capabilities
+                const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
 
-            const worker = new Worker(worker_url);
-            const duckdbLogger = new duckdb.ConsoleLogger();
-            db = new duckdb.AsyncDuckDB(duckdbLogger, worker);
-            await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+                const worker_url = URL.createObjectURL(
+                    new Blob([`importScripts("${bundle.mainWorker!}");`], { type: 'text/javascript' })
+                );
 
-            conn = await db.connect();
+                const worker = new Worker(worker_url);
+                const duckdbLogger = new duckdb.ConsoleLogger();
+                db = new duckdb.AsyncDuckDB(duckdbLogger, worker);
+                await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
 
-            const elapsed = Math.round(performance.now() - startTime);
-            logger.info('[DuckDB]', `WASM engine ready in ${elapsed}ms`);
+                conn = await db.connect();
 
-            URL.revokeObjectURL(worker_url);
-        } catch (err) {
-            initError = err as Error;
-            logger.error('[DuckDB]', 'Failed to initialize:', err);
-            throw err;
+                const elapsed = Math.round(performance.now() - startTime);
+                logger.info('[DuckDB]', `WASM engine ready in ${elapsed}ms`);
+
+                URL.revokeObjectURL(worker_url);
+
+                // Success — reset error state
+                initError = null;
+                return;
+            } catch (err) {
+                lastError = err as Error;
+                // Clean up partial state from failed attempt
+                db = null;
+                conn = null;
+
+                logger.error('[DuckDB]', `Init attempt ${attempt + 1} failed:`, err);
+
+                if (attempt < MAX_INIT_RETRIES - 1) {
+                    // Exponential backoff: 1s, 2s, 4s
+                    const delay = 1000 * Math.pow(2, attempt);
+                    logger.info('[DuckDB]', `Retrying in ${delay}ms...`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
         }
+
+        // All retries exhausted
+        initError = lastError;
+        initPromise = null;  // Reset so future calls can retry after resetDuckDB()
+        throw lastError;
     })();
 
     return initPromise;
+}
+
+/**
+ * Reset DuckDB state to allow re-initialization.
+ * Call this when the user wants to retry after a failure,
+ * or when the app detects the connection is broken.
+ */
+export function resetDuckDB(): void {
+    db = null;
+    conn = null;
+    initPromise = null;
+    initError = null;
+    initAttempts = 0;
+    loadedTables.clear();
+    logger.info('[DuckDB]', 'State reset — next query will re-initialize');
 }
 
 // ── Table Management ─────────────────────────────────────────────
@@ -493,7 +538,7 @@ export async function executeSQLViaDuckDB(
     sql: string,
     timeContext?: { minDate: string; maxDate: string; primaryDateColumn?: string }
 ): Promise<SQLExecutionResult> {
-    try {
+    const attemptExecution = async (): Promise<SQLExecutionResult> => {
         // 1. Initialize DuckDB
         await initDuckDB();
         if (!conn) throw new Error('DuckDB connection not available');
@@ -530,8 +575,31 @@ export async function executeSQLViaDuckDB(
 
         logger.debug('[DuckDB]', `Result: ${result.rowCount} rows, ${result.columns.length} columns`);
         return { data: result.data, columns: result.columns };
+    };
+
+    try {
+        return await attemptExecution();
     } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
+
+        // If it's a connection/init error, reset and retry once
+        const isConnectionError = errorMsg.includes('connection not available')
+            || errorMsg.includes('initialization failed')
+            || errorMsg.includes('WebAssembly')
+            || errorMsg.includes('Network error');
+
+        if (isConnectionError) {
+            logger.warn('[DuckDB]', `Connection error detected, resetting and retrying: ${errorMsg}`);
+            resetDuckDB();
+            try {
+                return await attemptExecution();
+            } catch (retryErr) {
+                const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+                logger.error('[DuckDB]', 'Retry also failed:', retryMsg);
+                return { data: [], columns: [], error: retryMsg };
+            }
+        }
+
         logger.error('[DuckDB]', 'executeSQLViaDuckDB error:', errorMsg);
         return { data: [], columns: [], error: errorMsg };
     }

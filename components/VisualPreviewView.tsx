@@ -1,7 +1,7 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ArrowLeft, Pin, Code, Table2, BarChart2, Palette, Activity, Sparkles,
-  Copy, Check, X, RefreshCw, Play, Database, Loader2
+  Copy, Check, X, RefreshCw, Play, Database, Loader2, Microscope
 } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { ChartVisualization } from './ChartVisualization';
@@ -11,6 +11,7 @@ import { getCalculationDisplayName, type TableCalculation } from '../utils/table
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { useTheme } from './ThemeProvider';
 import TrustBadge from './TrustBadge';
+import { PipelineReport } from './PipelineReport';
 
 interface VisualPreviewViewProps {
   dataset: Dataset | null;
@@ -36,6 +37,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const [copiedSQL, setCopiedSQL] = useState(false);
   const [isPinned, setIsPinned] = useState(false);
   const [showConfidence, setShowConfidence] = useState(false);
+  const [showPipelineReport, setShowPipelineReport] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const [chartType, setChartType] = useState<string>((initialResult.vis as string) || 'bar');
   const [localFormatting, setLocalFormatting] = useState<FormattingConfig>(formatting);
@@ -132,6 +134,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           <button onClick={handlePin} className="flex items-center gap-1.5 text-[12px] font-bold text-amber-600 dark:text-amber-300 bg-amber-50 dark:bg-amber-500/10 hover:bg-amber-100 dark:hover:bg-amber-500/20 px-3 py-1.5 rounded-lg transition-all border border-amber-200 dark:border-amber-500/20">
             <Pin className="w-3.5 h-3.5" /> {isPinned ? 'Pinned!' : 'Pin'}
           </button>
+          {pipeline?.trace && (
+            <button onClick={() => setShowPipelineReport(true)} className="flex items-center gap-1.5 text-[12px] font-bold text-purple-600 dark:text-purple-300 bg-purple-50 dark:bg-purple-500/10 hover:bg-purple-100 dark:hover:bg-purple-500/20 px-3 py-1.5 rounded-lg transition-all border border-purple-200 dark:border-purple-500/20">
+              <Microscope className="w-3.5 h-3.5" /> Pipeline
+            </button>
+          )}
         </div>
       </div>
 
@@ -300,6 +307,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           </div>
         )}
       </div>
+
+      {/* ── Pipeline Report Modal ─────────────────────── */}
+      {showPipelineReport && pipeline?.trace && (
+        <PipelineReport trace={pipeline.trace} onClose={() => setShowPipelineReport(false)} />
+      )}
     </div>
   );
 };

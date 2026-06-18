@@ -20,7 +20,7 @@
  */
 
 import { Dataset } from '../../types';
-import { AISQLPipelineResult, AuditEntry, PlanFilter } from './types';
+import { AISQLPipelineResult, AuditEntry, PlanFilter, PipelineStepTrace, PipelineTrace } from './types';
 import { buildSemanticModel } from './semanticLayer';
 import { generatePlan } from './intentPlanner';
 import { generateSQLFromPlan, repairSQL } from './sqlGenerator';
@@ -73,8 +73,13 @@ export async function runAISQLPipeline(
         onProgress?.({ step, stepNumber, totalSteps: TOTAL_STEPS, percent: Math.round((stepNumber / TOTAL_STEPS) * 100) });
     };
 
-    console.log('[AI SQL Pipeline] Starting for question:', question);
+    // ─── Pipeline Trace Collector ─────────────────────────────────
+    const traceSteps: PipelineStepTrace[] = [];
+    const traceStep = (step: Omit<PipelineStepTrace, 'startMs' | 'durationMs'>, stepStart: number) => {
+        traceSteps.push({ ...step, startMs: Math.round(stepStart - startTime), durationMs: Math.round(performance.now() - stepStart) });
+    };
 
+    console.log('[AI SQL Pipeline] Starting for question:', question);
 
     if (externalFilters?.length) {
         console.log(`[Pipeline] ${externalFilters.length} external filter(s) provided from UI`);
@@ -83,14 +88,41 @@ export async function runAISQLPipeline(
     // ─── Step 1: Build Semantic Model ────────────────────────────
     reportProgress('Building semantic model...', 1);
     console.log('[Pipeline] Step 1: Building semantic model...');
+    let _s1 = performance.now();
     const semanticModel = buildSemanticModel(dataset);
+    const _metrics = semanticModel.fields.filter(f => f.role === 'metric').length;
+    const _dims = semanticModel.fields.filter(f => f.role === 'dimension').length;
+    traceStep({
+        stepNumber: 1, name: 'Semantic Model', engine: 'semanticLayer', icon: '🧠',
+        status: 'pass',
+        summary: `Classified ${semanticModel.fields.length} fields → ${_metrics} metrics, ${_dims} dimensions, ${semanticModel.compositeMetrics.length} composite`,
+        details: {
+            fields: semanticModel.fields.map(f => ({ name: f.name, role: f.role, type: f.semanticType, agg: f.defaultAgg })),
+            compositeMetrics: semanticModel.compositeMetrics.map(c => c.label),
+            derivedMetrics: (semanticModel.derivedMetrics || []).map(d => d.label),
+            timeContext: semanticModel.timeContext || null,
+        },
+    }, _s1);
     console.log(`[Pipeline] Semantic model: ${semanticModel.fields.length} fields, ${semanticModel.compositeMetrics.length} composite, ${semanticModel.derivedMetrics?.length || 0} derived metrics`);
 
     // ─── Step 1b: Resolve Time Context (BEFORE LLM) ────────────
     reportProgress('Resolving time context...', 2);
     console.log('[Pipeline] Step 1b: Resolving time context...');
+    _s1 = performance.now();
     const resolvedTime = resolveTimeContext(question, semanticModel);
     const augmentedQuestion = augmentQuestionWithTime(question, resolvedTime);
+    traceStep({
+        stepNumber: 2, name: 'Time Resolver', engine: 'timeResolver', icon: '⏰',
+        status: resolvedTime.filter ? 'pass' : 'skip',
+        summary: resolvedTime.filter
+            ? `"${resolvedTime.matchedPhrase}" → ${resolvedTime.description}`
+            : 'No time reference detected in question',
+        details: {
+            matchedPhrase: resolvedTime.matchedPhrase || null,
+            filter: resolvedTime.filter || null,
+            anchorDate: semanticModel.timeContext?.anchorDate || null,
+        },
+    }, _s1);
     if (resolvedTime.filter) {
         console.log(`[Pipeline] Time resolved: "${resolvedTime.matchedPhrase}" → ${resolvedTime.description}`);
     }
@@ -98,7 +130,23 @@ export async function runAISQLPipeline(
     // ─── Step 2: Generate Analysis Plan (Step A — LLM) ───────────
     reportProgress('Generating analysis plan (AI)...', 3);
     console.log('[Pipeline] Step 2: Generating analysis plan...');
+    _s1 = performance.now();
     const plan = await generatePlan(augmentedQuestion, semanticModel, grainOverride, conversationHistory);
+    traceStep({
+        stepNumber: 3, name: 'Intent Planner', engine: 'intentPlanner', icon: '🎯',
+        status: plan.ambiguous ? 'warn' : 'pass',
+        summary: `Intent: ${plan.intent} | ${plan.dimensions.length} dim(s), ${plan.metrics.length} metric(s), ${plan.filters.length} filter(s)${plan.limit ? `, limit ${plan.limit}` : ''}`,
+        details: {
+            intent: plan.intent,
+            dimensions: plan.dimensions.map(d => ({ field: d.field, grain: d.timeGrain || null })),
+            metrics: plan.metrics.map(m => ({ field: m.field, agg: m.agg })),
+            filters: plan.filters.map(f => ({ field: f.field, op: f.op, value: f.value })),
+            sort: plan.sort,
+            limit: plan.limit,
+            resultGrain: plan.resultGrain,
+            ambiguous: plan.ambiguous,
+        },
+    }, _s1);
 
     // Inject the pre-resolved time filter if the LLM didn't include one
     if (resolvedTime.filter) {
@@ -132,7 +180,23 @@ export async function runAISQLPipeline(
     // ─── Step 2c: APDME — Derived Metrics & Guardrails ─────────────
     reportProgress('Analyzing derived metrics...', 3);
     console.log('[Pipeline] Step 2c: Running APDME (Derived Metric Engine)...');
+    _s1 = performance.now();
     const apdmeResult = processPlan(plan, semanticModel);
+    traceStep({
+        stepNumber: 4, name: 'APDME Guardrails', engine: 'derivedMetricEngine', icon: '🛡️',
+        status: apdmeResult.violations.length > 0 ? 'warn' : 'pass',
+        summary: apdmeResult.derivedMetricApplied
+            ? `Derived metric applied: ${apdmeResult.derivedMetrics.map(d => d.aggregatedExpression).join(', ')}`
+            : apdmeResult.violations.length > 0
+                ? `${apdmeResult.violations.length} guardrail violation(s), penalty: -${apdmeResult.confidencePenalty}`
+                : 'All metrics passed guardrail checks',
+        details: {
+            derivedMetricApplied: apdmeResult.derivedMetricApplied,
+            derivedMetrics: apdmeResult.derivedMetrics.map(d => d.aggregatedExpression),
+            violations: apdmeResult.violations.map(v => v.message),
+            confidencePenalty: apdmeResult.confidencePenalty,
+        },
+    }, _s1);
     if (apdmeResult.derivedMetricApplied) {
         console.log(`[Pipeline] APDME: Derived metric applied — ${apdmeResult.derivedMetrics.map(d => d.aggregatedExpression).join(', ')}`);
     }
@@ -168,21 +232,39 @@ export async function runAISQLPipeline(
     // ─── Step 3: Generate SQL (Step B — deterministic + LLM fallback) ─
     reportProgress('Generating SQL...', 4);
     console.log('[Pipeline] Step 3: Generating SQL...');
+    _s1 = performance.now();
     let sqlResult = await generateSQLFromPlan(plan, semanticModel, apdmeResult.derivedMetrics);
     const aiGeneratedSQL = sqlResult.sql; // Keep AI's SQL for reference
     const sqlMethod = sqlResult.method;
+    traceStep({
+        stepNumber: 5, name: 'SQL Generator', engine: 'sqlGenerator', icon: '⚡',
+        status: 'pass',
+        summary: `Generated via ${sqlMethod === 'deterministic' ? 'deterministic rules' : 'AI/LLM fallback'}`,
+        details: { method: sqlMethod, sql: aiGeneratedSQL },
+    }, _s1);
 
     // ─── Step 3b: SQL Correction Engine ──────────────────────────
     reportProgress('Correcting SQL...', 5);
     console.log('[Pipeline] Step 3b: Running SQL Correction Engine...');
+    _s1 = performance.now();
     let currentSQL: string;
+    let _correctionStatus: 'pass' | 'warn' = 'pass';
     try {
         currentSQL = correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
         console.log('[Pipeline] Correction Engine SQL:', currentSQL);
     } catch (correctionErr: any) {
         console.warn('[Pipeline] Correction engine failed, using AI SQL:', correctionErr.message);
         currentSQL = aiGeneratedSQL; // Fallback to AI SQL if engine fails
+        _correctionStatus = 'warn';
     }
+    traceStep({
+        stepNumber: 6, name: 'SQL Correction Engine', engine: 'sqlCorrectionEngine', icon: '🔧',
+        status: _correctionStatus,
+        summary: _correctionStatus === 'pass'
+            ? 'SQL rebuilt deterministically — verified column names, GROUP BY, aggregations'
+            : 'Correction engine failed — using AI-generated SQL as fallback',
+        details: { correctedSQL: currentSQL, usedFallback: _correctionStatus === 'warn' },
+    }, _s1);
 
     // Surface fallback reason from the correction engine (e.g., hour grain without time data)
     if ((plan as any)._fallbackReason) {
@@ -200,15 +282,25 @@ export async function runAISQLPipeline(
     // ─── Step 4: Validate SQL ────────────────────────────────────
     reportProgress('Validating SQL...', 6);
     console.log('[Pipeline] Step 4: Validating SQL...');
+    _s1 = performance.now();
     const validation = validateSQL(currentSQL, plan, semanticModel);
+    const _failedChecks = validation.checks.filter(c => c.status === 'fail');
+    const _warnChecks = validation.checks.filter(c => c.status === 'warn');
+    traceStep({
+        stepNumber: 7, name: 'SQL Validator', engine: 'sqlValidator', icon: '✅',
+        status: _failedChecks.length > 0 ? 'fail' : _warnChecks.length > 0 ? 'warn' : 'pass',
+        summary: `${validation.checks.filter(c => c.status === 'pass').length}/${validation.checks.length} checks passed${_failedChecks.length > 0 ? `, ${_failedChecks.length} failed` : ''}`,
+        details: { checks: validation.checks },
+    }, _s1);
 
     if (!validation.valid) {
-        console.warn('[Pipeline] SQL validation failed:', validation.checks.filter(c => c.status === 'fail'));
+        console.warn('[Pipeline] SQL validation failed:', _failedChecks);
     }
 
     // ─── Step 5: Execute SQL ─────────────────────────────────────
     reportProgress('Executing SQL...', 7);
     console.log('[Pipeline] Step 5: Executing SQL...');
+    _s1 = performance.now();
     let execResult = await executeSQLViaDuckDB(dataset.rows, currentSQL, semanticModel.timeContext);
 
     // ─── Step 5b: Repair Loop (max 2 attempts) ──────────────────
@@ -229,6 +321,19 @@ export async function runAISQLPipeline(
     if (execResult.error) {
         throw new Error(`SQL execution failed: ${execResult.error}`);
     }
+
+    traceStep({
+        stepNumber: 8, name: 'DuckDB Execution', engine: 'duckdbEngine', icon: '🦆',
+        status: repairAttempts > 0 ? 'warn' : 'pass',
+        summary: `${(execResult.data || []).length} rows returned${repairAttempts > 0 ? ` (after ${repairAttempts} repair attempt${repairAttempts > 1 ? 's' : ''})` : ''}`,
+        details: {
+            rowCount: (execResult.data || []).length,
+            columnCount: (execResult.columns || []).length,
+            columns: execResult.columns || [],
+            repairAttempts,
+            sql: currentSQL,
+        },
+    }, _s1);
 
     let rawData = execResult.data || [];
     const columns = execResult.columns || [];
@@ -626,13 +731,35 @@ export async function runAISQLPipeline(
     // ─── Step 7: Profile Result ──────────────────────────────────
     reportProgress('Profiling results...', 9);
     console.log('[Pipeline] Step 7: Profiling result...');
+    _s1 = performance.now();
     const profile = profileResult(rawData, plan, semanticModel);
+    traceStep({
+        stepNumber: 9, name: 'Result Profiler', engine: 'resultProfiler', icon: '📊',
+        status: 'pass',
+        summary: `${profile.rowCount} rows, ${profile.metricCount} metric(s), ${profile.dimensionCount} dim(s), time=${profile.hasTimeDimension}`,
+        details: {
+            rowCount: profile.rowCount, metricCount: profile.metricCount,
+            dimensionCount: profile.dimensionCount, hasTimeDimension: profile.hasTimeDimension,
+            dimensionColumns: profile.dimensionColumns, metricColumns: profile.metricColumns,
+            scaleMismatch: profile.metricsScaleMismatch,
+        },
+    }, _s1);
     console.log(`[Pipeline] Profile: ${profile.rowCount} rows, ${profile.metricCount} metrics, ${profile.dimensionCount} dims, time=${profile.hasTimeDimension}, scaleMismatch=${profile.metricsScaleMismatch.toFixed(1)}x`);
 
     // ─── Step 8: Recommend Chart ─────────────────────────────────
     reportProgress('Selecting chart type...', 10);
     console.log('[Pipeline] Step 8: Recommending chart...');
+    _s1 = performance.now();
     const chartRec = recommendChart(profile, plan, semanticModel);
+    traceStep({
+        stepNumber: 10, name: 'Chart Recommender', engine: 'chartRecommender', icon: '📈',
+        status: 'pass',
+        summary: `${chartRec.chartType} — ${chartRec.reason}`,
+        details: {
+            chartType: chartRec.chartType, xKey: chartRec.xKey, yKey: chartRec.yKey,
+            useDualAxis: chartRec.useDualAxis, reason: chartRec.reason,
+        },
+    }, _s1);
     console.log(`[Pipeline] Chart: ${chartRec.chartType} (${chartRec.reason})`);
 
     // ── Growth Ranking Chart Override ─────────────────────────
@@ -670,6 +797,7 @@ export async function runAISQLPipeline(
 
     // ─── Step 10: Score Confidence ───────────────────────────────
     console.log('[Pipeline] Step 10: Scoring confidence...');
+    _s1 = performance.now();
     const confidence = scoreConfidence(plan, semanticModel, validation, sqlMethod, repairAttempts, currentSQL);
     // Apply APDME guardrail penalties (e.g., -50 for SUM on a date column)
     if (apdmeResult.confidencePenalty > 0) {
@@ -678,6 +806,12 @@ export async function runAISQLPipeline(
         confidence.reasons.push(...apdmeResult.violations.map(v => v.message));
         console.log(`[Pipeline] APDME penalty applied: -${apdmeResult.confidencePenalty} → ${confidence.score}/100`);
     }
+    traceStep({
+        stepNumber: 11, name: 'Confidence Scorer', engine: 'confidenceScorer', icon: '🏆',
+        status: confidence.level === 'low' ? 'warn' : 'pass',
+        summary: `Score: ${confidence.score}/100 (${confidence.level})`,
+        details: { score: confidence.score, level: confidence.level, factors: confidence.factors, reasons: confidence.reasons },
+    }, _s1);
     console.log(`[Pipeline] Confidence: ${confidence.score}/100 (${confidence.level})`);
 
     const executionTime = performance.now() - startTime;
@@ -713,6 +847,13 @@ export async function runAISQLPipeline(
     const dataAnswer = generateDataDrivenAnswer(question, plan, chartDataForAnswer, semanticModel);
     const finalExplanation = dataAnswer || sqlResult.explanation;
 
+    // ─── Build Pipeline Trace ─────────────────────────────────────
+    const pipelineTrace: PipelineTrace = {
+        question,
+        totalDurationMs: Math.round(executionTime),
+        steps: traceSteps,
+    };
+
     const pipelineResult: AISQLPipelineResult = {
         plan,
         sql: currentSQL,
@@ -726,6 +867,7 @@ export async function runAISQLPipeline(
         columnsUsed,
         executionTimeMs: Math.round(executionTime),
         repairAttempts,
+        trace: pipelineTrace,
     };
 
 
