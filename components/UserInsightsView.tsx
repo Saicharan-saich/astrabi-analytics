@@ -2,7 +2,8 @@ import React, { useState, useMemo } from 'react';
 import {
   Users, Activity, TrendingUp, Clock, BarChart3, Sparkles, Search, Upload,
   Layout, Bell, Brain, Crown, Pencil, Eye, ChevronDown, ChevronRight,
-  MessageSquare, Zap, Calendar, ArrowUpRight, ArrowDownRight, Minus
+  MessageSquare, Zap, Calendar, ArrowUpRight, ArrowDownRight, Minus,
+  RefreshCw, Globe, Loader2
 } from 'lucide-react';
 import { useActivityStore, UserInsightSummary, UserActivity } from '../store/useActivityStore';
 import { useTheme } from './ThemeProvider';
@@ -55,18 +56,85 @@ const timeAgo = (ts: number): string => {
 export const UserInsightsView: React.FC = () => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  const { getUserSummaries, getRecentActivities, getActivities } = useActivityStore();
+  // localStorage fallback
+  const localStore = useActivityStore();
 
   const [selectedUser, setSelectedUser] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<'overview' | 'activity'>('overview');
+  const [isLoading, setIsLoading] = useState(true);
+  const [backendError, setBackendError] = useState<string | null>(null);
 
-  const summaries = useMemo(() => getUserSummaries(), [getUserSummaries]);
-  const recentActivities = useMemo(() => getRecentActivities(100), [getRecentActivities]);
+  // ── Backend data state ──
+  const [backendSummaries, setBackendSummaries] = useState<UserInsightSummary[]>([]);
+  const [backendActivities, setBackendActivities] = useState<UserActivity[]>([]);
+  const [usingBackend, setUsingBackend] = useState(false);
+
+  const API_BASE_URL = (import.meta as any).env?.VITE_API_BASE_URL || 'https://api.quickinsight.co.uk';
+
+  // Get JWT token from localStorage
+  const getToken = (): string | null => {
+    try {
+      return localStorage.getItem('qi_token') || null;
+    } catch {}
+    return null;
+  };
+
+  const fetchFromBackend = async () => {
+    setIsLoading(true);
+    setBackendError(null);
+    const token = getToken();
+
+    try {
+      // Fetch summaries
+      const summaryRes = await fetch(`${API_BASE_URL}/api/activities/summary`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
+
+      if (summaryRes.ok) {
+        const summaryData = await summaryRes.json();
+        if (summaryData.success && summaryData.summaries) {
+          setBackendSummaries(summaryData.summaries);
+          setUsingBackend(true);
+        }
+      }
+
+      // Fetch recent activities
+      const actRes = await fetch(`${API_BASE_URL}/api/activities?limit=500`, {
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+      });
+
+      if (actRes.ok) {
+        const actData = await actRes.json();
+        if (actData.success && actData.activities) {
+          setBackendActivities(actData.activities);
+        }
+      }
+    } catch (err: any) {
+      console.warn('[UserInsights] Backend fetch failed, using localStorage fallback:', err.message);
+      setBackendError('Using local data — backend unavailable');
+      setUsingBackend(false);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Fetch on mount
+  React.useEffect(() => { fetchFromBackend(); }, []);
+
+  // Use backend data if available, else fall back to localStorage
+  const summaries = usingBackend ? backendSummaries : localStore.getUserSummaries();
+  const recentActivities = usingBackend
+    ? backendActivities.slice(0, 100)
+    : localStore.getRecentActivities(100);
 
   const selectedSummary = summaries.find(s => s.userId === selectedUser);
   const selectedActivities = useMemo(
-    () => selectedUser ? getActivities(selectedUser).reverse().slice(0, 200) : [],
-    [selectedUser, getActivities]
+    () => selectedUser
+      ? (usingBackend
+          ? backendActivities.filter(a => a.userId === selectedUser).slice(0, 200)
+          : localStore.getActivities(selectedUser).reverse().slice(0, 200))
+      : [],
+    [selectedUser, usingBackend, backendActivities, localStore]
   );
 
   // Aggregate stats
@@ -87,15 +155,43 @@ export const UserInsightsView: React.FC = () => {
     <div className="h-full w-full overflow-auto">
       <div className={`max-w-7xl mx-auto p-6 space-y-6 ${isDark ? '' : 'bg-gray-50 min-h-full'}`}>
         {/* ─── Header ─── */}
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl shadow-lg shadow-violet-500/20">
-            <Activity className="w-6 h-6 text-white" />
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-gradient-to-br from-violet-500 to-purple-600 rounded-xl shadow-lg shadow-violet-500/20">
+              <Activity className="w-6 h-6 text-white" />
+            </div>
+            <div>
+              <h2 className={`text-2xl font-bold ${headerText}`}>User Insights</h2>
+              <p className={`text-sm ${subtleText}`}>Monitor how your team uses QuickInsight across the globe</p>
+            </div>
           </div>
-          <div>
-            <h2 className={`text-2xl font-bold ${headerText}`}>User Insights</h2>
-            <p className={`text-sm ${subtleText}`}>Monitor how your team uses QuickInsight</p>
+          <div className="flex items-center gap-2">
+            {/* Data source badge */}
+            {usingBackend ? (
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-500/20">
+                <Globe className="w-3 h-3" /> Global Database
+              </span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-[11px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-2.5 py-1 rounded-full border border-amber-200 dark:border-amber-500/20">
+                Local Only
+              </span>
+            )}
+            <button
+              onClick={() => fetchFromBackend()}
+              disabled={isLoading}
+              className={`flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-lg transition-all border ${isDark ? 'text-cyan-300 bg-cyan-500/10 hover:bg-cyan-500/20 border-cyan-500/20' : 'text-cyan-600 bg-cyan-50 hover:bg-cyan-100 border-cyan-200'} disabled:opacity-50`}
+            >
+              {isLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Refresh
+            </button>
           </div>
         </div>
+
+        {/* Backend error notice */}
+        {backendError && (
+          <div className={`text-xs px-3 py-2 rounded-lg border ${isDark ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-amber-50 border-amber-200 text-amber-700'}`}>
+            ⚠️ {backendError}
+          </div>
+        )}
 
         {/* ─── Summary Cards ─── */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

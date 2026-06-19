@@ -61,19 +61,43 @@ interface ActivityState {
 
 const MAX_ACTIVITIES = 10000; // Cap at 10k to prevent localStorage bloat
 
+// ── Backend Sync (fire-and-forget) ──────────────────────────────
+const API_BASE_URL = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_BASE_URL) || 'https://api.quickinsight.co.uk';
+
+function syncToBackend(activity: UserActivity): void {
+    try {
+        fetch(`${API_BASE_URL}/api/activities`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                userId: activity.userId,
+                userName: activity.userName,
+                userEmail: activity.userEmail,
+                userRole: activity.userRole,
+                action: activity.action,
+                details: activity.details || null,
+            }),
+        }).catch(() => { /* silent — don't break UX if backend is down */ });
+    } catch { /* silent */ }
+}
+
 export const useActivityStore = create<ActivityState>()(
   persist(
     (set, get) => ({
       activities: [],
 
       trackActivity: (activity) => {
-        set(state => {
-          const newActivity: UserActivity = {
+        const newActivity: UserActivity = {
             ...activity,
             timestamp: Date.now(),
-          };
+        };
+
+        // Sync to backend PostgreSQL (fire-and-forget)
+        syncToBackend(newActivity);
+
+        // Also keep in localStorage for offline/fallback
+        set(state => {
           const updated = [...state.activities, newActivity];
-          // Cap at MAX_ACTIVITIES, removing oldest
           if (updated.length > MAX_ACTIVITIES) {
             return { activities: updated.slice(-MAX_ACTIVITIES) };
           }

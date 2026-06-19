@@ -119,6 +119,24 @@ async function initAuthDatabase() {
         try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_dashboards_user ON dashboards (user_id)`); } catch {}
         console.log('[Auth] Dashboards table ready');
 
+        // Create user_activities table for global engagement tracking
+        await authPool.query(`
+            CREATE TABLE IF NOT EXISTS user_activities (
+                id SERIAL PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                user_name TEXT,
+                user_email TEXT,
+                user_role TEXT,
+                action TEXT NOT NULL,
+                details TEXT,
+                created_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+        try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_activities_user ON user_activities (user_id)`); } catch {}
+        try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_activities_created ON user_activities (created_at)`); } catch {}
+        try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_activities_action ON user_activities (action)`); } catch {}
+        console.log('[Auth] User activities table ready');
+
         // Always ensure admin user exists (upsert — won't overwrite if already present)
         const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
         const upsertResult = await authPool.query(
@@ -1138,6 +1156,154 @@ app.post('/api/refresh-data', async (req, res) => {
             success: false,
             error: friendlyError,
         });
+    }
+});
+
+// ═══════════════════════════════════════════
+// USER ACTIVITY TRACKING (Global — PostgreSQL)
+// ═══════════════════════════════════════════
+
+// POST /api/activities — Log a user activity (any authenticated user)
+app.post('/api/activities', async (req, res) => {
+    if (!authPool) return res.status(503).json({ success: false, error: 'Database not available' });
+
+    const { userId, userName, userEmail, userRole, action, details } = req.body;
+    if (!userId || !action) {
+        return res.status(400).json({ success: false, error: 'userId and action are required' });
+    }
+
+    try {
+        await authPool.query(
+            `INSERT INTO user_activities (user_id, user_name, user_email, user_role, action, details)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [userId, userName || '', userEmail || '', userRole || '', action, details || null]
+        );
+        res.json({ success: true });
+    } catch (err) {
+        console.error('[Activities] Failed to log activity:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to log activity' });
+    }
+});
+
+// GET /api/activities — Fetch all activities (admin only)
+app.get('/api/activities', async (req, res) => {
+    if (!authPool) return res.status(503).json({ success: false, error: 'Database not available' });
+
+    // Verify admin JWT
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    let decoded;
+    try {
+        decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+    } catch {
+        return res.status(401).json({ success: false, error: 'Invalid token' });
+    }
+    if (decoded.role !== 'admin') {
+        return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+
+    try {
+        const limit = Math.min(parseInt(req.query.limit) || 5000, 10000);
+        const days = parseInt(req.query.days) || 90;
+
+        const { rows } = await authPool.query(
+            `SELECT user_id, user_name, user_email, user_role, action, details,
+                    EXTRACT(EPOCH FROM created_at) * 1000 AS timestamp
+             FROM user_activities
+             WHERE created_at >= NOW() - INTERVAL '${days} days'
+             ORDER BY created_at DESC
+             LIMIT $1`,
+            [limit]
+        );
+
+        res.json({
+            success: true,
+            activities: rows.map(r => ({
+                userId: r.user_id,
+                userName: r.user_name,
+                userEmail: r.user_email,
+                userRole: r.user_role,
+                action: r.action,
+                details: r.details,
+                timestamp: Math.round(parseFloat(r.timestamp)),
+            })),
+            total: rows.length,
+        });
+    } catch (err) {
+        console.error('[Activities] Failed to fetch activities:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to fetch activities' });
+    }
+});
+
+// GET /api/activities/summary — Aggregated user summaries (admin only)
+app.get('/api/activities/summary', async (req, res) => {
+    if (!authPool) return res.status(503).json({ success: false, error: 'Database not available' });
+
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return res.status(401).json({ success: false, error: 'Authentication required' });
+    }
+    let decoded;
+    try {
+        decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
+    } catch {
+        return res.status(401).json({ success: false, error: 'Invalid token' });
+    }
+    if (decoded.role !== 'admin') {
+        return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+
+    try {
+        const { rows } = await authPool.query(`
+            SELECT
+                user_id,
+                MAX(user_name) AS user_name,
+                MAX(user_email) AS user_email,
+                MAX(user_role) AS user_role,
+                COUNT(*) AS total_actions,
+                MAX(created_at) AS last_active,
+                MIN(created_at) AS first_seen,
+                COUNT(*) FILTER (WHERE action = 'login') AS login_count,
+                COUNT(*) FILTER (WHERE action = 'ai_sql_query') AS ai_sql_queries,
+                COUNT(*) FILTER (WHERE action = 'builder_query') AS builder_queries,
+                COUNT(*) FILTER (WHERE action = 'upload_dataset') AS datasets_uploaded,
+                COUNT(*) FILTER (WHERE action = 'pin_to_dashboard') AS dashboard_pins,
+                COUNT(*) FILTER (WHERE action = 'create_alert') AS alerts_created,
+                COUNT(*) FILTER (WHERE action = 'smart_question') AS smart_questions,
+                COUNT(DISTINCT DATE(created_at)) AS active_days
+            FROM user_activities
+            GROUP BY user_id
+            ORDER BY MAX(created_at) DESC
+        `);
+
+        const summaries = rows.map(r => ({
+            userId: r.user_id,
+            userName: r.user_name,
+            userEmail: r.user_email,
+            userRole: r.user_role,
+            totalActions: parseInt(r.total_actions),
+            lastActive: new Date(r.last_active).getTime(),
+            firstSeen: new Date(r.first_seen).getTime(),
+            loginCount: parseInt(r.login_count),
+            aiSqlQueries: parseInt(r.ai_sql_queries),
+            builderQueries: parseInt(r.builder_queries),
+            datasetsUploaded: parseInt(r.datasets_uploaded),
+            dashboardPins: parseInt(r.dashboard_pins),
+            alertsCreated: parseInt(r.alerts_created),
+            smartQuestions: parseInt(r.smart_questions),
+            activeDays: parseInt(r.active_days),
+            avgActionsPerDay: parseInt(r.active_days) > 0
+                ? Math.round(parseInt(r.total_actions) / parseInt(r.active_days) * 10) / 10
+                : 0,
+            tabVisits: {},
+        }));
+
+        res.json({ success: true, summaries });
+    } catch (err) {
+        console.error('[Activities] Failed to get summaries:', err.message);
+        res.status(500).json({ success: false, error: 'Failed to get summaries' });
     }
 });
 
