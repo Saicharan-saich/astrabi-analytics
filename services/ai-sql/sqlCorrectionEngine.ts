@@ -255,7 +255,7 @@ function buildSingleMetricSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMet
  * breakdown: "Sales by category" â†’ SELECT category, SUM(sales) FROM data GROUP BY category
  */
 function buildBreakdownSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
-    // â”€â”€ Special handling for day_of_week â”€â”€
+    // ── Special handling for day_of_week ──
     const dowDim = plan.dimensions.find(d => (d as any).timeGrain === 'day_of_week');
     if (dowDim) {
         return buildDayOfWeekSQL(plan, model, dowDim, 'breakdown');
@@ -297,7 +297,6 @@ function buildTrendSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: 
     const groupBy = buildGroupByClause(plan.dimensions);
     const where = buildWhereClause(plan.filters);
 
-    // For trends, always sort by time dimension ascending
     const timeDim = plan.dimensions.find(d => d.timeGrain);
     const timeAlias = timeDim
         ? (timeDim.timeGrain && timeDim.timeGrain !== 'day'
@@ -319,16 +318,23 @@ function buildTrendSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: 
 }
 
 /**
- * ranking: "Which day had the lowest sales?" â†’ SUM + GROUP BY + ORDER BY ASC + LIMIT 1
- * "Top 10 products by revenue" â†’ SUM + GROUP BY + ORDER BY DESC + LIMIT 10
+ * ranking: "Which day had the lowest sales?" → SUM + GROUP BY + ORDER BY ASC + LIMIT 1
+ * "Top 10 products by revenue" → SUM + GROUP BY + ORDER BY DESC + LIMIT 10
  */
 function buildRankingSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
-    // â”€â”€ Special handling for day_of_week: scope to current week â”€â”€
+    // ── Special handling for day_of_week: scope to current week ──
     const dowDim = plan.dimensions.find(d => (d as any).timeGrain === 'day_of_week');
     if (dowDim) {
         return buildDayOfWeekSQL(plan, model, dowDim, 'ranking');
     }
 
+    // ── Detect "Top N per group" pattern (partitioned ranking) ──
+    const isPartitioned = detectPartitionedRanking(plan);
+    if (isPartitioned && plan.dimensions.length >= 2) {
+        return buildPartitionedRankingSQL(plan, model, apdmeMetrics);
+    }
+
+    // ── Standard (global) ranking ──
     const dimExprs = buildDimensionExpressions(plan.dimensions);
     const metExprs = buildMetricExpressions(plan.metrics, model, apdmeMetrics);
     const groupBy = buildGroupByClause(plan.dimensions);
@@ -353,6 +359,64 @@ function buildRankingSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?
     parts.push(`LIMIT ${limit}`);
 
     return parts.join('\n');
+}
+
+/**
+ * Detect if this ranking is asking for "Top N per group" (partitioned).
+ */
+function detectPartitionedRanking(plan: AnalysisPlan): boolean {
+    const grain = (plan.resultGrain || '').toLowerCase();
+    const question = (plan.originalQuestion || '').toLowerCase();
+
+    if (/within each|per .+ within|in each|for each/.test(grain)) return true;
+    if (/\b(within each|in each|for each|per each)\b/.test(question)) return true;
+    if (/\b(top|bottom|best|worst)\s+\d+\b/.test(question) &&
+        /\b(within|in each|for each|per|by)\s+(each\s+)?\w+/i.test(question) &&
+        plan.dimensions.length >= 2) return true;
+
+    return false;
+}
+
+/**
+ * Build partitioned ranking with ROW_NUMBER() OVER (PARTITION BY ...).
+ */
+function buildPartitionedRankingSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
+    const partitionDim = plan.dimensions[0];
+    const allDimExprs = buildDimensionExpressions(plan.dimensions);
+    const metExprs = buildMetricExpressions(plan.metrics, model, apdmeMetrics);
+    const groupBy = buildGroupByClause(plan.dimensions);
+    const where = buildWhereClause(plan.filters);
+
+    const sortDir = plan.sort.length > 0 ? plan.sort[0].dir.toUpperCase() : 'DESC';
+    const limit = plan.limit || 5;
+
+    const metric = plan.metrics[0];
+    const metricField = `"${metric.field}"`;
+    const aggExpr = metric.agg === 'count_distinct'
+        ? `COUNT(DISTINCT ${metricField})`
+        : `${metric.agg.toUpperCase()}(${metricField})`;
+
+    const firstMetAlias = getMetricAlias(plan.metrics[0], model);
+    const partitionCol = `"${partitionDim.field}"`;
+
+    const innerSelects = [
+        ...allDimExprs,
+        ...metExprs,
+        `ROW_NUMBER() OVER (PARTITION BY ${partitionCol} ORDER BY ${aggExpr} ${sortDir}) AS _rn`
+    ];
+
+    const innerParts = [
+        `SELECT ${innerSelects.join(', ')}`,
+        fromTable(),
+    ];
+    if (where) innerParts.push(`WHERE ${where}`);
+    if (groupBy) innerParts.push(`GROUP BY ${groupBy}`);
+
+    const innerSQL = innerParts.join('\n    ');
+    const sql = `SELECT * FROM (\n    ${innerSQL}\n) sub\nWHERE _rn <= ${limit}\nORDER BY ${partitionCol}, ${firstMetAlias} ${sortDir}`;
+
+    logger.info('[SQL Correction]', `Built partitioned ranking: top ${limit} per "${partitionDim.field}"`);
+    return sql;
 }
 
 /**
