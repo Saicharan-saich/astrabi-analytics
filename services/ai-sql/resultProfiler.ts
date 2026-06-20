@@ -72,29 +72,48 @@ export function profileResult(
             } else {
                 dimensionColumns.push(col);
             }
-        } else if (typeof firstVal === 'number') {
-            metricColumns.push(col);
-            // Infer semantic type from column name
-            if (colLower.includes('pct') || colLower.includes('percent') || colLower.includes('rate') || colLower.includes('margin')) {
-                metricSemanticTypes[col] = 'percentage';
-            } else if (colLower.includes('sales') || colLower.includes('revenue') || colLower.includes('cost') || colLower.includes('price') || colLower.includes('profit') || colLower.includes('amount')) {
-                metricSemanticTypes[col] = 'currency';
-            } else if (colLower.includes('count') || colLower.includes('qty') || colLower.includes('quantity')) {
-                metricSemanticTypes[col] = 'count';
-            } else {
-                metricSemanticTypes[col] = 'quantity';
-            }
-        } else if (/_(sum|avg|count|min|max|pct|total)$/.test(colLower) || colLower.endsWith('_count_distinct')) {
-            // Fallback: column name strongly suggests a metric (aggregated alias)
-            // even if the first value is null/string (e.g., SUM on a mistyped column)
-            metricColumns.push(col);
-            if (colLower.includes('pct') || colLower.includes('margin')) {
-                metricSemanticTypes[col] = 'percentage';
-            } else {
-                metricSemanticTypes[col] = 'currency';
-            }
         } else {
-            dimensionColumns.push(col);
+            // No match in semantic model — use heuristics
+
+            // CRITICAL: Detect time-grain suffixed columns → these are ALWAYS dimensions
+            // e.g., order_date_year (values: 2014, 2015), order_date_month_of_year, order_date_quarter
+            const TIME_GRAIN_SUFFIXES = /_(?:year|month|quarter|week|day|day_of_week|month_of_year|hour)$/i;
+            const isTimeGrainCol = TIME_GRAIN_SUFFIXES.test(colLower);
+
+            // Also check if this column corresponds to a plan dimension
+            const isPlanDimension = plan.dimensions.some(d => {
+                const dimCol = d.timeGrain
+                    ? `${d.field}_${d.timeGrain}`.toLowerCase()
+                    : d.field.toLowerCase();
+                return colLower === dimCol || colLower.replace(/\s+/g, '_') === dimCol;
+            });
+
+            if (isTimeGrainCol || isPlanDimension) {
+                // Time-grain or plan dimension → classify as dimension even if numeric
+                dimensionColumns.push(col);
+            } else if (typeof firstVal === 'number') {
+                metricColumns.push(col);
+                // Infer semantic type from column name
+                if (colLower.includes('pct') || colLower.includes('percent') || colLower.includes('rate') || colLower.includes('margin')) {
+                    metricSemanticTypes[col] = 'percentage';
+                } else if (colLower.includes('sales') || colLower.includes('revenue') || colLower.includes('cost') || colLower.includes('price') || colLower.includes('profit') || colLower.includes('amount')) {
+                    metricSemanticTypes[col] = 'currency';
+                } else if (colLower.includes('count') || colLower.includes('qty') || colLower.includes('quantity')) {
+                    metricSemanticTypes[col] = 'count';
+                } else {
+                    metricSemanticTypes[col] = 'quantity';
+                }
+            } else if (/_(sum|avg|count|min|max|pct|total)$/.test(colLower) || colLower.endsWith('_count_distinct')) {
+                // Fallback: column name strongly suggests a metric (aggregated alias)
+                metricColumns.push(col);
+                if (colLower.includes('pct') || colLower.includes('margin')) {
+                    metricSemanticTypes[col] = 'percentage';
+                } else {
+                    metricSemanticTypes[col] = 'currency';
+                }
+            } else {
+                dimensionColumns.push(col);
+            }
         }
     }
 
