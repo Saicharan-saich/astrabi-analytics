@@ -162,22 +162,7 @@ async function initAuthDatabase() {
 const app = express();
 const PORT = process.env.PORT || 5002;
 
-// Security Middleware
-app.use(helmet());
-app.use(compression());
-
-// Rate Limiting (100 requests per 15 minutes)
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // Limit each IP to 100 requests per windowMs
-    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
-    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-    message: { success: false, error: 'Too many requests, please try again later.' }
-});
-// Apply rate limiting to all requests
-app.use('/api/', limiter);
-
-// CORS Config
+// CORS Config — MUST be first, before helmet/rate-limiter
 const allowedOrigins = [
     'http://localhost:5173',
     'http://localhost:3000',
@@ -200,8 +185,32 @@ app.use(cors({
         }
         return callback(null, true);
     },
-    credentials: true
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
 }));
+
+// Explicitly handle preflight for all routes
+app.options('*', cors());
+
+// Security Middleware
+app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+}));
+app.use(compression());
+
+// Rate Limiting (100 requests per 15 minutes)
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // Limit each IP to 100 requests per windowMs
+    standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+    legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+    message: { success: false, error: 'Too many requests, please try again later.' },
+    // Don't count preflight OPTIONS requests against rate limit
+    skip: (req) => req.method === 'OPTIONS',
+});
+// Apply rate limiting to all requests
+app.use('/api/', limiter);
 
 app.use(express.json());
 
