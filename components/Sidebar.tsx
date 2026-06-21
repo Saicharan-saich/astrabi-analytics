@@ -14,9 +14,10 @@ interface SidebarProps {
     onToggle: () => void;
     onOpenUserManagement?: () => void;
     hasVisualResult?: boolean;
+    onDataStory?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onToggle, onOpenUserManagement, hasVisualResult }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onToggle, onOpenUserManagement, hasVisualResult, onDataStory }) => {
     const { currentUser, logout } = useAuthStore();
     const { unreadCount } = useAlertStore();
     const { theme } = useTheme();
@@ -278,6 +279,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                     </div>
                 </div>
                 {renderSection('Analysis', analysisSection)}
+                {/* Data Story special button */}
+                {onDataStory && perms.canCreateVisuals && (
+                    <div className="px-2 mb-2">
+                        <button
+                            onClick={onDataStory}
+                            className={classNames(
+                                'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-bold transition-all duration-200 border',
+                                isDark
+                                    ? 'bg-gradient-to-r from-indigo-500/10 to-purple-500/10 text-indigo-300 border-indigo-500/20 hover:from-indigo-500/20 hover:to-purple-500/20 hover:border-indigo-400/30'
+                                    : 'bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-700 border-indigo-200 hover:from-indigo-100 hover:to-purple-100'
+                            )}
+                        >
+                            <span className="text-base">{'\u{1F4CA}'}</span>
+                            <span>Data Story</span>
+                            <span className={`ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${isDark ? 'bg-indigo-500/20 text-indigo-300' : 'bg-indigo-100 text-indigo-600'}`}>New</span>
+                        </button>
+                    </div>
+                )}
                 {renderSection('Views', viewSection)}
             </nav>
 

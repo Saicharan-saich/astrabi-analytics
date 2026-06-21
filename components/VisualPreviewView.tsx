@@ -1,7 +1,8 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ArrowLeft, Pin, Code, Table2, BarChart2, Palette, Activity, Sparkles,
-  Copy, Check, X, RefreshCw, Play, Database, Loader2, Microscope
+  Copy, Check, X, RefreshCw, Play, Database, Loader2, Microscope,
+  MessageSquare, Send, MousePointerClick, ChevronDown
 } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { ChartVisualization } from './ChartVisualization';
@@ -22,11 +23,20 @@ interface VisualPreviewViewProps {
   onBack: () => void;
   onPin?: (title: string, result: AnalysisResult) => void;
   onFormatChange?: (formatting: FormattingConfig) => void;
+  conversationHistory?: Array<{ question: string; planSummary: string }>;
+  onConversationUpdate?: (history: Array<{ question: string; planSummary: string }>) => void;
+}
+
+interface DrillDownResult {
+  query: string;
+  result: AnalysisResult;
+  pipeline: AISQLPipelineResult;
 }
 
 export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   dataset, result: initialResult, pipelineResult: initialPipeline, query,
   formatting, onBack, onPin, onFormatChange,
+  conversationHistory: externalHistory, onConversationUpdate,
 }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -46,6 +56,16 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const [isReloading, setIsReloading] = useState(false);
   const [timeGrain, setTimeGrain] = useState<'day'|'week'|'month'|'quarter'|'year'>('month');
 
+  // ── Feature 1: Click-to-Drill-Down ──
+  const [drillDown, setDrillDown] = useState<DrillDownResult | null>(null);
+  const [isDrilling, setIsDrilling] = useState(false);
+
+  // ── Feature 2: Conversational Follow-ups ──
+  const [followUpQuery, setFollowUpQuery] = useState('');
+  const [isFollowUpLoading, setIsFollowUpLoading] = useState(false);
+  const [convHistory, setConvHistory] = useState<Array<{ question: string; planSummary: string }>>(externalHistory || []);
+  const followUpRef = useRef<HTMLInputElement>(null);
+
   // ── Sync internal state when new query results arrive ──
   // useState only uses initialValue on FIRST mount. Since this component
   // stays mounted (hidden with CSS), we need useEffect to update state
@@ -64,8 +84,69 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
     setLocalFormatting(formatting);
   }, [formatting]);
 
-  const sql = result.sql || pipeline?.sql || '';
-  const explanation = result.insight || pipeline?.explanation || '';
+  const activeResult = drillDown?.result || result;
+  const activePipeline = drillDown?.pipeline || pipeline;
+  const activeQuery = drillDown?.query || query;
+  const sql = activeResult.sql || activePipeline?.sql || '';
+  const explanation = activeResult.insight || activePipeline?.explanation || '';
+
+  // ── Drill-Down Handler ──
+  const handleDrillDown = useCallback(async (dimensionValue: string) => {
+    if (!dataset || isDrilling) return;
+    setIsDrilling(true);
+    const drillQuery = `Show breakdown of ${pipeline?.plan?.metrics?.[0]?.field || 'sales'} for "${dimensionValue}"`;
+    try {
+      const history = [...convHistory, { question: query, planSummary: pipeline?.plan?.resultGrain || '' }];
+      const res = await runAISQLPipeline(drillQuery, dataset, undefined, undefined, undefined, false, history);
+      if (res.rawData.length === 0) { setIsDrilling(false); return; }
+      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'bar' };
+      setDrillDown({
+        query: drillQuery,
+        pipeline: res,
+        result: {
+          data: res.chartData, xKey: res.chart.xKey, yKey: res.chart.yKey, yLabel: drillQuery,
+          insight: res.explanation, sql: res.sql,
+          config: { metric: res.plan.metrics[0]?.field || res.chart.yKey, dimension: res.plan.dimensions[0]?.field || res.chart.xKey, aggregation: AggregationType.SUM, timeGrain: TimeGrain.RAW, analysisType: AnalysisType.STANDARD, questionId: 'drill_' + Date.now(), questionLabel: drillQuery, secondaryMetrics: res.chart.secondaryYKeys, axisMode: res.chart.useDualAxis ? 'dual' : 'auto', limit: res.plan.limit || 0, sort: res.plan.sort?.[0]?.dir || 'desc' },
+          vis: (chartMap[res.chart.chartType] || 'bar') as any,
+          kpi: res.chart.chartType === 'kpiCard' && res.chartData.length > 0 ? res.chartData[0][res.chart.yKey] : undefined,
+          growth: res.chart.growth ? { diff: res.chart.growth.diff, pct: res.chart.growth.pct } : undefined,
+          secondaryYKeys: res.chart.secondaryYKeys,
+        },
+      });
+      setActiveTab('chart');
+    } catch { /* ignore */ } finally { setIsDrilling(false); }
+  }, [dataset, isDrilling, pipeline, query, convHistory]);
+
+  // ── Follow-Up Handler ──
+  const handleFollowUp = useCallback(async () => {
+    if (!dataset || !followUpQuery.trim() || isFollowUpLoading) return;
+    setIsFollowUpLoading(true);
+    const q = followUpQuery.trim();
+    setFollowUpQuery('');
+    try {
+      const history = [...convHistory, { question: activeQuery, planSummary: activePipeline?.plan?.resultGrain || '' }];
+      const res = await runAISQLPipeline(q, dataset, undefined, undefined, undefined, false, history);
+      if (res.rawData.length === 0) { setIsFollowUpLoading(false); return; }
+      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'bar' };
+      const newHistory = [...history, { question: q, planSummary: res.plan.resultGrain || '' }];
+      setConvHistory(newHistory);
+      onConversationUpdate?.(newHistory);
+      // Replace current result with follow-up result
+      setDrillDown(null);
+      setResult({
+        data: res.chartData, xKey: res.chart.xKey, yKey: res.chart.yKey, yLabel: q,
+        insight: res.explanation, sql: res.sql,
+        config: { metric: res.plan.metrics[0]?.field || res.chart.yKey, dimension: res.plan.dimensions[0]?.field || res.chart.xKey, aggregation: AggregationType.SUM, timeGrain: TimeGrain.RAW, analysisType: AnalysisType.STANDARD, questionId: 'followup_' + Date.now(), questionLabel: q, secondaryMetrics: res.chart.secondaryYKeys, axisMode: res.chart.useDualAxis ? 'dual' : 'auto', limit: res.plan.limit || 0, sort: res.plan.sort?.[0]?.dir || 'desc' },
+        vis: (chartMap[res.chart.chartType] || 'bar') as any,
+        kpi: res.chart.chartType === 'kpiCard' && res.chartData.length > 0 ? res.chartData[0][res.chart.yKey] : undefined,
+        growth: res.chart.growth ? { diff: res.chart.growth.diff, pct: res.chart.growth.pct } : undefined,
+        secondaryYKeys: res.chart.secondaryYKeys,
+      });
+      setPipeline(res);
+      setChartType(chartMap[res.chart.chartType] || 'bar');
+      setActiveTab('chart');
+    } catch { /* ignore */ } finally { setIsFollowUpLoading(false); }
+  }, [dataset, followUpQuery, isFollowUpLoading, activeQuery, activePipeline, convHistory, onConversationUpdate]);
 
   const updateFormatting = useCallback((f: FormattingConfig) => {
     setLocalFormatting(f);
@@ -111,17 +192,25 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       {/* ── Top Bar ───────────────────────────────────────── */}
       <div className={`flex items-center justify-between px-5 py-3 border-b shrink-0 ${isDark ? 'border-white/[0.06] bg-[#0d1117]' : 'border-gray-200 bg-white'}`}>
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={onBack} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}><ArrowLeft className="w-4 h-4" /></button>
+          <button onClick={() => { if (drillDown) { setDrillDown(null); } else { onBack(); } }} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}><ArrowLeft className="w-4 h-4" /></button>
           <div className="min-w-0">
-            <div className="text-sm font-bold truncate max-w-md">{query}</div>
+            {drillDown && (
+              <div className="text-[10px] text-indigo-400 dark:text-indigo-300 font-medium flex items-center gap-1 mb-0.5">
+                <MousePointerClick className="w-3 h-3" />
+                <span className="opacity-60 cursor-pointer hover:opacity-100" onClick={() => setDrillDown(null)}>{query}</span>
+                <span className="opacity-40">→</span>
+              </div>
+            )}
+            <div className="text-sm font-bold truncate max-w-md">{activeQuery}</div>
             <div className="text-[11px] text-gray-400 dark:text-slate-500 flex items-center gap-2">
-              <span>{result.data.length} rows</span>
-              {pipeline && <span>· {pipeline.executionTimeMs}ms</span>}
-              {pipeline?.chart?.growth && (
-                <span className={pipeline.chart.growth.pct >= 0 ? 'text-emerald-500' : 'text-red-500'}>
-                  {pipeline.chart.growth.pct >= 0 ? '▲' : '▼'} {pipeline.chart.growth.pct >= 0 ? '+' : ''}{pipeline.chart.growth.pct.toFixed(1)}%
+              <span>{activeResult.data.length} rows</span>
+              {activePipeline && <span>· {(activePipeline as any).executionTimeMs}ms</span>}
+              {(activePipeline as any)?.chart?.growth && (
+                <span className={(activePipeline as any).chart.growth.pct >= 0 ? 'text-emerald-500' : 'text-red-500'}>
+                  {(activePipeline as any).chart.growth.pct >= 0 ? '▲' : '▼'} {(activePipeline as any).chart.growth.pct >= 0 ? '+' : ''}{(activePipeline as any).chart.growth.pct.toFixed(1)}%
                 </span>
               )}
+              {isDrilling && <span className="text-indigo-400 flex items-center gap-1"><Loader2 className="w-3 h-3 animate-spin" /> Drilling...</span>}
             </div>
           </div>
         </div>
@@ -186,16 +275,24 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           {activeTab === 'chart' && (
             <div className="h-full p-6 overflow-hidden relative" ref={chartContainerRef}>
               <ChartVisualization
-                data={result.data} xKey={result.xKey} yKey={result.yKey} yLabel={result.yLabel}
-                chartType={chartType as any} onChartTypeChange={(type) => setChartType(type)}
+                data={activeResult.data} xKey={activeResult.xKey} yKey={activeResult.yKey} yLabel={activeResult.yLabel}
+                chartType={(drillDown ? ((({ kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'bar' } as Record<string,string>)[drillDown.pipeline.chart.chartType] || 'bar')) : chartType) as any}
+                onChartTypeChange={(type) => setChartType(type)}
                 formatting={localFormatting}
                 onToggleFormat={() => setIsFormatPanelOpen(!isFormatPanelOpen)} isFormatOpen={isFormatPanelOpen}
                 onToggleAnalytics={() => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen)} isAnalyticsOpen={isAnalyticsPanelOpen}
                 onToggleLabels={() => updateFormatting({ ...localFormatting, showDataLabels: !localFormatting.showDataLabels })}
                 onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)} isAIInsightOpen={isAIInsightOpen}
                 chartContainerRef={chartContainerRef}
+                onDrillDown={handleDrillDown}
               />
-              <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={result.yLabel} />
+              {/* Drill-down hint */}
+              {!drillDown && !isDrilling && (
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 text-[10px] text-gray-400 dark:text-slate-500 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm px-3 py-1 rounded-full border border-gray-200/50 dark:border-white/5 opacity-60 hover:opacity-100 transition-opacity pointer-events-none">
+                  <MousePointerClick className="w-3 h-3" /> Click any data point to drill down
+                </div>
+              )}
+              <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={activeResult.yLabel} />
             </div>
           )}
 
@@ -308,9 +405,59 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         )}
       </div>
 
+      {/* ── Follow-Up Question Bar ──────────────────────── */}
+      <div className={`flex items-center gap-2 px-4 py-2.5 border-t shrink-0 ${isDark ? 'border-white/[0.06] bg-[#0d1117]' : 'border-gray-200 bg-white'}`}>
+        <MessageSquare className="w-4 h-4 text-indigo-400 shrink-0" />
+        <input
+          ref={followUpRef}
+          type="text"
+          value={followUpQuery}
+          onChange={e => setFollowUpQuery(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleFollowUp(); } }}
+          placeholder="Ask a follow-up... e.g. 'Break that down by region' or 'Now show the trend'"
+          className={`flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400 dark:placeholder:text-slate-500 ${isDark ? 'text-white' : 'text-gray-900'}`}
+          disabled={isFollowUpLoading}
+        />
+        {isFollowUpLoading ? (
+          <Loader2 className="w-4 h-4 text-indigo-400 animate-spin shrink-0" />
+        ) : (
+          <button
+            onClick={handleFollowUp}
+            disabled={!followUpQuery.trim()}
+            className="p-1.5 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
+          >
+            <Send className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+
+      {/* ── Suggested Follow-ups ──────────────────────────── */}
+      {!isFollowUpLoading && !drillDown && (
+        <div className={`flex items-center gap-1.5 px-4 pb-2 overflow-x-auto shrink-0 ${isDark ? 'bg-[#0d1117]' : 'bg-white'}`}>
+          {[
+            { label: '📊 Break down by region', q: `Break down ${pipeline?.plan?.metrics?.[0]?.field || 'sales'} by region` },
+            { label: '📈 Show trend over time', q: `Show ${pipeline?.plan?.metrics?.[0]?.field || 'sales'} trend over time` },
+            { label: '🥧 Show as percentages', q: `What percentage does each ${pipeline?.plan?.dimensions?.[0]?.field || 'category'} contribute?` },
+            { label: '🔝 Top 5 only', q: `Show top 5 ${pipeline?.plan?.dimensions?.[0]?.field || 'items'} by ${pipeline?.plan?.metrics?.[0]?.field || 'sales'}` },
+          ].map(({ label, q }) => (
+            <button
+              key={q}
+              onClick={() => { setFollowUpQuery(q); setTimeout(() => handleFollowUp(), 50); }}
+              className={`text-[11px] px-2.5 py-1 rounded-full border whitespace-nowrap transition-all hover:scale-[1.02] ${
+                isDark
+                  ? 'border-white/10 text-slate-400 hover:text-white hover:border-indigo-500/30 hover:bg-indigo-500/10'
+                  : 'border-gray-200 text-gray-500 hover:text-gray-900 hover:border-indigo-300 hover:bg-indigo-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* ── Pipeline Report Modal ─────────────────────── */}
-      {showPipelineReport && pipeline?.trace && (
-        <PipelineReport trace={pipeline.trace} onClose={() => setShowPipelineReport(false)} />
+      {showPipelineReport && activePipeline?.trace && (
+        <PipelineReport trace={(activePipeline as any).trace} onClose={() => setShowPipelineReport(false)} />
       )}
     </div>
   );

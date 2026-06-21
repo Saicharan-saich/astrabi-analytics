@@ -53,6 +53,7 @@ import { NotificationCenter } from './components/NotificationCenter';
 import { useAlertStore } from './store/useAlertStore';
 import { evaluateAllAlerts } from './services/alertEngine';
 import { useActivityStore } from './store/useActivityStore';
+import { DataStoryView } from './components/DataStoryView';
 
 // ── SESSION CREDENTIAL CACHE (auto-reconnect without re-entering password) ──
 // Stored in sessionStorage: survives page refresh but cleared on tab close or logout.
@@ -282,6 +283,9 @@ function App() {
     headerBold: true, showLabels: true, showDataLabels: false, tableCalculations: [],
     showXAxis: true, showYAxis: true,
   });
+
+  // ── Data Story state ──
+  const [showDataStory, setShowDataStory] = useState(false);
 
   // Alert evaluation on dataset load/refresh
   const alertStore = useAlertStore();
@@ -1084,6 +1088,7 @@ function App() {
                     onToggle={() => toggleSidebar()}
                     onOpenUserManagement={() => setShowUserMgmt(true)}
                     hasVisualResult={!!visualPreviewResult}
+                    onDataStory={() => setShowDataStory(true)}
                   />
                 </motion.div>
               )}
@@ -1750,6 +1755,14 @@ function App() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* ── Data Story Overlay ──────────────────────── */}
+            {showDataStory && dataset && (
+              <DataStoryView
+                dataset={dataset}
+                onClose={() => setShowDataStory(false)}
+              />
+            )}
           </div>
         )}
       </ThemeProvider>
