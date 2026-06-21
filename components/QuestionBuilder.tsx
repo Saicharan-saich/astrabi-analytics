@@ -1013,22 +1013,31 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         )}
                     </div>
 
-                    {/* LIMIT */}
+                    {/* LIMIT — Top / Bottom */}
                     {!isTimeDimension && (
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">Limit</span>
                             <QuerySelect
-                                value={limit > 0 && ![5, 10, 20, 50].includes(limit) ? 'custom' : (limit <= 0 ? -1 : limit).toString()}
+                                value={limit > 0 && ![5, 10, 20, 50].includes(Math.abs(limit)) ? 'custom' : (limit === 0 ? '0' : `${limit}`)}
                                 onChange={val => {
-                                    if (val === 'custom') setLimit(15);
-                                    else setLimit(Number(val));
+                                    if (val === 'custom') { setLimit(15); setSort('desc'); }
+                                    else {
+                                        const n = Number(val);
+                                        if (n === 0) { setLimit(0); }
+                                        else if (n < 0) { setLimit(Math.abs(n)); setSort('asc'); }
+                                        else { setLimit(n); setSort('desc'); }
+                                    }
                                 }}
                                 options={[
-                                    { label: 'Show All', value: '-1' },
-                                    { label: 'Top 5', value: '5' },
-                                    { label: 'Top 10', value: '10' },
-                                    { label: 'Top 20', value: '20' },
-                                    { label: 'Top 50', value: '50' },
+                                    { label: 'Show All', value: '0' },
+                                    { label: '\u2B06 Top 5', value: '5' },
+                                    { label: '\u2B06 Top 10', value: '10' },
+                                    { label: '\u2B06 Top 20', value: '20' },
+                                    { label: '\u2B06 Top 50', value: '50' },
+                                    { label: '\u2B07 Bottom 5', value: '-5' },
+                                    { label: '\u2B07 Bottom 10', value: '-10' },
+                                    { label: '\u2B07 Bottom 20', value: '-20' },
+                                    { label: '\u2B07 Bottom 50', value: '-50' },
                                     { label: 'Custom...', value: 'custom' }
                                 ]}
                                 colorRingClass="focus:ring-white/20"
