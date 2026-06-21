@@ -53,6 +53,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [forceGridMode, setForceGridMode] = useState<'auto' | 'grid' | 'combined'>('auto');
     const hasAutoRestoredRef = useRef(false);
 
+    // Pre-drill state — saved before drill-down so user can revert
+    const [preDrillConfig, setPreDrillConfig] = useState<any>(null);
+    const [preDrillResult, setPreDrillResult] = useState<any>(null);
+
     // Export CSV helper
     const exportToCSV = () => {
         if (!result) return;
@@ -242,6 +246,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const handleDrillDown = useCallback((dimensionValue: string) => {
         if (!result || !lastRunConfig) return;
 
+        // Save pre-drill state so user can go back
+        setPreDrillConfig(lastRunConfig);
+        setPreDrillResult(result);
+
         // Use the original dimension from config, not the calculated xKey
         // (% of Total pie uses a calculated xKey that doesn't map to raw data)
         const dimCol = lastRunConfig.dimension || result.xKey;
@@ -266,6 +274,16 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             handleRun({ ...lastRunConfig, filters: updatedFilters });
         }
     }, [result, lastRunConfig]);
+
+    // --- Go Back from empty drill-down ---
+    const handleGoBack = useCallback(() => {
+        if (preDrillResult && preDrillConfig) {
+            setResult(preDrillResult);
+            setLastRunConfig(preDrillConfig);
+            setPreDrillConfig(null);
+            setPreDrillResult(null);
+        }
+    }, [preDrillResult, preDrillConfig]);
 
     const tableData = useMemo(() => {
         if (!result) return { data: [], columns: [] as CalculatedColumn[] };
@@ -651,6 +669,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                 isAnalyticsOpen={isAnalyticsPanelOpen}
                                                 onToggleLabels={undefined}
                                                 onDrillDown={handleDrillDown}
+                                                onGoBack={preDrillConfig ? handleGoBack : undefined}
                                                 onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)}
                                                 isAIInsightOpen={isAIInsightOpen}
                                                 chartContainerRef={chartContainerRef}
@@ -704,6 +723,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                             isAnalyticsOpen={isAnalyticsPanelOpen}
                                             onToggleLabels={onUpdateFormatting && formatting ? () => onUpdateFormatting({ ...formatting, showDataLabels: !formatting.showDataLabels }) : undefined}
                                             onDrillDown={handleDrillDown}
+                                            onGoBack={preDrillConfig ? handleGoBack : undefined}
                                             onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)}
                                             isAIInsightOpen={isAIInsightOpen}
                                             chartContainerRef={chartContainerRef}

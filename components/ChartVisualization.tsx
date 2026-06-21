@@ -68,6 +68,7 @@ interface ChartVisualizationProps {
     hideControls?: boolean;
     compact?: boolean;
     onDrillDown?: (dimensionValue: string) => void;
+    onGoBack?: () => void;
     onAIInsight?: () => void;
     isAIInsightOpen?: boolean;
     chartContainerRef?: React.RefObject<HTMLDivElement | null>;
@@ -146,6 +147,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     hideControls = false,
     compact = false,
     onDrillDown,
+    onGoBack,
     onAIInsight,
     isAIInsightOpen,
     chartContainerRef
@@ -1529,8 +1531,20 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     // ── EARLY RETURN — must be AFTER all hooks to avoid "fewer hooks" crash ──
     if (!data || data.length === 0 || !chartData) {
         return (
-            <div className="flex items-center justify-center h-full min-h-[300px] text-slate-400">
-                No data to display
+            <div className="flex flex-col items-center justify-center h-full min-h-[300px] gap-4">
+                <div className="text-center">
+                    <div className="text-4xl mb-3">{"\u{1F4AD}"}</div>
+                    <p className="text-slate-400 text-sm mb-1">No data to display</p>
+                    <p className="text-slate-500 text-xs">The current filter or selection returned no results.</p>
+                </div>
+                {onGoBack && (
+                    <button
+                        onClick={onGoBack}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-violet-500/10 text-violet-400 hover:bg-violet-500/20 hover:text-violet-300 transition-all text-sm font-medium border border-violet-500/20"
+                    >
+                        {"\u2190"} Go Back to Previous View
+                    </button>
+                )}
             </div>
         );
     }
