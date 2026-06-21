@@ -1018,7 +1018,13 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">Limit</span>
                             <QuerySelect
-                                value={limit > 0 && ![5, 10, 20, 50].includes(Math.abs(limit)) ? 'custom' : (limit === 0 ? '0' : `${limit}`)}
+                                value={(() => {
+                                    if (limit === 0) return '0';
+                                    const isBottom = sort === 'asc';
+                                    const absLimit = Math.abs(limit);
+                                    if ([5, 10, 20, 50].includes(absLimit)) return isBottom ? `-${absLimit}` : `${absLimit}`;
+                                    return 'custom';
+                                })()}
                                 onChange={val => {
                                     if (val === 'custom') { setLimit(15); setSort('desc'); }
                                     else {
