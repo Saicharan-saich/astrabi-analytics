@@ -205,7 +205,7 @@ export const useAppStore = create<AppStore>()(
                 headerSize: 'lg',
                 headerBold: true,
                 showLabels: true,
-                showDataLabels: false,
+                showDataLabels: true,
                 showAxis: false,
                 tableCalculations: []
             },

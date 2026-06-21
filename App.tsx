@@ -280,7 +280,7 @@ function App() {
   const [visualPreviewQuery, setVisualPreviewQuery] = useState('');
   const [visualPreviewFormatting, setVisualPreviewFormatting] = useState<any>({
     colorMode: 'vibrant', numberFormat: 'auto', fontSize: 'md', headerSize: 'md',
-    headerBold: true, showLabels: true, showDataLabels: false, tableCalculations: [],
+    headerBold: true, showLabels: true, showDataLabels: true, tableCalculations: [],
     showXAxis: true, showYAxis: true,
   });
 

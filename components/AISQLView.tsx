@@ -52,7 +52,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         headerSize: 'md',
         headerBold: true,
         showLabels: true,
-        showDataLabels: false,
+        showDataLabels: true,
         tableCalculations: [],
         showXAxis: true,
         showYAxis: true
