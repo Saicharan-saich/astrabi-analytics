@@ -36,7 +36,21 @@ const loadedTables = new Map<string, Promise<void>>();
  * it resets state and retries up to MAX_INIT_RETRIES times.
  */
 async function initDuckDB(): Promise<void> {
-    if (db && conn) return;
+    // If we think we have a connection, verify it's still alive
+    if (db && conn) {
+        try {
+            await conn.query('SELECT 1');
+            return; // Connection is healthy
+        } catch (_) {
+            // Connection is stale (tab was asleep, WASM worker died, etc.)
+            logger.info('[DuckDB]', 'Connection stale — resetting for re-initialization');
+            db = null;
+            conn = null;
+            initPromise = null;
+            initAttempts = 0;
+            loadedTables.clear();
+        }
+    }
     if (initPromise) return initPromise;
 
     initPromise = (async () => {

@@ -141,7 +141,9 @@ You MUST respond with a JSON object in this exact format (no markdown, no code f
     "dimension": "order_date", // The dimension for X-axis. Can be a date column if the user asks for a trend!
     "timeFilter": "this_week", // e.g. "this_month", "last_year", "all_time", etc.
     "comparison": "previous_period", // ONLY include if explicitly asked to compare. Use "previous_period" (e.g. this vs last week) or "same_period_last_year".
-    "comparisonMode": "trend" // "trend" to compare a timeseries over the period (requires dimension to be a date), "total" for a single scalar comparison.
+    "comparisonMode": "trend", // "trend" to compare a timeseries over the period (requires dimension to be a date), "total" for a single scalar comparison.
+    "visualization": "bar", // REQUIRED. Choose the best chart type: "pie" for percentage/contribution/share/proportion queries, "line" for trends over time, "bar" for categorical comparisons, "horizontalBar" for rankings/top-N, "kpiCard" for single-value answers, "groupedBar" for multi-group comparisons.
+    "numberFormat": "number" // REQUIRED. Choose: "percent" if the values are percentages (0-100), "currency" if the values are monetary amounts, "number" for plain numbers.
   },
   "explanation": "Brief explanation of what this query does and any assumptions made",
   "columns_used": ["col1", "col2"]

@@ -117,6 +117,7 @@ export function recommendChart(
     // ─── Rule 4: Share of Total → Donut or Bar ──────────────────
     if (plan.intent === 'share_of_total') {
         const cardinality = dimensionCardinality[dimensionColumns[0]] || 0;
+        leftAxisFormat = 'percent'; // Share of total is always percentage
         if (cardinality <= DONUT_MAX_CATEGORIES) {
             chartType = 'donut';
             reason = `Share of total with ${cardinality} categories (≤${DONUT_MAX_CATEGORIES}) → Donut`;
@@ -124,7 +125,7 @@ export function recommendChart(
             chartType = 'horizontalBar';
             reason = `Share of total with ${cardinality} categories (>${DONUT_MAX_CATEGORIES}) → Horizontal Bar`;
         }
-        return { chartType, xKey, yKey, useDualAxis, reason };
+        return { chartType, xKey, yKey, useDualAxis, leftAxisFormat, reason };
     }
 
     // ─── Rule 4b: Growth/Comparison → Dual-Axis Combo (bars + growth line) ──

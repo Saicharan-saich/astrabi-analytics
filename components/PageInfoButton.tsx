@@ -205,23 +205,6 @@ const PAGE_INFO: Record<PageKey, PageInfo> = {
             'Automatic insight highlights',
         ],
     },
-    QUICK_INSIGHTS: {
-        title: 'Quick Insights — Auto-Analysis',
-        description: 'The moment you upload a dataset, QuickInsight automatically detects the domain and generates 15 curated analytics — KPIs, trends, rankings, and distributions — all in seconds with zero configuration.',
-        features: [
-            'Auto-detects domain (Sales, Healthcare, HR, Finance, etc.)',
-            'Generates 15 meaningful insights from your semantic model',
-            'KPI cards, trend charts, rankings, and distributions',
-            '100% deterministic — no AI calls, instant results',
-            'Pin any insight to your dashboard with one click',
-        ],
-        tips: [
-            'This page runs automatically after every dataset upload',
-            'Click Refresh to regenerate insights after column mapping changes',
-            'Dismiss cards you don\'t need — click Refresh to bring them back',
-            'Pin your favorite insights to build a dashboard instantly',
-        ],
-    },
     SMART_QUESTIONS: {
         title: 'AI-Generated Smart Questions',
         description: 'QuickInsight analyzes your dataset and suggests the most interesting questions to ask. These are AI-generated based on your data\'s structure and statistical properties — no typing required.',
