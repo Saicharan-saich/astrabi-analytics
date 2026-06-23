@@ -79,7 +79,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
         dataset.timeContext?.anchorDateColumn || ''
     );
     const [asOfDate, setAsOfDate] = useState<string>(
-        dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || new Date().toISOString().split('T')[0]
+        dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || ''
     );
     const [isUserOverride, setIsUserOverride] = useState(false);
     const [originalQuestionTemplate, setOriginalQuestionTemplate] = useState<string>('');
@@ -186,7 +186,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
         const tc = dataset.timeContext;
         if (tc) {
             setAnchorColumn(tc.anchorDateColumn || '');
-            setAsOfDate(tc.defaultAnchorDate || tc.maxDate || new Date().toISOString().split('T')[0]);
+            setAsOfDate(tc.defaultAnchorDate || tc.maxDate || '');
             setIsUserOverride(false); // Reset override on dataset change
         }
     }, [dataset.id, initialConfig]); // Track initialConfig to fire on Edit Mode entry
@@ -212,7 +212,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
 
     // Reset AS OF date back to dataset_max_date
     const handleAsOfDateReset = () => {
-        const defaultDate = dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || new Date().toISOString().split('T')[0];
+        const defaultDate = dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || '';
         setAsOfDate(defaultDate);
         setIsUserOverride(false);
     };
@@ -1322,26 +1322,16 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                         <span className="text-[10px] text-slate-500 leading-tight mt-0.5 block">Compare with the immediately preceding period</span>
                                                                     </div>
                                                                 </label>
-                                                                <label className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-all border ${config?.comparison === 'same_period_last_year' ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'
-                                                                    }`}>
-                                                                    <input type="radio" name="comparison" checked={config?.comparison === 'same_period_last_year'} onChange={() => {
-                                                                        if (config) handleRunAnalysis({ ...config, comparison: 'same_period_last_year' });
-                                                                    }} className="mt-0.5 text-indigo-600" />
-                                                                    <div>
-                                                                        <span className="text-xs font-bold text-slate-700 leading-tight">Same Period Last Year</span>
-                                                                        <span className="text-[10px] text-slate-500 leading-tight mt-0.5 block">Year-over-year comparison</span>
-                                                                    </div>
-                                                                </label>
 
-                                                                {/* Same Period Last N */}
+                                                                {/* Same Period Last N (replaces static Same Period Last Year) */}
                                                                 <label className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-all border ${config?.comparison === 'same_period_last_n' ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'
                                                                     }`}>
                                                                     <input type="radio" name="comparison" checked={config?.comparison === 'same_period_last_n'} onChange={() => {
-                                                                        if (config) handleRunAnalysis({ ...config, comparison: 'same_period_last_n' as any, comparisonGrain: config.comparisonGrain || 'month', comparisonOffset: config.comparisonOffset || 1 });
+                                                                        if (config) handleRunAnalysis({ ...config, comparison: 'same_period_last_n' as any, comparisonGrain: config.comparisonGrain || 'year', comparisonOffset: config.comparisonOffset || 1 });
                                                                     }} className="mt-0.5 text-indigo-600" />
                                                                     <div>
                                                                         <span className="text-xs font-bold text-slate-700 leading-tight">Same Period Last N</span>
-                                                                        <span className="text-[10px] text-slate-500 leading-tight mt-0.5 block">Flexible: pick grain &amp; offset</span>
+                                                                        <span className="text-[10px] text-slate-500 leading-tight mt-0.5 block">Flexible: pick grain &amp; offset (D/W/M/Q/Y)</span>
                                                                     </div>
                                                                 </label>
 

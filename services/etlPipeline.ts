@@ -787,13 +787,16 @@ function layer4_rulePlanner(
             else if (isDateName) {
                 type = ColumnType.DATE;
             }
-            // ── Gate 3: Boolean gate (≥60% boolean tokens) ──
-            else if (p.booleanTokenRate >= 0.6) {
-                type = ColumnType.BOOLEAN; // Booleans get their own type with bool normalization
-            }
-            // ── Gate 4: Metric by name + numeric data — trust the name ──
+            // ── Gate 3: Metric by name + numeric data — trust the name ──
+            // IMPORTANT: This MUST run before the boolean gate because BOOLEAN_TOKENS
+            // includes '1' and '0', which causes columns like "quantity" with mostly
+            // values of 1 to be misclassified as BOOLEAN instead of METRIC.
             else if (isMetricName && effectiveNumericRate >= 0.3) {
                 type = ColumnType.METRIC;
+            }
+            // ── Gate 4: Boolean gate (≥60% boolean tokens) ──
+            else if (p.booleanTokenRate >= 0.6) {
+                type = ColumnType.BOOLEAN; // Booleans get their own type with bool normalization
             }
             // ── Gate 4b: Metric gate (high numeric rate + sufficient cardinality) ──
             // BUT: first check if this is a numeric ATTRIBUTE (age, rating, etc.)

@@ -24,7 +24,13 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
         Object.assign(mapping.fields, query.semanticRoles);
     }
 
-    const dates = getDates(query.asOfDate || new Date().toISOString());
+    // CRITICAL: Never fall back to new Date() — always use the dataset's max date.
+    // Using today's date for historical datasets (e.g. 2014-2018 data) produces wrong results.
+    const resolvedAsOfDate = query.asOfDate
+        || dataset.timeContext?.defaultAnchorDate
+        || dataset.timeContext?.maxDate
+        || '';
+    const dates = getDates(resolvedAsOfDate || new Date().toISOString());
 
     if (!query.questionId) {
         return { data: [], xKey: '', yKey: '', yLabel: '', insight: '', sql: '', config: query };

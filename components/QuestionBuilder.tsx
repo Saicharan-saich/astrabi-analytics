@@ -961,8 +961,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             options={[
                                 { label: 'No Comparison', value: '' },
                                 { label: 'vs Previous Period', value: 'previous_period' },
-                                { label: 'vs Same Period Last Year', value: 'same_period_last_year' },
-                                { label: 'vs Last N...', value: 'same_period_last_n' }
+                                { label: 'vs Same Period Last N', value: 'same_period_last_n' }
                             ]}
                             colorTextClass="text-yellow-400"
                             colorRingClass="focus:ring-yellow-500/30"

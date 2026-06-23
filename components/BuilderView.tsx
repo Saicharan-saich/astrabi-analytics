@@ -85,7 +85,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         dataset.timeContext?.anchorDateColumn || ''
     );
     const [asOfDate, setAsOfDate] = useState<string>(
-        dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || new Date().toISOString().split('T')[0]
+        dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || ''
     );
     const [isUserOverride, setIsUserOverride] = useState(false);
 
@@ -770,20 +770,12 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                             <span className="text-[10px] text-slate-500 block leading-tight">Compare with preceding period</span>
                                                         </div>
                                                     </label>
-                                                    {/* Same Period Last Year */}
-                                                    <label className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all border ${result?.config?.comparison === 'same_period_last_year' ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'}`}>
-                                                        <input type="radio" name="builder-comparison" checked={result?.config?.comparison === 'same_period_last_year'} onChange={() => { if (result) handleRun({ ...result.config, comparison: 'same_period_last_year' as any }); }} className="text-emerald-600" />
-                                                        <div>
-                                                            <span className="text-sm font-bold text-slate-700">Same Period Last Year</span>
-                                                            <span className="text-[10px] text-slate-500 block leading-tight">Year-over-year comparison</span>
-                                                        </div>
-                                                    </label>
-                                                    {/* Same Period Last N */}
+                                                    {/* Same Period Last N (replaces static Same Period Last Year) */}
                                                     <label className={`flex items-center gap-3 p-2 rounded-lg cursor-pointer transition-all border ${result?.config?.comparison === 'same_period_last_n' ? 'bg-emerald-50 border-emerald-400 ring-1 ring-emerald-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'}`}>
-                                                        <input type="radio" name="builder-comparison" checked={result?.config?.comparison === 'same_period_last_n'} onChange={() => { if (result) handleRun({ ...result.config, comparison: 'same_period_last_n' as any, comparisonGrain: result.config.comparisonGrain || 'month', comparisonOffset: result.config.comparisonOffset || 1 }); }} className="text-emerald-600" />
+                                                        <input type="radio" name="builder-comparison" checked={result?.config?.comparison === 'same_period_last_n'} onChange={() => { if (result) handleRun({ ...result.config, comparison: 'same_period_last_n' as any, comparisonGrain: result.config.comparisonGrain || 'year', comparisonOffset: result.config.comparisonOffset || 1 }); }} className="text-emerald-600" />
                                                         <div>
                                                             <span className="text-sm font-bold text-slate-700">Same Period Last N</span>
-                                                            <span className="text-[10px] text-slate-500 block leading-tight">Flexible: pick grain &amp; offset</span>
+                                                            <span className="text-[10px] text-slate-500 block leading-tight">Flexible: pick grain &amp; offset (D/W/M/Q/Y)</span>
                                                         </div>
                                                     </label>
                                                     {/* Grain + Offset controls (only when Same Period Last N is active) */}

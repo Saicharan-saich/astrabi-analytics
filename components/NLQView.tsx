@@ -99,7 +99,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                 sort: parsed.sort,
                 questionId: question.id,
                 questionLabel: question.question,
-                asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || new Date().toISOString().split('T')[0],
+                asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || '',
             };
 
             const res = await runAnalysis(dataset, config);
@@ -169,7 +169,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                 sort: parsed.sort,
                 questionId: 'nlq_generated_' + Date.now(),
                 questionLabel: query,
-                asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || new Date().toISOString().split('T')[0],
+                asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || '',
                 ...(parsed.secondaryMetrics && parsed.secondaryMetrics.length > 0 ? { secondaryMetrics: parsed.secondaryMetrics, axisMode: 'auto' as const } : {}),
                 ...(parsed.tableCalculations && parsed.tableCalculations.length > 0 ? { tableCalculations: parsed.tableCalculations } : {}),
             };

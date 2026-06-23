@@ -137,7 +137,7 @@ export async function evaluateAlertRule(
 
         // Resolve date context
         const dateCol = dataset.timeContext?.anchorDateColumn || '';
-        const asOfDate = dataset.timeContext?.maxDate || new Date().toISOString().split('T')[0];
+        const asOfDate = dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || '';
         const dates = getDates(asOfDate);
 
         if (!dateCol && rule.timeRange.type !== 'all_time') {
