@@ -1052,6 +1052,28 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             if (dp && dp.previous_period_label) {
                                 return [label, `vs ${dp.previous_period_label}`];
                             }
+                            // For comparison trend charts, compute the previous period date
+                            // by shifting the current label by the comparison offset
+                            if (dp && dp.previous_value !== undefined && label) {
+                                if (config?.comparison === 'same_period_last_n' && config.comparisonGrain && config.comparisonOffset) {
+                                    try {
+                                        const d = new Date(label);
+                                        if (!isNaN(d.getTime())) {
+                                            const grain = config.comparisonGrain;
+                                            const offset = config.comparisonOffset || 1;
+                                            if (grain === 'day') d.setDate(d.getDate() - offset);
+                                            else if (grain === 'week') d.setDate(d.getDate() - (offset * 7));
+                                            else if (grain === 'month') d.setMonth(d.getMonth() - offset);
+                                            else if (grain === 'quarter') d.setMonth(d.getMonth() - (offset * 3));
+                                            else if (grain === 'year') d.setFullYear(d.getFullYear() - offset);
+                                            const prevLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                                            return [label, `vs ${prevLabel}`];
+                                        }
+                                    } catch (_) { /* ignore parse errors */ }
+                                } else if (config?.comparison === 'previous_period') {
+                                    return [label, 'vs Previous Period'];
+                                }
+                            }
                             return label;
                         },
                         label: function (context: any) {
@@ -1136,6 +1158,13 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
                             return lines.length > 0 ? lines.join('\n') : '';
                         }
+                    },
+                    // Filter out tooltip items with null/0/undefined values
+                    // Prevents grouped bar charts from showing all datasets
+                    // when only some have data at a given category (e.g. top 3 products per category)
+                    filter: function (tooltipItem: any) {
+                        const raw = tooltipItem.raw;
+                        return raw !== null && raw !== undefined && raw !== 0 && raw !== '';
                     }
                 }
             },
