@@ -441,7 +441,7 @@ function App() {
             setDataset(profiled);
             saveDatasetToDB(profiled);
             setPendingProfile(profile);
-            setActiveTab(Tab.SCHEMA);
+            setActiveTab(Tab.COLUMN_MAPPING);
             console.log(`[App] AI Profile: ${profile.domain} (${(profile.confidence * 100).toFixed(0)}% confidence)`);
           } else {
             // ── HEURISTIC DOMAIN FALLBACK (no AI required) ──
@@ -472,7 +472,7 @@ function App() {
             setDataset(profiled);
             saveDatasetToDB(profiled);
             setPendingProfile(fallbackProfile);
-            setActiveTab(Tab.SCHEMA);
+            setActiveTab(Tab.COLUMN_MAPPING);
             console.log(`[App] Heuristic domain: ${heuristicDomain || 'Sales'}`);
           }
         }).catch(err => {
@@ -504,7 +504,7 @@ function App() {
           setDataset(profiled);
           saveDatasetToDB(profiled);
           setPendingProfile(fallbackProfile);
-          setActiveTab(Tab.SCHEMA);
+          setActiveTab(Tab.COLUMN_MAPPING);
         });
       } else if (type === 'ERROR') {
         setError(error);
