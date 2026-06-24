@@ -1742,6 +1742,16 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             );
         }
 
+        // DIAGNOSTIC — remove after fixing doughnut
+        if (effectiveChartType === 'pie' || effectiveChartType === 'doughnut') {
+            console.log('[CHART DEBUG] type:', effectiveChartType, 'component:', ChartComponent?.name || ChartComponent);
+            console.log('[CHART DEBUG] chartData:', JSON.stringify(chartData, null, 2));
+            console.log('[CHART DEBUG] options.scales:', chartOptions?.scales);
+            console.log('[CHART DEBUG] options.cutout:', chartOptions?.cutout);
+            console.log('[CHART DEBUG] options.interaction:', chartOptions?.interaction);
+            console.log('[CHART DEBUG] plugins:', plugins?.map((p: any) => p.id));
+        }
+
         return <ChartComponent ref={chartRef} data={chartData as any} options={chartOptions} plugins={plugins} />;
     };
 
