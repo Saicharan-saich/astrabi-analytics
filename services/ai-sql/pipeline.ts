@@ -795,6 +795,23 @@ export async function runAISQLPipeline(
         reshaped.chart = chartRec;
     }
 
+    // For share_of_total (donut/pie), strip non-percentage metric columns
+    // to prevent the sum column from rendering as a secondary bar/line
+    if (plan.intent === 'share_of_total' && chartRec.yKey) {
+        const keepKeys = new Set([chartRec.xKey, chartRec.yKey]);
+        reshaped.data = reshaped.data.map((row: any) => {
+            const cleaned: any = {};
+            for (const key of Object.keys(row)) {
+                // Keep dimension, pct metric, and non-numeric fields
+                if (keepKeys.has(key) || typeof row[key] !== 'number') {
+                    cleaned[key] = row[key];
+                }
+            }
+            return cleaned;
+        });
+        console.log(`[Pipeline] share_of_total cleanup: kept keys=[${[...keepKeys]}], stripped extra metrics`);
+    }
+
     // ─── Step 10: Score Confidence ───────────────────────────────
     console.log('[Pipeline] Step 10: Scoring confidence...');
     _s1 = performance.now();
