@@ -92,16 +92,23 @@ export function reshapeData(
     // ─── 3. Percent-of-Total ─────────────────────────────────────
     if (plan.intent === 'share_of_total' && profile.metricColumns.length >= 1) {
         const metricCol = chart.yKey;
-        const total = reshapedData.reduce((sum, r) => sum + (Number(r[metricCol]) || 0), 0);
 
-        if (total > 0) {
-            reshapedData = reshapedData.map(r => ({
-                ...r,
-                [`${metricCol}_pct`]: ((Number(r[metricCol]) || 0) / total) * 100,
-            }));
-            // Update yKey to point to the percentage column
-            updatedChart.yKey = `${metricCol}_pct`;
+        // If SQL already computed a _pct column (e.g., sales_pct), don't re-append _pct
+        const alreadyPct = /[_](pct|percent|share|ratio)$/i.test(metricCol);
+
+        if (!alreadyPct) {
+            const total = reshapedData.reduce((sum, r) => sum + (Number(r[metricCol]) || 0), 0);
+
+            if (total > 0) {
+                reshapedData = reshapedData.map(r => ({
+                    ...r,
+                    [`${metricCol}_pct`]: ((Number(r[metricCol]) || 0) / total) * 100,
+                }));
+                // Update yKey to point to the percentage column
+                updatedChart.yKey = `${metricCol}_pct`;
+            }
         }
+        // else: yKey already points to the correct pct column from SQL
     }
 
     // ─── 4. Sort Time Series Chronologically ─────────────────────
