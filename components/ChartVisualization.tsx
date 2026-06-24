@@ -733,20 +733,36 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const isStepped = chartType === 'steppedLine';
         const isCurved = chartType === 'curvedLine' || chartType === 'area';
 
+        // ═══ PIE / DOUGHNUT / POLAR AREA — clean Arc dataset ═══════════
+        // These chart types use Arc elements, NOT Cartesian elements.
+        // Mixing in Cartesian properties (fill, tension, pointRadius,
+        // borderSkipped, maxBarThickness) can break Arc rendering.
+        if (isPieChart) {
+            const bgColors = generateColors(values.length) as string[];
+            return {
+                labels,
+                datasets: [{
+                    label: calculatedYLabel || 'Value',
+                    data: values,
+                    backgroundColor: bgColors,
+                    borderColor: bgColors.map((c) => lightenColor(c, -10)),
+                    borderWidth: 2,
+                    hoverOffset: 8,
+                    ...(chartType === 'doughnut' ? { cutout: '55%' } : {}),
+                }]
+            };
+        }
+
         const datasets: any[] = [{
             label: calculatedYLabel || 'Value',
             data: values,
-            backgroundColor: isPieChart
-                ? generateColors(values.length)
-                : isFillChart
+            backgroundColor: isFillChart
                     ? `${baseColor}40`
                     : isBarVariant
                         ? generateColors(values)
                         : `${baseColor}DD`,
-            borderColor: isPieChart
-                ? (generateColors(values.length) as string[]).map((c) => lightenColor(c, -10))
-                : borderColor,
-            borderWidth: isPieChart ? 2 : isLineVariant ? 3 : isBarVariant ? 1.5 : 2,
+            borderColor: borderColor,
+            borderWidth: isLineVariant ? 3 : isBarVariant ? 1.5 : 2,
             fill: isFillChart,
             tension: isCurved ? 0.4 : isStepped ? 0 : (chartType === 'line' ? 0.35 : 0),
             stepped: isStepped ? 'middle' as const : false,
@@ -760,7 +776,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             borderSkipped: 'bottom',
             maxBarThickness: 50,
             hoverBackgroundColor: isBarVariant ? lightenColor(baseColor, 10) : undefined,
-            ...(isPieChart ? {} : { yAxisID: 'y' }),
+            yAxisID: 'y',
         }];
 
         // When trend comparison is detected from data, override primary dataset for line rendering
