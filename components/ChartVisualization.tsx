@@ -1004,7 +1004,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             maintainAspectRatio: false,
             indexAxis: isHorizontal ? 'y' as const : 'x' as const,
             layout: {
-                padding: isPieChart ? { top: 40, left: 60, right: 60, bottom: 10 } : { top: 60, left: 20, right: 20, bottom: 20 }
+                padding: isPieChart ? { top: 40, left: 60, right: 60, bottom: 40 } : { top: 60, left: 20, right: 20, bottom: 20 }
             },
             ...(chartType === 'doughnut' ? { cutout: '55%' } : {}),
             plugins: {
@@ -1329,9 +1329,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 const chartArea = chart.chartArea;
                 const centerX = (chartArea.left + chartArea.right) / 2;
                 const centerY = (chartArea.top + chartArea.bottom) / 2;
+                const canvasWidth = chart.width;
+                const canvasHeight = chart.height;
 
-                // Collect label positions first for collision avoidance
-                const labels = chart.data.labels || [];
+                // Collect label positions
+                const dataLabels = chart.data.labels || [];
                 const labelInfos: { angle: number; labelText: string; outerX: number; outerY: number; side: 'left' | 'right' }[] = [];
 
                 meta.data.forEach((arc: any, index: number) => {
@@ -1339,56 +1341,74 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     if (!value || value === 0) return;
 
                     const pct = ((value / total) * 100);
-                    // Skip truly tiny slices (< 2%) to avoid clutter
-                    if (pct < 2) return;
+                    if (pct < 1) return; // skip tiny slices
 
                     const startAngle = arc.startAngle;
                     const endAngle = arc.endAngle;
                     const midAngle = (startAngle + endAngle) / 2;
 
                     const outerRadius = arc.outerRadius;
-                    const labelRadius = outerRadius + 28;
+                    const labelRadius = outerRadius + 24;
 
                     const outerX = centerX + Math.cos(midAngle) * labelRadius;
                     const outerY = centerY + Math.sin(midAngle) * labelRadius;
 
-                    // Clean label: "Category: XX.X%"
-                    const catName = labels[index] || '';
+                    const catName = dataLabels[index] || '';
                     const labelText = `${catName}: ${pct.toFixed(1)}%`;
                     const side: 'left' | 'right' = outerX >= centerX ? 'right' : 'left';
 
                     labelInfos.push({ angle: midAngle, labelText, outerX, outerY, side });
                 });
 
-                // Collision avoidance: separate left and right, push apart vertically
-                const leftLabels = labelInfos.filter(l => l.side === 'left').sort((a, b) => a.outerY - b.outerY);
-                const rightLabels = labelInfos.filter(l => l.side === 'right').sort((a, b) => a.outerY - b.outerY);
+                // Collision avoidance per side — clamp within canvas bounds
+                const marginY = 14; // min distance from canvas edge
                 const minGap = 20;
-                for (const group of [leftLabels, rightLabels]) {
+                for (const side of ['left', 'right'] as const) {
+                    const group = labelInfos.filter(l => l.side === side).sort((a, b) => a.outerY - b.outerY);
+                    // Clamp each label within canvas bounds
+                    for (const lbl of group) {
+                        lbl.outerY = Math.max(marginY, Math.min(canvasHeight - marginY, lbl.outerY));
+                    }
+                    // Push overlapping labels apart
                     for (let i = 1; i < group.length; i++) {
                         if (group[i].outerY - group[i - 1].outerY < minGap) {
                             group[i].outerY = group[i - 1].outerY + minGap;
                         }
                     }
+                    // If last label is off canvas, push all up
+                    if (group.length > 0) {
+                        const lastY = group[group.length - 1].outerY;
+                        if (lastY > canvasHeight - marginY) {
+                            const overflow = lastY - (canvasHeight - marginY);
+                            for (const lbl of group) {
+                                lbl.outerY = Math.max(marginY, lbl.outerY - overflow);
+                            }
+                            // Re-apply minimum gap after shifting
+                            for (let i = 1; i < group.length; i++) {
+                                if (group[i].outerY - group[i - 1].outerY < minGap) {
+                                    group[i].outerY = group[i - 1].outerY + minGap;
+                                }
+                            }
+                        }
+                    }
                 }
-                const sortedLabels = [...leftLabels, ...rightLabels];
 
                 // Draw each label with leader line
-                sortedLabels.forEach(info => {
+                labelInfos.forEach(info => {
                     const { angle, labelText, outerX, outerY, side } = info;
 
                     const outerRadius = meta.data[0]?.outerRadius || 100;
 
-                    // Start point: on the edge of the pie
+                    // Start point on pie edge
                     const edgeX = centerX + Math.cos(angle) * (outerRadius + 4);
                     const edgeY = centerY + Math.sin(angle) * (outerRadius + 4);
 
-                    // Elbow: horizontal extension
-                    const elbowExtend = side === 'right' ? 20 : -20;
+                    // Elbow extends horizontally
+                    const elbowExtend = side === 'right' ? 18 : -18;
                     const elbowX = outerX + elbowExtend;
 
-                    // Draw leader line
-                    ctx.strokeStyle = '#94a3b8'; // slate-400
+                    // Leader line
+                    ctx.strokeStyle = '#94a3b8';
                     ctx.lineWidth = 1;
                     ctx.beginPath();
                     ctx.moveTo(edgeX, edgeY);
@@ -1396,13 +1416,13 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     ctx.lineTo(elbowX, outerY);
                     ctx.stroke();
 
-                    // Draw label text
+                    // Label text
                     ctx.textAlign = side === 'right' ? 'left' : 'right';
                     ctx.textBaseline = 'middle';
                     const labelX = elbowX + (side === 'right' ? 5 : -5);
 
                     ctx.font = 'bold 11px "Inter", sans-serif';
-                    ctx.fillStyle = '#334155'; // slate-700
+                    ctx.fillStyle = '#334155';
                     ctx.fillText(labelText, labelX, outerY);
                 });
             } else {
