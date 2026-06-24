@@ -760,7 +760,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             borderSkipped: 'bottom',
             maxBarThickness: 50,
             hoverBackgroundColor: isBarVariant ? lightenColor(baseColor, 10) : undefined,
-            yAxisID: 'y',
+            ...(isPieChart ? {} : { yAxisID: 'y' }),
         }];
 
         // When trend comparison is detected from data, override primary dataset for line rendering
@@ -1277,8 +1277,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 }
             },
             interaction: {
-                mode: 'index' as const,
-                intersect: false,
+                mode: (chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea' || chartType === 'gauge') ? 'nearest' as const : 'index' as const,
+                intersect: (chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea' || chartType === 'gauge') ? true : false,
             },
         } as any; // Cast to any to allow custom scale ID 'y1'
     }, [chartType, formatting, transformedData, chartData, calculatedYLabel, xKey, yKey]);
