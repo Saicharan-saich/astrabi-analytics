@@ -341,22 +341,28 @@ function applyTimeSPLN(
             }),
         }
     };
-    const compResult = executeQueryPlan(compPlan, prevRows, dimDate);
+    // Filter dim_date to only cover the comparison period to avoid generating 1464 empty buckets
+    const compDimDate = dimDate?.filter(dd => {
+        const d = dd.date || dd.full_date || '';
+        return d >= prevStart && d <= prevEnd;
+    });
+    const compResult = executeQueryPlan(compPlan, prevRows, compDimDate);
 
     // Build positional mapping: sort both current and previous keys and align them
-    const prevData = compResult.data;
+    // Filter out empty dim_date spine entries (value = 0 or null)
+    const prevData = compResult.data.filter((r: any) => {
+        const v = Number(r[metricKey]);
+        return v !== 0 && !isNaN(v);
+    });
     const currKeys = data.map(r => String(r[dimKey] || '')).sort();
     const prevKeys = prevData.map((r: any) => String(r[dimKey] || '')).sort();
 
     // Build a map from previous period sorted position → metric value
-    const prevByPosition = new Map<number, { value: number; label: string }>();
+    const prevByPosition = new Map<number, number>();
     prevKeys.forEach((key, i) => {
         const row = prevData.find((r: any) => String(r[dimKey] || '') === key);
         if (row) {
-            prevByPosition.set(i, {
-                value: Number(row[metricKey]) || 0,
-                label: key,
-            });
+            prevByPosition.set(i, Number(row[metricKey]) || 0);
         }
     });
 
@@ -367,14 +373,13 @@ function applyTimeSPLN(
 
     for (let i = 0; i < sortedCurrentData.length; i++) {
         const row = sortedCurrentData[i];
-        const prevEntry = prevByPosition.get(i);
+        const prevVal = prevByPosition.get(i);
         const curr = Number(row[metricKey]) || 0;
 
-        if (prevEntry) {
-            row.previous_value = prevEntry.value;
-            row.previous_period_label = prevEntry.label;
-            if (prevEntry.value !== 0) {
-                row.growth_pct = ((curr - prevEntry.value) / Math.abs(prevEntry.value)) * 100;
+        if (prevVal !== undefined) {
+            row.previous_value = prevVal;
+            if (prevVal !== 0) {
+                row.growth_pct = ((curr - prevVal) / Math.abs(prevVal)) * 100;
             } else {
                 row.growth_pct = curr !== 0 ? 100 : 0;
             }
