@@ -745,18 +745,35 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     currSet = rows;
                     currLabel = 'Current Period';
 
-                    // Compute the previous period of the same length
+                    // Compute the previous period based on comparison type
                     const usableDates = rows.map((r: any) => date(r)).filter((d: string) => d && d !== '1970-01-01').sort();
                     const minDate = usableDates[0] || '';
                     const maxDate = usableDates[usableDates.length - 1] || '';
 
                     if (minDate && maxDate) {
+                        let prevStartStr: string, prevEndStr: string;
                         const spanMs = new Date(maxDate).getTime() - new Date(minDate).getTime();
                         const spanDays = Math.round(spanMs / 86400000) + 1;
-                        const prevEnd = new Date(new Date(minDate).getTime() - 86400000);
-                        const prevStart = new Date(prevEnd.getTime() - (spanDays - 1) * 86400000);
-                        const prevStartStr = prevStart.toISOString().split('T')[0];
-                        const prevEndStr = prevEnd.toISOString().split('T')[0];
+
+                        if (query.comparison === 'same_period_last_n' && query.comparisonGrain) {
+                            // Shift the ENTIRE current date range by grain * offset
+                            const grainDaysMap: Record<string, number> = {
+                                day: 1, week: 7, month: 30, quarter: 91, year: 365,
+                            };
+                            const shiftDays = (grainDaysMap[query.comparisonGrain] || 1) * (query.comparisonOffset || 1);
+                            const prevStart = new Date(new Date(minDate).getTime() - shiftDays * 86400000);
+                            const prevEnd = new Date(new Date(maxDate).getTime() - shiftDays * 86400000);
+                            prevStartStr = prevStart.toISOString().split('T')[0];
+                            prevEndStr = prevEnd.toISOString().split('T')[0];
+                            prevLabel = `${query.comparisonOffset || 1} ${query.comparisonGrain}${(query.comparisonOffset || 1) > 1 ? 's' : ''} ago`;
+                        } else {
+                            // Default: previous period of the same length
+                            const prevEnd = new Date(new Date(minDate).getTime() - 86400000);
+                            const prevStart = new Date(prevEnd.getTime() - (spanDays - 1) * 86400000);
+                            prevStartStr = prevStart.toISOString().split('T')[0];
+                            prevEndStr = prevEnd.toISOString().split('T')[0];
+                            prevLabel = 'Previous Period';
+                        }
 
                         // Get previous period rows from the ORIGINAL unfiltered dataset
                         const origRows = allOrigRows;
@@ -764,7 +781,6 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                             const d = date(r);
                             return d >= prevStartStr && d <= prevEndStr;
                         });
-                        prevLabel = 'Previous Period';
                     }
                 } else {
                     // Default comparison logic â€” use question ID prefix to decide periods

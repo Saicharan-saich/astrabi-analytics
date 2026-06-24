@@ -69,7 +69,10 @@ export function applyComparison(params: ComparisonParams): void {
         if (comparison === 'previous_period') {
             applyLag1(data, planMetricKey, partKey);
         } else if (comparison === 'same_period_last_n') {
-            applyLagN(data, planMetricKey, partKey, comparisonOffset || 1);
+            // Convert grain + offset into actual row offset
+            // e.g., "1 week ago" with daily data = LAG(7), not LAG(1)
+            const actualRowOffset = computeRowOffset(data, planDimKey, comparisonGrain, comparisonOffset || 1);
+            applyLagN(data, planMetricKey, partKey, actualRowOffset);
         } else if (comparison === 'same_period_last_year') {
             applySPLY(data, plan, planDimKey, planMetricKey, partKey, dateColKey, allRows, dimDate);
         }
@@ -86,6 +89,49 @@ export function applyComparison(params: ComparisonParams): void {
             comparison, comparisonGrain, comparisonOffset,
             dateColKey, dateExtractor, dates, allRows, dimDate);
     }
+}
+
+// ── Convert grain + offset into actual row offset ────────────────
+// Analyzes the data's time dimension to determine how many rows
+// correspond to the requested grain * offset. For example, daily data
+// with grain='week' and offset=1 returns 7 rows.
+function computeRowOffset(
+    data: any[], dimKey: string, grain?: string, offset: number = 1
+): number {
+    if (!grain || data.length < 2) return offset;
+
+    // Detect the data granularity by looking at the gap between first two sorted rows
+    const sortedDates = data
+        .map(r => String(r[dimKey] || ''))
+        .filter(d => d && d !== '' && d !== '1970-01-01')
+        .sort();
+
+    if (sortedDates.length < 2) return offset;
+
+    // Compute the median gap between consecutive data points (in days)
+    const gaps: number[] = [];
+    for (let i = 1; i < Math.min(sortedDates.length, 20); i++) {
+        const d1 = new Date(sortedDates[i - 1]);
+        const d2 = new Date(sortedDates[i]);
+        if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
+            gaps.push(Math.round((d2.getTime() - d1.getTime()) / 86400000));
+        }
+    }
+    if (gaps.length === 0) return offset;
+
+    const medianGap = gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)];
+    
+    // Convert the requested grain into days
+    const grainDays: Record<string, number> = {
+        day: 1, week: 7, month: 30, quarter: 91, year: 365,
+    };
+    const requestedDays = (grainDays[grain] || 1) * offset;
+
+    // How many data rows correspond to the requested time span?
+    const rowOffset = Math.max(1, Math.round(requestedDays / Math.max(1, medianGap)));
+
+    console.log(`[ComparisonEngine] computeRowOffset: grain=${grain}, offset=${offset}, medianGap=${medianGap}d, requestedDays=${requestedDays}d → rowOffset=${rowOffset}`);
+    return rowOffset;
 }
 
 // ── LAG(1): Previous period within partition ─────────────────────
