@@ -797,8 +797,9 @@ export async function runAISQLPipeline(
 
     // For share_of_total (donut/pie), strip non-percentage metric columns
     // to prevent the sum column from rendering as a secondary bar/line
-    if (plan.intent === 'share_of_total' && chartRec.yKey) {
-        const keepKeys = new Set([chartRec.xKey, chartRec.yKey]);
+    // Use reshaped.chart (post-reshaper) keys, not chartRec (pre-reshaper)
+    if (plan.intent === 'share_of_total' && reshaped.chart.yKey) {
+        const keepKeys = new Set([reshaped.chart.xKey, reshaped.chart.yKey]);
         reshaped.data = reshaped.data.map((row: any) => {
             const cleaned: any = {};
             for (const key of Object.keys(row)) {
