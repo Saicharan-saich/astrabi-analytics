@@ -118,6 +118,15 @@ export function recommendChart(
     if (plan.intent === 'share_of_total') {
         const cardinality = dimensionCardinality[dimensionColumns[0]] || 0;
         leftAxisFormat = 'percent'; // Share of total is always percentage
+
+        // Use the percentage column (e.g., sales_pct) as yKey, not the sum
+        const pctCol = metricColumns.find(c => /pct|percent|share|ratio/i.test(c));
+        if (pctCol) {
+            yKey = pctCol;
+        }
+        // Clear secondary metrics — don't show sum as a line overlay
+        secondaryYKeys = undefined;
+
         if (cardinality <= DONUT_MAX_CATEGORIES) {
             chartType = 'donut';
             reason = `Share of total with ${cardinality} categories (≤${DONUT_MAX_CATEGORIES}) → Donut`;
