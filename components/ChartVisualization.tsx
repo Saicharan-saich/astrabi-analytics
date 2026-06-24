@@ -1004,7 +1004,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             maintainAspectRatio: false,
             indexAxis: isHorizontal ? 'y' as const : 'x' as const,
             layout: {
-                padding: isPieChart ? { top: 30, left: 20, right: 20, bottom: 20 } : { top: 60, left: 20, right: 20, bottom: 20 }
+                padding: isPieChart ? { top: 40, left: 60, right: 60, bottom: 10 } : { top: 60, left: 20, right: 20, bottom: 20 }
             },
             ...(chartType === 'doughnut' ? { cutout: '55%' } : {}),
             plugins: {
@@ -1028,13 +1028,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     offset: 4
                 },
                 legend: {
-                    position: 'bottom' as const, // Moved to bottom to avoid overlap
+                    position: 'bottom' as const,
                     align: 'center' as const,
                     labels: {
                         font: { size: fontSize },
                         usePointStyle: true,
-                        padding: 15,
-                    }
+                        padding: isPieChart ? 20 : 15,
+                    },
+                    ...(isPieChart ? { padding: 10 } : {}),
                 },
                 title: {
                     display: false, // Handled by parent container header
@@ -1329,47 +1330,51 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 const centerY = (chartArea.top + chartArea.bottom) / 2;
 
                 // Collect label positions first for collision avoidance
-                const labelInfos: { angle: number; text: string; pctText: string; outerX: number; outerY: number; side: 'left' | 'right' }[] = [];
+                const labels = chart.data.labels || [];
+                const labelInfos: { angle: number; labelText: string; outerX: number; outerY: number; side: 'left' | 'right' }[] = [];
 
                 meta.data.forEach((arc: any, index: number) => {
                     const value = dataset.data[index];
                     if (!value || value === 0) return;
 
                     const pct = ((value / total) * 100);
-                    // Skip truly tiny slices (< 0.5%) to avoid clutter
-                    if (pct < 0.5) return;
+                    // Skip truly tiny slices (< 2%) to avoid clutter
+                    if (pct < 2) return;
 
                     const startAngle = arc.startAngle;
                     const endAngle = arc.endAngle;
                     const midAngle = (startAngle + endAngle) / 2;
 
                     const outerRadius = arc.outerRadius;
-                    const labelRadius = outerRadius + 20;
+                    const labelRadius = outerRadius + 28;
 
                     const outerX = centerX + Math.cos(midAngle) * labelRadius;
                     const outerY = centerY + Math.sin(midAngle) * labelRadius;
 
-                    const formattedVal = options.formatter ? options.formatter(value, { dataset }) : value;
-                    const pctText = `(${pct.toFixed(1)}%)`;
-                    const side = outerX >= centerX ? 'right' : 'left';
+                    // Clean label: "Category: XX.X%"
+                    const catName = labels[index] || '';
+                    const labelText = `${catName}: ${pct.toFixed(1)}%`;
+                    const side: 'left' | 'right' = outerX >= centerX ? 'right' : 'left';
 
-                    labelInfos.push({ angle: midAngle, text: formattedVal, pctText, outerX, outerY, side });
+                    labelInfos.push({ angle: midAngle, labelText, outerX, outerY, side });
                 });
 
-                // Simple collision avoidance: push overlapping labels apart vertically
-                const sortedLabels = [...labelInfos].sort((a, b) => a.outerY - b.outerY);
-                const minGap = 16;
-                for (let i = 1; i < sortedLabels.length; i++) {
-                    const prev = sortedLabels[i - 1];
-                    const curr = sortedLabels[i];
-                    if (curr.outerY - prev.outerY < minGap) {
-                        curr.outerY = prev.outerY + minGap;
+                // Collision avoidance: separate left and right, push apart vertically
+                const leftLabels = labelInfos.filter(l => l.side === 'left').sort((a, b) => a.outerY - b.outerY);
+                const rightLabels = labelInfos.filter(l => l.side === 'right').sort((a, b) => a.outerY - b.outerY);
+                const minGap = 20;
+                for (const group of [leftLabels, rightLabels]) {
+                    for (let i = 1; i < group.length; i++) {
+                        if (group[i].outerY - group[i - 1].outerY < minGap) {
+                            group[i].outerY = group[i - 1].outerY + minGap;
+                        }
                     }
                 }
+                const sortedLabels = [...leftLabels, ...rightLabels];
 
                 // Draw each label with leader line
                 sortedLabels.forEach(info => {
-                    const { angle, text, pctText, outerX, outerY, side } = info;
+                    const { angle, labelText, outerX, outerY, side } = info;
 
                     const outerRadius = meta.data[0]?.outerRadius || 100;
 
@@ -1378,7 +1383,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     const edgeY = centerY + Math.sin(angle) * (outerRadius + 4);
 
                     // Elbow: horizontal extension
-                    const elbowExtend = side === 'right' ? 16 : -16;
+                    const elbowExtend = side === 'right' ? 20 : -20;
                     const elbowX = outerX + elbowExtend;
 
                     // Draw leader line
@@ -1393,11 +1398,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     // Draw label text
                     ctx.textAlign = side === 'right' ? 'left' : 'right';
                     ctx.textBaseline = 'middle';
-                    const labelX = elbowX + (side === 'right' ? 4 : -4);
+                    const labelX = elbowX + (side === 'right' ? 5 : -5);
 
                     ctx.font = 'bold 11px "Inter", sans-serif';
                     ctx.fillStyle = '#334155'; // slate-700
-                    ctx.fillText(`${text} ${pctText}`, labelX, outerY);
+                    ctx.fillText(labelText, labelX, outerY);
                 });
             } else {
                 // ── BAR / LINE / OTHER CHARTS — show data point labels ──
