@@ -245,6 +245,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             // Catches questions like "% Revenue by Product Today" where rawLabel starts with %
             // BUT EXCLUDE change/growth questions like "% Revenue Change vs Yesterday"
             // where bars show actual revenue values, not percentages
+            // Check for _pct/_percent suffix FIRST — e.g., sales_pct should be % not $
+            else if (/[_\s](pct|percent|share|ratio)$/i.test(metricName) || /^pct_/i.test(metricName)) {
+                effectiveFormat = 'percent';
+            }
             else if (
                 (rawLabel.startsWith('%') && !rawLabel.includes('change') && !rawLabel.includes('growth') && !rawLabel.includes('vs')) ||
                 rawLabel.includes('% of') || rawLabel.includes('percent of') ||
@@ -309,7 +313,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const name = metricName.toLowerCase();
         let fmt: string;
         let fd: number;
-        if (name.includes('count') || name.includes('quantity') || name.includes('units') || name.includes('volume') || name.includes('orders') || name.includes('users') || name.includes('sessions')) {
+        // Check _pct/_percent suffix FIRST — e.g., sales_pct must be % not $
+        if (/[_ ](pct|percent|share|ratio)$/i.test(name) || /^pct[_ ]/i.test(name)) {
+            fmt = 'percent';
+            fd = 2;
+        } else if (name.includes('count') || name.includes('quantity') || name.includes('units') || name.includes('volume') || name.includes('orders') || name.includes('users') || name.includes('sessions')) {
             fmt = value < 1000 ? 'raw' : 'compact';
             fd = 0;
         } else if (name.includes('discount') || (name.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(name)) || name.includes('ratio') || name.includes('percent') || name.includes('share') || name.includes('conversion') || name.includes('margin_pct')) {
@@ -892,7 +900,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const knownKeys = new Set([xKey, yKey, 'previous_value', 'previous_period_label', 'growth_pct', 'difference', 'raw_value', 'rawValue', '__original_value', '_original', 'x', 'value', 'period', 'metric']);
         // Also exclude table-calculation derived fields so they don't spawn phantom chart series
         const isTableCalcKey = (k: string) => /running_total|cumulative|percent_of_total|pct_of_total|rank|percentile|moving_avg|pct_diff|diff_from_prev|_sum$|_count$|_avg$|_min$|_max$/i.test(k);
-        const secondaryKeys = data.length > 0
+        // Skip secondary metric detection for pie/doughnut charts — they only use one metric
+        const skipSecondary = chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea' || chartType === 'radar' || chartType === 'gauge';
+        const secondaryKeys = (!skipSecondary && data.length > 0)
             ? Object.keys(data[0]).filter(k => !knownKeys.has(k) && !isTableCalcKey(k) && typeof data[0][k] === 'number')
             : [];
 
@@ -957,7 +967,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     }, [transformedData, xKey, yKey, chartType, calculatedYLabel, formatting, data, config]);
 
     const options = useMemo(() => {
-        const isPieChart = chartType === 'pie' || chartType === 'gauge';
+        const isPieChart = chartType === 'pie' || chartType === 'doughnut' || chartType === 'gauge';
         const isBarVariant = chartType === 'bar' || chartType === 'horizontalBar' || chartType === 'stackedBar' || chartType === 'groupedBar' || chartType === 'waterfall' || chartType === 'funnel' || chartType === 'lollipop';
         const isStacked = chartType === 'stackedBar' || chartType === 'stackedArea' || chartType === 'waterfall';
         const isHorizontal = chartType === 'horizontalBar' || chartType === 'funnel';
