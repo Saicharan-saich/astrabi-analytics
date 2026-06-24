@@ -46,7 +46,7 @@ export function applyComparison(params: ComparisonParams): void {
     // ═══════════════════════════════════════════════════════════════════
     // TIME-DIMENSION COMPARISON — Windowed LAG on sorted, grouped data
     // ═══════════════════════════════════════════════════════════════════
-    if (isTimeDim && data.length > 1) {
+    if (isTimeDim && data.length > 0) {
         const partDims = plan.dimensions.filter(d => d.type === 'column');
 
         // Time-aware sort: PARTITION BY categorical dims, ORDER BY time dim
@@ -66,13 +66,13 @@ export function applyComparison(params: ComparisonParams): void {
         const partKey = (row: any): string =>
             partDims.map(pd => String(row[(pd as any).column] || '')).join('||');
 
-        if (comparison === 'previous_period') {
+        if (comparison === 'previous_period' && data.length > 1) {
             applyLag1(data, planMetricKey, partKey);
         } else if (comparison === 'same_period_last_n') {
-            // Convert grain + offset into actual row offset
-            // e.g., "1 week ago" with daily data = LAG(7), not LAG(1)
-            const actualRowOffset = computeRowOffset(data, planDimKey, comparisonGrain, comparisonOffset || 1);
-            applyLagN(data, planMetricKey, partKey, actualRowOffset);
+            // Date-shifted re-query: fetch data from the comparison period and merge
+            applyTimeSPLN(data, plan, planDimKey, planMetricKey,
+                comparisonGrain, comparisonOffset || 1,
+                dateColKey, dateExtractor, dates, allRows, dimDate);
         } else if (comparison === 'same_period_last_year') {
             applySPLY(data, plan, planDimKey, planMetricKey, partKey, dateColKey, allRows, dimDate);
         }
@@ -254,6 +254,137 @@ function applySPLY(
             row.growth_pct = undefined;
         }
     }
+}
+
+// ── Same Period Last N for Time Dimensions ───────────────────────
+// Instead of LAG (which requires enough rows), this shifts the entire
+// date range back by grain * offset, re-runs the query plan, and
+// maps previous values by time bucket key. Works for all grains.
+function applyTimeSPLN(
+    data: any[], plan: QueryPlan,
+    dimKey: string, metricKey: string,
+    comparisonGrain?: string, comparisonOffset: number = 1,
+    dateColKey?: string, dateExtractor?: (r: any) => string,
+    dates?: DateRange, allRows?: any[], dimDate?: DimDateRow[]
+): void {
+    if (!dateExtractor || !dates || !allRows || data.length === 0) return;
+
+    // Determine current period boundaries from the plan's range filters
+    let timeFilterStart = '';
+    let timeFilterEnd = '';
+    const timeRangeFilter = plan.filters.range.find(f => {
+        const fCol = f.column.toLowerCase().replace(/[_\s]+/g, '');
+        const dCol = (dateColKey || '').toLowerCase().replace(/[_\s]+/g, '');
+        return fCol === dCol;
+    });
+    if (timeRangeFilter) {
+        timeFilterStart = timeRangeFilter.start || '';
+        timeFilterEnd = timeRangeFilter.end || '';
+    }
+    // Fall back to actual data boundaries
+    if (!timeFilterStart) {
+        let minD = '9999-12-31', maxD = '0000-01-01';
+        for (const r of allRows) {
+            const d = dateExtractor(r);
+            if (d > '1970-01-01' && d < '9999-01-01') {
+                if (d < minD) minD = d;
+                if (d > maxD) maxD = d;
+            }
+        }
+        if (minD < '9999-12-31') { timeFilterStart = minD; timeFilterEnd = maxD; }
+    }
+    if (!timeFilterStart || !timeFilterEnd) return;
+
+    // Compute the shift in days based on grain * offset
+    const grainDaysMap: Record<string, number> = {
+        day: 1, week: 7, month: 30, quarter: 91, year: 365,
+    };
+    const shiftDays = (grainDaysMap[comparisonGrain || 'day'] || 1) * comparisonOffset;
+
+    // Shift the current date range back
+    const startD = new Date(`${timeFilterStart}T12:00:00Z`);
+    const endD = new Date(`${timeFilterEnd}T12:00:00Z`);
+    const prevStartD = new Date(startD.getTime() - shiftDays * 86400000);
+    const prevEndD = new Date(endD.getTime() - shiftDays * 86400000);
+    const fmt = (d: Date) => d.toISOString().split('T')[0];
+    const prevStart = fmt(prevStartD);
+    const prevEnd = fmt(prevEndD);
+
+    console.log(`[ComparisonEngine] TimeSPLN: current=${timeFilterStart}→${timeFilterEnd}, prev=${prevStart}→${prevEnd}, shift=${shiftDays}d`);
+
+    // Filter raw rows for the comparison period
+    const prevRows = allRows.filter(r => {
+        const d = dateExtractor(r);
+        return d >= prevStart && d <= prevEnd;
+    });
+
+    if (prevRows.length === 0) {
+        console.log(`[ComparisonEngine] TimeSPLN: no rows found for comparison period ${prevStart}→${prevEnd}`);
+        return;
+    }
+
+    // Re-run the query plan on comparison-period rows with date filters stripped
+    const compPlan = {
+        ...plan,
+        filters: {
+            ...plan.filters,
+            range: plan.filters.range.filter(f => {
+                if ((f as any)._isTimeFilter) return false;
+                const fCol = f.column.toLowerCase().replace(/[_\s]+/g, '');
+                const dCol = (dateColKey || '').toLowerCase().replace(/[_\s]+/g, '');
+                return fCol !== dCol;
+            }),
+            date: (plan.filters.date || []).filter((f: any) => {
+                const fCol = (f.column || '').toLowerCase().replace(/[_\s]+/g, '');
+                const dCol = (dateColKey || '').toLowerCase().replace(/[_\s]+/g, '');
+                return fCol !== dCol;
+            }),
+        }
+    };
+    const compResult = executeQueryPlan(compPlan, prevRows, dimDate);
+
+    // Build positional mapping: sort both current and previous keys and align them
+    const prevData = compResult.data;
+    const currKeys = data.map(r => String(r[dimKey] || '')).sort();
+    const prevKeys = prevData.map((r: any) => String(r[dimKey] || '')).sort();
+
+    // Build a map from previous period sorted position → metric value
+    const prevByPosition = new Map<number, { value: number; label: string }>();
+    prevKeys.forEach((key, i) => {
+        const row = prevData.find((r: any) => String(r[dimKey] || '') === key);
+        if (row) {
+            prevByPosition.set(i, {
+                value: Number(row[metricKey]) || 0,
+                label: key,
+            });
+        }
+    });
+
+    // Map positionally: current row i → previous row i
+    const sortedCurrentData = [...data].sort((a, b) =>
+        String(a[dimKey] || '').localeCompare(String(b[dimKey] || ''))
+    );
+
+    for (let i = 0; i < sortedCurrentData.length; i++) {
+        const row = sortedCurrentData[i];
+        const prevEntry = prevByPosition.get(i);
+        const curr = Number(row[metricKey]) || 0;
+
+        if (prevEntry) {
+            row.previous_value = prevEntry.value;
+            row.previous_period_label = prevEntry.label;
+            if (prevEntry.value !== 0) {
+                row.growth_pct = ((curr - prevEntry.value) / Math.abs(prevEntry.value)) * 100;
+            } else {
+                row.growth_pct = curr !== 0 ? 100 : 0;
+            }
+        } else {
+            row.previous_value = undefined;
+            row.growth_pct = undefined;
+        }
+    }
+
+    console.log(`[ComparisonEngine] TimeSPLN: ${prevRows.length} prev rows → ${prevData.length} buckets, matched ${Math.min(currKeys.length, prevKeys.length)}/${currKeys.length} current buckets`);
 }
 
 // ── Non-time dimension comparison (categorical) ──────────────────
