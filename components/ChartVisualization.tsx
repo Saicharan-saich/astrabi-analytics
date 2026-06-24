@@ -13,7 +13,9 @@ import {
     Legend,
     Filler,
     Plugin, // Import Plugin type
-    RadialLinearScale
+    RadialLinearScale,
+    DoughnutController,
+    PieController
 } from 'chart.js';
 import { Chart, Bar, Line, Pie, Doughnut, PolarArea, Radar, Scatter, Bubble } from 'react-chartjs-2';
 import { TreemapController, TreemapElement } from 'chartjs-chart-treemap';
@@ -36,6 +38,8 @@ ChartJS.register(
     Legend,
     Filler,
     RadialLinearScale,
+    DoughnutController,
+    PieController,
     TreemapController,
     TreemapElement
 );
@@ -748,7 +752,6 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     borderColor: bgColors.map((c) => lightenColor(c, -10)),
                     borderWidth: 2,
                     hoverOffset: 8,
-                    ...(chartType === 'doughnut' ? { cutout: '55%' } : {}),
                 }]
             };
         }
@@ -1001,8 +1004,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             maintainAspectRatio: false,
             indexAxis: isHorizontal ? 'y' as const : 'x' as const,
             layout: {
-                padding: { top: 60, left: 20, right: 20, bottom: 20 }
+                padding: isPieChart ? { top: 30, left: 20, right: 20, bottom: 20 } : { top: 60, left: 20, right: 20, bottom: 20 }
             },
+            ...(chartType === 'doughnut' ? { cutout: '55%' } : {}),
             plugins: {
                 // Custom Data Labels Plugin
                 customDataLabels: { // Namespace for our custom plugin
