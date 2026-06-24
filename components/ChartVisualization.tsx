@@ -1028,6 +1028,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     offset: 4
                 },
                 legend: {
+                    // Hide legend on pie/doughnut when data labels are on — labels already show "Category: XX.X%"
+                    display: isPieChart && formatting?.showDataLabels ? false : true,
                     position: 'bottom' as const,
                     align: 'center' as const,
                     labels: {
@@ -1035,7 +1037,6 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         usePointStyle: true,
                         padding: isPieChart ? 20 : 15,
                     },
-                    ...(isPieChart ? { padding: 10 } : {}),
                 },
                 title: {
                     display: false, // Handled by parent container header
