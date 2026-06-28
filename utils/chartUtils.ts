@@ -9,18 +9,18 @@ import { FormattingConfig, QueryConfig } from '../types';
 
 export const PALETTES = {
     // Discrete Multi-Color Palettes (for categorical/dimension analysis)
-    vibrant: ['#4338ca', '#0284c7', '#059669', '#d97706', '#dc2626', '#9333ea', '#db2777', '#0d9488'],
-    electric: ['#4f46e5', '#0891b2', '#16a34a', '#ea580c', '#be123c', '#7c3aed', '#0e7490', '#c026d3'],
-    neon: ['#00b4d8', '#00cc6a', '#e63946', '#e6b800', '#a855f7', '#e11d48', '#14b8a6', '#84cc16'],
-    sunset: ['#e63300', '#e6590a', '#e68a00', '#d4a012', '#c0392b', '#d63384', '#9b2226', '#6a0572'],
-    ocean: ['#005f8c', '#0088b2', '#2da8d4', '#60c0dd', '#003d6b', '#007bad', '#74c9e0', '#9ddcf0'],
+    vibrant: ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#ec4899', '#14b8a6', '#3b82f6', '#f97316'],
+    electric: ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0e7490', '#c026d3', '#2563eb', '#ea580c'],
+    neon: ['#00b4d8', '#00cc6a', '#e63946', '#e6b800', '#a855f7', '#e11d48', '#14b8a6', '#84cc16', '#3b82f6', '#f97316'],
+    sunset: ['#e63300', '#e6590a', '#e68a00', '#d4a012', '#c0392b', '#d63384', '#9b2226', '#6a0572', '#e11d48', '#ea580c'],
+    ocean: ['#005f8c', '#0088b2', '#2da8d4', '#60c0dd', '#003d6b', '#007bad', '#74c9e0', '#9ddcf0', '#0d9488', '#06b6d4'],
 
-    // Sequential Single-Hue Palettes (richer saturation — no washed-out tones)
-    blueSequential: ['#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8', '#1e40af', '#1e3a8a', '#172554'],
-    greenSequential: ['#6ee7b7', '#34d399', '#10b981', '#059669', '#047857', '#065f46', '#064e3b', '#022c22'],
-    purpleSequential: ['#c4b5fd', '#a78bfa', '#8b5cf6', '#7c3aed', '#6d28d9', '#5b21b6', '#4c1d95', '#3b0764'],
-    orangeSequential: ['#fdba74', '#fb923c', '#f97316', '#ea580c', '#c2410c', '#9a3412', '#7c2d12', '#431407'],
-    tealSequential: ['#5eead4', '#2dd4bf', '#14b8a6', '#0d9488', '#0f766e', '#115e59', '#134e4a', '#042f2e']
+    // Sequential Single-Hue Palettes (richer saturation)
+    blueSequential: ['#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8', '#1e40af', '#1e3a8a'],
+    greenSequential: ['#a7f3d0', '#6ee7b7', '#34d399', '#10b981', '#059669', '#047857', '#065f46', '#064e3b'],
+    purpleSequential: ['#ddd6fe', '#c4b5fd', '#a78bfa', '#8b5cf6', '#7c3aed', '#6d28d9', '#5b21b6', '#4c1d95'],
+    orangeSequential: ['#fed7aa', '#fdba74', '#fb923c', '#f97316', '#ea580c', '#c2410c', '#9a3412', '#7c2d12'],
+    tealSequential: ['#99f6e4', '#5eead4', '#2dd4bf', '#14b8a6', '#0d9488', '#0f766e', '#115e59', '#134e4a']
 };
 
 export type PaletteName = keyof typeof PALETTES;
