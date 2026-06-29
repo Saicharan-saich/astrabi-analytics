@@ -2,11 +2,15 @@ import React, { useState } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useDashboardStore } from '../store/useDashboardStore';
 import { UserRole } from '../types';
-import { Eye, EyeOff, LogIn, Sparkles, AlertCircle, UserPlus, Users } from 'lucide-react';
+import { Eye, EyeOff, LogIn, Sparkles, AlertCircle, UserPlus, Users, Shield } from 'lucide-react';
+
+interface LoginPageProps {
+    onShowLegal?: () => void;
+}
 
 const API_BASE = import.meta.env.VITE_API_URL?.replace(/\/api$/, '') || 'http://localhost:5002';
 
-export const LoginPage: React.FC = () => {
+export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [name, setName] = useState('');
@@ -255,6 +259,13 @@ export const LoginPage: React.FC = () => {
                 <p className="text-center text-xs text-gray-400 mt-6">
                     QuickInsight v3.0
                 </p>
+                {onShowLegal && (
+                    <div className="flex items-center justify-center gap-3 mt-3">
+                        <button onClick={onShowLegal} className="text-[11px] text-gray-400 hover:text-indigo-500 transition-colors flex items-center gap-1">
+                            <Shield className="w-3 h-3" /> Privacy & Terms
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );

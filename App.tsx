@@ -54,6 +54,7 @@ import { useAlertStore } from './store/useAlertStore';
 import { evaluateAllAlerts } from './services/alertEngine';
 import { useActivityStore } from './store/useActivityStore';
 import { DataStoryView } from './components/DataStoryView';
+import LegalPage from './components/LegalPage';
 
 // ── SESSION CREDENTIAL CACHE (auto-reconnect without re-entering password) ──
 // Stored in sessionStorage: survives page refresh but cleared on tab close or logout.
@@ -1070,7 +1071,12 @@ function App() {
 
         {/* Auth Gate: Show login if not authenticated */}
         {!isAuthenticated ? (
-          <LoginPage />
+          <>
+            <LoginPage onShowLegal={() => setActiveTab(Tab.LEGAL)} />
+            {activeTab === Tab.LEGAL && (
+              <LegalPage onClose={() => setActiveTab(Tab.DASHBOARD)} />
+            )}
+          </>
         ) : (
           <div className={getGlobalClasses()} style={getGlobalStyle()}>
             <AnimatePresence>
@@ -1618,6 +1624,11 @@ function App() {
                 </div>
               </main>
             </div>
+
+            {/* Legal Pages (full-screen overlay) */}
+            {activeTab === Tab.LEGAL && (
+              <LegalPage onClose={() => setActiveTab(Tab.DASHBOARD)} />
+            )}
 
             {/* Global Settings Modal */}
             <AnimatePresence>
