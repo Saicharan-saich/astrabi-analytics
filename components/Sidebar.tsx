@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb, Bell, Activity, Zap } from 'lucide-react';
+import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb, Bell, Activity, Zap, Shield } from 'lucide-react';
 import { Tab, UserRole } from '../types';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { useAlertStore } from '../store/useAlertStore';
@@ -358,11 +358,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                     <span className={`text-[10px] mx-1 ${isDark ? 'text-gray-700' : 'text-gray-300'}`}>·</span>
                     <span className={`text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>QuickInsight</span>
                 </div>
-                <div className="px-3 pb-2 text-center">
+                <div className="px-3 pb-3 pt-1">
                     <button
                         onClick={() => onTabChange(Tab.LEGAL)}
-                        className={`text-[10px] transition-colors ${isDark ? 'text-gray-600 hover:text-indigo-400' : 'text-gray-400 hover:text-indigo-600'}`}
+                        className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${isDark ? 'text-gray-400 hover:text-indigo-300 hover:bg-white/[0.05] border border-white/[0.06]' : 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 border border-gray-200'}`}
                     >
+                        <Shield className="w-3.5 h-3.5" />
                         Privacy & Terms
                     </button>
                 </div>
