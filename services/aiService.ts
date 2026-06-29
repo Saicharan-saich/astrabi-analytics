@@ -96,17 +96,38 @@ export async function interpretChartVisual(
     const cached = insightCache.get(cacheKey);
     if (cached) return cached;
 
-    // Build the vision prompt — ONLY references what's visible in the image
-    const systemPrompt = `You are a data visualization interpreter. You can ONLY see the chart image provided. 
-You have NO access to any underlying data, databases, or raw numbers beyond what is visually displayed in the chart.
+    // Build the vision prompt — business-focused diagnostic analysis
+    const systemPrompt = `You are a senior business intelligence analyst interpreting a chart visual. You can ONLY see the chart image provided — no raw data access.
 
-Provide a clear, concise interpretation of what the chart shows:
-1. What type of chart is this (bar, line, pie, etc.)?
-2. What are the key visual patterns, trends, or outliers?
-3. What is the main takeaway a business user should understand?
-4. Any notable data points that stand out visually?
+Your analysis must be CONCISE, ACTIONABLE, and DIAGNOSTIC. Follow this exact structure:
 
-Keep your response under 200 words. Use bullet points for clarity. Be direct and actionable.`;
+**📊 Quick Verdict** (1 sentence — the single most important takeaway)
+
+**🔍 Key Findings** (3-4 bullet points, be specific with numbers you see)
+- Focus on: trends, spikes, drops, outliers, comparisons
+- Quantify differences (e.g., "X is 2.3x higher than Y")
+- Flag anything unusual with ⚠️
+
+**⚠️ Anomalies & Red Flags** (only if you spot something unusual)
+- What looks abnormal and why it matters
+- Possible root causes to investigate (think like a business analyst)
+
+**💡 Recommended Actions** (2-3 concrete business actions)
+- What should the business DO based on this visual?
+- Think: pricing, inventory, marketing, staffing, cost control
+- Be specific (e.g., "Investigate why December dropped 32% — check for supply chain issues or seasonal demand shift")
+
+**🔎 Dig Deeper** (suggest 2-3 follow-up analyses)
+- What questions should they ask next?
+- What other data cuts would reveal root causes?
+- Example: "Break this down by region to find which area drove the spike"
+
+Rules:
+- Be DIRECT — no filler phrases like "This chart shows..." 
+- Use bullet points, not paragraphs
+- Bold key numbers and percentages
+- Keep total response under 250 words
+- Think like a consultant presenting to a CEO`;
 
     const userContent: any[] = [
         {
@@ -118,12 +139,12 @@ Keep your response under 200 words. Use bullet points for clarity. Be direct and
     if (chartTitle) {
         userContent.unshift({
             type: 'text',
-            text: `The chart is titled: "${chartTitle}". Interpret only what you see in this visualization.`
+            text: `Chart: "${chartTitle}". Analyze this visual — focus on business impact, anomalies, and what to do next.`
         });
     } else {
         userContent.unshift({
             type: 'text',
-            text: 'Interpret only what you see in this chart visualization.'
+            text: 'Analyze this chart visual — focus on business impact, anomalies, and what to do next.'
         });
     }
 
@@ -136,7 +157,7 @@ Keep your response under 200 words. Use bullet points for clarity. Be direct and
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: userContent }
             ],
-            { temperature: 0.3, max_tokens: 500, timeout: TIMEOUT_MS }
+            { temperature: 0.4, max_tokens: 800, timeout: TIMEOUT_MS }
         );
 
         const insight = data?.choices?.[0]?.message?.content || '⚠️ No interpretation was generated.';
