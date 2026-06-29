@@ -358,6 +358,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                     <span className={`text-[10px] mx-1 ${isDark ? 'text-gray-700' : 'text-gray-300'}`}>·</span>
                     <span className={`text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>QuickInsight</span>
                 </div>
+                <div className="px-3 pb-2 text-center">
+                    <button
+                        onClick={() => onTabChange(Tab.LEGAL)}
+                        className={`text-[10px] transition-colors ${isDark ? 'text-gray-600 hover:text-indigo-400' : 'text-gray-400 hover:text-indigo-600'}`}
+                    >
+                        Privacy & Terms
+                    </button>
+                </div>
             </div>
 
             {/* ── Change Password Modal ── */}
