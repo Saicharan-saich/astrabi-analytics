@@ -919,6 +919,205 @@ html.light .glass-frost {
   transition: transform 0.1s ease;
 }
 
+/* ── Premium Gradient Text ─────────────────────────── */
+.gradient-text {
+  background: linear-gradient(135deg, #818cf8 0%, #a78bfa 40%, #c084fc 70%, #e879f9 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.gradient-text-brand {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+html.light .gradient-text {
+  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 40%, #9333ea 70%, #c026d3 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ── Animated Mesh Gradient Background ─────────────── */
+@keyframes mesh-gradient {
+  0%, 100% { background-position: 0% 50%; }
+  25% { background-position: 100% 50%; }
+  50% { background-position: 100% 0%; }
+  75% { background-position: 0% 100%; }
+}
+
+.bg-mesh-animated {
+  background: linear-gradient(-45deg,
+    #0a0d16, #111827, #1a1040, #0d1530, #111827, #0a0d16);
+  background-size: 400% 400%;
+  animation: mesh-gradient 20s ease infinite;
+}
+
+html.light .bg-mesh-animated {
+  background: linear-gradient(-45deg,
+    #f0f0ff, #e8e0ff, #f5f0ff, #fff0f5, #e8f0ff, #f0f0ff);
+  background-size: 400% 400%;
+  animation: mesh-gradient 20s ease infinite;
+}
+
+/* ── Animated Gradient Border ──────────────────────── */
+@keyframes border-gradient-spin {
+  0% { --angle: 0deg; }
+  100% { --angle: 360deg; }
+}
+
+.border-gradient {
+  position: relative;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.border-gradient::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(99,102,241,0.3), rgba(139,92,246,0.3), rgba(236,72,153,0.2), rgba(99,102,241,0.3));
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* ── Glow Utilities ────────────────────────────────── */
+.glow-indigo {
+  box-shadow: 0 0 30px -5px rgba(99, 102, 241, 0.25),
+              0 0 60px -10px rgba(99, 102, 241, 0.15);
+}
+
+.glow-purple {
+  box-shadow: 0 0 30px -5px rgba(139, 92, 246, 0.25),
+              0 0 60px -10px rgba(139, 92, 246, 0.15);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 30px -5px rgba(16, 185, 129, 0.2),
+              0 0 60px -10px rgba(16, 185, 129, 0.1);
+}
+
+html.light .glow-indigo {
+  box-shadow: 0 0 40px -5px rgba(99, 102, 241, 0.15),
+              0 0 80px -10px rgba(99, 102, 241, 0.08);
+}
+
+/* ── Premium Card Hover ────────────────────────────── */
+.card-hover-lift {
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+              box-shadow 0.3s ease,
+              border-color 0.3s ease;
+}
+
+.card-hover-lift:hover {
+  transform: translateY(-3px) scale(1.005);
+  box-shadow: var(--shadow-lg), 0 0 30px -8px rgba(99, 102, 241, 0.2);
+  border-color: var(--border-hover);
+}
+
+/* ── Floating Animation ────────────────────────────── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  33% { transform: translateY(-8px) rotate(1deg); }
+  66% { transform: translateY(4px) rotate(-1deg); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-float-slow {
+  animation: float 10s ease-in-out infinite;
+}
+
+.animate-float-delay {
+  animation: float 7s ease-in-out infinite;
+  animation-delay: -3s;
+}
+
+/* ── Pulse Glow Animation ──────────────────────────── */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 20px -4px rgba(99, 102, 241, 0.2); }
+  50% { box-shadow: 0 0 35px -2px rgba(99, 102, 241, 0.35); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 3s ease-in-out infinite;
+}
+
+/* ── Shimmer Sweep (for buttons) ───────────────────── */
+@keyframes shimmer-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+.btn-shimmer {
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-shimmer::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 30%,
+    rgba(255, 255, 255, 0.15) 50%,
+    rgba(255, 255, 255, 0.08) 70%,
+    transparent 100%);
+  transform: translateX(-100%);
+  pointer-events: none;
+}
+
+.btn-shimmer:hover::after {
+  animation: shimmer-sweep 0.6s ease-out forwards;
+}
+
+/* ── Dot Grid Pattern ──────────────────────────────── */
+.bg-dot-grid {
+  background-image: radial-gradient(
+    circle,
+    rgba(99, 102, 241, 0.08) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+html.light .bg-dot-grid {
+  background-image: radial-gradient(
+    circle,
+    rgba(99, 102, 241, 0.06) 1px,
+    transparent 1px
+  );
+  background-size: 24px 24px;
+}
+
+/* ── Premium Focus Ring ────────────────────────────── */
+.focus-premium:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--bg-app), 0 0 0 4px var(--color-primary);
+}
+
+/* ── Scroll Shadow Indicators ──────────────────────── */
+.scroll-shadow-top {
+  box-shadow: inset 0 12px 12px -12px rgba(0, 0, 0, 0.15);
+}
+
+.scroll-shadow-bottom {
+  box-shadow: inset 0 -12px 12px -12px rgba(0, 0, 0, 0.15);
+}
+
 .btn-premium::before {
   content: '';
   position: absolute;
