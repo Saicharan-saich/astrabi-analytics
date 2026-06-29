@@ -616,7 +616,7 @@ export const LegalPage: React.FC<LegalPageProps> = ({ onClose }) => {
     };
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-violet-50 via-white to-orange-50">
+        <div className="fixed inset-0 z-[100] bg-gradient-to-br from-violet-50 via-white to-orange-50 overflow-y-auto">
             {/* ── Top Bar ── */}
             <div className="sticky top-0 z-30 bg-white/80 backdrop-blur-xl border-b border-gray-200">
                 <div className="max-w-5xl mx-auto px-4 sm:px-6">
