@@ -292,7 +292,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                   <MousePointerClick className="w-3 h-3" /> Click any data point to drill down
                 </div>
               )}
-              <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={activeResult.yLabel} />
+              <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={activeResult.yLabel} chartContext={{ chartType: activeResult.vis, xKey: activeResult.xKey, yKey: activeResult.yKey, comparisonMode: (activeResult.config as any)?.comparison || undefined }} />
             </div>
           )}
 

@@ -8,6 +8,14 @@ interface AIInsightPanelProps {
     chartContainerRef: React.RefObject<HTMLElement | null>;
     chartTitle?: string;
     visualHash?: string; // New prop to force reset
+    chartContext?: {
+        chartType?: string;
+        xKey?: string;
+        yKey?: string;
+        legendLabels?: string[];
+        comparisonMode?: string;
+        numberFormat?: string;
+    };
 }
 
 /**
@@ -21,7 +29,8 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({
     onClose,
     chartContainerRef,
     chartTitle,
-    visualHash
+    visualHash,
+    chartContext
 }) => {
     const [insight, setInsight] = useState<string>('');
     const [loading, setLoading] = useState(false);
@@ -47,7 +56,7 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({
         }
 
         try {
-            const result = await interpretChartVisual(imageBase64, chartTitle);
+            const result = await interpretChartVisual(imageBase64, chartTitle, chartContext);
             if (result.startsWith('⚠️')) {
                 setError(result);
             } else {

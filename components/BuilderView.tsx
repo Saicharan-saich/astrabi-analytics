@@ -732,7 +732,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                 })()}
 
                                 {/* AI Insight Panel */}
-                                <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={result?.yLabel} />
+                                <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={result?.yLabel} chartContext={{ chartType: result?.vis, xKey: result?.xKey, yKey: result?.yKey, comparisonMode: (result?.config as any)?.comparison || undefined }} />
 
                                 {isFormatPanelOpen && formatting && onUpdateFormatting && (
                                     <FormatPanel

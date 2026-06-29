@@ -690,7 +690,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                                                 {/* Trust Badge placeholder — NLQ view uses deterministic parsing, not AI SQL pipeline */}
 
                                                 {/* AI Insight Panel */}
-                                                <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={analysisResult?.yLabel} />
+                                                <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={analysisResult?.yLabel} chartContext={{ chartType: analysisResult?.vis, xKey: analysisResult?.xKey, yKey: analysisResult?.yKey, comparisonMode: (analysisResult?.config as any)?.comparison || undefined }} />
 
                                                 {/* FLOATING FORMAT PANEL */}
                                                 {isFormatPanelOpen && (

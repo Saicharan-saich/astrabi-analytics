@@ -65,7 +65,15 @@ export function captureChartAsImage(chartContainer: HTMLElement): string | null 
  */
 export async function interpretChartVisual(
     chartImageBase64: string,
-    chartTitle?: string
+    chartTitle?: string,
+    chartContext?: {
+        chartType?: string;
+        xKey?: string;
+        yKey?: string;
+        legendLabels?: string[];
+        comparisonMode?: string;
+        numberFormat?: string;
+    }
 ): Promise<string> {
     if (!API_KEY) {
         return '⚠️ Smart Insight is not configured. Please add your OpenRouter API key to the environment variables.';
@@ -92,9 +100,24 @@ export async function interpretChartVisual(
     requestCount++;
 
     // Check cache
-    const cacheKey = quickHash(chartImageBase64 + (chartTitle || ''));
+    const cacheKey = quickHash(chartImageBase64 + (chartTitle || '') + JSON.stringify(chartContext || {}));
     const cached = insightCache.get(cacheKey);
     if (cached) return cached;
+
+    // Build contextual metadata to help the LLM understand the chart
+    let contextHint = '';
+    if (chartContext) {
+        const parts: string[] = [];
+        if (chartContext.chartType) parts.push(`Chart type: ${chartContext.chartType}`);
+        if (chartContext.xKey) parts.push(`X-axis: ${chartContext.xKey}`);
+        if (chartContext.yKey) parts.push(`Y-axis metric: ${chartContext.yKey}`);
+        if (chartContext.legendLabels?.length) parts.push(`Legend labels: ${chartContext.legendLabels.join(', ')}`);
+        if (chartContext.comparisonMode) parts.push(`Comparison mode: ${chartContext.comparisonMode}`);
+        if (chartContext.numberFormat) parts.push(`Number format: ${chartContext.numberFormat}`);
+        if (parts.length > 0) {
+            contextHint = '\n\nChart metadata (use this to understand the chart correctly):\n' + parts.join('\n');
+        }
+    }
 
     // Build the vision prompt — business-focused diagnostic analysis
     const systemPrompt = `You are a senior business intelligence analyst interpreting a chart visual. You can ONLY see the chart image provided — no raw data access.
@@ -136,17 +159,11 @@ Rules:
         }
     ];
 
-    if (chartTitle) {
-        userContent.unshift({
-            type: 'text',
-            text: `Chart: "${chartTitle}". Analyze this visual — focus on business impact, anomalies, and what to do next.`
-        });
-    } else {
-        userContent.unshift({
-            type: 'text',
-            text: 'Analyze this chart visual — focus on business impact, anomalies, and what to do next.'
-        });
-    }
+    const contextText = chartTitle
+        ? `Chart: "${chartTitle}".${contextHint}\n\nAnalyze this visual — focus on business impact, anomalies, and what to do next.`
+        : `${contextHint ? contextHint + '\n\n' : ''}Analyze this chart visual — focus on business impact, anomalies, and what to do next.`;
+
+    userContent.unshift({ type: 'text', text: contextText });
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);

@@ -1266,6 +1266,13 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                     fmt: formatting,
                                                     time: asOfDate
                                                 })}
+                                                chartContext={{
+                                                    chartType: chartType,
+                                                    xKey: result.xKey,
+                                                    yKey: result.yKey,
+                                                    comparisonMode: config?.comparison || undefined,
+                                                    numberFormat: formatting?.numberFormat || 'auto',
+                                                }}
                                             />
 
                                             {/* FLOATING FORMAT PANEL */}
