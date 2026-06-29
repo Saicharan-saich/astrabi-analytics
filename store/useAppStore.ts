@@ -473,6 +473,17 @@ export const useAppStore = create<AppStore>()(
                 return persisted;
             },
             version: 4,
+            // ── Critical: sync backward-compat properties after EVERY rehydrate ──
+            // The migrate function only runs on version mismatch. We need this to
+            // always sync items/dashboardLayout/dashboardFilters from the active
+            // dashboard, including after login/logout cycles.
+            onRehydrateStorage: () => (state) => {
+                if (state?.dashboards && state.dashboards.length > 0) {
+                    const synced = syncFromActive(state.dashboards, state.activeDashboardId);
+                    useAppStore.setState(synced);
+                    console.log(`[Store] Rehydrated: synced ${synced.items.length} items from active dashboard`);
+                }
+            },
         }
     )
 );
