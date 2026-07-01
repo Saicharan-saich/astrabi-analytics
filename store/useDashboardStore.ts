@@ -89,7 +89,11 @@ function debouncedCloudPush(state: DashboardState) {
             filters: state.dashboardFilters as any[],
             formatting: state.formatting as any,
             datasetId: state.selectedDatasetId,
-        }).catch(() => { /* silent — local is source of truth */ });
+        }).then(ok => {
+            if (!ok) console.warn('[Dashboard] ⚠️ Cloud push failed — will retry on next change');
+        }).catch(err => {
+            console.error('[Dashboard] ❌ Cloud push error:', err?.message || err);
+        });
     }, 2000); // 2s debounce
 }
 
@@ -186,37 +190,28 @@ export const useDashboardStore = create<DashboardState>()(
                 set({ cloudSyncStatus: 'syncing' });
                 try {
                     const cloud = await pullDashboardFromCloud(datasetId);
-                    if (cloud) {
+                    if (cloud && (cloud.items || []).length > 0) {
+                        // Cloud has data — use it as source of truth
+                        set({
+                            items: cloud.items || [],
+                            dashboardLayout: cloud.layout || get().dashboardLayout,
+                            dashboardFilters: (cloud.filters || []) as DashboardFilter[],
+                            formatting: { ...get().formatting, ...(cloud.formatting || {}) },
+                        });
+                        console.log(`[CloudSync] ✅ Restored ${(cloud.items || []).length} dashboard items from cloud`);
+                    } else {
+                        // Cloud is empty — push local to cloud if we have any
                         const localItems = get().items;
-                        const localIds = new Set(localItems.map(i => i.id));
-
-                        // Merge strategy: cloud items that don't exist locally get added
-                        // Local items are preserved (user may have unsaved local work)
-                        const cloudOnlyItems = (cloud.items || []).filter(
-                            (ci: any) => !localIds.has(ci.id)
-                        );
-
-                        if (cloudOnlyItems.length > 0 || localItems.length === 0) {
-                            // If local is empty, fully restore from cloud
-                            // If local has items, merge cloud-only items in
-                            const mergedItems = localItems.length === 0
-                                ? cloud.items || []
-                                : [...localItems, ...cloudOnlyItems];
-
-                            set({
-                                items: mergedItems,
-                                dashboardLayout: cloud.layout || get().dashboardLayout,
-                                dashboardFilters: (cloud.filters || []) as DashboardFilter[],
-                                formatting: { ...get().formatting, ...(cloud.formatting || {}) },
-                            });
-                            console.log(`[CloudSync] Restored ${mergedItems.length} dashboard items from cloud`);
+                        if (localItems.length > 0) {
+                            console.log(`[CloudSync] Cloud empty, pushing ${localItems.length} local items to cloud...`);
+                            debouncedCloudPush(get());
                         } else {
-                            console.log('[CloudSync] Local dashboard is up-to-date');
+                            console.log('[CloudSync] Both cloud and local are empty — fresh start');
                         }
                     }
                     set({ cloudSyncStatus: 'synced' });
                 } catch (err) {
-                    console.warn('[CloudSync] Pull failed:', (err as Error).message);
+                    console.error('[CloudSync] ❌ Pull failed:', (err as Error).message);
                     set({ cloudSyncStatus: 'error' });
                 }
             },

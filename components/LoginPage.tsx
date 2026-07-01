@@ -92,10 +92,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                     : [...state.users, storeUser],
             }));
 
-            // Cloud Sync: pull saved dashboards from PostgreSQL
-            useDashboardStore.getState().syncFromCloud().catch(() => {
-                console.warn('[LoginPage] Cloud dashboard sync failed — using local data');
-            });
+            // Cloud Sync: pull saved dashboards from PostgreSQL (await to restore before UI loads)
+            try {
+                await useDashboardStore.getState().syncFromCloud();
+                console.log('[LoginPage] ✅ Dashboard sync complete');
+            } catch (syncErr) {
+                console.error('[LoginPage] ❌ Dashboard sync failed:', syncErr);
+            }
         } catch (err: any) {
             console.error('[LoginPage] Auth request failed:', err);
             setError('Could not connect to the server. Make sure the backend is running on port 5002.');
