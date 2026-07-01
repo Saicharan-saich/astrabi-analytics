@@ -140,7 +140,7 @@ interface AuthState {
     login: (email: string, password: string) => { success: boolean; error?: string };
     loginAsGuest: () => void;
     register: (email: string, name: string, password: string) => { success: boolean; error?: string };
-    logout: () => void;
+    logout: () => Promise<void>;
     addUser: (email: string, name: string, password: string, role: UserRole) => { success: boolean; error?: string };
     removeUser: (id: string) => { success: boolean; error?: string };
     updateUserRole: (id: string, role: UserRole) => void;
@@ -207,19 +207,25 @@ export const useAuthStore = create<AuthState>()(
                 return { success: true };
             },
 
-            logout: () => {
+            logout: async () => {
                 const userId = get().currentUser?.id;
                 if (userId) {
                     saveUserAppData(userId);
-                    // ── Cloud Sync: push dashboard to PostgreSQL before clearing ──
+                    // ── Cloud Sync: push dashboard to PostgreSQL BEFORE clearing token ──
                     try {
-                        const { pushToCloud } = require('./useDashboardStore').useDashboardStore.getState();
-                        pushToCloud().catch(() => { /* silent — user is leaving */ });
-                    } catch { /* dashboard store not available */ }
+                        const dashStore = require('./useDashboardStore').useDashboardStore.getState();
+                        // Flush any pending debounced pushes immediately
+                        if (dashStore.items && dashStore.items.length > 0) {
+                            await dashStore.pushToCloud();
+                            console.log('[Logout] ✅ Dashboard pushed to cloud before logout');
+                        }
+                    } catch (err) {
+                        console.error('[Logout] ❌ Dashboard push failed:', err);
+                    }
                 }
                 resetUserData();
                 clearSharedAppData();
-                // Clear JWT token and session credentials
+                // Clear JWT token and session credentials AFTER cloud push completes
                 localStorage.removeItem('qi_token');
                 try { sessionStorage.removeItem('qi_session_creds'); } catch {}
                 set({ currentUser: null, isAuthenticated: false });
