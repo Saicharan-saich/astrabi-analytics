@@ -68,11 +68,34 @@ export async function syncDashboardsFromCloud(): Promise<void> {
         console.log('[DashSync] 📥 Pulling dashboards from cloud...');
         const cloudDashboards = await fetchCloudDashboards();
         if (cloudDashboards.length > 0) {
+            // Sanitize layout: if items overlap, regenerate a clean 2-col grid
+            const sanitizeLayout = (layoutArr: any[] | null, dashItems: any[]): any[] | null => {
+                if (!layoutArr || !Array.isArray(layoutArr) || layoutArr.length === 0) return null;
+                // Check for overlaps
+                for (let a = 0; a < layoutArr.length; a++) {
+                    for (let b = a + 1; b < layoutArr.length; b++) {
+                        const la = layoutArr[a], lb = layoutArr[b];
+                        const xHit = la.x < lb.x + lb.w && la.x + la.w > lb.x;
+                        const yHit = la.y < lb.y + lb.h && la.y + la.h > lb.y;
+                        if (xHit && yHit) {
+                            console.warn('[DashSync] Overlap in cloud layout — regenerating clean grid');
+                            return dashItems.map((item: any, idx: number) => ({
+                                i: item.id,
+                                x: (idx % 2) * 6,
+                                y: Math.floor(idx / 2) * 6,
+                                w: 6, h: 6, minW: 4, minH: 4,
+                            }));
+                        }
+                    }
+                }
+                return layoutArr;
+            };
+
             const restored: DashboardDefinition[] = cloudDashboards.map(cd => ({
                 id: cd.id,
                 name: cd.name,
                 items: cd.items || [],
-                layout: cd.layout || null,
+                layout: sanitizeLayout(cd.layout, cd.items || []),
                 filters: cd.filters || [],
                 createdAt: cd.created_at ? new Date(cd.created_at).getTime() : Date.now(),
             }));

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { ResponsiveGridLayout as RGLBase } from 'react-grid-layout';
+import { ResponsiveGridLayout as RGLBase, verticalCompactor } from 'react-grid-layout';
 const ResponsiveGridLayout = RGLBase as any;
+const rglCompactor = verticalCompactor as any;
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import { ChartVisualization } from './ChartVisualization';
@@ -367,44 +368,51 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   // Use persisted layout if available and matches current items
   // Robustly reconciling persisted layout with current items
   const layout = useMemo(() => {
-    // 1. Create a map of existing layout items for quick lookup
+    // 1. Build a map of persisted layout entries
     const layoutMap = new Map();
     if (dashboardLayout && Array.isArray(dashboardLayout)) {
       dashboardLayout.forEach((l: any) => layoutMap.set(l.i, l));
     }
 
-    // 2. Determine where to place new items (below everything else)
-    let maxY = 0;
-    // Calculate the bottom-most point of the existing *persisted* layout
-    // We only care about items that are still present to avoid gaps from deleted items
-    const presentIds = new Set(items.map(i => i.id));
-    layoutMap.forEach((l: any) => {
-      if (presentIds.has(l.i)) {
-        if ((l.y + l.h) > maxY) maxY = l.y + l.h;
+    // 2. Gather persisted entries for current items
+    const persistedEntries = items
+      .map(item => layoutMap.get(item.id))
+      .filter(Boolean);
+
+    // 3. Check if ALL items have persisted positions AND none overlap
+    let usePersistedLayout = persistedEntries.length === items.length;
+    if (usePersistedLayout) {
+      for (let a = 0; a < persistedEntries.length && usePersistedLayout; a++) {
+        for (let b = a + 1; b < persistedEntries.length; b++) {
+          const la = persistedEntries[a];
+          const lb = persistedEntries[b];
+          const xHit = la.x < lb.x + lb.w && la.x + la.w > lb.x;
+          const yHit = la.y < lb.y + lb.h && la.y + la.h > lb.y;
+          if (xHit && yHit) {
+            console.warn('[Dashboard] Overlap detected in persisted layout — regenerating');
+            usePersistedLayout = false;
+            break;
+          }
+        }
       }
-    });
+    }
 
-    return items.map((item, i) => {
-      // If this item exists in the persisted layout, reuse its config
-      if (layoutMap.has(item.id)) {
-        return layoutMap.get(item.id);
-      }
+    if (usePersistedLayout) {
+      // Persisted layout is valid — use it
+      return items.map(item => ({ ...layoutMap.get(item.id) }));
+    }
 
-      // Otherwise, create a new layout item at the bottom
-      const newItem = {
-        i: item.id,
-        x: (i % 2) * 6,
-        y: maxY,
-        w: 6,
-        h: 6,
-        minW: 4,
-        minH: 4,
-      };
-
-      if (i % 2 === 1) maxY += 6;
-
-      return newItem;
-    });
+    // 4. Generate a fresh 2-column layout
+    console.log('[Dashboard] Generating fresh 2-col layout for', items.length, 'items');
+    return items.map((item, idx) => ({
+      i: item.id,
+      x: (idx % 2) * 6,
+      y: Math.floor(idx / 2) * 6,
+      w: 6,
+      h: 6,
+      minW: 4,
+      minH: 4,
+    }));
   }, [items, dashboardLayout]);
 
   // Generate responsive layouts for all breakpoints
@@ -438,15 +446,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     return { lg, md, sm, xs };
   }, [layout]);
 
+  // Debounced layout save — prevents feedback loop between RGL and state
+  const layoutSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleLayoutChange = useCallback((_cur: any, _allLayouts: any) => {
-    // Always persist the lg layout so smaller breakpoints don't corrupt saved sizes.
-    // _allLayouts.lg keeps the real user-sized layout even when viewing at md/sm/xs.
     const lg = _allLayouts?.lg;
-    if (Array.isArray(lg) && lg.length > 0) {
-      setDashboardLayout(lg);
-    } else if (Array.isArray(_cur) && _cur.length > 0) {
-      setDashboardLayout(_cur);
-    }
+    const toSave = (Array.isArray(lg) && lg.length > 0) ? lg
+      : (Array.isArray(_cur) && _cur.length > 0) ? _cur
+      : null;
+    if (!toSave) return;
+    if (layoutSaveTimer.current) clearTimeout(layoutSaveTimer.current);
+    layoutSaveTimer.current = setTimeout(() => {
+      setDashboardLayout(toSave);
+    }, 300);
   }, [setDashboardLayout]);
 
   // PDF Export via print
@@ -1227,7 +1238,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             isResizable={true}
             isDraggable={true}
             draggableHandle=".drag-handle"
-            compactType="vertical"
+            compactor={rglCompactor}
             margin={[16, 16]}
             containerPadding={[24, 0]}
           >
