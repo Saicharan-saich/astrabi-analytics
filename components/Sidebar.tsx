@@ -137,28 +137,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                 <button
                     onClick={() => onTabChange(item.id)}
                     className={classNames(
-                        "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 group relative text-[13px] font-medium",
+                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative text-[13px] font-medium",
                         isActive
                             ? isDark
-                                ? "bg-violet-500/15 text-violet-300"
-                                : "bg-violet-50 text-violet-700"
+                                ? "bg-gradient-to-r from-violet-500/15 to-indigo-500/10 text-violet-300 shadow-sm shadow-violet-500/10"
+                                : "bg-gradient-to-r from-violet-50 to-indigo-50 text-violet-700 shadow-sm shadow-violet-500/5"
                             : isDark
-                                ? "text-gray-400 hover:bg-white/[0.05] hover:text-gray-200"
-                                : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                                ? "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200 hover:translate-x-0.5"
+                                : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 hover:translate-x-0.5"
                     )}
                 >
-                    {/* Active left accent bar */}
+                    {/* Active left accent bar — gradient */}
                     {isActive && (
-                        <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full ${isDark ? 'bg-violet-400' : 'bg-violet-600'
-                            }`} />
+                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-gradient-to-b from-violet-400 to-indigo-500 sidebar-active-indicator" />
                     )}
 
-                    <item.icon className={classNames(
-                        "w-[17px] h-[17px] transition-colors duration-150",
+                    <div className={classNames(
+                        "w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 shrink-0",
                         isActive
-                            ? isDark ? "text-violet-400" : "text-violet-600"
-                            : isDark ? "text-gray-500" : "text-gray-400"
-                    )} />
+                            ? isDark ? "bg-violet-500/20 text-violet-400" : "bg-violet-100 text-violet-600"
+                            : isDark ? "bg-white/[0.04] text-gray-500 group-hover:bg-white/[0.06] group-hover:text-gray-300" : "bg-gray-100 text-gray-400 group-hover:bg-gray-200 group-hover:text-gray-600"
+                    )}>
+                        <item.icon className="w-[15px] h-[15px]" />
+                    </div>
                     <span>{item.label}</span>
                     {/* Info button — appears on hover */}
                     <span
@@ -186,11 +187,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         if (filtered.length === 0) return null;
         return (
             <div className="mb-1">
-                <div className="px-3 mb-1.5">
-                    <span className={`text-[10px] font-semibold uppercase tracking-[0.1em] ${isDark ? 'text-gray-500' : 'text-gray-400'
+                <div className="px-3 mb-2 flex items-center gap-2">
+                    <div className={`h-px flex-1 ${isDark ? 'bg-gradient-to-r from-violet-500/20 to-transparent' : 'bg-gradient-to-r from-violet-200 to-transparent'}`} />
+                    <span className={`text-[10px] font-bold uppercase tracking-[0.12em] ${isDark ? 'text-gray-500' : 'text-gray-400'
                         }`}>
                         {label}
                     </span>
+                    <div className={`h-px flex-1 ${isDark ? 'bg-gradient-to-l from-violet-500/20 to-transparent' : 'bg-gradient-to-l from-violet-200 to-transparent'}`} />
                 </div>
                 <div className="space-y-0.5">
                     {filtered.map(renderNavItem)}
@@ -242,17 +245,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
             {/* Header */}
             <div className="flex items-center justify-between mb-4 px-1">
                 <div className="flex items-center gap-2.5">
-                    <img src="/logo.jpg" alt="QuickInsight" className="w-8 h-8 rounded-lg object-cover shadow-sm" />
+                    <div className="relative">
+                        <div className={`absolute -inset-0.5 rounded-xl ${isDark ? 'bg-gradient-to-br from-violet-500/30 to-indigo-500/30' : 'bg-gradient-to-br from-violet-200 to-indigo-200'} blur-sm`} />
+                        <img src="/logo.jpg" alt="QuickInsight" className="relative w-8 h-8 rounded-lg object-cover shadow-sm ring-1 ring-white/10" />
+                    </div>
                     <div>
-                        <span className={`font-bold text-[15px] tracking-tight block leading-tight ${isDark ? 'text-white' : 'text-gray-900'
-                            }`}>QuickInsight</span>
+                        <span className="font-extrabold text-[15px] tracking-tight block leading-tight gradient-text-brand">QuickInsight</span>
                         <span className={`text-[10px] font-medium tracking-wide ${isDark ? 'text-gray-500' : 'text-gray-400'
                             }`}>Analytics Platform</span>
                     </div>
                 </div>
                 <button
                     onClick={onToggle}
-                    className={`p-1.5 rounded-lg transition-all duration-150 ${isDark ? 'hover:bg-white/10 text-gray-500' : 'hover:bg-gray-100 text-gray-400'
+                    className={`p-1.5 rounded-lg transition-all duration-200 ${isDark ? 'hover:bg-white/10 text-gray-500 hover:text-gray-300 hover:rotate-90' : 'hover:bg-gray-100 text-gray-400 hover:text-gray-600 hover:rotate-90'
                         }`}
                     title="Toggle Sidebar"
                 >
@@ -260,17 +265,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                 </button>
             </div>
 
-            {/* Divider */}
-            <div className={`mx-2 mb-3 h-px ${isDark ? 'bg-white/[0.06]' : 'bg-gray-200'}`} />
+            {/* Divider — gradient line */}
+            <div className={`mx-2 mb-3 h-px ${isDark ? 'bg-gradient-to-r from-transparent via-white/[0.08] to-transparent' : 'bg-gradient-to-r from-transparent via-gray-200 to-transparent'}`} />
 
             {/* Navigation */}
             <nav className="flex-1 min-h-0 overflow-y-auto space-y-3 stagger-in">
                 {/* Data section: Upload + collapsible Explore Data */}
                 <div className="mb-1">
-                    <div className="px-3 mb-1.5">
-                        <span className={`text-[10px] font-semibold uppercase tracking-[0.1em] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                    <div className="px-3 mb-2 flex items-center gap-2">
+                        <div className={`h-px flex-1 ${isDark ? 'bg-gradient-to-r from-violet-500/20 to-transparent' : 'bg-gradient-to-r from-violet-200 to-transparent'}`} />
+                        <span className={`text-[10px] font-bold uppercase tracking-[0.12em] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
                             Data
                         </span>
+                        <div className={`h-px flex-1 ${isDark ? 'bg-gradient-to-l from-violet-500/20 to-transparent' : 'bg-gradient-to-l from-violet-200 to-transparent'}`} />
                     </div>
                     <div className="space-y-0.5">
                         {filterItems(dataSection).map(renderNavItem)}
@@ -300,34 +307,40 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
             </nav>
 
             {/* User Section */}
-            <div className="shrink-0 mt-auto pt-2 space-y-2">
-                <div className={`mx-2 mb-2 h-px ${isDark ? 'bg-white/[0.06]' : 'bg-gray-200'}`} />
+            <div className="shrink-0 mt-auto pt-2 space-y-1.5">
+                <div className={`mx-2 mb-2 h-px ${isDark ? 'bg-gradient-to-r from-transparent via-white/[0.08] to-transparent' : 'bg-gradient-to-r from-transparent via-gray-200 to-transparent'}`} />
 
                 {perms.canManageUsers && onOpenUserManagement && (
                     <button
                         onClick={onOpenUserManagement}
-                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all text-[13px] font-medium ${isDark ? 'text-gray-400 hover:bg-white/[0.05] hover:text-gray-200' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-[13px] font-medium ${isDark ? 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-200 hover:translate-x-0.5' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 hover:translate-x-0.5'
                             }`}
                     >
-                        <Users className={`w-[17px] h-[17px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`} />
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-white/[0.04] text-gray-500' : 'bg-gray-100 text-gray-400'}`}>
+                            <Users className="w-[15px] h-[15px]" />
+                        </div>
                         <span>Manage Users</span>
                     </button>
                 )}
 
                 {currentUser && (
-                    <div className={`rounded-lg p-2.5 border transition-all ${isDark ? 'bg-white/[0.03] border-white/[0.06] hover:bg-white/[0.05]' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'
+                    <div className={`rounded-xl p-3 border transition-all ${isDark ? 'bg-gradient-to-br from-white/[0.03] to-white/[0.01] border-white/[0.06] hover:border-violet-500/20' : 'bg-gradient-to-br from-gray-50 to-white border-gray-200 hover:border-violet-200'
                         }`}>
                         <div className="flex items-center gap-2.5">
-                            <div
-                                className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm shrink-0"
-                                style={{ backgroundColor: currentUser.avatar || '#7c3aed' }}
-                            >
-                                {currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                            {/* Avatar with gradient ring */}
+                            <div className="relative shrink-0">
+                                <div className="absolute -inset-0.5 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 opacity-60" />
+                                <div
+                                    className="relative w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md"
+                                    style={{ backgroundColor: currentUser.avatar || '#7c3aed' }}
+                                >
+                                    {currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                                </div>
                             </div>
                             <div className="flex-1 min-w-0">
-                                <div className={`text-sm font-semibold truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>{currentUser.name}</div>
+                                <div className={`text-sm font-bold truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>{currentUser.name}</div>
                                 <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold border ${getRoleBadgeClasses(currentUser.role)}`}>
+                                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold border ${getRoleBadgeClasses(currentUser.role)}`}>
                                         {getRoleIcon(currentUser.role)}
                                         {ROLE_PERMISSIONS[currentUser.role].label}
                                     </span>
@@ -335,7 +348,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                             </div>
                             <button
                                 onClick={() => { setShowChangePw(true); setPwError(''); setPwSuccess(false); setPwCurrent(''); setPwNew(''); setPwConfirm(''); }}
-                                className={`p-1.5 rounded-lg transition-all duration-150 shrink-0 ${isDark ? 'text-gray-500 hover:text-violet-400 hover:bg-violet-500/10' : 'text-gray-400 hover:text-violet-500 hover:bg-violet-50'
+                                className={`p-1.5 rounded-lg transition-all duration-200 shrink-0 ${isDark ? 'text-gray-500 hover:text-violet-400 hover:bg-violet-500/10' : 'text-gray-400 hover:text-violet-500 hover:bg-violet-50'
                                     }`}
                                 title="Change Password"
                             >
@@ -343,7 +356,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                             </button>
                             <button
                                 onClick={logout}
-                                className={`p-1.5 rounded-lg transition-all duration-150 shrink-0 ${isDark ? 'text-gray-500 hover:text-red-400 hover:bg-red-500/10' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
+                                className={`p-1.5 rounded-lg transition-all duration-200 shrink-0 ${isDark ? 'text-gray-500 hover:text-red-400 hover:bg-red-500/10' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
                                     }`}
                                 title="Sign Out"
                             >
@@ -353,17 +366,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                     </div>
                 )}
 
-                <div className="mt-2 px-3 py-1.5 text-center">
-                    <span className={`text-[10px] font-mono ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>v1.0.0</span>
-                    <span className={`text-[10px] mx-1 ${isDark ? 'text-gray-700' : 'text-gray-300'}`}>·</span>
-                    <span className={`text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>QuickInsight</span>
-                </div>
-                <div className="px-3 pb-3 pt-1">
+                <div className="mt-1.5 px-3 py-1 flex items-center justify-center gap-2">
+                    <span className={`text-[10px] font-mono ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>v3.0</span>
+                    <span className={`text-[10px] ${isDark ? 'text-gray-700' : 'text-gray-300'}`}>·</span>
                     <button
                         onClick={() => onTabChange(Tab.LEGAL)}
-                        className={`w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all ${isDark ? 'text-gray-400 hover:text-indigo-300 hover:bg-white/[0.05] border border-white/[0.06]' : 'text-gray-500 hover:text-indigo-600 hover:bg-indigo-50 border border-gray-200'}`}
+                        className={`text-[10px] font-medium transition-colors flex items-center gap-1 ${isDark ? 'text-gray-600 hover:text-indigo-400' : 'text-gray-400 hover:text-indigo-600'}`}
                     >
-                        <Shield className="w-3.5 h-3.5" />
+                        <Shield className="w-2.5 h-2.5" />
                         Privacy & Terms
                     </button>
                 </div>
