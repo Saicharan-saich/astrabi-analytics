@@ -60,6 +60,27 @@ export async function flushDashboardsToCloud(): Promise<boolean> {
     }
 }
 
+/** Compact a layout array — resolve overlaps by pushing items down */
+function compactLayoutArr(layout: any[], itemIds?: string[]): any[] {
+    if (!layout || !Array.isArray(layout) || layout.length === 0) return layout;
+    let filtered = itemIds
+        ? layout.filter((l: any) => itemIds.includes(l.i)).map((l: any) => ({ ...l }))
+        : layout.map((l: any) => ({ ...l }));
+    filtered.sort((a: any, b: any) => (a.y - b.y) || (a.x - b.x));
+    for (let i = 0; i < filtered.length; i++) {
+        const cur = filtered[i];
+        for (let j = 0; j < i; j++) {
+            const other = filtered[j];
+            const xOverlap = cur.x < other.x + other.w && cur.x + cur.w > other.x;
+            const yOverlap = cur.y < other.y + other.h && cur.y + cur.h > other.y;
+            if (xOverlap && yOverlap) {
+                cur.y = other.y + other.h;
+            }
+        }
+    }
+    return filtered;
+}
+
 /** Pull dashboards from cloud and merge into local state. Call on login. */
 export async function syncDashboardsFromCloud(): Promise<void> {
     const token = localStorage.getItem('qi_token');
@@ -76,11 +97,15 @@ export async function syncDashboardsFromCloud(): Promise<void> {
                 filters: cd.filters || [],
                 createdAt: cd.created_at ? new Date(cd.created_at).getTime() : Date.now(),
             }));
+            // Compact layout to resolve any overlapping card positions
+            const rawLayout = restored[0].layout || [];
+            const itemIds = restored[0].items.map((i: any) => i.id);
+            const compacted = compactLayoutArr(rawLayout, itemIds);
             useAppStore.setState({
                 dashboards: restored,
                 activeDashboardId: restored[0].id,
                 items: restored[0].items,
-                dashboardLayout: restored[0].layout,
+                dashboardLayout: compacted,
                 dashboardFilters: restored[0].filters || [],
             });
             console.log(`[DashSync] ✅ Restored ${restored.length} dashboards (${restored.reduce((s, d) => s + d.items.length, 0)} total items) from cloud`);
