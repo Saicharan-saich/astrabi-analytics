@@ -94,7 +94,7 @@ function debouncedCloudPush(state: DashboardState) {
         }).catch(err => {
             console.error('[Dashboard] ❌ Cloud push error:', err?.message || err);
         });
-    }, 2000); // 2s debounce
+    }, 500); // 500ms debounce — fast enough to push before logout
 }
 
 export const useDashboardStore = create<DashboardState>()(
