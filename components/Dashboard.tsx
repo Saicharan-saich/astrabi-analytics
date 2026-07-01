@@ -110,7 +110,7 @@ const DATASET_COLORS = [
 export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange }) => {
   const {
     dashboards, activeDashboardId, setActiveDashboard, createDashboard, renameDashboard, deleteDashboard, duplicateDashboard,
-    items, removeItem, updateItem, formatting, clearAllItems,
+    items, removeItem, updateItem, formatting, clearAllItems, setItems,
     dashboardLayout, dashboardFilters,
     setDashboardLayout_legacy: setDashboardLayout,
     setDashboardFilters_legacy: setDashboardFilters,
