@@ -78,6 +78,30 @@ interface HistoryEntry {
     timestamp: number;
 }
 
+/** Compact a layout array — resolve overlaps by pushing items down */
+function compactLayout(layout: any[], itemIds?: string[]): any[] {
+    if (!layout || !Array.isArray(layout) || layout.length === 0) return layout;
+    // Only keep entries for items that exist (if itemIds provided)
+    let filtered = itemIds
+        ? layout.filter((l: any) => itemIds.includes(l.i))
+        : [...layout];
+    // Sort by y then x (top-left first)
+    filtered.sort((a: any, b: any) => (a.y - b.y) || (a.x - b.x));
+    // Resolve collisions
+    for (let i = 0; i < filtered.length; i++) {
+        const cur = filtered[i];
+        for (let j = 0; j < i; j++) {
+            const other = filtered[j];
+            const xOverlap = cur.x < other.x + other.w && cur.x + cur.w > other.x;
+            const yOverlap = cur.y < other.y + other.h && cur.y + cur.h > other.y;
+            if (xOverlap && yOverlap) {
+                cur.y = other.y + other.h;
+            }
+        }
+    }
+    return filtered;
+}
+
 /** Debounce cloud push — avoid flooding on rapid changes */
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 function debouncedCloudPush(state: DashboardState) {
@@ -174,7 +198,8 @@ export const useDashboardStore = create<DashboardState>()(
             // Dashboard layout
             dashboardLayout: null,
             setDashboardLayout: (layout) => {
-                set({ dashboardLayout: layout });
+                const itemIds = get().items.map(i => i.id);
+                set({ dashboardLayout: compactLayout(layout, itemIds) });
                 debouncedCloudPush(get());
             },
 
@@ -229,13 +254,16 @@ export const useDashboardStore = create<DashboardState>()(
                     const cloud = await pullDashboardFromCloud(datasetId);
                     if (cloud && (cloud.items || []).length > 0) {
                         // Cloud has data — use it as source of truth
+                        const cloudItems = cloud.items || [];
+                        const cloudLayout = cloud.layout || get().dashboardLayout;
+                        const itemIds = cloudItems.map((i: any) => i.id);
                         set({
-                            items: cloud.items || [],
-                            dashboardLayout: cloud.layout || get().dashboardLayout,
+                            items: cloudItems,
+                            dashboardLayout: compactLayout(cloudLayout, itemIds),
                             dashboardFilters: (cloud.filters || []) as DashboardFilter[],
                             formatting: { ...get().formatting, ...(cloud.formatting || {}) },
                         });
-                        console.log(`[CloudSync] ✅ Restored ${(cloud.items || []).length} dashboard items from cloud`);
+                        console.log(`[CloudSync] ✅ Restored ${cloudItems.length} dashboard items from cloud`);
                     } else {
                         // Cloud is empty — push local to cloud if we have any
                         const localItems = get().items;
