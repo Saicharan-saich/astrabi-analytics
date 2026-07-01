@@ -559,51 +559,57 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     <span className="text-slate-200 text-base font-bold tracking-wide">Show me</span>
 
                     {/* Metric Selector */}
-                    <Tooltip text="Choose the measure to analyze. Pick a numeric metric (e.g. revenue) or a dimension to count (e.g. patient count)." position="bottom">
-                        <QuerySelect
-                            value={metric}
-                            onChange={val => {
-                                setMetric(val);
-                                if (countableColumns.includes(val) && !['COUNT', 'COUNT_DISTINCT'].includes(aggregation)) {
-                                    setAggregation('COUNT');
-                                }
-                            }}
-                            options={[
-                                ...metrics.map(m => ({ label: m.replace(/_/g, ' '), value: m, group: 'Measures' })),
-                                ...countableColumns.map(c => ({ label: c.replace(/_/g, ' '), value: c, group: 'Countable Dimensions' }))
-                            ]}
-                            icon={<TrendingUp className="w-3.5 h-3.5" />}
-                            colorTextClass="text-purple-400"
-                            colorRingClass="focus:ring-purple-500/30"
-                            placeholder="Select Metric"
-                        />
-                    </Tooltip>
-
-                    <Tooltip text={isDimensionMetric ? "Counting dimensions: Count tallies rows, Unique Count counts distinct values." : "How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values."} position="bottom">
-                        <QuerySelect
-                            value={aggregation}
-                            onChange={setAggregation}
-                            options={isDimensionMetric
-                                ? [
-                                    { label: 'Count  (#)', value: 'COUNT' },
-                                    { label: 'Unique Count  (∩)', value: 'COUNT_DISTINCT' },
-                                    { label: 'Raw Values', value: 'NONE' }
-                                ]
-                                : [
-                                    { label: 'Total  (Σ)', value: 'SUM' },
-                                    { label: 'Average  (μ)', value: 'AVG' },
-                                    { label: 'Highest  (↑)', value: 'MAX' },
-                                    { label: 'Lowest  (↓)', value: 'MIN' },
-                                    { label: 'Count  (#)', value: 'COUNT' },
-                                    { label: 'Unique Count  (∩)', value: 'COUNT_DISTINCT' },
-                                    { label: 'Raw Values', value: 'NONE' }
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Metric</span>
+                        <Tooltip text="Choose the measure to analyze. Pick a numeric metric (e.g. revenue) or a dimension to count (e.g. patient count)." position="bottom">
+                            <QuerySelect
+                                value={metric}
+                                onChange={val => {
+                                    setMetric(val);
+                                    if (countableColumns.includes(val) && !['COUNT', 'COUNT_DISTINCT'].includes(aggregation)) {
+                                        setAggregation('COUNT');
+                                    }
+                                }}
+                                options={[
+                                    ...metrics.map(m => ({ label: m.replace(/_/g, ' '), value: m, group: 'Measures' })),
+                                    ...countableColumns.map(c => ({ label: c.replace(/_/g, ' '), value: c, group: 'Countable Dimensions' }))
                                 ]}
-                            icon={<span className="font-bold text-xs px-0.5">{isDimensionMetric ? '#' : 'Σ'}</span>}
-                            colorTextClass="text-purple-400"
-                            colorRingClass="focus:ring-purple-500/30"
-                            searchable={false}
-                        />
-                    </Tooltip>
+                                icon={<TrendingUp className="w-3.5 h-3.5" />}
+                                colorTextClass="text-purple-400"
+                                colorRingClass="focus:ring-purple-500/30"
+                                placeholder="Select Metric"
+                            />
+                        </Tooltip>
+                    </div>
+
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Aggregation</span>
+                        <Tooltip text={isDimensionMetric ? "Counting dimensions: Count tallies rows, Unique Count counts distinct values." : "How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values."} position="bottom">
+                            <QuerySelect
+                                value={aggregation}
+                                onChange={setAggregation}
+                                options={isDimensionMetric
+                                    ? [
+                                        { label: 'Count  (#)', value: 'COUNT' },
+                                        { label: 'Unique Count  (∩)', value: 'COUNT_DISTINCT' },
+                                        { label: 'Raw Values', value: 'NONE' }
+                                    ]
+                                    : [
+                                        { label: 'Total  (Σ)', value: 'SUM' },
+                                        { label: 'Average  (μ)', value: 'AVG' },
+                                        { label: 'Highest  (↑)', value: 'MAX' },
+                                        { label: 'Lowest  (↓)', value: 'MIN' },
+                                        { label: 'Count  (#)', value: 'COUNT' },
+                                        { label: 'Unique Count  (∩)', value: 'COUNT_DISTINCT' },
+                                        { label: 'Raw Values', value: 'NONE' }
+                                    ]}
+                                icon={<span className="font-bold text-xs px-0.5">{isDimensionMetric ? '#' : 'Σ'}</span>}
+                                colorTextClass="text-purple-400"
+                                colorRingClass="focus:ring-purple-500/30"
+                                searchable={false}
+                            />
+                        </Tooltip>
+                    </div>
 
                     {/* Secondary Metric Chips (display only — add button moved to Options row) */}
                     {secondaryMetrics.map((sm, i) => (
@@ -662,25 +668,28 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     <span className="text-slate-200 text-base font-bold tracking-wide">by</span>
 
                     {/* Dimension Selector (columns only) */}
-                    <Tooltip text="Group by a categorical column like product, region, or category." position="bottom">
-                        <QuerySelect
-                            value={dimension}
-                            onChange={newDim => {
-                                setDimension(newDim);
-                                if (newDim && !timeGrain) setSort('desc');
-                                // Remove any existing auto-filter for the old dimension
-                                setFilters(prev => prev.filter(f => !(f.type === 'dimension' && f._autoDim)));
-                            }}
-                            options={[
-                                { label: '(None)', value: '' },
-                                ...dims.map(d => ({ label: d.replace(/_/g, ' '), value: d, group: 'Dimensions' }))
-                            ]}
-                            icon={<MapPin className="w-3.5 h-3.5" />}
-                            colorTextClass="text-blue-400"
-                            colorRingClass="focus:ring-blue-500/30"
-                            placeholder="Dimension"
-                        />
-                    </Tooltip>
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400/70 pl-1">Dimension</span>
+                        <Tooltip text="Group by a categorical column like product, region, or category." position="bottom">
+                            <QuerySelect
+                                value={dimension}
+                                onChange={newDim => {
+                                    setDimension(newDim);
+                                    if (newDim && !timeGrain) setSort('desc');
+                                    // Remove any existing auto-filter for the old dimension
+                                    setFilters(prev => prev.filter(f => !(f.type === 'dimension' && f._autoDim)));
+                                }}
+                                options={[
+                                    { label: '(None)', value: '' },
+                                    ...dims.map(d => ({ label: d.replace(/_/g, ' '), value: d, group: 'Dimensions' }))
+                                ]}
+                                icon={<MapPin className="w-3.5 h-3.5" />}
+                                colorTextClass="text-blue-400"
+                                colorRingClass="focus:ring-blue-500/30"
+                                placeholder="Dimension"
+                            />
+                        </Tooltip>
+                    </div>
 
                     {/* Dimension Value Picker — appears when dimension is selected */}
                     {dimension && (() => {
@@ -740,61 +749,66 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     })()}
 
                     {/* Date/Time Grain Selector (separate) */}
-                    <Tooltip text="Group by a time grain to see trends over time. Can be combined with a dimension." position="bottom">
-                        <QuerySelect
-                            value={timeGrain}
-                            onChange={newGrain => {
-                                setTimeGrain(newGrain);
-                                if (newGrain) setSort('oldest');
-                                else if (dimension) setSort('desc');
-                            }}
-                            options={[
-                                { label: '(None)', value: '' },
-                                { label: 'Minute', value: 'minute', group: 'Sub-Day' },
-                                { label: 'Hour', value: 'hour', group: 'Sub-Day' },
-                                { label: 'Day', value: 'day', group: 'Standard' },
-                                { label: 'Week', value: 'week', group: 'Standard' },
-                                { label: 'Month', value: 'month', group: 'Standard' },
-                                { label: 'Quarter', value: 'quarter', group: 'Standard' },
-                                { label: 'Year', value: 'year', group: 'Standard' },
-                            ]}
-                            icon={<Clock className="w-3.5 h-3.5" />}
-                            colorTextClass="text-cyan-400"
-                            colorRingClass="focus:ring-cyan-500/30"
-                            placeholder="Date / Time"
-                            searchable={false}
-                        />
-                    </Tooltip>
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400/70 pl-1">Time Grain</span>
+                        <Tooltip text="Group by a time grain to see trends over time. Can be combined with a dimension." position="bottom">
+                            <QuerySelect
+                                value={timeGrain}
+                                onChange={newGrain => {
+                                    setTimeGrain(newGrain);
+                                    if (newGrain) setSort('oldest');
+                                    else if (dimension) setSort('desc');
+                                }}
+                                options={[
+                                    { label: '(None)', value: '' },
+                                    { label: 'Minute', value: 'minute', group: 'Sub-Day' },
+                                    { label: 'Hour', value: 'hour', group: 'Sub-Day' },
+                                    { label: 'Day', value: 'day', group: 'Standard' },
+                                    { label: 'Week', value: 'week', group: 'Standard' },
+                                    { label: 'Month', value: 'month', group: 'Standard' },
+                                    { label: 'Quarter', value: 'quarter', group: 'Standard' },
+                                    { label: 'Year', value: 'year', group: 'Standard' },
+                                ]}
+                                icon={<Clock className="w-3.5 h-3.5" />}
+                                colorTextClass="text-cyan-400"
+                                colorRingClass="focus:ring-cyan-500/30"
+                                placeholder="Date / Time"
+                                searchable={false}
+                            />
+                        </Tooltip>
+                    </div>
 
                     <span className="text-slate-200 text-base font-bold tracking-wide">where</span>
 
                     {/* Time Filter */}
-                    <div className="flex items-center gap-2">
-                        <Tooltip text="Filter data by time range relative to the AS OF date. 'Time is Anything' includes all data. 'Last...' lets you pick a custom window." position="bottom">
-                            <QuerySelect
-                                value={timeFilter.startsWith('last_') && !['last_30_days', 'last_90_days', 'last_year'].includes(timeFilter) ? 'custom' : timeFilter}
-                                onChange={val => {
-                                    if (val === 'custom') setTimeFilter('last_7_days');
-                                    else setTimeFilter(val);
-                                }}
-                                options={[
-                                    { label: 'Time is Anything', value: 'all_time' },
-                                    { label: 'Today', value: 'today', group: 'Preset' },
-                                    { label: 'Yesterday', value: 'yesterday', group: 'Preset' },
-                                    { label: 'Last 30 Days', value: 'last_30_days', group: 'Preset' },
-                                    { label: 'Last 90 Days', value: 'last_90_days', group: 'Preset' },
-                                    { label: 'This Week', value: 'this_week', group: 'Current' },
-                                    { label: 'This Month', value: 'this_month', group: 'Current' },
-                                    { label: 'This Quarter', value: 'this_quarter', group: 'Current' },
-                                    { label: 'This Year', value: 'this_year', group: 'Current' },
-                                    { label: 'Last...', value: 'custom', group: 'Custom' }
-                                ]}
-                                icon={<Calendar className="w-3.5 h-3.5" />}
-                                colorTextClass="text-green-400"
-                                colorRingClass="focus:ring-green-500/30"
-                                searchable={false}
-                            />
-                        </Tooltip>
+                    <div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-green-400/70 pl-1">Time Range</span>
+                        <div className="flex items-center gap-2">
+                            <Tooltip text="Filter data by time range relative to the AS OF date. 'Time is Anything' includes all data. 'Last...' lets you pick a custom window." position="bottom">
+                                <QuerySelect
+                                    value={timeFilter.startsWith('last_') && !['last_30_days', 'last_90_days', 'last_year'].includes(timeFilter) ? 'custom' : timeFilter}
+                                    onChange={val => {
+                                        if (val === 'custom') setTimeFilter('last_7_days');
+                                        else setTimeFilter(val);
+                                    }}
+                                    options={[
+                                        { label: 'Time is Anything', value: 'all_time' },
+                                        { label: 'Today', value: 'today', group: 'Preset' },
+                                        { label: 'Yesterday', value: 'yesterday', group: 'Preset' },
+                                        { label: 'Last 30 Days', value: 'last_30_days', group: 'Preset' },
+                                        { label: 'Last 90 Days', value: 'last_90_days', group: 'Preset' },
+                                        { label: 'This Week', value: 'this_week', group: 'Current' },
+                                        { label: 'This Month', value: 'this_month', group: 'Current' },
+                                        { label: 'This Quarter', value: 'this_quarter', group: 'Current' },
+                                        { label: 'This Year', value: 'this_year', group: 'Current' },
+                                        { label: 'Last...', value: 'custom', group: 'Custom' }
+                                    ]}
+                                    icon={<Calendar className="w-3.5 h-3.5" />}
+                                    colorTextClass="text-green-400"
+                                    colorRingClass="focus:ring-green-500/30"
+                                    searchable={false}
+                                />
+                            </Tooltip>
 
                         {/* Custom Last N UI */}
                         {(timeFilter.startsWith('last_') && !['last_30_days', 'last_90_days', 'last_year'].includes(timeFilter)) && (
@@ -829,6 +843,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 </div>
                             </div>
                         )}
+                        </div>
                     </div>
 
                 </div>
