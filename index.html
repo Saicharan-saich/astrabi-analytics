@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="QuickInsight — AI-powered business intelligence. Upload your data, ask questions, and get instant visualizations and insights." />
+    <meta name="theme-color" content="#6366f1" />
+    <meta property="og:title" content="QuickInsight" />
+    <meta property="og:description" content="AI-powered business intelligence platform. Upload data, ask questions, get insights." />
+    <meta property="og:type" content="website" />
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>" />
+    <title>QuickInsight — Business Intelligence</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: '#f0fdfa',
+                100: '#ccfbf1',
+                500: '#14b8a6',
+                600: '#0d9488',
+                900: '#134e4a',
+              },
+              slate: {
+                850: '#1e293b', // Custom dark
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body {
+        background-color: #f8fafc;
+      }
+      /* Custom scrollbar for better aesthetics */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #f1f5f9; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1; 
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8; 
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@18.2.0?dev&v=fixed",
+    "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime?dev&v=fixed",
+    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client?dev&v=fixed",
+    "react-dom": "https://esm.sh/react-dom@18.2.0?dev&v=fixed",
+    "lucide-react": "https://esm.sh/lucide-react@0.292.0?external=react,react-dom&v=fixed",
+    "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom&v=fixed",
+    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs",
+    "react-simple-maps": "https://esm.sh/react-simple-maps@3.0.0?external=react,react-dom&v=fixed",
+    "d3-scale": "https://esm.sh/d3-scale@4.0.2?v=fixed",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body>
+    <div class="ambient-orb ambient-orb-1"></div>
+    <div class="ambient-orb ambient-orb-2"></div>
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

@@ -1,0 +1,182 @@
+/**
+ * Result Profiler — Analyzes the shape of SQL query results
+ *
+ * Inspects row count, column count, metric/dimension split, cardinality,
+ * time dimension detection, and scale mismatch between metrics.
+ * This profile drives the deterministic chart recommendation.
+ */
+
+import { SemanticModel, AnalysisPlan, ResultProfile, SemanticType } from './types';
+
+/**
+ * Profile the result data to understand its shape for chart recommendation.
+ */
+export function profileResult(
+    data: Record<string, any>[],
+    plan: AnalysisPlan,
+    model: SemanticModel
+): ResultProfile {
+    if (!data || data.length === 0) {
+        return {
+            rowCount: 0, columnCount: 0, metricCount: 0, dimensionCount: 0,
+            dimensionColumns: [], metricColumns: [],
+            dimensionCardinality: {}, hasTimeDimension: false,
+            metricsScaleMismatch: 1, metricSemanticTypes: {},
+            isPivoted: false, isSingleValue: false,
+        };
+    }
+
+    const cols = Object.keys(data[0]);
+    const fieldMap = new Map(model.fields.map(f => [f.name.toLowerCase(), f]));
+
+    // Classify columns as metric or dimension
+    const metricColumns: string[] = [];
+    const dimensionColumns: string[] = [];
+    const metricSemanticTypes: Record<string, SemanticType> = {};
+
+    for (const col of cols) {
+        const firstVal = data[0][col];
+        const colLower = col.toLowerCase();
+
+        // Skip computed growth/time-intel columns — these are handled separately by the chart recommender
+        if (['previous_value', 'growth_pct', 'growth_abs', 'running_total', 'moving_avg'].includes(colLower)) {
+            continue;
+        }
+
+        // CRITICAL: Detect if this column has an aggregation suffix (e.g., _avg, _sum)
+        // Aggregated columns are ALWAYS metrics — even if the source field is a dimension.
+        // Example: job_satisfaction is ordinal/dimension, but AVG(job_satisfaction) → job_satisfaction_avg
+        // is absolutely a metric in the result set.
+        const aggSuffixMatch = colLower.match(/_(sum|avg|count|count_distinct|min|max)$/);
+        const baseColName = aggSuffixMatch
+            ? colLower.replace(/_(sum|avg|count|count_distinct|min|max)$/, '')
+            : colLower;
+
+        // Try to match to semantic model
+        const field = fieldMap.get(colLower) || fieldMap.get(baseColName);
+
+        if (field) {
+            if (aggSuffixMatch) {
+                // Column has aggregation suffix → ALWAYS a metric regardless of source field role
+                metricColumns.push(col);
+                // Infer the semantic type from the source field or the aggregation
+                if (field.semanticType === 'ordinal' || field.semanticType === 'category') {
+                    // Aggregated ordinal/category (e.g., AVG(rating)) → treat as quantity
+                    metricSemanticTypes[col] = 'quantity';
+                } else {
+                    metricSemanticTypes[col] = field.semanticType;
+                }
+            } else if (field.role === 'metric') {
+                metricColumns.push(col);
+                metricSemanticTypes[col] = field.semanticType;
+            } else {
+                dimensionColumns.push(col);
+            }
+        } else {
+            // No match in semantic model — use heuristics
+
+            // CRITICAL: Detect time-grain suffixed columns → these are ALWAYS dimensions
+            // e.g., order_date_year (values: 2014, 2015), order_date_month_of_year, order_date_quarter
+            const TIME_GRAIN_SUFFIXES = /_(?:year|month|quarter|week|day|day_of_week|month_of_year|hour)$/i;
+            const isTimeGrainCol = TIME_GRAIN_SUFFIXES.test(colLower);
+
+            // Also check if this column corresponds to a plan dimension
+            const isPlanDimension = plan.dimensions.some(d => {
+                const dimCol = d.timeGrain
+                    ? `${d.field}_${d.timeGrain}`.toLowerCase()
+                    : d.field.toLowerCase();
+                return colLower === dimCol || colLower.replace(/\s+/g, '_') === dimCol;
+            });
+
+            if (isTimeGrainCol || isPlanDimension) {
+                // Time-grain or plan dimension → classify as dimension even if numeric
+                dimensionColumns.push(col);
+            } else if (typeof firstVal === 'number') {
+                metricColumns.push(col);
+                // Infer semantic type from column name
+                if (colLower.includes('pct') || colLower.includes('percent') || colLower.includes('rate') || colLower.includes('margin')) {
+                    metricSemanticTypes[col] = 'percentage';
+                } else if (colLower.includes('sales') || colLower.includes('revenue') || colLower.includes('cost') || colLower.includes('price') || colLower.includes('profit') || colLower.includes('amount')) {
+                    metricSemanticTypes[col] = 'currency';
+                } else if (colLower.includes('count') || colLower.includes('qty') || colLower.includes('quantity')) {
+                    metricSemanticTypes[col] = 'count';
+                } else {
+                    metricSemanticTypes[col] = 'quantity';
+                }
+            } else if (/_(sum|avg|count|min|max|pct|total)$/.test(colLower) || colLower.endsWith('_count_distinct')) {
+                // Fallback: column name strongly suggests a metric (aggregated alias)
+                metricColumns.push(col);
+                if (colLower.includes('pct') || colLower.includes('margin')) {
+                    metricSemanticTypes[col] = 'percentage';
+                } else {
+                    metricSemanticTypes[col] = 'currency';
+                }
+            } else {
+                dimensionColumns.push(col);
+            }
+        }
+    }
+
+    // Dimension cardinality
+    const dimensionCardinality: Record<string, number> = {};
+    for (const dim of dimensionColumns) {
+        const unique = new Set(data.map(r => r[dim]));
+        dimensionCardinality[dim] = unique.size;
+    }
+
+    // Detect time dimension
+    let hasTimeDimension = false;
+    let timeDimensionColumn: string | undefined;
+    for (const dim of dimensionColumns) {
+        const dimLower = dim.toLowerCase();
+        if (dimLower.includes('date') || dimLower.includes('month') || dimLower.includes('year')
+            || dimLower.includes('week') || dimLower.includes('quarter') || dimLower.includes('day')
+            || dimLower.includes('period') || dimLower.includes('time')) {
+            hasTimeDimension = true;
+            timeDimensionColumn = dim;
+            break;
+        }
+        // Also check if the plan declares a time grain on this dimension
+        const planDim = plan.dimensions.find(d => d.field.toLowerCase() === dim.toLowerCase().replace(/_\w+$/, ''));
+        if (planDim?.timeGrain) {
+            hasTimeDimension = true;
+            timeDimensionColumn = dim;
+            break;
+        }
+    }
+
+    // Scale mismatch between metrics
+    let metricsScaleMismatch = 1;
+    if (metricColumns.length >= 2) {
+        const scales = metricColumns.map(col => {
+            const vals = data.map(r => Math.abs(Number(r[col]) || 0)).filter(v => v > 0);
+            return vals.length > 0 ? Math.max(...vals) : 0;
+        }).filter(s => s > 0);
+
+        if (scales.length >= 2) {
+            metricsScaleMismatch = Math.max(...scales) / Math.min(...scales);
+        }
+    }
+
+    // Detect pivoted data (single row with multiple metrics, no dimensions)
+    const isPivoted = data.length === 1 && metricColumns.length > 1 && dimensionColumns.length === 0;
+
+    // Detect single value
+    const isSingleValue = data.length === 1 && cols.length === 1;
+
+    return {
+        rowCount: data.length,
+        columnCount: cols.length,
+        metricCount: metricColumns.length,
+        dimensionCount: dimensionColumns.length,
+        dimensionColumns,
+        metricColumns,
+        dimensionCardinality,
+        hasTimeDimension,
+        timeDimensionColumn,
+        metricsScaleMismatch,
+        metricSemanticTypes,
+        isPivoted,
+        isSingleValue,
+    };
+}
