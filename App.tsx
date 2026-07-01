@@ -1102,7 +1102,7 @@ function App() {
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
               {/* Header */}
-              <header className={`h-14 flex items-center justify-between px-5 z-30 relative border-b ${theme === 'dark' ? 'bg-[#141825] border-white/[0.06]' : 'bg-white border-gray-200 shadow-sm'
+              <header className={`h-14 flex items-center justify-between px-5 z-30 relative border-b ${theme === 'dark' ? 'bg-[#141825]/80 backdrop-blur-xl border-white/[0.06]' : 'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm'
                 }`}>
                 <div className="flex items-center gap-3">
                   {!isSidebarOpen && (
@@ -1115,14 +1115,14 @@ function App() {
                     </button>
                   )}
 
-                  <div className={`flex items-center gap-2.5 rounded-lg py-1.5 px-3 border ${theme === 'dark' ? 'bg-white/[0.04] border-white/[0.06]' : 'bg-gray-50 border-gray-200'
+                  <div className={`flex items-center gap-2.5 rounded-xl py-1.5 px-3 border transition-all ${theme === 'dark' ? 'bg-white/[0.04] border-white/[0.06] hover:border-violet-500/20' : 'bg-gray-50 border-gray-200 hover:border-violet-200'
                     }`}>
                     <div className={`
-                      w-2 h-2 rounded-full transition-all duration-500
-                      ${isProcessing ? 'bg-amber-400 animate-pulse' :
-                        dataset ? 'bg-emerald-500' : 'bg-gray-400'}
+                      w-2 h-2 rounded-full transition-all duration-500 shrink-0
+                      ${isProcessing ? 'bg-amber-400 animate-pulse shadow-sm shadow-amber-400/50' :
+                        dataset ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 'bg-gray-400'}
                     `} />
-                    <span className={`text-sm font-medium tracking-tight ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                    <span className={`text-sm font-semibold tracking-tight ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
                       }`}>
                       {dataset ? dataset.name : 'No active dataset'}
                     </span>
@@ -1278,12 +1278,17 @@ function App() {
                   {currentUser && (
                     <div className={`flex items-center gap-2 ml-1 pl-3 border-l ${theme === 'dark' ? 'border-white/[0.08]' : 'border-gray-200'
                       }`}>
-                      <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm cursor-default"
-                        style={{ backgroundColor: currentUser.avatar || '#7c3aed' }}
-                        title={`${currentUser.name} (${currentUser.role})`}
-                      >
-                        {currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                      <div className="relative">
+                        <div className="absolute -inset-0.5 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 opacity-50" />
+                        <div
+                          className="relative w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-md cursor-default"
+                          style={{ backgroundColor: currentUser.avatar || '#7c3aed' }}
+                          title={`${currentUser.name} (${currentUser.role})`}
+                        >
+                          {currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+                        </div>
+                        {/* Online indicator */}
+                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#141825]" />
                       </div>
                       <button
                         onClick={() => { clearSessionCredentials(); logout(); }}
