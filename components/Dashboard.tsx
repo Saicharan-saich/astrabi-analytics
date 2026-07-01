@@ -1,8 +1,4 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { Responsive as RGLResponsive } from 'react-grid-layout';
-const ResponsiveGridLayout = RGLResponsive as any;
-import 'react-grid-layout/css/styles.css';
-import 'react-resizable/css/styles.css';
 import { ChartVisualization } from './ChartVisualization';
 import { ErrorBoundary } from './ErrorBoundary';
 import {
@@ -334,143 +330,39 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     });
   }, [dataset?.version]);
 
-  // Measure container width for ResponsiveGridLayout
+  // Container ref for dashboard grid
   const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(1200);
 
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
-    const observer = new ResizeObserver(entries => {
-      for (const entry of entries) {
-        setContainerWidth(entry.contentRect.width);
-      }
-    });
-    observer.observe(el);
-    setContainerWidth(el.clientWidth);
-    return () => observer.disconnect();
+  // ─── Drag-and-drop reorder state ───
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+
+  const handleDragStart = useCallback((e: React.DragEvent, idx: number) => {
+    setDragIdx(idx);
+    e.dataTransfer.effectAllowed = 'move';
+    // Make drag image semi-transparent
+    const el = e.currentTarget as HTMLElement;
+    if (el) {
+      e.dataTransfer.setDragImage(el, el.offsetWidth / 2, 30);
+    }
   }, []);
 
-  // Generate default layout from items for all breakpoints
-  const defaultLayout = useMemo(() => {
-    return items.map((item, i) => ({
-      i: item.id,
-      x: (i % 2) * 6,
-      y: Math.floor(i / 2) * 6,
-      w: 6,
-      h: 6,
-      minW: 4,
-      minH: 4,
-    }));
-  }, [items]);
+  const handleDragOver = useCallback((e: React.DragEvent, idx: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIdx(idx);
+  }, []);
 
-  // Use persisted layout if available and matches current items
-  // Robustly reconciling persisted layout with current items
-  const layout = useMemo(() => {
-    console.log('[Dashboard Layout v2] Computing layout for', items.length, 'items, persisted:', dashboardLayout?.length || 0);
-
-    // Helper: check if two layout items collide
-    const collides = (a: any, b: any) => {
-      if (a.i === b.i) return false;
-      const xOverlap = a.x < b.x + b.w && a.x + a.w > b.x;
-      const yOverlap = a.y < b.y + b.h && a.y + b.h > b.y;
-      return xOverlap && yOverlap;
-    };
-
-    // 1. Try to use persisted layout
-    const layoutMap = new Map();
-    if (dashboardLayout && Array.isArray(dashboardLayout)) {
-      dashboardLayout.forEach((l: any) => layoutMap.set(l.i, l));
+  const handleDragEnd = useCallback(() => {
+    if (dragIdx !== null && dragOverIdx !== null && dragIdx !== dragOverIdx) {
+      const reordered = [...filteredItems];
+      const [moved] = reordered.splice(dragIdx, 1);
+      reordered.splice(dragOverIdx, 0, moved);
+      setItems(reordered);
     }
-
-    // 2. Check if persisted layout has any overlaps
-    const presentIds = items.map(i => i.id);
-    const persistedEntries = presentIds.map(id => layoutMap.get(id)).filter(Boolean);
-    let hasOverlaps = false;
-    for (let i = 0; i < persistedEntries.length && !hasOverlaps; i++) {
-      for (let j = i + 1; j < persistedEntries.length; j++) {
-        const a = persistedEntries[i];
-        const b = persistedEntries[j];
-        const xOvr = a.x < b.x + b.w && a.x + a.w > b.x;
-        const yOvr = a.y < b.y + b.h && a.y + a.h > b.y;
-        if (xOvr && yOvr) {
-          hasOverlaps = true;
-          console.warn('[Dashboard Layout v2] Overlap detected between', a.i, 'and', b.i, '→ regenerating clean layout');
-          break;
-        }
-      }
-    }
-
-    // 3. Generate layout: clean grid if overlaps or missing entries, otherwise use persisted
-    let result: any[];
-    if (hasOverlaps || persistedEntries.length < items.length) {
-      // Generate a fresh 2-column layout for ALL items
-      result = items.map((item, idx) => ({
-        i: item.id,
-        x: (idx % 2) * 6,
-        y: Math.floor(idx / 2) * 6,
-        w: 6,
-        h: 6,
-        minW: 4,
-        minH: 4,
-      }));
-      console.log('[Dashboard Layout v2] REGENERATED fresh layout:');
-      result.forEach(l => console.log(`  → ${l.i} at x=${l.x} y=${l.y} w=${l.w} h=${l.h}`));
-    } else {
-      // Use persisted layout (already validated as non-overlapping)
-      result = items.map(item => ({
-        ...layoutMap.get(item.id),
-        minW: 4,
-        minH: 4,
-      }));
-      console.log('[Dashboard Layout v2] Using PERSISTED layout:');
-      result.forEach(l => console.log(`  → ${l.i} at x=${l.x} y=${l.y} w=${l.w} h=${l.h}`));
-    }
-
-    return result;
-  }, [items, dashboardLayout]);
-
-  // Generate responsive layouts for all breakpoints
-  const allLayouts = useMemo(() => {
-    // lg: 12 cols — use computed layout directly
-    const lg = layout;
-
-    // md: 8 cols — scale to 2-column or single-column
-    const md = layout.map((item: any) => ({
-      ...item,
-      x: item.x >= 6 ? 4 : 0,
-      w: 4,
-    }));
-
-    // sm: 4 cols — single column stack
-    let smY = 0;
-    const sm = layout.map((item: any) => {
-      const entry = { ...item, x: 0, w: 4, y: smY };
-      smY += item.h;
-      return entry;
-    });
-
-    // xs: 2 cols — single column stack
-    let xsY = 0;
-    const xs = layout.map((item: any) => {
-      const entry = { ...item, x: 0, w: 2, y: xsY };
-      xsY += item.h;
-      return entry;
-    });
-
-    return { lg, md, sm, xs };
-  }, [layout]);
-
-  const handleLayoutChange = useCallback((_cur: any, _allLayouts: any) => {
-    // Always persist the lg layout so smaller breakpoints don't corrupt saved sizes.
-    // _allLayouts.lg keeps the real user-sized layout even when viewing at md/sm/xs.
-    const lg = _allLayouts?.lg;
-    if (Array.isArray(lg) && lg.length > 0) {
-      setDashboardLayout(lg);
-    } else if (Array.isArray(_cur) && _cur.length > 0) {
-      setDashboardLayout(_cur);
-    }
-  }, [setDashboardLayout]);
+    setDragIdx(null);
+    setDragOverIdx(null);
+  }, [dragIdx, dragOverIdx, filteredItems, setItems]);
 
   // PDF Export via print
   const handleExportPDF = useCallback(() => {
@@ -1237,31 +1129,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
           </div>
         )}
 
-        {/* ─── Drag-Drop Grid Layout ─── */}
+        {/* ─── CSS Grid Dashboard Layout ─── */}
         {filteredItems.length > 0 && (
-          <ResponsiveGridLayout
-            className="layout"
-            layouts={allLayouts}
-            breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
-            cols={{ lg: 12, md: 8, sm: 4, xs: 2 }}
-            rowHeight={70}
-            width={containerWidth - 48}
-            onLayoutChange={handleLayoutChange}
-            isResizable={true}
-            isDraggable={true}
-            draggableHandle=".drag-handle"
-            compactType="vertical"
-            margin={[16, 16]}
-            containerPadding={[24, 0]}
+          <div
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))',
+              gap: '16px',
+              padding: '0 24px',
+            }}
           >
             {filteredItems.map((item, idx) => {
               const accent = CARD_ACCENTS[idx % CARD_ACCENTS.length];
               const vis = (item.result.vis as string) || 'bar';
               const isHovered = hoveredCard === item.id;
+              const isDragging = dragIdx === idx;
+              const isDragOver = dragOverIdx === idx;
 
               return (
                 <div
                   key={item.id}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, idx)}
+                  onDragOver={(e) => handleDragOver(e, idx)}
+                  onDragEnd={handleDragEnd}
+                  onDrop={(e) => { e.preventDefault(); handleDragEnd(); }}
                   className={`
                     animate-card-entrance
                     bg-white dark:bg-[#1c2033]/80 dark:backdrop-blur-sm border border-gray-200 dark:border-white/[0.08] rounded-xl overflow-hidden
@@ -1269,7 +1161,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     transition-all duration-300 group flex flex-col
                     hover:border-gray-300 dark:hover:border-violet-500/20
                     print:break-inside-avoid
+                    ${isDragging ? 'opacity-40 scale-95' : ''}
+                    ${isDragOver ? 'ring-2 ring-violet-500 ring-offset-2 dark:ring-offset-gray-900' : ''}
                   `}
+                  style={{ minHeight: '380px' }}
                   onMouseEnter={() => setHoveredCard(item.id)}
                   onMouseLeave={() => setHoveredCard(null)}
                 >
@@ -1387,7 +1282,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                 </div>
               );
             })}
-          </ResponsiveGridLayout>
+          </div>
         )}
 
         {/* ─── Clear All Confirmation Modal ─── */}
