@@ -1,4 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { ResponsiveGridLayout as RGLBase } from 'react-grid-layout';
+const ResponsiveGridLayout = RGLBase as any;
+import 'react-grid-layout/css/styles.css';
+import 'react-resizable/css/styles.css';
 import { ChartVisualization } from './ChartVisualization';
 import { ErrorBoundary } from './ErrorBoundary';
 import {
@@ -110,7 +114,7 @@ const DATASET_COLORS = [
 export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange }) => {
   const {
     dashboards, activeDashboardId, setActiveDashboard, createDashboard, renameDashboard, deleteDashboard, duplicateDashboard,
-    items, removeItem, updateItem, formatting, clearAllItems, setItems,
+    items, removeItem, updateItem, formatting, clearAllItems,
     dashboardLayout, dashboardFilters,
     setDashboardLayout_legacy: setDashboardLayout,
     setDashboardFilters_legacy: setDashboardFilters,
@@ -330,39 +334,120 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     });
   }, [dataset?.version]);
 
-  // Container ref for dashboard grid
+  // Measure container width for ResponsiveGridLayout
   const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(1200);
 
-  // ─── Drag-and-drop reorder state ───
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
-
-  const handleDragStart = useCallback((e: React.DragEvent, idx: number) => {
-    setDragIdx(idx);
-    e.dataTransfer.effectAllowed = 'move';
-    // Make drag image semi-transparent
-    const el = e.currentTarget as HTMLElement;
-    if (el) {
-      e.dataTransfer.setDragImage(el, el.offsetWidth / 2, 30);
-    }
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+    observer.observe(el);
+    setContainerWidth(el.clientWidth);
+    return () => observer.disconnect();
   }, []);
 
-  const handleDragOver = useCallback((e: React.DragEvent, idx: number) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOverIdx(idx);
-  }, []);
+  // Generate default layout from items for all breakpoints
+  const defaultLayout = useMemo(() => {
+    return items.map((item, i) => ({
+      i: item.id,
+      x: (i % 2) * 6,
+      y: Math.floor(i / 2) * 6,
+      w: 6,
+      h: 6,
+      minW: 4,
+      minH: 4,
+    }));
+  }, [items]);
 
-  const handleDragEnd = useCallback(() => {
-    if (dragIdx !== null && dragOverIdx !== null && dragIdx !== dragOverIdx) {
-      const reordered = [...filteredItems];
-      const [moved] = reordered.splice(dragIdx, 1);
-      reordered.splice(dragOverIdx, 0, moved);
-      setItems(reordered);
+  // Use persisted layout if available and matches current items
+  // Robustly reconciling persisted layout with current items
+  const layout = useMemo(() => {
+    // 1. Create a map of existing layout items for quick lookup
+    const layoutMap = new Map();
+    if (dashboardLayout && Array.isArray(dashboardLayout)) {
+      dashboardLayout.forEach((l: any) => layoutMap.set(l.i, l));
     }
-    setDragIdx(null);
-    setDragOverIdx(null);
-  }, [dragIdx, dragOverIdx, filteredItems, setItems]);
+
+    // 2. Determine where to place new items (below everything else)
+    let maxY = 0;
+    // Calculate the bottom-most point of the existing *persisted* layout
+    // We only care about items that are still present to avoid gaps from deleted items
+    const presentIds = new Set(items.map(i => i.id));
+    layoutMap.forEach((l: any) => {
+      if (presentIds.has(l.i)) {
+        if ((l.y + l.h) > maxY) maxY = l.y + l.h;
+      }
+    });
+
+    return items.map((item, i) => {
+      // If this item exists in the persisted layout, reuse its config
+      if (layoutMap.has(item.id)) {
+        return layoutMap.get(item.id);
+      }
+
+      // Otherwise, create a new layout item at the bottom
+      const newItem = {
+        i: item.id,
+        x: (i % 2) * 6,
+        y: maxY,
+        w: 6,
+        h: 6,
+        minW: 4,
+        minH: 4,
+      };
+
+      if (i % 2 === 1) maxY += 6;
+
+      return newItem;
+    });
+  }, [items, dashboardLayout]);
+
+  // Generate responsive layouts for all breakpoints
+  const allLayouts = useMemo(() => {
+    // lg: 12 cols — use user-persisted layout directly
+    const lg = layout;
+
+    // md: 8 cols — scale x/w proportionally but preserve user height
+    const md = layout.map((item: any) => ({
+      ...item,
+      x: Math.min(Math.floor(item.x * 8 / 12), 4),
+      w: Math.min(Math.max(Math.floor(item.w * 8 / 12), 4), 8),
+    }));
+
+    // sm: 4 cols — full width single column, preserve height
+    const sm = layout.map((item: any, i: number) => ({
+      ...item,
+      x: 0,
+      w: 4,
+      y: i * item.h,
+    }));
+
+    // xs: 2 cols — full width single column, preserve height
+    const xs = layout.map((item: any, i: number) => ({
+      ...item,
+      x: 0,
+      w: 2,
+      y: i * item.h,
+    }));
+
+    return { lg, md, sm, xs };
+  }, [layout]);
+
+  const handleLayoutChange = useCallback((_cur: any, _allLayouts: any) => {
+    // Always persist the lg layout so smaller breakpoints don't corrupt saved sizes.
+    // _allLayouts.lg keeps the real user-sized layout even when viewing at md/sm/xs.
+    const lg = _allLayouts?.lg;
+    if (Array.isArray(lg) && lg.length > 0) {
+      setDashboardLayout(lg);
+    } else if (Array.isArray(_cur) && _cur.length > 0) {
+      setDashboardLayout(_cur);
+    }
+  }, [setDashboardLayout]);
 
   // PDF Export via print
   const handleExportPDF = useCallback(() => {
@@ -1129,31 +1214,31 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
           </div>
         )}
 
-        {/* ─── CSS Grid Dashboard Layout ─── */}
+        {/* ─── Drag-Drop Grid Layout ─── */}
         {filteredItems.length > 0 && (
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 420px), 1fr))',
-              gap: '16px',
-              padding: '0 24px',
-            }}
+          <ResponsiveGridLayout
+            className="layout"
+            layouts={allLayouts}
+            breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
+            cols={{ lg: 12, md: 8, sm: 4, xs: 2 }}
+            rowHeight={70}
+            width={containerWidth - 48}
+            onLayoutChange={handleLayoutChange}
+            isResizable={true}
+            isDraggable={true}
+            draggableHandle=".drag-handle"
+            compactType="vertical"
+            margin={[16, 16]}
+            containerPadding={[24, 0]}
           >
             {filteredItems.map((item, idx) => {
               const accent = CARD_ACCENTS[idx % CARD_ACCENTS.length];
               const vis = (item.result.vis as string) || 'bar';
               const isHovered = hoveredCard === item.id;
-              const isDragging = dragIdx === idx;
-              const isDragOver = dragOverIdx === idx;
 
               return (
                 <div
                   key={item.id}
-                  draggable
-                  onDragStart={(e) => handleDragStart(e, idx)}
-                  onDragOver={(e) => handleDragOver(e, idx)}
-                  onDragEnd={handleDragEnd}
-                  onDrop={(e) => { e.preventDefault(); handleDragEnd(); }}
                   className={`
                     animate-card-entrance
                     bg-white dark:bg-[#1c2033]/80 dark:backdrop-blur-sm border border-gray-200 dark:border-white/[0.08] rounded-xl overflow-hidden
@@ -1161,10 +1246,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     transition-all duration-300 group flex flex-col
                     hover:border-gray-300 dark:hover:border-violet-500/20
                     print:break-inside-avoid
-                    ${isDragging ? 'opacity-40 scale-95' : ''}
-                    ${isDragOver ? 'ring-2 ring-violet-500 ring-offset-2 dark:ring-offset-gray-900' : ''}
                   `}
-                  style={{ minHeight: '380px' }}
                   onMouseEnter={() => setHoveredCard(item.id)}
                   onMouseLeave={() => setHoveredCard(null)}
                 >
@@ -1282,7 +1364,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                 </div>
               );
             })}
-          </div>
+          </ResponsiveGridLayout>
         )}
 
         {/* ─── Clear All Confirmation Modal ─── */}
