@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import { User, UserRole } from '../types';
 import { indexedDBStorage } from '../services/indexedDBStorage';
 import { resetUserData, useAppStore } from './useAppStore';
+import { pushDashboardToCloud } from '../services/dashboardCloudSync';
 
 // ── User Data Isolation ──────────────────────────────────────────
 const APP_STORAGE_KEY = 'QuickInsight-storage-v4';
@@ -213,11 +214,23 @@ export const useAuthStore = create<AuthState>()(
                     saveUserAppData(userId);
                     // ── Cloud Sync: push dashboard to PostgreSQL BEFORE clearing token ──
                     try {
-                        const dashStore = require('./useDashboardStore').useDashboardStore.getState();
-                        // Flush any pending debounced pushes immediately
-                        if (dashStore.items && dashStore.items.length > 0) {
-                            await dashStore.pushToCloud();
-                            console.log('[Logout] ✅ Dashboard pushed to cloud before logout');
+                        // Dynamic import to avoid circular dependency (ESM-compatible)
+                        const { useDashboardStore } = await import('./useDashboardStore');
+                        const dashState = useDashboardStore.getState();
+                        if (dashState.items && dashState.items.length > 0) {
+                            // Push directly using the sync service (no require() needed)
+                            const ok = await pushDashboardToCloud({
+                                items: dashState.items,
+                                layout: dashState.dashboardLayout,
+                                filters: dashState.dashboardFilters as any[],
+                                formatting: dashState.formatting as any,
+                                datasetId: dashState.selectedDatasetId,
+                            });
+                            if (ok) {
+                                console.log('[Logout] ✅ Dashboard pushed to cloud before logout');
+                            } else {
+                                console.error('[Logout] ⚠️ Dashboard push returned false');
+                            }
                         }
                     } catch (err) {
                         console.error('[Logout] ❌ Dashboard push failed:', err);
