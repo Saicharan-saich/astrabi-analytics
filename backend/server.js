@@ -1755,7 +1755,7 @@ app.post('/api/dashboards', async (req, res) => {
         res.json({ success: true, id });
     } catch (err) {
         console.error('[Dashboards] Save error:', err.message);
-        res.status(500).json({ error: 'Failed to save dashboard' });
+        res.status(500).json({ error: 'Failed to save dashboard', detail: err.message });
     }
 });
 
