@@ -194,6 +194,113 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   const [filterMeasureValue, setFilterMeasureValue] = useState<string>('');
   const [refreshingCards, setRefreshingCards] = useState<Set<string>>(new Set());
 
+  // ── Reusable helper: apply global filters to a dashboard card's data ──
+  const getFilteredData = useCallback((item: DashboardItem) => {
+    if (item.ignoreGlobalFilter) return item.result.data;
+    if (dashboardFilters.length === 0 || !Array.isArray(item.result.data)) return item.result.data;
+
+    const isDateStr = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const xKey = item.result.xKey;
+    const yKey = item.result.yKey;
+    const sourceRows = dataset?.rows ?? [];
+    const cfg = item.result.config || item.result.queryConfig;
+
+    // Pass 1: filter raw dataset rows by ALL global filters
+    let filteredSource = sourceRows;
+    dashboardFilters.forEach(f => {
+      filteredSource = filteredSource.filter((row: any) => {
+        const val = row[f.column];
+        if (val === undefined || val === null) return true;
+        const colType = dataset?.columns?.find(c => c.name === f.column)?.type;
+
+        if (colType === 'DATE' && f.values.length > 0) {
+          const d = new Date(val);
+          if (isNaN(d.getTime())) return true;
+          const yr = String(d.getFullYear());
+          const qtr = `${yr}-Q${Math.ceil((d.getMonth() + 1) / 3)}`;
+          const hierarchyTokens = f.values.filter(v => !isDateStr(v));
+          const dateRangeValues = f.values.filter(v => isDateStr(v));
+          let passedHierarchy = hierarchyTokens.length === 0;
+          let passedRange = dateRangeValues.length === 0;
+          if (hierarchyTokens.length > 0) passedHierarchy = hierarchyTokens.some(v => v === yr || v === qtr);
+          if (dateRangeValues.length >= 2) { const from = new Date(dateRangeValues[0]); const to = new Date(dateRangeValues[1]); passedRange = d >= from && d <= to; }
+          if (hierarchyTokens.length > 0 && dateRangeValues.length >= 2) return passedHierarchy || passedRange;
+          return passedHierarchy && passedRange;
+        }
+        if (f.type === 'measure' && f.operator !== undefined && f.numericValue !== undefined) {
+          const num = typeof val === 'number' ? val : parseFloat(val);
+          if (isNaN(num)) return true;
+          switch (f.operator) {
+            case '>': return num > f.numericValue; case '<': return num < f.numericValue;
+            case '=': return num === f.numericValue; case '!=': return num !== f.numericValue;
+            case '>=': return num >= f.numericValue; case '<=': return num <= f.numericValue;
+            default: return true;
+          }
+        }
+        return f.values.length === 0 || f.values.includes(String(val));
+      });
+    });
+
+    // ── RE-AGGREGATE from filtered rows ──
+    if (cfg && cfg.metric && filteredSource.length > 0) {
+      const metricCol = cfg.metric;
+      const dimCol = cfg.dimension || '';
+      const agg = (cfg.aggregation || 'SUM').toUpperCase();
+      const timeDims = ['day', 'week', 'month', 'quarter', 'year'];
+      const isTimeDim = timeDims.includes(dimCol);
+      const dateCol = dataset?.timeContext?.anchorDateColumn || dataset?.columns?.find(c => c.type === 'DATE')?.name;
+      const groups = new Map<string, number[]>();
+      filteredSource.forEach((row: any) => {
+        let dimVal = '(Total)';
+        if (dimCol && !isTimeDim) {
+          dimVal = String(row[dimCol] ?? '(empty)');
+        } else if (isTimeDim && dateCol) {
+          const d = new Date(row[dateCol]);
+          if (!isNaN(d.getTime())) {
+            if (dimCol === 'year') dimVal = String(d.getFullYear());
+            else if (dimCol === 'quarter') dimVal = `Q${Math.ceil((d.getMonth() + 1) / 3)} ${d.getFullYear()}`;
+            else if (dimCol === 'month') dimVal = `${d.toLocaleString('en', { month: 'short' })} ${d.getFullYear()}`;
+            else if (dimCol === 'week') dimVal = `W${Math.ceil(((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000 + 1) / 7)} ${d.getFullYear()}`;
+            else if (dimCol === 'day') dimVal = d.toISOString().slice(0, 10);
+          }
+        }
+        const metricVal = typeof row[metricCol] === 'number' ? row[metricCol] : parseFloat(row[metricCol]);
+        if (!isNaN(metricVal)) {
+          if (!groups.has(dimVal)) groups.set(dimVal, []);
+          groups.get(dimVal)!.push(metricVal);
+        }
+      });
+      const reAggregated: any[] = [];
+      groups.forEach((vals, dim) => {
+        let result = 0;
+        if (agg === 'SUM') result = vals.reduce((a, b) => a + b, 0);
+        else if (agg === 'AVG') result = vals.reduce((a, b) => a + b, 0) / vals.length;
+        else if (agg === 'COUNT') result = vals.length;
+        else if (agg === 'COUNT_DISTINCT') result = new Set(vals).size;
+        else if (agg === 'MAX') result = Math.max(...vals);
+        else if (agg === 'MIN') result = Math.min(...vals);
+        else result = vals.reduce((a, b) => a + b, 0);
+        const row: any = { [xKey]: dim, [yKey]: result };
+        if (xKey !== 'dim') row.dim = dim;
+        if (yKey !== 'metric') row.metric = result;
+        reAggregated.push(row);
+      });
+      const sort = cfg.sort || 'desc';
+      if (sort === 'desc') reAggregated.sort((a, b) => (b[yKey] || 0) - (a[yKey] || 0));
+      else if (sort === 'asc') reAggregated.sort((a, b) => (a[yKey] || 0) - (b[yKey] || 0));
+      else if (sort === 'newest') reAggregated.reverse();
+      const limit = cfg.limit || 0;
+      if (limit > 0 && reAggregated.length > limit) return reAggregated.slice(0, limit);
+      return reAggregated;
+    }
+
+    // Fallback: simple row filtering for charts without config
+    const chartVis = (item.result.vis as string) || 'bar';
+    const maxRows = ['bar', 'horizontalBar', 'pie', 'donut', 'groupedBar', 'stackedBar'].includes(chartVis) ? 25 : 500;
+    const rawData = item.result.data || [];
+    return rawData.length > maxRows ? rawData.slice(0, maxRows) : rawData;
+  }, [dashboardFilters, dataset]);
+
   // Fix #8: Re-evaluate a dashboard card by re-running its stored query config
   const handleRefreshCard = useCallback(async (item: DashboardItem) => {
     if (!dataset || !item.result?.queryConfig) return;
@@ -395,6 +502,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               className="text-white font-bold text-lg"
               inputClassName="text-white text-lg"
             />
+            {/* Active filter chips in presentation mode */}
+            {dashboardFilters.length > 0 && (
+              <div className="flex items-center gap-2 ml-4">
+                <Filter className="w-3.5 h-3.5 text-indigo-300" />
+                {dashboardFilters.map(f => (
+                  <span key={f.column} className="px-2.5 py-1 rounded-full text-xs font-semibold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                    {f.column}: {f.type === 'measure' ? `${f.operator} ${f.numericValue}` : f.values.slice(0, 3).join(', ')}{f.values.length > 3 ? ` +${f.values.length - 3}` : ''}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-4">
             <span className="text-slate-400 text-sm">{currentSlide + 1} / {items.length}</span>
@@ -423,7 +541,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             <div className="h-[calc(100%-52px)]">
               <ChartVisualization
                 config={item.result.config}
-                data={item.result.data}
+                data={getFilteredData(item)}
                 xKey={item.result.xKey}
                 yKey={item.result.yKey}
                 yLabel={item.result.yLabel}
@@ -1221,130 +1339,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       <ErrorBoundary compact label={item.title || 'Chart'}>
                         <ChartVisualization
                           config={item.result.config}
-                          data={(() => {
-                            // ── Skip filters when this card has opted out ──
-                            if (item.ignoreGlobalFilter) return item.result.data;
-                            if (dashboardFilters.length === 0 || !Array.isArray(item.result.data)) return item.result.data;
-
-                            const isDateStr = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
-                            const xKey = item.result.xKey;
-                            const yKey = item.result.yKey;
-                            const sourceRows = dataset?.rows ?? [];
-                            const cfg = item.result.config || item.result.queryConfig;
-
-                            // Pass 1: filter raw dataset rows by ALL global filters
-                            let filteredSource = sourceRows;
-                            dashboardFilters.forEach(f => {
-                              filteredSource = filteredSource.filter((row: any) => {
-                                const val = row[f.column];
-                                if (val === undefined || val === null) return true;
-                                const colType = dataset?.columns?.find(c => c.name === f.column)?.type;
-
-                                if (colType === 'DATE' && f.values.length > 0) {
-                                  const d = new Date(val);
-                                  if (isNaN(d.getTime())) return true;
-                                  const yr = String(d.getFullYear());
-                                  const qtr = `${yr}-Q${Math.ceil((d.getMonth() + 1) / 3)}`;
-                                  const hierarchyTokens = f.values.filter(v => !isDateStr(v));
-                                  const dateRangeValues = f.values.filter(v => isDateStr(v));
-                                  let passedHierarchy = hierarchyTokens.length === 0;
-                                  let passedRange = dateRangeValues.length === 0;
-                                  if (hierarchyTokens.length > 0) passedHierarchy = hierarchyTokens.some(v => v === yr || v === qtr);
-                                  if (dateRangeValues.length >= 2) { const from = new Date(dateRangeValues[0]); const to = new Date(dateRangeValues[1]); passedRange = d >= from && d <= to; }
-                                  if (hierarchyTokens.length > 0 && dateRangeValues.length >= 2) return passedHierarchy || passedRange;
-                                  return passedHierarchy && passedRange;
-                                }
-                                if (f.type === 'measure' && f.operator !== undefined && f.numericValue !== undefined) {
-                                  const num = typeof val === 'number' ? val : parseFloat(val);
-                                  if (isNaN(num)) return true;
-                                  switch (f.operator) {
-                                    case '>': return num > f.numericValue; case '<': return num < f.numericValue;
-                                    case '=': return num === f.numericValue; case '!=': return num !== f.numericValue;
-                                    case '>=': return num >= f.numericValue; case '<=': return num <= f.numericValue;
-                                    default: return true;
-                                  }
-                                }
-                                return f.values.length === 0 || f.values.includes(String(val));
-                              });
-                            });
-
-                            // ── RE-AGGREGATE from filtered rows ──
-                            // If we have a config with metric + dimension, rebuild the chart data
-                            if (cfg && cfg.metric && filteredSource.length > 0) {
-                              const metricCol = cfg.metric;
-                              const dimCol = cfg.dimension || '';
-                              const agg = (cfg.aggregation || 'SUM').toUpperCase();
-
-                              // Determine the dimension column in the raw data
-                              // Time dimensions (day/week/month/quarter/year) need date extraction
-                              const timeDims = ['day', 'week', 'month', 'quarter', 'year'];
-                              const isTimeDim = timeDims.includes(dimCol);
-                              const dateCol = dataset?.timeContext?.anchorDateColumn || dataset?.columns?.find(c => c.type === 'DATE')?.name;
-
-                              // Group rows by dimension value
-                              const groups = new Map<string, number[]>();
-                              filteredSource.forEach((row: any) => {
-                                let dimVal = '(Total)';
-                                if (dimCol && !isTimeDim) {
-                                  dimVal = String(row[dimCol] ?? '(empty)');
-                                } else if (isTimeDim && dateCol) {
-                                  const d = new Date(row[dateCol]);
-                                  if (!isNaN(d.getTime())) {
-                                    if (dimCol === 'year') dimVal = String(d.getFullYear());
-                                    else if (dimCol === 'quarter') dimVal = `Q${Math.ceil((d.getMonth() + 1) / 3)} ${d.getFullYear()}`;
-                                    else if (dimCol === 'month') dimVal = `${d.toLocaleString('en', { month: 'short' })} ${d.getFullYear()}`;
-                                    else if (dimCol === 'week') dimVal = `W${Math.ceil(((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000 + 1) / 7)} ${d.getFullYear()}`;
-                                    else if (dimCol === 'day') dimVal = d.toISOString().slice(0, 10);
-                                  }
-                                }
-                                const metricVal = typeof row[metricCol] === 'number' ? row[metricCol] : parseFloat(row[metricCol]);
-                                if (!isNaN(metricVal)) {
-                                  if (!groups.has(dimVal)) groups.set(dimVal, []);
-                                  groups.get(dimVal)!.push(metricVal);
-                                }
-                              });
-
-                              // Aggregate each group
-                              const reAggregated: any[] = [];
-                              groups.forEach((vals, dim) => {
-                                let result = 0;
-                                if (agg === 'SUM') result = vals.reduce((a, b) => a + b, 0);
-                                else if (agg === 'AVG') result = vals.reduce((a, b) => a + b, 0) / vals.length;
-                                else if (agg === 'COUNT') result = vals.length;
-                                else if (agg === 'COUNT_DISTINCT') result = new Set(vals).size;
-                                else if (agg === 'MAX') result = Math.max(...vals);
-                                else if (agg === 'MIN') result = Math.min(...vals);
-                                else result = vals.reduce((a, b) => a + b, 0);
-
-                                // Build row using the SAME keys as the original chart data
-                                const row: any = { [xKey]: dim, [yKey]: result };
-                                // Also add 'dim' and 'metric' aliases (used by some chart configs)
-                                if (xKey !== 'dim') row.dim = dim;
-                                if (yKey !== 'metric') row.metric = result;
-                                reAggregated.push(row);
-                              });
-
-                              // Sort to match original chart order
-                              const sort = cfg.sort || 'desc';
-                              if (sort === 'desc') reAggregated.sort((a, b) => (b[yKey] || 0) - (a[yKey] || 0));
-                              else if (sort === 'asc') reAggregated.sort((a, b) => (a[yKey] || 0) - (b[yKey] || 0));
-                              else if (sort === 'oldest') { /* keep insertion order for time dims */ }
-                              else if (sort === 'newest') reAggregated.reverse();
-
-                              // Apply limit if configured
-                              const limit = cfg.limit || 0;
-                              if (limit > 0 && reAggregated.length > limit) return reAggregated.slice(0, limit);
-
-                              return reAggregated;
-                            }
-
-                            // Fallback: simple row filtering for charts without config
-                            // Safety cap: bar/pie charts with too many rows become unreadable
-                            const chartVis = (item.result.vis as string) || 'bar';
-                            const maxRows = ['bar', 'horizontalBar', 'pie', 'donut', 'groupedBar', 'stackedBar'].includes(chartVis) ? 25 : 500;
-                            const rawData = item.result.data || [];
-                            return rawData.length > maxRows ? rawData.slice(0, maxRows) : rawData;
-                          })()}
+                          data={getFilteredData(item)}
                           xKey={item.result.xKey}
                           yKey={item.result.yKey}
                           yLabel={item.result.yLabel}
