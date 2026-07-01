@@ -1055,13 +1055,13 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     }
                 },
                 tooltip: {
-                    backgroundColor: 'rgba(15, 23, 42, 0.92)',
+                    backgroundColor: 'rgba(10, 13, 22, 0.88)',
                     titleColor: '#f1f5f9',
                     bodyColor: '#cbd5e1',
-                    borderColor: 'rgba(99, 102, 241, 0.25)',
+                    borderColor: 'rgba(99, 102, 241, 0.3)',
                     borderWidth: 1,
-                    padding: { top: 10, bottom: 10, left: 14, right: 14 },
-                    cornerRadius: 10,
+                    padding: { top: 12, bottom: 12, left: 16, right: 16 },
+                    cornerRadius: 12,
                     titleFont: {
                         size: 13,
                         weight: 'bold' as const,

@@ -9,7 +9,7 @@ import { FormattingConfig, QueryConfig } from '../types';
 
 export const PALETTES = {
     // Discrete Multi-Color Palettes (for categorical/dimension analysis)
-    vibrant: ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#f43f5e', '#8b5cf6', '#ec4899', '#14b8a6', '#3b82f6', '#f97316'],
+    vibrant: ['#818cf8', '#22d3ee', '#34d399', '#fbbf24', '#fb7185', '#a78bfa', '#f472b6', '#2dd4bf', '#60a5fa', '#fb923c'],
     electric: ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0e7490', '#c026d3', '#2563eb', '#ea580c'],
     neon: ['#00b4d8', '#00cc6a', '#e63946', '#e6b800', '#a855f7', '#e11d48', '#14b8a6', '#84cc16', '#3b82f6', '#f97316'],
     sunset: ['#e63300', '#e6590a', '#e68a00', '#d4a012', '#c0392b', '#d63384', '#9b2226', '#6a0572', '#e11d48', '#ea580c'],

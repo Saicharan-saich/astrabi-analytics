@@ -1123,16 +1123,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                   key={item.id}
                   className={`
                     animate-card-entrance
-                    bg-white dark:bg-[#1c2033] border border-gray-200 dark:border-white/[0.08] rounded-xl overflow-hidden
-                    shadow-sm hover:shadow-md
-                    transition-all duration-200 group flex flex-col
+                    bg-white dark:bg-[#1c2033]/80 dark:backdrop-blur-sm border border-gray-200 dark:border-white/[0.08] rounded-xl overflow-hidden
+                    shadow-sm hover:shadow-lg dark:hover:shadow-violet-500/5
+                    transition-all duration-300 group flex flex-col
+                    hover:border-gray-300 dark:hover:border-violet-500/20
                     print:break-inside-avoid
                   `}
                   onMouseEnter={() => setHoveredCard(item.id)}
                   onMouseLeave={() => setHoveredCard(null)}
                 >
                   {/* ── Card Header — drag handle ── */}
-                  <div className="drag-handle flex items-center justify-between px-3.5 py-2.5 border-b border-gray-100 dark:border-white/[0.06] bg-gray-50 dark:bg-white/[0.02] flex-shrink-0 cursor-grab active:cursor-grabbing">
+                  <div className="drag-handle flex items-center justify-between px-3.5 py-2.5 border-b border-gray-100 dark:border-white/[0.06] bg-gray-50/80 dark:bg-white/[0.02] flex-shrink-0 cursor-grab active:cursor-grabbing">
                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       {/* Grip dots visible on hover */}
                       <div className="opacity-0 group-hover:opacity-40 transition-opacity">

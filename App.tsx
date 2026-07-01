@@ -1079,13 +1079,17 @@ function App() {
           </>
         ) : (
           <div className={getGlobalClasses()} style={getGlobalStyle()}>
+            {/* Ambient background orbs */}
+            <div className="ambient-orb ambient-orb-1" />
+            <div className="ambient-orb ambient-orb-2" />
+
             <AnimatePresence>
               {isSidebarOpen && (
                 <motion.div
                   initial={{ width: 0, opacity: 0 }}
                   animate={{ width: 260, opacity: 1 }}
                   exit={{ width: 0, opacity: 0 }}
-                  className={`h-full border-r z-20 overflow-hidden flex-shrink-0 relative ${theme === 'dark' ? 'bg-[#111422] border-white/[0.06]' : 'bg-white border-gray-200'
+                  className={`h-full border-r z-20 overflow-hidden flex-shrink-0 relative ${theme === 'dark' ? 'bg-[#111422]/90 backdrop-blur-xl border-white/[0.06]' : 'bg-white/90 backdrop-blur-xl border-gray-200'
                     }`}
                 >
                   <Sidebar
