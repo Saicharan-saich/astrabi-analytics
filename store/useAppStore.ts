@@ -2,9 +2,102 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { Dataset, DashboardItem, DashboardDefinition, AnalysisResult, QueryConfig, FormattingConfig, Tab } from '../types';
+import { saveCloudDashboard, fetchCloudDashboards, deleteCloudDashboard as deleteCloudDb } from '../services/dashboardCloudSync';
 
 // ── Helpers ──────────────────────────────────────────────────────
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+
+// ── Cloud Sync for Multi-Dashboard State ─────────────────────────
+let dashPushTimer: ReturnType<typeof setTimeout> | null = null;
+function debouncedDashboardPush(dashboards: DashboardDefinition[]) {
+    if (dashPushTimer) clearTimeout(dashPushTimer);
+    dashPushTimer = setTimeout(() => {
+        const token = localStorage.getItem('qi_token');
+        if (!token) { console.warn('[DashSync] No token — skip push'); return; }
+        console.log(`[DashSync] 📤 Pushing ${dashboards.length} dashboards to cloud...`);
+        // Push each dashboard as a separate cloud record
+        Promise.all(dashboards.map(d => saveCloudDashboard({
+            id: d.id,
+            name: d.name,
+            dataset_id: null,
+            items: d.items,
+            layout: d.layout as any[] | null,
+            filters: d.filters || [],
+            formatting: {},
+        }))).then(results => {
+            const ok = results.filter(Boolean).length;
+            console.log(`[DashSync] ✅ ${ok}/${dashboards.length} dashboards pushed to cloud`);
+        }).catch(err => {
+            console.error('[DashSync] ❌ Push failed:', err?.message || err);
+        });
+    }, 500);
+}
+
+/** Immediately push dashboards (for logout). Returns a promise. */
+export async function flushDashboardsToCloud(): Promise<boolean> {
+    if (dashPushTimer) { clearTimeout(dashPushTimer); dashPushTimer = null; }
+    const token = localStorage.getItem('qi_token');
+    if (!token) return false;
+    const dashboards = useAppStore.getState().dashboards;
+    if (!dashboards || dashboards.length === 0) return true;
+    console.log(`[DashSync] 📤 Flushing ${dashboards.length} dashboards to cloud (logout)...`);
+    try {
+        const results = await Promise.all(dashboards.map(d => saveCloudDashboard({
+            id: d.id,
+            name: d.name,
+            dataset_id: null,
+            items: d.items,
+            layout: d.layout as any[] | null,
+            filters: d.filters || [],
+            formatting: {},
+        })));
+        const ok = results.filter(Boolean).length;
+        console.log(`[DashSync] ✅ Flushed ${ok}/${dashboards.length} dashboards`);
+        return ok > 0;
+    } catch (err) {
+        console.error('[DashSync] ❌ Flush failed:', err);
+        return false;
+    }
+}
+
+/** Pull dashboards from cloud and merge into local state. Call on login. */
+export async function syncDashboardsFromCloud(): Promise<void> {
+    const token = localStorage.getItem('qi_token');
+    if (!token) return;
+    try {
+        console.log('[DashSync] 📥 Pulling dashboards from cloud...');
+        const cloudDashboards = await fetchCloudDashboards();
+        if (cloudDashboards.length > 0) {
+            const restored: DashboardDefinition[] = cloudDashboards.map(cd => ({
+                id: cd.id,
+                name: cd.name,
+                items: cd.items || [],
+                layout: cd.layout || null,
+                filters: cd.filters || [],
+                createdAt: cd.created_at ? new Date(cd.created_at).getTime() : Date.now(),
+            }));
+            useAppStore.setState({
+                dashboards: restored,
+                activeDashboardId: restored[0].id,
+                items: restored[0].items,
+                dashboardLayout: restored[0].layout,
+                dashboardFilters: restored[0].filters || [],
+            });
+            console.log(`[DashSync] ✅ Restored ${restored.length} dashboards (${restored.reduce((s, d) => s + d.items.length, 0)} total items) from cloud`);
+        } else {
+            // Cloud is empty — push local if we have any
+            const local = useAppStore.getState().dashboards;
+            if (local.length > 0) {
+                console.log(`[DashSync] Cloud empty, pushing ${local.length} local dashboards...`);
+                debouncedDashboardPush(local);
+            } else {
+                console.log('[DashSync] Both cloud and local empty — fresh start');
+            }
+        }
+    } catch (err) {
+        console.error('[DashSync] ❌ Pull failed:', err);
+    }
+}
 
 interface UIState {
     activeTab: Tab;
@@ -238,6 +331,7 @@ export const useAppStore = create<AppStore>()(
                         ...syncFromActive(newDashboards, id),
                     };
                 });
+                debouncedDashboardPush(get().dashboards);
                 return id;
             },
 
@@ -284,27 +378,34 @@ export const useAppStore = create<AppStore>()(
                 ...syncFromActive(state.dashboards, id),
             })),
 
-            addItemToDashboard: (dashboardId, item) => set((state) => {
-                const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
-                    ...d,
-                    items: [...d.items, item],
-                }));
-                return {
-                    dashboards: newDashboards,
-                    ...syncFromActive(newDashboards, state.activeDashboardId),
-                };
-            }),
+            addItemToDashboard: (dashboardId, item) => {
+                console.log(`[DashSync] 📌 Pinning "${item.title || item.id}" to dashboard ${dashboardId}`);
+                set((state) => {
+                    const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
+                        ...d,
+                        items: [...d.items, item],
+                    }));
+                    return {
+                        dashboards: newDashboards,
+                        ...syncFromActive(newDashboards, state.activeDashboardId),
+                    };
+                });
+                debouncedDashboardPush(get().dashboards);
+            },
 
-            removeItemFromDashboard: (dashboardId, itemId) => set((state) => {
-                const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
-                    ...d,
-                    items: d.items.filter(i => i.id !== itemId),
-                }));
-                return {
-                    dashboards: newDashboards,
-                    ...syncFromActive(newDashboards, state.activeDashboardId),
-                };
-            }),
+            removeItemFromDashboard: (dashboardId, itemId) => {
+                set((state) => {
+                    const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
+                        ...d,
+                        items: d.items.filter(i => i.id !== itemId),
+                    }));
+                    return {
+                        dashboards: newDashboards,
+                        ...syncFromActive(newDashboards, state.activeDashboardId),
+                    };
+                });
+                debouncedDashboardPush(get().dashboards);
+            },
 
             updateItemInDashboard: (dashboardId, item) => set((state) => {
                 const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({

@@ -212,28 +212,17 @@ export const useAuthStore = create<AuthState>()(
                 const userId = get().currentUser?.id;
                 if (userId) {
                     saveUserAppData(userId);
-                    // ── Cloud Sync: push dashboard to PostgreSQL BEFORE clearing token ──
+                    // ── Cloud Sync: flush ALL dashboards to PostgreSQL BEFORE clearing token ──
                     try {
-                        // Dynamic import to avoid circular dependency (ESM-compatible)
-                        const { useDashboardStore } = await import('./useDashboardStore');
-                        const dashState = useDashboardStore.getState();
-                        if (dashState.items && dashState.items.length > 0) {
-                            // Push directly using the sync service (no require() needed)
-                            const ok = await pushDashboardToCloud({
-                                items: dashState.items,
-                                layout: dashState.dashboardLayout,
-                                filters: dashState.dashboardFilters as any[],
-                                formatting: dashState.formatting as any,
-                                datasetId: dashState.selectedDatasetId,
-                            });
-                            if (ok) {
-                                console.log('[Logout] ✅ Dashboard pushed to cloud before logout');
-                            } else {
-                                console.error('[Logout] ⚠️ Dashboard push returned false');
-                            }
+                        const { flushDashboardsToCloud } = await import('./useAppStore');
+                        const ok = await flushDashboardsToCloud();
+                        if (ok) {
+                            console.log('[Logout] ✅ Dashboards flushed to cloud before logout');
+                        } else {
+                            console.warn('[Logout] ⚠️ Dashboard flush returned false');
                         }
                     } catch (err) {
-                        console.error('[Logout] ❌ Dashboard push failed:', err);
+                        console.error('[Logout] ❌ Dashboard flush failed:', err);
                     }
                 }
                 resetUserData();

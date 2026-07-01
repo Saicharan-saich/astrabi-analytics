@@ -94,7 +94,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
 
             // Cloud Sync: pull saved dashboards from PostgreSQL (await to restore before UI loads)
             try {
-                await useDashboardStore.getState().syncFromCloud();
+                const { syncDashboardsFromCloud } = await import('../store/useAppStore');
+                await syncDashboardsFromCloud();
                 console.log('[LoginPage] ✅ Dashboard sync complete');
             } catch (syncErr) {
                 console.error('[LoginPage] ❌ Dashboard sync failed:', syncErr);
