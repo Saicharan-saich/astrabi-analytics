@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { ResponsiveGridLayout as RGLBase } from 'react-grid-layout';
-const ResponsiveGridLayout = RGLBase as any;
+import { Responsive as RGLResponsive } from 'react-grid-layout';
+const ResponsiveGridLayout = RGLResponsive as any;
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import { ChartVisualization } from './ChartVisualization';
@@ -414,7 +414,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
         minW: 4,
         minH: 4,
       }));
-      console.log('[Dashboard Layout v2] Generated fresh 2-col layout:', result.map(l => `${l.i.slice(0,8)}→(${l.x},${l.y})`));
+      console.log('[Dashboard Layout v2] REGENERATED fresh layout:');
+      result.forEach(l => console.log(`  → ${l.i} at x=${l.x} y=${l.y} w=${l.w} h=${l.h}`));
     } else {
       // Use persisted layout (already validated as non-overlapping)
       result = items.map(item => ({
@@ -422,7 +423,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
         minW: 4,
         minH: 4,
       }));
-      console.log('[Dashboard Layout v2] Using persisted layout:', result.map(l => `${l.i.slice(0,8)}→(${l.x},${l.y})`));
+      console.log('[Dashboard Layout v2] Using PERSISTED layout:');
+      result.forEach(l => console.log(`  → ${l.i} at x=${l.x} y=${l.y} w=${l.w} h=${l.h}`));
     }
 
     return result;
