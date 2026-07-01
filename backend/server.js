@@ -1691,7 +1691,7 @@ app.get('/api/dashboards', async (req, res) => {
     try {
         const { rows } = await authPool.query(
             'SELECT id, name, dataset_id, items, layout, filters, formatting, created_at, updated_at FROM dashboards WHERE user_id = $1 ORDER BY updated_at DESC',
-            [user.id]
+            [user.userId]
         );
         res.json({ dashboards: rows });
     } catch (err) {
@@ -1709,7 +1709,7 @@ app.get('/api/dashboards/:id', async (req, res) => {
     try {
         const { rows } = await authPool.query(
             'SELECT * FROM dashboards WHERE id = $1 AND user_id = $2',
-            [req.params.id, user.id]
+            [req.params.id, user.userId]
         );
         if (rows.length === 0) return res.status(404).json({ error: 'Dashboard not found' });
         res.json(rows[0]);
@@ -1742,7 +1742,7 @@ app.post('/api/dashboards', async (req, res) => {
                 updated_at = NOW()`,
             [
                 id,
-                user.id,
+                user.userId,
                 name || 'My Dashboard',
                 dataset_id || null,
                 JSON.stringify(items || []),
@@ -1768,7 +1768,7 @@ app.delete('/api/dashboards/:id', async (req, res) => {
     try {
         const result = await authPool.query(
             'DELETE FROM dashboards WHERE id = $1 AND user_id = $2',
-            [req.params.id, user.id]
+            [req.params.id, user.userId]
         );
         if (result.rowCount === 0) return res.status(404).json({ error: 'Dashboard not found' });
         console.log(`[Dashboards] Deleted dashboard ${req.params.id} for user ${user.email}`);
