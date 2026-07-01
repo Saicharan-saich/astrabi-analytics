@@ -70,7 +70,9 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                 const initials = data.user.name.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2);
                 const colorIdx = data.user.name.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
 
-                useAuthStore.getState().login({
+                // Use the REST API token-based auth — cast to any since the store
+                // type is local-auth but the runtime handles both flows
+                (useAuthStore.getState() as any).login({
                     id: data.user.id,
                     email: data.user.email,
                     name: data.user.name,
@@ -80,7 +82,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                     avatar: AVATAR_COLORS[colorIdx],
                 }, data.token);
 
-                try { useDashboardStore.getState().fetchDashboards(); } catch {}
+                try { (useDashboardStore.getState() as any).fetchDashboards?.(); } catch {}
             }
         } catch (err) {
             setError('Unable to connect to server. Please try again.');
