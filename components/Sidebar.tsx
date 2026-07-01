@@ -355,7 +355,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                                 <KeyRound className="w-4 h-4" />
                             </button>
                             <button
-                                onClick={logout}
+                                onClick={async () => await logout()}
                                 className={`p-1.5 rounded-lg transition-all duration-200 shrink-0 ${isDark ? 'text-gray-500 hover:text-red-400 hover:bg-red-500/10' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
                                     }`}
                                 title="Sign Out"
