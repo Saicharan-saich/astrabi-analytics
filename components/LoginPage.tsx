@@ -106,7 +106,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
     };
 
     return (
-        <div className="min-h-screen bg-mesh-animated flex items-center justify-center relative overflow-hidden">
+        <div className="min-h-screen bg-mesh-animated flex items-center justify-center relative overflow-y-auto py-6">
             {/* Ambient orbs */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden">
                 <div className="absolute -top-32 -left-32 w-[500px] h-[500px] rounded-full bg-indigo-500/[0.07] blur-[100px] animate-float-slow" />
@@ -127,20 +127,20 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
 
             <div className="relative z-10 w-full max-w-sm px-6">
                 {/* Logo & Brand */}
-                <div className="text-center mb-6">
-                    <div className="inline-flex items-center justify-center mb-4">
+                <div className="text-center mb-4">
+                    <div className="inline-flex items-center justify-center mb-3">
                         <div className="relative">
                             <div className="absolute inset-0 rounded-2xl bg-indigo-500/20 blur-xl animate-pulse-glow" />
-                            <img src="/logo.jpg" alt="QuickInsight" className="relative w-14 h-14 rounded-2xl object-cover shadow-xl ring-1 ring-white/10" />
+                            <img src="/logo.jpg" alt="QuickInsight" className="relative w-12 h-12 rounded-2xl object-cover shadow-xl ring-1 ring-white/10" />
                         </div>
                     </div>
-                    <h1 className="text-3xl font-extrabold tracking-tight mb-1">
+                    <h1 className="text-2xl font-extrabold tracking-tight mb-0.5">
                         <span className="gradient-text">QuickInsight</span>
                     </h1>
                     {/* Rotating tagline */}
                     <div className="h-5 flex items-center justify-center overflow-hidden">
-                        <p key={taglineIdx} className="text-sm text-gray-400 flex items-center gap-1.5 animate-fadeIn">
-                            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                        <p key={taglineIdx} className="text-xs text-gray-400 flex items-center gap-1.5 animate-fadeIn">
+                            <Sparkles className="w-3 h-3 text-amber-400" />
                             {taglines[taglineIdx]}
                         </p>
                     </div>
@@ -148,15 +148,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
 
                 {/* Login/Register Card */}
                 <div className="glass-frost rounded-2xl overflow-hidden border-gradient glow-indigo">
-                    <div className="px-6 pt-6 pb-5">
-                        <h2 className="text-base font-bold text-white mb-0.5">
+                    <div className="px-5 pt-5 pb-4">
+                        <h2 className="text-sm font-bold text-white mb-0.5">
                             {mode === 'login' ? 'Welcome back' : 'Create your account'}
                         </h2>
-                        <p className="text-gray-400 text-xs mb-5">
+                        <p className="text-gray-400 text-[11px] mb-4">
                             {mode === 'login' ? 'Sign in to your workspace' : 'Get started with QuickInsight'}
                         </p>
 
-                        <form onSubmit={handleSubmit} className="space-y-3.5">
+                        <form onSubmit={handleSubmit} className="space-y-3">
                             {mode === 'register' && (
                                 <div>
                                     <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
@@ -222,7 +222,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                             <button
                                 type="submit"
                                 disabled={isLoading}
-                                className="w-full py-3 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 hover:from-indigo-500 hover:via-violet-500 hover:to-purple-500 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 disabled:opacity-50 btn-shimmer btn-premium text-sm"
+                                className="w-full py-2.5 bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 hover:from-indigo-500 hover:via-violet-500 hover:to-purple-500 text-white font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 disabled:opacity-50 btn-shimmer btn-premium text-sm"
                             >
                                 {isLoading ? (
                                     <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -237,10 +237,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                         </form>
 
                         {/* Toggle login/register */}
-                        <div className="mt-4 text-center">
+                        <div className="mt-3 text-center">
                             <button
                                 onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}
-                                className="text-sm text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
+                                className="text-xs text-indigo-400 hover:text-indigo-300 font-medium transition-colors"
                             >
                                 {mode === 'login' ? "Don't have an account? Register" : 'Already have an account? Sign In'}
                             </button>
@@ -257,28 +257,28 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                     </div>
 
                     {/* Guest Login */}
-                    <div className="px-6 py-4">
+                    <div className="px-5 py-3">
                         <button
                             onClick={handleGuestLogin}
-                            className="w-full py-2.5 glass-input hover:border-indigo-500/30 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 text-sm text-gray-300 hover:text-white"
+                            className="w-full py-2 glass-input hover:border-indigo-500/30 font-semibold rounded-xl transition-all flex items-center justify-center gap-2 text-sm text-gray-300 hover:text-white"
                         >
                             <Users className="w-4 h-4" />
                             Continue as Guest
                         </button>
-                        <p className="text-[10px] text-gray-500 text-center mt-2">
+                        <p className="text-[10px] text-gray-500 text-center mt-1.5">
                             View-only access — no account needed
                         </p>
                     </div>
                 </div>
 
                 {/* Feature highlights */}
-                <div className="flex items-center justify-center gap-6 mt-6">
+                <div className="flex items-center justify-center gap-5 mt-4">
                     {[
-                        { icon: <BarChart2 className="w-3.5 h-3.5" />, label: '20+ Charts' },
-                        { icon: <Brain className="w-3.5 h-3.5" />, label: 'AI Powered' },
-                        { icon: <Zap className="w-3.5 h-3.5" />, label: 'Real-time' },
+                        { icon: <BarChart2 className="w-3 h-3" />, label: '20+ Charts' },
+                        { icon: <Brain className="w-3 h-3" />, label: 'AI Powered' },
+                        { icon: <Zap className="w-3 h-3" />, label: 'Real-time' },
                     ].map((feat, i) => (
-                        <div key={i} className="flex items-center gap-1.5 text-[11px] text-gray-500">
+                        <div key={i} className="flex items-center gap-1 text-[10px] text-gray-500">
                             <span className="text-indigo-400">{feat.icon}</span>
                             {feat.label}
                         </div>
@@ -286,14 +286,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                 </div>
 
                 {/* Footer */}
-                <div className="mt-5 text-center space-y-2">
-                    <p className="text-[10px] text-gray-600 font-mono">
-                        QuickInsight v3.0
-                    </p>
+                <div className="mt-3 text-center">
+                    <span className="text-[10px] text-gray-600 font-mono">v3.0</span>
                     {onShowLegal && (
-                        <button onClick={onShowLegal} className="text-[11px] text-gray-500 hover:text-indigo-400 transition-colors flex items-center gap-1 mx-auto">
-                            <Shield className="w-3 h-3" /> Privacy & Terms
-                        </button>
+                        <>
+                            <span className="text-[10px] text-gray-700 mx-1.5">·</span>
+                            <button onClick={onShowLegal} className="text-[10px] text-gray-500 hover:text-indigo-400 transition-colors inline-flex items-center gap-1">
+                                <Shield className="w-2.5 h-2.5" /> Privacy & Terms
+                            </button>
+                        </>
                     )}
                 </div>
             </div>
