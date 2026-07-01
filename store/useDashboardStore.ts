@@ -81,8 +81,12 @@ interface HistoryEntry {
 /** Debounce cloud push — avoid flooding on rapid changes */
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 function debouncedCloudPush(state: DashboardState) {
+    const itemCount = state.items?.length || 0;
+    const hasToken = !!localStorage.getItem('qi_token');
+    console.log(`[Dashboard] 📤 Scheduling cloud push (${itemCount} items, token=${hasToken})`);
     if (pushTimer) clearTimeout(pushTimer);
     pushTimer = setTimeout(() => {
+        console.log(`[Dashboard] 📤 Executing cloud push NOW...`);
         pushDashboardToCloud({
             items: state.items,
             layout: state.dashboardLayout,
@@ -90,11 +94,15 @@ function debouncedCloudPush(state: DashboardState) {
             formatting: state.formatting as any,
             datasetId: state.selectedDatasetId,
         }).then(ok => {
-            if (!ok) console.warn('[Dashboard] ⚠️ Cloud push failed — will retry on next change');
+            if (ok) {
+                console.log('[Dashboard] ✅ Cloud push succeeded!');
+            } else {
+                console.warn('[Dashboard] ⚠️ Cloud push returned false — will retry on next change');
+            }
         }).catch(err => {
             console.error('[Dashboard] ❌ Cloud push error:', err?.message || err);
         });
-    }, 500); // 500ms debounce — fast enough to push before logout
+    }, 500); // 500ms debounce
 }
 
 export const useDashboardStore = create<DashboardState>()(
@@ -103,6 +111,7 @@ export const useDashboardStore = create<DashboardState>()(
             // Dashboard items
             items: [],
             addItem: (item) => {
+                console.log(`[Dashboard] 📌 Pinning item "${item.title || item.id}" to dashboard`);
                 set((state) => ({ items: [...state.items, item] }));
                 debouncedCloudPush(get());
             },
