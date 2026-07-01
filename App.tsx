@@ -260,7 +260,7 @@ function App() {
           const data = await res.json().catch(() => ({}));
           if (res.status === 401) {
             console.warn('[Session] Token revoked or expired — logging out');
-            logout();
+            await logout();
             // Force reload to show login page
             window.location.reload();
           }
@@ -1295,7 +1295,7 @@ function App() {
                         <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#141825]" />
                       </div>
                       <button
-                        onClick={() => { clearSessionCredentials(); logout(); }}
+                        onClick={async () => { clearSessionCredentials(); await logout(); }}
                         className={`p-1.5 rounded-lg transition-all duration-200 ${theme === 'dark' ? 'text-gray-500 hover:text-red-400 hover:bg-red-500/10' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'
                           }`}
                         title="Sign Out"
