@@ -19,6 +19,9 @@ interface QuestionBuilderProps {
     initialComparison?: string;
     initialComparisonGrain?: string;
     initialComparisonOffset?: number;
+    initialSecondaryMetrics?: string[];
+    initialSecondaryMetricVisuals?: Record<string, string>;
+    initialSecondaryMetricAggregations?: Record<string, string>;
     asOfDate: string;
     onDateChange: (date: string) => void;
     anchorColumn?: string;
@@ -72,6 +75,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     initialComparison = '',
     initialComparisonGrain = 'month',
     initialComparisonOffset = 1,
+    initialSecondaryMetrics = [],
+    initialSecondaryMetricVisuals = {},
+    initialSecondaryMetricAggregations = {},
     asOfDate,
     onDateChange,
     anchorColumn,
@@ -93,9 +99,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const [nextFilterId, setNextFilterId] = useState(1);
 
     // Secondary metrics for combo/dual-axis charts
-    const [secondaryMetrics, setSecondaryMetrics] = useState<string[]>([]);
-    const [secondaryMetricVisuals, setSecondaryMetricVisuals] = useState<Record<string, string>>({});
-    const [secondaryMetricAggregations, setSecondaryMetricAggregations] = useState<Record<string, string>>({});
+    const [secondaryMetrics, setSecondaryMetrics] = useState<string[]>(initialSecondaryMetrics);
+    const [secondaryMetricVisuals, setSecondaryMetricVisuals] = useState<Record<string, string>>(initialSecondaryMetricVisuals);
+    const [secondaryMetricAggregations, setSecondaryMetricAggregations] = useState<Record<string, string>>(initialSecondaryMetricAggregations);
 
     // Secondary dimensions for multi-dimension grouping
     const [secondaryDimensions, setSecondaryDimensions] = useState<string[]>([]);
