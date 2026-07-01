@@ -384,25 +384,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
       }
     });
 
-    return items.map((item, i) => {
+    // Track new items separately so they tile correctly in 2-column layout
+    let newItemIndex = 0;
+
+    return items.map((item) => {
       // If this item exists in the persisted layout, reuse its config
       if (layoutMap.has(item.id)) {
         return layoutMap.get(item.id);
       }
 
       // Otherwise, create a new layout item at the bottom
+      // Place in a 2-column grid: col 0 (x=0) then col 1 (x=6), then next row
+      const col = newItemIndex % 2;
+      const row = Math.floor(newItemIndex / 2);
       const newItem = {
         i: item.id,
-        x: (i % 2) * 6,
-        y: maxY,
+        x: col * 6,
+        y: maxY + row * 6,
         w: 6,
         h: 6,
         minW: 4,
         minH: 4,
       };
 
-      if (i % 2 === 1) maxY += 6;
-
+      newItemIndex++;
       return newItem;
     });
   }, [items, dashboardLayout]);
