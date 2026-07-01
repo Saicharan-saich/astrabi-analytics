@@ -46,59 +46,72 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
         setError('');
         setIsLoading(true);
 
-        // Try REST API first, fall back to local Zustand auth
-        try {
-            const endpoint = mode === 'login' ? '/api/auth/login' : '/api/auth/register';
-            const body = mode === 'login'
-                ? { email: email.trim(), password }
-                : { email: email.trim(), name: name.trim(), password, role: 'contributor' };
-
-            const res = await fetch(`${API_BASE}${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-
-            const data = await res.json();
-
-            if (!res.ok) {
-                setError(data.error || `${mode === 'login' ? 'Login' : 'Registration'} failed`);
+        // ── Primary: Local Zustand auth (always works offline) ──
+        if (mode === 'login') {
+            const result = useAuthStore.getState().login(email.trim(), password);
+            if (result.success) {
+                setIsLoading(false);
+                return; // Logged in locally — done
+            }
+            // If local login fails, try REST API as fallback
+            try {
+                const res = await fetch(`${API_BASE}/api/auth/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email.trim(), password }),
+                });
+                const data = await res.json();
+                if (res.ok && data.token && data.user) {
+                    const colorIdx = data.user.name.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
+                    (useAuthStore.getState() as any).login({
+                        id: data.user.id, email: data.user.email, name: data.user.name,
+                        role: mapRole(data.user.role), passwordHash: '', createdAt: Date.now(),
+                        avatar: AVATAR_COLORS[colorIdx],
+                    }, data.token);
+                    try { (useDashboardStore.getState() as any).fetchDashboards?.(); } catch {}
+                    setIsLoading(false);
+                    return;
+                }
+                // Both local and REST failed — show the local error (more relevant)
+                setError(result.error || 'Invalid email or password');
+            } catch {
+                // REST API unreachable — show local error
+                setError(result.error || 'Invalid email or password');
+            }
+        } else {
+            // Register mode
+            const result = useAuthStore.getState().register(email.trim(), name.trim(), password);
+            if (result.success) {
+                // Auto-login after registration
+                useAuthStore.getState().login(email.trim(), password);
                 setIsLoading(false);
                 return;
             }
-
-            if (data.token && data.user) {
-                const colorIdx = data.user.name.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
-
-                // REST API token-based auth — cast to any since store type is local-auth
-                (useAuthStore.getState() as any).login({
-                    id: data.user.id,
-                    email: data.user.email,
-                    name: data.user.name,
-                    role: mapRole(data.user.role),
-                    passwordHash: '',
-                    createdAt: Date.now(),
-                    avatar: AVATAR_COLORS[colorIdx],
-                }, data.token);
-
-                try { (useDashboardStore.getState() as any).fetchDashboards?.(); } catch {}
-            }
-        } catch {
-            // REST API unavailable — fall back to local Zustand auth
-            if (mode === 'login') {
-                const result = useAuthStore.getState().login(email.trim(), password);
-                if (!result.success) {
-                    setError(result.error || 'Login failed');
+            // Try REST API registration
+            try {
+                const res = await fetch(`${API_BASE}/api/auth/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: email.trim(), name: name.trim(), password, role: 'contributor' }),
+                });
+                const data = await res.json();
+                if (res.ok && data.token && data.user) {
+                    const colorIdx = data.user.name.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0) % AVATAR_COLORS.length;
+                    (useAuthStore.getState() as any).login({
+                        id: data.user.id, email: data.user.email, name: data.user.name,
+                        role: mapRole(data.user.role), passwordHash: '', createdAt: Date.now(),
+                        avatar: AVATAR_COLORS[colorIdx],
+                    }, data.token);
+                    setIsLoading(false);
+                    return;
                 }
-            } else {
-                const result = useAuthStore.getState().register(email.trim(), name.trim(), password);
-                if (!result.success) {
-                    setError(result.error || 'Registration failed');
-                }
+                setError(result.error || 'Registration failed');
+            } catch {
+                setError(result.error || 'Registration failed');
             }
-        } finally {
-            setIsLoading(false);
         }
+
+        setIsLoading(false);
     };
 
     const handleGuestLogin = () => {
