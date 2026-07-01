@@ -367,92 +367,94 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   // Use persisted layout if available and matches current items
   // Robustly reconciling persisted layout with current items
   const layout = useMemo(() => {
-    // 1. Create a map of existing layout items for quick lookup
+    console.log('[Dashboard Layout v2] Computing layout for', items.length, 'items, persisted:', dashboardLayout?.length || 0);
+
+    // Helper: check if two layout items collide
+    const collides = (a: any, b: any) => {
+      if (a.i === b.i) return false;
+      const xOverlap = a.x < b.x + b.w && a.x + a.w > b.x;
+      const yOverlap = a.y < b.y + b.h && a.y + b.h > b.y;
+      return xOverlap && yOverlap;
+    };
+
+    // 1. Try to use persisted layout
     const layoutMap = new Map();
     if (dashboardLayout && Array.isArray(dashboardLayout)) {
       dashboardLayout.forEach((l: any) => layoutMap.set(l.i, l));
     }
 
-    // 2. Determine where to place new items (below everything else)
-    let maxY = 0;
-    const presentIds = new Set(items.map(i => i.id));
-    layoutMap.forEach((l: any) => {
-      if (presentIds.has(l.i)) {
-        if ((l.y + l.h) > maxY) maxY = l.y + l.h;
-      }
-    });
-
-    // Track new items separately so they tile correctly in 2-column layout
-    let newItemIndex = 0;
-
-    const rawLayout = items.map((item) => {
-      if (layoutMap.has(item.id)) {
-        return { ...layoutMap.get(item.id) };
-      }
-      const col = newItemIndex % 2;
-      const row = Math.floor(newItemIndex / 2);
-      const newItem = {
-        i: item.id,
-        x: col * 6,
-        y: maxY + row * 6,
-        w: 6,
-        h: 6,
-        minW: 4,
-        minH: 4,
-      };
-      newItemIndex++;
-      return newItem;
-    });
-
-    // 3. Compact vertically — resolve any overlaps
-    // Sort by y then x so we process top-left items first
-    rawLayout.sort((a: any, b: any) => a.y - b.y || a.x - b.x);
-
-    // For each item, push it down if it overlaps with any item above it
-    for (let idx = 0; idx < rawLayout.length; idx++) {
-      const cur = rawLayout[idx];
-      for (let j = 0; j < idx; j++) {
-        const other = rawLayout[j];
-        // Check collision: overlapping x range AND overlapping y range
-        const xOverlap = cur.x < other.x + other.w && cur.x + cur.w > other.x;
-        const yOverlap = cur.y < other.y + other.h && cur.y + cur.h > other.y;
-        if (xOverlap && yOverlap) {
-          // Push current item below the colliding item
-          cur.y = other.y + other.h;
+    // 2. Check if persisted layout has any overlaps
+    const presentIds = items.map(i => i.id);
+    const persistedEntries = presentIds.map(id => layoutMap.get(id)).filter(Boolean);
+    let hasOverlaps = false;
+    for (let i = 0; i < persistedEntries.length && !hasOverlaps; i++) {
+      for (let j = i + 1; j < persistedEntries.length; j++) {
+        const a = persistedEntries[i];
+        const b = persistedEntries[j];
+        const xOvr = a.x < b.x + b.w && a.x + a.w > b.x;
+        const yOvr = a.y < b.y + b.h && a.y + a.h > b.y;
+        if (xOvr && yOvr) {
+          hasOverlaps = true;
+          console.warn('[Dashboard Layout v2] Overlap detected between', a.i, 'and', b.i, '→ regenerating clean layout');
+          break;
         }
       }
     }
 
-    return rawLayout;
+    // 3. Generate layout: clean grid if overlaps or missing entries, otherwise use persisted
+    let result: any[];
+    if (hasOverlaps || persistedEntries.length < items.length) {
+      // Generate a fresh 2-column layout for ALL items
+      result = items.map((item, idx) => ({
+        i: item.id,
+        x: (idx % 2) * 6,
+        y: Math.floor(idx / 2) * 6,
+        w: 6,
+        h: 6,
+        minW: 4,
+        minH: 4,
+      }));
+      console.log('[Dashboard Layout v2] Generated fresh 2-col layout:', result.map(l => `${l.i.slice(0,8)}→(${l.x},${l.y})`));
+    } else {
+      // Use persisted layout (already validated as non-overlapping)
+      result = items.map(item => ({
+        ...layoutMap.get(item.id),
+        minW: 4,
+        minH: 4,
+      }));
+      console.log('[Dashboard Layout v2] Using persisted layout:', result.map(l => `${l.i.slice(0,8)}→(${l.x},${l.y})`));
+    }
+
+    return result;
   }, [items, dashboardLayout]);
 
   // Generate responsive layouts for all breakpoints
   const allLayouts = useMemo(() => {
-    // lg: 12 cols — use user-persisted layout directly
+    // lg: 12 cols — use computed layout directly
     const lg = layout;
 
-    // md: 8 cols — scale x/w proportionally but preserve user height
+    // md: 8 cols — scale to 2-column or single-column
     const md = layout.map((item: any) => ({
       ...item,
-      x: Math.min(Math.floor(item.x * 8 / 12), 4),
-      w: Math.min(Math.max(Math.floor(item.w * 8 / 12), 4), 8),
-    }));
-
-    // sm: 4 cols — full width single column, preserve height
-    const sm = layout.map((item: any, i: number) => ({
-      ...item,
-      x: 0,
+      x: item.x >= 6 ? 4 : 0,
       w: 4,
-      y: i * item.h,
     }));
 
-    // xs: 2 cols — full width single column, preserve height
-    const xs = layout.map((item: any, i: number) => ({
-      ...item,
-      x: 0,
-      w: 2,
-      y: i * item.h,
-    }));
+    // sm: 4 cols — single column stack
+    let smY = 0;
+    const sm = layout.map((item: any) => {
+      const entry = { ...item, x: 0, w: 4, y: smY };
+      smY += item.h;
+      return entry;
+    });
+
+    // xs: 2 cols — single column stack
+    let xsY = 0;
+    const xs = layout.map((item: any) => {
+      const entry = { ...item, x: 0, w: 2, y: xsY };
+      xsY += item.h;
+      return entry;
+    });
 
     return { lg, md, sm, xs };
   }, [layout]);
