@@ -375,8 +375,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
 
     // 2. Determine where to place new items (below everything else)
     let maxY = 0;
-    // Calculate the bottom-most point of the existing *persisted* layout
-    // We only care about items that are still present to avoid gaps from deleted items
     const presentIds = new Set(items.map(i => i.id));
     layoutMap.forEach((l: any) => {
       if (presentIds.has(l.i)) {
@@ -387,14 +385,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     // Track new items separately so they tile correctly in 2-column layout
     let newItemIndex = 0;
 
-    return items.map((item) => {
-      // If this item exists in the persisted layout, reuse its config
+    const rawLayout = items.map((item) => {
       if (layoutMap.has(item.id)) {
-        return layoutMap.get(item.id);
+        return { ...layoutMap.get(item.id) };
       }
-
-      // Otherwise, create a new layout item at the bottom
-      // Place in a 2-column grid: col 0 (x=0) then col 1 (x=6), then next row
       const col = newItemIndex % 2;
       const row = Math.floor(newItemIndex / 2);
       const newItem = {
@@ -406,10 +400,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
         minW: 4,
         minH: 4,
       };
-
       newItemIndex++;
       return newItem;
     });
+
+    // 3. Compact vertically — resolve any overlaps
+    // Sort by y then x so we process top-left items first
+    rawLayout.sort((a: any, b: any) => a.y - b.y || a.x - b.x);
+
+    // For each item, push it down if it overlaps with any item above it
+    for (let idx = 0; idx < rawLayout.length; idx++) {
+      const cur = rawLayout[idx];
+      for (let j = 0; j < idx; j++) {
+        const other = rawLayout[j];
+        // Check collision: overlapping x range AND overlapping y range
+        const xOverlap = cur.x < other.x + other.w && cur.x + cur.w > other.x;
+        const yOverlap = cur.y < other.y + other.h && cur.y + cur.h > other.y;
+        if (xOverlap && yOverlap) {
+          // Push current item below the colliding item
+          cur.y = other.y + other.h;
+        }
+      }
+    }
+
+    return rawLayout;
   }, [items, dashboardLayout]);
 
   // Generate responsive layouts for all breakpoints
