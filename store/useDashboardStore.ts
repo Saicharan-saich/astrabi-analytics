@@ -78,30 +78,6 @@ interface HistoryEntry {
     timestamp: number;
 }
 
-/** Compact a layout array — resolve overlaps by pushing items down */
-function compactLayout(layout: any[], itemIds?: string[]): any[] {
-    if (!layout || !Array.isArray(layout) || layout.length === 0) return layout;
-    // Only keep entries for items that exist (if itemIds provided)
-    let filtered = itemIds
-        ? layout.filter((l: any) => itemIds.includes(l.i))
-        : [...layout];
-    // Sort by y then x (top-left first)
-    filtered.sort((a: any, b: any) => (a.y - b.y) || (a.x - b.x));
-    // Resolve collisions
-    for (let i = 0; i < filtered.length; i++) {
-        const cur = filtered[i];
-        for (let j = 0; j < i; j++) {
-            const other = filtered[j];
-            const xOverlap = cur.x < other.x + other.w && cur.x + cur.w > other.x;
-            const yOverlap = cur.y < other.y + other.h && cur.y + cur.h > other.y;
-            if (xOverlap && yOverlap) {
-                cur.y = other.y + other.h;
-            }
-        }
-    }
-    return filtered;
-}
-
 /** Debounce cloud push — avoid flooding on rapid changes */
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 function debouncedCloudPush(state: DashboardState) {
@@ -136,39 +112,11 @@ export const useDashboardStore = create<DashboardState>()(
             items: [],
             addItem: (item) => {
                 console.log(`[Dashboard] 📌 Pinning item "${item.title || item.id}" to dashboard`);
-                set((state) => {
-                    const newItems = [...state.items, item];
-                    // Compute layout position for the new item below all existing ones
-                    const existingLayout = state.dashboardLayout || [];
-                    let maxY = 0;
-                    existingLayout.forEach((l: any) => {
-                        const bottom = (l.y || 0) + (l.h || 6);
-                        if (bottom > maxY) maxY = bottom;
-                    });
-                    // Place in 2-column grid: check if there's space on the right in the last row
-                    const lastRowItems = existingLayout.filter((l: any) => l.y + l.h > maxY - 6);
-                    const rightSlotFree = !lastRowItems.some((l: any) => l.x >= 6);
-                    const leftSlotFree = !lastRowItems.some((l: any) => l.x < 6);
-                    let newX = 0;
-                    let newY = maxY;
-                    if (lastRowItems.length > 0 && rightSlotFree && !leftSlotFree) {
-                        // Place next to the last item in the same row
-                        newX = 6;
-                        newY = maxY - (lastRowItems[0]?.h || 6);
-                    }
-                    const newLayout = [
-                        ...existingLayout,
-                        { i: item.id, x: newX, y: newY, w: 6, h: 6, minW: 4, minH: 4 }
-                    ];
-                    return { items: newItems, dashboardLayout: newLayout };
-                });
+                set((state) => ({ items: [...state.items, item] }));
                 debouncedCloudPush(get());
             },
             removeItem: (id) => {
-                set((state) => ({
-                    items: state.items.filter((i) => i.id !== id),
-                    dashboardLayout: (state.dashboardLayout || []).filter((l: any) => l.i !== id),
-                }));
+                set((state) => ({ items: state.items.filter((i) => i.id !== id) }));
                 debouncedCloudPush(get());
             },
             updateItem: (updatedItem) => {
@@ -198,8 +146,7 @@ export const useDashboardStore = create<DashboardState>()(
             // Dashboard layout
             dashboardLayout: null,
             setDashboardLayout: (layout) => {
-                const itemIds = get().items.map(i => i.id);
-                set({ dashboardLayout: compactLayout(layout, itemIds) });
+                set({ dashboardLayout: layout });
                 debouncedCloudPush(get());
             },
 
@@ -254,16 +201,13 @@ export const useDashboardStore = create<DashboardState>()(
                     const cloud = await pullDashboardFromCloud(datasetId);
                     if (cloud && (cloud.items || []).length > 0) {
                         // Cloud has data — use it as source of truth
-                        const cloudItems = cloud.items || [];
-                        const cloudLayout = cloud.layout || get().dashboardLayout;
-                        const itemIds = cloudItems.map((i: any) => i.id);
                         set({
-                            items: cloudItems,
-                            dashboardLayout: compactLayout(cloudLayout, itemIds),
+                            items: cloud.items || [],
+                            dashboardLayout: cloud.layout || get().dashboardLayout,
                             dashboardFilters: (cloud.filters || []) as DashboardFilter[],
                             formatting: { ...get().formatting, ...(cloud.formatting || {}) },
                         });
-                        console.log(`[CloudSync] ✅ Restored ${cloudItems.length} dashboard items from cloud`);
+                        console.log(`[CloudSync] ✅ Restored ${(cloud.items || []).length} dashboard items from cloud`);
                     } else {
                         // Cloud is empty — push local to cloud if we have any
                         const localItems = get().items;
