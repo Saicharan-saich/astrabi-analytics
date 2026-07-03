@@ -1,7 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
-import { ResponsiveGridLayout as RGLBase, verticalCompactor } from 'react-grid-layout';
-const ResponsiveGridLayout = RGLBase as any;
-const rglCompactor = verticalCompactor as any;
+import { Responsive, WidthProvider } from 'react-grid-layout';
+const ResponsiveGridLayout = WidthProvider(Responsive) as any;
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
 import { ChartVisualization } from './ChartVisualization';
@@ -1235,11 +1234,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             rowHeight={70}
             width={containerWidth - 48}
             onLayoutChange={handleLayoutChange}
-            isResizable={undefined}
-            isDraggable={undefined}
-            dragConfig={{ enabled: true, handle: ".drag-handle" }}
-            resizeConfig={{ enabled: true }}
-            compactor={rglCompactor}
+            isDraggable={true}
+            isResizable={true}
+            draggableHandle=".drag-handle"
+            compactType="vertical"
             margin={[16, 16]}
             containerPadding={[24, 0]}
           >
