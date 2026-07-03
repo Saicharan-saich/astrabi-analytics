@@ -212,22 +212,23 @@ export const useAuthStore = create<AuthState>()(
                 const userId = get().currentUser?.id;
                 if (userId) {
                     saveUserAppData(userId);
-                    // ── Cloud Sync: flush ALL dashboards to PostgreSQL BEFORE clearing token ──
+                    // ── Cloud Sync: flush dashboards with a 3s timeout so logout never hangs ──
                     try {
                         const { flushDashboardsToCloud } = await import('./useAppStore');
-                        const ok = await flushDashboardsToCloud();
+                        const timeout = new Promise<boolean>(r => setTimeout(() => r(false), 3000));
+                        const ok = await Promise.race([flushDashboardsToCloud(), timeout]);
                         if (ok) {
                             console.log('[Logout] ✅ Dashboards flushed to cloud before logout');
                         } else {
-                            console.warn('[Logout] ⚠️ Dashboard flush returned false');
+                            console.warn('[Logout] ⚠️ Dashboard flush timed out or failed — proceeding with logout');
                         }
                     } catch (err) {
                         console.error('[Logout] ❌ Dashboard flush failed:', err);
                     }
                 }
+                // Always clear state immediately
                 resetUserData();
                 clearSharedAppData();
-                // Clear JWT token and session credentials AFTER cloud push completes
                 localStorage.removeItem('qi_token');
                 try { sessionStorage.removeItem('qi_session_creds'); } catch {}
                 set({ currentUser: null, isAuthenticated: false });
