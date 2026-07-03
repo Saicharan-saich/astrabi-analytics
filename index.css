@@ -1209,15 +1209,12 @@ html.light .ambient-orb-2 {
   border-radius: 16px;
 }
 
-/* ── Print Styles ───────────────────────────────────── */
 @media print {
-  /* ── Page setup ── */
   @page {
     size: A4 landscape;
-    margin: 12mm;
+    margin: 14mm;
   }
 
-  /* ── Reset body ── */
   body {
     background: white !important;
     background-image: none !important;
@@ -1227,46 +1224,37 @@ html.light .ambient-orb-2 {
     print-color-adjust: exact !important;
   }
 
-  /* ── Hide ALL app chrome ── */
+  /* Hide UI chrome — use Tailwind's print:hidden on elements */
   .print\:hidden,
   nav,
   aside,
-  header,
   [data-sidebar],
-  [role="navigation"],
-  button:not(.print\:visible),
   .drag-handle,
   .react-resizable-handle {
     display: none !important;
   }
 
-  /* ── Show print-only elements ── */
+  /* Show print-only elements */
   .print\:block {
     display: block !important;
   }
 
-  /* ── Make content fill page ── */
-  .print\:static {
-    position: static !important;
-  }
-
-  /* ── Scrollable containers ── */
-  .h-full.overflow-y-auto,
-  .overflow-y-auto,
-  .overflow-hidden {
-    height: auto !important;
+  /* Unlock scrollable containers so all cards render */
+  * {
     overflow: visible !important;
   }
 
+  /* Full width content */
   .max-w-\[1900px\] {
     max-width: 100% !important;
-    padding: 0 !important;
+    padding: 0 8px !important;
   }
 
-  /* ── React Grid Layout: linearize cards ── */
+  /* Linearize grid cards — one per row, full width */
   .react-grid-layout {
     height: auto !important;
     position: static !important;
+    display: block !important;
   }
 
   .react-grid-item {
@@ -1274,64 +1262,31 @@ html.light .ambient-orb-2 {
     transform: none !important;
     width: 100% !important;
     height: auto !important;
-    min-height: 350px !important;
-    margin-bottom: 20px !important;
+    min-height: 380px !important;
+    margin-bottom: 24px !important;
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
-  /* ── Card styling for print ── */
+  /* Card inner container */
   .react-grid-item > div {
-    border: 1px solid #e2e8f0 !important;
-    border-radius: 12px !important;
+    border: 1.5px solid #cbd5e1 !important;
+    border-radius: 10px !important;
     box-shadow: none !important;
     background: white !important;
     height: auto !important;
-    min-height: 320px !important;
-    padding: 16px !important;
+    min-height: 360px !important;
   }
 
-  /* ── Card title: dark text ── */
+  /* Dark text for card titles */
   .react-grid-item h3,
   .react-grid-item .font-semibold {
     color: #1e293b !important;
   }
 
-  /* ── Chart canvas: full width ── */
-  .react-grid-item canvas {
-    max-width: 100% !important;
-    height: auto !important;
-    min-height: 250px !important;
-  }
-
-  /* ── Hide card hover actions (edit/delete/refresh buttons on cards) ── */
-  .react-grid-item .opacity-0,
-  .react-grid-item [class*="group-hover"] {
-    display: none !important;
-  }
-
-  /* ── Table styling ── */
-  .react-grid-item table {
-    width: 100% !important;
-    border-collapse: collapse !important;
-  }
-
-  .react-grid-item th,
-  .react-grid-item td {
-    border: 1px solid #e2e8f0 !important;
-    padding: 6px 10px !important;
-    color: #334155 !important;
-    font-size: 11px !important;
-  }
-
-  /* ── Presentation mode ── */
+  /* Presentation slides */
   .presentation-slide {
     position: static !important;
     background: white !important;
-  }
-
-  /* ── Hide scrollbar artifacts ── */
-  ::-webkit-scrollbar {
-    display: none !important;
   }
 }
