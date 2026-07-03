@@ -1211,44 +1211,127 @@ html.light .ambient-orb-2 {
 
 /* ── Print Styles ───────────────────────────────────── */
 @media print {
+  /* ── Page setup ── */
+  @page {
+    size: A4 landscape;
+    margin: 12mm;
+  }
+
+  /* ── Reset body ── */
   body {
     background: white !important;
     background-image: none !important;
     color: black !important;
     overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  .print\\:hidden,
+  /* ── Hide ALL app chrome ── */
+  .print\:hidden,
   nav,
   aside,
+  header,
   [data-sidebar],
-  button:not(.print\\:visible) {
+  [role="navigation"],
+  button:not(.print\:visible),
+  .drag-handle,
+  .react-resizable-handle {
     display: none !important;
   }
 
-  .print\\:static {
+  /* ── Show print-only elements ── */
+  .print\:block {
+    display: block !important;
+  }
+
+  /* ── Make content fill page ── */
+  .print\:static {
     position: static !important;
   }
 
-  .print\\:break-inside-avoid {
-    break-inside: avoid;
+  /* ── Scrollable containers ── */
+  .h-full.overflow-y-auto,
+  .overflow-y-auto,
+  .overflow-hidden {
+    height: auto !important;
+    overflow: visible !important;
   }
 
+  .max-w-\[1900px\] {
+    max-width: 100% !important;
+    padding: 0 !important;
+  }
+
+  /* ── React Grid Layout: linearize cards ── */
   .react-grid-layout {
     height: auto !important;
+    position: static !important;
   }
 
   .react-grid-item {
     position: static !important;
     transform: none !important;
     width: 100% !important;
-    margin-bottom: 24px !important;
+    height: auto !important;
+    min-height: 350px !important;
+    margin-bottom: 20px !important;
     break-inside: avoid;
     page-break-inside: avoid;
   }
 
+  /* ── Card styling for print ── */
+  .react-grid-item > div {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    box-shadow: none !important;
+    background: white !important;
+    height: auto !important;
+    min-height: 320px !important;
+    padding: 16px !important;
+  }
+
+  /* ── Card title: dark text ── */
+  .react-grid-item h3,
+  .react-grid-item .font-semibold {
+    color: #1e293b !important;
+  }
+
+  /* ── Chart canvas: full width ── */
+  .react-grid-item canvas {
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 250px !important;
+  }
+
+  /* ── Hide card hover actions (edit/delete/refresh buttons on cards) ── */
+  .react-grid-item .opacity-0,
+  .react-grid-item [class*="group-hover"] {
+    display: none !important;
+  }
+
+  /* ── Table styling ── */
+  .react-grid-item table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+  }
+
+  .react-grid-item th,
+  .react-grid-item td {
+    border: 1px solid #e2e8f0 !important;
+    padding: 6px 10px !important;
+    color: #334155 !important;
+    font-size: 11px !important;
+  }
+
+  /* ── Presentation mode ── */
   .presentation-slide {
     position: static !important;
     background: white !important;
+  }
+
+  /* ── Hide scrollbar artifacts ── */
+  ::-webkit-scrollbar {
+    display: none !important;
   }
 }
