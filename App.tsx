@@ -1080,8 +1080,8 @@ function App() {
         ) : (
           <div className={getGlobalClasses()} style={getGlobalStyle()}>
             {/* Ambient background orbs */}
-            <div className="ambient-orb ambient-orb-1" />
-            <div className="ambient-orb ambient-orb-2" />
+            <div className="ambient-orb ambient-orb-1 print:hidden" />
+            <div className="ambient-orb ambient-orb-2 print:hidden" />
 
             <AnimatePresence>
               {isSidebarOpen && (
@@ -1089,7 +1089,7 @@ function App() {
                   initial={{ width: 0, opacity: 0 }}
                   animate={{ width: 260, opacity: 1 }}
                   exit={{ width: 0, opacity: 0 }}
-                  className={`h-full border-r z-20 overflow-hidden flex-shrink-0 relative ${theme === 'dark' ? 'bg-[#111422]/90 backdrop-blur-xl border-white/[0.06]' : 'bg-white/90 backdrop-blur-xl border-gray-200'
+                  className={`h-full border-r z-20 overflow-hidden flex-shrink-0 relative print:hidden ${theme === 'dark' ? 'bg-[#111422]/90 backdrop-blur-xl border-white/[0.06]' : 'bg-white/90 backdrop-blur-xl border-gray-200'
                     }`}
                 >
                   <Sidebar
@@ -1106,7 +1106,7 @@ function App() {
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
               {/* Header */}
-              <header className={`h-14 flex items-center justify-between px-5 z-30 relative border-b ${theme === 'dark' ? 'bg-[#141825]/80 backdrop-blur-xl border-white/[0.06]' : 'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm'
+              <header className={`h-14 flex items-center justify-between px-5 z-30 relative border-b print:hidden ${theme === 'dark' ? 'bg-[#141825]/80 backdrop-blur-xl border-white/[0.06]' : 'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm'
                 }`}>
                 <div className="flex items-center gap-3">
                   {!isSidebarOpen && (
