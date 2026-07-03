@@ -690,7 +690,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
         )}
 
         {/* ─── Dashboard Header ─── */}
-        <div className="flex flex-col gap-4 mb-6">
+        <div className="flex flex-col gap-4 mb-6 print:hidden">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-md">
@@ -815,6 +815,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
           )}
         </div>
 
+        {/* ─── Print-only title ─── */}
+        <h1 className="hidden print:block text-2xl font-bold text-black mb-4">
+          {activeDashboard?.name || 'Dashboard'}
+        </h1>
+
         {items.length > 0 && (() => {
           // ── Group columns from the FULL dataset by their type ──────────
           const colGroups: Record<string, string[]> = { Dimensions: [], Measures: [], Dates: [], IDs: [], Other: [] };
@@ -874,7 +879,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
           const activeFilter = dashboardFilters.find(f => f.column === filterColumn);
 
           return (
-            <div className="mb-4">
+            <div className="mb-4 print:hidden">
               {/* Toggle button */}
               <button
                 onClick={() => setFilterOpen(!filterOpen)}
