@@ -1211,7 +1211,6 @@ html.light .ambient-orb-2 {
 
 @media print {
   @page {
-    size: A4 landscape;
     margin: 14mm;
   }
 
@@ -1224,12 +1223,11 @@ html.light .ambient-orb-2 {
     print-color-adjust: exact !important;
   }
 
-  /* Force white backgrounds on all dark-themed containers */
-  body *,
-  [class*="bg-[#"],
-  [class*="bg-slate"],
-  [class*="bg-gray"],
-  [class*="backdrop-blur"] {
+  /* White backgrounds on layout containers only — NOT chart elements */
+  .flex.h-screen,
+  .flex-1.flex.flex-col,
+  .h-full.overflow-y-auto,
+  .ambient-orb {
     background-color: white !important;
     background-image: none !important;
     backdrop-filter: none !important;
