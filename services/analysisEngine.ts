@@ -1662,9 +1662,48 @@ export const parseExcel = async (file: File): Promise<any[]> => {
 };
 
 /**
- * Parse ALL sheets from an Excel file.
- * Returns { sheetCount, sheets: Record<sheetName, rows[]> }
+ * Find the best header row in a sheet. Many institutional/government datasets
+ * have title rows or merged cells above the actual column headers.
+ * Strategy: read the sheet as a 2D array, scan the first 15 rows, and pick
+ * the row with the most non-empty, unique, text-like cells as the header.
  */
+function findHeaderRow(sheet: any): number {
+    const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
+    const maxScan = Math.min(range.e.r, 14); // scan first 15 rows (0-indexed)
+    let bestRow = 0;
+    let bestScore = 0;
+
+    for (let r = 0; r <= maxScan; r++) {
+        let filled = 0;
+        let total = 0;
+        const seen = new Set<string>();
+        for (let c = range.s.c; c <= range.e.c; c++) {
+            total++;
+            const addr = XLSX.utils.encode_cell({ r, c });
+            const cell = sheet[addr];
+            if (cell && cell.v !== undefined && cell.v !== null && String(cell.v).trim() !== '') {
+                const val = String(cell.v).trim();
+                // Skip if it looks like a long title/description (>80 chars)
+                if (val.length > 80) continue;
+                // Skip if it's just a number (headers are usually text)
+                if (!isNaN(Number(val)) && val.length < 6) continue;
+                if (!seen.has(val.toLowerCase())) {
+                    filled++;
+                    seen.add(val.toLowerCase());
+                }
+            }
+        }
+        // Score: filled ratio × unique count — prefer rows with many unique text cells
+        const ratio = total > 0 ? filled / total : 0;
+        const score = filled * (1 + ratio);
+        if (score > bestScore) {
+            bestScore = score;
+            bestRow = r;
+        }
+    }
+    return bestRow;
+}
+
 export const parseExcelMultiSheet = async (file: File): Promise<{ sheetCount: number; sheets: Record<string, any[]> }> => {
     return new Promise(resolve => {
         const reader = new FileReader();
@@ -1673,9 +1712,36 @@ export const parseExcelMultiSheet = async (file: File): Promise<{ sheetCount: nu
             const wb = XLSX.read(e.target?.result, { type: 'binary', cellDates: true });
             const sheets: Record<string, any[]> = {};
             for (const name of wb.SheetNames) {
-                const rows = XLSX.utils.sheet_to_json(wb.Sheets[name]);
-                if (rows.length > 0) {
-                    sheets[name] = rows;
+                const ws = wb.Sheets[name];
+                const headerRow = findHeaderRow(ws);
+
+                // Parse using the detected header row
+                const rows = XLSX.utils.sheet_to_json(ws, { range: headerRow });
+
+                // Filter out rows that are mostly empty (spacer rows between headers and data)
+                const filtered = (rows as any[]).filter(row => {
+                    const vals = Object.values(row);
+                    const nonEmpty = vals.filter(v => v !== undefined && v !== null && String(v).trim() !== '');
+                    return nonEmpty.length >= Math.max(2, vals.length * 0.3);
+                });
+
+                if (filtered.length > 0) {
+                    // Remove any columns that start with __EMPTY (leftover from merged cells)
+                    const cleanedRows = filtered.map(row => {
+                        const clean: any = {};
+                        for (const [k, v] of Object.entries(row)) {
+                            if (!k.startsWith('__EMPTY')) {
+                                clean[k] = v;
+                            }
+                        }
+                        return clean;
+                    });
+                    // Only include if we still have columns after cleaning
+                    const finalRows = cleanedRows.filter(r => Object.keys(r).length > 0);
+                    if (finalRows.length > 0) {
+                        sheets[name] = finalRows;
+                        console.log(`[Excel] Sheet "${name}": header detected at row ${headerRow + 1}, ${finalRows.length} data rows, ${Object.keys(finalRows[0]).length} columns`);
+                    }
                 }
             }
             resolve({ sheetCount: wb.SheetNames.length, sheets });
