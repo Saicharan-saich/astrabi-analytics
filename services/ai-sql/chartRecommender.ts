@@ -239,6 +239,13 @@ export function recommendChart(
                 leftAxisFormat = 'currency_usd';
                 rightAxisFormat = 'percent';
                 reason = `${cardinality} categories + ${metricCount} metrics with scale mismatch → Dual-Axis Combo`;
+            } else if (metricsScaleMismatch > DUAL_AXIS_SCALE_THRESHOLD) {
+                // Large scale mismatch even without mixed semantic types (e.g. sales vs discount)
+                chartType = 'dualAxisCombo';
+                useDualAxis = true;
+                leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
+                rightAxisFormat = deriveAxisFormat(metricColumns[1] || metricColumns[0], metricSemanticTypes);
+                reason = `${cardinality} categories + ${metricCount} metrics with ${metricsScaleMismatch.toFixed(0)}x scale mismatch → Dual-Axis Combo`;
             } else {
                 chartType = 'groupedBar';
                 reason = `${cardinality} categories + ${metricCount} metrics → Grouped Bar`;
