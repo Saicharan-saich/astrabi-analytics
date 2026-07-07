@@ -156,9 +156,10 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
     setTerms(prev => { const u = prev.filter((_, idx) => idx !== i); u[u.length - 1] = { ...u[u.length - 1], operator: undefined }; return u; });
   };
 
-  const buildPreview = () => terms.filter(t => t.column).map((t, i, a) =>
-    i < a.length - 1 && t.operator ? `${t.column} ${OP_SYM[t.operator] || '?'}` : t.column
-  ).join(' ');
+  const buildPreview = () => terms.filter(t => t.column).map((t, i, a) => {
+    const label = t.constant !== undefined ? String(t.constant) : t.column;
+    return i < a.length - 1 && t.operator ? `${label} ${OP_SYM[t.operator] || '?'}` : label;
+  }).join(' ');
 
   const addCustomColumn = () => {
     if (!dataset || !customLabel.trim()) return;
@@ -372,7 +373,7 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
                 <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">Column Name</label>
-                <input value={customLabel} onChange={e => setCustomLabel(e.target.value)} placeholder="e.g. Total Sales" className={`mt-1 ${inputCls}`} />
+                <input value={customLabel} onChange={e => setCustomLabel(e.target.value)} placeholder="e.g. Discount Percentage" className={`mt-1 ${inputCls}`} />
               </div>
               <div>
                 <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">Format</label>
@@ -383,15 +384,53 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
             </div>
             <div>
               <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase mb-2 block">Formula</label>
-              {terms.map((term, idx) => (
+              {terms.map((term, idx) => {
+                const isConstant = term.constant !== undefined;
+                return (
                 <div key={idx} className="flex items-center gap-2 mb-2">
-                  <select value={term.column} onChange={e => updateTerm(idx, 'column', e.target.value)} className={`flex-1 ${inputCls}`}>
-                    <option value="" style={{ color: '#0f172a', backgroundColor: '#fff' }}>Select column...</option>
-                    {colsByType.metrics.length > 0 && <optgroup label="📊 Measures" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.metrics.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
-                    {colsByType.dimensions.length > 0 && <optgroup label="📁 Dimensions" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.dimensions.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
-                    {colsByType.ids.length > 0 && <optgroup label="🔑 IDs" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.ids.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
-                    {colsByType.dates.length > 0 && <optgroup label="📅 Dates" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.dates.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
-                  </select>
+                  {/* Toggle: column vs constant */}
+                  <button
+                    onClick={() => {
+                      setTerms(prev => prev.map((t, i) => i === idx
+                        ? (t.constant !== undefined
+                          ? { column: '', operator: t.operator }                           // switch to column mode
+                          : { column: '', operator: t.operator, constant: 0 })             // switch to constant mode
+                        : t
+                      ));
+                    }}
+                    title={isConstant ? 'Switch to column' : 'Switch to number'}
+                    className={`shrink-0 w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold transition-all ${
+                      isConstant
+                        ? (isDark ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-cyan-50 text-cyan-600 border border-cyan-200')
+                        : (isDark ? 'bg-slate-700 text-gray-400 border border-white/10' : 'bg-gray-100 text-gray-500 border border-gray-200')
+                    }`}
+                  >
+                    {isConstant ? '#' : '⊞'}
+                  </button>
+
+                  {isConstant ? (
+                    /* Number input for constants */
+                    <input
+                      type="number"
+                      value={term.constant ?? 0}
+                      onChange={e => {
+                        const num = parseFloat(e.target.value);
+                        setTerms(prev => prev.map((t, i) => i === idx ? { ...t, constant: isNaN(num) ? 0 : num, column: `__const_${isNaN(num) ? 0 : num}` } : t));
+                      }}
+                      placeholder="e.g. 100"
+                      className={`flex-1 ${inputCls}`}
+                    />
+                  ) : (
+                    /* Column dropdown */
+                    <select value={term.column} onChange={e => updateTerm(idx, 'column', e.target.value)} className={`flex-1 ${inputCls}`}>
+                      <option value="" style={{ color: '#0f172a', backgroundColor: '#fff' }}>Select column...</option>
+                      {colsByType.metrics.length > 0 && <optgroup label="📊 Measures" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.metrics.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
+                      {colsByType.dimensions.length > 0 && <optgroup label="📁 Dimensions" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.dimensions.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
+                      {colsByType.ids.length > 0 && <optgroup label="🔑 IDs" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.ids.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
+                      {colsByType.dates.length > 0 && <optgroup label="📅 Dates" style={{ color: '#0f172a', backgroundColor: '#fff' }}>{colsByType.dates.map(c => <option key={c.name} value={c.name} style={{ color: '#0f172a', backgroundColor: '#fff' }}>{(c as any).label || c.name}</option>)}</optgroup>}
+                    </select>
+                  )}
+
                   {idx < terms.length - 1 && (
                     <select value={term.operator || 'multiply'} onChange={e => updateTerm(idx, 'operator', e.target.value)} className={`w-20 shrink-0 text-center font-bold ${inputCls}`}>
                       <option value="multiply">×</option><option value="add">+</option><option value="subtract">−</option><option value="divide">÷</option>
@@ -399,7 +438,8 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
                   )}
                   {terms.length > 2 && <button onClick={() => removeTerm(idx)} className="text-red-400 hover:text-red-600"><X className="w-4 h-4" /></button>}
                 </div>
-              ))}
+              );
+              })}
               <button onClick={addTerm} className="text-xs text-cyan-500 flex items-center gap-1 hover:underline"><Plus className="w-3 h-3" /> Add column</button>
             </div>
             {terms.some(t => t.column) && (

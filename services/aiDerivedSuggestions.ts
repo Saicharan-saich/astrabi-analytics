@@ -29,6 +29,8 @@ export interface DerivedColumnSuggestion {
 export interface ExpressionTerm {
     column: string;
     operator?: 'multiply' | 'subtract' | 'divide' | 'add';
+    /** If set, use this numeric constant instead of reading from the row */
+    constant?: number;
 }
 
 
@@ -172,7 +174,10 @@ export function computeExpression(
     const operators: string[] = [];
 
     for (const term of terms) {
-        const val = parseNumber(row[term.column]);
+        // Support numeric constants: if term.constant is set, use it directly
+        const val = term.constant !== undefined
+            ? term.constant
+            : parseNumber(row[term.column]);
         if (isNaN(val)) return null;
         values.push(val);
         if (term.operator) operators.push(term.operator);
