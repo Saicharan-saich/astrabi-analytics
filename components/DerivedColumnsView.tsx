@@ -166,7 +166,11 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
     const valid = terms.filter(t => t.column);
     if (valid.length < 2) return;
     const id = customLabel.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-    const expr: ExpressionTerm[] = valid.map((t, i, a) => ({ column: t.column, operator: i < a.length - 1 ? (t.operator || 'multiply') as OpType : undefined }));
+    const expr: ExpressionTerm[] = valid.map((t, i, a) => ({
+      column: t.column,
+      operator: i < a.length - 1 ? (t.operator || 'multiply') as OpType : undefined,
+      ...(t.constant !== undefined ? { constant: t.constant } : {}),
+    }));
     const custom: DerivedColumnSuggestion = {
       id, label: customLabel, description: 'Custom', formula: expr[0].operator || 'multiply',
       columnA: expr[0].column, columnB: expr[1].column, expression: expr,
