@@ -58,8 +58,8 @@ export interface ConstraintResult {
 // NAME PATTERN DICTIONARIES — Replaces greedy regexes with scoped matching
 // ═══════════════════════════════════════════════════════════════════
 
-const CURRENCY_NAMES = /(?:^|[_\s])(sales|revenue|price|cost|total_amount|amount|profit|discount|shipping|tax|payment|spend|income|earning|fee|charge|balance|budget|salary|wage|pay|compensation|expense|bonus|commission|payout|premium|interest|deposit|refund|rent|royalty|stipend|funding|debt|credit|debit|turnover)(?:[_\s]|$)/i;
-const PERCENTAGE_NAMES = /(?:^|[_\s])(rate|pct|percent|ratio|margin_pct|discount_pct|growth_pct|share|proportion)(?:[_\s]|$)/i;
+const CURRENCY_NAMES = /(?:^|[_\s])(sales|revenue|price|cost|total_amount|amount|profit|shipping|tax|payment|spend|income|earning|fee|charge|balance|budget|salary|wage|pay|compensation|expense|bonus|commission|payout|premium|interest|deposit|refund|rent|royalty|stipend|funding|debt|credit|debit|turnover)(?:[_\s]|$)/i;
+const PERCENTAGE_NAMES = /(?:^|[_\s])(rate|pct|percent|ratio|margin_pct|discount_pct|growth_pct|share|proportion|discount)(?:[_\s]|$)/i;
 const COUNT_NAMES = /(?:^|[_\s])(count|num|number_of|total_count|qty|quantity|units|items|orders|transactions)(?:[_\s]|$)/i;
 const GEO_NAMES = /(?:^|[_\s])(region|state|city|country|zip|postal|address|geo|territory|area|location)(?:[_\s]|$)/i;
 const ID_NAMES = /(?:^|[_\s])?(id|_id|key|code)$/i;
@@ -223,6 +223,18 @@ function computeDeterministicGuess(
         if (uniqueRatio > 0.95) s += 0.2;
         if (profile.etlType === ColumnType.ID) s += 0.15;
         scores.push({ type: 'identifier', role: 'dimension', score: Math.min(1, s), reason: `ID pattern with ${(uniqueRatio * 100).toFixed(0)}% unique ratio` });
+    }
+
+    // --- Percentage by value range (0.0–1.0 fractional values) ---
+    // Columns where all values are between 0 and 1 and not integers are likely percentages/ratios
+    if (allowedTypes.includes('percentage') && profile.etlType === ColumnType.METRIC
+        && profile.range && profile.range.min >= 0 && profile.range.max <= 1
+        && !profile.isIntegerLike && !CURRENCY_NAMES.test(name)) {
+        let s = 0.75;
+        if (PERCENTAGE_NAMES.test(name)) s += 0.15;
+        if (rangeSpan !== undefined && rangeSpan <= 1) s += 0.05;
+        scores.push({ type: 'percentage', role: 'metric', score: Math.min(1, s),
+            reason: `Values in [0,1] range → likely percentage/ratio` });
     }
 
     // --- Generic Metric (numeric, no strong name) ---

@@ -94,20 +94,31 @@ export function profileResult(
             } else if (typeof firstVal === 'number') {
                 metricColumns.push(col);
                 // Infer semantic type from column name
-                if (colLower.includes('pct') || colLower.includes('percent') || colLower.includes('rate') || colLower.includes('margin')) {
+                if (colLower.includes('pct') || colLower.includes('percent') || colLower.includes('rate') || colLower.includes('margin') || colLower.includes('discount')) {
                     metricSemanticTypes[col] = 'percentage';
                 } else if (colLower.includes('sales') || colLower.includes('revenue') || colLower.includes('cost') || colLower.includes('price') || colLower.includes('profit') || colLower.includes('amount')) {
                     metricSemanticTypes[col] = 'currency';
                 } else if (colLower.includes('count') || colLower.includes('qty') || colLower.includes('quantity')) {
                     metricSemanticTypes[col] = 'count';
                 } else {
-                    metricSemanticTypes[col] = 'quantity';
+                    // Value-range heuristic: if all sampled values are 0–1 and fractional → percentage
+                    const sampleVals = data.slice(0, 50).map(r => Math.abs(Number(r[col]) || 0));
+                    const maxSample = Math.max(...sampleVals);
+                    const allFractional = sampleVals.length > 0 && sampleVals.every(v => v >= 0 && v <= 1);
+                    if (allFractional && maxSample <= 1 && maxSample > 0) {
+                        metricSemanticTypes[col] = 'percentage';
+                    } else {
+                        metricSemanticTypes[col] = 'quantity';
+                    }
                 }
             } else if (/_(sum|avg|count|min|max|pct|total)$/.test(colLower) || colLower.endsWith('_count_distinct')) {
                 // Fallback: column name strongly suggests a metric (aggregated alias)
                 metricColumns.push(col);
-                if (colLower.includes('pct') || colLower.includes('margin')) {
+                // Infer from base column name, not just the suffix
+                if (colLower.includes('pct') || colLower.includes('margin') || colLower.includes('discount') || colLower.includes('rate')) {
                     metricSemanticTypes[col] = 'percentage';
+                } else if (colLower.includes('count') || colLower.includes('qty') || colLower.includes('quantity')) {
+                    metricSemanticTypes[col] = 'count';
                 } else {
                     metricSemanticTypes[col] = 'currency';
                 }
@@ -161,8 +172,8 @@ export function profileResult(
     // Detect pivoted data (single row with multiple metrics, no dimensions)
     const isPivoted = data.length === 1 && metricColumns.length > 1 && dimensionColumns.length === 0;
 
-    // Detect single value
-    const isSingleValue = data.length === 1 && cols.length === 1;
+    // Detect single value — also catch queries like SELECT SUM(sales) which return 1 row + 1 metric + 0 dims
+    const isSingleValue = data.length === 1 && (cols.length === 1 || (metricColumns.length === 1 && dimensionColumns.length === 0));
 
     return {
         rowCount: data.length,
