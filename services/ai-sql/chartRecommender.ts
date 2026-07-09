@@ -216,11 +216,25 @@ export function recommendChart(
         const cardinality = dimensionCardinality[primaryDim] || 0;
 
         if (cardinality > HIGH_CARDINALITY_THRESHOLD) {
-            // Too many categories → horizontal bar with top-N
-            chartType = 'horizontalBar';
+            // High cardinality — always limit with topN
             topN = 15;
-            leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
-            reason = `${cardinality} categories (>${HIGH_CARDINALITY_THRESHOLD}) → Horizontal Bar (top ${topN})`;
+            if (metricCount >= 2 && metricsScaleMismatch > DUAL_AXIS_SCALE_THRESHOLD) {
+                chartType = 'dualAxisCombo';
+                useDualAxis = true;
+                secondaryYKeys = metricColumns.slice(1);
+                leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
+                rightAxisFormat = deriveAxisFormat(metricColumns[1] || metricColumns[0], metricSemanticTypes);
+                reason = `${cardinality} categories (>${HIGH_CARDINALITY_THRESHOLD}) + ${metricsScaleMismatch.toFixed(0)}x scale mismatch → Dual-Axis Combo (top ${topN})`;
+            } else if (metricCount >= 2) {
+                chartType = 'groupedBar';
+                secondaryYKeys = metricColumns.slice(1);
+                leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
+                reason = `${cardinality} categories (>${HIGH_CARDINALITY_THRESHOLD}) + ${metricCount} metrics → Grouped Bar (top ${topN})`;
+            } else {
+                chartType = 'horizontalBar';
+                leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
+                reason = `${cardinality} categories (>${HIGH_CARDINALITY_THRESHOLD}) → Horizontal Bar (top ${topN})`;
+            }
         } else if (metricCount === 1) {
             chartType = 'bar';
             leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
@@ -243,12 +257,26 @@ export function recommendChart(
                 // Large scale mismatch even without mixed semantic types (e.g. sales vs discount)
                 chartType = 'dualAxisCombo';
                 useDualAxis = true;
+                secondaryYKeys = metricColumns.slice(1);
                 leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
                 rightAxisFormat = deriveAxisFormat(metricColumns[1] || metricColumns[0], metricSemanticTypes);
                 reason = `${cardinality} categories + ${metricCount} metrics with ${metricsScaleMismatch.toFixed(0)}x scale mismatch → Dual-Axis Combo`;
             } else {
                 chartType = 'groupedBar';
                 reason = `${cardinality} categories + ${metricCount} metrics → Grouped Bar`;
+            }
+
+            // Auto-swap: if primary metric is percentage/small-scale, put it on the RIGHT axis as a line
+            // and the larger metric on the LEFT as bars for better readability
+            if (useDualAxis && metricColumns.length >= 2) {
+                const primaryType = metricSemanticTypes[metricColumns[0]];
+                if (primaryType === 'percentage') {
+                    // Swap: larger metric on left (bars), percentage on right (line)
+                    yKey = metricColumns[1];
+                    secondaryYKeys = [metricColumns[0]];
+                    leftAxisFormat = deriveAxisFormat(metricColumns[1], metricSemanticTypes);
+                    rightAxisFormat = 'percent';
+                }
             }
         }
 
