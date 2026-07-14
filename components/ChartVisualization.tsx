@@ -489,7 +489,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const effectiveType = (hasCompData && fewPoints && lineTypes.includes(chartType))
             ? 'bar' : chartType;
 
-        const isBarVariant = effectiveType === 'bar' || effectiveType === 'horizontalBar' || effectiveType === 'stackedBar' || effectiveType === 'groupedBar' || effectiveType === 'waterfall' || effectiveType === 'funnel' || effectiveType === 'lollipop';
+        const isBarVariant = effectiveType === 'bar' || effectiveType === 'horizontalBar' || effectiveType === 'stackedBar' || effectiveType === 'groupedBar' || effectiveType === 'waterfall' || effectiveType === 'funnel' || effectiveType === 'lollipop' || effectiveType === 'combo';
         const isLineVariant = effectiveType === 'line' || effectiveType === 'area' || effectiveType === 'stackedArea' || effectiveType === 'steppedLine' || effectiveType === 'curvedLine';
 
         // TREEMAP DATA TRANSFORMATION
@@ -918,7 +918,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // Auto-detect additional numeric keys in data beyond xKey, yKey, and known metadata keys
         const knownKeys = new Set([xKey, yKey, 'previous_value', 'previous_period_label', 'growth_pct', 'difference', 'raw_value', 'rawValue', '__original_value', '_original', 'x', 'value', 'period', 'metric']);
         // Also exclude table-calculation derived fields so they don't spawn phantom chart series
-        const isTableCalcKey = (k: string) => /running_total|cumulative|percent_of_total|pct_of_total|rank|percentile|moving_avg|pct_diff|diff_from_prev|_sum$|_count$|_avg$|_min$|_max$/i.test(k);
+        // Filter table calculation fields — but NOT SQL aggregation aliases like discount_avg, sales_sum
+        // Table calc keys have specific prefixes (running_total_, pct_of_total_, etc.) or are exact matches
+        const isTableCalcKey = (k: string) => /running_total|cumulative|percent_of_total|pct_of_total|rank|percentile|moving_avg|pct_diff|diff_from_prev/i.test(k);
         // Skip secondary metric detection for pie/doughnut charts — they only use one metric
         const skipSecondary = chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea' || chartType === 'radar' || chartType === 'gauge';
         const secondaryKeys = (!skipSecondary && data.length > 0)
@@ -933,7 +935,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
         // Determine axis mode: compare primary vs secondary max values
         let autoAxisMode: 'single' | 'dual' | 'blended' = 'blended';
-        if (secondaryKeys.length > 0 && values.length > 0) {
+        // For combo chart type, always use dual axis
+        if (chartType === 'combo') {
+            autoAxisMode = 'dual';
+        } else if (secondaryKeys.length > 0 && values.length > 0) {
             const primaryMax = Math.max(...values.map(v => Math.abs(Number(v) || 0)));
             const secMaxes = secondaryKeys.map(sk => Math.max(...transformedData.map(d => Math.abs(Number(d[sk]) || 0))));
             const overallSecMax = Math.max(...secMaxes);
@@ -942,7 +947,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 : 1;
             autoAxisMode = ratio > 5 ? 'dual' : 'blended';
         }
-        const useDualAxis = autoAxisMode === 'dual';
+        // Also force dual axis if config says so
+        const useDualAxis = autoAxisMode === 'dual' || config?.axisMode === 'dual';
 
         // Read secondary metric visual types from config (default: line)
         const secVisuals: Record<string, string> = config?.secondaryMetricVisuals || {};
@@ -987,7 +993,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
     const options = useMemo(() => {
         const isPieChart = chartType === 'pie' || chartType === 'doughnut' || chartType === 'gauge';
-        const isBarVariant = chartType === 'bar' || chartType === 'horizontalBar' || chartType === 'stackedBar' || chartType === 'groupedBar' || chartType === 'waterfall' || chartType === 'funnel' || chartType === 'lollipop';
+        const isBarVariant = chartType === 'bar' || chartType === 'horizontalBar' || chartType === 'stackedBar' || chartType === 'groupedBar' || chartType === 'waterfall' || chartType === 'funnel' || chartType === 'lollipop' || chartType === 'combo';
         const isStacked = chartType === 'stackedBar' || chartType === 'stackedArea' || chartType === 'waterfall';
         const isHorizontal = chartType === 'horizontalBar' || chartType === 'funnel';
         const fontSize = formatting ? FONT_SIZES[formatting.fontSize || 'md'] : 12;
@@ -1731,6 +1737,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             case 'waterfall':
             case 'funnel':
                 ChartComponent = Bar; break;
+            case 'combo':
+                ChartComponent = Chart; break; // Mixed bar+line for dual-axis
             case 'lollipop':
                 ChartComponent = Chart; break; // Mixed bar+scatter
             case 'line':
