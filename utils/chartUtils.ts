@@ -1,31 +1,36 @@
 /**
  * Chart color palettes, color helpers, and data formatting utilities
  * extracted from ChartVisualization.tsx for reusability and testability.
+ *
+ * v2 — Premium palette upgrade with gradient helpers
  */
 
 import { FormattingConfig, QueryConfig } from '../types';
 
 // ─── Palettes ────────────────────────────────────────────────────────
+// Curated harmonious palettes inspired by Linear, Stripe, and Vercel dashboards.
+// Each color is carefully chosen for visual harmony and WCAG contrast.
 
 export const PALETTES = {
     // Discrete Multi-Color Palettes (for categorical/dimension analysis)
-    vibrant: ['#818cf8', '#22d3ee', '#34d399', '#fbbf24', '#fb7185', '#a78bfa', '#f472b6', '#2dd4bf', '#60a5fa', '#fb923c'],
+    vibrant: ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#3b82f6', '#f97316'],
     electric: ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0e7490', '#c026d3', '#2563eb', '#ea580c'],
     neon: ['#00b4d8', '#00cc6a', '#e63946', '#e6b800', '#a855f7', '#e11d48', '#14b8a6', '#84cc16', '#3b82f6', '#f97316'],
-    sunset: ['#e63300', '#e6590a', '#e68a00', '#d4a012', '#c0392b', '#d63384', '#9b2226', '#6a0572', '#e11d48', '#ea580c'],
-    ocean: ['#005f8c', '#0088b2', '#2da8d4', '#60c0dd', '#003d6b', '#007bad', '#74c9e0', '#9ddcf0', '#0d9488', '#06b6d4'],
+    sunset: ['#f43f5e', '#fb923c', '#fbbf24', '#a3e635', '#34d399', '#22d3ee', '#818cf8', '#e879f9', '#f472b6', '#fb7185'],
+    ocean: ['#0ea5e9', '#06b6d4', '#14b8a6', '#10b981', '#0284c7', '#0369a1', '#0891b2', '#0d9488', '#059669', '#047857'],
 
-    // Sequential Single-Hue Palettes (richer saturation)
-    blueSequential: ['#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8', '#1e40af', '#1e3a8a'],
-    greenSequential: ['#a7f3d0', '#6ee7b7', '#34d399', '#10b981', '#059669', '#047857', '#065f46', '#064e3b'],
-    purpleSequential: ['#ddd6fe', '#c4b5fd', '#a78bfa', '#8b5cf6', '#7c3aed', '#6d28d9', '#5b21b6', '#4c1d95'],
-    orangeSequential: ['#fed7aa', '#fdba74', '#fb923c', '#f97316', '#ea580c', '#c2410c', '#9a3412', '#7c2d12'],
-    tealSequential: ['#99f6e4', '#5eead4', '#2dd4bf', '#14b8a6', '#0d9488', '#0f766e', '#115e59', '#134e4a']
+    // Sequential Single-Hue Palettes (richer saturation, smooth gradients)
+    blueSequential: ['#dbeafe', '#bfdbfe', '#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8', '#1e40af'],
+    greenSequential: ['#d1fae5', '#a7f3d0', '#6ee7b7', '#34d399', '#10b981', '#059669', '#047857', '#065f46'],
+    purpleSequential: ['#ede9fe', '#ddd6fe', '#c4b5fd', '#a78bfa', '#8b5cf6', '#7c3aed', '#6d28d9', '#5b21b6'],
+    orangeSequential: ['#ffedd5', '#fed7aa', '#fdba74', '#fb923c', '#f97316', '#ea580c', '#c2410c', '#9a3412'],
+    tealSequential: ['#ccfbf1', '#99f6e4', '#5eead4', '#2dd4bf', '#14b8a6', '#0d9488', '#0f766e', '#115e59']
 };
 
 export type PaletteName = keyof typeof PALETTES;
 
 export const FONT_SIZES: Record<string, number> = {
+    xs: 9,
     sm: 10,
     md: 12,
     lg: 14,
@@ -42,13 +47,41 @@ export const isSequentialData = (xKey: string, data: any[]): boolean => {
     return isTimeKey || (isNumeric && xValues.length > 1);
 };
 
-/** Create canvas gradient */
+/** Create canvas gradient for line/area fill (top: colored → bottom: transparent) */
 export const createGradient = (ctx: CanvasRenderingContext2D, color: string, chartArea: any): string | CanvasGradient => {
     if (!chartArea) return color;
     const gradient = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-    gradient.addColorStop(0, color + '40');
-    gradient.addColorStop(1, color);
+    gradient.addColorStop(0, color + '08');  // Nearly transparent at bottom
+    gradient.addColorStop(0.4, color + '20'); // Subtle midpoint
+    gradient.addColorStop(1, color + '50');   // Visible at top near the line
     return gradient;
+};
+
+/** Create premium vertical gradient for bar fills (top: bright → bottom: deeper) */
+export const createBarGradient = (ctx: CanvasRenderingContext2D, color: string, chartArea: any): string | CanvasGradient => {
+    if (!chartArea) return color;
+    const gradient = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+    gradient.addColorStop(0, color + 'B0'); // Slightly transparent at base
+    gradient.addColorStop(1, color + 'F0'); // Rich at top
+    return gradient;
+};
+
+/** Convert hex color to rgba string */
+export const hexToRgba = (hex: string, alpha: number): string => {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+/** Darken a hex color by a percentage (for borders matching bar fill) */
+export const darkenColor = (color: string, percent: number = 15): string => {
+    const num = parseInt(color.replace('#', ''), 16);
+    const amt = Math.round(2.55 * percent);
+    const R = Math.max(0, (num >> 16) - amt);
+    const G = Math.max(0, ((num >> 8) & 0x00FF) - amt);
+    const B = Math.max(0, (num & 0x0000FF) - amt);
+    return '#' + (0x1000000 + R * 0x10000 + G * 0x100 + B).toString(16).slice(1);
 };
 
 /** Lighten or darken a hex color */
