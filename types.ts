@@ -202,6 +202,7 @@ export type FormattingConfig = {
   headerColor?: string; // Hex color for chart title text
   showLabels: boolean;
   showDataLabels: boolean;
+  dataLabelMode?: 'off' | 'primary' | 'all'; // off=hidden, primary=main metric only, all=every dataset
   dataLabelSize?: 'xs' | 'sm' | 'md' | 'lg'; // Independent data label font size
   dataLabelBold?: boolean; // Bold data labels (default: true for backward compat)
   dataLabelColor?: string; // Hex color for data labels (default: '#334155')

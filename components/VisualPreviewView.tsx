@@ -281,7 +281,19 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 formatting={localFormatting}
                 onToggleFormat={() => setIsFormatPanelOpen(!isFormatPanelOpen)} isFormatOpen={isFormatPanelOpen}
                 onToggleAnalytics={() => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen)} isAnalyticsOpen={isAnalyticsPanelOpen}
-                onToggleLabels={() => updateFormatting({ ...localFormatting, showDataLabels: !localFormatting.showDataLabels })}
+                onToggleLabels={() => {
+                  const mode = localFormatting.dataLabelMode || 'off';
+                  if (!localFormatting.showDataLabels || mode === 'off') {
+                    // Off → Primary
+                    updateFormatting({ ...localFormatting, showDataLabels: true, dataLabelMode: 'primary' });
+                  } else if (mode === 'primary') {
+                    // Primary → All
+                    updateFormatting({ ...localFormatting, showDataLabels: true, dataLabelMode: 'all' });
+                  } else {
+                    // All → Off
+                    updateFormatting({ ...localFormatting, showDataLabels: false, dataLabelMode: 'off' });
+                  }
+                }}
                 onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)} isAIInsightOpen={isAIInsightOpen}
                 chartContainerRef={chartContainerRef}
                 onDrillDown={handleDrillDown}

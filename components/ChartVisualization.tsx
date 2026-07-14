@@ -1027,6 +1027,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 // Custom Data Labels Plugin
                 customDataLabels: { // Namespace for our custom plugin
                     display: formatting ? formatting.showDataLabels : false,
+                    labelMode: formatting?.dataLabelMode || 'primary', // 'primary' = main metric only, 'all' = every dataset
                     formatter: (val: number) => {
                         return formatNumber(val);
                     },
@@ -1480,6 +1481,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 chart.data.datasets.forEach((dataset: any, i: number) => {
                     const meta = chart.getDatasetMeta(i);
                     if (meta.hidden) return;
+
+                    // Label mode filtering: 'primary' = only dataset 0, 'all' = all datasets
+                    const mode = options.labelMode || 'all';
+                    if (mode === 'primary' && i > 0) return;
 
                     meta.data.forEach((element: any, index: number) => {
                         const value = dataset.data[index];
@@ -1958,14 +1963,26 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     {onToggleLabels && (
                         <button
                             onClick={onToggleLabels}
-                            className={`px-3.5 py-2 rounded-lg flex items-center gap-2 text-[13px] font-bold transition-all shadow-sm ${formatting?.showDataLabels
-                                ? 'bg-slate-700 text-white ring-2 ring-slate-400'
-                                : 'text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300'
-                                }`}
-                            title="Toggle Data Labels"
+                            className={`px-3.5 py-2 rounded-lg flex items-center gap-2 text-[13px] font-bold transition-all shadow-sm ${
+                                formatting?.showDataLabels
+                                    ? formatting?.dataLabelMode === 'all'
+                                        ? 'bg-indigo-600 text-white ring-2 ring-indigo-300'
+                                        : 'bg-slate-700 text-white ring-2 ring-slate-400'
+                                    : 'text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300'
+                            }`}
+                            title={!formatting?.showDataLabels ? 'Show labels (primary metric)' : formatting?.dataLabelMode === 'all' ? 'Hide labels' : 'Show all labels'}
                         >
                             <div className="flex items-center justify-center w-4.5 h-4.5 border border-current rounded text-xs font-mono">12</div>
                             <span>Labels</span>
+                            {formatting?.showDataLabels && (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                                    formatting?.dataLabelMode === 'all'
+                                        ? 'bg-indigo-400/30 text-indigo-100'
+                                        : 'bg-slate-500/30 text-slate-200'
+                                }`}>
+                                    {formatting?.dataLabelMode === 'all' ? 'All' : '1st'}
+                                </span>
+                            )}
                         </button>
                     )}
                 </div>
