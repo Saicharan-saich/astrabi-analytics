@@ -1268,7 +1268,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     if (!hasY1) return {};
                     return {
                         y1: {
-                            display: yVisible,
+                            display: true, // Always show right axis when secondary metrics exist
                             position: 'right' as const,
                             beginAtZero: true,
                             grid: {
@@ -1276,7 +1276,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                 drawBorder: false,
                             },
                             ticks: {
-                                display: yVisible,
+                                display: true, // Always show ticks — they carry the secondary scale
                                 font: {
                                     size: fontSize + 2,
                                     weight: formatting?.axisBold ? 'bold' as const : 'normal' as const
