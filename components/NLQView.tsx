@@ -681,7 +681,16 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                                                     isFormatOpen={isFormatPanelOpen}
                                                     onToggleAnalytics={() => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen)}
                                                     isAnalyticsOpen={isAnalyticsPanelOpen}
-                                                    onToggleLabels={() => updateFormatting({ ...formatting, showDataLabels: !formatting.showDataLabels })}
+                                                    onToggleLabels={() => {
+                                                      const mode = formatting.dataLabelMode || 'off';
+                                                      if (!formatting.showDataLabels || mode === 'off') {
+                                                        updateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'primary' });
+                                                      } else if (mode === 'primary') {
+                                                        updateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'all' });
+                                                      } else {
+                                                        updateFormatting({ ...formatting, showDataLabels: false, dataLabelMode: 'off' });
+                                                      }
+                                                    }}
                                                     onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)}
                                                     isAIInsightOpen={isAIInsightOpen}
                                                     chartContainerRef={chartContainerRef}

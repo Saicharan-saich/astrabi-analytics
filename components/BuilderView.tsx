@@ -724,7 +724,16 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                             isFormatOpen={isFormatPanelOpen}
                                             onToggleAnalytics={onUpdateFormatting ? () => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen) : undefined}
                                             isAnalyticsOpen={isAnalyticsPanelOpen}
-                                            onToggleLabels={onUpdateFormatting && formatting ? () => onUpdateFormatting({ ...formatting, showDataLabels: !formatting.showDataLabels }) : undefined}
+                                            onToggleLabels={onUpdateFormatting && formatting ? () => {
+                                              const mode = formatting.dataLabelMode || 'off';
+                                              if (!formatting.showDataLabels || mode === 'off') {
+                                                onUpdateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'primary' });
+                                              } else if (mode === 'primary') {
+                                                onUpdateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'all' });
+                                              } else {
+                                                onUpdateFormatting({ ...formatting, showDataLabels: false, dataLabelMode: 'off' });
+                                              }
+                                            } : undefined}
                                             onDrillDown={handleDrillDown}
                                             onGoBack={preDrillConfig ? handleGoBack : undefined}
                                             onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)}

@@ -1248,7 +1248,16 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                 isFormatOpen={isFormatPanelOpen}
                                                 onToggleAnalytics={() => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen)}
                                                 isAnalyticsOpen={isAnalyticsPanelOpen}
-                                                onToggleLabels={formatting && onUpdateFormatting ? () => onUpdateFormatting({ ...formatting, showDataLabels: !formatting.showDataLabels }) : undefined}
+                                                onToggleLabels={formatting && onUpdateFormatting ? () => {
+                                                  const mode = formatting.dataLabelMode || 'off';
+                                                  if (!formatting.showDataLabels || mode === 'off') {
+                                                    onUpdateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'primary' });
+                                                  } else if (mode === 'primary') {
+                                                    onUpdateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'all' });
+                                                  } else {
+                                                    onUpdateFormatting({ ...formatting, showDataLabels: false, dataLabelMode: 'off' });
+                                                  }
+                                                } : undefined}
                                                 onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)}
                                                 isAIInsightOpen={isAIInsightOpen}
                                                 chartContainerRef={chartContainerRef}
