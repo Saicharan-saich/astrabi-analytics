@@ -780,6 +780,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             maxBarThickness: 50,
             hoverBackgroundColor: isBarVariant ? lightenColor(baseColor, 10) : undefined,
             yAxisID: 'y',
+            // Mixed Chart component (combo, lollipop) requires explicit type on each dataset
+            ...(chartType === 'combo' || chartType === 'lollipop' ? { type: 'bar' as const } : {}),
         }];
 
         // When trend comparison is detected from data, override primary dataset for line rendering
