@@ -231,6 +231,24 @@ export function validatePlan(plan: AnalysisPlan, model: SemanticModel): Validati
         }
     }
 
+    // ── Rule 10b: Enforce correct aggregation for percentage/ratio metrics ──
+    // SUM of a percentage (e.g., SUM(discount) where discount is 0.0–0.8) is analytically meaningless.
+    // The semantic model's defaultAgg already knows the correct aggregation (AVG for percentages).
+    for (const met of plan.metrics) {
+        if (met.compositeId) continue;
+        const field = fieldMap.get(met.field.toLowerCase());
+        if (field && (field.semanticType === 'percentage' || field.semanticType === 'ratio')
+            && met.agg === 'sum' && field.defaultAgg === 'avg') {
+            warnings.push({
+                field: met.field,
+                rule: 'percentage_agg_correction',
+                message: `"${met.field}" is a ${field.semanticType} — changed aggregation from SUM to AVG (summing percentages is analytically incorrect).`,
+                severity: 'warning',
+                autoFix: () => { met.agg = 'avg'; },
+            });
+        }
+    }
+
     // ── Apply auto-fixes ──
     const allIssues = [...errors, ...warnings];
     for (const issue of allIssues) {
