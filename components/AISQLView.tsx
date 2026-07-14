@@ -81,7 +81,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const chartTypeMap: Record<string, string> = {
         kpiCard: 'kpiCard', line: 'line', bar: 'bar', horizontalBar: 'horizontalBar',
         groupedBar: 'groupedBar', stackedBar: 'stackedBar', area: 'area',
-        dualAxisCombo: 'comboChart', multiLine: 'line', donut: 'doughnut', pie: 'pie', heatmap: 'heatmap', table: 'table',
+        dualAxisCombo: 'combo', multiLine: 'line', donut: 'doughnut', pie: 'pie', heatmap: 'heatmap', table: 'table',
     };
 
     const handleSubmit = async () => {

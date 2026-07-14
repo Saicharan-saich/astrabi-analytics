@@ -168,7 +168,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       const res = await runAISQLPipeline(query, dataset, undefined, undefined, timeGrain, true);
       if (res.rawData.length === 0) { setIsReloading(false); return; }
       setPipeline(res);
-      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'comboChart', multiLine:'line', donut:'donut', heatmap:'heatmap', table:'table' };
+      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'donut', heatmap:'heatmap', table:'table' };
       setResult({
         data: res.chartData, xKey: res.chart.xKey, yKey: res.chart.yKey, yLabel: query,
         insight: res.explanation, sql: res.sql,
