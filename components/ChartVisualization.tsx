@@ -48,7 +48,7 @@ import { Dataset, ColumnType, AggregationType, QueryConfig, AnalysisResult, Time
 import { applyTableCalculation } from '../utils/tableCalculations';
 import {
     PALETTES, FONT_SIZES,
-    isSequentialData, createGradient, lightenColor,
+    isSequentialData, createGradient, createBarGradient, lightenColor, darkenColor, hexToRgba,
     selectPalette, generateColors as genColors,
     formatNumber as formatNum, formatDateLabel
 } from '../utils/chartUtils';
@@ -749,9 +749,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     label: calculatedYLabel || 'Value',
                     data: values,
                     backgroundColor: bgColors,
-                    borderColor: bgColors.map((c) => lightenColor(c, -10)),
-                    borderWidth: 2,
-                    hoverOffset: 8,
+                    borderColor: 'rgba(15, 23, 42, 0.6)',  // Dark separator for clean slice edges
+                    borderWidth: 3,
+                    hoverOffset: 14,  // Dramatic hover pop
+                    hoverBorderColor: '#fff',
+                    hoverBorderWidth: 3,
+                    spacing: 2,  // Slight gap between slices
                 }]
             };
         }
@@ -760,25 +763,29 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             label: calculatedYLabel || 'Value',
             data: values,
             backgroundColor: isFillChart
-                    ? `${baseColor}40`
+                    ? `${baseColor}30`
                     : isBarVariant
                         ? generateColors(values)
                         : `${baseColor}DD`,
-            borderColor: borderColor,
-            borderWidth: isLineVariant ? 3 : isBarVariant ? 1.5 : 2,
-            fill: isFillChart,
-            tension: isCurved ? 0.4 : isStepped ? 0 : (chartType === 'line' ? 0.35 : 0),
+            borderColor: isBarVariant
+                ? generateColors(values).map((c: string) => darkenColor(c, 12))
+                : borderColor,
+            borderWidth: isLineVariant ? 2.5 : isBarVariant ? 1 : 2,
+            fill: isFillChart || (isLineVariant && chartType === 'area'),
+            tension: isCurved ? 0.45 : isStepped ? 0 : (chartType === 'line' || chartType === 'area' ? 0.4 : 0),
             stepped: isStepped ? 'middle' as const : false,
-            pointRadius: isLineVariant ? 4 : 0,
-            pointHoverRadius: isLineVariant ? 6 : 0,
+            pointRadius: isLineVariant ? 5 : 0,
+            pointHoverRadius: isLineVariant ? 8 : 0,
             pointBackgroundColor: '#fff',
             pointBorderColor: borderColor,
-            pointBorderWidth: 2,
-            pointHoverBorderWidth: 3,
-            borderRadius: isBarVariant ? 6 : 0,
+            pointBorderWidth: 2.5,
+            pointHoverBorderWidth: 3.5,
+            pointHoverBackgroundColor: '#fff',
+            borderRadius: isBarVariant ? 8 : 0,
             borderSkipped: 'bottom',
-            maxBarThickness: 50,
-            hoverBackgroundColor: isBarVariant ? lightenColor(baseColor, 10) : undefined,
+            maxBarThickness: 56,
+            hoverBackgroundColor: isBarVariant ? lightenColor(baseColor, 15) : undefined,
+            hoverBorderWidth: isBarVariant ? 2 : undefined,
             yAxisID: 'y',
             // Mixed Chart component (combo, lollipop) requires explicit type on each dataset
             ...(chartType === 'combo' || chartType === 'lollipop' ? { type: 'bar' as const } : {}),
@@ -1012,9 +1019,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             maintainAspectRatio: false,
             indexAxis: isHorizontal ? 'y' as const : 'x' as const,
             layout: {
-                padding: isPieChart ? { top: 40, left: 60, right: 60, bottom: 40 } : { top: 60, left: 20, right: 20, bottom: 20 }
+                padding: isPieChart ? { top: 40, left: 60, right: 60, bottom: 40 } : { top: 50, left: 16, right: 16, bottom: 16 }
             },
-            ...(chartType === 'doughnut' ? { cutout: '55%' } : {}),
+            ...(chartType === 'doughnut' ? { cutout: '62%' } : {}),
+            ...(chartType === 'gauge' ? { cutout: '70%' } : {}),
             plugins: {
                 // Custom Data Labels Plugin
                 customDataLabels: { // Namespace for our custom plugin
@@ -1041,9 +1049,17 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     position: 'bottom' as const,
                     align: 'center' as const,
                     labels: {
-                        font: { size: fontSize },
+                        font: {
+                            size: Math.max(fontSize, 12),
+                            family: "'Inter', 'system-ui', -apple-system, sans-serif",
+                            weight: '500' as any,
+                        },
                         usePointStyle: true,
-                        padding: isPieChart ? 20 : 15,
+                        pointStyle: 'rectRounded',
+                        padding: isPieChart ? 24 : 18,
+                        color: '#64748b',
+                        boxWidth: 12,
+                        boxHeight: 12,
                     },
                 },
                 title: {
@@ -1063,24 +1079,29 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     }
                 },
                 tooltip: {
-                    backgroundColor: 'rgba(10, 13, 22, 0.88)',
-                    titleColor: '#f1f5f9',
-                    bodyColor: '#cbd5e1',
-                    borderColor: 'rgba(99, 102, 241, 0.3)',
+                    backgroundColor: 'rgba(15, 23, 42, 0.94)',
+                    titleColor: '#f8fafc',
+                    bodyColor: '#94a3b8',
+                    borderColor: 'rgba(99, 102, 241, 0.2)',
                     borderWidth: 1,
-                    padding: { top: 12, bottom: 12, left: 16, right: 16 },
-                    cornerRadius: 12,
+                    padding: { top: 14, bottom: 14, left: 18, right: 18 },
+                    cornerRadius: 14,
                     titleFont: {
-                        size: 13,
+                        size: 14,
                         weight: 'bold' as const,
-                        family: "'Inter', 'system-ui', sans-serif"
+                        family: "'Inter', 'system-ui', -apple-system, sans-serif"
                     },
                     bodyFont: {
-                        size: 12,
-                        family: "'Inter', 'system-ui', sans-serif"
+                        size: 13,
+                        family: "'Inter', 'system-ui', -apple-system, sans-serif"
                     },
+                    bodySpacing: 6,
+                    titleMarginBottom: 10,
                     displayColors: true,
-                    boxPadding: 6,
+                    boxWidth: 10,
+                    boxHeight: 10,
+                    boxPadding: 8,
+                    usePointStyle: true,
                     mode: 'index' as const,
                     intersect: false,
                     callbacks: {
@@ -1210,24 +1231,28 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             },
             scales: isPieChart ? undefined : {
                 x: {
-                    display: xVisible,
+                    display: xVisible ?? true,
                     stacked: isStacked,
                     ...(isHorizontal ? { beginAtZero: true, min: 0 } : {}),
                     grid: {
-                        display: formatting?.showGridLines ?? isHorizontal, // Show grid on X for horizontal (value axis)
-                        drawBorder: xVisible,
-                        borderColor: 'rgba(0, 0, 0, 0.1)',
-                        ...(isHorizontal ? { color: 'rgba(148, 163, 184, 0.06)' } : {}),
+                        display: formatting?.showGridLines ?? false, // Clean: no X grid by default
+                        drawBorder: false,
+                        color: 'rgba(148, 163, 184, 0.08)',
+                    },
+                    border: {
+                        display: false,
                     },
                     ticks: {
-                        display: xVisible,
+                        display: xVisible ?? true,
                         maxRotation: isHorizontal ? 0 : 45,
                         minRotation: 0,
                         font: {
                             size: axisLabelFontSize,
-                            weight: formatting?.axisBold ? 'bold' as const : 'normal' as const
+                            family: "'Inter', 'system-ui', -apple-system, sans-serif",
+                            weight: formatting?.axisBold ? 'bold' as const : ('500' as any)
                         },
-                        color: formatting?.axisColor || '#475569',
+                        color: formatting?.axisColor || '#64748b',
+                        padding: 8,
                         // For horizontal bars, X-axis is the VALUE axis — format numbers
                         // For vertical bars, X-axis is the CATEGORY axis — no callback needed
                         ...(isHorizontal ? {
@@ -1238,22 +1263,28 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     },
                 },
                 y: {
-                    display: yVisible,
+                    display: yVisible ?? true,
                     ...(isHorizontal ? {} : { min: 0, beginAtZero: true }),
                     stacked: isStacked,
                     grid: {
-                        display: formatting?.showGridLines ?? (isHorizontal ? false : yVisible),
-                        color: 'rgba(148, 163, 184, 0.06)',
+                        display: formatting?.showGridLines ?? true,
+                        color: 'rgba(148, 163, 184, 0.10)',
                         drawBorder: false,
                         tickLength: 0,
                     },
+                    border: {
+                        display: false,
+                        dash: [3, 3],
+                    },
                     ticks: {
-                        display: yVisible,
+                        display: yVisible ?? true,
                         font: {
                             size: axisLabelFontSize,
-                            weight: formatting?.axisBold ? 'bold' as const : 'normal' as const
+                            family: "'Inter', 'system-ui', -apple-system, sans-serif",
+                            weight: formatting?.axisBold ? 'bold' as const : ('500' as any)
                         },
-                        color: formatting?.axisColor || '#475569',
+                        color: formatting?.axisColor || '#64748b',
+                        padding: 8,
                         ...(!isHorizontal ? {
                             callback: function (value: any) {
                                 return formatAxisNumber(value);
@@ -1298,11 +1329,20 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             },
             // SMOOTH ANIMATIONS
             animation: {
-                duration: 800, // Smooth entrance
-                easing: 'easeInOutQuart' as const,
+                duration: 900,
+                easing: 'easeOutQuart' as const,
+                delay: (context: any) => {
+                    // Staggered entrance: each element appears slightly after the previous
+                    if (context.type === 'data' && context.mode === 'default') {
+                        return context.dataIndex * 40 + context.datasetIndex * 80;
+                    }
+                    return 0;
+                },
+            },
+            transitions: {
                 active: {
                     animation: {
-                        duration: 300
+                        duration: 200
                     }
                 }
             },
