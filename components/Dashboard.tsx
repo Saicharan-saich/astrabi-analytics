@@ -10,7 +10,7 @@ import {
   ChevronLeft, ChevronRight, Maximize2, LayoutDashboard, GripVertical,
   BarChart3, PieChart, LineChart, Activity, Zap,
   Eye, Filter, ChevronDown, RefreshCw, SlidersHorizontal, Database,
-  Plus, Pencil, Copy, MoreHorizontal, Check, Loader2
+  Plus, Pencil, Copy, MoreHorizontal, Check, Loader2, Tag
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Dataset, DashboardItem, RefreshSchedule } from '../types';
@@ -1320,6 +1320,33 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                           <Filter className="w-3.5 h-3.5" />
                         </button>
                       )}
+                      {/* Labels toggle — cycle Off → Primary → All */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const fmt = item.result.formatting || formatting;
+                          const mode = fmt?.dataLabelMode || 'off';
+                          let newFmt;
+                          if (!fmt?.showDataLabels || mode === 'off') {
+                            newFmt = { ...fmt, showDataLabels: true, dataLabelMode: 'primary' as const };
+                          } else if (mode === 'primary') {
+                            newFmt = { ...fmt, showDataLabels: true, dataLabelMode: 'all' as const };
+                          } else {
+                            newFmt = { ...fmt, showDataLabels: false, dataLabelMode: 'off' as const };
+                          }
+                          updateItem({ ...item, result: { ...item.result, formatting: newFmt } });
+                        }}
+                        className={`p-1.5 rounded-lg transition-all ${
+                          (item.result.formatting || formatting)?.showDataLabels
+                            ? (item.result.formatting || formatting)?.dataLabelMode === 'all'
+                              ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-200'
+                              : 'bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-300 hover:bg-sky-100'
+                            : 'bg-gray-50 dark:bg-gray-700 text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-600'
+                        }`}
+                        title={`Labels: ${!(item.result.formatting || formatting)?.showDataLabels ? 'Off — click for Primary' : (item.result.formatting || formatting)?.dataLabelMode === 'all' ? 'All — click to turn Off' : 'Primary — click for All'}`}
+                      >
+                        <Tag className="w-3.5 h-3.5" />
+                      </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); onEdit?.(item); }}
                         className="p-1.5 rounded-lg bg-violet-50 dark:bg-violet-500/15 hover:bg-violet-100 dark:hover:bg-violet-500/25 text-violet-600 dark:text-violet-300 transition-all"
