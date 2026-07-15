@@ -16,6 +16,7 @@ import { ResultsTable } from './ResultsTable';
 import { Tooltip as InfoTooltip } from './Tooltip';
 import { getCalculationDisplayName, applyMultipleCalculations, type TableCalculation, type CalculatedColumn } from '../utils/tableCalculations';
 import { AIInsightPanel } from './AIInsightPanel';
+import { TransparencyPanel } from './TransparencyPanel';
 import { AISQLChat } from './AISQLChat';
 import { FormatPanel } from './FormatPanel';
 import { generateDynamicLabel } from '../services/workbenchLogic'; // Fix #6: Use extracted pure function
@@ -1232,6 +1233,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                             {contentTab === 'visual' && (
                                 <>
                                     {result.data && result.data.length > 0 ? (
+                                        <>
                                         <div
                                             className="w-full bg-white flex-1 min-h-[350px] rounded-xl border border-slate-200 shadow-sm overflow-hidden relative"
                                         >
@@ -1526,6 +1528,8 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                 </div>
                                             )}
                                         </div>
+                                        <TransparencyPanel result={result} datasetName={dataset.name} />
+                                        </>
                                     ) : (
                                         <div className="p-12 text-center text-slate-400 bg-slate-50 border border-slate-200 rounded-xl border-dashed">
                                             No Data available for visualization

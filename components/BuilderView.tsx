@@ -10,6 +10,7 @@ import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 import { FormatPanel } from './FormatPanel';
 
 import { AIInsightPanel } from './AIInsightPanel';
+import { TransparencyPanel } from './TransparencyPanel';
 
 import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers } from 'lucide-react';
 
@@ -625,6 +626,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     <>
                         {/* â”€â”€â”€ VISUAL TAB â”€â”€â”€ */}
                         {contentTab === 'visual' && (
+                          <>
                             <div className="relative bg-white flex-1 min-h-[350px] rounded-xl border border-slate-200 shadow-sm overflow-visible">
                                 {/* Growth toggle */}
                                 {tableData.columns.length > 0 && (
@@ -851,6 +853,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                     </div>
                                 )}
                             </div>
+                            <TransparencyPanel result={result} datasetName={dataset.name} />
+                          </>
                         )}
 
                         {/* â”€â”€â”€ SQL TAB â”€â”€â”€ */}
