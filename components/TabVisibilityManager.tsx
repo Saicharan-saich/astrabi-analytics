@@ -30,6 +30,8 @@ const ALL_TABS: TabInfo[] = [
   { id: Tab.AI_SQL, label: 'AI SQL', icon: Sparkles, section: 'Analysis', description: 'Natural language to SQL', canHide: true },
   { id: Tab.DERIVED_COLUMNS, label: 'Derived Columns', icon: Lightbulb, section: 'Analysis', description: 'Custom calculated metrics', canHide: true },
   { id: Tab.CUSTOM_QUESTIONS, label: 'Custom Questions', icon: Wrench, section: 'Analysis', description: 'Admin question templates', canHide: true },
+  // Special (not a Tab enum — uses string ID)
+  { id: 'DATA_STORY' as any, label: 'Data Story', icon: BarChart2, section: 'Analysis', description: 'AI-generated narrative from your data', canHide: true },
   // Views
   { id: Tab.DASHBOARD, label: 'Dashboard', icon: Layout, section: 'Views', description: 'Pinned charts and analyses', canHide: false },
   { id: Tab.ALERTS, label: 'Monitoring', icon: Bell, section: 'Views', description: 'Business rules and alerts', canHide: true },

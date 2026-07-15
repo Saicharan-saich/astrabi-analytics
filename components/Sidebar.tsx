@@ -292,7 +292,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                 </div>
                 {renderSection('Analysis', analysisSection)}
                 {/* Data Story special button */}
-                {onDataStory && perms.canCreateVisuals && (
+                {onDataStory && perms.canCreateVisuals && !hiddenTabs.includes('DATA_STORY') && (
                     <div className="px-2 mb-2">
                         <button
                             onClick={onDataStory}
