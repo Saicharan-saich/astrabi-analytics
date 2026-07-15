@@ -21,7 +21,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
 }) => {
     return (
         <div className="h-full w-full overflow-y-auto">
-            <div className="flex flex-col items-center justify-center min-h-full p-8 relative">
+            <div className="flex flex-col items-center justify-center min-h-full p-4 md:p-8 relative">
                 {/* Ambient background */}
                 <div className="absolute inset-0 pointer-events-none overflow-hidden">
                     <div className="absolute top-0 left-1/4 w-[500px] h-[500px] rounded-full bg-violet-500/[0.03] blur-[100px]" />
