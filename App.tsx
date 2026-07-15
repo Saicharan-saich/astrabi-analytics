@@ -56,6 +56,7 @@ import { useActivityStore } from './store/useActivityStore';
 import { DataStoryView } from './components/DataStoryView';
 import LegalPage from './components/LegalPage';
 import { GameView } from './components/GameView';
+import { TabVisibilityManager } from './components/TabVisibilityManager';
 
 // ── SESSION CREDENTIAL CACHE (auto-reconnect without re-entering password) ──
 // Stored in sessionStorage: survives page refresh but cleared on tab close or logout.
@@ -206,6 +207,7 @@ function App() {
   // Auth State
   const { isAuthenticated, currentUser, logout } = useAuthStore();
   const [showUserMgmt, setShowUserMgmt] = useState(false);
+  const [showTabManager, setShowTabManager] = useState(false);
   const [isAIProfiling, setIsAIProfiling] = useState(false);
   const [showDomainReview, setShowDomainReview] = useState(false);
   const [pendingProfile, setPendingProfile] = useState<any>(null);
@@ -1100,6 +1102,7 @@ function App() {
                     onOpenUserManagement={() => setShowUserMgmt(true)}
                     hasVisualResult={!!visualPreviewResult}
                     onDataStory={() => setShowDataStory(true)}
+                    onOpenTabManager={() => setShowTabManager(true)}
                   />
                 </motion.div>
               )}
@@ -1746,6 +1749,9 @@ function App() {
             {showUserMgmt && currentUser?.role === UserRole.ADMIN && (
               <UserManagement onClose={() => setShowUserMgmt(false)} />
             )}
+
+            {/* Tab Visibility Manager (Admin only) */}
+            <TabVisibilityManager isOpen={showTabManager && currentUser?.role === UserRole.ADMIN} onClose={() => setShowTabManager(false)} />
 
             {/* Domain Review Modal — replaced by full-page ColumnMappingWizard */}
             {/* DomainReviewModal kept in code but no longer rendered */}
