@@ -184,10 +184,16 @@ export const formatNumber = (
                 return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(value);
             case 'currency_eur':
                 return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(value);
-            case 'percent':
-                return value.toFixed(fractionDigits) + '%';
-            case 'compact':
-                return new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short', minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(value);
+            case 'percent': {
+                // Scale fractional percents (0.073 → 7.3%) for consistency with charts.
+                const pctVal = (Math.abs(value) <= 1 && Math.abs(value) > 0) ? value * 100 : value;
+                return pctVal.toFixed(fractionDigits) + '%';
+            }
+            case 'compact': {
+                // Premium compact: one decimal for large values, clean integers below 1000.
+                const cd = formatting?.decimals !== undefined ? formatting.decimals : (Math.abs(value) >= 1000 ? 1 : 0);
+                return new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short', minimumFractionDigits: 0, maximumFractionDigits: cd }).format(value);
+            }
             default:
                 return value.toLocaleString(undefined, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
         }

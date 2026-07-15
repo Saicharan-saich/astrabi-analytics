@@ -295,15 +295,25 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         minimumFractionDigits: fractionDigits,
                         maximumFractionDigits: fractionDigits
                     }).format(value);
-                case 'percent':
-                    return value.toFixed(fractionDigits) + '%';
-                case 'compact':
+                case 'percent': {
+                    // Fractional percents (e.g. 0.073) are stored as 0–1; scale to 7.3%.
+                    // Matches formatForMetricName so every surface is consistent.
+                    const pctVal = (Math.abs(value) <= 1 && Math.abs(value) > 0) ? value * 100 : value;
+                    return pctVal.toFixed(fractionDigits) + '%';
+                }
+                case 'compact': {
+                    // Premium compact: one decimal for large values ($1.2M, 15.3K),
+                    // clean integers below 1000 — unless the user pinned a decimal count.
+                    const cd = formatting?.decimals !== undefined
+                        ? formatting.decimals
+                        : (Math.abs(value) >= 1000 ? 1 : 0);
                     return new Intl.NumberFormat('en-US', {
                         notation: 'compact',
                         compactDisplay: 'short',
-                        minimumFractionDigits: fractionDigits,
-                        maximumFractionDigits: fractionDigits
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: cd
                     }).format(value);
+                }
                 default:
                     return value.toLocaleString(undefined, { minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits });
             }
@@ -382,7 +392,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             metricRef.includes('ratio') || metricRef.includes('share');
 
         if (isPercent) {
-            return value.toFixed(1) + '%';
+            // Scale fractional percents (0.073 → 7.3%) so axis ticks read correctly.
+            const pctVal = (Math.abs(value) <= 1 && Math.abs(value) > 0) ? value * 100 : value;
+            return pctVal.toFixed(1) + '%';
         }
 
         if (axisFormat === 'short_currency' && isCurrency) {
