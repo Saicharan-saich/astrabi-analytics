@@ -234,7 +234,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       {/* ── Confidence Breakdown (expandable) ───────────── */}
       {showConfidence && pipeline?.confidence && (
         <div className={`px-5 py-3 border-b ${isDark ? 'border-white/[0.06] bg-slate-800/50' : 'border-gray-200 bg-white'}`}>
-          <div className="max-w-2xl mx-auto grid grid-cols-5 gap-3">
+          <div className="max-w-2xl mx-auto grid grid-cols-3 sm:grid-cols-5 gap-3">
             {[
               { label: 'Semantic', value: pipeline.confidence.factors.semanticMatch, max: 30 },
               { label: 'Filters', value: pipeline.confidence.factors.filterClarity, max: 20 },

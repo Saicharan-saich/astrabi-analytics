@@ -374,7 +374,7 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
         {/* ── Custom Formula Tab ── */}
         {subTab === 'custom' && (
           <div className={`rounded-xl border p-5 space-y-4 ${isDark ? 'bg-slate-800/50 border-white/[0.06]' : 'bg-white border-gray-200'}`}>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="col-span-2">
                 <label className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase">Column Name</label>
                 <input value={customLabel} onChange={e => setCustomLabel(e.target.value)} placeholder="e.g. Discount Percentage" className={`mt-1 ${inputCls}`} />

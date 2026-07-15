@@ -1855,7 +1855,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                     {CHART_TYPE_OPTIONS.map(group => (
                                         <div key={group.category} className="mb-3 last:mb-0">
                                             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5">{group.category}</div>
-                                            <div className="grid grid-cols-3 gap-1.5">
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                                                 {group.items.map(type => (
                                                     <button
                                                         key={type.id}
