@@ -17,6 +17,35 @@ let _lastDuckDBVerification: {
 
 export function getLastDuckDBVerification() { return _lastDuckDBVerification; }
 
+/**
+ * Classify a metric by its unit family from its name. Used to decide whether
+ * two metrics can safely share a single Y-axis (same family) or need
+ * separate axes (different families). Mirrors detectNumberFormat's keyword
+ * logic so axis grouping and number formatting stay consistent.
+ */
+export function metricUnitFamily(name: string): 'currency' | 'percent' | 'count' | 'generic' {
+    const n = (name || '').toLowerCase();
+    // Percent must be checked before currency so "margin_pct" beats "margin".
+    if (
+        n.includes('percent') || n.includes('ratio') || n.includes('share') ||
+        n.includes('margin_pct') || n.includes('conversion') ||
+        (n.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(n))
+    ) return 'percent';
+    if (
+        n.includes('revenue') || n.includes('sales') || n.includes('price') ||
+        n.includes('cost') || n.includes('amount') || n.includes('profit') ||
+        n.includes('margin') || n.includes('spend') || n.includes('budget') ||
+        n.includes('income') || n.includes('gmv') || n.includes('arr') || n.includes('mrr')
+    ) return 'currency';
+    if (
+        n.includes('count') || n.includes('quantity') || n.includes('qty') ||
+        n.includes('units') || n.includes('volume') || n.includes('orders') ||
+        n.includes('users') || n.includes('sessions') || n.includes('clicks') ||
+        n.includes('visits') || n.includes('impressions')
+    ) return 'count';
+    return 'generic';
+}
+
 // --- VALIDATION & SAFETY LAYERS ---
 export const validateRequirements = (q: QuestionTemplate, mapping: CanonicalMapping): { valid: boolean; error?: string } => {
     const missing = q.req.filter(role => !mapping.fields[role]);
@@ -363,15 +392,28 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
             }
 
             // ─── Auto-axis detection for multi-metric ───
+            // Premium heuristic: metrics from DIFFERENT unit families (currency
+            // vs percent vs count) must never share a Y-axis, regardless of
+            // magnitude — otherwise a % line gets crushed against a $ axis.
+            // Same-family metrics fall back to a magnitude-ratio test.
             let detectedAxisMode: 'single' | 'dual' | 'blended' = 'single';
             if (secMetrics.length > 0 && data.length > 0) {
+                const primaryFamily = metricUnitFamily(metricCol);
+                const secondaryFamilies = (query.secondaryMetrics || []).map(metricUnitFamily);
+                // Treat "generic" as compatible with anything (unknown unit → don't force split).
+                const mixedUnits = secondaryFamilies.some(
+                    f => f !== 'generic' && primaryFamily !== 'generic' && f !== primaryFamily
+                );
+
                 const primaryMax = Math.max(...data.map((d: any) => Math.abs(d[planMetricKey] || 0)));
                 const secondaryMaxes = secMetrics.map(sm => Math.max(...data.map((d: any) => Math.abs(d[sm] || 0))));
                 const overallSecMax = Math.max(...secondaryMaxes);
                 const ratio = primaryMax > 0 && overallSecMax > 0
                     ? Math.max(primaryMax / overallSecMax, overallSecMax / primaryMax)
                     : 1;
-                detectedAxisMode = ratio > 5 ? 'dual' : 'blended';
+
+                // Different units → always dual. Same unit → magnitude decides.
+                detectedAxisMode = mixedUnits ? 'dual' : (ratio > 5 ? 'dual' : 'blended');
             }
             const userAxisMode = query.axisMode;
             const finalAxisMode = userAxisMode && userAxisMode !== 'auto' ? userAxisMode as 'single' | 'dual' | 'blended' : detectedAxisMode;
