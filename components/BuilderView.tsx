@@ -684,17 +684,29 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                     // ── Small Multiples Detection ──
                                     const xk = result.xKey;
                                     const yk = result.yKey;
+                                    // A grid of small charts stays readable up to ~12 panels;
+                                    // beyond that the panels are too small to compare.
+                                    const IDEAL_MAX_FACETS = 12;
                                     const candidateCols = Object.keys(result.data[0] || {}).filter(k =>
                                         k !== xk && k !== yk && typeof result.data[0]?.[k] === 'string'
                                     );
-                                    const splitCol = candidateCols.find(col => {
-                                        const unique = new Set(result.data.map((r: any) => r[col]));
-                                        return unique.size > 1 && unique.size <= 50;
-                                    });
+                                    // Score candidates by distinct-value count and pick the best
+                                    // faceting column — preferring the richest breakdown that still
+                                    // fits a readable grid — instead of blindly taking the first.
+                                    const scored = candidateCols
+                                        .map(col => ({ col, n: new Set(result.data.map((r: any) => r[col])).size }))
+                                        .filter(c => c.n > 1 && c.n <= 50);
+                                    const idealCandidates = scored.filter(c => c.n <= IDEAL_MAX_FACETS);
+                                    const splitCol = (idealCandidates.length > 0
+                                        ? [...idealCandidates].sort((a, b) => b.n - a.n)[0]
+                                        : scored[0]
+                                    )?.col;
                                     const seriesCount = splitCol ? new Set(result.data.map((r: any) => r[splitCol])).size : 0;
-                                    const shouldUseGrid = splitCol && (
+                                    // Auto-grid only when the facet count is both meaningful (>4) and
+                                    // readable (<=12). An explicit "grid" choice is always honoured.
+                                    const shouldUseGrid = !!splitCol && (
                                         forceGridMode === 'grid' ||
-                                        (forceGridMode === 'auto' && seriesCount > 4)
+                                        (forceGridMode === 'auto' && seriesCount > 4 && seriesCount <= IDEAL_MAX_FACETS)
                                     ) && forceGridMode !== 'combined';
 
                                     if (shouldUseGrid && splitCol) {
