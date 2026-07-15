@@ -4,7 +4,7 @@ import {
   Gamepad2, Trophy, Zap, Star, ChevronRight, RotateCcw,
   Lightbulb, CheckCircle2, XCircle, ArrowRight, Sparkles,
   Target, Brain, Filter, ArrowUpDown, BarChart3, Play,
-  Volume2, VolumeX, Clock
+  Volume2, VolumeX, Clock, X, Search, BookOpen
 } from 'lucide-react';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -13,7 +13,7 @@ import {
 
 type GAFSLane = 'G' | 'A' | 'F' | 'S';
 type Difficulty = 'easy' | 'medium' | 'hard' | 'expert';
-type GamePhase = 'start' | 'playing' | 'feedback' | 'level-complete' | 'game-complete';
+type GamePhase = 'landing' | 'start' | 'playing' | 'feedback' | 'level-complete' | 'game-complete';
 
 interface AnswerChip {
   id: string;
@@ -283,11 +283,12 @@ const ConfettiParticle = ({ delay }: { delay: number }) => {
 
 interface GameViewProps {
   onNavigateToBuilder?: () => void;
+  onExit?: () => void;
 }
 
-export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder }) => {
+export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) => {
   // Game state
-  const [gamePhase, setGamePhase] = useState<GamePhase>('start');
+  const [gamePhase, setGamePhase] = useState<GamePhase>('landing');
   const [currentLevel, setCurrentLevel] = useState(0);
   const [score, setScore] = useState(0);
   const [streak, setStreak] = useState(0);
@@ -493,6 +494,22 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder }) => {
     resetLevel();
   }, [resetLevel]);
 
+  const exitGame = useCallback(() => {
+    if (onExit) {
+      onExit();
+    } else {
+      setGamePhase('landing');
+      resetLevel();
+      setCurrentLevel(0);
+      setScore(0);
+      setStreak(0);
+      setBestStreak(0);
+      setHintsUsed(0);
+      setPerfectLevels(0);
+      setTotalTime(0);
+    }
+  }, [onExit, resetLevel]);
+
   // Drag handlers
   const handleDragStart = (e: React.DragEvent, chipId: string) => {
     e.dataTransfer.setData('chipId', chipId);
@@ -544,7 +561,184 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder }) => {
   };
 
   // ═══════════════════════════════════════════════════════════════════
-  // RENDER: START SCREEN
+  // RENDER: LANDING PAGE (Educational Overlay)
+  // ═══════════════════════════════════════════════════════════════════
+
+  if (gamePhase === 'landing') {
+    return (
+      <div className="h-full overflow-auto bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950">
+        <div className="max-w-3xl mx-auto px-6 py-10">
+          {/* Header with close */}
+          <div className="flex items-center justify-between mb-10">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600">
+                <BookOpen className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h1 className="text-xl font-black text-white tracking-tight">What is GAFS?</h1>
+                <p className="text-xs text-slate-500">The thinking framework behind every great analysis</p>
+              </div>
+            </div>
+            {onExit && (
+              <button onClick={onExit} className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-white/10 transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            )}
+          </div>
+
+          {/* The Problem */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+            <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 mb-6">
+              <h2 className="text-lg font-bold text-white mb-3">Why do beginners struggle with data analytics?</h2>
+              <p className="text-sm text-slate-400 leading-relaxed mb-4">
+                When a manager asks <span className="text-white font-semibold">"Show me the top 5 products by total sales in 2023"</span>, 
+                beginners immediately reach for SQL syntax. Experienced analysts do something different — they first 
+                <span className="text-indigo-400 font-semibold"> think about the analytical structure</span> of the question.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-red-500/5 border border-red-500/15 rounded-xl p-4">
+                  <p className="text-xs font-bold text-red-400 mb-2">❌ Beginner thinks:</p>
+                  <ul className="text-xs text-slate-400 space-y-1">
+                    <li>• Do I need GROUP BY?</li>
+                    <li>• Should I use SUM()?</li>
+                    <li>• Where does ORDER BY go?</li>
+                  </ul>
+                </div>
+                <div className="bg-emerald-500/5 border border-emerald-500/15 rounded-xl p-4">
+                  <p className="text-xs font-bold text-emerald-400 mb-2">✅ Expert thinks:</p>
+                  <ul className="text-xs text-slate-400 space-y-1">
+                    <li>• What am I comparing?</li>
+                    <li>• What am I measuring?</li>
+                    <li>• Which data matters?</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* GAFS Framework */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+            <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 mb-6">
+              <h2 className="text-lg font-bold text-white mb-2">The GAFS Framework</h2>
+              <p className="text-sm text-slate-400 mb-5">
+                GAFS is a simple thinking framework that helps you decompose any business question into 
+                <span className="text-white font-semibold"> four analytical decisions</span> — before touching any tool.
+              </p>
+
+              <div className="space-y-3">
+                {(['G', 'A', 'F', 'S'] as GAFSLane[]).map((lane, i) => {
+                  const config = LANE_CONFIG[lane];
+                  const descriptions: Record<GAFSLane, { detail: string; example: string }> = {
+                    G: { detail: 'Organise records into meaningful categories. This determines the dimension of your analysis.', example: '"by product" → Group by Product Name' },
+                    A: { detail: 'Summarise values within each group using SUM, AVG, COUNT, MAX, or MIN.', example: '"total sales" → SUM(Sales)' },
+                    F: { detail: 'Narrow the dataset to only the records relevant to the question.', example: '"in 2023" → Year = 2023' },
+                    S: { detail: 'Arrange results so the answer is immediately clear and actionable.', example: '"top 5" → Highest → Lowest, Limit 5' },
+                  };
+                  const desc = descriptions[lane];
+                  return (
+                    <motion.div
+                      key={lane}
+                      initial={{ opacity: 0, x: -20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      transition={{ delay: 0.3 + i * 0.08 }}
+                      className={`${config.bg} ${config.border} border rounded-xl p-4 flex gap-4`}
+                    >
+                      <div className="shrink-0 flex flex-col items-center gap-1 w-12">
+                        <span className={`font-black text-2xl ${config.color}`}>{config.label}</span>
+                        <span className={config.color}>{config.icon}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="text-sm font-bold text-white">{config.fullLabel}</p>
+                          <span className="text-xs text-slate-500">— {config.question}</span>
+                        </div>
+                        <p className="text-xs text-slate-400 mb-1.5">{desc.detail}</p>
+                        <p className="text-xs font-mono bg-black/20 px-2.5 py-1 rounded-md text-slate-300 inline-block">{desc.example}</p>
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* How GAFS maps to Question Builder */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+            <div className="bg-gradient-to-br from-indigo-500/10 to-purple-500/10 border border-indigo-500/20 rounded-2xl p-6 mb-6">
+              <h2 className="text-lg font-bold text-white mb-2 flex items-center gap-2">
+                <Search className="w-5 h-5 text-indigo-400" />
+                How GAFS Maps to Your Question Builder
+              </h2>
+              <p className="text-sm text-slate-400 mb-4">
+                The Question Builder in this app is designed around exactly these four concepts. 
+                Once you understand GAFS, the builder becomes intuitive:
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { gafs: 'G — Grouping', builder: '"by" Dimension dropdown', desc: 'Select what to compare', color: 'text-indigo-400', bg: 'bg-indigo-500/10 border-indigo-500/20' },
+                  { gafs: 'A — Aggregation', builder: 'Metric + Aggregation selector', desc: 'Choose what to measure', color: 'text-cyan-400', bg: 'bg-cyan-500/10 border-cyan-500/20' },
+                  { gafs: 'F — Filtering', builder: '"where" filters + time range', desc: 'Narrow the scope', color: 'text-emerald-400', bg: 'bg-emerald-500/10 border-emerald-500/20' },
+                  { gafs: 'S — Sorting', builder: 'Sort order + Limit (Top N)', desc: 'Rank the results', color: 'text-amber-400', bg: 'bg-amber-500/10 border-amber-500/20' },
+                ].map(m => (
+                  <div key={m.gafs} className={`${m.bg} border rounded-lg p-3`}>
+                    <p className={`text-xs font-bold ${m.color} mb-0.5`}>{m.gafs}</p>
+                    <p className="text-xs text-white font-semibold">→ {m.builder}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{m.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* How the Game Works */}
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+            <div className="bg-white/[0.03] border border-white/10 rounded-2xl p-6 mb-8">
+              <h2 className="text-lg font-bold text-white mb-3 flex items-center gap-2">
+                <Gamepad2 className="w-5 h-5 text-purple-400" />
+                How the Game Works
+              </h2>
+              <div className="grid grid-cols-3 gap-4">
+                {[
+                  { step: '1', title: 'Read the Question', desc: 'A business question appears in plain English — just like a real manager would ask.', icon: '📝' },
+                  { step: '2', title: 'Drag & Drop', desc: 'Place the correct answer chips into the G, A, F, S lanes. Watch out for distractors!', icon: '🎯' },
+                  { step: '3', title: 'Learn & Level Up', desc: 'See detailed explanations of why each answer is correct. Earn points and streak bonuses.', icon: '🏆' },
+                ].map(s => (
+                  <div key={s.step} className="text-center">
+                    <div className="text-3xl mb-2">{s.icon}</div>
+                    <p className="text-sm font-bold text-white mb-1">{s.title}</p>
+                    <p className="text-xs text-slate-400">{s.desc}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center justify-center gap-6 mt-5 text-xs text-slate-500">
+                <span className="flex items-center gap-1.5"><Target className="w-3.5 h-3.5" /> 10 Levels</span>
+                <span className="flex items-center gap-1.5"><Sparkles className="w-3.5 h-3.5" /> 6 Industries</span>
+                <span className="flex items-center gap-1.5"><Zap className="w-3.5 h-3.5" /> Speed Bonuses</span>
+                <span className="flex items-center gap-1.5"><Star className="w-3.5 h-3.5" /> Star Ratings</span>
+              </div>
+            </div>
+          </motion.div>
+
+          {/* Start Button */}
+          <motion.button
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.6 }}
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => setGamePhase('start')}
+            className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-lg shadow-xl shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-shadow flex items-center justify-center gap-3"
+          >
+            <Play className="w-5 h-5" />
+            Start the GAFS Challenge
+          </motion.button>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // RENDER: START SCREEN (Quick restart / level select)
   // ═══════════════════════════════════════════════════════════════════
 
   if (gamePhase === 'start') {
@@ -568,28 +762,24 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder }) => {
               GAFS Challenge
             </h1>
             <p className="text-lg text-slate-400 max-w-md mx-auto">
-              Master analytical thinking through play. Learn to decompose business questions before writing a single query.
+              Master analytical thinking through play. Decompose business questions into Grouping, Aggregating, Filtering & Sorting.
             </p>
           </div>
 
-          {/* GAFS Explanation */}
-          <div className="grid grid-cols-2 gap-3 mb-8">
+          {/* GAFS Quick Reference */}
+          <div className="grid grid-cols-4 gap-2 mb-8">
             {(['G', 'A', 'F', 'S'] as GAFSLane[]).map((lane, i) => {
               const config = LANE_CONFIG[lane];
               return (
                 <motion.div
                   key={lane}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.2 + i * 0.1 }}
-                  className={`${config.bg} ${config.border} border rounded-xl p-4`}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 + i * 0.08 }}
+                  className={`${config.bg} ${config.border} border rounded-xl p-3 text-center`}
                 >
-                  <div className="flex items-center gap-2 mb-1">
-                    <span className={`font-black text-lg ${config.color}`}>{config.label}</span>
-                    <span className={config.color}>{config.icon}</span>
-                  </div>
-                  <p className="text-sm font-semibold text-white">{config.fullLabel}</p>
-                  <p className="text-xs text-slate-400 mt-0.5">{config.question}</p>
+                  <span className={`font-black text-xl ${config.color}`}>{config.label}</span>
+                  <p className="text-xs font-semibold text-white mt-0.5">{config.fullLabel}</p>
                 </motion.div>
               );
             })}
@@ -597,27 +787,41 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder }) => {
 
           {/* Stats */}
           <div className="flex items-center justify-center gap-6 mb-8 text-sm text-slate-500">
-            <span className="flex items-center gap-1.5">
-              <Target className="w-4 h-4" /> 10 Levels
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4" /> 5 Industries
-            </span>
-            <span className="flex items-center gap-1.5">
-              <Zap className="w-4 h-4" /> Speed Bonuses
-            </span>
+            <span className="flex items-center gap-1.5"><Target className="w-4 h-4" /> 10 Levels</span>
+            <span className="flex items-center gap-1.5"><Sparkles className="w-4 h-4" /> 6 Industries</span>
+            <span className="flex items-center gap-1.5"><Zap className="w-4 h-4" /> Speed Bonuses</span>
           </div>
 
-          {/* Start Button */}
-          <motion.button
-            whileHover={{ scale: 1.03 }}
-            whileTap={{ scale: 0.97 }}
-            onClick={startGame}
-            className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-lg shadow-xl shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-shadow flex items-center justify-center gap-3"
-          >
-            <Play className="w-5 h-5" />
-            Start Challenge
-          </motion.button>
+          {/* Buttons */}
+          <div className="space-y-3">
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.97 }}
+              onClick={startGame}
+              className="w-full py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-bold text-lg shadow-xl shadow-indigo-500/25 hover:shadow-indigo-500/40 transition-shadow flex items-center justify-center gap-3"
+            >
+              <Play className="w-5 h-5" />
+              Start Challenge
+            </motion.button>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setGamePhase('landing')}
+                className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
+              >
+                <BookOpen className="w-4 h-4" />
+                What is GAFS?
+              </button>
+              {onNavigateToBuilder && (
+                <button
+                  onClick={onNavigateToBuilder}
+                  className="flex-1 py-3 rounded-xl bg-white/5 border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/10 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Search className="w-4 h-4" />
+                  Go to Question Builder
+                </button>
+              )}
+            </div>
+          </div>
         </motion.div>
       </div>
     );
@@ -750,8 +954,17 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder }) => {
       {/* ── Top Bar ── */}
       <div className="shrink-0 px-6 py-3 flex items-center justify-between border-b border-white/5">
         <div className="flex items-center gap-4">
+          <button
+            onClick={exitGame}
+            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors text-sm"
+            title="Exit game"
+          >
+            <X className="w-4 h-4" />
+            <span className="font-bold">Exit</span>
+          </button>
+          <div className="h-4 w-px bg-white/10" />
           <div className="flex items-center gap-2">
-            <Gamepad2 className="w-5 h-5 text-indigo-400" />
+            <Gamepad2 className="w-4 h-4 text-indigo-400" />
             <span className="font-bold text-white text-sm">GAFS Challenge</span>
           </div>
           <span className={`${diff.bg} ${diff.text} text-xs font-bold px-2.5 py-1 rounded-full`}>
