@@ -133,7 +133,7 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
             Color Palette
           </label>
-          <div className="grid grid-cols-5 gap-2">
+          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
             {(['vibrant', 'electric', 'neon', 'sunset', 'ocean'] as const).map(mode => (
               <button
                 key={mode}

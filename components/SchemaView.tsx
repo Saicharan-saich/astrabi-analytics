@@ -259,7 +259,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                     <CheckCircle2 className="w-4 h-4 text-indigo-400" />
                     <h3 className="text-sm font-bold text-white">Master Table Result</h3>
                 </div>
-                <div className="grid grid-cols-3 gap-4 text-center">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
                     <div>
                         <div className="text-2xl font-bold text-indigo-400">{dataset.totalRows.toLocaleString()}</div>
                         <div className="text-[10px] text-slate-400 font-medium uppercase">Rows</div>

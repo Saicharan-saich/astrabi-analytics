@@ -308,7 +308,7 @@ export const AdminQuestionBuilder: React.FC<AdminQuestionBuilderProps> = ({ data
                         </div>
 
                         {/* Grid: Grain + Vis + EvalType */}
-                        <div className="grid grid-cols-3 gap-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <div>
                                 <label className={labelClass}>Grain</label>
                                 <select value={grain} onChange={e => setGrain(e.target.value as QuestionGrain)} className={inputClass}>

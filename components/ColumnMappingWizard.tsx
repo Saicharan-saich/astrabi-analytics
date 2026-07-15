@@ -374,7 +374,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                 <div className="max-w-7xl mx-auto px-6 py-5 space-y-4">
 
                     {/* ══ SECTION 1: GRAIN + DOMAIN (Mandatory) ══ */}
-                    <div className="grid grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                         {/* Grain (MANDATORY — most prominent) */}
                         <div className={`col-span-2 rounded-xl p-4 border transition-all ${showErrors && !grain.trim()
                             ? 'bg-red-500/10 border-red-500/30'
@@ -741,7 +741,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                             <PenLine className="w-3 h-3 text-violet-400" />
                                                             <span className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Advanced Settings</span>
                                                         </div>
-                                                        <div className="grid grid-cols-4 gap-3">
+                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                                             {/* Semantic Role */}
                                                             <div>
                                                                 <label className="text-[10px] text-gray-600 uppercase tracking-wider block mb-1">Semantic Role</label>

@@ -57,6 +57,7 @@ import { DataStoryView } from './components/DataStoryView';
 import LegalPage from './components/LegalPage';
 import { GameView } from './components/GameView';
 import { TabVisibilityManager } from './components/TabVisibilityManager';
+import { useMobile } from './hooks/useMobile';
 
 // ── SESSION CREDENTIAL CACHE (auto-reconnect without re-entering password) ──
 // Stored in sessionStorage: survives page refresh but cleared on tab close or logout.
@@ -206,6 +207,7 @@ function App() {
 
   // Auth State
   const { isAuthenticated, currentUser, logout } = useAuthStore();
+  const { isMobile } = useMobile();
   const [showUserMgmt, setShowUserMgmt] = useState(false);
   const [showTabManager, setShowTabManager] = useState(false);
   const [isAIProfiling, setIsAIProfiling] = useState(false);
@@ -1086,67 +1088,104 @@ function App() {
             <div className="ambient-orb ambient-orb-1 print:hidden" />
             <div className="ambient-orb ambient-orb-2 print:hidden" />
 
-            <AnimatePresence>
-              {isSidebarOpen && (
-                <motion.div
-                  initial={{ width: 0, opacity: 0 }}
-                  animate={{ width: 260, opacity: 1 }}
-                  exit={{ width: 0, opacity: 0 }}
-                  className={`h-full border-r z-20 overflow-hidden flex-shrink-0 relative print:hidden ${theme === 'dark' ? 'bg-[#111422]/90 backdrop-blur-xl border-white/[0.06]' : 'bg-white/90 backdrop-blur-xl border-gray-200'
-                    }`}
-                >
-                  <Sidebar
-                    activeTab={activeTab}
-                    onTabChange={setActiveTab}
-                    onToggle={() => toggleSidebar()}
-                    onOpenUserManagement={() => setShowUserMgmt(true)}
-                    hasVisualResult={!!visualPreviewResult}
-                    onDataStory={() => setShowDataStory(true)}
-                    onOpenTabManager={() => setShowTabManager(true)}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {/* Sidebar — drawer overlay on mobile, side panel on desktop */}
+            {isMobile ? (
+              <AnimatePresence>
+                {isSidebarOpen && (
+                  <>
+                    {/* Backdrop */}
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm print:hidden"
+                      onClick={() => setSidebarOpen(false)}
+                    />
+                    {/* Drawer */}
+                    <motion.div
+                      initial={{ x: -300, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      exit={{ x: -300, opacity: 0 }}
+                      transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                      className={`fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] border-r overflow-hidden flex-shrink-0 print:hidden ${theme === 'dark' ? 'bg-[#111422] border-white/[0.06]' : 'bg-white border-gray-200'
+                        }`}
+                    >
+                      <Sidebar
+                        activeTab={activeTab}
+                        onTabChange={(tab) => { setActiveTab(tab); setSidebarOpen(false); }}
+                        onToggle={() => setSidebarOpen(false)}
+                        onOpenUserManagement={() => { setShowUserMgmt(true); setSidebarOpen(false); }}
+                        hasVisualResult={!!visualPreviewResult}
+                        onDataStory={() => { setShowDataStory(true); setSidebarOpen(false); }}
+                        onOpenTabManager={() => { setShowTabManager(true); setSidebarOpen(false); }}
+                      />
+                    </motion.div>
+                  </>
+                )}
+              </AnimatePresence>
+            ) : (
+              <AnimatePresence>
+                {isSidebarOpen && (
+                  <motion.div
+                    initial={{ width: 0, opacity: 0 }}
+                    animate={{ width: 260, opacity: 1 }}
+                    exit={{ width: 0, opacity: 0 }}
+                    className={`h-full border-r z-20 overflow-hidden flex-shrink-0 relative print:hidden ${theme === 'dark' ? 'bg-[#111422]/90 backdrop-blur-xl border-white/[0.06]' : 'bg-white/90 backdrop-blur-xl border-gray-200'
+                      }`}
+                  >
+                    <Sidebar
+                      activeTab={activeTab}
+                      onTabChange={setActiveTab}
+                      onToggle={() => toggleSidebar()}
+                      onOpenUserManagement={() => setShowUserMgmt(true)}
+                      hasVisualResult={!!visualPreviewResult}
+                      onDataStory={() => setShowDataStory(true)}
+                      onOpenTabManager={() => setShowTabManager(true)}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            )}
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
               {/* Header */}
-              <header className={`h-14 flex items-center justify-between px-5 z-30 relative border-b print:hidden ${theme === 'dark' ? 'bg-[#141825]/80 backdrop-blur-xl border-white/[0.06]' : 'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm'
+              <header className={`h-14 flex items-center justify-between px-3 md:px-5 z-30 relative border-b print:hidden ${theme === 'dark' ? 'bg-[#141825]/80 backdrop-blur-xl border-white/[0.06]' : 'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm'
                 }`}>
-                <div className="flex items-center gap-3">
-                  {!isSidebarOpen && (
+                <div className="flex items-center gap-2 md:gap-3 min-w-0">
+                  {(!isSidebarOpen || isMobile) && (
                     <button
-                      onClick={() => toggleSidebar()}
-                      className={`p-2 -ml-2 rounded-lg transition-all duration-200 ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                      onClick={() => isMobile ? setSidebarOpen(true) : toggleSidebar()}
+                      className={`p-2 -ml-1 rounded-lg transition-all duration-200 shrink-0 ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
                         }`}
                     >
                       <Menu className="w-5 h-5" />
                     </button>
                   )}
 
-                  <div className={`flex items-center gap-2.5 rounded-xl py-1.5 px-3 border transition-all ${theme === 'dark' ? 'bg-white/[0.04] border-white/[0.06] hover:border-violet-500/20' : 'bg-gray-50 border-gray-200 hover:border-violet-200'
+                  <div className={`flex items-center gap-2 md:gap-2.5 rounded-xl py-1.5 px-2 md:px-3 border transition-all min-w-0 ${theme === 'dark' ? 'bg-white/[0.04] border-white/[0.06] hover:border-violet-500/20' : 'bg-gray-50 border-gray-200 hover:border-violet-200'
                     }`}>
                     <div className={`
                       w-2 h-2 rounded-full transition-all duration-500 shrink-0
                       ${isProcessing ? 'bg-amber-400 animate-pulse shadow-sm shadow-amber-400/50' :
                         dataset ? 'bg-emerald-500 shadow-sm shadow-emerald-500/50' : 'bg-gray-400'}
                     `} />
-                    <span className={`text-sm font-semibold tracking-tight ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
+                    <span className={`text-sm font-semibold tracking-tight truncate max-w-[120px] md:max-w-none ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'
                       }`}>
                       {dataset ? dataset.name : 'No active dataset'}
                     </span>
                     {dataset && (
-                      <span className={`text-[11px] font-medium ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+                      <span className={`text-[11px] font-medium hidden sm:inline ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
                         }`}>
                         {dataset.totalRows?.toLocaleString()} rows
                       </span>
                     )}
                     {isAIProfiling && (
-                      <span className="text-[11px] font-medium text-violet-400 flex items-center gap-1 animate-pulse">
+                      <span className="text-[11px] font-medium text-violet-400 items-center gap-1 animate-pulse hidden sm:flex">
                         <Brain className="w-3 h-3" /> Profiling...
                       </span>
                     )}
                     {dataset?.domainProfile && !isAIProfiling && (
-                      <span className="text-[11px] font-semibold text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded-full">
+                      <span className="text-[11px] font-semibold text-violet-400 bg-violet-500/10 px-2 py-0.5 rounded-full hidden sm:inline">
                         {dataset.domainProfile.domain}
                       </span>
                     )}
@@ -1335,7 +1374,7 @@ function App() {
                         animate={{ scale: 1, opacity: 1 }}
                         exit={{ scale: 0.9, opacity: 0 }}
                         transition={{ delay: 0.1, duration: 0.3 }}
-                        className="relative z-10 w-[420px] rounded-2xl border shadow-2xl overflow-hidden"
+                        className="relative z-10 w-[90vw] max-w-[420px] rounded-2xl border shadow-2xl overflow-hidden"
                         style={{
                           background: theme === 'dark'
                             ? 'linear-gradient(135deg, #1a1d2e 0%, #141825 100%)'

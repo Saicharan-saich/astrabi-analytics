@@ -595,7 +595,7 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit 
                 beginners immediately reach for SQL syntax. Experienced analysts do something different — they first 
                 <span className="text-indigo-400 font-semibold"> think about the analytical structure</span> of the question.
               </p>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="bg-red-500/5 border border-red-500/15 rounded-xl p-4">
                   <p className="text-xs font-bold text-red-400 mb-2">❌ Beginner thinks:</p>
                   <ul className="text-xs text-slate-400 space-y-1">
@@ -673,7 +673,7 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit 
                 The Question Builder in this app is designed around exactly these four concepts. 
                 Once you understand GAFS, the builder becomes intuitive:
               </p>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {[
                   { gafs: 'G — Grouping', builder: '"by" Dimension dropdown', desc: 'Select what to compare', color: 'text-indigo-400', bg: 'bg-indigo-500/10 border-indigo-500/20' },
                   { gafs: 'A — Aggregation', builder: 'Metric + Aggregation selector', desc: 'Choose what to measure', color: 'text-cyan-400', bg: 'bg-cyan-500/10 border-cyan-500/20' },
@@ -697,7 +697,7 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit 
                 <Gamepad2 className="w-5 h-5 text-purple-400" />
                 How the Game Works
               </h2>
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 {[
                   { step: '1', title: 'Read the Question', desc: 'A business question appears in plain English — just like a real manager would ask.', icon: '📝' },
                   { step: '2', title: 'Drag & Drop', desc: 'Place the correct answer chips into the G, A, F, S lanes. Watch out for distractors!', icon: '🎯' },
@@ -767,7 +767,7 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit 
           </div>
 
           {/* GAFS Quick Reference */}
-          <div className="grid grid-cols-4 gap-2 mb-8">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-8">
             {(['G', 'A', 'F', 'S'] as GAFSLane[]).map((lane, i) => {
               const config = LANE_CONFIG[lane];
               return (

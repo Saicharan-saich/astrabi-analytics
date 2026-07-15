@@ -149,7 +149,7 @@ const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, 
             {expanded && (
                 <div className="px-4 pb-4 pt-2 border-t border-slate-100 dark:border-white/5 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
                     {stat.type === 'METRIC' && (
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                             {[
                                 { label: 'Min', value: formatNum(stat.min as number) },
                                 { label: 'Max', value: formatNum(stat.max as number) },
