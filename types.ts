@@ -490,7 +490,8 @@ export enum Tab {
   DERIVED_COLUMNS = 'DERIVED_COLUMNS',
   USER_INSIGHTS = 'USER_INSIGHTS',
   QUICK_INSIGHTS = 'QUICK_INSIGHTS',
-  LEGAL = 'LEGAL'
+  LEGAL = 'LEGAL',
+  GAME = 'GAME'
 }
 
 // ─── Authentication & RBAC ───────────────────────────────────────

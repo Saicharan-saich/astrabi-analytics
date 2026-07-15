@@ -12,7 +12,7 @@ export type PageKey =
     | 'UPLOAD' | 'COLUMN_MAPPING' | 'DASHBOARD' | 'BUILDER' | 'WORKBENCH'
     | 'DATA' | 'ETL' | 'SCHEMA' | 'CONNECTORS' | 'NLQ' | 'AI_SQL'
     | 'CUSTOM_QUESTIONS' | 'DATASET_SUMMARY' | 'SMART_QUESTIONS' | 'ALERTS'
-    | 'VISUAL_PREVIEW' | 'DERIVED_COLUMNS' | 'USER_INSIGHTS';
+    | 'VISUAL_PREVIEW' | 'DERIVED_COLUMNS' | 'USER_INSIGHTS' | 'GAME';
 
 interface PageInfo {
     title: string;
@@ -268,6 +268,23 @@ const PAGE_INFO: Record<PageKey, PageInfo> = {
             'Feature usage breakdown',
             'User activity timeline',
             'Adoption metrics',
+        ],
+    },
+    GAME: {
+        title: 'GAFS Challenge',
+        description: 'An interactive learning game that teaches analytical thinking through the GAFS framework — Grouping, Aggregating, Filtering, and Sorting. Master these concepts and bridge directly to the Question Builder.',
+        features: [
+            '10 progressive levels across 5+ industries',
+            'Drag-and-drop answer chips into GAFS lanes',
+            'Scoring with speed bonuses and streak multipliers',
+            'Hints system when you get stuck',
+            'Direct bridge to the Question Builder after completing',
+        ],
+        tips: [
+            'Start by identifying WHAT you\'re comparing (Grouping)',
+            'Then determine WHAT you\'re measuring (Aggregation)',
+            'Next decide WHICH data matters (Filtering)',
+            'Finally choose HOW to present results (Sorting)',
         ],
     },
 };

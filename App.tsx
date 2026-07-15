@@ -55,6 +55,7 @@ import { evaluateAllAlerts } from './services/alertEngine';
 import { useActivityStore } from './store/useActivityStore';
 import { DataStoryView } from './components/DataStoryView';
 import LegalPage from './components/LegalPage';
+import { GameView } from './components/GameView';
 
 // ── SESSION CREDENTIAL CACHE (auto-reconnect without re-entering password) ──
 // Stored in sessionStorage: survives page refresh but cleared on tab close or logout.
@@ -1638,6 +1639,11 @@ function App() {
             {activeTab === Tab.LEGAL && (
               <LegalPage onClose={() => setActiveTab(Tab.DASHBOARD)} />
             )}
+
+            {/* GAFS Challenge Game */}
+            <div className={`h-full w-full ${activeTab === Tab.GAME ? '' : 'hidden'}`}>
+              <GameView onNavigateToBuilder={() => setActiveTab(Tab.BUILDER)} />
+            </div>
 
             {/* Global Settings Modal */}
             <AnimatePresence>
