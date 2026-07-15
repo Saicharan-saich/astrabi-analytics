@@ -13,7 +13,10 @@ import { FormattingConfig, QueryConfig } from '../types';
 
 export const PALETTES = {
     // Discrete Multi-Color Palettes (for categorical/dimension analysis)
-    vibrant: ['#6366f1', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#3b82f6', '#f97316'],
+    // Default 'vibrant' is ordered for maximum adjacent-hue distinctness (first
+    // 6 are the most-used slots) so series stay distinguishable for colour-blind
+    // viewers — greens/teals and warm reds are spaced apart, not adjacent.
+    vibrant: ['#6366f1', '#f59e0b', '#ef4444', '#10b981', '#ec4899', '#06b6d4', '#8b5cf6', '#f97316', '#3b82f6', '#14b8a6'],
     electric: ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0e7490', '#c026d3', '#2563eb', '#ea580c'],
     neon: ['#00b4d8', '#00cc6a', '#e63946', '#e6b800', '#a855f7', '#e11d48', '#14b8a6', '#84cc16', '#3b82f6', '#f97316'],
     sunset: ['#f43f5e', '#fb923c', '#fbbf24', '#a3e635', '#34d399', '#22d3ee', '#818cf8', '#e879f9', '#f472b6', '#fb7185'],
