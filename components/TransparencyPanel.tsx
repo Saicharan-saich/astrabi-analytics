@@ -10,6 +10,11 @@
 // is safe to drop next to any chart without affecting existing layouts.
 // All data comes from fields that already exist on AnalysisResult — this
 // component invents nothing.
+//
+// Theming: this app is Tailwind v4 WITHOUT a `.dark`-class mapping, so the
+// `dark:` variant follows the OS, not the app. We therefore read the real
+// app theme via useTheme() and switch classes explicitly — the same
+// pattern App.tsx uses — with solid backgrounds for crisp contrast.
 // ═══════════════════════════════════════════════════════════════════
 
 import React, { useMemo, useState } from 'react';
@@ -18,6 +23,7 @@ import {
     Sigma, Layers, Filter as FilterIcon, Database
 } from 'lucide-react';
 import { AnalysisResult } from '../types';
+import { useTheme } from './ThemeProvider';
 
 interface TransparencyPanelProps {
     result: AnalysisResult;
@@ -85,6 +91,8 @@ export const TransparencyPanel: React.FC<TransparencyPanelProps> = ({
     className = '',
     defaultOpen = false,
 }) => {
+    const { theme } = useTheme();
+    const isDark = theme === 'dark';
     const [open, setOpen] = useState(defaultOpen);
     const [copied, setCopied] = useState(false);
     const panelId = useMemo(() => `transparency-${Math.random().toString(36).slice(2, 9)}`, []);
@@ -119,21 +127,34 @@ export const TransparencyPanel: React.FC<TransparencyPanelProps> = ({
     const conf = hasConfidence ? confidenceMeta(result.confidence as number) : null;
     const confToneClasses =
         conf?.tone === 'high'
-            ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-300 border-emerald-500/20'
+            ? (isDark ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30' : 'bg-emerald-50 text-emerald-700 border-emerald-200')
             : conf?.tone === 'medium'
-                ? 'bg-amber-500/10 text-amber-600 dark:text-amber-300 border-amber-500/20'
-                : 'bg-rose-500/10 text-rose-600 dark:text-rose-300 border-rose-500/20';
+                ? (isDark ? 'bg-amber-500/15 text-amber-300 border-amber-500/30' : 'bg-amber-50 text-amber-700 border-amber-200')
+                : (isDark ? 'bg-rose-500/15 text-rose-300 border-rose-500/30' : 'bg-rose-50 text-rose-700 border-rose-200');
+
+    // ── Theme-explicit class fragments (solid backgrounds, high contrast) ──
+    const container = isDark ? 'bg-[#141825] border-white/10' : 'bg-white border-gray-200 shadow-sm';
+    const headerText = isDark ? 'text-slate-200 hover:text-white' : 'text-gray-700 hover:text-gray-900';
+    const accentIcon = isDark ? 'text-indigo-400' : 'text-indigo-600';
+    const chip = isDark ? 'bg-slate-800 border-white/10 text-slate-200' : 'bg-gray-50 border-gray-200 text-gray-700';
+    const chipMuted = isDark ? 'text-slate-500' : 'text-gray-400';
+    const filterChip = isDark ? 'bg-indigo-500/15 text-indigo-300 border-indigo-500/30' : 'bg-indigo-50 text-indigo-700 border-indigo-200';
+    const warnText = isDark ? 'text-amber-300' : 'text-amber-600';
+    const sqlLabel = isDark ? 'text-slate-500' : 'text-gray-400';
+    const copyBtn = isDark ? 'text-slate-400 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100';
+    const footerText = isDark ? 'text-slate-500' : 'text-gray-400';
+    const dividerBorder = isDark ? 'border-white/10' : 'border-gray-100';
 
     return (
-        <div className={`mt-3 rounded-xl border border-gray-200 dark:border-white/10 bg-gray-50/60 dark:bg-slate-900/40 no-export ${className}`}>
+        <div className={`mt-3 rounded-xl border overflow-hidden no-export ${container} ${className}`}>
             <button
                 type="button"
                 onClick={() => setOpen((o) => !o)}
                 aria-expanded={open}
                 aria-controls={panelId}
-                className="w-full flex items-center gap-2 px-3 py-2 text-left text-xs font-medium text-gray-600 dark:text-slate-300 hover:text-gray-900 dark:hover:text-white transition-colors"
+                className={`w-full flex items-center gap-2 px-3 py-2.5 text-left text-xs font-semibold transition-colors ${headerText}`}
             >
-                <Info className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400 shrink-0" aria-hidden="true" />
+                <Info className={`w-3.5 h-3.5 shrink-0 ${accentIcon}`} aria-hidden="true" />
                 <span>How was this calculated?</span>
                 {conf && (
                     <span className={`ml-1 hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md border text-[10px] font-semibold ${confToneClasses}`}>
@@ -147,32 +168,32 @@ export const TransparencyPanel: React.FC<TransparencyPanelProps> = ({
             </button>
 
             {open && (
-                <div id={panelId} className="px-3 pb-3 space-y-3 text-xs max-h-[40vh] overflow-y-auto">
+                <div id={panelId} className={`px-3 pb-3 pt-1 space-y-3 text-xs max-h-[40vh] overflow-y-auto border-t ${dividerBorder}`}>
                     {/* Summary chips */}
-                    <div className="flex flex-wrap gap-2 pt-1">
+                    <div className="flex flex-wrap gap-2 pt-2">
                         {aggregation && sourceColumn && (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white dark:bg-slate-800/60 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-slate-200">
-                                <Sigma className="w-3 h-3 text-indigo-500 dark:text-indigo-400" aria-hidden="true" />
-                                <span className="font-mono">{String(aggregation).toUpperCase()}</span>
-                                <span className="text-gray-400 dark:text-slate-500">of</span>
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border ${chip}`}>
+                                <Sigma className={`w-3 h-3 ${accentIcon}`} aria-hidden="true" />
+                                <span className="font-mono font-semibold">{String(aggregation).toUpperCase()}</span>
+                                <span className={chipMuted}>of</span>
                                 <span className="font-mono">{sourceColumn}</span>
                             </span>
                         )}
                         {dimension && (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white dark:bg-slate-800/60 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-slate-200">
-                                <Layers className="w-3 h-3 text-indigo-500 dark:text-indigo-400" aria-hidden="true" />
-                                <span className="text-gray-400 dark:text-slate-500">grouped by</span>
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border ${chip}`}>
+                                <Layers className={`w-3 h-3 ${accentIcon}`} aria-hidden="true" />
+                                <span className={chipMuted}>grouped by</span>
                                 <span className="font-mono">{dimension}</span>
                             </span>
                         )}
                         {typeof rowsProcessed === 'number' && (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white dark:bg-slate-800/60 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-slate-200">
-                                <Database className="w-3 h-3 text-indigo-500 dark:text-indigo-400" aria-hidden="true" />
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border ${chip}`}>
+                                <Database className={`w-3 h-3 ${accentIcon}`} aria-hidden="true" />
                                 <span>{rowsProcessed.toLocaleString()} rows processed</span>
                             </span>
                         )}
                         {typeof resultRows === 'number' && (
-                            <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white dark:bg-slate-800/60 border border-gray-200 dark:border-white/10 text-gray-700 dark:text-slate-200">
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border ${chip}`}>
                                 <span>{resultRows.toLocaleString()} result {resultRows === 1 ? 'row' : 'rows'}</span>
                             </span>
                         )}
@@ -188,10 +209,10 @@ export const TransparencyPanel: React.FC<TransparencyPanelProps> = ({
                     {/* Filters applied */}
                     {filters.length > 0 && (
                         <div className="flex items-start gap-2">
-                            <FilterIcon className="w-3.5 h-3.5 mt-0.5 text-gray-400 dark:text-slate-500 shrink-0" aria-hidden="true" />
+                            <FilterIcon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${chipMuted}`} aria-hidden="true" />
                             <div className="flex flex-wrap gap-1.5">
                                 {filters.map((f, i) => (
-                                    <span key={i} className="inline-flex items-center px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-600 dark:text-indigo-300 border border-indigo-500/20 font-mono text-[11px]">
+                                    <span key={i} className={`inline-flex items-center px-2 py-0.5 rounded-md border font-mono text-[11px] ${filterChip}`}>
                                         {f}
                                     </span>
                                 ))}
@@ -203,7 +224,7 @@ export const TransparencyPanel: React.FC<TransparencyPanelProps> = ({
                     {warnings.length > 0 && (
                         <ul className="space-y-1">
                             {warnings.map((w, i) => (
-                                <li key={i} className="flex items-start gap-2 text-amber-600 dark:text-amber-300">
+                                <li key={i} className={`flex items-start gap-2 ${warnText}`}>
                                     <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden="true" />
                                     <span>{w}</span>
                                 </li>
@@ -211,36 +232,36 @@ export const TransparencyPanel: React.FC<TransparencyPanelProps> = ({
                         </ul>
                     )}
 
-                    {/* SQL */}
+                    {/* SQL — always a dark code panel for consistent legibility */}
                     {sql && (
                         <div>
                             <div className="flex items-center justify-between mb-1">
-                                <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400 dark:text-slate-500">
+                                <span className={`text-[11px] font-semibold uppercase tracking-wide ${sqlLabel}`}>
                                     Query executed
                                 </span>
                                 <button
                                     type="button"
                                     onClick={handleCopy}
                                     aria-label="Copy SQL to clipboard"
-                                    className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+                                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] transition-colors ${copyBtn}`}
                                 >
                                     {copied ? (
-                                        <><Check className="w-3 h-3 text-emerald-500" aria-hidden="true" /> Copied</>
+                                        <><Check className="w-3 h-3 text-emerald-400" aria-hidden="true" /> Copied</>
                                     ) : (
                                         <><Copy className="w-3 h-3" aria-hidden="true" /> Copy</>
                                     )}
                                 </button>
                             </div>
-                            <pre className="text-[11px] leading-relaxed text-gray-700 dark:text-slate-300 font-mono bg-white dark:bg-slate-950/60 rounded-lg p-2.5 border border-gray-200 dark:border-white/5 overflow-x-auto whitespace-pre-wrap break-words">
+                            <pre className="text-[11px] leading-relaxed text-slate-200 font-mono bg-[#0b1020] rounded-lg p-2.5 border border-white/10 overflow-x-auto whitespace-pre-wrap break-words">
                                 {sql}
                             </pre>
                         </div>
                     )}
 
                     {/* Trust footer */}
-                    <p className="text-[11px] text-gray-400 dark:text-slate-500 pt-0.5">
+                    <p className={`text-[11px] pt-0.5 ${footerText}`}>
                         Computed by running the query above against
-                        {datasetName ? <> your dataset <span className="font-medium text-gray-500 dark:text-slate-400">{datasetName}</span></> : <> your data</>}.
+                        {datasetName ? <> your dataset <span className={`font-medium ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>{datasetName}</span></> : <> your data</>}.
                     </p>
                 </div>
             )}
