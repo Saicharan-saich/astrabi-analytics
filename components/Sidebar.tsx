@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb, Bell, Activity, Zap, Shield, Gamepad2 } from 'lucide-react';
+import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb, Bell, Activity, Zap, Shield, Gamepad2, Settings } from 'lucide-react';
 import { Tab, UserRole } from '../types';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { useAlertStore } from '../store/useAlertStore';
@@ -7,6 +7,7 @@ import { Tooltip } from './Tooltip';
 import { PageInfoButton, PageKey } from './PageInfoButton';
 import classNames from 'clsx';
 import { useTheme } from './ThemeProvider';
+import { useAppStore } from '../store/useAppStore';
 
 interface SidebarProps {
     activeTab: Tab;
@@ -15,15 +16,17 @@ interface SidebarProps {
     onOpenUserManagement?: () => void;
     hasVisualResult?: boolean;
     onDataStory?: () => void;
+    onOpenTabManager?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onToggle, onOpenUserManagement, hasVisualResult, onDataStory }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onToggle, onOpenUserManagement, hasVisualResult, onDataStory, onOpenTabManager }) => {
     const { currentUser, logout } = useAuthStore();
     const { unreadCount } = useAlertStore();
     const { theme } = useTheme();
     const isDark = theme === 'dark';
     const userRole = currentUser?.role || UserRole.VIEWER;
     const perms = ROLE_PERMISSIONS[userRole];
+    const hiddenTabs = useAppStore((s: any) => s.hiddenTabs) || [];
 
     // Change Password modal state
     const [showChangePw, setShowChangePw] = useState(false);
@@ -105,6 +108,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         if (item.requiresEditSchema && !perms.canEditSchema) return false;
         if (item.requiresCreateVisuals && !perms.canCreateVisuals) return false;
         if (item.requiresManageQuestions && !perms.canManageQuestions) return false;
+        // Admin-controlled global tab visibility
+        if (hiddenTabs.includes(item.id)) return false;
         return true;
     });
 
@@ -321,6 +326,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                             <Users className="w-[15px] h-[15px]" />
                         </div>
                         <span>Manage Users</span>
+                    </button>
+                )}
+
+                {userRole === UserRole.ADMIN && onOpenTabManager && (
+                    <button
+                        onClick={onOpenTabManager}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-[13px] font-medium ${isDark ? 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-200 hover:translate-x-0.5' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 hover:translate-x-0.5'
+                            }`}
+                    >
+                        <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-white/[0.04] text-gray-500' : 'bg-gray-100 text-gray-400'}`}>
+                            <Settings className="w-[15px] h-[15px]" />
+                        </div>
+                        <span>Manage Tabs</span>
                     </button>
                 )}
 

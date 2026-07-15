@@ -129,6 +129,7 @@ interface UIState {
     appFontSize: number;
     appFontBold: boolean;
     theme: 'dark' | 'light';
+    hiddenTabs: string[];
     setActiveTab: (tab: Tab) => void;
     toggleSidebar: () => void;
     setSidebarOpen: (isOpen: boolean) => void;
@@ -137,6 +138,8 @@ interface UIState {
     toggleAppFontBold: () => void;
     setTheme: (theme: 'dark' | 'light') => void;
     toggleTheme: () => void;
+    toggleTabVisibility: (tabId: string) => void;
+    setHiddenTabs: (tabs: string[]) => void;
 }
 
 interface DataState {
@@ -275,6 +278,7 @@ export const useAppStore = create<AppStore>()(
             appFontSize: 14,
             appFontBold: false,
             theme: 'dark',
+            hiddenTabs: [],
             setActiveTab: (tab) => set({ activeTab: tab }),
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
             setSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),
@@ -283,6 +287,12 @@ export const useAppStore = create<AppStore>()(
             toggleAppFontBold: () => set((state) => ({ appFontBold: !state.appFontBold })),
             setTheme: (theme) => set({ theme }),
             toggleTheme: () => set((state) => ({ theme: state.theme === 'dark' ? 'light' : 'dark' })),
+            toggleTabVisibility: (tabId) => set((state) => ({
+                hiddenTabs: state.hiddenTabs.includes(tabId)
+                    ? state.hiddenTabs.filter(t => t !== tabId)
+                    : [...state.hiddenTabs, tabId]
+            })),
+            setHiddenTabs: (tabs) => set({ hiddenTabs: tabs }),
 
             // Data Slice
             dataset: null,
