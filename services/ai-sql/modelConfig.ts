@@ -16,8 +16,16 @@ export const BACKEND_LLM_URL = `${API_BASE}/llm/chat`;
 export const OPENROUTER_API_URL = BACKEND_LLM_URL;
 export const API_KEY = '__ROUTED_THROUGH_BACKEND__';
 
-/** The model to use for all AI requests */
+/** The model to use for most AI requests (fast, cheap). */
 export const PRIMARY_MODEL = 'google/gemini-2.5-flash';
+
+/**
+ * Stronger reasoning model for the accuracy-critical PLAN step. The plan is the
+ * single stochastic decision in the pipeline (SQL + chart are deterministic),
+ * so a more capable model here is the highest-leverage accuracy improvement.
+ * Backend /api/llm/chat already honours a per-call `model` param.
+ */
+export const PLANNER_MODEL = 'google/gemini-2.5-pro';
 
 /** Default timeout for AI requests */
 export const DEFAULT_TIMEOUT_MS = 60000;
@@ -47,6 +55,7 @@ export async function fetchWithFallback(
         temperature?: number;
         max_tokens?: number;
         timeout?: number;
+        model?: string;
     }
 ): Promise<{ data: any; model: string }> {
 
@@ -58,6 +67,7 @@ export async function fetchWithFallback(
     const temperature = options?.temperature ?? 0.0;
     const max_tokens = options?.max_tokens ?? 1500;
     const timeout = options?.timeout ?? DEFAULT_TIMEOUT_MS;
+    const model = options?.model ?? PRIMARY_MODEL;
 
     for (let attempt = 0; attempt <= MAX_429_RETRIES; attempt++) {
         const controller = new AbortController();
@@ -71,7 +81,7 @@ export async function fetchWithFallback(
                     'Authorization': `Bearer ${token}`,
                 },
                 body: JSON.stringify({
-                    model: PRIMARY_MODEL,
+                    model,
                     messages,
                     temperature,
                     max_tokens,
@@ -91,7 +101,7 @@ export async function fetchWithFallback(
                     );
                 }
 
-                return { data, model: PRIMARY_MODEL };
+                return { data, model };
             }
 
             // 401 Unauthorized — user not logged in or session revoked

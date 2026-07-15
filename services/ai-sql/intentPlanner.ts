@@ -15,14 +15,16 @@
 
 import { SemanticModel, SemanticField, AnalysisPlan, AnalysisIntent } from './types';
 import { serializeSemanticModel } from './semanticLayer';
-import { fetchWithFallback, PRIMARY_MODEL, API_KEY } from './modelConfig';
+import { fetchWithFallback, PRIMARY_MODEL, PLANNER_MODEL, API_KEY } from './modelConfig';
 import { classifyQuestion, ClassificationResult } from './questionClassifier';
 import { mapFieldsFromQuestion } from './fieldMapper';
 import { validatePlan } from './planValidator';
 
 /** Exported for UI display (shows which model family is active) */
 export const MODEL = PRIMARY_MODEL;
-const TIMEOUT_MS = 20000;
+// Planner uses the stronger (slower) PLANNER_MODEL, so allow more time than the
+// old flash-only budget to avoid premature timeouts on complex questions.
+const TIMEOUT_MS = 45000;
 
 /**
  * Build the system prompt for the intent planner.
@@ -1165,7 +1167,10 @@ export async function generatePlan(
     try {
         const { data } = await fetchWithFallback(
             llmMessages as any,
-            { temperature: 0.0, max_tokens: 1500, timeout: TIMEOUT_MS }
+            // Accuracy-critical step: use the stronger planning model and a larger
+            // token budget so complex plans (multi-dim + metrics + filters +
+            // comparison) don't truncate into invalid JSON.
+            { temperature: 0.0, max_tokens: 2500, timeout: TIMEOUT_MS, model: PLANNER_MODEL }
         );
 
         clearTimeout(timeout);
