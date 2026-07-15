@@ -354,6 +354,13 @@ function App() {
     }
   }, [activeTab, setSidebarOpen]);
 
+  // Auto-close sidebar on mobile
+  useEffect(() => {
+    if (isMobile) {
+      setSidebarOpen(false);
+    }
+  }, [isMobile, setSidebarOpen]);
+
   // ── AUTO-SYNC pendingProfile to active dataset ──
   // When the user switches datasets or a new dataset is uploaded,
   // update pendingProfile so the Column Mapping Wizard always shows
@@ -1190,7 +1197,7 @@ function App() {
                       </span>
                     )}
                     {dataset?.liveConnection && (
-                      <div className="relative">
+                      <div className="relative hidden md:block">
                         <button
                           onClick={() => setShowModeDropdown(!showModeDropdown)}
                           className={`text-[11px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1.5 border transition-all cursor-pointer ${
@@ -1273,26 +1280,28 @@ function App() {
                     )}
                   </div>
 
-                  <DatasetSwitcher
-                    datasets={datasets}
-                    activeDataset={dataset}
-                    onSwitch={setActiveDatasetById}
-                    onRemove={removeDataset}
-                    onAddNew={() => setActiveTab(Tab.UPLOAD)}
-                  />
+                  <div className="hidden md:block">
+                    <DatasetSwitcher
+                      datasets={datasets}
+                      activeDataset={dataset}
+                      onSwitch={setActiveDatasetById}
+                      onRemove={removeDataset}
+                      onAddNew={() => setActiveTab(Tab.UPLOAD)}
+                    />
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1 md:gap-1.5 shrink-0">
                   {/* Notification Center (Alert Bell) */}
                   <NotificationCenter onNavigateToAlerts={() => setActiveTab(Tab.ALERTS)} />
-                  {/* Re-open Column Mapping */}
+                  {/* Re-open Column Mapping — hide on mobile */}
                   {dataset?.domainProfile && (
                     <button
                       onClick={() => {
                         setPendingProfile(dataset.domainProfile!);
                         setActiveTab(Tab.COLUMN_MAPPING);
                       }}
-                      className={`p-2 rounded-lg transition-all duration-200 ${theme === 'dark' ? 'text-gray-400 hover:text-violet-400 hover:bg-violet-500/10' : 'text-gray-500 hover:text-violet-600 hover:bg-violet-50'
+                      className={`p-2 rounded-lg transition-all duration-200 hidden md:block ${theme === 'dark' ? 'text-gray-400 hover:text-violet-400 hover:bg-violet-500/10' : 'text-gray-500 hover:text-violet-600 hover:bg-violet-50'
                         }`}
                       title="Re-open Column Mapping"
                     >
@@ -1315,7 +1324,7 @@ function App() {
 
                   <button
                     onClick={() => toggleAbout(true)}
-                    className={`p-2 rounded-lg transition-all duration-200 ${theme === 'dark' ? 'text-gray-400 hover:text-violet-400 hover:bg-violet-500/10' : 'text-gray-500 hover:text-violet-600 hover:bg-violet-50'
+                    className={`p-2 rounded-lg transition-all duration-200 hidden sm:block ${theme === 'dark' ? 'text-gray-400 hover:text-violet-400 hover:bg-violet-500/10' : 'text-gray-500 hover:text-violet-600 hover:bg-violet-50'
                       }`}
                     title="Settings"
                   >
@@ -1323,7 +1332,7 @@ function App() {
                   </button>
 
                   {currentUser && (
-                    <div className={`flex items-center gap-2 ml-1 pl-3 border-l ${theme === 'dark' ? 'border-white/[0.08]' : 'border-gray-200'
+                    <div className={`flex items-center gap-1 md:gap-2 ml-0.5 md:ml-1 pl-1.5 md:pl-3 border-l ${theme === 'dark' ? 'border-white/[0.08]' : 'border-gray-200'
                       }`}>
                       <div className="relative">
                         <div className="absolute -inset-0.5 rounded-full bg-gradient-to-br from-violet-500 to-indigo-500 opacity-50" />
