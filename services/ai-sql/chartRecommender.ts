@@ -236,9 +236,14 @@ export function recommendChart(
                 reason = `${cardinality} categories (>${HIGH_CARDINALITY_THRESHOLD}) → Horizontal Bar (top ${topN})`;
             }
         } else if (metricCount === 1) {
-            chartType = 'bar';
+            // A second categorical dimension present → stack it as series instead
+            // of silently charting only the first dimension. The renderer
+            // auto-pivots the second string column into stacked series.
+            chartType = dimensionCount >= 2 ? 'stackedBar' : 'bar';
             leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
-            reason = `${cardinality} categories + 1 metric → Bar`;
+            reason = dimensionCount >= 2
+                ? `${cardinality} categories × ${dimensionCount} dimensions + 1 metric → Stacked Bar`
+                : `${cardinality} categories + 1 metric → Bar`;
         } else if (metricCount >= 2) {
             // Multiple metrics by category
             secondaryYKeys = metricColumns.slice(1);
@@ -283,12 +288,8 @@ export function recommendChart(
         return { chartType, xKey, yKey, secondaryYKeys, useDualAxis, leftAxisFormat, rightAxisFormat, reason, topN };
     }
 
-    // ─── Rule 7: Two dimensions + one metric → Stacked Bar ──────
-    if (dimensionCount >= 2 && metricCount >= 1) {
-        chartType = 'stackedBar';
-        reason = `${dimensionCount} dimensions + ${metricCount} metric(s) → Stacked Bar`;
-        return { chartType, xKey, yKey, useDualAxis, reason };
-    }
+    // (Two-dimension category queries are handled inside Rule 6 above — they
+    // return a stacked bar there, so the previous unreachable Rule 7 was removed.)
 
     // ─── Rule 8: Table fallback ──────────────────────────────────
     if (metricCount === 0) {
