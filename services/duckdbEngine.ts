@@ -37,6 +37,14 @@ const loadedTables = new Map<string, Promise<void>>();
  * it resets state and retries up to MAX_INIT_RETRIES times.
  */
 async function initDuckDB(): Promise<void> {
+    // DuckDB-WASM requires a browser Web Worker. In environments without one
+    // (server-side rendering, unit tests, restricted sandboxes) there is no
+    // point spinning through retries + exponential backoff against an
+    // impossible environment — fail fast with a clear message so callers can
+    // fall back to the pure-JS analysis path immediately.
+    if (typeof Worker === 'undefined') {
+        throw new Error('DuckDB-WASM unavailable: Web Worker is not supported in this environment');
+    }
     // If we think we have a connection, verify it's still alive
     if (db && conn) {
         try {
