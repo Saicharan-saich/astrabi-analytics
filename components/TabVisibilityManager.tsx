@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Eye, EyeOff, Search, BarChart2, Lightbulb, Sparkles, Wrench, Layout, Bell, Activity, Upload, GitMerge, Database, Gamepad2 } from 'lucide-react';
+import { X, Eye, EyeOff, Search, BarChart2, Lightbulb, Sparkles, Wrench, Layout, Bell, Activity, Upload, GitMerge, Database, Gamepad2, Check, CloudOff, Loader2 } from 'lucide-react';
 import { Tab } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { useTheme } from './ThemeProvider';
+import { saveGlobalHiddenTabs } from '../services/tabVisibilityService';
 
 interface TabInfo {
   id: Tab;
@@ -47,7 +48,22 @@ export const TabVisibilityManager: React.FC<TabVisibilityManagerProps> = ({ isOp
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const hiddenTabs = useAppStore((s) => s.hiddenTabs) || [];
-  const toggleTabVisibility = useAppStore((s) => s.toggleTabVisibility);
+  const setHiddenTabs = useAppStore((s) => s.setHiddenTabs);
+
+  const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+
+  // Toggle a tab AND persist the new global config to the backend so the
+  // change applies to every user — not just this admin's browser.
+  const handleToggle = async (tabId: string) => {
+    const next = hiddenTabs.includes(tabId)
+      ? hiddenTabs.filter((t) => t !== tabId)
+      : [...hiddenTabs, tabId];
+    setHiddenTabs(next); // optimistic local update
+    setSaveState('saving');
+    const ok = await saveGlobalHiddenTabs(next);
+    setSaveState(ok ? 'saved' : 'error');
+    if (ok) setTimeout(() => setSaveState('idle'), 2000);
+  };
 
   const sections = ['Data', 'Explore Data', 'Analysis', 'Views'];
 
@@ -69,8 +85,11 @@ export const TabVisibilityManager: React.FC<TabVisibilityManagerProps> = ({ isOp
             <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
               <div>
                 <h2 className={`text-lg font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Manage Tabs</h2>
-                <p className={`text-xs mt-0.5 ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
-                  {hiddenCount} of {totalHideable} optional tabs hidden
+                <p className={`text-xs mt-0.5 flex items-center gap-2 ${isDark ? 'text-slate-400' : 'text-gray-500'}`}>
+                  <span>{hiddenCount} of {totalHideable} optional tabs hidden · applies to all users</span>
+                  {saveState === 'saving' && <span className="inline-flex items-center gap-1 text-slate-400"><Loader2 className="w-3 h-3 animate-spin" /> Saving…</span>}
+                  {saveState === 'saved' && <span className="inline-flex items-center gap-1 text-emerald-500"><Check className="w-3 h-3" /> Saved for everyone</span>}
+                  {saveState === 'error' && <span className="inline-flex items-center gap-1 text-amber-500"><CloudOff className="w-3 h-3" /> Couldn’t sync — check connection</span>}
                 </p>
               </div>
               <button
@@ -99,7 +118,7 @@ export const TabVisibilityManager: React.FC<TabVisibilityManagerProps> = ({ isOp
                         return (
                           <button
                             key={tab.id}
-                            onClick={() => tab.canHide && toggleTabVisibility(tab.id)}
+                            onClick={() => tab.canHide && handleToggle(tab.id)}
                             disabled={!tab.canHide}
                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all text-left group ${
                               !tab.canHide
