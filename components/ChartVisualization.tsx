@@ -1344,12 +1344,13 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             },
             // SMOOTH ANIMATIONS
             animation: {
-                duration: 900,
-                easing: 'easeOutQuart' as const,
+                // Sleek & Glossy: a calmer, longer draw-in with gentle deceleration.
+                duration: 1100,
+                easing: 'easeOutCubic' as const,
                 delay: (context: any) => {
                     // Staggered entrance: each element appears slightly after the previous
                     if (context.type === 'data' && context.mode === 'default') {
-                        return context.dataIndex * 40 + context.datasetIndex * 80;
+                        return context.dataIndex * 45 + context.datasetIndex * 90;
                     }
                     return 0;
                 },

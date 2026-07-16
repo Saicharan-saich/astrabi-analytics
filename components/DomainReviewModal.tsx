@@ -62,7 +62,7 @@ export const DomainReviewModal: React.FC<DomainReviewModalProps> = ({ profile, i
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     exit={{ opacity: 0, scale: 0.95, y: 10 }}
                     transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                    className="w-full max-w-xl bg-[#1c2033] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
+                    className="w-full max-w-xl bg-[#171c26] border border-white/10 rounded-2xl shadow-2xl overflow-hidden"
                 >
                     {/* Header */}
                     <div className="px-6 pt-5 pb-4 border-b border-white/[0.06]">

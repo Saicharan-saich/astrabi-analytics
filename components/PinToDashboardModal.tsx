@@ -52,7 +52,7 @@ export const PinToDashboardModal: React.FC<PinToDashboardModalProps> = ({ item, 
                     transition={{ duration: 0.2 }}
                     className={`w-full max-w-md rounded-2xl border shadow-2xl overflow-hidden ${
                         isDark
-                            ? 'bg-[#1a1d2e] border-white/[0.08]'
+                            ? 'bg-[#171c26] border-white/[0.08]'
                             : 'bg-white border-gray-200'
                     }`}
                     onClick={e => e.stopPropagation()}
@@ -147,7 +147,7 @@ export const PinToDashboardModal: React.FC<PinToDashboardModalProps> = ({ item, 
                                     autoFocus
                                     className={`w-full px-3 py-2 rounded-lg text-sm font-medium outline-none transition-colors ${
                                         isDark
-                                            ? 'bg-[#141825] text-white border border-white/[0.1] focus:border-violet-500/50 placeholder:text-gray-600'
+                                            ? 'bg-[#12161f] text-white border border-white/[0.1] focus:border-violet-500/50 placeholder:text-gray-600'
                                             : 'bg-white text-gray-900 border border-gray-300 focus:border-violet-400 placeholder:text-gray-400'
                                     }`}
                                 />

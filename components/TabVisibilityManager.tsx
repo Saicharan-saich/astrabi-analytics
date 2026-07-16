@@ -63,7 +63,7 @@ export const TabVisibilityManager: React.FC<TabVisibilityManagerProps> = ({ isOp
             initial={{ opacity: 0, scale: 0.96 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.96 }}
-            className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border ${isDark ? 'bg-[#1c2033] border-white/10' : 'bg-white border-gray-200'}`}
+            className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden border ${isDark ? 'bg-[#171c26] border-white/10' : 'bg-white border-gray-200'}`}
           >
             {/* Header */}
             <div className={`flex items-center justify-between px-6 py-4 border-b ${isDark ? 'border-white/10' : 'border-gray-200'}`}>

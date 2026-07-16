@@ -24,7 +24,7 @@ export const SplashScreen: React.FC<{ onComplete: () => void }> = ({ onComplete 
                     exit={{ opacity: 0, scale: 1.08 }}
                     transition={{ duration: 0.9, ease: 'easeInOut' }}
                     className="fixed inset-0 z-[9999] flex flex-col items-center justify-center"
-                    style={{ background: 'linear-gradient(145deg, #0b0e1a 0%, #141825 50%, #0f1222 100%)' }}
+                    style={{ background: 'linear-gradient(145deg, #0b0e1a 0%, #12161f 50%, #0f1222 100%)' }}
                 >
                     {/* Subtle radial glow behind logo */}
                     <div

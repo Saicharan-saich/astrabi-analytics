@@ -1114,7 +1114,7 @@ function App() {
                       animate={{ x: 0, opacity: 1 }}
                       exit={{ x: -300, opacity: 0 }}
                       transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                      className={`fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] border-r overflow-hidden flex-shrink-0 print:hidden ${theme === 'dark' ? 'bg-[#111422] border-white/[0.06]' : 'bg-white border-gray-200'
+                      className={`fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] border-r overflow-hidden flex-shrink-0 print:hidden ${theme === 'dark' ? 'bg-[#0c0f16] border-white/[0.06]' : 'bg-white border-gray-200'
                         }`}
                     >
                       <Sidebar
@@ -1137,7 +1137,7 @@ function App() {
                     initial={{ width: 0, opacity: 0 }}
                     animate={{ width: 260, opacity: 1 }}
                     exit={{ width: 0, opacity: 0 }}
-                    className={`h-full border-r z-20 overflow-hidden flex-shrink-0 relative print:hidden ${theme === 'dark' ? 'bg-[#111422]/90 backdrop-blur-xl border-white/[0.06]' : 'bg-white/90 backdrop-blur-xl border-gray-200'
+                    className={`h-full border-r z-20 overflow-hidden flex-shrink-0 relative print:hidden ${theme === 'dark' ? 'bg-[#0c0f16]/90 backdrop-blur-xl border-white/[0.06]' : 'bg-white/90 backdrop-blur-xl border-gray-200'
                       }`}
                   >
                     <Sidebar
@@ -1156,7 +1156,7 @@ function App() {
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
               {/* Header */}
-              <header className={`h-14 flex items-center justify-between px-3 md:px-5 z-30 relative border-b print:hidden ${theme === 'dark' ? 'bg-[#141825]/80 backdrop-blur-xl border-white/[0.06]' : 'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm'
+              <header className={`h-14 flex items-center justify-between px-3 md:px-5 z-30 relative border-b print:hidden ${theme === 'dark' ? 'bg-[#12161f]/80 backdrop-blur-xl border-white/[0.06]' : 'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm'
                 }`}>
                 <div className="flex items-center gap-2 md:gap-3 min-w-0">
                   {(!isSidebarOpen || isMobile) && (
@@ -1218,7 +1218,7 @@ function App() {
                           <>
                             <div className="fixed inset-0 z-30" onClick={() => setShowModeDropdown(false)} />
                             <div className={`absolute top-full left-0 mt-1 z-40 w-48 rounded-xl shadow-2xl border overflow-hidden ${
-                              theme === 'dark' ? 'bg-[#1e2333] border-white/10' : 'bg-white border-gray-200'
+                              theme === 'dark' ? 'bg-[#171c26] border-white/10' : 'bg-white border-gray-200'
                             }`}>
                               <button
                                 onClick={() => switchConnectionMode('import')}
@@ -1344,7 +1344,7 @@ function App() {
                           {currentUser.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
                         </div>
                         {/* Online indicator */}
-                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#141825]" />
+                        <div className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#12161f]" />
                       </div>
                       <button
                         onClick={async () => { clearSessionCredentials(); await logout(); }}
@@ -1360,7 +1360,7 @@ function App() {
               </header>
 
               {/* Main Content Area */}
-              <main className={`flex-1 overflow-hidden relative ${theme === 'dark' ? 'bg-[#0c0f1a]' : 'bg-[#f5f6fa]'
+              <main className={`flex-1 overflow-hidden relative ${theme === 'dark' ? 'bg-[#0a0c12]' : 'bg-[#f4f6fb]'
                 }`}>
 
                 {/* ── FULL-SCREEN PROFILING OVERLAY ── */}
@@ -1386,7 +1386,7 @@ function App() {
                         className="relative z-10 w-[90vw] max-w-[420px] rounded-2xl border shadow-2xl overflow-hidden"
                         style={{
                           background: theme === 'dark'
-                            ? 'linear-gradient(135deg, #1a1d2e 0%, #141825 100%)'
+                            ? 'linear-gradient(135deg, #171c26 0%, #12161f 100%)'
                             : 'linear-gradient(135deg, #ffffff 0%, #f8f9fc 100%)',
                           borderColor: theme === 'dark' ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)',
                         }}
@@ -1704,7 +1704,7 @@ function App() {
                     initial={{ opacity: 0, scale: 0.96 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.96 }}
-                    className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border ${theme === 'dark' ? 'bg-[#1c2033] border-white/10' : 'bg-white border-gray-200'
+                    className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border ${theme === 'dark' ? 'bg-[#171c26] border-white/10' : 'bg-white border-gray-200'
                       }`}
                   >
                     <div className="p-6">

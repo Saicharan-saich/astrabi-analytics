@@ -378,7 +378,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                         {/* Grain (MANDATORY — most prominent) */}
                         <div className={`col-span-2 rounded-xl p-4 border transition-all ${showErrors && !grain.trim()
                             ? 'bg-red-500/10 border-red-500/30'
-                            : 'bg-[#1c2033] border-white/[0.06]'
+                            : 'bg-[#171c26] border-white/[0.06]'
                             }`}>
                             <div className="flex items-center gap-2 mb-2">
                                 <Layers className="w-4 h-4 text-violet-400" />
@@ -414,7 +414,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                         </div>
 
                         {/* Domain */}
-                        <div className="bg-[#1c2033] border border-white/[0.06] rounded-xl p-4">
+                        <div className="bg-[#171c26] border border-white/[0.06] rounded-xl p-4">
                             <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold block mb-2">Domain</label>
                             <select
                                 value={domain}
@@ -422,7 +422,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                 className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50"
                             >
                                 {ALL_DOMAINS.map(d => (
-                                    <option key={d} value={d} className="bg-[#1c2033]">{d}</option>
+                                    <option key={d} value={d} className="bg-[#171c26]">{d}</option>
                                 ))}
                             </select>
                             {subDomain && <p className="text-[10px] text-gray-500 mt-1">Sub: {subDomain}</p>}
@@ -445,7 +445,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
 
 
                             return (
-                                <div className="bg-[#1c2033] border border-white/[0.06] rounded-xl p-4">
+                                <div className="bg-[#171c26] border border-white/[0.06] rounded-xl p-4">
                                     {/* Status badge + columns classified */}
                                     <div className="flex items-center justify-between mb-3">
                                         <label className="text-sm text-gray-400 uppercase tracking-wider font-semibold">Classification Status</label>
@@ -608,7 +608,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                 value={searchFilter}
                                 onChange={e => setSearchFilter(e.target.value)}
                                 placeholder="Search columns..."
-                                className="w-full bg-[#1c2033] border border-white/[0.06] rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
+                                className="w-full bg-[#171c26] border border-white/[0.06] rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
                             />
                         </div>
                         <div className="flex gap-1">
@@ -626,7 +626,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                     </div>
 
                     {/* ══ COLUMN TABLE (SIMPLIFIED — critical fields only in main row) ══ */}
-                    <div className="bg-[#1c2033] border border-white/[0.06] rounded-xl overflow-hidden">
+                    <div className="bg-[#171c26] border border-white/[0.06] rounded-xl overflow-hidden">
                         {/* Header */}
                         <div className="grid grid-cols-[2.5fr_0.8fr_1.2fr_0.6fr_0.4fr] gap-2 px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.06] text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                             <span>Column</span>
@@ -680,7 +680,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                     className={`w-full px-1.5 py-1 rounded text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/50 ${TYPE_COLORS[sem.role] || TYPE_COLORS.UNKNOWN}`}
                                                 >
                                                     {COLUMN_TYPES.map(t => (
-                                                        <option key={t} value={t} className="bg-[#1c2033] text-white font-normal">{t}</option>
+                                                        <option key={t} value={t} className="bg-[#171c26] text-white font-normal">{t}</option>
                                                     ))}
                                                 </select>
                                             </div>
@@ -698,7 +698,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                             }`}
                                                     >
                                                         {AGGREGATIONS.filter(a => a !== 'NONE').map(a => (
-                                                            <option key={a} value={a} className="bg-[#1c2033] text-white font-normal">{a}</option>
+                                                            <option key={a} value={a} className="bg-[#171c26] text-white font-normal">{a}</option>
                                                         ))}
                                                     </select>
                                                 ) : (
@@ -751,7 +751,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-violet-500/50"
                                                                 >
                                                                     {SEMANTIC_ROLES.map(r => (
-                                                                        <option key={r} value={r} className="bg-[#1c2033]">{ROLE_DISPLAY[r]?.label || r}</option>
+                                                                        <option key={r} value={r} className="bg-[#171c26]">{ROLE_DISPLAY[r]?.label || r}</option>
                                                                     ))}
                                                                 </select>
                                                             </div>
@@ -764,7 +764,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-violet-500/50"
                                                                 >
                                                                     {FORMATS.map(f => (
-                                                                        <option key={f} value={f} className="bg-[#1c2033]">{f}</option>
+                                                                        <option key={f} value={f} className="bg-[#171c26]">{f}</option>
                                                                     ))}
                                                                 </select>
                                                             </div>
@@ -805,7 +805,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
 
 
                     {/* ══ PREVIEW BEFORE COMMIT ══ */}
-                    <div className="bg-[#1c2033] border border-white/[0.06] rounded-xl overflow-hidden">
+                    <div className="bg-[#171c26] border border-white/[0.06] rounded-xl overflow-hidden">
                         <button
                             onClick={() => setShowPreview(!showPreview)}
                             className="w-full flex items-center justify-between px-4 py-3 bg-white/[0.02] hover:bg-white/[0.04] transition-colors"

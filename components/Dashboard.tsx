@@ -1256,7 +1256,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                   key={item.id}
                   className={`
                     animate-card-entrance
-                    bg-white dark:bg-[#1c2033]/80 dark:backdrop-blur-sm border border-gray-200 dark:border-white/[0.08] rounded-xl overflow-hidden
+                    bg-white dark:bg-[#171c26]/80 dark:backdrop-blur-sm border border-gray-200 dark:border-white/[0.08] rounded-xl overflow-hidden
                     shadow-sm hover:shadow-lg dark:hover:shadow-violet-500/5
                     transition-all duration-300 group flex flex-col
                     hover:border-gray-300 dark:hover:border-violet-500/20

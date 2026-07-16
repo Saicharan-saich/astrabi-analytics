@@ -4,77 +4,89 @@
 
 /* ── Design Tokens ──────────────────────────────────── */
 :root {
-  /* Primary palette — Indigo-Violet */
-  --color-primary: #6366f1;
-  --color-primary-light: #818cf8;
-  --color-primary-lighter: #e0e7ff;
-  --color-primary-dark: #4f46e5;
+  /* ── Sleek & Glossy — single confident accent (refined azure) ── */
+  --color-primary: #4f80ff;
+  --color-primary-light: #7aa2ff;
+  --color-primary-lighter: #dbe6ff;
+  --color-primary-dark: #3b6ff0;
 
-  /* Secondary palette — Warm Amber */
-  --color-secondary: #f59e0b;
-  --color-secondary-light: #fbbf24;
-  --color-secondary-lighter: #fffbeb;
+  /* Semantic (Apple-system tuned) — amber warn / used sparingly */
+  --color-secondary: #ff9f0a;
+  --color-secondary-light: #ffc75a;
+  --color-secondary-lighter: #fff6e6;
 
-  /* Accent — Teal */
-  --color-accent: #14b8a6;
-  --color-accent-light: #5eead4;
+  /* Accent — cool teal kept for occasional secondary series */
+  --color-accent: #2dd4bf;
+  --color-accent-light: #7bead9;
 
-  /* Accent gradient & glow */
-  --accent-gradient: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%);
-  --accent-glow: 0 0 20px -4px rgba(99, 102, 241, 0.35);
+  /* Accent gradient & glow — subtle single-hue gloss (not tri-color) */
+  --accent-gradient: linear-gradient(180deg, #7aa2ff 0%, #4f80ff 100%);
+  --accent-glow: 0 0 24px -6px rgba(79, 128, 255, 0.35);
+  /* Glass gloss highlight + gentle spring easing */
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
 
-  /* Surfaces — Dark theme (default) — indigo-tinted */
-  --bg-app: #0a0d16;
-  --bg-surface: #111827;
-  --bg-elevated: #1a2035;
-  --bg-hover: #232d48;
-  --bg-sidebar: #0e1120;
+  /* Surfaces — deep cool-neutral ground (biased toward the accent) */
+  --bg-app: #0a0c12;
+  --bg-surface: #12161f;
+  --bg-elevated: #171c26;
+  --bg-hover: #1e2530;
+  --bg-sidebar: #0c0f16;
 
-  /* Text */
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-tertiary: #64748b;
-  --text-muted: #475569;
+  /* Text — cool-biased neutrals */
+  --text-primary: #f3f6fb;
+  --text-secondary: #98a3b4;
+  --text-tertiary: #626c7a;
+  --text-muted: #4a5361;
 
-  /* Borders — slightly more visible */
+  /* Borders */
   --border-default: rgba(255, 255, 255, 0.08);
-  --border-hover: rgba(99, 102, 241, 0.2);
-  --border-strong: rgba(255, 255, 255, 0.18);
+  --border-hover: rgba(79, 128, 255, 0.22);
+  --border-strong: rgba(255, 255, 255, 0.16);
 
-  /* Shadows — layered for depth */
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 16px -2px rgba(0, 0, 0, 0.3), 0 2px 4px rgba(0, 0, 0, 0.2);
-  --shadow-lg: 0 8px 30px -4px rgba(0, 0, 0, 0.4), 0 4px 8px rgba(0, 0, 0, 0.2);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.25), 0 4px 16px -4px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  /* Shadows — softer, deeper, glossier */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 6px 20px -8px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 18px 40px -18px rgba(0, 0, 0, 0.7), 0 6px 14px rgba(0, 0, 0, 0.28);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 12px 30px -16px rgba(0, 0, 0, 0.6);
 
-  /* Radii */
-  --radius-sm: 8px;
-  --radius-md: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
+  /* Radii — sleek, slightly rounder */
+  --radius-sm: 9px;
+  --radius-md: 13px;
+  --radius-lg: 18px;
+  --radius-xl: 22px;
 }
 
 /* ── Light Theme Overrides ──────────────────────────── */
 html.light {
-  --bg-app: #f7f8fc;
+  /* Deeper azure accent for contrast on light ground */
+  --color-primary: #3b6ff0;
+  --color-primary-light: #5b86f5;
+  --color-primary-dark: #2f5fe0;
+  --accent-gradient: linear-gradient(180deg, #5b86f5 0%, #3b6ff0 100%);
+  --accent-glow: 0 0 24px -8px rgba(47, 102, 240, 0.28);
+  --glass-highlight: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+  /* Cool off-white ground */
+  --bg-app: #f4f6fb;
   --bg-surface: #ffffff;
   --bg-elevated: #ffffff;
-  --bg-hover: #f0f1f8;
-  --bg-sidebar: #fafbff;
+  --bg-hover: #eef1f8;
+  --bg-sidebar: #fbfcfe;
 
-  --text-primary: #0f172a;
-  --text-secondary: #334155;
-  --text-tertiary: #475569;
-  --text-muted: #6b7280;
+  --text-primary: #0c111b;
+  --text-secondary: #55606f;
+  --text-tertiary: #8a94a3;
+  --text-muted: #99a2b0;
 
-  --border-default: rgba(99, 102, 241, 0.08);
-  --border-hover: rgba(99, 102, 241, 0.16);
-  --border-strong: rgba(0, 0, 0, 0.14);
+  --border-default: rgba(15, 23, 42, 0.08);
+  --border-hover: rgba(47, 102, 240, 0.20);
+  --border-strong: rgba(15, 23, 42, 0.14);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-  --shadow-md: 0 4px 16px -2px rgba(0, 0, 0, 0.06), 0 2px 4px rgba(0, 0, 0, 0.04);
-  --shadow-lg: 0 8px 30px -4px rgba(0, 0, 0, 0.08), 0 4px 8px rgba(0, 0, 0, 0.04);
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.04), 0 4px 16px -4px rgba(0, 0, 0, 0.05), inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  --shadow-sm: 0 1px 2px rgba(21, 32, 59, 0.06);
+  --shadow-md: 0 6px 20px -8px rgba(21, 32, 59, 0.16), 0 2px 6px rgba(21, 32, 59, 0.06);
+  --shadow-lg: 0 18px 40px -18px rgba(21, 32, 59, 0.22), 0 6px 14px rgba(21, 32, 59, 0.08);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.9) inset, 0 12px 30px -18px rgba(21, 32, 59, 0.18);
 }
 
 /* Light mode: comprehensive overrides for dark-only classes */
@@ -479,21 +491,21 @@ body,
 
 /* ── Surface Utilities — Glassmorphism ──────────────── */
 .surface-card {
-  background: rgba(17, 24, 39, 0.75);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  background: rgba(18, 22, 31, 0.72);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
-  transition: transform 0.2s cubic-bezier(0.34, 1.56, 0.64, 1),
-              box-shadow 0.25s ease,
-              border-color 0.25s ease;
+  box-shadow: var(--glass-highlight), var(--shadow-card);
+  transition: transform 0.35s var(--ease-spring),
+              box-shadow 0.35s var(--ease-spring),
+              border-color 0.3s ease;
 }
 
 .surface-card:hover {
   border-color: var(--border-hover);
-  box-shadow: var(--shadow-md), var(--accent-glow);
-  transform: translateY(-1px);
+  box-shadow: var(--glass-highlight), var(--shadow-lg);
+  transform: translateY(-3px);
 }
 
 .surface-elevated {
@@ -507,11 +519,11 @@ body,
 
 /* Glassmorphism panels */
 .glass-panel {
-  background: rgba(17, 24, 39, 0.65);
-  backdrop-filter: blur(16px) saturate(180%);
-  -webkit-backdrop-filter: blur(16px) saturate(180%);
+  background: rgba(18, 22, 31, 0.62);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
   border: 1px solid var(--border-default);
-  box-shadow: var(--shadow-card);
+  box-shadow: var(--glass-highlight), var(--shadow-card);
 }
 
 .glass-panel-hover:hover {
@@ -530,7 +542,7 @@ body,
 
 .glass-input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15), var(--accent-glow);
+  box-shadow: 0 0 0 3px rgba(79, 128, 255, 0.18), var(--accent-glow);
   outline: none;
 }
 
@@ -583,16 +595,18 @@ html.light .glass-input:focus {
 }
 
 .glass-frost {
-  background: rgba(17, 24, 39, 0.7);
-  backdrop-filter: blur(20px) saturate(180%);
-  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  background: rgba(18, 22, 31, 0.68);
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
   border: 1px solid var(--border-default);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--glass-highlight), var(--shadow-md);
+  transition: transform 0.35s var(--ease-spring), box-shadow 0.35s var(--ease-spring), border-color 0.3s ease;
 }
 
 .glass-frost:hover {
   border-color: var(--border-hover);
-  box-shadow: var(--shadow-lg), var(--accent-glow);
+  box-shadow: var(--glass-highlight), var(--shadow-lg);
+  transform: translateY(-2px);
 }
 
 html.light .glass,
@@ -747,7 +761,27 @@ html.light .glass-frost {
 }
 
 .animate-card-entrance {
-  animation: card-entrance 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: card-entrance 0.5s var(--ease-spring) forwards;
+}
+
+/* ── Sleek & Glossy motion utilities ──────────────────── */
+/* Gentle spring lift on hover — apply to any interactive card/tile. */
+.hover-lift {
+  transition: transform 0.35s var(--ease-spring), box-shadow 0.35s var(--ease-spring), border-color 0.3s ease;
+  will-change: transform;
+}
+.hover-lift:hover { transform: translateY(-3px); }
+
+/* Soft entrance used across panels/rows. */
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-rise { animation: rise-in 0.6s var(--ease-spring) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hover-lift:hover { transform: none; }
+  .animate-rise { animation: none; }
 }
 
 .animate-card-entrance:nth-child(1) {

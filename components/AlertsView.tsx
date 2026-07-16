@@ -161,7 +161,7 @@ export const AlertsView: React.FC<AlertsViewProps> = ({ dataset }) => {
                         {menuRuleId === rule.id && (
                           <>
                             <div className="fixed inset-0 z-40" onClick={() => setMenuRuleId(null)} />
-                            <div className={`absolute right-0 top-full mt-1 z-50 w-44 rounded-xl shadow-2xl border overflow-hidden ${isDark ? 'bg-[#1e2333] border-white/10' : 'bg-white border-gray-200'}`}>
+                            <div className={`absolute right-0 top-full mt-1 z-50 w-44 rounded-xl shadow-2xl border overflow-hidden ${isDark ? 'bg-[#171c26] border-white/10' : 'bg-white border-gray-200'}`}>
                               <button onClick={e => { e.stopPropagation(); setEditingRule(rule); setShowWizard(true); setMenuRuleId(null); }}
                                 className={`w-full flex items-center gap-2 px-3 py-2 text-xs font-medium ${isDark ? 'text-gray-300 hover:bg-white/[0.05]' : 'text-gray-700 hover:bg-gray-50'}`}>
                                 <Edit2 className="w-3.5 h-3.5" /> Edit

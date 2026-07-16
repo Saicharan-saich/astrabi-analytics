@@ -164,7 +164,7 @@ export const AdminQuestionBuilder: React.FC<AdminQuestionBuilderProps> = ({ data
 
     if (!isAdmin) {
         return (
-            <div className={`h-full flex items-center justify-center ${isDark ? 'bg-[#0c0f1a]' : 'bg-gray-50'}`}>
+            <div className={`h-full flex items-center justify-center ${isDark ? 'bg-[#0a0c12]' : 'bg-gray-50'}`}>
                 <div className="text-center space-y-3">
                     <AlertCircle className="w-12 h-12 text-red-400 mx-auto" />
                     <h2 className={`text-xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>Admin Access Required</h2>
@@ -184,7 +184,7 @@ export const AdminQuestionBuilder: React.FC<AdminQuestionBuilderProps> = ({ data
     const labelClass = `block text-xs font-bold uppercase tracking-wider mb-1.5 ${isDark ? 'text-slate-400' : 'text-slate-500'}`;
 
     return (
-        <div className={`h-full overflow-y-auto ${isDark ? 'bg-[#0c0f1a]' : 'bg-gray-50'}`}>
+        <div className={`h-full overflow-y-auto ${isDark ? 'bg-[#0a0c12]' : 'bg-gray-50'}`}>
             <div className="max-w-6xl mx-auto p-6 space-y-6">
                 {/* Header */}
                 <div className="flex items-center justify-between">
