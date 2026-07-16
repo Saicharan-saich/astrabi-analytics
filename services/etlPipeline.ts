@@ -202,8 +202,86 @@ const MONTH_MAP: Record<string, number> = {
     oct: 10, october: 10, nov: 11, november: 11, dec: 12, december: 12,
 };
 
+// ─── CLASSIFICATION VOCABULARY ──────────────────────────────────────
+// The name-pattern signals that drive Layer-4 role classification, kept
+// together so the rules are easy to reason about and extend. Used by
+// classifyColumnRole() below.
+
 // ID column name patterns — includes abbreviated forms like acid (account-id), brid (branch-id), tno (txn-no)
 const ID_PATTERNS = /(?:^id$|_id$|^id_|order_?id|cust(?:omer)?_?id|product_?id|trans(?:action)?_?id|invoice_?id|sku|code$|_code$|_no$|_num$|number$|_key$|^pk_|^fk_|^.{1,4}id$|^.{1,4}no$|^.{1,4}cd$|^s_?no$|^t_?no$|^sr_?no$|^acc_?(?:id|no)$|^acct_?(?:id|no)$|^emp_?(?:id|no)$|^cust_?(?:id|no)$|^br_?(?:id|no)$)/i;
+
+// Metric name patterns — exact match for standalone names
+const METRIC_NAME_EXACT = /^(quantity|qty|amount|amt|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|avg|average|num|number)$/i;
+
+// Metric keyword fragments — for compound names like txn_amount, total_sales, net_revenue
+const METRIC_KEYWORDS = /(?:^|[_\s])(amount|amt|qty|quantity|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|average|avg|number|num|charge|payment|spend|earning|payout|funding|debt|credit|debit|turnover|premium|commission|bonus|interest|deposit|withdrawal|refund|surcharge|tariff|fare|toll|rent|royalty|stipend)(?:[_\s]|$)/i;
+
+// Date name patterns (strong signal for date classification)
+const DATE_NAME_PATTERNS = /^(date|sale_?date|order_?date|purchase_?date|created_?at|updated_?at|ship_?date|delivery_?date|birth_?date|dob|start_?date|end_?date|due_?date|invoice_?date|payment_?date|registration_?date|timestamp|datetime|created|modified|posted|expired|effective)$/i;
+
+// Strong business-metric names — a numeric column with one of these is a measure,
+// never reclassified as a numeric attribute.
+const STRONG_METRIC_NAME = /(?:^|[_\s])(sales|revenue|profit|cost|price|amount|total|income|salary|wage|pay|compensation|expense|fee|charge|payment|spend|earning|bonus|commission|balance|budget|discount|tax|shipping|freight|margin|debt|credit|debit|turnover|premium|interest|deposit|refund|rent|royalty|stipend|funding|payout)(?:[_\s]|$)/i;
+
+/**
+ * Distinguishes a numeric ATTRIBUTE (age, rating, score) from a business MEASURE.
+ * Attributes have a bounded human-scale range, integer values, and/or low
+ * distinct-to-row ratio; strong metric names are never attributes.
+ */
+function isNumericAttribute(p: ColumnProfileData): boolean {
+    const pMin = p.min, pMax = p.max;
+    if (pMin === undefined || pMax === undefined) return false;
+    if (STRONG_METRIC_NAME.test(p.name)) return false;
+    const span = pMax - pMin;
+    const maxVal = Math.max(Math.abs(pMin), Math.abs(pMax));
+    const bounded = maxVal > 0 && maxVal <= 200 && span > 0 && span <= 200; // Signal 1
+    const integers = Number.isInteger(pMin) && Number.isInteger(pMax);      // Signal 2
+    const lowDistinct = p.totalValues > 0 && (p.distinctCount / p.totalValues) < 0.15; // Signal 3
+    return [bounded, integers, lowDistinct].filter(Boolean).length >= 2;
+}
+
+/**
+ * The Layer-4 role decision for a single column, as an explicit ORDERED list of
+ * named rules — first match wins. Pure (no logging/side-effects) so it can be
+ * unit-tested directly and reasoned about in one place. Rule order is
+ * significant and documented per-rule; the returned `note`, when present, is the
+ * structured reason the caller logs.
+ */
+export type RoleDecision = { type: ColumnType; note?: { label: string; message: string } };
+export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
+    const isMetricName = METRIC_NAME_EXACT.test(p.name) || METRIC_KEYWORDS.test(p.name);
+    const isDateName = DATE_NAME_PATTERNS.test(p.name);
+    const effectiveNumericRate = p.numericParseRate + (p.wordNumberRate || 0);
+    const keySig = keySignalFor(p, isMetricName);
+
+    // R1 — ID by name pattern (order_id, sku, *_code …).
+    if (ID_PATTERNS.test(p.name)) return { type: ColumnType.ID };
+    // R2 — Date by data: a majority of values parse as dates.
+    if (p.dateParseRate >= 0.5) return { type: ColumnType.DATE };
+    // R3 — Date by name (trust the column name when data is inconclusive).
+    if (isDateName) return { type: ColumnType.DATE };
+    // R4 — Metric by name + numeric data. MUST precede the boolean rule because
+    // boolean tokens include '1'/'0', which would misclassify e.g. a "quantity"
+    // column that happens to be mostly 1s as BOOLEAN.
+    if (isMetricName && effectiveNumericRate >= 0.3) return { type: ColumnType.METRIC };
+    // R5 — Boolean (≥60% true/false tokens).
+    if (p.booleanTokenRate >= 0.6) return { type: ColumnType.BOOLEAN };
+    // R6 — Data-driven key: near-unique or serial integers are identifiers, not
+    // measures, even when the name gives nothing away. Precedes the metric rule
+    // so keys are never summed/averaged.
+    if (keySig.isKey) return { type: ColumnType.ID, note: { label: 'Key Detection', message: `Column '${p.name}' classified as ID — ${keySig.reason}.` } };
+    // R7 — Numeric: a business metric UNLESS it looks like a numeric attribute.
+    if (effectiveNumericRate >= 0.7 && p.distinctCount >= 10 && !ID_PATTERNS.test(p.name)) {
+        if (isNumericAttribute(p)) {
+            return { type: ColumnType.DIMENSION, note: { label: 'Attribute Detection', message: `Column '${p.name}' reclassified as DIMENSION (numeric attribute) — range: ${p.min}–${p.max}, distinct: ${p.distinctCount}/${p.totalValues}` } };
+        }
+        return { type: ColumnType.METRIC };
+    }
+    // R8 — Low-cardinality numeric with almost no distinct values = an ID/code.
+    if (p.numericParseRate >= 0.9 && p.distinctCount < 10 && p.totalValues > 0 && p.distinctCount / p.totalValues < 0.05) return { type: ColumnType.ID };
+    // R9 — Default: dimension (categorical text or anything unclassified above).
+    return { type: ColumnType.DIMENSION };
+}
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  HELPER FUNCTIONS                                               ║
@@ -869,15 +947,6 @@ function layer4_rulePlanner(
     const columns: ColumnDefinition[] = [];
     const plans: TransformPlan[] = [];
 
-    // Metric name patterns — exact match for standalone names
-    const METRIC_NAME_EXACT = /^(quantity|qty|amount|amt|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|avg|average|num|number)$/i;
-
-    // Metric keyword fragments — for compound names like txn_amount, total_sales, net_revenue
-    const METRIC_KEYWORDS = /(?:^|[_\s])(amount|amt|qty|quantity|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|average|avg|number|num|charge|payment|spend|earning|payout|funding|debt|credit|debit|turnover|premium|commission|bonus|interest|deposit|withdrawal|refund|surcharge|tariff|fare|toll|rent|royalty|stipend)(?:[_\s]|$)/i;
-
-    // Date name patterns (strong signal for date classification)
-    const DATE_NAME_PATTERNS = /^(date|sale_?date|order_?date|purchase_?date|created_?at|updated_?at|ship_?date|delivery_?date|birth_?date|dob|start_?date|end_?date|due_?date|invoice_?date|payment_?date|registration_?date|timestamp|datetime|created|modified|posted|expired|effective)$/i;
-
     for (const p of profiles) {
         let type: ColumnType;
         const steps: TransformStep[] = [];
@@ -887,98 +956,21 @@ function layer4_rulePlanner(
             type = columnTypeOverrides[p.name];
             logs.push(log('User Override', 4, 'info', `Column '${p.name}' set to ${type} (manual override).`, { affectedColumns: [p.name] }));
         } else {
-            const isMetricName = METRIC_NAME_EXACT.test(p.name) || METRIC_KEYWORDS.test(p.name);
-            const isDateName = DATE_NAME_PATTERNS.test(p.name);
-            const effectiveNumericRate = p.numericParseRate + (p.wordNumberRate || 0);
-            const keySig = keySignalFor(p, isMetricName);
-
-            // ── Gate 1: ID detection (by name pattern) ──
-            if (ID_PATTERNS.test(p.name)) {
-                type = ColumnType.ID;
-            }
-            // ── Gate 2: Date gate (>50% parse rate) ──
-            else if (p.dateParseRate >= 0.5) {
-                type = ColumnType.DATE;
-            }
-            // ── Gate 2b: Date by name — trust the column name pattern ──
-            else if (isDateName) {
-                type = ColumnType.DATE;
-            }
-            // ── Gate 3: Metric by name + numeric data — trust the name ──
-            // IMPORTANT: This MUST run before the boolean gate because BOOLEAN_TOKENS
-            // includes '1' and '0', which causes columns like "quantity" with mostly
-            // values of 1 to be misclassified as BOOLEAN instead of METRIC.
-            else if (isMetricName && effectiveNumericRate >= 0.3) {
-                type = ColumnType.METRIC;
-            }
-            // ── Gate 4: Boolean gate (≥60% boolean tokens) ──
-            else if (p.booleanTokenRate >= 0.6) {
-                type = ColumnType.BOOLEAN; // Booleans get their own type with bool normalization
-            }
-            // ── Gate 4a2: Data-driven KEY detection (relationship/uniqueness) ──
-            // Near-unique or sequential integer columns are identifiers, not measures —
-            // even when the name gives nothing away. Catch them before the metric gate
-            // so keys never get summed/averaged.
-            else if (keySig.isKey) {
-                type = ColumnType.ID;
-                logs.push(log('Key Detection', 4, 'info',
-                    `Column '${p.name}' classified as ID — ${keySig.reason}.`,
-                    { affectedColumns: [p.name] }));
-            }
-            // ── Gate 4b: Metric gate (high numeric rate + sufficient cardinality) ──
-            // BUT: first check if this is a numeric ATTRIBUTE (age, rating, etc.)
-            // using statistical signals — bounded range, integer values, low cardinality
-            else if (effectiveNumericRate >= 0.7 && p.distinctCount >= 10 && !ID_PATTERNS.test(p.name)) {
-                // Check if this looks like a numeric attribute vs a business metric
-                const pMin = p.min;
-                const pMax = p.max;
-                const isAttribute = (() => {
-                    if (pMin === undefined || pMax === undefined) return false;
-
-                    // Never reclassify columns with strong business metric names
-                    const STRONG_METRIC = /(?:^|[_\s])(sales|revenue|profit|cost|price|amount|total|income|salary|wage|pay|compensation|expense|fee|charge|payment|spend|earning|bonus|commission|balance|budget|discount|tax|shipping|freight|margin|debt|credit|debit|turnover|premium|interest|deposit|refund|rent|royalty|stipend|funding|payout)(?:[_\s]|$)/i;
-                    if (STRONG_METRIC.test(p.name)) return false;
-
-                    const span = pMax - pMin;
-                    const maxVal = Math.max(Math.abs(pMin), Math.abs(pMax));
-
-                    // Signal 1: Bounded human-scale range (0–200)
-                    const bounded = maxVal > 0 && maxVal <= 200 && span > 0 && span <= 200;
-                    // Signal 2: Integer-only values
-                    const integers = Number.isInteger(pMin) && Number.isInteger(pMax);
-                    // Signal 3: Low distinct-to-row ratio (< 15% unique)
-                    const lowDistinct = p.totalValues > 0 && (p.distinctCount / p.totalValues) < 0.15;
-
-                    const signals = [bounded, integers, lowDistinct].filter(Boolean).length;
-                    return signals >= 2;
-                })();
-
-                if (isAttribute) {
-                    type = ColumnType.DIMENSION;
-                    logs.push(log('Attribute Detection', 4, 'info',
-                        `Column '${p.name}' reclassified as DIMENSION (numeric attribute) — ` +
-                        `range: ${pMin}–${pMax}, distinct: ${p.distinctCount}/${p.totalValues}`,
-                        { affectedColumns: [p.name] }));
-                } else {
-                    type = ColumnType.METRIC;
-                }
-            }
-            // ── Gate 5: Low-cardinality numeric = ID ──
-            else if (p.numericParseRate >= 0.9 && p.distinctCount < 10 && p.totalValues > 0 && p.distinctCount / p.totalValues < 0.05) {
-                type = ColumnType.ID;
-            }
-            // ── Default: Dimension ──
-            else {
-                type = ColumnType.DIMENSION;
+            // ── Role decision: pure, explicitly-ordered named rules (see
+            //    classifyColumnRole). This block only logs the outcome. ──
+            const decision = classifyColumnRole(p);
+            type = decision.type;
+            if (decision.note) {
+                logs.push(log(decision.note.label, 4, 'info', decision.note.message, { affectedColumns: [p.name] }));
             }
 
             // Advisory confidence — surface ambiguous columns for review (no
             // change to the decision above).
             const rc = roleConfidenceFor(type, p, {
                 isIdName: ID_PATTERNS.test(p.name),
-                isDateName,
-                isMetricName,
-                effectiveNumericRate,
+                isDateName: DATE_NAME_PATTERNS.test(p.name),
+                isMetricName: METRIC_NAME_EXACT.test(p.name) || METRIC_KEYWORDS.test(p.name),
+                effectiveNumericRate: p.numericParseRate + (p.wordNumberRate || 0),
             });
             if (rc.confidence < 0.6) {
                 logs.push(log('Low-Confidence Classification', 4, 'info',

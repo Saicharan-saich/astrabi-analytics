@@ -1,6 +1,48 @@
 import { describe, it, expect } from 'vitest';
-import { toTitleCase, roleConfidenceFor, keySignalFor } from '../services/etlPipeline';
+import { toTitleCase, roleConfidenceFor, keySignalFor, classifyColumnRole } from '../services/etlPipeline';
 import { ColumnType } from '../types';
+
+// Minimal profile builder for direct rule testing.
+const prof = (o: any) => ({
+    name: 'col', nullRate: 0, distinctCount: 10, totalValues: 100, numericParseRate: 0,
+    dateParseRate: 0, booleanTokenRate: 0, dateFormatCandidate: null, currencyDetected: false,
+    percentageDetected: false, wordNumberRate: 0, integerRate: 0, looksSequential: false, ...o,
+});
+
+describe('classifyColumnRole — ordered named rules, first match wins', () => {
+    it('R1: ID by name pattern wins over everything', () => {
+        expect(classifyColumnRole(prof({ name: 'order_id', numericParseRate: 1, integerRate: 1 })).type).toBe(ColumnType.ID);
+    });
+    it('R2: date by parse rate', () => {
+        expect(classifyColumnRole(prof({ name: 'when', dateParseRate: 0.8 })).type).toBe(ColumnType.DATE);
+    });
+    it('R3: date by name', () => {
+        expect(classifyColumnRole(prof({ name: 'created_at', dateParseRate: 0.1 })).type).toBe(ColumnType.DATE);
+    });
+    it('R4: metric by name + numeric beats boolean tokens', () => {
+        // mostly 1/0 tokens but named "quantity" → METRIC, not BOOLEAN
+        expect(classifyColumnRole(prof({ name: 'quantity', numericParseRate: 1, integerRate: 1, booleanTokenRate: 0.9 })).type).toBe(ColumnType.METRIC);
+    });
+    it('R5: boolean tokens', () => {
+        expect(classifyColumnRole(prof({ name: 'is_active', booleanTokenRate: 0.8 })).type).toBe(ColumnType.BOOLEAN);
+    });
+    it('R6: data-driven key (near-unique integers) with a note', () => {
+        const d = classifyColumnRole(prof({ name: 'reference', numericParseRate: 1, integerRate: 1, distinctCount: 100, totalValues: 100 }));
+        expect(d.type).toBe(ColumnType.ID);
+        expect(d.note?.label).toBe('Key Detection');
+    });
+    it('R7: numeric business metric', () => {
+        expect(classifyColumnRole(prof({ name: 'sales', numericParseRate: 1, distinctCount: 90, totalValues: 100, min: 100, max: 9000 })).type).toBe(ColumnType.METRIC);
+    });
+    it('R7: numeric attribute → dimension with a note', () => {
+        const d = classifyColumnRole(prof({ name: 'age', numericParseRate: 1, integerRate: 1, distinctCount: 40, totalValues: 100, min: 18, max: 65 }));
+        expect(d.type).toBe(ColumnType.DIMENSION);
+        expect(d.note?.label).toBe('Attribute Detection');
+    });
+    it('R9: default is dimension', () => {
+        expect(classifyColumnRole(prof({ name: 'category', distinctCount: 5 })).type).toBe(ColumnType.DIMENSION);
+    });
+});
 
 const K = (o: Partial<{ distinctCount: number; totalValues: number; numericParseRate: number; currencyDetected: boolean; percentageDetected: boolean; integerRate: number; looksSequential: boolean }>) =>
     ({ distinctCount: 0, totalValues: 100, numericParseRate: 1, currencyDetected: false, percentageDetected: false, integerRate: 1, looksSequential: false, ...o });
