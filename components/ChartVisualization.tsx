@@ -52,6 +52,7 @@ import {
     selectPalette, generateColors as genColors,
     formatNumber as formatNum, formatDateLabel
 } from '../utils/chartUtils';
+import { sanitizeRows } from '../utils/numberSafety';
 import { MapChart } from './MapChart';
 import { CHART_TYPE_OPTIONS } from './charts/chartRegistry';
 
@@ -204,23 +205,24 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     const primaryCalc = activeCalcs.length > 0 ? activeCalcs[0] : null;
 
     const { transformedData, yLabel: calculatedYLabel, suggestedNumberFormat } = useMemo(() => {
-        if (!primaryCalc) {
-            return {
+        const result = !primaryCalc
+            ? {
                 transformedData: data,
                 yLabel: yLabel || '',
                 suggestedNumberFormat: formatting?.numberFormat || 'raw'
-            };
-        }
-
-        return applyTableCalculation(
-            data,
-            yKey,
-            primaryCalc,
-            yLabel || '',
-            formatting?.numberFormat,
-            undefined,
-            formatting?.movingAvgWindow || 3
-        );
+            }
+            : applyTableCalculation(
+                data,
+                yKey,
+                primaryCalc,
+                yLabel || '',
+                formatting?.numberFormat,
+                undefined,
+                formatting?.movingAvgWindow || 3
+            );
+        // Output-boundary safety net: no NaN/Infinity can ever reach a chart,
+        // regardless of which engine or table-calc produced the data.
+        return { ...result, transformedData: sanitizeRows(result.transformedData) };
     }, [data, yKey, primaryCalc, yLabel, formatting?.numberFormat, formatting?.movingAvgWindow]);
 
     // Use calculated number format if available

@@ -17,6 +17,7 @@
 
 import * as duckdb from '@duckdb/duckdb-wasm';
 import { logger } from './logger';
+import { finiteOrNull } from '../utils/numberSafety';
 
 // ── Singleton State ──────────────────────────────────────────────
 
@@ -280,8 +281,10 @@ async function executeSQLQuery(sql: string): Promise<DuckDBResult> {
                 const colData = result.getChild(col);
                 if (colData) {
                     const val = colData.get(i);
-                    // Convert BigInt to number (DuckDB returns BigInt for integers)
-                    row[col] = typeof val === 'bigint' ? Number(val) : val;
+                    // Convert BigInt to number (DuckDB returns BigInt for integers).
+                    // Guarantee finiteness at the SQL boundary: any inf/NaN that a
+                    // division or aggregate could yield becomes null, never garbage.
+                    row[col] = typeof val === 'bigint' ? Number(val) : finiteOrNull(val);
                 } else {
                     row[col] = null;
                 }
