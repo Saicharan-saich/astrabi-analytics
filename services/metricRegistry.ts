@@ -243,6 +243,111 @@ export function classifyMetric(columnName: string): MetricClassification | null 
     return null;
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// DATA-AWARE MEASURE CLASSIFICATION
+//
+// classifyMetric() uses the NAME only, which mis-classifies ambiguous
+// columns (e.g. "discount" = rate vs dollars). classifyMeasure() adds the
+// column's statistical PROFILE (min/max range, currency/percent glyphs) so
+// the DATA disambiguates the name. 100% local/deterministic — no AI, and it
+// never inspects or emits raw values, only aggregate stats.
+// ═══════════════════════════════════════════════════════════════════
+
+/** Privacy-safe stats about a numeric column (no raw values retained). */
+export interface MeasureProfile {
+    min?: number;
+    max?: number;
+    distinctCount?: number;
+    totalValues?: number;
+    /** A raw value contained a literal "%". */
+    percentSignPresent?: boolean;
+    /** A raw value contained a currency symbol ($ € £ …). */
+    currencyGlyphPresent?: boolean;
+}
+
+export interface MeasureClassification extends MetricClassification {
+    /** 0–1. Below ~0.6 the column is worth surfacing for user review. */
+    confidence: number;
+    reason: string;
+}
+
+const CURRENCY_GLYPH = /[$€£¥₹₩₫₽¢]/;
+const STRONG_CURRENCY_NAME = /(?:^|[_\s])(sales|revenue|price|cost|amount|profit|income|salary|wage|gross|net|subtotal)(?:[_\s]|$)/i;
+
+/**
+ * Compute a lightweight, privacy-safe profile from a column's values.
+ * Retains only aggregate stats — never the values themselves.
+ */
+export function computeMeasureProfile(values: any[]): MeasureProfile {
+    let min = Infinity, max = -Infinity, numericCount = 0, total = 0;
+    let percentSign = false, currencyGlyph = false;
+    const distinct = new Set<any>();
+    for (const v of values) {
+        if (v === null || v === undefined || v === '') continue;
+        total++;
+        distinct.add(typeof v === 'string' ? v.trim() : v);
+        const s = String(v);
+        if (!percentSign && s.includes('%')) percentSign = true;
+        if (!currencyGlyph && CURRENCY_GLYPH.test(s)) currencyGlyph = true;
+        const n = typeof v === 'number' ? v : Number(s.replace(/[$€£¥₹₩₫₽¢,%\s]/g, ''));
+        if (!isNaN(n) && isFinite(n)) { numericCount++; if (n < min) min = n; if (n > max) max = n; }
+    }
+    return {
+        min: numericCount ? min : undefined,
+        max: numericCount ? max : undefined,
+        distinctCount: distinct.size,
+        totalValues: total,
+        percentSignPresent: percentSign,
+        currencyGlyphPresent: currencyGlyph,
+    };
+}
+
+/**
+ * Classify a measure using its name as a PRIOR and its data profile to
+ * disambiguate. Always returns a classification (never null) with a
+ * confidence and human-readable reason.
+ */
+export function classifyMeasure(columnName: string, profile?: MeasureProfile): MeasureClassification {
+    const named = classifyMetric(columnName);
+    const p = profile || {};
+    const min = p.min, max = p.max;
+    const hasRange = typeof min === 'number' && typeof max === 'number' && isFinite(min) && isFinite(max);
+    // Values sitting in [-1, 1] with real spread look like a stored 0–1 rate.
+    const fractional = !!hasRange && (min as number) >= -1.0001 && (max as number) <= 1.0001
+        && ((max as number) - (min as number)) > 0 && !((min === 0) && (max === 0));
+
+    const rate = (c: number, r: string): MeasureClassification =>
+        ({ aggregation: AggregationType.AVG, behavior: 'non_additive', format: 'percent', requiresWeighting: false, confidence: c, reason: r });
+    const currency = (c: number, r: string): MeasureClassification =>
+        ({ aggregation: AggregationType.SUM, behavior: 'additive', format: 'currency_usd', requiresWeighting: false, confidence: c, reason: r });
+    const withConf = (m: MetricClassification, c: number, r: string): MeasureClassification =>
+        ({ ...m, confidence: c, reason: r });
+
+    // 1. Hard evidence in the raw values wins over any name.
+    if (p.percentSignPresent) return rate(0.97, 'Values contain a "%" sign → percentage (AVG).');
+    if (p.currencyGlyphPresent && !(named && named.format === 'percent'))
+        return currency(0.92, 'Values contain a currency symbol → currency amount (SUM).');
+
+    // 2. Name matched a registry rule.
+    if (named) {
+        // Data override: name implies a summable amount, but values are a 0–1 rate.
+        if (named.behavior === 'additive' && fractional && !STRONG_CURRENCY_NAME.test(columnName)) {
+            return rate(0.8, `"${columnName}" looks like an amount by name, but its values sit in 0–1 → treated as a rate (AVG %).`);
+        }
+        return withConf(named, 0.85, `Matched a name rule for "${columnName}".`);
+    }
+
+    // 3. No name match — infer from data shape alone.
+    if (fractional) return rate(0.68, `Unrecognised name "${columnName}"; values in 0–1 → inferred rate (AVG %).`);
+    if (p.currencyGlyphPresent) return currency(0.68, 'Currency symbols present → currency amount (SUM).');
+
+    // 4. Fallback — additive number, low confidence (worth review).
+    return {
+        aggregation: AggregationType.SUM, behavior: 'additive', format: 'raw', requiresWeighting: false,
+        confidence: 0.45, reason: `No strong name or data signal for "${columnName}" — defaulted to SUM (review recommended).`,
+    };
+}
+
 /**
  * Classify a column as a dimension with data type.
  * Returns null if the column name doesn't match any dimension pattern
