@@ -52,6 +52,16 @@ function hr(n = 80) {
         performance_rating: 1 + (i % 5),                // 1–5
     }));
 }
+// Keys with generic names that give nothing away — must be caught by SHAPE.
+function ledger(n = 60) {
+    const acct = ['Cash', 'Payable', 'Receivable', 'Equity'];
+    return Array.from({ length: n }, (_, i) => ({
+        reference: 700000 + i * 97,     // near-unique integers, no id-ish name → primary key
+        sequence: i + 1,                 // 1..N contiguous run → serial key
+        account: acct[i % 4],            // text category
+        amount: `$${100 + i * 13}`,      // currency measure
+    }));
+}
 // Currency written with glyphs, and a foreign column name.
 function foreign(n = 60) {
     return Array.from({ length: n }, (_, i) => ({
@@ -84,6 +94,13 @@ describe('Golden inference — ETL roles', () => {
         expect(roleOf(r, 'hire_date')).toBe(ColumnType.DATE);
         expect(roleOf(r, 'department')).toBe(ColumnType.DIMENSION);
         expect(roleOf(r, 'salary')).toBe(ColumnType.METRIC);
+    });
+    it('ledger: nameless keys caught by shape, not summed as metrics', () => {
+        const r = ledger();
+        expect(roleOf(r, 'reference')).toBe(ColumnType.ID);   // near-unique integers
+        expect(roleOf(r, 'sequence')).toBe(ColumnType.ID);    // sequential run
+        expect(roleOf(r, 'account')).toBe(ColumnType.DIMENSION);
+        expect(roleOf(r, 'amount')).toBe(ColumnType.METRIC);  // real measure still a metric
     });
 });
 
