@@ -6,9 +6,35 @@
  * Uses the semantic model to pick correct aggregations.
  */
 
-import { Dataset } from '../types';
+import { Dataset, QueryConfig, AggregationType, TimeGrain, AnalysisType } from '../types';
 import { SemanticModel, SemanticMeasure, SemanticDimension } from './semanticModel';
 import { executeSQLViaDuckDB, reloadDataTable } from './duckdbEngine';
+
+/**
+ * Build a real QueryConfig for an insight so a dashboard card can be OPENED
+ * and re-run in the Question Builder (not a dead-end stub). Maps the raw
+ * columns/aggregation the insight was built from into the builder's shape.
+ */
+function mkConfig(opts: {
+    metric?: string; dimension?: string; agg?: string;
+    grain?: TimeGrain; analysis?: AnalysisType; limit?: number;
+    sort?: 'desc' | 'asc'; chartType?: any;
+}): Partial<QueryConfig> {
+    const aggMap: Record<string, AggregationType> = {
+        SUM: AggregationType.SUM, AVG: AggregationType.AVG, COUNT: AggregationType.COUNT,
+        MAX: AggregationType.MAX, MIN: AggregationType.MIN, COUNT_DISTINCT: AggregationType.COUNT_DISTINCT,
+    };
+    return {
+        metric: opts.metric || '',
+        dimension: opts.dimension || '',
+        aggregation: aggMap[(opts.agg || 'SUM').toUpperCase()] || AggregationType.SUM,
+        timeGrain: opts.grain || TimeGrain.RAW,
+        analysisType: opts.analysis || AnalysisType.STANDARD,
+        ...(opts.limit ? { limit: opts.limit } : {}),
+        ...(opts.sort ? { sort: opts.sort } : {}),
+        ...(opts.chartType ? { chartType: opts.chartType } : {}),
+    };
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES
@@ -30,6 +56,8 @@ export interface AutoInsight {
     kpiFormat?: 'currency_usd' | 'number' | 'percent' | 'compact';
     status: 'pending' | 'done' | 'error';
     error?: string;
+    /** Real query config so the card can be opened/edited in the Builder. */
+    config?: Partial<QueryConfig>;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -219,6 +247,7 @@ interface InsightDef {
     xKey: string;
     yKey: string;
     kpiFormat?: AutoInsight['kpiFormat'];
+    config?: Partial<QueryConfig>;
 }
 
 /**
@@ -299,6 +328,36 @@ function buildDimensionOnlyInsights(model: SemanticModel, rowCount: number): Ins
     }
 
     return defs.slice(0, 15);
+}
+
+/** Attach an editable QueryConfig to each insight so its dashboard card can be
+ *  opened and re-run in the Question Builder. */
+function attachConfigs(
+    defs: InsightDef[],
+    ctx: { pm?: SemanticMeasure; sm?: SemanticMeasure; pd?: SemanticDimension; sd?: SemanticDimension; dateCol?: string }
+): void {
+    const { pm, sm, pd, sd, dateCol } = ctx;
+    const agg = (m?: SemanticMeasure) => (m?.aggregation as string) || 'SUM';
+    for (const d of defs) {
+        switch (d.id) {
+            case 'kpi_total': d.config = mkConfig({ metric: pm?.column, agg: agg(pm), chartType: 'kpi' }); break;
+            case 'kpi_avg': d.config = mkConfig({ metric: pm?.column, agg: 'AVG', chartType: 'kpi' }); break;
+            case 'kpi_count': d.config = mkConfig({ agg: 'COUNT', chartType: 'kpi' }); break;
+            case 'kpi_unique': d.config = mkConfig({ metric: pd?.column, agg: 'COUNT_DISTINCT', chartType: 'kpi' }); break;
+            case 'rank_top5': d.config = mkConfig({ metric: pm?.column, dimension: pd?.column, agg: agg(pm), limit: 5, sort: 'desc', chartType: 'horizontalBar' }); break;
+            case 'rank_bottom5': d.config = mkConfig({ metric: pm?.column, dimension: pd?.column, agg: agg(pm), limit: 5, sort: 'asc', chartType: 'horizontalBar' }); break;
+            case 'rank_top5_sec': d.config = mkConfig({ metric: sm?.column, dimension: pd?.column, agg: agg(sm), limit: 5, sort: 'desc', chartType: 'horizontalBar' }); break;
+            case 'trend_monthly': d.config = mkConfig({ metric: pm?.column, dimension: dateCol, agg: agg(pm), grain: TimeGrain.MONTH, chartType: 'area' }); break;
+            case 'trend_monthly_avg': d.config = mkConfig({ metric: pm?.column, dimension: dateCol, agg: 'AVG', grain: TimeGrain.MONTH, chartType: 'line' }); break;
+            case 'dist_extra1': d.config = mkConfig({ metric: pm?.column, dimension: sd?.column, agg: agg(pm), limit: 10, chartType: 'bar' }); break;
+            case 'dist_extra2': d.config = mkConfig({ metric: sm?.column, dimension: pd?.column, agg: agg(sm), limit: 10, chartType: 'bar' }); break;
+            default:
+                // Best-effort for any other chart def so it's still openable.
+                if (d.chartType !== 'kpiCard' && pm) {
+                    d.config = mkConfig({ metric: pm.column, dimension: pd?.column, agg: agg(pm), chartType: d.chartType });
+                }
+        }
+    }
 }
 
 function buildInsightDefs(model: SemanticModel, rowCount: number): InsightDef[] {
@@ -443,18 +502,8 @@ function buildInsightDefs(model: SemanticModel, rowCount: number): InsightDef[] 
             yKey: 'value',
         });
 
-        // TREND 9: Weekly trend
-        defs.push({
-            id: 'trend_weekly',
-            title: `Weekly ${pmLabel} Trend`,
-            subtitle: `${pmLabel} aggregated by week`,
-            category: 'trend',
-            priority: 9,
-            chartType: 'line',
-            sql: `SELECT strftime(CAST(${q(dateCol)} AS DATE), '%Y-W%W') as period, ${aggExpr(pm)} as value FROM data WHERE ${q(dateCol)} IS NOT NULL GROUP BY period ORDER BY period`,
-            xKey: 'period',
-            yKey: 'value',
-        });
+        // (Weekly trend removed — weekly buckets over multi-year data produce
+        // 200+ unreadable points. Monthly + monthly-average cover the trend.)
 
         // TREND 10: Monthly average
         defs.push({
@@ -594,6 +643,7 @@ function buildInsightDefs(model: SemanticModel, rowCount: number): InsightDef[] 
         });
     }
 
+    attachConfigs(defs, { pm, sm, pd, sd, dateCol });
     return defs.slice(0, 15);
 }
 

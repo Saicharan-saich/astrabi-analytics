@@ -10,7 +10,7 @@
  * dashboard store actions — it invents no new analysis.
  */
 
-import { Dataset, AnalysisResult, DashboardItem } from '../types';
+import { Dataset, AnalysisResult, DashboardItem, FormattingConfig } from '../types';
 import { generateAutoInsights } from './autoInsightsEngine';
 import { useAppStore } from '../store/useAppStore';
 
@@ -63,6 +63,27 @@ export async function buildAutoDashboard(
 
     let chartIndex = 0;
     for (const insight of chosen) {
+        // Per-card formatting: only label charts that stay readable. Dense
+        // time-series (line/area) and many-bar charts get NO per-point labels;
+        // small bars / donuts keep them. This is what stops the "brainless",
+        // label-smothered visuals.
+        const pointCount = Array.isArray(insight.data) ? insight.data.length : 0;
+        const isBar = insight.chartType === 'bar' || insight.chartType === 'horizontalBar';
+        const showLabels = insight.chartType === 'donut' || insight.chartType === 'pie'
+            || (isBar && pointCount <= 8);
+        const formatting: FormattingConfig = {
+            colorMode: 'vibrant',
+            numberFormat: insight.kpiFormat === 'currency_usd' ? 'currency_usd'
+                : insight.kpiFormat === 'percent' ? 'percent' : 'auto',
+            fontSize: 'md',
+            headerSize: 'md',
+            headerBold: true,
+            showLabels: true,
+            showDataLabels: showLabels,
+            dataLabelMode: showLabels ? 'primary' : 'off',
+            tableCalculations: [],
+        };
+
         const result: AnalysisResult = {
             data: insight.data,
             xKey: insight.xKey,
@@ -70,9 +91,11 @@ export async function buildAutoDashboard(
             yLabel: insight.title,
             insight: insight.subtitle,
             sql: insight.sql,
-            config: { questionId: insight.id, questionLabel: insight.title } as any,
+            // Real config so the card opens/edits in the Question Builder.
+            config: { ...(insight.config || {}), questionId: insight.id, questionLabel: insight.title } as any,
             vis: insight.chartType as any,
             kpi: insight.kpiValue,
+            formatting,
         };
 
         // KPIs are half-width tiles; give the first couple of charts full width
