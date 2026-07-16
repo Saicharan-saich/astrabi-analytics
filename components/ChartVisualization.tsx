@@ -1,5 +1,6 @@
 import React, { useMemo, useRef, useCallback, useState } from 'react';
-import html2canvas from 'html2canvas';
+// html2canvas is only needed when the user exports a chart to PNG — load it
+// lazily so it stays out of the initial bundle.
 import {
     Chart as ChartJS,
     CategoryScale,
@@ -169,6 +170,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     const exportChart = useCallback(async () => {
         if (resolvedRef.current) {
             try {
+                const { default: html2canvas } = await import('html2canvas');
                 // Capture the visualization container with high resolution
                 const canvas = await html2canvas(resolvedRef.current, {
                     scale: 3, // High resolution (300 DPI equivalent)

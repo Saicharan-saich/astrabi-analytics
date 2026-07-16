@@ -1,7 +1,14 @@
 // --- REFACTORED: analysisEngine.ts ---
 // Re-exports from extracted modules for backward compatibility
 import { AggregationType, AnalysisResult, AnalysisType, ColumnDefinition, ColumnProfile, ColumnType, Dataset, ETLLog, QueryConfig, TimeContext, TimeGrain, SchemaType, CanonicalMapping, QuestionTemplate, QuestionGrain } from "../types";
-import * as XLSX from 'xlsx';
+// xlsx is large (~1 MB) and only needed when a user actually parses a spreadsheet.
+// Load it lazily so it stays out of the initial bundle / critical path.
+type XLSXModule = typeof import('xlsx');
+let _xlsx: XLSXModule | null = null;
+async function getXLSX(): Promise<XLSXModule> {
+    if (!_xlsx) _xlsx = await import('xlsx');
+    return _xlsx;
+}
 import { findMeasure, findDimension } from './semanticModel';
 import type { SemanticModel } from './semanticModel';
 
@@ -1650,6 +1657,7 @@ function parseCSVLine(line: string): string[] {
 }
 
 export const parseExcel = async (file: File): Promise<any[]> => {
+    const XLSX = await getXLSX();
     return new Promise(resolve => {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -1667,7 +1675,7 @@ export const parseExcel = async (file: File): Promise<any[]> => {
  * Strategy: read the sheet as a 2D array, scan the first 15 rows, and pick
  * the row with the most non-empty, unique, text-like cells as the header.
  */
-function findHeaderRow(sheet: any): number {
+function findHeaderRow(sheet: any, XLSX: XLSXModule): number {
     const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
     const maxScan = Math.min(range.e.r, 14); // scan first 15 rows (0-indexed)
     let bestRow = 0;
@@ -1705,6 +1713,7 @@ function findHeaderRow(sheet: any): number {
 }
 
 export const parseExcelMultiSheet = async (file: File): Promise<{ sheetCount: number; sheets: Record<string, any[]> }> => {
+    const XLSX = await getXLSX();
     return new Promise(resolve => {
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -1713,7 +1722,7 @@ export const parseExcelMultiSheet = async (file: File): Promise<{ sheetCount: nu
             const sheets: Record<string, any[]> = {};
             for (const name of wb.SheetNames) {
                 const ws = wb.Sheets[name];
-                const headerRow = findHeaderRow(ws);
+                const headerRow = findHeaderRow(ws, XLSX);
 
                 // Parse using the detected header row
                 const rows = XLSX.utils.sheet_to_json(ws, { range: headerRow });
