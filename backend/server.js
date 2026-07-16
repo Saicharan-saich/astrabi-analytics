@@ -212,7 +212,10 @@ const limiter = rateLimit({
 // Apply rate limiting to all requests
 app.use('/api/', limiter);
 
-app.use(express.json());
+// Raise the body limit above the 100 kb default: AI features POST a rendered
+// chart image (Smart Visual Insight) and dataset profile samples, which exceed
+// the default and were rejected with 413 Payload Too Large.
+app.use(express.json({ limit: '15mb' }));
 
 // API Key Middleware
 const apiKeyMiddleware = (req, res, next) => {
