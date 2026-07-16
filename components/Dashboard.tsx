@@ -10,7 +10,7 @@ import {
   ChevronLeft, ChevronRight, Maximize2, LayoutDashboard, GripVertical,
   BarChart3, PieChart, LineChart, Activity, Zap,
   Eye, Filter, ChevronDown, RefreshCw, SlidersHorizontal, Database,
-  Plus, Pencil, Copy, MoreHorizontal, Check, Loader2, Tag
+  Plus, Pencil, Copy, MoreHorizontal, Check, Loader2, Tag, Sparkles
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
 import { Dataset, DashboardItem, RefreshSchedule } from '../types';
@@ -25,6 +25,8 @@ interface DashboardProps {
   isLiveRefreshing?: boolean;
   refreshSchedule?: RefreshSchedule;
   onScheduleChange?: (schedule: RefreshSchedule) => void;
+  onBuildDashboard?: () => void;
+  isBuildingDashboard?: boolean;
 }
 
 // Format large numbers compactly
@@ -111,7 +113,7 @@ const DATASET_COLORS = [
   { bg: 'bg-orange-500/15', text: 'text-orange-400', dot: 'bg-orange-400' },
 ];
 
-export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange, onBuildDashboard, isBuildingDashboard }) => {
   const {
     dashboards, activeDashboardId, setActiveDashboard, createDashboard, renameDashboard, deleteDashboard, duplicateDashboard,
     items, removeItem, updateItem, formatting, clearAllItems,
@@ -651,6 +653,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             <Plus className="w-3.5 h-3.5" />
             New
           </button>
+
+          {/* ✨ Auto-build dashboard */}
+          {onBuildDashboard && dataset && (
+            <button
+              onClick={onBuildDashboard}
+              disabled={isBuildingDashboard}
+              title="Auto-build a dashboard from the most useful insights"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-indigo-600 dark:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/15 border border-indigo-500/25 transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              {isBuildingDashboard ? 'Building…' : 'Auto-build'}
+            </button>
+          )}
         </div>
 
         {/* ─── Tab Context Menu ─── */}
@@ -1201,10 +1216,21 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               </div>
               <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Build Your Dashboard</h3>
               <p className="text-gray-500 dark:text-gray-400 mb-6 leading-relaxed text-sm">
-                Pin charts from the <span className="text-violet-600 dark:text-violet-300 font-semibold">Question Builder</span>,{' '}
+                Let us do it for you — one click turns your data into a full dashboard of the most useful charts. Or pin charts manually from the{' '}
+                <span className="text-violet-600 dark:text-violet-300 font-semibold">Question Builder</span>,{' '}
                 <span className="text-purple-600 dark:text-purple-300 font-semibold">Ask Data</span>, or{' '}
-                <span className="text-teal-600 dark:text-teal-300 font-semibold">Workbench</span> to create your analytics dashboard.
+                <span className="text-teal-600 dark:text-teal-300 font-semibold">Workbench</span>.
               </p>
+              {onBuildDashboard && dataset && (
+                <button
+                  onClick={onBuildDashboard}
+                  disabled={isBuildingDashboard}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 mb-7 rounded-xl text-sm font-semibold text-white bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 shadow-lg shadow-indigo-500/25 hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  {isBuildingDashboard ? 'Building…' : 'Build my dashboard'}
+                </button>
+              )}
               <div className="flex items-center justify-center gap-5 text-xs text-gray-400 dark:text-gray-500">
                 <div className="flex items-center gap-1.5">
                   <div className="w-5 h-5 rounded bg-violet-100 dark:bg-violet-500/10 flex items-center justify-center">
