@@ -23,7 +23,7 @@ import {
     DatasetDomainProfile,
     ColumnSemantic,
 } from '../types';
-import { classifyMetric, classifyDimension } from './metricRegistry';
+import { classifyMetric, classifyDimension, classifyMeasure, computeMeasureProfile } from './metricRegistry';
 
 // ═══════════════════════════════════════════════════════════════════
 // CORE TYPES
@@ -211,29 +211,24 @@ export function buildSemanticModel(
             }
 
             case ColumnType.METRIC: {
-                const metricDef = classifyMetric(col.name);
-                if (metricDef) {
+                // Data-aware classification: the DATA disambiguates the name
+                // (e.g. "discount" as a 0–1 rate vs dollar amount). Profile is
+                // computed locally from a sample — stats only, no raw values.
+                const sampleRows = dataset.rows.length > 5000 ? dataset.rows.slice(0, 5000) : dataset.rows;
+                const measureProfile = computeMeasureProfile(sampleRows.map(r => r[col.name]));
+                const m = classifyMeasure(col.name, measureProfile);
+                if (m.confidence < 0.6) {
+                    warnings.push(`Metric "${col.name}": ${m.reason} (confidence ${Math.round(m.confidence * 100)}%)`);
+                }
+                {
                     measures.push({
                         name: col.name,
                         column: col.name,
-                        aggregation: metricDef.aggregation,
-                        behavior: metricDef.behavior,
-                        format: metricDef.format,
-                        requiresWeighting: metricDef.requiresWeighting,
-                        weightColumn: metricDef.weightColumn,
-                        label: humanizeColumnName(col.name),
-                        isHidden: false,
-                    });
-                } else {
-                    // Metric column not in registry — default to SUM with warning
-                    warnings.push(`Metric "${col.name}" not found in registry, defaulting to SUM. Review recommended.`);
-                    measures.push({
-                        name: col.name,
-                        column: col.name,
-                        aggregation: AggregationType.SUM,
-                        behavior: 'additive',
-                        format: 'raw',
-                        requiresWeighting: false,
+                        aggregation: m.aggregation,
+                        behavior: m.behavior,
+                        format: m.format,
+                        requiresWeighting: m.requiresWeighting,
+                        weightColumn: m.weightColumn,
                         label: humanizeColumnName(col.name),
                         isHidden: false,
                     });
