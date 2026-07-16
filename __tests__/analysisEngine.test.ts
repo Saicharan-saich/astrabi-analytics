@@ -21,6 +21,12 @@ const ROWS = [
     { category: 'C', revenue: 50, order_date: '2025-03-02' },
 ];
 
+// The engine aliases aggregated columns as `{agg}_{metric}` (e.g. sum_revenue)
+// and exposes the value column via result.yKey and the grouping column via
+// result.xKey. Assert against that contract rather than hard-coding aliases.
+const metricVal = (result: any, row: any) => row?.[result.yKey];
+const dimVal = (result: any, row: any) => row?.[result.xKey];
+
 // ─── Tests ────────────────────────────────────────────────────────
 
 describe('runAnalysis — custom builder', () => {
@@ -39,8 +45,8 @@ describe('runAnalysis — custom builder', () => {
 
         const result = await runAnalysis(ds, query);
         expect(result.data.length).toBeGreaterThanOrEqual(3); // A, B, C
-        const aRow = result.data.find((d: any) => d.category === 'A');
-        expect(aRow?.revenue).toBe(300);
+        const aRow = result.data.find((d: any) => dimVal(result, d) === 'A');
+        expect(metricVal(result, aRow)).toBe(300);
     });
 
     it('aggregates COUNT by dimension', async () => {
@@ -55,8 +61,8 @@ describe('runAnalysis — custom builder', () => {
         };
 
         const result = await runAnalysis(ds, query);
-        const aRow = result.data.find((d: any) => d.category === 'A');
-        expect(aRow?.revenue).toBe(2);
+        const aRow = result.data.find((d: any) => dimVal(result, d) === 'A');
+        expect(metricVal(result, aRow)).toBe(2);
     });
 
     it('aggregates AVG by dimension', async () => {
@@ -71,8 +77,8 @@ describe('runAnalysis — custom builder', () => {
         };
 
         const result = await runAnalysis(ds, query);
-        const aRow = result.data.find((d: any) => d.category === 'A');
-        expect(aRow?.revenue).toBe(150);
+        const aRow = result.data.find((d: any) => dimVal(result, d) === 'A');
+        expect(metricVal(result, aRow)).toBe(150);
     });
 
     it('aggregates MAX by dimension', async () => {
@@ -86,8 +92,8 @@ describe('runAnalysis — custom builder', () => {
             asOfDate: '2025-03-03',
         };
         const result = await runAnalysis(ds, query);
-        const bRow = result.data.find((d: any) => d.category === 'B');
-        expect(bRow?.revenue).toBe(250);
+        const bRow = result.data.find((d: any) => dimVal(result, d) === 'B');
+        expect(metricVal(result, bRow)).toBe(250);
     });
 
     it('aggregates MIN by dimension', async () => {
@@ -101,8 +107,8 @@ describe('runAnalysis — custom builder', () => {
             asOfDate: '2025-03-03',
         };
         const result = await runAnalysis(ds, query);
-        const bRow = result.data.find((d: any) => d.category === 'B');
-        expect(bRow?.revenue).toBe(150);
+        const bRow = result.data.find((d: any) => dimVal(result, d) === 'B');
+        expect(metricVal(result, bRow)).toBe(150);
     });
 
     it('applies limit', async () => {
@@ -132,7 +138,7 @@ describe('runAnalysis — custom builder', () => {
             sort: 'asc' as any,
         };
         const result = await runAnalysis(ds, query);
-        const values = result.data.map((d: any) => d.revenue);
+        const values = result.data.map((d: any) => metricVal(result, d));
         for (let i = 1; i < values.length; i++) {
             expect(values[i]).toBeGreaterThanOrEqual(values[i - 1]);
         }
@@ -151,8 +157,8 @@ describe('runAnalysis — custom builder', () => {
         };
         const result = await runAnalysis(ds, query);
         expect(result.data.length).toBe(1);
-        expect(result.data[0].category).toBe('A');
-        expect(result.data[0].revenue).toBe(300);
+        expect(dimVal(result, result.data[0])).toBe('A');
+        expect(metricVal(result, result.data[0])).toBe(300);
     });
 
     it('returns SQL preview', async () => {
@@ -199,8 +205,8 @@ describe('runAnalysis — time dimension', () => {
         };
         const result = await runAnalysis(ds, query);
         expect(result.data.length).toBeGreaterThanOrEqual(1);
-        // All March => should collapse to 2025-03
-        expect(result.data[0].month).toMatch(/^2025-03/);
+        // All March => should collapse to 2025-03 (grouping key exposed via xKey)
+        expect(dimVal(result, result.data[0])).toMatch(/^2025-03/);
     });
 
     it('applies time filter this_month', async () => {
@@ -216,7 +222,7 @@ describe('runAnalysis — time dimension', () => {
         };
         const result = await runAnalysis(ds, query);
         // All rows are in March 2025 so should include all
-        const total = result.data.reduce((s: number, d: any) => s + d.revenue, 0);
+        const total = result.data.reduce((s: number, d: any) => s + metricVal(result, d), 0);
         expect(total).toBe(750);
     });
 });
