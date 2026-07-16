@@ -809,8 +809,11 @@ export function keySignalFor(
     if (p.numericParseRate < 0.9 || (p.integerRate ?? 0) < 0.99) return { isKey: false, reason: '' };
 
     const cardRatio = p.totalValues > 0 ? p.distinctCount / p.totalValues : 0;
-    // Serial / auto-increment key: a contiguous run of integers.
-    if (p.looksSequential) return { isKey: true, reason: 'integer values form a sequential run — looks like a serial identifier, not a measure' };
+    // Serial / auto-increment key: a contiguous run of integers that also visits
+    // each value ~once (near-unique per row). The near-uniqueness guard is what
+    // separates a real serial id from a bounded, repeating attribute like age or
+    // year, whose values are also contiguous but recur across many rows.
+    if (p.looksSequential && cardRatio >= 0.9) return { isKey: true, reason: 'integer values form a sequential run — looks like a serial identifier, not a measure' };
     // Primary-key: near-unique integers with enough rows to be sure.
     if (p.distinctCount >= 20 && cardRatio >= 0.95)
         return { isKey: true, reason: 'integer values are near-unique — looks like an identifier, not a measure' };
