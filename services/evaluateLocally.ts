@@ -4,6 +4,7 @@ import type { EnrichedQuery, ComparisonConfig, TableCalculation } from './queryP
 import { DateRange, pad, getISOWeek } from './dateHelpers';
 import { applyComparison } from './evaluation/comparisonEngine';
 import { executeViaDuckDB, isDuckDBReady, type DuckDBResult } from './duckdbEngine';
+import { round2 } from '../utils/numberSafety';
 
 // ── DuckDB Verification Cache (async, non-blocking) ──────────────
 // Since evaluateLocally is synchronous, DuckDB execution runs in the
@@ -963,7 +964,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                             previous_value: compGroups[key] !== undefined ? compGroups[key] : undefined,
                             previous_period_label: prevLabelMap2[key] || undefined,
                             growth_pct: compGroups[key] && compGroups[key] !== 0
-                                ? (((currGroups[key] || 0) - compGroups[key]) / Math.abs(compGroups[key])) * 100
+                                ? round2((((currGroups[key] || 0) - compGroups[key]) / Math.abs(compGroups[key])) * 100)
                                 : undefined
                         };
                         // Add secondary metric values with smart aggregation
@@ -988,7 +989,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     growth = {
                         diff: aggregate(currSet) - aggregate(prevSet),
                         pct: aggregate(prevSet) !== 0
-                            ? ((aggregate(currSet) - aggregate(prevSet)) / aggregate(prevSet)) * 100
+                            ? round2(((aggregate(currSet) - aggregate(prevSet)) / aggregate(prevSet)) * 100)
                             : (aggregate(currSet) > 0 ? 100 : 0)
                     };
 
@@ -997,7 +998,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     // â”€â”€ TOTAL MODE: Simple 2-bar comparison â”€â”€
                     const currVal = aggregate(currSet);
                     const prevVal = aggregate(prevSet);
-                    const growthPct = prevVal !== 0 ? ((currVal - prevVal) / prevVal) * 100 : (currVal > 0 ? 100 : 0);
+                    const growthPct = prevVal !== 0 ? round2(((currVal - prevVal) / prevVal) * 100) : (currVal > 0 ? 100 : 0);
 
                     data = [
                         { metric: currLabel, value: currVal, growth_pct: growthPct },
@@ -1203,7 +1204,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                                 const prev = data[i - 1].value;
                                 data[i].previous_value = prev;
                                 if (prev !== 0) {
-                                    data[i].growth_pct = ((current - prev) / Math.abs(prev)) * 100;
+                                    data[i].growth_pct = round2(((current - prev) / Math.abs(prev)) * 100);
                                 } else {
                                     data[i].growth_pct = current !== 0 ? 100 : 0;
                                 }
@@ -1245,7 +1246,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                             const lyVal = lyRunning[pt.x];
                             pt.previous_value = lyVal !== undefined ? lyVal : undefined;
                             if (lyVal !== undefined && lyVal !== 0) {
-                                pt.growth_pct = ((pt.value - lyVal) / Math.abs(lyVal)) * 100;
+                                pt.growth_pct = round2(((pt.value - lyVal) / Math.abs(lyVal)) * 100);
                             } else if (pt.value !== 0 && lyVal !== undefined) {
                                 pt.growth_pct = 100;
                             } else {
