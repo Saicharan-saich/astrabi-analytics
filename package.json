@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.33.1-dev45.0",
@@ -28,6 +29,7 @@
     "zustand": "^5.0.11"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.1",
     "@types/html2canvas": "^0.5.35",
     "@types/node": "^22.14.0",
     "@types/react-grid-layout": "^1.3.6",

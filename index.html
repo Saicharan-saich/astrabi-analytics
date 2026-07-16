@@ -15,23 +15,28 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              brand: {
-                50: '#f0fdfa',
-                100: '#ccfbf1',
-                500: '#14b8a6',
-                600: '#0d9488',
-                900: '#134e4a',
-              },
-              slate: {
-                850: '#1e293b', // Custom dark
+      // Guard the config: if the Tailwind CDN fails to load (blocked network,
+      // offline, slow), `tailwind` is undefined — assigning to it would throw an
+      // uncaught error and take the whole app down. Degrade gracefully instead.
+      if (window.tailwind) {
+        window.tailwind.config = {
+          theme: {
+            extend: {
+              colors: {
+                brand: {
+                  50: '#f0fdfa',
+                  100: '#ccfbf1',
+                  500: '#14b8a6',
+                  600: '#0d9488',
+                  900: '#134e4a',
+                },
+                slate: {
+                  850: '#1e293b', // Custom dark
+                }
               }
             }
           }
-        }
+        };
       }
     </script>
     <style>

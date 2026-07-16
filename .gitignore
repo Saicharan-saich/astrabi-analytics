@@ -26,3 +26,7 @@ dist-ssr
 # Secrets & sensitive data
 .env
 backend/.env
+test-results/
+playwright-report/
+/blob-report/
+.playwright/
