@@ -213,7 +213,7 @@ export const SmartQuestionsView: React.FC<SmartQuestionsViewProps> = ({ dataset,
                     initial={{ opacity: 0, y: 12 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, delay: isLoading ? 0.1 : 0.3 }}
-                    className="bg-[#1c2033] border border-white/[0.06] rounded-2xl p-5"
+                    className="bg-[#171c26] border border-white/[0.06] rounded-2xl p-5"
                 >
                     <div className="flex items-center gap-2.5 mb-3">
                         <Sparkles className="w-5 h-5 text-violet-400" />

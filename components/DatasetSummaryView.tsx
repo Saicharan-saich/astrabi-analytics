@@ -104,7 +104,7 @@ const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, 
 
     return (
         <div
-            className={`bg-white dark:bg-[#1c2033] border ${color.border} rounded-xl overflow-hidden hover:shadow-md transition-all duration-200`}
+            className={`bg-white dark:bg-[#171c26] border ${color.border} rounded-xl overflow-hidden hover:shadow-md transition-all duration-200`}
         >
             {/* Header */}
             <button
@@ -276,7 +276,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({ dataset 
                             { label: 'Date Fields', value: String(overviewStats.dates), icon: <Calendar className="w-4 h-4" />, color: 'from-rose-500 to-pink-500' },
                             { label: 'Completeness', value: `${overviewStats.completeness.toFixed(1)}%`, icon: <Eye className="w-4 h-4" />, color: overviewStats.completeness > 90 ? 'from-emerald-500 to-green-500' : 'from-amber-500 to-red-500' },
                         ].map(kpi => (
-                            <div key={kpi.label} className="bg-white dark:bg-[#1c2033] rounded-xl border border-gray-200 dark:border-white/[0.06] p-4 hover:shadow-md transition-all">
+                            <div key={kpi.label} className="bg-white dark:bg-[#171c26] rounded-xl border border-gray-200 dark:border-white/[0.06] p-4 hover:shadow-md transition-all">
                                 <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${kpi.color} flex items-center justify-center text-white mb-2`}>
                                     {kpi.icon}
                                 </div>
@@ -302,7 +302,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({ dataset 
 
                 {/* Quick Data Preview */}
                 {dataset.rows && dataset.rows.length > 0 && (
-                    <div className="bg-white dark:bg-[#1c2033] rounded-xl border border-gray-200 dark:border-white/[0.06] overflow-hidden">
+                    <div className="bg-white dark:bg-[#171c26] rounded-xl border border-gray-200 dark:border-white/[0.06] overflow-hidden">
                         <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
                             <h3 className="text-sm font-bold text-gray-700 dark:text-white flex items-center gap-2">
                                 <BarChart3 className="w-4 h-4 text-amber-500" />

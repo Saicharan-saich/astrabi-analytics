@@ -133,7 +133,7 @@ export const TransparencyPanel: React.FC<TransparencyPanelProps> = ({
                 : (isDark ? 'bg-rose-500/15 text-rose-300 border-rose-500/30' : 'bg-rose-50 text-rose-700 border-rose-200');
 
     // ── Theme-explicit class fragments (solid backgrounds, high contrast) ──
-    const container = isDark ? 'bg-[#141825] border-white/10' : 'bg-white border-gray-200 shadow-sm';
+    const container = isDark ? 'bg-[#12161f] border-white/10' : 'bg-white border-gray-200 shadow-sm';
     const headerText = isDark ? 'text-slate-200 hover:text-white' : 'text-gray-700 hover:text-gray-900';
     const accentIcon = isDark ? 'text-indigo-400' : 'text-indigo-600';
     const chip = isDark ? 'bg-slate-800 border-white/10 text-slate-200' : 'bg-gray-50 border-gray-200 text-gray-700';
