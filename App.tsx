@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Database, Settings, Play, Layout, Plus, Search, FileText, BarChart2, Shield, Menu, LogOut, Users, Brain } from 'lucide-react';
+import { Upload, Database, Settings, Play, Layout, Plus, Search, FileText, BarChart2, Shield, Menu, LogOut, Users, Brain, Sparkles } from 'lucide-react';
 import {
   Dataset,
   RefreshSchedule,
@@ -12,6 +12,7 @@ import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, g
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
 import { buildSemanticModel } from './services/semanticModel';
 import { fetchGlobalHiddenTabs } from './services/tabVisibilityService';
+import { buildAutoDashboard } from './services/autoDashboardBuilder';
 import { refreshLiveDataset } from './services/liveRefreshService';
 import { preloadDuckDB } from './services/duckdbEngine';
 import { Sidebar } from './components/Sidebar';
@@ -1009,6 +1010,44 @@ function App() {
     setPendingPinItem(newItem);
   };
 
+  // ── Auto-Dashboard: build a full dashboard from auto-insights ──
+  const [isBuildingDashboard, setIsBuildingDashboard] = useState(false);
+  const [buildDashboardMsg, setBuildDashboardMsg] = useState('');
+  const autoBuildAttemptedRef = useRef(false);
+
+  const handleBuildDashboard = async () => {
+    if (!dataset || isBuildingDashboard) return;
+    setIsBuildingDashboard(true);
+    setBuildDashboardMsg('Analyzing your data…');
+    try {
+      const { count } = await buildAutoDashboard(dataset, { onProgress: setBuildDashboardMsg });
+      if (count > 0) {
+        setActiveTab(Tab.DASHBOARD);
+      } else {
+        setError('We couldn’t auto-build a dashboard for this dataset yet — try building a chart from Smart Insights or the Question Builder.');
+      }
+    } catch (e: any) {
+      setError(e?.message || 'Failed to build the dashboard. Please try again.');
+    } finally {
+      setIsBuildingDashboard(false);
+      setBuildDashboardMsg('');
+    }
+  };
+
+  // First upload → auto-build a starter dashboard once processing completes,
+  // but only when no dashboard has any cards yet (never clobber existing work).
+  useEffect(() => {
+    if (autoBuildAttemptedRef.current) return;
+    if (isProcessing) return;
+    if (!dataset?.id || !(dataset.rows && dataset.rows.length > 0)) return;
+    const dashboards = useAppStore.getState().dashboards || [];
+    const hasCards = dashboards.some((d: any) => (d.items?.length || 0) > 0);
+    if (hasCards) return;
+    autoBuildAttemptedRef.current = true;
+    handleBuildDashboard();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataset?.id, isProcessing]);
+
   const handleEditAnalysis = (item: any) => {
     const config = { ...item.result.config };
     // Backward compat: AI SQL cards pinned before the limit/sort fix
@@ -1069,6 +1108,22 @@ function App() {
     <ErrorBoundary>
       {/* ── Splash / Boot Screen ── */}
       {showSplash && <SplashScreen onComplete={() => setShowSplash(false)} />}
+
+      {/* Auto-Dashboard build overlay */}
+      {isBuildingDashboard && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className={`flex flex-col items-center gap-4 px-8 py-7 rounded-2xl border shadow-2xl ${theme === 'dark' ? 'bg-[#12161f] border-white/10' : 'bg-white border-gray-200'}`}>
+            <div className="relative">
+              <div className="w-11 h-11 rounded-full border-2 border-indigo-500/25 border-t-indigo-500 animate-spin" />
+              <Sparkles className="w-4 h-4 text-indigo-400 absolute inset-0 m-auto" />
+            </div>
+            <div className="text-center">
+              <div className={`text-sm font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Building your dashboard</div>
+              <div className={`text-xs mt-1 ${theme === 'dark' ? 'text-slate-400' : 'text-gray-500'}`}>{buildDashboardMsg || 'One moment…'}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Reconnect Modal (connection expired) ── */}
       {showReconnectModal && dataset?.liveConnection && (
@@ -1659,6 +1714,8 @@ function App() {
                     isLiveRefreshing={isLiveRefreshing}
                     refreshSchedule={dataset?.refreshSchedule}
                     onScheduleChange={updateRefreshSchedule}
+                    onBuildDashboard={handleBuildDashboard}
+                    isBuildingDashboard={isBuildingDashboard}
                   />
                 </div>
 
