@@ -46,7 +46,32 @@ export function captureChartAsImage(chartContainer: HTMLElement): string | null 
     if (!canvas) return null;
 
     try {
-        return canvas.toDataURL('image/png');
+        const srcW = canvas.width, srcH = canvas.height;
+        if (!srcW || !srcH) return canvas.toDataURL('image/png');
+
+        // Downscale so the longest edge is at most MAX_EDGE px. A full-res
+        // high-DPI chart is several MB as PNG and blows past the request-body
+        // limit (413). A ~1000px JPEG is legible for the vision model but
+        // typically <100 KB — small, fast, and cheap.
+        const MAX_EDGE = 1000;
+        const scale = Math.min(1, MAX_EDGE / Math.max(srcW, srcH));
+        const w = Math.max(1, Math.round(srcW * scale));
+        const h = Math.max(1, Math.round(srcH * scale));
+
+        const off = document.createElement('canvas');
+        off.width = w; off.height = h;
+        const ctx = off.getContext('2d');
+        if (!ctx) return canvas.toDataURL('image/png');
+
+        // JPEG has no alpha — paint an opaque white ground so the chart isn't
+        // composited onto black. (Chart marks/text stay legible for the AI.)
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(canvas, 0, 0, w, h);
+
+        return off.toDataURL('image/jpeg', 0.85);
     } catch (err) {
         console.warn('[AI Service] Failed to capture chart canvas:', err);
         return null;
