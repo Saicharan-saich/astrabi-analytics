@@ -1,5 +1,34 @@
 import { describe, it, expect } from 'vitest';
-import { toTitleCase } from '../services/etlPipeline';
+import { toTitleCase, roleConfidenceFor } from '../services/etlPipeline';
+import { ColumnType } from '../types';
+
+const P = (o: Partial<{ distinctCount: number; totalValues: number; numericParseRate: number; dateParseRate: number; booleanTokenRate: number }>) =>
+    ({ distinctCount: 0, totalValues: 100, numericParseRate: 0, dateParseRate: 0, booleanTokenRate: 0, ...o });
+const S = (o: Partial<{ isIdName: boolean; isDateName: boolean; isMetricName: boolean; effectiveNumericRate: number }>) =>
+    ({ isIdName: false, isDateName: false, isMetricName: false, effectiveNumericRate: 0, ...o });
+
+describe('roleConfidenceFor — advisory role confidence', () => {
+    it('ID by name is high confidence', () => {
+        expect(roleConfidenceFor(ColumnType.ID, P({}), S({ isIdName: true })).confidence).toBeGreaterThan(0.85);
+    });
+    it('low-cardinality numeric ID (no id-name) is flagged low', () => {
+        const r = roleConfidenceFor(ColumnType.ID, P({ distinctCount: 5, totalValues: 500, numericParseRate: 1 }), S({}));
+        expect(r.confidence).toBeLessThan(0.6);
+        expect(r.reason).toMatch(/category|year/i);
+    });
+    it('date with high parse rate is high confidence', () => {
+        expect(roleConfidenceFor(ColumnType.DATE, P({ dateParseRate: 0.95 }), S({})).confidence).toBeGreaterThan(0.9);
+    });
+    it('named numeric metric is high confidence', () => {
+        expect(roleConfidenceFor(ColumnType.METRIC, P({ numericParseRate: 1 }), S({ isMetricName: true, effectiveNumericRate: 1 })).confidence).toBeGreaterThan(0.85);
+    });
+    it('numeric column treated as a dimension is flagged low', () => {
+        expect(roleConfidenceFor(ColumnType.DIMENSION, P({}), S({ effectiveNumericRate: 0.9 })).confidence).toBeLessThan(0.6);
+    });
+    it('clearly-text dimension is confident', () => {
+        expect(roleConfidenceFor(ColumnType.DIMENSION, P({ distinctCount: 5 }), S({ effectiveNumericRate: 0 })).confidence).toBeGreaterThan(0.8);
+    });
+});
 
 describe('toTitleCase — preservation-aware casing', () => {
     // ── Normalizes plain words with inconsistent casing ──

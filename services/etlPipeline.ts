@@ -766,6 +766,47 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
 // ║  LAYER 4: RULE PLANNER (Classification Gates)                   ║
 // ╚══════════════════════════════════════════════════════════════════╝
 
+/**
+ * Confidence (0–1) that a column's assigned ROLE is correct, from the strength
+ * of the signals that drove it. Advisory only — it does not change the
+ * decision; it surfaces genuinely ambiguous columns for user review (e.g. a
+ * low-cardinality numeric that could be a category/year rather than an ID).
+ */
+export function roleConfidenceFor(
+    type: ColumnType,
+    p: Pick<ColumnProfileData, 'distinctCount' | 'totalValues' | 'numericParseRate' | 'dateParseRate' | 'booleanTokenRate'>,
+    signals: { isIdName: boolean; isDateName: boolean; isMetricName: boolean; effectiveNumericRate: number }
+): { confidence: number; reason: string } {
+    const cardRatio = p.totalValues > 0 ? p.distinctCount / p.totalValues : 0;
+    const { isIdName, isDateName, isMetricName, effectiveNumericRate } = signals;
+    switch (type) {
+        case ColumnType.ID:
+            if (isIdName) return { confidence: 0.92, reason: '' };
+            if (cardRatio > 0.9) return { confidence: 0.85, reason: 'values are near-unique' };
+            if (p.numericParseRate >= 0.9 && p.distinctCount < 10 && cardRatio < 0.05)
+                return { confidence: 0.5, reason: 'low-cardinality number — could be a category or year, not an ID' };
+            return { confidence: 0.6, reason: '' };
+        case ColumnType.DATE:
+            if (p.dateParseRate >= 0.8) return { confidence: 0.95, reason: '' };
+            if (isDateName) return { confidence: 0.72, reason: 'classified by name; not all values parse as dates' };
+            return { confidence: 0.62, reason: 'only about half the values parse as dates' };
+        case ColumnType.BOOLEAN:
+            return p.booleanTokenRate >= 0.8
+                ? { confidence: 0.9, reason: '' }
+                : { confidence: 0.6, reason: 'mixed true/false tokens' };
+        case ColumnType.METRIC:
+            if (isMetricName && effectiveNumericRate >= 0.7) return { confidence: 0.9, reason: '' };
+            if (isMetricName) return { confidence: 0.72, reason: '' };
+            if (effectiveNumericRate >= 0.7) return { confidence: 0.68, reason: 'numeric by data, but the name is not a known metric' };
+            return { confidence: 0.5, reason: 'weak metric signal' };
+        case ColumnType.DIMENSION:
+            if (effectiveNumericRate < 0.3) return { confidence: 0.85, reason: '' };
+            return { confidence: 0.58, reason: 'a numeric column treated as a category — verify it should not be a metric' };
+        default:
+            return { confidence: 0.6, reason: '' };
+    }
+}
+
 function layer4_rulePlanner(
     profiles: ColumnProfileData[],
     columnTypeOverrides?: Record<string, ColumnType>
@@ -864,6 +905,20 @@ function layer4_rulePlanner(
             // ── Default: Dimension ──
             else {
                 type = ColumnType.DIMENSION;
+            }
+
+            // Advisory confidence — surface ambiguous columns for review (no
+            // change to the decision above).
+            const rc = roleConfidenceFor(type, p, {
+                isIdName: ID_PATTERNS.test(p.name),
+                isDateName,
+                isMetricName,
+                effectiveNumericRate,
+            });
+            if (rc.confidence < 0.6) {
+                logs.push(log('Low-Confidence Classification', 4, 'info',
+                    `Column '${p.name}' → ${type} (${Math.round(rc.confidence * 100)}% confidence)${rc.reason ? ` — ${rc.reason}` : ''}. Review recommended.`,
+                    { affectedColumns: [p.name] }));
             }
         }
 
