@@ -13,32 +13,10 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      // Guard the config: if the Tailwind CDN fails to load (blocked network,
-      // offline, slow), `tailwind` is undefined — assigning to it would throw an
-      // uncaught error and take the whole app down. Degrade gracefully instead.
-      if (window.tailwind) {
-        window.tailwind.config = {
-          theme: {
-            extend: {
-              colors: {
-                brand: {
-                  50: '#f0fdfa',
-                  100: '#ccfbf1',
-                  500: '#14b8a6',
-                  600: '#0d9488',
-                  900: '#134e4a',
-                },
-                slate: {
-                  850: '#1e293b', // Custom dark
-                }
-              }
-            }
-          }
-        };
-      }
-    </script>
+    <!-- Tailwind is compiled into index.css at build time (see tailwind.config.js).
+         The runtime cdn.tailwindcss.com script was removed — no production
+         dependency on an external CDN for styling. -->
+
     <style>
       body {
         background-color: #f8fafc;
@@ -59,23 +37,10 @@
         background: #94a3b8; 
       }
     </style>
-  <script type="importmap">
-{
-  "imports": {
-    "react": "https://esm.sh/react@18.2.0?dev&v=fixed",
-    "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime?dev&v=fixed",
-    "react-dom/client": "https://esm.sh/react-dom@18.2.0/client?dev&v=fixed",
-    "react-dom": "https://esm.sh/react-dom@18.2.0?dev&v=fixed",
-    "lucide-react": "https://esm.sh/lucide-react@0.292.0?external=react,react-dom&v=fixed",
-    "recharts": "https://esm.sh/recharts@2.12.7?external=react,react-dom&v=fixed",
-    "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.1/package/xlsx.mjs",
-    "react-simple-maps": "https://esm.sh/react-simple-maps@3.0.0?external=react,react-dom&v=fixed",
-    "d3-scale": "https://esm.sh/d3-scale@4.0.2?v=fixed",
-    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
-    "react/": "https://esm.sh/react@^19.2.4/"
-  }
-}
-</script>
+  <!-- The dev importmap (react/lucide/recharts/etc. via esm.sh) was removed:
+       Vite bundles all dependencies from package.json at build time, so the map
+       was dead cruft that only added external-CDN references (and conflicting
+       React versions) to the production HTML. -->
 <link rel="stylesheet" href="/index.css">
 </head>
   <body>
