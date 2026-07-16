@@ -250,8 +250,29 @@ function wordToNumber(s: string): number | null {
     return null;
 }
 
-function toTitleCase(s: string): string {
-    return s.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+/**
+ * Case-normalize a dimension value WITHOUT destroying meaningful casing.
+ *
+ * Plain words with inconsistent casing ("north AMERICA" → "North America")
+ * are normalized, but tokens that carry real meaning in their casing are
+ * preserved verbatim so the ETL never corrupts legitimate values:
+ *   - alphanumeric codes / models: "WH-1000XM5", "PS5", "34\"", "S24"
+ *   - brand / camelCase names:     "iPhone", "eBay", "MacBook", "AirPods"
+ *   - short acronyms:              "USA", "NYC", "IBM", "EU"
+ *
+ * Exported for unit testing.
+ */
+export function toTitleCase(s: string): string {
+    return s.replace(/\w\S*/g, w => {
+        // Contains a digit → alphanumeric code/model number → leave as-is.
+        if (/\d/.test(w)) return w;
+        // Internal capital (camelCase / brand) → leave as-is (iPhone, eBay, MacBook).
+        if (/[a-z][A-Z]/.test(w)) return w;
+        // Short all-caps token → acronym (USA, NYC, IBM) → leave as-is.
+        if (w.length <= 4 && w === w.toUpperCase() && /[A-Z]/.test(w)) return w;
+        // Otherwise normalize: first letter up, rest down.
+        return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    });
 }
 
 function toISO(y: number, m: number, d: number): string {
@@ -851,7 +872,7 @@ function layer4_rulePlanner(
             if (p.currencyDetected) steps.push({ name: 'REMOVE_CURRENCY', fn: (v: any) => typeof v === 'string' ? v.replace(CURRENCY_STRIP_REGEX, '') : v });
             if (p.percentageDetected) steps.push({ name: 'REMOVE_PERCENTAGE', fn: (v: any) => typeof v === 'string' ? v.replace(/%/g, '').trim() : v });
             if (p.wordNumberRate > 0) steps.push({ name: 'WORD_TO_NUMBER', fn: (v: any) => { if (typeof v !== 'string') return v; const n = wordToNumber(v); return n !== null ? n : v; } });
-            steps.push({ name: 'PARSE_NUMBER', fn: (v: any) => { if (typeof v === 'number') return v; const s = String(v).replace(/[,\s]/g, ''); const n = parseFloat(s); return isNaN(n) ? null : n; } });
+            steps.push({ name: 'PARSE_NUMBER', fn: (v: any) => { if (typeof v === 'number') return v; if (v === null || v === undefined) return null; const s = String(v).replace(/[,\s]/g, ''); if (s === '') return null; const n = Number(s); return isNaN(n) ? null : n; } });
             steps.push({ name: 'IMPUTE_NULL', fn: (v: any) => (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) ? null : v });
         } else if (type === ColumnType.DATE) {
             const fmt = p.dateFormatCandidate || 'YYYY-MM-DD';
