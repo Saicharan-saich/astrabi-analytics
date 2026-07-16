@@ -86,9 +86,12 @@ const METRIC_RULES: { pattern: RegExp; result: MetricClassification }[] = [
         result: { aggregation: AggregationType.SUM, behavior: 'additive', format: 'currency_usd', requiresWeighting: false },
     },
 
-    // Discount (absolute amount) — SUM, currency format
+    // Discount as an absolute DOLLAR amount — SUM, currency format.
+    // NOTE: a BARE "discount" column is handled as a RATE below (AVG, percent),
+    // because in most datasets (retail/e-commerce) "discount" is a 0–1 / 0–100
+    // rate, not a dollar figure. Use "discount_amount" for a currency discount.
     {
-        pattern: /(?:^|[_\s])(discount|discount_amount|rebate|savings|coupon_value)(?:[_\s]|$)/i,
+        pattern: /(?:^|[_\s])(discount_amount|discount_amt|rebate|savings|coupon_value)(?:[_\s]|$)/i,
         result: { aggregation: AggregationType.SUM, behavior: 'additive', format: 'currency_usd', requiresWeighting: false },
     },
 
@@ -132,7 +135,7 @@ const METRIC_RULES: { pattern: RegExp; result: MetricClassification }[] = [
 
     // Percentage / Ratio / Rate — always AVG, percent format
     {
-        pattern: /(?:^|[_\s])(percentage|percent|pct|ratio|margin_pct|margin_percent|profit_margin|gross_margin|discount_pct|discount_rate|discount_percent|tax_rate|return_rate|conversion_rate|churn_rate|attrition|retention_rate|growth_rate|click_through_rate|ctr|open_rate|bounce_rate)(?:[_\s]|$)/i,
+        pattern: /(?:^|[_\s])(discount|markdown|percentage|percent|pct|ratio|margin_pct|margin_percent|profit_margin|gross_margin|discount_pct|discount_rate|discount_percent|tax_rate|return_rate|conversion_rate|churn_rate|attrition|retention_rate|growth_rate|click_through_rate|ctr|open_rate|bounce_rate)(?:[_\s]|$)/i,
         result: { aggregation: AggregationType.AVG, behavior: 'non_additive', format: 'percent', requiresWeighting: false },
     },
 
