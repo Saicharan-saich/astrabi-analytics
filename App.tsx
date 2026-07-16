@@ -12,6 +12,7 @@ import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, g
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
 import { buildSemanticModel } from './services/semanticModel';
 import { fetchGlobalHiddenTabs } from './services/tabVisibilityService';
+import { fetchColumnCorrections, saveColumnCorrections, rememberedOverridesFor } from './services/columnCorrectionsService';
 import { buildAutoDashboard } from './services/autoDashboardBuilder';
 import { refreshLiveDataset } from './services/liveRefreshService';
 import { preloadDuckDB } from './services/duckdbEngine';
@@ -238,6 +239,9 @@ function App() {
       fetchGlobalHiddenTabs()
         .then((tabs) => useAppStore.getState().setHiddenTabs(tabs))
         .catch(() => { /* fail-open: keep whatever is local */ });
+      // Prime the remembered column-classification cache so future uploads can
+      // auto-apply corrections. Metadata only (columnName → role) — never data.
+      fetchColumnCorrections().catch(() => { /* fail-open */ });
     }
     prevAuthRef.current = isAuthenticated;
   }, [isAuthenticated, currentUser]);
@@ -403,12 +407,25 @@ function App() {
       const { type, result, error } = event.data;
       if (type === 'SUCCESS') {
         const { rows, logs, columns, timeContext, sourceSchema, dimDate, rawRows } = result;
+
+        // ── APPLY REMEMBERED CORRECTIONS ──
+        // If a user previously corrected the role of a column with this name,
+        // auto-apply it so the app gets smarter about a schema over time.
+        // Metadata only (columnName → role); no raw data involved.
+        const remembered = rememberedOverridesFor(columns.map((c: any) => c.name));
+        const correctedColumns = Object.keys(remembered).length > 0
+          ? columns.map((col: any) => (remembered[col.name] ? { ...col, type: remembered[col.name] } : col))
+          : columns;
+        if (Object.keys(remembered).length > 0) {
+          console.log(`[App] Applied ${Object.keys(remembered).length} remembered column correction(s) on upload`);
+        }
+
         const newDataset: Dataset = {
           id: generateId(),
           name: file.name,
           rows,
           rawRows,
-          columns,
+          columns: correctedColumns,
           totalRows: rows.length,
           etlLogs: logs,
           timeContext,
@@ -1547,6 +1564,10 @@ function App() {
                           });
                           finalDataset = { ...finalDataset, columns: updatedColumns };
                           console.log(`[App] Column types updated: ${Object.keys(columnTypeOverrides).length} overrides (semantic-only, no ETL re-run)`);
+                          // ── REMEMBER CORRECTIONS ──
+                          // Persist columnName → role globally so future uploads
+                          // of the same schema auto-apply. Metadata only, no data.
+                          saveColumnCorrections(columnTypeOverrides).catch(() => { /* fail-open */ });
                         }
 
                         // Rebuild semantic model with user-verified profile
