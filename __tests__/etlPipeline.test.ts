@@ -1,6 +1,37 @@
 import { describe, it, expect } from 'vitest';
-import { toTitleCase, roleConfidenceFor } from '../services/etlPipeline';
+import { toTitleCase, roleConfidenceFor, keySignalFor } from '../services/etlPipeline';
 import { ColumnType } from '../types';
+
+const K = (o: Partial<{ distinctCount: number; totalValues: number; numericParseRate: number; currencyDetected: boolean; percentageDetected: boolean; integerRate: number; looksSequential: boolean }>) =>
+    ({ distinctCount: 0, totalValues: 100, numericParseRate: 1, currencyDetected: false, percentageDetected: false, integerRate: 1, looksSequential: false, ...o });
+
+describe('keySignalFor — data-driven key detection', () => {
+    it('near-unique integer column is a key', () => {
+        const r = keySignalFor(K({ distinctCount: 100, totalValues: 100 }), false);
+        expect(r.isKey).toBe(true);
+        expect(r.reason).toMatch(/near-unique/i);
+    });
+    it('sequential integer run is a serial key', () => {
+        const r = keySignalFor(K({ distinctCount: 500, totalValues: 500, looksSequential: true }), false);
+        expect(r.isKey).toBe(true);
+        expect(r.reason).toMatch(/sequential|serial/i);
+    });
+    it('strong metric name is never a key', () => {
+        expect(keySignalFor(K({ distinctCount: 100, totalValues: 100 }), true).isKey).toBe(false);
+    });
+    it('currency-formatted column is never a key', () => {
+        expect(keySignalFor(K({ distinctCount: 100, totalValues: 100, currencyDetected: true }), false).isKey).toBe(false);
+    });
+    it('decimal (non-integer) numeric is not a key', () => {
+        expect(keySignalFor(K({ distinctCount: 100, totalValues: 100, integerRate: 0.4 }), false).isKey).toBe(false);
+    });
+    it('repeating low-cardinality integers (e.g. quantity) are not a key', () => {
+        expect(keySignalFor(K({ distinctCount: 8, totalValues: 500 }), false).isKey).toBe(false);
+    });
+    it('non-numeric column is not a key', () => {
+        expect(keySignalFor(K({ distinctCount: 100, totalValues: 100, numericParseRate: 0.1, integerRate: 0 }), false).isKey).toBe(false);
+    });
+});
 
 const P = (o: Partial<{ distinctCount: number; totalValues: number; numericParseRate: number; dateParseRate: number; booleanTokenRate: number }>) =>
     ({ distinctCount: 0, totalValues: 100, numericParseRate: 0, dateParseRate: 0, booleanTokenRate: 0, ...o });

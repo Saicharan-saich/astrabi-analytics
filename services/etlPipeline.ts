@@ -47,6 +47,10 @@ export interface ColumnProfileData {
     currencyDetected: boolean;
     percentageDetected: boolean;
     wordNumberRate: number;
+    /** Fraction of numeric values that are whole integers (0–1). Key columns are integer-heavy. */
+    integerRate?: number;
+    /** True when integer values form a near-contiguous run (max−min+1 ≈ distinct) — an auto-increment / serial key. */
+    looksSequential?: boolean;
 }
 
 export interface TransformStep {
@@ -649,6 +653,7 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
         let currencyDetected = false;
         let percentageDetected = false;
         let wordNumberCount = 0;
+        let integerCount = 0;
 
         for (const v of nonNull) {
             const s = String(v);
@@ -667,10 +672,21 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
             const num = Number(stripped);
             if (!isNaN(num)) {
                 numericCount++;
+                if (Number.isInteger(num)) integerCount++;
                 if (num < min) min = num;
                 if (num > max) max = num;
             }
         }
+        // Key-shape signals (relationship/uniqueness): integer-heaviness and whether the
+        // integer values form a near-contiguous run (auto-increment / serial key).
+        const integerRate = numericCount > 0 ? integerCount / numericCount : 0;
+        const looksSequential = (() => {
+            if (integerRate < 0.99 || min === Infinity || max === -Infinity) return false;
+            if (distinctCount < 20) return false; // too few to distinguish a run from a small category
+            const span = max - min + 1;
+            // A serial key visits nearly every integer in its range exactly once.
+            return span > 0 && distinctCount / span >= 0.9 && distinctCount / span <= 1.1;
+        })();
 
         // Date parse rate — count TOTAL parseable values across ALL formats
         let bestDateFormat: string | null = null;
@@ -740,6 +756,8 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
             currencyDetected,
             percentageDetected,
             wordNumberRate: nonNull.length > 0 ? wordNumberCount / nonNull.length : 0,
+            integerRate,
+            looksSequential,
         };
 
         profiles.push(profile);
@@ -765,6 +783,39 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  LAYER 4: RULE PLANNER (Classification Gates)                   ║
 // ╚══════════════════════════════════════════════════════════════════╝
+
+/**
+ * Data-driven KEY detection (Phase 4). Numeric columns whose SHAPE says "this is
+ * an identifier, not a measure" — even when the column NAME gives nothing away.
+ * Aggregating a key (SUM of order numbers, AVG of a serial id) is meaningless, so
+ * catching these before the metric gate keeps auto-analysis honest.
+ *
+ * Two relationship/uniqueness signals, both requiring integer-heavy numeric data
+ * with no money/percent formatting:
+ *   • primary-key   — values are near-unique (a candidate key for the row)
+ *   • serial-key    — values form a near-contiguous run (auto-increment id)
+ *
+ * Deliberately conservative: it never fires on columns with a strong metric name,
+ * on non-integer/decimal data (measures have cents), or on low-cardinality data
+ * (that's a category, handled elsewhere).
+ */
+export function keySignalFor(
+    p: Pick<ColumnProfileData, 'distinctCount' | 'totalValues' | 'numericParseRate' | 'currencyDetected' | 'percentageDetected' | 'integerRate' | 'looksSequential'>,
+    isMetricName: boolean
+): { isKey: boolean; reason: string } {
+    // Never override a real measure: money/percent formatting or a metric name means "measure".
+    if (isMetricName || p.currencyDetected || p.percentageDetected) return { isKey: false, reason: '' };
+    // Must be integer-heavy numeric data — keys don't have decimals.
+    if (p.numericParseRate < 0.9 || (p.integerRate ?? 0) < 0.99) return { isKey: false, reason: '' };
+
+    const cardRatio = p.totalValues > 0 ? p.distinctCount / p.totalValues : 0;
+    // Serial / auto-increment key: a contiguous run of integers.
+    if (p.looksSequential) return { isKey: true, reason: 'integer values form a sequential run — looks like a serial identifier, not a measure' };
+    // Primary-key: near-unique integers with enough rows to be sure.
+    if (p.distinctCount >= 20 && cardRatio >= 0.95)
+        return { isKey: true, reason: 'integer values are near-unique — looks like an identifier, not a measure' };
+    return { isKey: false, reason: '' };
+}
 
 /**
  * Confidence (0–1) that a column's assigned ROLE is correct, from the strength
@@ -836,6 +887,7 @@ function layer4_rulePlanner(
             const isMetricName = METRIC_NAME_EXACT.test(p.name) || METRIC_KEYWORDS.test(p.name);
             const isDateName = DATE_NAME_PATTERNS.test(p.name);
             const effectiveNumericRate = p.numericParseRate + (p.wordNumberRate || 0);
+            const keySig = keySignalFor(p, isMetricName);
 
             // ── Gate 1: ID detection (by name pattern) ──
             if (ID_PATTERNS.test(p.name)) {
@@ -859,6 +911,16 @@ function layer4_rulePlanner(
             // ── Gate 4: Boolean gate (≥60% boolean tokens) ──
             else if (p.booleanTokenRate >= 0.6) {
                 type = ColumnType.BOOLEAN; // Booleans get their own type with bool normalization
+            }
+            // ── Gate 4a2: Data-driven KEY detection (relationship/uniqueness) ──
+            // Near-unique or sequential integer columns are identifiers, not measures —
+            // even when the name gives nothing away. Catch them before the metric gate
+            // so keys never get summed/averaged.
+            else if (keySig.isKey) {
+                type = ColumnType.ID;
+                logs.push(log('Key Detection', 4, 'info',
+                    `Column '${p.name}' classified as ID — ${keySig.reason}.`,
+                    { affectedColumns: [p.name] }));
             }
             // ── Gate 4b: Metric gate (high numeric rate + sufficient cardinality) ──
             // BUT: first check if this is a numeric ATTRIBUTE (age, rating, etc.)
