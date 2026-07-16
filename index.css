@@ -1,3 +1,11 @@
+/* Tailwind utilities are now COMPILED at build time (replacing the runtime
+   cdn.tailwindcss.com script). base/components/utilities come first so the
+   custom design-system rules below still win on conflicts — matching the old
+   order where index.css loaded after the CDN-injected styles. */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* ═══════════════════════════════════════════════════════
    QuickInsight — Premium Theme System
    ═══════════════════════════════════════════════════════ */
