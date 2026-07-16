@@ -1588,10 +1588,13 @@ app.post('/api/admin/tab-visibility', async (req, res) => {
 });
 
 // ── Remembered column classifications ────────────────────
-// A shared, self-improving map of columnName → role. When a user corrects a
-// column's classification, it's remembered here and auto-applied to future
-// uploads that contain a column with the same name.
+// A self-improving map of column corrections, SCOPED BY DATASET SIGNATURE so a
+// correction to "region" in one dataset never rewrites a same-named column in an
+// unrelated dataset. Shape: { [datasetSignature]: { [columnNameLower]: role } }.
+// The signature is a stable fingerprint of the dataset's column-name set, so the
+// same schema re-applies its corrections while different schemas stay isolated.
 const VALID_ROLES = new Set(['METRIC', 'DIMENSION', 'DATE', 'BOOLEAN', 'ID', 'UNKNOWN']);
+const SIGNATURE_RE = /^[a-z0-9]{1,64}$/; // hashed signature — lowercase alnum only
 
 app.get('/api/settings/column-corrections', async (req, res) => {
     const user = extractUser(req);
@@ -1599,7 +1602,14 @@ app.get('/api/settings/column-corrections', async (req, res) => {
     if (!authPool) return res.json({ corrections: {} });
     try {
         const { rows } = await authPool.query(`SELECT value FROM app_settings WHERE key = 'column_corrections'`);
-        res.json({ corrections: rows[0]?.value && typeof rows[0].value === 'object' ? rows[0].value : {} });
+        const value = rows[0]?.value && typeof rows[0].value === 'object' ? rows[0].value : {};
+        // Return only the signature-scoped sub-maps (objects). Any legacy flat
+        // string entries from the pre-scoping version are ignored.
+        const scoped = {};
+        for (const [sig, sub] of Object.entries(value)) {
+            if (SIGNATURE_RE.test(sig) && sub && typeof sub === 'object' && !Array.isArray(sub)) scoped[sig] = sub;
+        }
+        res.json({ corrections: scoped });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -1610,7 +1620,11 @@ app.post('/api/column-corrections', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Authentication required' });
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
     try {
+        const signature = req.body?.signature;
         const input = req.body?.corrections;
+        if (typeof signature !== 'string' || !SIGNATURE_RE.test(signature)) {
+            return res.status(400).json({ error: 'Missing or invalid dataset signature' });
+        }
         const clean = {};
         if (input && typeof input === 'object') {
             for (const [name, role] of Object.entries(input)) {
@@ -1620,15 +1634,21 @@ app.post('/api/column-corrections', async (req, res) => {
             }
         }
         if (Object.keys(clean).length === 0) return res.status(400).json({ error: 'No valid corrections provided' });
-        // Merge into the existing map (JSONB || concatenation).
+
+        // Atomically deep-merge into the signature's bucket. A plain JSONB || is
+        // shallow (it would replace the whole bucket), so merge the bucket itself:
+        // value || { sig: (existing bucket || new corrections) } — one statement,
+        // no read-modify-write race between concurrent writers.
         await authPool.query(
             `INSERT INTO app_settings (key, value, updated_by, updated_at)
-             VALUES ('column_corrections', $1, $2, NOW())
-             ON CONFLICT (key) DO UPDATE SET value = app_settings.value || $1, updated_by = $2, updated_at = NOW()`,
-            [JSON.stringify(clean), user.email]
+             VALUES ('column_corrections', jsonb_build_object($1::text, $2::jsonb), $3, NOW())
+             ON CONFLICT (key) DO UPDATE SET
+                value = app_settings.value || jsonb_build_object($1::text, COALESCE(app_settings.value->$1, '{}'::jsonb) || $2::jsonb),
+                updated_by = $3, updated_at = NOW()`,
+            [signature, JSON.stringify(clean), user.email]
         );
-        console.log(`[Corrections] ${user.email} remembered: ${Object.entries(clean).map(([n, r]) => `${n}=${r}`).join(', ')}`);
-        res.json({ success: true, saved: clean });
+        console.log(`[Corrections] ${user.email} remembered for ${signature}: ${Object.entries(clean).map(([n, r]) => `${n}=${r}`).join(', ')}`);
+        res.json({ success: true, saved: clean, signature });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
