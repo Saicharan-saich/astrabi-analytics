@@ -12,7 +12,7 @@ import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, g
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
 import { buildSemanticModel } from './services/semanticModel';
 import { fetchGlobalHiddenTabs } from './services/tabVisibilityService';
-import { fetchColumnCorrections, saveColumnCorrections, rememberedOverridesFor } from './services/columnCorrectionsService';
+import { fetchColumnCorrections, saveColumnCorrections, rememberedOverridesFor, datasetSignature } from './services/columnCorrectionsService';
 import { buildAutoDashboard } from './services/autoDashboardBuilder';
 import { refreshLiveDataset } from './services/liveRefreshService';
 import { preloadDuckDB } from './services/duckdbEngine';
@@ -1564,10 +1564,13 @@ function App() {
                           });
                           finalDataset = { ...finalDataset, columns: updatedColumns };
                           console.log(`[App] Column types updated: ${Object.keys(columnTypeOverrides).length} overrides (semantic-only, no ETL re-run)`);
-                          // ── REMEMBER CORRECTIONS ──
-                          // Persist columnName → role globally so future uploads
-                          // of the same schema auto-apply. Metadata only, no data.
-                          saveColumnCorrections(columnTypeOverrides).catch(() => { /* fail-open */ });
+                          // ── REMEMBER CORRECTIONS (scoped to this dataset's schema) ──
+                          // Persist columnName → role under this dataset's signature so
+                          // future uploads of the SAME schema auto-apply — without
+                          // colliding with same-named columns in other datasets.
+                          // Metadata only (names + roles), no data.
+                          const sig = datasetSignature(dataset.columns.map(c => c.name));
+                          saveColumnCorrections(sig, columnTypeOverrides).catch(() => { /* fail-open */ });
                         }
 
                         // Rebuild semantic model with user-verified profile
