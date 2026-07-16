@@ -259,6 +259,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 (rawLabel.startsWith('%') && !rawLabel.includes('change') && !rawLabel.includes('growth') && !rawLabel.includes('vs')) ||
                 rawLabel.includes('% of') || rawLabel.includes('percent of') ||
                 /\bshare\b/.test(metricName) ||
+                /\bdiscount\b/.test(metricName) || /\bmarkdown\b/.test(metricName) ||
                 (/\brate\b/.test(metricName) && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)\s*_?\s*rate\b/.test(metricName)) ||
                 /\bconversion\b/.test(metricName) || /\bratio\b/.test(metricName)
             ) {
@@ -391,7 +392,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             metricRef.includes('price') || metricRef.includes('cost') ||
             metricRef.includes('amount') || metricRef.includes('profit');
         const isPercent = metricRef.includes('percent') || (metricRef.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(metricRef)) ||
-            metricRef.includes('ratio') || metricRef.includes('share');
+            metricRef.includes('ratio') || metricRef.includes('share') ||
+            /\bdiscount\b/.test(metricRef) || metricRef.includes('markdown');
 
         if (isPercent) {
             // Scale fractional percents (0.073 → 7.3%) so axis ticks read correctly.
