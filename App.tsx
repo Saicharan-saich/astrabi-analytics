@@ -11,6 +11,7 @@ import {
 import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, getSampleData } from './services/analysisEngine';
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
 import { buildSemanticModel } from './services/semanticModel';
+import { fetchGlobalHiddenTabs } from './services/tabVisibilityService';
 import { refreshLiveDataset } from './services/liveRefreshService';
 import { preloadDuckDB } from './services/duckdbEngine';
 import { Sidebar } from './components/Sidebar';
@@ -221,7 +222,7 @@ function App() {
   const { trackActivity } = useActivityStore();
   const prevAuthRef = useRef(false);
 
-  // Track login events
+  // Track login events + load the admin-defined global tab visibility
   useEffect(() => {
     if (isAuthenticated && currentUser && !prevAuthRef.current) {
       trackActivity({
@@ -231,6 +232,11 @@ function App() {
         userRole: currentUser.role,
         action: 'login',
       });
+      // Apply the admin's global tab-visibility config for EVERY user on login,
+      // so hiding a tab actually affects everyone (not just the admin's browser).
+      fetchGlobalHiddenTabs()
+        .then((tabs) => useAppStore.getState().setHiddenTabs(tabs))
+        .catch(() => { /* fail-open: keep whatever is local */ });
     }
     prevAuthRef.current = isAuthenticated;
   }, [isAuthenticated, currentUser]);

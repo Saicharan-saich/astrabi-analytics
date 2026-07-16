@@ -119,6 +119,18 @@ async function initAuthDatabase() {
         try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_dashboards_user ON dashboards (user_id)`); } catch {}
         console.log('[Auth] Dashboards table ready');
 
+        // Global app settings (key → JSON value). Used by admin-controlled
+        // features that must apply to ALL users, e.g. tab visibility.
+        await authPool.query(`
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value JSONB NOT NULL DEFAULT '{}',
+                updated_by TEXT,
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        `);
+        console.log('[Auth] App settings table ready');
+
         // Create user_activities table for global engagement tracking
         await authPool.query(`
             CREATE TABLE IF NOT EXISTS user_activities (
@@ -1533,6 +1545,43 @@ app.post('/api/admin/set-quota', async (req, res) => {
         await authPool.query('UPDATE users SET daily_ai_limit = $1 WHERE id = $2', [limit, targetUserId]);
         console.log(`[Admin] ${user.email} set daily AI limit to ${limit} for user ${targetUserId}`);
         res.json({ success: true, dailyLimit: limit });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ── Global tab visibility ────────────────────────────────
+// Read: any authenticated user gets the admin-defined hidden tabs.
+app.get('/api/settings/tab-visibility', async (req, res) => {
+    const user = extractUser(req);
+    if (!user) return res.status(401).json({ error: 'Authentication required' });
+    if (!authPool) return res.json({ hiddenTabs: [] });
+    try {
+        const { rows } = await authPool.query(`SELECT value FROM app_settings WHERE key = 'tab_visibility'`);
+        const hiddenTabs = Array.isArray(rows[0]?.value?.hiddenTabs) ? rows[0].value.hiddenTabs : [];
+        res.json({ hiddenTabs });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Write: admin sets the globally-hidden tabs for everyone.
+app.post('/api/admin/tab-visibility', async (req, res) => {
+    const user = extractUser(req);
+    if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+    try {
+        const hiddenTabs = Array.isArray(req.body?.hiddenTabs)
+            ? req.body.hiddenTabs.filter(t => typeof t === 'string').slice(0, 100)
+            : [];
+        await authPool.query(
+            `INSERT INTO app_settings (key, value, updated_by, updated_at)
+             VALUES ('tab_visibility', $1, $2, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_by = $2, updated_at = NOW()`,
+            [JSON.stringify({ hiddenTabs }), user.email]
+        );
+        console.log(`[Admin] ${user.email} set global hidden tabs: [${hiddenTabs.join(', ')}]`);
+        res.json({ success: true, hiddenTabs });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
