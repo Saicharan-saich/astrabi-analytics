@@ -1,0 +1,51 @@
+name: CI
+
+# Quality gate: run on every push and on PRs into main so regressions are caught
+# BEFORE they reach production (main auto-deploys to Railway). This is the
+# safety net that replaces "users are the QA environment".
+on:
+  push:
+    branches: ['**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit:
+    name: Build & unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Unit tests
+        run: npx vitest run
+
+  e2e:
+    name: Smoke tests (Playwright)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      # Install the browser here (the repo does not vendor it). The Playwright
+      # config falls back to Playwright's own browser resolution when the
+      # sandbox path /opt/pw-browsers is absent, so this Just Works on CI.
+      - name: Install Chromium for Playwright
+        run: npx playwright install --with-deps chromium
+      - name: Smoke tests
+        run: npm run test:e2e
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
