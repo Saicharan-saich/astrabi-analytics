@@ -129,7 +129,7 @@ const METRIC_RULES: { pattern: RegExp; result: MetricClassification }[] = [
 
     // Price / Rate / Unit Price — always AVG, currency format
     {
-        pattern: /(?:^|[_\s])(price|unit_price|unit_cost|cost_per_unit|rate|avg_price|average_price|selling_price|list_price|msrp)(?:[_\s]|$)/i,
+        pattern: /(?:^|[_\s])(price|unit_price|unit_cost|cost_per_unit|hourly_rate|daily_rate|pay_rate|bill_rate|billing_rate|charge_rate|flat_rate|base_rate|exchange_rate|avg_price|average_price|selling_price|list_price|msrp)(?:[_\s]|$)/i,
         result: { aggregation: AggregationType.AVG, behavior: 'non_additive', format: 'currency_usd', requiresWeighting: true, weightColumn: 'quantity' },
     },
 
