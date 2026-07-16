@@ -102,6 +102,23 @@ describe('Golden inference — ETL roles', () => {
         expect(roleOf(r, 'account')).toBe(ColumnType.DIMENSION);
         expect(roleOf(r, 'amount')).toBe(ColumnType.METRIC);  // real measure still a metric
     });
+    it('bounded attributes are NOT mistaken for serial keys', () => {
+        // age/rating/year form contiguous integer runs but RECUR across rows
+        // (low uniqueness) — they must stay attributes, while a true serial id
+        // (one row per value, near-unique) is still caught as a key.
+        const r = Array.from({ length: 60 }, (_, i) => ({
+            record_seq: i + 1,               // 1..60, near-unique → serial ID
+            age: 20 + (i % 50),              // 20..69, recurs → attribute
+            rating: 1 + (i % 5),             // 1..5 → attribute
+            year: 2015 + (i % 8),            // 2015..2022, recurs → attribute
+            sales: 100 + i * 7,
+        }));
+        expect(roleOf(r, 'record_seq')).toBe(ColumnType.ID);
+        expect(roleOf(r, 'age')).toBe(ColumnType.DIMENSION);
+        expect(roleOf(r, 'rating')).toBe(ColumnType.DIMENSION);
+        expect(roleOf(r, 'year')).toBe(ColumnType.DIMENSION);
+        expect(roleOf(r, 'sales')).toBe(ColumnType.METRIC);
+    });
 });
 
 describe('Golden inference — measure semantics (aggregation + format)', () => {
