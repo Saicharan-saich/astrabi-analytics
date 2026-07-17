@@ -416,43 +416,30 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     }));
   }, [items, dashboardLayout]);
 
-  // Generate responsive layouts for all breakpoints
-  const allLayouts = useMemo(() => {
-    // lg: 12 cols — use user-persisted layout directly
-    const lg = layout;
-
-    // md: 8 cols — scale x/w proportionally but preserve user height
-    const md = layout.map((item: any) => ({
-      ...item,
-      x: Math.min(Math.floor(item.x * 8 / 12), 4),
-      w: Math.min(Math.max(Math.floor(item.w * 8 / 12), 4), 8),
-    }));
-
-    // sm: 4 cols — full width single column, preserve height
-    const sm = layout.map((item: any, i: number) => ({
-      ...item,
-      x: 0,
-      w: 4,
-      y: i * item.h,
-    }));
-
-    // xs: 2 cols — full width single column, preserve height
-    const xs = layout.map((item: any, i: number) => ({
-      ...item,
-      x: 0,
-      w: 2,
-      y: i * item.h,
-    }));
-
-    return { lg, md, sm, xs };
-  }, [layout]);
+  // Use the SAME 12-column layout at every breakpoint so a card keeps the exact
+  // size and position the user chose regardless of container width. Previously
+  // md/sm/xs were *derived* from lg with scaled-down widths, so toggling the
+  // sidebar (which changes the dashboard's width enough to cross a breakpoint)
+  // remapped every card to the shrunken layout — the "my resize reset itself"
+  // bug. With one shared layout + a fixed column count, only the pixel width of
+  // each grid column scales; the cards never resize themselves.
+  const allLayouts = useMemo(() => ({
+    lg: layout,
+    md: layout,
+    sm: layout,
+    xs: layout,
+  }), [layout]);
 
   // Debounced layout save — prevents feedback loop between RGL and state
   const layoutSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handleLayoutChange = useCallback((_cur: any, _allLayouts: any) => {
+    // Persist the layout the user actually manipulated at the current breakpoint.
+    // All breakpoints share one layout now, so _cur is always the source of
+    // truth — preferring a specific breakpoint (lg) could save a stale copy when
+    // the user resized at a different width.
     const lg = _allLayouts?.lg;
-    const toSave = (Array.isArray(lg) && lg.length > 0) ? lg
-      : (Array.isArray(_cur) && _cur.length > 0) ? _cur
+    const toSave = (Array.isArray(_cur) && _cur.length > 0) ? _cur
+      : (Array.isArray(lg) && lg.length > 0) ? lg
       : null;
     if (!toSave) return;
     if (layoutSaveTimer.current) clearTimeout(layoutSaveTimer.current);
@@ -1261,7 +1248,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             className="layout"
             layouts={allLayouts}
             breakpoints={{ lg: 1200, md: 996, sm: 768, xs: 480 }}
-            cols={{ lg: 12, md: 8, sm: 4, xs: 2 }}
+            cols={{ lg: 12, md: 12, sm: 12, xs: 12 }}
             rowHeight={70}
             width={containerWidth - 48}
             onLayoutChange={handleLayoutChange}
