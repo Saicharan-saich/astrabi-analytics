@@ -52,7 +52,23 @@ export async function buildAutoDashboard(
 
     // Keep KPI tiles up top (capped) then the highest-priority charts.
     const kpis = usable.filter(i => i.chartType === 'kpiCard').slice(0, MAX_KPIS);
-    const charts = usable.filter(i => i.chartType !== 'kpiCard');
+    // Dedupe charts: two cards showing the same metric × dimension × chart type
+    // (e.g. two identical "SUM of sales by ship_mode") is the #1 thing that makes
+    // an auto-dashboard look broken. Keep the first (highest-priority) of each.
+    const seen = new Set<string>();
+    const charts = usable.filter(i => i.chartType !== 'kpiCard').filter(i => {
+        const cfg: any = i.config || {};
+        const sig = [
+            i.chartType,
+            (cfg.metric || i.yKey || '').toString().toLowerCase(),
+            (cfg.dimension || i.xKey || '').toString().toLowerCase(),
+            (cfg.aggregation || '').toString().toLowerCase(),
+            (i.title || '').toString().toLowerCase().trim(),
+        ].join('|');
+        if (seen.has(sig)) return false;
+        seen.add(sig);
+        return true;
+    });
     const chosen = [...kpis, ...charts].slice(0, MAX_CARDS);
 
     opts?.onProgress?.('Building your dashboard…');

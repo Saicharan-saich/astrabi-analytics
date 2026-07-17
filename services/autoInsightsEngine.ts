@@ -627,21 +627,11 @@ function buildInsightDefs(model: SemanticModel, rowCount: number): InsightDef[] 
         }
     }
 
-    // ── COMPARATIVE 15: Two measures side by side ──
-    if (pd && sm) {
-        const smLabel = humanize(sm.column);
-        defs.push({
-            id: 'comp_dual',
-            title: `${pmLabel} vs ${smLabel}`,
-            subtitle: `Comparing both metrics by ${pdLabel.toLowerCase()}`,
-            category: 'comparative',
-            priority: 15,
-            chartType: 'bar',
-            sql: `SELECT ${q(pd.column)} as label, ${aggExpr(pm)} as value1, ${aggExpr(sm)} as value2 FROM data GROUP BY ${q(pd.column)} ORDER BY value1 DESC LIMIT 8`,
-            xKey: 'label',
-            yKey: 'value1',
-        });
-    }
+    // NOTE: A "two measures side by side" auto-insight was removed here. Plotting
+    // two different-scale measures on one chart forces a dual y-axis, which is the
+    // single most misleading chart pattern (see the dataviz guidance) and looked
+    // unprofessional on the auto-dashboard. Each measure now gets its own clean,
+    // single-axis card instead.
 
     attachConfigs(defs, { pm, sm, pd, sd, dateCol });
     return defs.slice(0, 15);

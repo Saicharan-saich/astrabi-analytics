@@ -327,6 +327,30 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         }
     };
 
+    // Compact formatter for ON-CHART data labels: keeps them short and premium
+    // ($1.36M, not $1,358,215.74) so bars aren't buried under giant numbers.
+    // Tooltips/axes keep their own (fuller) precision.
+    const formatCompactLabel = (value: number | undefined | null) => {
+        if (value === undefined || value === null || isNaN(value)) return '0';
+        const abs = Math.abs(value);
+        const metricRef = (config?.metric || yLabel || yKey || '').toLowerCase();
+        const autoDetect = !activeNumberFormat || activeNumberFormat === 'auto';
+        const isCurrency = activeNumberFormat === 'currency_usd' || activeNumberFormat === 'currency_eur'
+            || (autoDetect && /(sales|revenue|price|cost|amount|profit|margin|spend|payment|balance|budget|salary)/.test(metricRef));
+        if (isCurrency && abs >= 1000) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency', currency: activeNumberFormat === 'currency_eur' ? 'EUR' : 'USD',
+                notation: 'compact', compactDisplay: 'short', minimumFractionDigits: 0, maximumFractionDigits: 1,
+            }).format(value);
+        }
+        // Non-currency large magnitudes → compact; everything else uses the
+        // standard formatter (percent, small ints, etc.).
+        if (!isCurrency && abs >= 10000) {
+            return new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short', maximumFractionDigits: 1 }).format(value);
+        }
+        return formatNumber(value);
+    };
+
     // Per-metric format resolver — given a column name, returns formatted value
     const formatForMetricName = (value: number, metricName: string): string => {
         const name = metricName.toLowerCase();
@@ -542,7 +566,13 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         }
 
         // SMART COLOR SELECTION: Sequential vs Discrete
-        const useSequential = isSequentialData(xKey, transformedData);
+        // A single-measure bar chart encodes MAGNITUDE, not identity — the axis
+        // labels already name each category. So colour bars as one cohesive hue
+        // keyed to value (taller = deeper), never a categorical rainbow that
+        // implies the colours mean something. (Multi-series bars take the
+        // seriesCol path below and are unaffected.)
+        const isMagnitudeBar = chartType === 'bar' || chartType === 'horizontalBar' || chartType === 'lollipop';
+        const useSequential = isSequentialData(xKey, transformedData) || isMagnitudeBar;
 
         // Select appropriate palette
         let palette: string[];
@@ -576,6 +606,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 // Categorical/dimension analysis → Use discrete multi-color
                 palette = PALETTES.vibrant;
             }
+        }
+
+        // Single-measure bars: a cohesive brand-blue magnitude ramp. Drops the
+        // palest steps of the default sequential palette so the smallest bars
+        // stay readable on BOTH light and dark surfaces (the default light end,
+        // #dbeafe, vanishes on white).
+        if (isMagnitudeBar) {
+            palette = ['#9dc0ff', '#7aa2ff', '#5c8bff', '#4f80ff', '#3b6ff0', '#2f5fe0', '#2450c4'];
         }
 
         const baseColor = palette[Math.floor(palette.length / 2)]; // Mid-tone
@@ -950,8 +988,19 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const isTableCalcKey = (k: string) => /running_total|cumulative|percent_of_total|pct_of_total|rank|percentile|moving_avg|pct_diff|diff_from_prev/i.test(k);
         // Skip secondary metric detection for pie/doughnut charts — they only use one metric
         const skipSecondary = chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea' || chartType === 'radar' || chartType === 'gauge';
-        const secondaryKeys = (!skipSecondary && data.length > 0)
-            ? Object.keys(data[0]).filter(k => !knownKeys.has(k) && !isTableCalcKey(k) && typeof data[0][k] === 'number')
+        // Only overlay secondary metrics that were EXPLICITLY requested via
+        // config.secondaryMetrics. Previously this scavenged ANY stray numeric
+        // column in the result rows, which spawned phantom lines + an ugly dual
+        // axis on plain single-metric charts (e.g. "SUM of sales by ship_mode"
+        // sprouting an amber line on a second scale). A metric the user did not
+        // ask for must never appear — and never on a second y-scale.
+        const declaredSecondary = (config?.secondaryMetrics || []).map((m: string) => m.toLowerCase().trim());
+        const matchesDeclared = (k: string) => {
+            const raw = k.replace(/^(sum|avg|count|count_distinct|min|max)_/i, '').toLowerCase().trim();
+            return declaredSecondary.includes(raw) || declaredSecondary.includes(k.toLowerCase().trim());
+        };
+        const secondaryKeys = (!skipSecondary && declaredSecondary.length > 0 && data.length > 0)
+            ? Object.keys(data[0]).filter(k => !knownKeys.has(k) && !isTableCalcKey(k) && typeof data[0][k] === 'number' && matchesDeclared(k))
             : [];
 
         const SECONDARY_COLORS = [
@@ -1047,7 +1096,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     display: formatting ? formatting.showDataLabels : false,
                     labelMode: formatting?.dataLabelMode || 'primary', // 'primary' = main metric only, 'all' = every dataset
                     formatter: (val: number) => {
-                        return formatNumber(val);
+                        return formatCompactLabel(val);
                     },
                     secondaryFormatter: (val: number, metricName: string) => {
                         return formatForMetricName(val, metricName);
