@@ -1102,31 +1102,27 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
         return buildBreakdownSQL(plan, model);
     }
 
-    const dateField = dateFilter.field;
+    const dateField = q(dateFilter.field);
     const currentStart = dateFilter.value[0];
     const currentEnd = dateFilter.value[1];
 
     // Calculate previous period dates
     const prevDates = calculatePreviousPeriod(currentStart, currentEnd, plan.comparison.type);
 
-    const metExprs = plan.metrics.map(m => {
-        if (m.compositeId) {
-            const comp = model.compositeMetrics.find(c => c.id === m.compositeId);
-            return comp ? `${comp.formula} AS ${comp.id}` : `${m.agg.toUpperCase()}(${m.field}) AS ${m.field}_${m.agg}`;
-        }
-        return `${m.agg.toUpperCase()}(${m.field}) AS ${m.field}_${m.agg}`;
-    });
+    // Reuse the hardened metric builder — inherits the additivity guard (no SUM
+    // of a rate), TRY_CAST (no "avg(VARCHAR)"), and identifier quoting.
+    const metExprs = buildMetricExpressions(plan.metrics, model);
 
     if (plan.comparison.mode === 'total') {
         // Total comparison: two rows (current + previous) with a period label
         const sql = [
             `SELECT 'Current' AS period, ${metExprs.join(', ')}`,
             fromTable(),
-            `WHERE ${dateField} BETWEEN '${currentStart}' AND '${currentEnd}'`,
+            `WHERE ${dateField} BETWEEN DATE '${currentStart}' AND DATE '${currentEnd}'`,
             `UNION ALL`,
             `SELECT 'Previous' AS period, ${metExprs.join(', ')}`,
             fromTable(),
-            `WHERE ${dateField} BETWEEN '${prevDates.start}' AND '${prevDates.end}'`,
+            `WHERE ${dateField} BETWEEN DATE '${prevDates.start}' AND DATE '${prevDates.end}'`,
         ];
         return sql.join('\n');
     }
@@ -1141,12 +1137,12 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
     const sql = [
         `SELECT 'Current' AS period, ${grainExpr} AS ${grainAlias}, ${metExprs.join(', ')}`,
         fromTable(),
-        `WHERE ${dateField} BETWEEN '${currentStart}' AND '${currentEnd}'`,
+        `WHERE ${dateField} BETWEEN DATE '${currentStart}' AND DATE '${currentEnd}'`,
         `GROUP BY ${grainExpr}`,
         `UNION ALL`,
         `SELECT 'Previous' AS period, ${grainExpr} AS ${grainAlias}, ${metExprs.join(', ')}`,
         fromTable(),
-        `WHERE ${dateField} BETWEEN '${prevDates.start}' AND '${prevDates.end}'`,
+        `WHERE ${dateField} BETWEEN DATE '${prevDates.start}' AND DATE '${prevDates.end}'`,
         `GROUP BY ${grainExpr}`,
         `ORDER BY ${grainAlias} ASC`,
     ];
@@ -1420,10 +1416,14 @@ function calculatePreviousPeriod(
         end.getUTCDate() === new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth() + 1, 0)).getUTCDate();
 
     if (isMonthAligned) {
-        // Use proper calendar month arithmetic
-        // Current: Dec 1 â†’ Dec 31  â†’  Previous: Nov 1 â†’ Nov 30
-        const prevStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 1, 1));
-        const prevEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 0)); // last day of prev month
+        // Shift back by the FULL number of months in the range, not just one.
+        // Q1 2024 (3 months) → Q4 2023, H1 2024 (6 months) → H2 2023, a single
+        // month → the prior month. Previously this always shifted by one month,
+        // so a quarter was compared against just its preceding month.
+        const monthsSpan = (end.getUTCFullYear() * 12 + end.getUTCMonth())
+            - (start.getUTCFullYear() * 12 + start.getUTCMonth()) + 1;
+        const prevEnd = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), 0)); // last day of month before start
+        const prevStart = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - monthsSpan, 1));
         return { start: fmtDate(prevStart), end: fmtDate(prevEnd) };
     }
 
