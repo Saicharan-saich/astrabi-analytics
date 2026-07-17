@@ -16,7 +16,10 @@ export const PALETTES = {
     // Default 'vibrant' is ordered for maximum adjacent-hue distinctness (first
     // 6 are the most-used slots) so series stay distinguishable for colour-blind
     // viewers — greens/teals and warm reds are spaced apart, not adjacent.
-    vibrant: ['#4f80ff', '#f59e0b', '#ef4444', '#10b981', '#ec4899', '#06b6d4', '#8b5cf6', '#f97316', '#3b82f6', '#14b8a6'],
+    // Multi-series categorical palette — validated (lightness band, chroma floor,
+    // colour-blind adjacent separation, and contrast on a dark surface all PASS).
+    // Order is significant: adjacent slots are guaranteed distinguishable.
+    vibrant: ['#3987e5', '#008300', '#d55181', '#c98500', '#199e70', '#d95926', '#9085e9', '#e66767', '#3b82f6', '#14b8a6'],
     electric: ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0e7490', '#c026d3', '#2563eb', '#ea580c'],
     neon: ['#00b4d8', '#00cc6a', '#e63946', '#e6b800', '#a855f7', '#e11d48', '#14b8a6', '#84cc16', '#3b82f6', '#f97316'],
     sunset: ['#f43f5e', '#fb923c', '#fbbf24', '#a3e635', '#34d399', '#22d3ee', '#818cf8', '#e879f9', '#f472b6', '#fb7185'],
