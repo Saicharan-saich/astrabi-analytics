@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useCallback, useState } from 'react';
+import React, { useMemo, useRef, useCallback, useState, useEffect } from 'react';
 // html2canvas is only needed when the user exports a chart to PNG — load it
 // lazily so it stays out of the initial bundle.
 import {
@@ -166,6 +166,21 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     const resolvedRef = (chartContainerRef || localChartRef) as React.RefObject<HTMLDivElement>;
     const [zoom, setZoom] = useState(1);
     const [chartSelectorOpen, setChartSelectorOpen] = useState(false);
+
+    // Follow the APP theme (ThemeProvider toggles `class="dark"` on <html>), not
+    // the OS. Re-checked on theme change via a MutationObserver so charts flip
+    // with the app instead of showing a white plot on a dark card.
+    const [isDark, setIsDark] = useState(() =>
+        typeof document !== 'undefined' && document.documentElement.classList.contains('dark'));
+    useEffect(() => {
+        if (typeof document === 'undefined') return;
+        const el = document.documentElement;
+        const sync = () => setIsDark(el.classList.contains('dark'));
+        sync();
+        const obs = new MutationObserver(sync);
+        obs.observe(el, { attributes: true, attributeFilter: ['class'] });
+        return () => obs.disconnect();
+    }, []);
 
     const exportChart = useCallback(async () => {
         if (resolvedRef.current) {
@@ -767,8 +782,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     label: sv,
                     data: seriesData,
                     backgroundColor: isFillChart ? `${color}30` : isBarVariant ? color : `${color}DD`,
-                    borderColor: color,
-                    borderWidth: isLineVariant ? 3 : 1.5,
+                    // Stacked bars: a 2px surface-coloured border reads as a clean
+                    // gap between segments (premium "floating segment" look).
+                    borderColor: (isBarVariant && chartType === 'stackedBar') ? (isDark ? '#12151d' : '#ffffff') : color,
+                    borderWidth: (isBarVariant && chartType === 'stackedBar') ? 2 : (isLineVariant ? 3 : isBarVariant ? 0 : 1.5),
+                    borderSkipped: false,
                     fill: isFillChart,
                     tension: isCurved ? 0.4 : isStepped ? 0 : (isLineVariant ? 0.35 : 0),
                     stepped: isStepped ? 'middle' as const : false,
@@ -777,7 +795,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     pointBackgroundColor: '#fff',
                     pointBorderColor: color,
                     pointBorderWidth: 2,
-                    borderRadius: isBarVariant ? 4 : 0,
+                    borderRadius: isBarVariant ? 5 : 0,
                     maxBarThickness: isBarVariant ? Math.max(20, Math.floor(200 / seriesValues.length)) : undefined,
                     yAxisID: 'y',
                     spanGaps: true,
@@ -1102,7 +1120,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         return formatForMetricName(val, metricName);
                     },
                     primaryLabel: yLabel || yKey || '',
-                    color: formatting?.dataLabelColor || '#334155',
+                    color: formatting?.dataLabelColor || (isDark ? '#e2e8f0' : '#334155'),
                     font: {
                         weight: formatting?.dataLabelBold !== false ? 'bold' : 'normal',
                         size: dataLabelFontSize
@@ -1896,10 +1914,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     };
 
     return (
-        <div className="h-full w-full flex flex-col overflow-hidden bg-white">
+        <div className={`h-full w-full flex flex-col overflow-hidden ${isDark ? 'bg-transparent' : 'bg-white'}`}>
             {/* Controls - Hidden on Dashboard */}
             {!hideControls && (
-                <div className="flex items-center gap-3 border-b border-slate-100 px-4 py-2.5 shrink-0">
+                <div className={`flex items-center gap-3 border-b px-4 py-2.5 shrink-0 ${isDark ? 'border-white/10' : 'border-slate-100'}`}>
                     {/* Chart Type Dropdown */}
                     <div className="relative">
                         <button
