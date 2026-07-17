@@ -136,6 +136,28 @@ const _CHART_TYPE_OPTIONS_REMOVED = [
     }
 ];
 
+// Categorical chart types where every row becomes its own mark (bar/slice). A
+// high-cardinality dimension (e.g. SUM by patient name over thousands of names)
+// would render thousands of marks + labels and freeze the tab. Cap these to the
+// top-N by magnitude. Time-series/scatter are left alone (a line handles many
+// points fine).
+const CATEGORICAL_CHART_TYPES = new Set([
+    'bar', 'horizontalBar', 'stackedBar', 'groupedBar', 'pie', 'doughnut',
+    'polarArea', 'lollipop', 'funnel', 'treemap', 'waterfall', 'radar',
+]);
+// Absolute safety ceiling regardless of any user setting — prevents the freeze.
+const MAX_RENDER_CATEGORIES = 100;
+
+function capCategoriesForRender(rows: any[], chartType: string, yKey: string, maxCategories?: number): { rows: any[]; truncatedFrom: number } {
+    const cap = Math.min(maxCategories && maxCategories > 0 ? maxCategories : MAX_RENDER_CATEGORIES, MAX_RENDER_CATEGORIES);
+    if (!CATEGORICAL_CHART_TYPES.has(chartType) || rows.length <= cap) {
+        return { rows, truncatedFrom: 0 };
+    }
+    // Keep the largest categories so the chart still tells the top story.
+    const sorted = [...rows].sort((a, b) => (Math.abs(Number(b[yKey])) || 0) - (Math.abs(Number(a[yKey])) || 0));
+    return { rows: sorted.slice(0, cap), truncatedFrom: rows.length };
+}
+
 export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     data,
     xKey,
@@ -167,20 +189,38 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     const [zoom, setZoom] = useState(1);
     const [chartSelectorOpen, setChartSelectorOpen] = useState(false);
 
-    // Follow the APP theme (ThemeProvider toggles `class="dark"` on <html>), not
-    // the OS. Re-checked on theme change via a MutationObserver so charts flip
-    // with the app instead of showing a white plot on a dark card.
+    // Detect the ACTUAL surface behind the chart (not the global app theme):
+    // walk up the DOM to the first opaque background and judge its luminance.
+    // This is correct even where a panel's background disagrees with the app
+    // theme — e.g. the builder is a white panel even in dark mode, so the chart
+    // there must use dark text/labels, while a dark dashboard card uses light.
     const [isDark, setIsDark] = useState(() =>
         typeof document !== 'undefined' && document.documentElement.classList.contains('dark'));
+    const detectSurface = useCallback(() => {
+        let node: HTMLElement | null = resolvedRef.current;
+        while (node) {
+            const bg = getComputedStyle(node).backgroundColor;
+            const m = bg && bg.match(/rgba?\(([^)]+)\)/);
+            if (m) {
+                const parts = m[1].split(',').map(s => parseFloat(s.trim()));
+                const [r, g, b, a = 1] = parts;
+                if (a > 0.2) { // opaque enough to be "the surface"
+                    setIsDark((0.299 * r + 0.587 * g + 0.114 * b) < 140);
+                    return;
+                }
+            }
+            node = node.parentElement;
+        }
+        // Fallback: app theme.
+        setIsDark(typeof document !== 'undefined' && document.documentElement.classList.contains('dark'));
+    }, [resolvedRef]);
     useEffect(() => {
+        detectSurface();
         if (typeof document === 'undefined') return;
-        const el = document.documentElement;
-        const sync = () => setIsDark(el.classList.contains('dark'));
-        sync();
-        const obs = new MutationObserver(sync);
-        obs.observe(el, { attributes: true, attributeFilter: ['class'] });
+        const obs = new MutationObserver(() => detectSurface());
+        obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
         return () => obs.disconnect();
-    }, []);
+    }, [detectSurface, chartType, data]);
 
     const exportChart = useCallback(async () => {
         if (resolvedRef.current) {
@@ -221,7 +261,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     const activeCalcs = (formatting?.tableCalculations || []).filter(c => c !== 'none');
     const primaryCalc = activeCalcs.length > 0 ? activeCalcs[0] : null;
 
-    const { transformedData, yLabel: calculatedYLabel, suggestedNumberFormat } = useMemo(() => {
+    const { transformedData, yLabel: calculatedYLabel, suggestedNumberFormat, truncatedFrom } = useMemo(() => {
         const result = !primaryCalc
             ? {
                 transformedData: data,
@@ -239,8 +279,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             );
         // Output-boundary safety net: no NaN/Infinity can ever reach a chart,
         // regardless of which engine or table-calc produced the data.
-        return { ...result, transformedData: sanitizeRows(result.transformedData) };
-    }, [data, yKey, primaryCalc, yLabel, formatting?.numberFormat, formatting?.movingAvgWindow]);
+        const sanitized = sanitizeRows(result.transformedData);
+        // Cap high-cardinality categorical charts so thousands of marks can't
+        // freeze the tab. Honors an optional user "max categories" setting.
+        const { rows: capped, truncatedFrom } = capCategoriesForRender(
+            sanitized, chartType, yKey, (formatting as any)?.maxCategories,
+        );
+        return { ...result, transformedData: capped, truncatedFrom };
+    }, [data, yKey, primaryCalc, yLabel, formatting?.numberFormat, formatting?.movingAvgWindow, chartType, (formatting as any)?.maxCategories]);
 
     // Use calculated number format if available
     const activeNumberFormat = suggestedNumberFormat || formatting?.numberFormat || 'raw';
@@ -1914,7 +1960,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     };
 
     return (
-        <div className={`h-full w-full flex flex-col overflow-hidden ${isDark ? 'bg-transparent' : 'bg-white'}`}>
+        <div className="h-full w-full flex flex-col overflow-hidden bg-transparent">
             {/* Controls - Hidden on Dashboard */}
             {!hideControls && (
                 <div className={`flex items-center gap-3 border-b px-4 py-2.5 shrink-0 ${isDark ? 'border-white/10' : 'border-slate-100'}`}>
@@ -2076,6 +2122,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
             {/* Chart Area - Absolute positioning prevents flex sizing loops */}
             <div className="flex-1 min-h-0 relative overflow-auto" ref={resolvedRef}>
+                {truncatedFrom > 0 && (
+                    <div className={`absolute top-2 right-3 z-10 text-[11px] font-medium px-2.5 py-1 rounded-full pointer-events-none ${isDark ? 'bg-white/10 text-slate-200' : 'bg-slate-900/5 text-slate-500'}`}>
+                        Showing top {transformedData.length} of {truncatedFrom.toLocaleString()}
+                    </div>
+                )}
                 <div
                     className="absolute inset-0"
                     style={{ transform: `scale(${zoom})`, transformOrigin: 'top left', width: `${100 / zoom}%`, height: `${100 / zoom}%` }}
