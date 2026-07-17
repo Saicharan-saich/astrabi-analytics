@@ -794,8 +794,10 @@ function buildGrowthAnalysisSQL(plan: AnalysisPlan, model: SemanticModel): strin
     const qDateField = q(dateField);
     const qMetricField = q(metricField);
 
-    const currentExpr = `${aggFn}(CASE WHEN ${qDateField} >= '${currentStart}' THEN ${qMetricField} ELSE 0 END)`;
-    const previousExpr = `${aggFn}(CASE WHEN ${qDateField} < '${previousEnd}' THEN ${qMetricField} ELSE 0 END)`;
+    // TRY_CAST so a metric loaded as text (CSV) doesn't break the aggregate.
+    const qMetricNum = `TRY_CAST(${qMetricField} AS DOUBLE)`;
+    const currentExpr = `${aggFn}(CASE WHEN ${qDateField} >= DATE '${currentStart}' THEN ${qMetricNum} ELSE 0 END)`;
+    const previousExpr = `${aggFn}(CASE WHEN ${qDateField} < DATE '${previousEnd}' THEN ${qMetricNum} ELSE 0 END)`;
 
     const growthExpr = `ROUND(CASE WHEN ${previousExpr} > 0 THEN (${currentExpr} - ${previousExpr}) / ${previousExpr} * 100 ELSE NULL END, 2)`;
 
