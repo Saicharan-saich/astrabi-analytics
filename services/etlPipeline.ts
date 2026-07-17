@@ -51,6 +51,8 @@ export interface ColumnProfileData {
     integerRate?: number;
     /** True when integer values form a near-contiguous run (max−min+1 ≈ distinct) — an auto-increment / serial key. */
     looksSequential?: boolean;
+    /** True when the column is dominated by messy human casing (e.g. "waTtS") and should be force-normalized. */
+    messyCasing?: boolean;
 }
 
 export interface TransformStep {
@@ -355,6 +357,53 @@ export function toTitleCase(s: string): string {
         // Otherwise normalize: first letter up, rest down.
         return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
     });
+}
+
+/**
+ * Aggressive Title Case that does NOT preserve brand/camelCase casing. Used only
+ * for columns detected as "messy-cased" human text (see isMessyCasedColumn),
+ * where preservation is the wrong call. "andrEw waTtS" → "Andrew Watts",
+ * "EDWaRDs" → "Edwards", "mRS. jamiE" → "Mrs. Jamie".
+ */
+export function forceTitleCase(s: string): string {
+    return s.toLowerCase().replace(/(^|[^a-zA-Z])([a-z])/g, (_, pre, c) => pre + c.toUpperCase());
+}
+
+/**
+ * True when a single token has irregular human casing that is NOT a recognizable
+ * brand / camelCase / acronym / code pattern. "waTtS", "EDWaRDs", "adrIENNE",
+ * "CHrisTInA" → chaotic; "iPhone", "eBay", "MacBook", "AirPods", "USA", "PS5",
+ * "Watts", "watts", "WATTS" → not chaotic.
+ */
+function isChaoticCasedWord(w: string): boolean {
+    const core = w.replace(/[^A-Za-z]/g, '');
+    if (core.length < 2) return false;
+    if (/\d/.test(w)) return false;                     // model code
+    if (/^[a-z]+$/.test(core)) return false;            // all lowercase
+    if (/^[A-Z]+$/.test(core)) return false;            // all UPPERCASE / acronym
+    if (/^[A-Z][a-z]+$/.test(core)) return false;       // Title case
+    if (/^[a-z]+[A-Z][a-z]+$/.test(core)) return false; // camelCase: eBay, iPhone
+    if (/^([A-Z][a-z]+){2,}$/.test(core)) return false; // PascalCase brand: MacBook
+    return true;                                         // anything else = chaotic
+}
+
+/**
+ * Column-level detector: is a text column dominated by messy human casing? When
+ * true, the ETL normalizes it with forceTitleCase instead of the brand-preserving
+ * toTitleCase. A genuine product column ("iPhone 15", "MacBook Pro") scores ~0%
+ * chaotic and is left alone; a name column full of "waTtS"/"EDWaRDs" trips it.
+ */
+export function isMessyCasedColumn(values: any[]): boolean {
+    let considered = 0;
+    let chaotic = 0;
+    for (const v of values) {
+        if (typeof v !== 'string') continue;
+        const t = v.trim();
+        if (!t || /\d/.test(t)) continue; // ignore blanks and codes/numbers
+        considered++;
+        if (t.split(/\s+/).some(isChaoticCasedWord)) chaotic++;
+    }
+    return considered >= 4 && chaotic / considered >= 0.25;
 }
 
 function toISO(y: number, m: number, d: number): string {
@@ -836,6 +885,7 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
             wordNumberRate: nonNull.length > 0 ? wordNumberCount / nonNull.length : 0,
             integerRate,
             looksSequential,
+            messyCasing: isMessyCasedColumn(strValues),
         };
 
         profiles.push(profile);
@@ -1002,7 +1052,10 @@ function layer4_rulePlanner(
             });
             steps.push({ name: 'IMPUTE_UNKNOWN', fn: (v: any) => (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) ? 'Unknown' : v });
         } else if (type === ColumnType.DIMENSION) {
-            steps.push({ name: 'TITLE_CASE', fn: (v: any) => typeof v === 'string' && v.trim() !== '' ? toTitleCase(v) : v });
+            // Messy-cased columns (human-typed names like "waTtS") get aggressive
+            // normalization; clean/brand columns keep preservation-aware casing.
+            const titleFn = p.messyCasing ? forceTitleCase : toTitleCase;
+            steps.push({ name: p.messyCasing ? 'TITLE_CASE(normalize)' : 'TITLE_CASE', fn: (v: any) => typeof v === 'string' && v.trim() !== '' ? titleFn(v) : v });
             // Add synonym normalization step (case-insensitive column + value matching)
             steps.push({
                 name: 'SYNONYM_MAP', fn: (v: any) => {

@@ -1,6 +1,48 @@
 import { describe, it, expect } from 'vitest';
-import { toTitleCase, roleConfidenceFor, keySignalFor, classifyColumnRole } from '../services/etlPipeline';
+import { toTitleCase, roleConfidenceFor, keySignalFor, classifyColumnRole, forceTitleCase, isMessyCasedColumn, runETLPipeline } from '../services/etlPipeline';
 import { ColumnType } from '../types';
+
+describe('messy-cased text cleaning', () => {
+    it('forceTitleCase normalizes chaotic human casing', () => {
+        expect(forceTitleCase('andrEw waTtS')).toBe('Andrew Watts');
+        expect(forceTitleCase('EDWaRDs')).toBe('Edwards');
+        expect(forceTitleCase('mRS. jamiE cAMPBELl')).toBe('Mrs. Jamie Campbell');
+        expect(forceTitleCase('CHrisTInA')).toBe('Christina');
+    });
+
+    it('isMessyCasedColumn flags a chaotic name column', () => {
+        const names = ['andrEw waTtS', 'adrIENNE bEll', 'edwArD EDWaRDs', 'CHrisTInA MARtinez', 'aaRon MARtiNeZ'];
+        expect(isMessyCasedColumn(names)).toBe(true);
+    });
+
+    it('isMessyCasedColumn does NOT flag a clean product / brand column', () => {
+        const products = ['iPhone 15 Pro', 'MacBook Pro', 'AirPods Pro', 'iPad Air', 'Galaxy S24', 'PS5 console'];
+        expect(isMessyCasedColumn(products)).toBe(false);
+    });
+
+    it('isMessyCasedColumn does NOT flag clean lower/upper/title columns', () => {
+        expect(isMessyCasedColumn(['north', 'south', 'east', 'west'])).toBe(false);
+        expect(isMessyCasedColumn(['NORTH', 'SOUTH', 'EAST', 'WEST'])).toBe(false);
+        expect(isMessyCasedColumn(['North America', 'Latin America', 'Europe', 'Asia'])).toBe(false);
+    });
+
+    it('ETL normalizes a messy name column end-to-end', () => {
+        const names = ['DaNnY sMitH', 'andrEw waTtS', 'adrIENNE bEll', 'EMILY JOHNSOn', 'edwArD EDWaRDs', 'CHrisTInA MARtinez'];
+        const { rows } = runETLPipeline(names.map(n => ({ name: n })), 'p.csv');
+        expect(rows.map((r: any) => r.name)).toEqual([
+            'Danny Smith', 'Andrew Watts', 'Adrienne Bell', 'Emily Johnson', 'Edward Edwards', 'Christina Martinez',
+        ]);
+    });
+
+    it('ETL preserves a brand column end-to-end', () => {
+        const prods = ['iPhone 15 Pro', 'MacBook Pro', 'AirPods Pro', 'iPad Air', 'PS5 console', 'LG UltraWide'];
+        const { rows } = runETLPipeline(prods.map(p => ({ product: p })), 'p.csv');
+        const out = rows.map((r: any) => r.product);
+        expect(out).toContain('iPhone 15 Pro');
+        expect(out).toContain('MacBook Pro');
+        expect(out).toContain('AirPods Pro');
+    });
+});
 
 // Minimal profile builder for direct rule testing.
 const prof = (o: any) => ({
