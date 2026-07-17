@@ -27,9 +27,42 @@ import { logger } from '../logger';
 // Set dynamically by correctSQL() so all builder functions use the
 // actual dataset name instead of hardcoded "data".
 let TABLE_REF = '"data"';
+// The dataset's ANCHOR date ("today" for this data) — set by correctSQL(). Relative
+// time filters ("this year/month/…") resolve against THIS, never real NOW(): using
+// the wall-clock date on a 2015-2018 dataset would silently return zero rows.
+let ANCHOR_DATE: string | null = null;
 
 function fromTable(): string {
     return `FROM ${TABLE_REF}`;
+}
+
+/** Resolve a relative-time filter op to an inclusive [start,end] ISO date range,
+ *  anchored to the dataset's date. Returns null when there is no usable anchor. */
+function resolveTemporalRange(op: string): { start: string; end: string } | null {
+    if (!ANCHOR_DATE) return null;
+    const d = new Date(ANCHOR_DATE.slice(0, 10) + 'T00:00:00Z');
+    if (isNaN(d.getTime())) return null;
+    const y = d.getUTCFullYear();
+    const m = d.getUTCMonth(); // 0-11
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const iso = (dt: Date) => dt.toISOString().slice(0, 10);
+    const lastDay = (yr: number, mo0: number) => new Date(Date.UTC(yr, mo0 + 1, 0)).getUTCDate();
+    switch (op) {
+        case 'this_year': return { start: `${y}-01-01`, end: `${y}-12-31` };
+        case 'this_month': return { start: `${y}-${pad(m + 1)}-01`, end: `${y}-${pad(m + 1)}-${pad(lastDay(y, m))}` };
+        case 'this_quarter': {
+            const sm = Math.floor(m / 3) * 3, em = sm + 2;
+            return { start: `${y}-${pad(sm + 1)}-01`, end: `${y}-${pad(em + 1)}-${pad(lastDay(y, em))}` };
+        }
+        case 'this_week': {
+            const dow = d.getUTCDay(); // 0=Sun
+            const mon = new Date(d); mon.setUTCDate(d.getUTCDate() - ((dow + 6) % 7));
+            const sun = new Date(mon); sun.setUTCDate(mon.getUTCDate() + 6);
+            return { start: iso(mon), end: iso(sun) };
+        }
+        case 'this_day': return { start: ANCHOR_DATE.slice(0, 10), end: ANCHOR_DATE.slice(0, 10) };
+        default: return null;
+    }
 }
 
 // â”€â”€â”€ Public API â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -42,6 +75,7 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     // Always use "data" as the table name — DuckDB loads all data into
     // a table called "data", NOT the original file name.
     TABLE_REF = '"data"';
+    ANCHOR_DATE = model.timeContext?.anchorDate || model.timeContext?.maxDate || null;
     logger.info('[SQL Correction]', `Building SQL for intent="${plan.intent}" table=${TABLE_REF}`);
 
     // â”€â”€ Intercept hour/time-of-day grain: check if dataset has time data â”€â”€
@@ -1166,32 +1200,41 @@ function buildMetricExpressions(metrics: PlanMetric[], model: SemanticModel, apd
 
         // Standard aggregation â€” quote all identifiers for safety
         const fld = q(met.field);
-        switch (met.agg) {
-            case 'count_distinct':
-                exprs.push(`COUNT(DISTINCT ${fld}) AS ${q(met.field + '_count_distinct')}`);
-                break;
-            case 'count':
-                exprs.push(`COUNT(${fld}) AS ${q(met.field + '_count')}`);
-                break;
-            case 'sum':
-                exprs.push(`SUM(${fld}) AS ${q(met.field + '_sum')}`);
-                break;
-            case 'avg':
-                exprs.push(`AVG(${fld}) AS ${q(met.field + '_avg')}`);
-                break;
-            case 'min':
-                exprs.push(`MIN(${fld}) AS ${q(met.field + '_min')}`);
-                break;
-            case 'max':
-                exprs.push(`MAX(${fld}) AS ${q(met.field + '_max')}`);
-                break;
-            default:
-                exprs.push(`SUM(${fld}) AS ${q(met.field + '_sum')}`);
+
+        // ── ADDITIVITY GUARD ──────────────────────────────────────────────
+        // SUM of a non-additive measure (a rate, ratio, percentage, or rating)
+        // is mathematically meaningless — summing "discount %" across rows gives a
+        // nonsense number. The plan (from the LLM or the UI) can ask for it, but we
+        // must not execute it: fall back to the measure's safe default (AVG). This
+        // is what makes the answer correct even when the intent step gets it wrong.
+        let agg = met.agg;
+        if (agg === 'sum') {
+            const field = model.fields.find(f => f.name.toLowerCase() === met.field.toLowerCase());
+            if (field && NON_ADDITIVE_TYPES.has(field.semanticType)) {
+                agg = (field.defaultAgg && field.defaultAgg !== 'none' ? field.defaultAgg : 'avg') as PlanMetric['agg'];
+                logger.info('[SQL Correction]', `Additivity guard: SUM("${met.field}") → ${agg.toUpperCase()} (non-additive ${field.semanticType}).`);
+            }
         }
+
+        // Numeric aggregations use TRY_CAST(... AS DOUBLE): CSV/ordinal columns
+        // (e.g. a 1–5 rating stored as text) would otherwise throw
+        // "avg(VARCHAR)". TRY_CAST is a no-op on real numbers and yields NULL
+        // (ignored by aggregates) on genuinely non-numeric values.
+        const numFld = `TRY_CAST(${fld} AS DOUBLE)`;
+        const fn = agg === 'count_distinct' ? `COUNT(DISTINCT ${fld})`
+            : agg === 'count' ? `COUNT(${fld})`
+            : agg === 'avg' ? `AVG(${numFld})`
+            : agg === 'min' ? `MIN(${numFld})`
+            : agg === 'max' ? `MAX(${numFld})`
+            : `SUM(${numFld})`;
+        exprs.push(`${fn} AS ${q(met.field + '_' + agg)}`);
     }
 
     return exprs;
 }
+
+// Measure semantic types where SUM is never correct — aggregate with AVG instead.
+const NON_ADDITIVE_TYPES = new Set(['percentage', 'ratio', 'ordinal']);
 
 /**
  * Build SELECT expressions for dimensions.
@@ -1237,8 +1280,19 @@ function buildWhereClause(filters: PlanFilter[]): string {
     const fld = (name: string) => q(name);
     const strVal = (v: any) => `'${esc(String(v))}'`;
     const val = (v: any) => typeof v === 'string' ? strVal(v) : String(v);
+    const TEMPORAL = new Set(['this_year', 'this_month', 'this_quarter', 'this_week', 'this_day']);
 
     for (const f of whereFilters) {
+        // Relative-time filters resolve to an anchored date range, not NOW().
+        if (TEMPORAL.has(f.op)) {
+            const r = resolveTemporalRange(f.op);
+            if (r) {
+                parts.push(`${fld(f.field)} >= DATE '${r.start}' AND ${fld(f.field)} <= DATE '${r.end}'`);
+            } else {
+                logger.warn('[SQL Correction]', `Temporal filter "${f.op}" on "${f.field}" could not be resolved (no anchor date). Filter skipped.`);
+            }
+            continue;
+        }
         switch (f.op) {
             case '=':
                 parts.push(`${fld(f.field)} = ${val(f.value)}`);

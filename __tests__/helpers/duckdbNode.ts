@@ -38,10 +38,16 @@ export async function createDuck(): Promise<DuckHandle> {
             // the json/csv extensions (which can't autoload offline in WASM).
             const cols = Object.keys(rows[0]);
             const typeOf = (field: string): string => {
-                const v = rows.map(r => r[field]).find(x => x !== null && x !== undefined);
-                if (typeof v === 'number') return Number.isInteger(v) ? 'BIGINT' : 'DOUBLE';
-                if (typeof v === 'boolean') return 'BOOLEAN';
-                if (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2})?/.test(v)) return 'DATE';
+                // Scan ALL values, not just the first — a column whose first value
+                // is 0 (integer) but which holds fractions must be DOUBLE, not BIGINT
+                // (otherwise the fractions truncate).
+                const vals = rows.map(r => r[field]).filter(x => x !== null && x !== undefined && x !== '');
+                if (vals.length === 0) return 'VARCHAR';
+                if (vals.every(v => typeof v === 'number')) {
+                    return vals.every(v => Number.isInteger(v)) ? 'BIGINT' : 'DOUBLE';
+                }
+                if (vals.every(v => typeof v === 'boolean')) return 'BOOLEAN';
+                if (vals.every(v => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2})?/.test(v))) return 'DATE';
                 return 'VARCHAR';
             };
             const colTypes = Object.fromEntries(cols.map(c => [c, typeOf(c)]));
