@@ -544,22 +544,32 @@ function buildDistributionSQL(plan: AnalysisPlan, model: SemanticModel): string 
     const met = plan.metrics[0];
     if (!met) return buildBreakdownSQL(plan, model);
 
-    const field = met.field;
+    const field = `"${met.field}"`;
     const where = buildWhereClause(plan.filters);
+    const whereClause = where ? ` WHERE ${where}` : '';
 
-    // Create 10 equal-width buckets using FLOOR
-    const sql = [
+    // 10 equal-width buckets. Use CTEs so every non-aggregated SELECT term
+    // (bucket index + the bucket width/min used to label the range) is present
+    // in GROUP BY — a bare cross-joined `bucket_width` in SELECT is not grouped
+    // and DuckDB/Postgres reject it ("must appear in the GROUP BY clause").
+    // NULLIF guards the all-equal-values case (width 0 → single bucket).
+    return [
+        `WITH stats AS (`,
+        `  SELECT MIN(${field}) AS min_val, (MAX(${field}) - MIN(${field})) / 10.0 AS bucket_width`,
+        `  ${fromTable()}${whereClause}`,
+        `),`,
+        `bucketed AS (`,
+        `  SELECT FLOOR((${field} - min_val) / NULLIF(bucket_width, 0)) AS bucket_idx,`,
+        `         min_val AS mn, bucket_width AS bw`,
+        `  ${fromTable()}, stats${whereClause}`,
+        `)`,
         `SELECT`,
-        `  CONCAT(CAST(FLOOR(${field} / bucket_width) * bucket_width AS TEXT), ' - ', CAST(FLOOR(${field} / bucket_width) * bucket_width + bucket_width AS TEXT)) AS ${field}_range,`,
+        `  CONCAT(CAST(mn + bucket_idx * bw AS TEXT), ' - ', CAST(mn + (bucket_idx + 1) * bw AS TEXT)) AS "${met.field}_range",`,
         `  COUNT(*) AS count`,
-        fromTable() + `,`,
-        `  (SELECT (MAX(${field}) - MIN(${field})) / 10.0 AS bucket_width ${fromTable()}${where ? ` WHERE ${where}` : ''}) bw`,
-    ];
-    if (where) sql.push(`WHERE ${where}`);
-    sql.push(`GROUP BY FLOOR(${field} / bucket_width)`);
-    sql.push(`ORDER BY FLOOR(${field} / bucket_width) ASC`);
-
-    return sql.join('\n');
+        `FROM bucketed`,
+        `GROUP BY bucket_idx, mn, bw`,
+        `ORDER BY bucket_idx ASC`,
+    ].join('\n');
 }
 
 /**

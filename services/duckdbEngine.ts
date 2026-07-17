@@ -447,7 +447,7 @@ export interface SQLExecutionResult {
  * DuckDB speaks standard PostgreSQL, so we need far fewer hacks than AlaSQL.
  * Main job: ensure table references use the correct name.
  */
-function normalizeSQLForDuckDB(sql: string): string {
+export function normalizeSQLForDuckDB(sql: string): string {
     let normalized = sql;
 
     // 1. Normalize table names: various forms → "data" (unquoted)
