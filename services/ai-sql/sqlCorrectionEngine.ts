@@ -62,6 +62,49 @@ function normalizeFilterOp(op: any): string {
     return FILTER_OP_ALIASES[k] ?? k;
 }
 
+// Aggregation name aliases — the LLM may say "average"/"total"/"distinct" instead
+// of the canonical avg/sum/count_distinct. Without this, "average" would emit an
+// invalid AVERAGE(...) or silently default to SUM.
+const AGG_ALIASES: Record<string, string> = {
+    sum: 'sum', total: 'sum', sum_of: 'sum', add: 'sum', totalsum: 'sum',
+    avg: 'avg', average: 'avg', mean: 'avg', avg_of: 'avg', averageof: 'avg',
+    count: 'count', cnt: 'count', tally: 'count', how_many: 'count',
+    count_distinct: 'count_distinct', distinct: 'count_distinct', distinct_count: 'count_distinct',
+    unique: 'count_distinct', count_unique: 'count_distinct', unique_count: 'count_distinct', nunique: 'count_distinct', num_unique: 'count_distinct',
+    min: 'min', minimum: 'min', smallest: 'min', lowest: 'min', least: 'min',
+    max: 'max', maximum: 'max', largest: 'max', highest: 'max', greatest: 'max', peak: 'max',
+};
+function normalizeAgg(agg: any): string {
+    if (typeof agg !== 'string') return agg;
+    const k = agg.toLowerCase().trim();
+    return AGG_ALIASES[k] ?? k;
+}
+
+// Sort direction — map ascending/descending word-forms to asc/desc. Without this,
+// "descending" reaches ORDER BY as "DESCENDING" and DuckDB throws a parser error.
+function normalizeSortDir(dir: any): 'asc' | 'desc' {
+    const d = String(dir ?? '').toLowerCase().trim();
+    return /^(asc|ascending|up|increasing|rising|oldest|earliest|smallest|lowest|least)$/.test(d) ? 'asc' : 'desc';
+}
+
+// Time-grain aliases — "monthly"→"month" etc. Without this, timeGrainExpr's default
+// branch returns the RAW date, so a "monthly" trend silently groups by day.
+const GRAIN_ALIASES: Record<string, string> = {
+    daily: 'day', day: 'day', by_day: 'day', per_day: 'day',
+    weekly: 'week', week: 'week', by_week: 'week', per_week: 'week',
+    monthly: 'month', month: 'month', by_month: 'month', per_month: 'month',
+    quarterly: 'quarter', quarter: 'quarter', by_quarter: 'quarter', per_quarter: 'quarter',
+    yearly: 'year', annual: 'year', annually: 'year', year: 'year', by_year: 'year', per_year: 'year',
+    hourly: 'hour', hour: 'hour',
+    day_of_week: 'day_of_week', dayofweek: 'day_of_week', dow: 'day_of_week', weekday: 'day_of_week',
+    month_of_year: 'month_of_year', monthofyear: 'month_of_year',
+};
+function normalizeGrain(grain: any): any {
+    if (typeof grain !== 'string') return grain;
+    const k = grain.toLowerCase().trim();
+    return GRAIN_ALIASES[k] ?? k;
+}
+
 /** Resolve a relative-time filter op to an inclusive [start,end] ISO date range,
  *  anchored to the dataset's date. Returns null when there is no usable anchor. */
 function resolveTemporalRange(op: string): { start: string; end: string } | null {
@@ -102,8 +145,17 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     // a table called "data", NOT the original file name.
     TABLE_REF = '"data"';
     ANCHOR_DATE = model.timeContext?.anchorDate || model.timeContext?.maxDate || null;
-    // Canonicalize filter operator spellings so no filter is dropped over "eq" vs "=".
-    plan = { ...plan, filters: (plan.filters || []).map(f => ({ ...f, op: normalizeFilterOp(f.op) as PlanFilter['op'] })) };
+    // Canonicalize the LLM's plan vocabulary up front so every builder sees the
+    // spellings it expects: filter ops ("eq"→"="), aggregations ("average"→"avg"),
+    // and sort directions ("descending"→"desc"). Otherwise a filter is dropped, a
+    // bad SQL function is emitted, or ORDER BY throws a parser error.
+    plan = {
+        ...plan,
+        filters: (plan.filters || []).map(f => ({ ...f, op: normalizeFilterOp(f.op) as PlanFilter['op'] })),
+        metrics: (plan.metrics || []).map(m => ({ ...m, agg: normalizeAgg(m.agg) as PlanMetric['agg'] })),
+        sort: (plan.sort || []).map(s => ({ ...s, dir: normalizeSortDir(s.dir) })),
+        dimensions: (plan.dimensions || []).map(d => (d.timeGrain ? { ...d, timeGrain: normalizeGrain(d.timeGrain) } : d)),
+    };
     logger.info('[SQL Correction]', `Building SQL for intent="${plan.intent}" table=${TABLE_REF}`);
 
     // â”€â”€ Intercept hour/time-of-day grain: check if dataset has time data â”€â”€
@@ -1406,7 +1458,8 @@ function timeGrainExpr(field: string, grain: string): string {
         case 'month':
             return `STRFTIME('%Y-%m', ${d})`;
         case 'week':
-            return `CONCAT(YEAR(${d}), '-W', LPAD(WEEK(${d}), 2, '0'))`;
+            // CAST WEEK() (BIGINT) to VARCHAR — LPAD requires a string first arg.
+            return `CONCAT(YEAR(${d}), '-W', LPAD(CAST(WEEK(${d}) AS VARCHAR), 2, '0'))`;
         case 'day_of_week':
             return `DAYNAME(${d})`;
         case 'month_of_year':
