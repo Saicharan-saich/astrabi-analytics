@@ -8,6 +8,7 @@ import {
 } from 'chart.js';
 import { Dataset, AnalysisResult } from '../types';
 import { generateAutoInsights, AutoInsight } from '../services/autoInsightsEngine';
+import { FindingsFeed } from './FindingsFeed';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Filler, ChartTooltip);
 
@@ -216,6 +217,9 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
                         Refresh
                     </button>
                 </div>
+
+                {/* ── DISCOVERED FINDINGS (the "analyst beside you" feed) ── */}
+                <FindingsFeed dataset={dataset} onOpenInBuilder={onOpenInBuilder} />
 
                 {/* ── KPI ROW ── */}
                 {kpiInsights.length > 0 && (

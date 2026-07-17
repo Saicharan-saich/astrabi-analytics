@@ -65,7 +65,7 @@ export interface AutoInsight {
 // ═══════════════════════════════════════════════════════════════════
 
 /** Quote a column name for DuckDB SQL */
-function q(col: string): string {
+export function q(col: string): string {
     return `"${col.replace(/"/g, '""')}"`;
 }
 
@@ -77,14 +77,14 @@ function aggFn(measure: SemanticMeasure): string {
 }
 
 /** Build aggregation expression */
-function aggExpr(measure: SemanticMeasure): string {
+export function aggExpr(measure: SemanticMeasure): string {
     const agg = measure.aggregation?.toUpperCase() || 'SUM';
     if (agg === 'COUNT_DISTINCT') return `COUNT(DISTINCT ${q(measure.column)})`;
     return `${agg}(${q(measure.column)})`;
 }
 
 /** Human-readable label for a column */
-function humanize(col: string): string {
+export function humanize(col: string): string {
     return col.replace(/[_-]/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
@@ -108,7 +108,7 @@ const METRIC_WHITELIST = /(sales|revenue|cost|price|amount|amt|quantity|qty|prof
 const CODE_BLACKLIST = /(postal|zip|phone|fax|ssn|pin|area_code|account|badge|license|permit|floor|unit_no|apt|suite|room|building|lot|block|ward|bed|seat|gate|terminal|route|flight|train|bus|locker|bin_no|shelf|rack|slot|booth|stall|bay|dock|port|berth|rank_no|priority_no|level_no|tier_no|step|version|revision|batch|sequence|number_of|no_of|num_of)/;
 
 /** True if column is an ID or code (never aggregate) */
-function isIdLike(col: string): boolean {
+export function isIdLike(col: string): boolean {
     const n = col.toLowerCase().replace(/[\s\-]+/g, '_');
     if (n === 'id' || n.endsWith('_id')) return true;
     if (n.startsWith('id_')) return true;
@@ -161,7 +161,7 @@ function scoreMeasure(m: SemanticMeasure): number {
  * If known business metrics exist (sales, revenue, cost, quantity...),
  * ONLY those are used. Unknown numerics are excluded entirely.
  */
-function getBusinessMeasures(model: SemanticModel): SemanticMeasure[] {
+export function getBusinessMeasures(model: SemanticModel): SemanticMeasure[] {
     // Log each measure's classification for debugging
     for (const m of model.measures) {
         const id = isIdLike(m.column);
@@ -206,7 +206,7 @@ function pickNonAdditiveMeasure(model: SemanticModel, primary: SemanticMeasure |
  * Prefer: category > region > department > channel > type
  * Avoid: individual names (high cardinality, not aggregatable)
  */
-function rankDimensions(dims: SemanticDimension[]): SemanticDimension[] {
+export function rankDimensions(dims: SemanticDimension[]): SemanticDimension[] {
     const GOOD_PATTERNS = /\b(category|region|department|channel|type|status|segment|group|class|tier|brand|market|state|country|city|gender|division|source|platform)\b/i;
     const BAD_PATTERNS = /\b(name|first_?name|last_?name|full_?name|address|email|phone|description|notes|comment|url)\b/i;
 
@@ -646,7 +646,7 @@ function buildInsightDefs(model: SemanticModel, rowCount: number): InsightDef[] 
  * Replaces empty strings, undefined, and NaN with null to prevent
  * "Could not convert string '' to DOUBLE" errors.
  */
-function sanitizeRows(rows: any[]): any[] {
+export function sanitizeRows(rows: any[]): any[] {
     if (!rows.length) return rows;
     const keys = Object.keys(rows[0]);
     return rows.map(row => {
