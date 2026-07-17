@@ -268,8 +268,8 @@ function detectExplicitAggregation(question: string): 'avg' | 'sum' | 'count' | 
         || /\b(lowest|highest|most|least|best|worst|top|bottom)[\w\s]+?(day|week|month|product|category|region|customer|item|store)\b/.test(q);
 
     if (!isRankingContext) {
-        if (/\b(max|maximum)\b/.test(q)) return 'max';
-        if (/\b(min|minimum)\b/.test(q)) return 'min';
+        if (/\b(max|maximum|oldest|latest|newest)\b/.test(q)) return 'max';
+        if (/\b(min|minimum|youngest|earliest)\b/.test(q)) return 'min';
         // "highest" and "lowest" only map to max/min in non-ranking context
         if (/\b(highest|largest|biggest)\b/.test(q)) return 'max';
         if (/\b(lowest|smallest)\b/.test(q)) return 'min';
@@ -1180,118 +1180,132 @@ export async function generatePlan(
             throw new Error('Empty response from intent planner');
         }
 
-        // Robust JSON extraction — free models often wrap JSON in markdown or add extra text
-        const cleaned = content.replace(/```json\s*|```\s*/g, '').trim();
-        let parsed: any;
-        try {
-            parsed = JSON.parse(cleaned);
-        } catch {
-            // Fallback: extract first { ... } block via brace matching
-            const start = cleaned.indexOf('{');
-            if (start === -1) throw new Error('No JSON object found in AI response');
-            let depth = 0, end = start;
-            for (let i = start; i < cleaned.length; i++) {
-                if (cleaned[i] === '{') depth++;
-                else if (cleaned[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
-            }
-            parsed = JSON.parse(cleaned.substring(start, end + 1));
+        // Robustly parse the LLM's JSON (fences, comments, trailing commas). If it
+        // is unusable, degrade to a deterministic plan instead of failing the query.
+        const parsed = extractPlanJson(content);
+        if (parsed) {
+            return finalizePlan(parsed, question, model, classification, grainOverride);
         }
-
-        // Validate required fields
-        const plan: AnalysisPlan = {
-            intent: validateIntent(parsed.intent),
-            dimensions: Array.isArray(parsed.dimensions) ? parsed.dimensions : [],
-            metrics: Array.isArray(parsed.metrics) ? parsed.metrics : [],
-            filters: Array.isArray(parsed.filters) ? parsed.filters : [],
-            comparison: parsed.comparison || undefined,
-            sort: Array.isArray(parsed.sort) ? parsed.sort : [],
-            limit: typeof parsed.limit === 'number' ? parsed.limit : null,
-            ambiguous: !!parsed.ambiguous,
-            clarificationQuestion: parsed.clarificationQuestion || undefined,
-            resultGrain: parsed.resultGrain || 'one row per record',
-            originalQuestion: question,
-        };
-
-        // ── STEP 1: Validate field names against the semantic model ──
-        validateFieldReferences(plan, model);
-
-        // ── STEP 2: CODE-LEVEL SAFEGUARDS ──
-        // Even if the LLM ignores the user's explicit instructions,
-        // these functions forcefully correct the plan metadata.
-        enforceAggregation(plan, question, model);
-        enforceTimeContext(plan, question, model);
-        enforceCyclicGrain(plan, question, model); // Fix: detect day-of-week / month-of-year patterns
-        enforceIntentFromKeywords(plan, question); // Fix: enforce intent from keywords (trend/share/top-N)
-        enforceCompositeMetrics(plan, question, model); // Fix: force governed composite metrics (weighted formulas)
-        enforceAggregateFilter(plan, question, model); // Fix: above/below average → HAVING clause with composite KPIs
-        enforceGrowthAnalysis(plan, question, model); // Fix: growth/decline → per-entity growth ranking (MUST run before enforceComparison)
-        enforcePluralLimit(plan, question); // Fix: plural nouns → top 5 instead of limit 1
-        enforceComparison(plan, question, model); // Fix: detect comparison patterns
-        enforceTimeComparison(plan, question, model); // MSARE: detect YoY/MoM/QoQ + derived metric combos
-
-        // ── STEP 3: SEMANTIC VALIDATION ──
-        // Catch nonsensical queries: AVG(customer_id), COUNT(revenue), revenue by revenue
-        validateSemantics(plan, model);
-
-        // ── STEP 4: SMART DEFAULTS ──
-        // If the plan is ambiguous due to missing metrics, auto-fill with
-        // intelligent defaults (e.g., revenue for compare/growth/performance)
-        applySmartDefaults(plan, question, model);
-
-        // ── STEP 5: ENFORCE TIME DIMENSION FOR GROWTH/COMPARISON ──
-        // Even if the LLM sets ambiguous=false and picks the right metric,
-        // it often forgets the time dimension needed for growth calculations.
-        // This step ALWAYS runs and injects the time grain if missing.
-        // Grain override MUST be set BEFORE this step runs.
-        if (grainOverride) {
-            (plan as any)._grainOverride = grainOverride;
-        }
-        enforceGrowthTimeDimension(plan, question, model);
-
-        // ── STEP 6: STRIP LIMIT/ORDER FOR GROWTH RANKING ──
-        // Growth ranking needs ALL data for correct growth computation.
-        // LIMIT and ORDER BY are applied post-collapse, not in SQL.
-        if ((plan as any)._growthRanking) {
-            plan.limit = null;
-            plan.sort = [];
-            console.log('[Intent Planner] Growth ranking: stripped LIMIT and ORDER BY (applied post-collapse)');
-        }
-
-        // ── STEP 7: PLAN VALIDATION GATE ──
-        // Validate the final plan against hard constraints.
-        // Auto-fixes recoverable issues (fuzzy field names, missing metrics).
-        const validation = validatePlan(plan, model);
-        if (!validation.valid) {
-            console.warn(`[Plan Validator] Plan has ${validation.errors.length} unrecoverable error(s). Proceeding with best effort.`);
-        }
-        if (validation.autoFixed > 0) {
-            console.log(`[Plan Validator] Auto-fixed ${validation.autoFixed} issue(s) in the plan.`);
-        }
-
-        // ── STEP 8: APPLY CLASSIFIER HINTS ──
-        // If the deterministic classifier has high confidence on intent/grain,
-        // override the LLM's choices as a safety net.
-        if (classification.confidence >= 0.8) {
-            if (classification.intent !== 'ambiguous' && classification.intent !== plan.intent) {
-                // Only override if classifier is very confident and it's a different intent
-                const validOverrides = ['trend', 'ranking', 'share_of_total', 'distribution'];
-                if (validOverrides.includes(classification.intent) && classification.confidence >= 0.9) {
-                    console.log(`[Classifier Override] intent: "${plan.intent}" → "${classification.intent}" (classifier confidence: ${classification.confidence.toFixed(2)})`);
-                    plan.intent = classification.intent as any;
-                }
-            }
-        }
-
-        console.log('[Intent Planner] Generated plan:', JSON.stringify(plan, null, 2));
-        return plan;
+        console.warn('[Intent Planner] LLM returned unparseable JSON — using deterministic fallback plan.');
+        return finalizePlan(buildDeterministicParsed(classification, fieldMapping, model), question, model, classification, grainOverride);
 
     } catch (err: any) {
         clearTimeout(timeout);
-        if (err.name === 'AbortError') {
-            throw new Error('Intent planner timed out after ' + TIMEOUT_MS + 'ms');
-        }
-        throw err;
+        // Never fail the whole query because the LLM step errored (timeout, network,
+        // bad JSON): fall back to a deterministic plan from the classifier + field
+        // mapper so the user still gets an answer.
+        console.warn(`[Intent Planner] Plan generation failed (${err?.name === 'AbortError' ? 'timeout' : err?.message}) — using deterministic fallback plan.`);
+        return finalizePlan(buildDeterministicParsed(classification, fieldMapping, model), question, model, classification, grainOverride);
     }
+}
+
+/**
+ * Extract a JSON object from an LLM response: strip markdown fences, brace-match
+ * the outermost object, and retry with common repairs (line/block comments,
+ * trailing commas). Returns null if nothing parses.
+ */
+export function extractPlanJson(content: string): any | null {
+    if (!content) return null;
+    let s = content.replace(/```json\s*|```\s*/g, '').trim();
+    const start = s.indexOf('{');
+    if (start >= 0) {
+        let depth = 0, end = -1;
+        for (let i = start; i < s.length; i++) {
+            const c = s[i];
+            if (c === '{') depth++;
+            else if (c === '}') { depth--; if (depth === 0) { end = i; break; } }
+        }
+        if (end > start) s = s.substring(start, end + 1);
+    }
+    const repairs: Array<(x: string) => string> = [
+        x => x,
+        x => x.replace(/,(\s*[}\]])/g, '$1'),                                                    // trailing commas
+        x => x.replace(/\/\/[^\n\r]*/g, '').replace(/,(\s*[}\]])/g, '$1'),                        // line comments
+        x => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n\r]*/g, '').replace(/,(\s*[}\]])/g, '$1'), // block comments
+    ];
+    for (const r of repairs) {
+        try { const v = JSON.parse(r(s)); if (v && typeof v === 'object') return v; } catch { /* next */ }
+    }
+    return null;
+}
+
+/**
+ * A deterministic best-effort plan for when the LLM plan is unusable. Uses the
+ * pre-computed classifier + field mapper so the query still runs. The enforce*
+ * safeguards in finalizePlan then refine aggregation / time / intent from the
+ * question keywords ("youngest" → MIN, "how many" → COUNT, etc.).
+ */
+function buildDeterministicParsed(classification: any, fieldMapping: any, model: SemanticModel): any {
+    const dimensions = (fieldMapping?.dimensions || []).map((d: any) => ({ field: d.name }));
+    let metrics = (fieldMapping?.metrics || []).map((m: any) => ({ field: m.name, agg: 'sum' }));
+    if (metrics.length === 0) {
+        const firstMetric = model.fields.find(f => f.role === 'metric');
+        metrics = [{ field: firstMetric?.name || model.fields[0]?.name || '*', agg: firstMetric ? 'sum' : 'count' }];
+    }
+    const intent = (classification?.intent && classification.intent !== 'ambiguous')
+        ? classification.intent
+        : (dimensions.length > 0 ? 'breakdown' : 'single_metric');
+    return { intent, dimensions, metrics, filters: [], sort: [], limit: classification?.limit ?? null };
+}
+
+/**
+ * Build the final AnalysisPlan from a parsed (LLM or deterministic) object and run
+ * every code-level safeguard, semantic validation, and smart default. Shared by
+ * the normal path and the deterministic fallback so both get the same guarantees.
+ */
+function finalizePlan(
+    parsed: any,
+    question: string,
+    model: SemanticModel,
+    classification: any,
+    grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year',
+): AnalysisPlan {
+    const plan: AnalysisPlan = {
+        intent: validateIntent(parsed.intent),
+        dimensions: Array.isArray(parsed.dimensions) ? parsed.dimensions : [],
+        metrics: Array.isArray(parsed.metrics) ? parsed.metrics : [],
+        filters: Array.isArray(parsed.filters) ? parsed.filters : [],
+        comparison: parsed.comparison || undefined,
+        sort: Array.isArray(parsed.sort) ? parsed.sort : [],
+        limit: typeof parsed.limit === 'number' ? parsed.limit : null,
+        ambiguous: !!parsed.ambiguous,
+        clarificationQuestion: parsed.clarificationQuestion || undefined,
+        resultGrain: parsed.resultGrain || 'one row per record',
+        originalQuestion: question,
+    };
+
+    validateFieldReferences(plan, model);
+    enforceAggregation(plan, question, model);
+    enforceTimeContext(plan, question, model);
+    enforceCyclicGrain(plan, question, model);
+    enforceIntentFromKeywords(plan, question);
+    enforceCompositeMetrics(plan, question, model);
+    enforceAggregateFilter(plan, question, model);
+    enforceGrowthAnalysis(plan, question, model);
+    enforcePluralLimit(plan, question);
+    enforceComparison(plan, question, model);
+    enforceTimeComparison(plan, question, model);
+    validateSemantics(plan, model);
+    applySmartDefaults(plan, question, model);
+    if (grainOverride) (plan as any)._grainOverride = grainOverride;
+    enforceGrowthTimeDimension(plan, question, model);
+    if ((plan as any)._growthRanking) {
+        plan.limit = null;
+        plan.sort = [];
+        console.log('[Intent Planner] Growth ranking: stripped LIMIT and ORDER BY (applied post-collapse)');
+    }
+    const validation = validatePlan(plan, model);
+    if (!validation.valid) console.warn(`[Plan Validator] Plan has ${validation.errors.length} unrecoverable error(s). Proceeding with best effort.`);
+    if (validation.autoFixed > 0) console.log(`[Plan Validator] Auto-fixed ${validation.autoFixed} issue(s) in the plan.`);
+    if (classification?.confidence >= 0.8 && classification.intent !== 'ambiguous' && classification.intent !== plan.intent) {
+        const validOverrides = ['trend', 'ranking', 'share_of_total', 'distribution'];
+        if (validOverrides.includes(classification.intent) && classification.confidence >= 0.9) {
+            console.log(`[Classifier Override] intent: "${plan.intent}" → "${classification.intent}" (confidence ${classification.confidence.toFixed(2)})`);
+            plan.intent = classification.intent as any;
+        }
+    }
+    console.log('[Intent Planner] Generated plan:', JSON.stringify(plan, null, 2));
+    return plan;
 }
 
 /**
