@@ -211,6 +211,50 @@ async function callLLM(prompt: string): Promise<any> {
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// ROLE RECONCILIATION
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Reconcile AI-assigned column roles with the deterministic, data-aware ETL
+ * classification. The ETL role (col.type) comes from the actual data shape (name
+ * patterns + numeric/date parse rates + key uniqueness/sequence) and is reliable.
+ * The AI enriches MEANING (domain, labels, descriptions) but must not override the
+ * STRUCTURAL role when the data contradicts it.
+ *
+ * The classic failure this prevents: the AI labels a near-unique TEXT column
+ * (person names, emails, cities) as "ID" because each value identifies a row — but
+ * a real key is caught by the deterministic classifier via an id-like name and/or a
+ * numeric key shape. If the data-aware classifier did not see an ID, it is not one.
+ *
+ * Mutates `semantics` in place. Pure w.r.t. external state; privacy-safe (operates
+ * only on metadata/roles, never raw values).
+ */
+export function reconcileRolesWithData(
+    semantics: Record<string, ColumnSemantic>,
+    columns: ColumnDefinition[],
+): Record<string, ColumnSemantic> {
+    const detRoleByName = new Map(columns.map(c => [c.name, c.type]));
+    for (const [colName, s] of Object.entries(semantics)) {
+        const detRole = detRoleByName.get(colName);
+        if (!detRole || s.isHidden) continue;
+        // AI → ID, but the data-aware classifier disagreed: trust the data. Text
+        // like names/emails is near-unique yet not a key.
+        if (s.role === ColumnType.ID && detRole !== ColumnType.ID) {
+            s.role = detRole;
+            if (s.aggregation === 'SUM' || s.aggregation === 'AVG') s.aggregation = 'NONE';
+        }
+        // AI → METRIC on a column the data says is a date/boolean/ID: a
+        // non-numeric field cannot be a measure.
+        else if (s.role === ColumnType.METRIC
+            && (detRole === ColumnType.DATE || detRole === ColumnType.BOOLEAN || detRole === ColumnType.ID)) {
+            s.role = detRole;
+            s.aggregation = 'NONE';
+        }
+    }
+    return semantics;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // PARSE & VALIDATE LLM RESPONSE
 // ═══════════════════════════════════════════════════════════════════
 
@@ -355,6 +399,9 @@ export async function profileDatasetWithAI(
                 };
             }
         }
+
+        // Step 6.5: Reconcile AI roles with the deterministic, data-aware classifier.
+        reconcileRolesWithData(allSemantics, columns);
 
         // Step 7: Compute deterministic confidence (not LLM self-reported)
         const totalCols = columns.length;
