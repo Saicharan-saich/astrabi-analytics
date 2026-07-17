@@ -36,6 +36,32 @@ function fromTable(): string {
     return `FROM ${TABLE_REF}`;
 }
 
+// The LLM plan uses varied spellings for filter operators ("eq", "gt", "in_list",
+// …). Map them to the canonical set the builders understand so a filter is NEVER
+// silently dropped over a spelling mismatch (e.g. "gender eq Male" → WHERE dropped
+// → counts everyone). Applied once at the top of correctSQL().
+const FILTER_OP_ALIASES: Record<string, string> = {
+    eq: '=', equals: '=', equal: '=', '==': '=', is: '=', matches_exactly: '=',
+    neq: '!=', ne: '!=', not_eq: '!=', not_equal: '!=', not_equals: '!=', isnt: '!=', is_not: '!=', '<>': '!=', '!==': '!=',
+    gt: '>', greater: '>', greater_than: '>', more_than: '>', after: '>',
+    lt: '<', less: '<', less_than: '<', fewer_than: '<', before: '<',
+    gte: '>=', ge: '>=', greater_than_or_equal: '>=', greater_or_equal: '>=', at_least: '>=', min: '>=',
+    lte: '<=', le: '<=', less_than_or_equal: '<=', less_or_equal: '<=', at_most: '<=', max: '<=',
+    in_list: 'in', one_of: 'in', in_set: 'in', includes: 'in', any_of: 'in',
+    not_in_list: 'not_in', nin: 'not_in', none_of: 'not_in', excludes: 'not_in',
+    contains: 'like', like_pattern: 'like', matches: 'like', starts_with: 'like',
+    range: 'between', within: 'between', in_range: 'between',
+    current_year: 'this_year', ytd: 'this_year',
+    current_month: 'this_month', mtd: 'this_month',
+    current_quarter: 'this_quarter', qtd: 'this_quarter',
+    above_average: 'above_avg', below_average: 'below_avg', above_mean: 'above_avg', below_mean: 'below_avg',
+};
+function normalizeFilterOp(op: any): string {
+    if (typeof op !== 'string') return op;
+    const k = op.toLowerCase().trim();
+    return FILTER_OP_ALIASES[k] ?? k;
+}
+
 /** Resolve a relative-time filter op to an inclusive [start,end] ISO date range,
  *  anchored to the dataset's date. Returns null when there is no usable anchor. */
 function resolveTemporalRange(op: string): { start: string; end: string } | null {
@@ -76,6 +102,8 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     // a table called "data", NOT the original file name.
     TABLE_REF = '"data"';
     ANCHOR_DATE = model.timeContext?.anchorDate || model.timeContext?.maxDate || null;
+    // Canonicalize filter operator spellings so no filter is dropped over "eq" vs "=".
+    plan = { ...plan, filters: (plan.filters || []).map(f => ({ ...f, op: normalizeFilterOp(f.op) as PlanFilter['op'] })) };
     logger.info('[SQL Correction]', `Building SQL for intent="${plan.intent}" table=${TABLE_REF}`);
 
     // â”€â”€ Intercept hour/time-of-day grain: check if dataset has time data â”€â”€
