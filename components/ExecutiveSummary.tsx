@@ -12,7 +12,8 @@ import { generateExecutiveSummary } from '../services/executiveSummaryEngine';
 export const ExecutiveSummary: React.FC<{ findings: Finding[]; dataset: Dataset }> = ({ findings, dataset }) => {
     if (!dataset) return null;
     const summary = generateExecutiveSummary(findings, dataset);
-    if (summary.basedOn === 0) return null; // nothing material — the feed's empty state covers it
+    // Render even when nothing material was found, so "Discover" always shows the
+    // scan ran (an empty page reads as "broken", not "all clear").
 
     return (
         <div className="mb-6 rounded-2xl border border-indigo-200/60 dark:border-indigo-500/20 bg-gradient-to-br from-indigo-50 to-white dark:from-indigo-500/[0.07] dark:to-slate-800/40 p-5">
@@ -26,7 +27,9 @@ export const ExecutiveSummary: React.FC<{ findings: Finding[]; dataset: Dataset 
                 {summary.sentences.join(' ')}
             </p>
             <p className="mt-2.5 text-[11px] text-gray-400 dark:text-slate-500">
-                Synthesized from {summary.basedOn} detected {summary.basedOn === 1 ? 'finding' : 'findings'} · exact figures, computed on your data
+                {summary.basedOn > 0
+                    ? `Synthesized from ${summary.basedOn} detected ${summary.basedOn === 1 ? 'finding' : 'findings'} · exact figures, computed on your data`
+                    : 'Automatic scan · deterministic checks for material changes, concentration, and data quality'}
             </p>
         </div>
     );

@@ -88,6 +88,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     ];
 
     const analysisSection = [
+        { id: Tab.QUICK_INSIGHTS, label: 'Discover', icon: Zap, requiresCreateVisuals: true, tooltip: 'Automatic insight discovery — the moment your data loads, it surfaces what stands out (drops, spikes, concentration, outliers), explains the likely root cause, and writes an executive summary. No question required.' },
         { id: Tab.GAME, label: 'GAFS Challenge', icon: Gamepad2, tooltip: 'Learn the GAFS framework through an interactive game — master Grouping, Aggregating, Filtering, and Sorting.' },
         { id: Tab.SMART_QUESTIONS, label: 'Smart Insights', icon: Lightbulb, requiresCreateVisuals: true, tooltip: 'AI-curated questions tailored to your dataset. Click any card to instantly run the analysis.' },
         { id: Tab.BUILDER, label: 'Question Builder', icon: Search, requiresCreateVisuals: true, tooltip: 'A simplified natural-language-style builder: "Show me [metric] by [dimension]" with intuitive dropdowns.' },

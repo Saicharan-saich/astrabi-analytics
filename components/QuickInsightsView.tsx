@@ -223,7 +223,7 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
                     <div>
                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2.5">
                             <span className="text-xl">⚡</span>
-                            Quick Insights
+                            Discover
                             <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
                                 domain === 'Sales' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' :
                                 domain === 'Healthcare' ? 'bg-red-500/15 text-red-400 border-red-500/20' :
