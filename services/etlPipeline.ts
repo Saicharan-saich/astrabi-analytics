@@ -258,8 +258,13 @@ export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
 
     // R1 — ID by name pattern (order_id, sku, *_code …).
     if (ID_PATTERNS.test(p.name)) return { type: ColumnType.ID };
-    // R2 — Date by data: a majority of values parse as dates.
-    if (p.dateParseRate >= 0.5) return { type: ColumnType.DATE };
+    // R2 — Date by data: a majority of values parse as dates. GUARD: for a
+    // metric-named, purely numeric column (salary, amount, price…) the "date"
+    // parses can only come from Excel-serial interpretation of plain numbers
+    // in 30000–60000 — that's money, not dates (salaries live in exactly that
+    // range). Let it fall through to the metric rule. A genuinely date-named
+    // column (payment_date…) still classifies as DATE via isDateName.
+    if (p.dateParseRate >= 0.5 && !(isMetricName && !isDateName && p.numericParseRate >= 0.7)) return { type: ColumnType.DATE };
     // R3 — Date by name (trust the column name when data is inconclusive).
     if (isDateName) return { type: ColumnType.DATE };
     // R4 — Metric by name + numeric data. MUST precede the boolean rule because
