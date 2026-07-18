@@ -8,7 +8,10 @@ import {
 } from 'chart.js';
 import { Dataset, AnalysisResult } from '../types';
 import { generateAutoInsights, AutoInsight } from '../services/autoInsightsEngine';
+import { discoverInsights, Finding } from '../services/insightDiscoveryEngine';
 import { FindingsFeed } from './FindingsFeed';
+import { ExecutiveSummary } from './ExecutiveSummary';
+import { InvestigationPanel } from './InvestigationPanel';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Filler, ChartTooltip);
 
@@ -79,14 +82,40 @@ interface QuickInsightsViewProps {
     dataset: Dataset | null;
     onPin?: (title: string, result: AnalysisResult) => void;
     onOpenInBuilder?: (config: any) => void;
+    /** Route a natural-language follow-up into the AI SQL pipeline. */
+    onAskQuestion?: (question: string) => void;
 }
 
-export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, onPin, onOpenInBuilder }) => {
+export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, onPin, onOpenInBuilder, onAskQuestion }) => {
     const [insights, setInsights] = useState<AutoInsight[]>([]);
     const [isLoading, setIsLoading] = useState(false);
     const [elapsed, setElapsed] = useState('0.0');
     const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
     const cachedDatasetId = useRef<string | null>(null);
+
+    // ── Insight Discovery: findings + executive summary (shared) ──
+    const [findings, setFindings] = useState<Finding[]>([]);
+    const [findingsLoading, setFindingsLoading] = useState(false);
+    const [investigating, setInvestigating] = useState<Finding | null>(null);
+    const findingsRanFor = useRef<string | null>(null);
+
+    useEffect(() => {
+        if (!dataset || dataset.id === findingsRanFor.current) return;
+        let cancelled = false;
+        (async () => {
+            setFindingsLoading(true);
+            try {
+                const f = await discoverInsights(dataset);
+                if (!cancelled) { setFindings(f); findingsRanFor.current = dataset.id; }
+            } catch (err) {
+                console.error('[QuickInsights] discovery failed:', err);
+                if (!cancelled) setFindings([]);
+            } finally {
+                if (!cancelled) setFindingsLoading(false);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [dataset?.id]);
 
     // Generate insights when dataset changes
     useEffect(() => {
@@ -218,8 +247,16 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
                     </button>
                 </div>
 
+                {/* ── EXECUTIVE SUMMARY (findings → business English) ── */}
+                <ExecutiveSummary findings={findings} dataset={dataset} />
+
                 {/* ── DISCOVERED FINDINGS (the "analyst beside you" feed) ── */}
-                <FindingsFeed dataset={dataset} onOpenInBuilder={onOpenInBuilder} />
+                <FindingsFeed
+                    findings={findings}
+                    loading={findingsLoading}
+                    onInvestigate={setInvestigating}
+                    onAskQuestion={onAskQuestion}
+                />
 
                 {/* ── KPI ROW ── */}
                 {kpiInsights.length > 0 && (
@@ -274,6 +311,16 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
                     </div>
                 )}
             </div>
+
+            {/* ── ROOT-CAUSE INVESTIGATION PANEL ── */}
+            {investigating && (
+                <InvestigationPanel
+                    finding={investigating}
+                    dataset={dataset}
+                    onClose={() => setInvestigating(null)}
+                    onAskQuestion={onAskQuestion ? (qn) => { setInvestigating(null); onAskQuestion(qn); } : undefined}
+                />
+            )}
         </div>
     );
 };

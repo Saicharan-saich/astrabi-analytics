@@ -1759,6 +1759,7 @@ function App() {
                   <QuickInsightsView
                     dataset={dataset}
                     onPin={(title, result) => handlePin(result)}
+                    onAskQuestion={handleSmartQuestion}
                   />
                 </div>
 
