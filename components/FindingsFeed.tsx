@@ -1,48 +1,28 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
     AlertTriangle, TrendingUp, TrendingDown, Info,
-    Loader2, ArrowRight, Search, Sparkles,
+    Loader2, ArrowRight, GitBranch, Sparkles,
 } from 'lucide-react';
-import { Dataset } from '../types';
-import { discoverInsights, Finding, FindingSeverity } from '../services/insightDiscoveryEngine';
+import { Finding, FindingSeverity } from '../services/insightDiscoveryEngine';
 
 /**
  * FindingsFeed — the "analyst sitting beside you" surface. Instead of asking the
- * user to type a question, it inspects the data and shows the handful of things
- * that actually stand out (drops, streaks, concentration, outliers, gaps),
- * ranked by how much they matter. Each finding is a one-click drill-down.
+ * user to type a question, it shows the handful of things that actually stand out
+ * (drops, streaks, concentration, outliers, gaps), ranked by how much they
+ * matter. Each finding opens a root-cause Investigation, or hands its follow-up
+ * question straight to the AI SQL pipeline.
  *
- * Detection is 100% deterministic (services/insightDiscoveryEngine) — the numbers
- * are exact, and no data leaves the browser to produce them.
+ * Presentational — the findings are computed once by the parent (via
+ * services/insightDiscoveryEngine) and shared with the Executive Summary.
  */
 
 const SEVERITY_STYLE: Record<FindingSeverity, {
     ring: string; chip: string; iconColor: string; Icon: any; label: string;
 }> = {
-    critical: {
-        ring: 'border-l-red-500',
-        chip: 'bg-red-500/15 text-red-600 dark:text-red-400',
-        iconColor: 'text-red-500',
-        Icon: AlertTriangle, label: 'Critical',
-    },
-    warning: {
-        ring: 'border-l-amber-500',
-        chip: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
-        iconColor: 'text-amber-500',
-        Icon: AlertTriangle, label: 'Watch',
-    },
-    positive: {
-        ring: 'border-l-emerald-500',
-        chip: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
-        iconColor: 'text-emerald-500',
-        Icon: TrendingUp, label: 'Good news',
-    },
-    info: {
-        ring: 'border-l-sky-500',
-        chip: 'bg-sky-500/15 text-sky-600 dark:text-sky-400',
-        iconColor: 'text-sky-500',
-        Icon: Info, label: 'FYI',
-    },
+    critical: { ring: 'border-l-red-500', chip: 'bg-red-500/15 text-red-600 dark:text-red-400', iconColor: 'text-red-500', Icon: AlertTriangle, label: 'Critical' },
+    warning: { ring: 'border-l-amber-500', chip: 'bg-amber-500/15 text-amber-600 dark:text-amber-400', iconColor: 'text-amber-500', Icon: AlertTriangle, label: 'Watch' },
+    positive: { ring: 'border-l-emerald-500', chip: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', iconColor: 'text-emerald-500', Icon: TrendingUp, label: 'Good news' },
+    info: { ring: 'border-l-sky-500', chip: 'bg-sky-500/15 text-sky-600 dark:text-sky-400', iconColor: 'text-sky-500', Icon: Info, label: 'FYI' },
 };
 
 function pickIcon(f: Finding) {
@@ -52,38 +32,17 @@ function pickIcon(f: Finding) {
 }
 
 interface FindingsFeedProps {
-    dataset: Dataset;
-    /** Open the finding's drill-down in the Question Builder. */
-    onOpenInBuilder?: (config: any) => void;
-    /** Optionally hand a natural-language follow-up to the AI SQL view. */
+    findings: Finding[];
+    loading: boolean;
+    /** Open the deterministic root-cause / investigation panel for a finding. */
+    onInvestigate?: (finding: Finding) => void;
+    /** Hand a natural-language follow-up to the AI SQL pipeline. */
     onAskQuestion?: (question: string) => void;
 }
 
-export const FindingsFeed: React.FC<FindingsFeedProps> = ({ dataset, onOpenInBuilder, onAskQuestion }) => {
-    const [findings, setFindings] = useState<Finding[]>([]);
-    const [loading, setLoading] = useState(false);
+export const FindingsFeed: React.FC<FindingsFeedProps> = ({ findings, loading, onInvestigate, onAskQuestion }) => {
     const [collapsed, setCollapsed] = useState(false);
-    const ranFor = useRef<string | null>(null);
 
-    useEffect(() => {
-        if (!dataset || dataset.id === ranFor.current) return;
-        let cancelled = false;
-        (async () => {
-            setLoading(true);
-            try {
-                const f = await discoverInsights(dataset);
-                if (!cancelled) { setFindings(f); ranFor.current = dataset.id; }
-            } catch (err) {
-                console.error('[FindingsFeed] discovery failed:', err);
-                if (!cancelled) setFindings([]);
-            } finally {
-                if (!cancelled) setLoading(false);
-            }
-        })();
-        return () => { cancelled = true; };
-    }, [dataset?.id]);
-
-    // ── Loading ──
     if (loading) {
         return (
             <div className="mb-6 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-800/60 p-5">
@@ -95,8 +54,7 @@ export const FindingsFeed: React.FC<FindingsFeedProps> = ({ dataset, onOpenInBui
         );
     }
 
-    // Nothing material — say so honestly rather than inventing filler.
-    if (findings.length === 0) return null;
+    if (!findings || findings.length === 0) return null;
 
     const counts = findings.reduce((acc, f) => {
         const k = f.severity === 'positive' ? 'good' : (f.severity === 'info' ? 'info' : 'attention');
@@ -105,7 +63,6 @@ export const FindingsFeed: React.FC<FindingsFeedProps> = ({ dataset, onOpenInBui
 
     return (
         <div className="mb-6 rounded-2xl border border-gray-200 dark:border-white/10 bg-white dark:bg-slate-800/60 overflow-hidden">
-            {/* Header */}
             <button
                 onClick={() => setCollapsed(c => !c)}
                 className="w-full flex items-center justify-between gap-3 px-5 py-4 text-left hover:bg-gray-50 dark:hover:bg-white/[0.03] transition-colors"
@@ -129,12 +86,12 @@ export const FindingsFeed: React.FC<FindingsFeedProps> = ({ dataset, onOpenInBui
                 <span className="text-xs text-gray-400 dark:text-slate-500">{collapsed ? 'Show' : 'Hide'}</span>
             </button>
 
-            {/* Findings */}
             {!collapsed && (
                 <div className="divide-y divide-gray-100 dark:divide-white/[0.06]">
                     {findings.map(f => {
                         const s = SEVERITY_STYLE[f.severity];
                         const Icon = pickIcon(f);
+                        const canInvestigate = onInvestigate && f.type !== 'data_gap';
                         return (
                             <div key={f.id} className={`flex items-start gap-3.5 px-5 py-3.5 border-l-[3px] ${s.ring}`}>
                                 <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${s.iconColor}`} />
@@ -145,14 +102,13 @@ export const FindingsFeed: React.FC<FindingsFeedProps> = ({ dataset, onOpenInBui
                                     </div>
                                     <p className="text-xs text-gray-500 dark:text-slate-400 mt-1 leading-relaxed">{f.detail}</p>
 
-                                    {/* Actions */}
-                                    <div className="flex items-center gap-2 mt-2">
-                                        {f.drill && onOpenInBuilder && (
+                                    <div className="flex items-center gap-3 mt-2">
+                                        {canInvestigate && (
                                             <button
-                                                onClick={() => onOpenInBuilder(f.drill)}
+                                                onClick={() => onInvestigate!(f)}
                                                 className="inline-flex items-center gap-1 text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 hover:gap-1.5 transition-all"
                                             >
-                                                <Search className="w-3 h-3" /> Investigate
+                                                <GitBranch className="w-3 h-3" /> Investigate
                                             </button>
                                         )}
                                         {f.suggestedQuestion && onAskQuestion && (
