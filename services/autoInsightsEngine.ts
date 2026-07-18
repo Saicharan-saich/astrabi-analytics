@@ -9,6 +9,7 @@
 import { Dataset, QueryConfig, AggregationType, TimeGrain, AnalysisType } from '../types';
 import { SemanticModel, SemanticMeasure, SemanticDimension } from './semanticModel';
 import { executeSQLViaDuckDB, reloadDataTable } from './duckdbEngine';
+import { buildDomainKpiDefs } from './domainKpiEngine';
 
 /**
  * Build a real QueryConfig for an insight so a dashboard card can be OPENED
@@ -673,8 +674,16 @@ export async function generateAutoInsights(dataset: Dataset): Promise<AutoInsigh
         return [];
     }
 
-    const defs = buildInsightDefs(model, dataset.rows.length);
-    console.log(`[AutoInsights] Generated ${defs.length} insight definitions`);
+    // ── DOMAIN KPIs FIRST: standard KPIs for the detected business domain
+    // (Admissions, Avg stay, Doctor workload… for healthcare; Headcount, Avg
+    // salary… for HR; Revenue trend, Top products… for retail). Generic
+    // insights fill in behind them, minus exact-SQL duplicates.
+    const domainDefs = buildDomainKpiDefs(dataset) as InsightDef[];
+    const genericDefs = buildInsightDefs(model, dataset.rows.length);
+    const normSql = (s: string) => s.toLowerCase().replace(/\s+/g, ' ').trim();
+    const domainSql = new Set(domainDefs.map(d => normSql(d.sql)));
+    const defs = [...domainDefs, ...genericDefs.filter(d => !domainSql.has(normSql(d.sql)))];
+    console.log(`[AutoInsights] Generated ${defs.length} insight definitions (${domainDefs.length} domain KPIs + ${defs.length - domainDefs.length} generic)`);
 
     if (defs.length === 0) return [];
 
