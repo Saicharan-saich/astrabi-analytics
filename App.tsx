@@ -1584,12 +1584,14 @@ function App() {
                         setDataset(finalDataset);
                         saveDatasetToDB(finalDataset);
                         setPendingProfile(null);
-                        setActiveTab(Tab.ETL);
+                        // Land on Discover so automatic insights are the first
+                        // thing the user sees once their schema is confirmed.
+                        setActiveTab(Tab.QUICK_INSIGHTS);
                         showToast(`Mapping applied: ${updatedProfile.domain} domain · Grain: ${updatedProfile.grain || 'unset'}`);
                       }}
                       onDismiss={() => {
                         setPendingProfile(null);
-                        setActiveTab(Tab.ETL);
+                        setActiveTab(Tab.QUICK_INSIGHTS);
                       }}
                     />
                   )}
