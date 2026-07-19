@@ -80,6 +80,23 @@ describe('runETLPipeline — correctness hardening wired end-to-end', () => {
         expect(etl.rows.every(r => typeof r.big_value === 'number' && r.big_value > 1_000_000)).toBe(true);
     });
 
+    it('completes quickly on a large, high-cardinality dataset (no hardening freeze)', () => {
+        // Mirrors the healthcare upload that hung: many rows, a unique "name" column.
+        const first = ['Danny', 'Andrew', 'Emily', 'Christina', 'Aaron', 'Haley', 'Luke', 'Jamie'];
+        const last = ['Smith', 'Watts', 'Johnson', 'Martinez', 'Hansen', 'Perkins', 'Burgess', 'Schmidt'];
+        const rows = Array.from({ length: 20000 }, (_, i) => ({
+            name: `${first[i % 8]} ${last[(i * 3) % 8]} ${i}`,   // ~unique → high cardinality
+            gender: i % 2 ? 'Male' : 'Female',
+            medical_condition: ['Diabetes', 'Asthma', 'Flu', 'Arthritis'][i % 4],
+            billing_amount: 500 + (i * 37) % 40000,
+        }));
+        const t0 = Date.now();
+        const etl = runETLPipeline(rows, 'big.csv');
+        const elapsed = Date.now() - t0;
+        expect(etl.rows.length).toBe(20000);
+        expect(elapsed).toBeLessThan(8000); // used to hang indefinitely on the name column
+    });
+
     it('FLAGS coercion loss when real values cannot be parsed as numbers', () => {
         const rows = [
             ...Array.from({ length: 16 }, (_, i) => ({ id: i, amount: 100 + i })),

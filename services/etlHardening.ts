@@ -226,11 +226,19 @@ export function levenshtein(a: string, b: string, ceiling = 3): number {
 
 export interface NearDupGroup { canonical: string; variants: string[] }
 
+/** Above this many distinct values a column is free-text (names, notes), not a
+ *  category — typo clustering is meaningless AND its pairwise (O(n²)) scan would
+ *  freeze on large data, so we skip it. */
+const MAX_TYPO_DISTINCT = 300;
+
 /**
  * Flag likely TYPOS among distinct category values (edit distance 1, same first
  * letter, length ≥ 5) — e.g. "Cardiology" / "Cardilogy". These are NOT merged
  * automatically because a 1-character difference can be a genuinely different
  * value; they are surfaced for the user to confirm.
+ *
+ * Only runs on genuinely categorical columns (≤ MAX_TYPO_DISTINCT distinct
+ * values) — high-cardinality free-text is skipped so this stays fast on big data.
  */
 export function findNearDuplicateGroups(values: any[]): NearDupGroup[] {
     const freq = new Map<string, number>();
@@ -238,6 +246,7 @@ export function findNearDuplicateGroups(values: any[]): NearDupGroup[] {
         if (v === null || v === undefined) continue;
         const s = String(v).trim();
         if (s.length >= 5) freq.set(s, (freq.get(s) || 0) + 1);
+        if (freq.size > MAX_TYPO_DISTINCT) return []; // free-text column → skip (and stay O(n))
     }
     const distinct = [...freq.keys()];
     const used = new Set<string>();

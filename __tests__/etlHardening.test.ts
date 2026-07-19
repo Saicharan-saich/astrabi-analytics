@@ -139,6 +139,19 @@ describe('category canonicalization (safe auto-merge) + typo flagging (review on
         expect(groups[0].canonical).toBe('Cardiology');
         expect(groups[0].variants).toContain('Cardilogy');
     });
+    it('skips high-cardinality free-text columns fast (no O(n²) freeze)', () => {
+        // 20k distinct names — the healthcare "name" column that used to hang.
+        const names = Array.from({ length: 20000 }, (_, i) => `Person Number ${i}`);
+        const t0 = Date.now();
+        const groups = findNearDuplicateGroups(names);
+        expect(groups).toEqual([]);            // free-text → skipped
+        expect(Date.now() - t0).toBeLessThan(500); // and it returns near-instantly
+    });
+    it('still finds typos in a genuinely categorical column', () => {
+        const rows = [...Array(50).fill('Cardiology'), ...Array(3).fill('Cardilogy'), ...Array(40).fill('Oncology')];
+        const groups = findNearDuplicateGroups(rows);
+        expect(groups.some(g => g.canonical === 'Cardiology' && g.variants.includes('Cardilogy'))).toBe(true);
+    });
     it('levenshtein basics', () => {
         expect(levenshtein('cardiology', 'cardilogy')).toBe(1);
         expect(levenshtein('abc', 'abc')).toBe(0);
