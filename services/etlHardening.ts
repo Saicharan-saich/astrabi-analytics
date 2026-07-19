@@ -62,7 +62,9 @@ export function parseLocaleNumber(raw: any): number | null {
 
     let s = String(raw).trim();
     if (s === '') return null;
-    s = s.replace(/[\s\u00A0\u2007\u202F]/g, "").replace(CURRENCY_SYMBOLS, '');
+    // Strip whitespace (incl. non-breaking/thin) AND zero-width / BOM / bidi marks
+    // that otherwise make a real number fail to parse and vanish from sums.
+    s = s.replace(/[\s\u00A0\u2007\u202F\u200B\u200C\u200D\u200E\u200F\uFEFF]/g, "").replace(CURRENCY_SYMBOLS, '');
 
     let sign = 1;
     if (/^\(.*\)$/.test(s)) { sign = -1; s = s.slice(1, -1); }           // (500) → -500
@@ -72,13 +74,19 @@ export function parseLocaleNumber(raw: any): number | null {
 
     if (s.endsWith('%')) s = s.slice(0, -1);                            // keep the number (45% → 45)
 
+    // Scientific / exponent notation (1.23E+11, 1,5e3): split off the exponent
+    // before separator disambiguation so these parse instead of becoming null.
+    let expPart = '';
+    const em = s.match(/[eE]([+-]?\d+)$/);
+    if (em && (em.index ?? 0) > 0) { expPart = 'e' + em[1]; s = s.slice(0, em.index); }
+
     let mult = 1;
     const suf = s.slice(-1).toLowerCase();
-    if (MAG[suf] && /[0-9]/.test(s.slice(0, -1))) { mult = MAG[suf]; s = s.slice(0, -1); }
+    if (!expPart && MAG[suf] && /[0-9]/.test(s.slice(0, -1))) { mult = MAG[suf]; s = s.slice(0, -1); }
 
     if (!/[0-9]/.test(s) || !/^[0-9.,]+$/.test(s)) return null;
 
-    const n = Number(disambiguateSeparators(s));
+    const n = Number(disambiguateSeparators(s) + expPart);
     if (!Number.isFinite(n)) return null;
     return sign * n * mult;
 }
@@ -291,6 +299,51 @@ export function detectDelimitedCells(values: any[]): { delimiter: string; count:
         for (const v of values) if (typeof v === 'string' && v.includes(d) && v.split(d).filter(p => p.trim()).length >= 2) count++;
         if (count >= Math.max(3, values.length * 0.1)) return { delimiter: d.trim(), count };
     }
+    return null;
+}
+
+/** Map a 2-digit year to a full year with a sliding window: 00–29 → 2000s,
+ *  30–99 → 1900s. Fixes birthdates like "99" being read as 2099. */
+export function pivotTwoDigitYear(yy: number): number {
+    return yy <= 29 ? 2000 + yy : 1900 + yy;
+}
+
+/**
+ * True when a numeric-looking column is really a CODE with significant leading
+ * zeros (zip 01234, SKU 007) — these must be kept as text, never summed or
+ * stripped to "1234". Returns true only if a meaningful share have a leading
+ * zero and the values are uniform-ish width (a code, not a measurement).
+ */
+export function looksLikeLeadingZeroCode(values: any[]): boolean {
+    let digits = 0, leadingZero = 0;
+    for (const v of values) {
+        if (v === null || v === undefined || v === '') continue;
+        const s = String(v).trim();
+        if (!/^\d+$/.test(s)) return false;      // any non-pure-digit → not this pattern
+        digits++;
+        if (s.length > 1 && s[0] === '0') leadingZero++;
+    }
+    return digits >= 4 && leadingZero / digits >= 0.2;
+}
+
+/**
+ * Flag a numeric column that mixes 0–1 ratios with 0–100 percentages — averaging
+ * them together yields a meaningless number. Returns the two sub-counts when both
+ * populations are present in force.
+ */
+export function detectMixedScale(name: string, values: any[]): { ratioLike: number; pctLike: number } | null {
+    if (!/(rate|ratio|percent|pct|share|conversion|margin|%)/i.test(name)) return null;
+    let ratioLike = 0, pctLike = 0, seen = 0;
+    for (const v of values) {
+        const x = typeof v === 'number' ? v : Number(v);
+        if (!Number.isFinite(x)) continue;
+        seen++;
+        if (x > 0 && x <= 1) ratioLike++;
+        else if (x > 1 && x <= 100) pctLike++;
+    }
+    if (seen < 8) return null;
+    // Both populations must be non-trivial to be a genuine mix.
+    if (ratioLike >= 3 && pctLike >= 3 && Math.min(ratioLike, pctLike) / seen >= 0.15) return { ratioLike, pctLike };
     return null;
 }
 

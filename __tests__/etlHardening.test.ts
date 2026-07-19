@@ -7,6 +7,7 @@ import {
     parseLocaleNumber, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
     canonicalKey, buildCanonicalCategoryMap, levenshtein, findNearDuplicateGroups,
     detectSignAnomalies, detectRangeAnomalies, detectDelimitedCells, detectDateOrderViolations,
+    pivotTwoDigitYear, looksLikeLeadingZeroCode, detectMixedScale,
 } from '../services/etlHardening';
 
 describe('parseLocaleNumber — recovers values that used to silently become null', () => {
@@ -38,13 +39,42 @@ describe('parseLocaleNumber — recovers values that used to silently become nul
         expect(parseLocaleNumber('3M')).toBe(3_000_000);
         expect(parseLocaleNumber('2.5B')).toBe(2_500_000_000);
     });
+    it('scientific notation & zero-width characters (previously lost)', () => {
+        expect(parseLocaleNumber('1.23E+11')).toBeCloseTo(1.23e11, 0);
+        expect(parseLocaleNumber('1.23e5')).toBeCloseTo(123000, 6);
+        expect(parseLocaleNumber('1,5e3')).toBeCloseTo(1500, 6);   // EU mantissa + exponent
+        expect(parseLocaleNumber('​1234﻿')).toBe(1234);   // zero-width + BOM stripped
+    });
     it('genuine non-numbers → null (no false positives)', () => {
         expect(parseLocaleNumber('abc')).toBeNull();
         expect(parseLocaleNumber('')).toBeNull();
         expect(parseLocaleNumber(null)).toBeNull();
         expect(parseLocaleNumber('N/A')).toBeNull();
         expect(parseLocaleNumber('12/05/2023')).toBeNull(); // a date, not a number
+        expect(parseLocaleNumber('5e')).toBeNull();          // malformed exponent
         expect(parseLocaleNumber(true as any)).toBeNull();
+    });
+});
+
+describe('two-digit year pivot, leading-zero codes, mixed scale', () => {
+    it('pivots 2-digit years at 30 (00–29 → 2000s, 30–99 → 1900s)', () => {
+        expect(pivotTwoDigitYear(25)).toBe(2025);
+        expect(pivotTwoDigitYear(0)).toBe(2000);
+        expect(pivotTwoDigitYear(29)).toBe(2029);
+        expect(pivotTwoDigitYear(30)).toBe(1930);
+        expect(pivotTwoDigitYear(99)).toBe(1999); // a birthdate, not 2099
+    });
+    it('detects leading-zero code columns (keep as text, never sum)', () => {
+        expect(looksLikeLeadingZeroCode(['01234', '00567', '01000', '02345'])).toBe(true);
+        expect(looksLikeLeadingZeroCode(['1234', '5678', '9012', '3456'])).toBe(false); // real numbers
+        expect(looksLikeLeadingZeroCode(['12.5', '3.4', '5.6', '7.8'])).toBe(false);     // decimals
+    });
+    it('flags a column mixing 0–1 ratios with 0–100 percentages', () => {
+        const r = detectMixedScale('conversion_rate', [0.1, 0.2, 0.15, 45, 60, 30, 0.3, 55])!;
+        expect(r).toBeTruthy();
+        expect(r.ratioLike).toBeGreaterThanOrEqual(3);
+        expect(r.pctLike).toBeGreaterThanOrEqual(3);
+        expect(detectMixedScale('conversion_rate', [0.1, 0.2, 0.15, 0.3, 0.25, 0.4, 0.35, 0.5])).toBeNull(); // all ratios
     });
 });
 

@@ -16,7 +16,8 @@ import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, TimeContext } from '.
 import { generateDimDate } from './dimDateGenerator';
 import {
     parseLocaleNumber, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
-    buildCanonicalCategoryMap, findNearDuplicateGroups,
+    buildCanonicalCategoryMap, findNearDuplicateGroups, pivotTwoDigitYear,
+    looksLikeLeadingZeroCode, detectMixedScale,
     detectSignAnomalies, detectRangeAnomalies, detectDelimitedCells, detectDateOrderViolations,
 } from './etlHardening';
 
@@ -58,6 +59,8 @@ export interface ColumnProfileData {
     looksSequential?: boolean;
     /** True when the column is dominated by messy human casing (e.g. "waTtS") and should be force-normalized. */
     messyCasing?: boolean;
+    /** True when numeric-looking values are really codes with significant leading zeros (zip 01234, SKU 007) — keep as text, never sum. */
+    leadingZeroCode?: boolean;
 }
 
 export interface TransformStep {
@@ -190,14 +193,14 @@ const DATE_FORMATS: { id: string; regex: RegExp; parse: (m: RegExpMatchArray) =>
     // EU: 08-06-2023
     { id: 'DD/MM/YYYY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/, parse: (m) => ({ y: +m[3], m: +m[2], d: +m[1] }) },
     // Short year: 06/08/23, 6/8/23
-    { id: 'MM/DD/YY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{2})$/, parse: (m) => ({ y: 2000 + +m[3], m: +m[1], d: +m[2] }) },
-    { id: 'DD/MM/YY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{2})$/, parse: (m) => ({ y: 2000 + +m[3], m: +m[2], d: +m[1] }) },
+    { id: 'MM/DD/YY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{2})$/, parse: (m) => ({ y: pivotTwoDigitYear(+m[3]), m: +m[1], d: +m[2] }) },
+    { id: 'DD/MM/YY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{2})$/, parse: (m) => ({ y: pivotTwoDigitYear(+m[3]), m: +m[2], d: +m[1] }) },
     // Text with spaces: "Jan 5, 2023", "5 Jan 2023", "January 5 2023"
     { id: 'MON_DD_YYYY', regex: /^([A-Za-z]+)[\s\-/]+(\d{1,2}),?[\s\-/]+(\d{4})$/, parse: (m) => { const mo = monthFromText(m[1]); return mo ? { y: +m[3], m: mo, d: +m[2] } : null; } },
     { id: 'DD_MON_YYYY', regex: /^(\d{1,2})[\s\-/]+([A-Za-z]+)[\s\-/]+(\d{4})$/, parse: (m) => { const mo = monthFromText(m[2]); return mo ? { y: +m[3], m: mo, d: +m[1] } : null; } },
     // Text with hyphens and short year: "21-May-25", "7-Mar-23", "1-Sep-24"
-    { id: 'DD_MON_YY', regex: /^(\d{1,2})[\s\-/]+([A-Za-z]+)[\s\-/]+(\d{2})$/, parse: (m) => { const mo = monthFromText(m[2]); return mo ? { y: 2000 + +m[3], m: mo, d: +m[1] } : null; } },
-    { id: 'MON_DD_YY', regex: /^([A-Za-z]+)[\s\-/]+(\d{1,2}),?[\s\-/]+(\d{2})$/, parse: (m) => { const mo = monthFromText(m[1]); return mo ? { y: 2000 + +m[3], m: mo, d: +m[2] } : null; } },
+    { id: 'DD_MON_YY', regex: /^(\d{1,2})[\s\-/]+([A-Za-z]+)[\s\-/]+(\d{2})$/, parse: (m) => { const mo = monthFromText(m[2]); return mo ? { y: pivotTwoDigitYear(+m[3]), m: mo, d: +m[1] } : null; } },
+    { id: 'MON_DD_YY', regex: /^([A-Za-z]+)[\s\-/]+(\d{1,2}),?[\s\-/]+(\d{2})$/, parse: (m) => { const mo = monthFromText(m[1]); return mo ? { y: pivotTwoDigitYear(+m[3]), m: mo, d: +m[2] } : null; } },
     // YYYYMMDD
     { id: 'YYYYMMDD', regex: /^(\d{4})(\d{2})(\d{2})$/, parse: (m) => ({ y: +m[1], m: +m[2], d: +m[3] }) },
 ];
@@ -263,6 +266,12 @@ export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
 
     // R1 — ID by name pattern (order_id, sku, *_code …).
     if (ID_PATTERNS.test(p.name)) return { type: ColumnType.ID };
+    // R1b — Leading-zero CODE (zip 01234, SKU 007): numeric-looking but the zeros
+    // are significant, so it must be preserved as text and never summed. Strong
+    // metric names (never a code) are exempt.
+    if (p.leadingZeroCode && !STRONG_METRIC_NAME.test(p.name)) {
+        return { type: ColumnType.ID, note: { label: 'Leading-Zero Code', message: `Column '${p.name}' classified as ID/code — values carry significant leading zeros (e.g. postal/SKU); preserved as text, never summed.` } };
+    }
     // R2 — Date by data: a majority of values parse as dates. GUARD: for a
     // metric-named, purely numeric column (salary, amount, price…) the "date"
     // parses can only come from Excel-serial interpretation of plain numbers
@@ -898,6 +907,7 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
             integerRate,
             looksSequential,
             messyCasing: isMessyCasedColumn(strValues),
+            leadingZeroCode: looksLikeLeadingZeroCode(nonNull),
         };
 
         profiles.push(profile);
@@ -1099,9 +1109,13 @@ function layer4_rulePlanner(
             steps.push({
                 name: 'CAST_ID', fn: (v: any) => {
                     if (v === null || v === undefined || v === '') return v;
+                    const s = String(v).trim();
+                    // Preserve significant leading zeros (zip 01234, SKU 007) —
+                    // rounding would silently corrupt the code to "1234"/"7".
+                    if (/^0\d+$/.test(s)) return s;
                     const n = Number(v);
                     if (!isNaN(n) && Number.isFinite(n)) return String(Math.round(n));
-                    return String(v).trim();
+                    return s;
                 }
             });
         }
@@ -1155,6 +1169,11 @@ function layer5_transformationEngine(
             const inputSamples: string[] = [];
             const outputSamples: string[] = [];
             let samplesCollected = 0;
+            // Coercion loss: a real (non-empty) value that a PARSE step turned into
+            // null — i.e. it was silently dropped from every future sum/average.
+            const isParse = step.name.startsWith('PARSE_NUMBER');
+            let coercionLoss = 0;
+            const lostSamples: string[] = [];
 
             for (let i = 0; i < rows.length; i++) {
                 const oldVal = rows[i][plan.column];
@@ -1169,6 +1188,11 @@ function layer5_transformationEngine(
                             samplesCollected++;
                         }
                     }
+                    if (isParse && newVal === null && oldVal !== null && oldVal !== undefined && String(oldVal).trim() !== ''
+                        && !NULL_TOKENS.has(String(oldVal).trim().toLowerCase())) {
+                        coercionLoss++;
+                        if (lostSamples.length < 5) lostSamples.push(String(oldVal));
+                    }
                     rows[i][plan.column] = newVal;
                 } catch {
                     failed++;
@@ -1176,6 +1200,12 @@ function layer5_transformationEngine(
             }
 
             chain.push({ column: plan.column, step: step.name, rowsChanged: changed, rowsFailed: failed, inputSamples, outputSamples });
+
+            if (coercionLoss > 0) {
+                logs.push(log('Coercion Loss Flag', 6, 'info',
+                    `Column '${plan.column}': ${coercionLoss} non-empty value(s) could not be parsed as numbers and were dropped (e.g. ${lostSamples.slice(0, 3).map(s => `"${s}"`).join(', ')}). These are excluded from sums/averages — review them.`,
+                    { affectedColumns: [plan.column], affectedRows: coercionLoss }));
+            }
 
             if (changed > 0 || failed > 0) {
                 const sampleStr = inputSamples.slice(0, 3).map((inp, i) => `"${inp}" → "${outputSamples[i]}"`).join(', ');
@@ -1261,6 +1291,10 @@ function layer5b_hardening(
             if (range) logs.push(log('Range Anomaly Flag', 6, 'info',
                 `Column '${c.name}': ${range.count} value(s) are ${range.kind}. Verify units/entry.`,
                 { affectedColumns: [c.name], affectedRows: range.count }));
+            const scale = detectMixedScale(c.name, vals);
+            if (scale) logs.push(log('Mixed Scale Flag', 6, 'info',
+                `Column '${c.name}': mixes ${scale.ratioLike} ratio-like (0–1) and ${scale.pctLike} percent-like (0–100) value(s) — averaging them together is misleading. Standardize to one scale.`,
+                { affectedColumns: [c.name] }));
         }
         if (c.type === ColumnType.DIMENSION) {
             const d = detectDelimitedCells(vals);
