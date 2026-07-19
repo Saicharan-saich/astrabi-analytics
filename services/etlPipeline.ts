@@ -14,6 +14,11 @@
 
 import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, TimeContext } from '../types';
 import { generateDimDate } from './dimDateGenerator';
+import {
+    parseLocaleNumber, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
+    buildCanonicalCategoryMap, findNearDuplicateGroups,
+    detectSignAnomalies, detectRangeAnomalies, detectDelimitedCells, detectDateOrderViolations,
+} from './etlHardening';
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  TYPES                                                          ║
@@ -724,6 +729,8 @@ function layer2_canonicalValuePrep(
         Object.keys(row).forEach(k => {
             let v = row[k];
             if (typeof v === 'string') {
+                // Repair broken encodings (Café → Café, smart quotes) before anything else.
+                v = normalizeUnicode(v);
                 // Trim + collapse spaces
                 const trimmed = v.trim().replace(/\s+/g, ' ');
                 if (trimmed !== v) { trimCount++; trimCols.add(k); }
@@ -1036,10 +1043,12 @@ function layer4_rulePlanner(
 
         // Build transform plan based on type
         if (type === ColumnType.METRIC) {
-            if (p.currencyDetected) steps.push({ name: 'REMOVE_CURRENCY', fn: (v: any) => typeof v === 'string' ? v.replace(CURRENCY_STRIP_REGEX, '') : v });
-            if (p.percentageDetected) steps.push({ name: 'REMOVE_PERCENTAGE', fn: (v: any) => typeof v === 'string' ? v.replace(/%/g, '').trim() : v });
+            // Spelled-out numbers first ("twenty" → 20), then a single locale-aware
+            // parse that handles currency symbols, %, (parentheses)/trailing
+            // negatives, K/M/B suffixes, and US *and* EU decimal/thousands
+            // separators — recovering values the old comma-strip turned into null.
             if (p.wordNumberRate > 0) steps.push({ name: 'WORD_TO_NUMBER', fn: (v: any) => { if (typeof v !== 'string') return v; const n = wordToNumber(v); return n !== null ? n : v; } });
-            steps.push({ name: 'PARSE_NUMBER', fn: (v: any) => { if (typeof v === 'number') return v; if (v === null || v === undefined) return null; const s = String(v).replace(/[,\s]/g, ''); if (s === '') return null; const n = Number(s); return isNaN(n) ? null : n; } });
+            steps.push({ name: 'PARSE_NUMBER(locale-aware)', fn: (v: any) => parseLocaleNumber(v) });
             steps.push({ name: 'IMPUTE_NULL', fn: (v: any) => (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) ? null : v });
         } else if (type === ColumnType.DATE) {
             const fmt = p.dateFormatCandidate || 'YYYY-MM-DD';
@@ -1186,6 +1195,109 @@ function layer5_transformationEngine(
     ));
 
     return { rows, lineage, logs, typeCastCount };
+}
+
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  LAYER 5b: CORRECTNESS HARDENING                                ║
+// ║  Safe canonical merges (applied) + data-quality FLAGS (never    ║
+// ║  mutating numbers behind the user's back).                      ║
+// ╚══════════════════════════════════════════════════════════════════╝
+
+function layer5b_hardening(
+    rows: Record<string, any>[],
+    columns: ColumnDefinition[],
+): { rows: Record<string, any>[]; logs: ETLLog[] } {
+    const logs: ETLLog[] = [];
+    const valuesOf = (col: string) => rows.map(r => r[col]);
+
+    // ── 1. Category canonicalization (SAFE auto-merge: same string, different
+    //       punctuation/diacritics/spacing → the most frequent surface form). ──
+    for (const c of columns.filter(c => c.type === ColumnType.DIMENSION)) {
+        const map = buildCanonicalCategoryMap(valuesOf(c.name));
+        if (map.size === 0) continue;
+        let changed = 0;
+        const samples: string[] = [];
+        for (const row of rows) {
+            const v = row[c.name];
+            if (typeof v === 'string' && map.has(v)) {
+                if (samples.length < 3) samples.push(`"${v}" → "${map.get(v)}"`);
+                row[c.name] = map.get(v); changed++;
+            }
+        }
+        if (changed > 0) {
+            logs.push(log('Category Canonicalization', 5, 'applied',
+                `Column '${c.name}': merged ${map.size} spelling variant(s) into canonical forms (${changed} cell(s)). ${samples.join(', ')}`,
+                { affectedColumns: [c.name], affectedRows: changed }));
+        }
+    }
+
+    // ── 2. FLAGS (surfaced for review; data is NOT changed) ──
+    // 2a. Numeric outliers per metric.
+    for (const c of columns.filter(c => c.type === ColumnType.METRIC)) {
+        const r = detectOutliersIQR(valuesOf(c.name));
+        if (r) logs.push(log('Outlier Flag', 6, 'info',
+            `Column '${c.name}': ${r.count} value(s) outside the expected range [${r.lowerBound.toFixed(2)}, ${r.upperBound.toFixed(2)}] (e.g. ${r.examples.join(', ')}). Review before trusting sums/averages — not auto-removed.`,
+            { affectedColumns: [c.name], affectedRows: r.count }));
+    }
+    // 2b. Likely typos among category values (edit distance 1).
+    for (const c of columns.filter(c => c.type === ColumnType.DIMENSION)) {
+        const groups = findNearDuplicateGroups(valuesOf(c.name));
+        if (groups.length > 0) {
+            const ex = groups.slice(0, 2).map(g => `"${g.variants[0]}"≈"${g.canonical}"`).join(', ');
+            logs.push(log('Possible Typo Flag', 6, 'info',
+                `Column '${c.name}': ${groups.length} near-duplicate value(s) that may be typos (${ex}). Not merged automatically — confirm to combine.`,
+                { affectedColumns: [c.name] }));
+        }
+    }
+    // 2c. Sign / range / delimited-cell / completeness flags.
+    for (const c of columns) {
+        const vals = valuesOf(c.name);
+        if (c.type === ColumnType.METRIC) {
+            const neg = detectSignAnomalies(c.name, vals);
+            if (neg > 0) logs.push(log('Sign Anomaly Flag', 6, 'info',
+                `Column '${c.name}': ${neg} negative value(s) in a field that is usually non-negative. Verify these are intentional.`,
+                { affectedColumns: [c.name], affectedRows: neg }));
+            const range = detectRangeAnomalies(c.name, vals);
+            if (range) logs.push(log('Range Anomaly Flag', 6, 'info',
+                `Column '${c.name}': ${range.count} value(s) are ${range.kind}. Verify units/entry.`,
+                { affectedColumns: [c.name], affectedRows: range.count }));
+        }
+        if (c.type === ColumnType.DIMENSION) {
+            const d = detectDelimitedCells(vals);
+            if (d) logs.push(log('Multi-Value Cell Flag', 6, 'info',
+                `Column '${c.name}': ${d.count} cell(s) pack multiple values separated by '${d.delimiter}'. Consider splitting for accurate grouping.`,
+                { affectedColumns: [c.name], affectedRows: d.count }));
+        }
+        // Completeness — high missingness distorts averages silently.
+        const nonNull = vals.filter(v => v !== null && v !== undefined && v !== '').length;
+        const missing = vals.length > 0 ? 1 - nonNull / vals.length : 0;
+        if (missing >= 0.3 && nonNull > 0) {
+            logs.push(log('Missing Data Flag', 6, 'info',
+                `Column '${c.name}': ${Math.round(missing * 100)}% of values are missing — aggregates cover only the ${nonNull} row(s) with data.`,
+                { affectedColumns: [c.name] }));
+        }
+    }
+    // 2d. Ambiguous date order (parsing defaulted; user should confirm).
+    for (const c of columns.filter(c => c.type === ColumnType.DATE)) {
+        if (resolveDateOrder(valuesOf(c.name)) === 'ambiguous'
+            && valuesOf(c.name).some(v => /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(String(v ?? '').trim()))) {
+            logs.push(log('Ambiguous Date Flag', 6, 'info',
+                `Column '${c.name}': day/month order can't be determined from the data (all parts ≤ 12); assumed the detected default. Confirm if these are DD/MM.`,
+                { affectedColumns: [c.name] }));
+        }
+    }
+    // 2e. End-before-start across a start/end date pair.
+    const dateCols = columns.filter(c => c.type === ColumnType.DATE).map(c => c.name);
+    const startCol = dateCols.find(n => /(start|admission|admit|hire|order|begin|open|purchase|checkin)/i.test(n));
+    const endCol = dateCols.find(n => /(end|discharge|term|exit|ship|deliver|close|checkout|complete)/i.test(n));
+    if (startCol && endCol && startCol !== endCol) {
+        const bad = detectDateOrderViolations(valuesOf(startCol), valuesOf(endCol));
+        if (bad > 0) logs.push(log('Date Order Flag', 6, 'info',
+            `${bad} row(s) where '${endCol}' is before '${startCol}'. These may be data-entry errors.`,
+            { affectedColumns: [startCol, endCol], affectedRows: bad }));
+    }
+
+    return { rows, logs };
 }
 
 // ╔══════════════════════════════════════════════════════════════════╗
@@ -1511,6 +1623,12 @@ export function runETLPipeline(
     rows = l5.rows;
     allLogs.push(...l5.logs);
     console.log(`[ETL L5] Transformed: ${l5.typeCastCount} cell changes`);
+
+    // ── LAYER 5b: Correctness Hardening (canonical merges + quality flags) ──
+    const l5b = layer5b_hardening(rows, l4.columns);
+    rows = l5b.rows;
+    allLogs.push(...l5b.logs);
+    console.log(`[ETL L5b] Hardening: ${l5b.logs.filter(l => l.status === 'applied').length} merge(s), ${l5b.logs.filter(l => l.status === 'info').length} flag(s)`);
 
     // ── LAYER 6: Data Contract Validation ──
     const l6 = layer6_dataContractValidation(rows, l4.columns);
