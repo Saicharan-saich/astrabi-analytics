@@ -1,14 +1,15 @@
 import React, { useState, useMemo } from 'react';
 import {
-  CheckCircle, XCircle, AlertTriangle, Info, Database,
-  ChevronDown, ChevronRight, Filter, BarChart3, Shield,
-  Sparkles, Layers, ArrowDownUp, Clock, Download, Eye, Table,
-  ToggleLeft, ToggleRight, Edit3, Check, SkipForward, X, Save,
-  Zap, Upload
+  CheckCircle, XCircle, AlertTriangle, Database,
+  ChevronDown, Filter, BarChart3, Shield,
+  Sparkles, Layers, ArrowDownUp, Clock, Download, Table,
+  ToggleLeft, ToggleRight, Check, X, Save,
+  Zap, Upload, Edit3,
 } from 'lucide-react';
 import { Dataset, ETLLog, ColumnType } from '../types';
 import { DataCleaningPanel } from './DataCleaningPanel';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
+import { ETLStepCard } from './ETLStepCard';
 
 interface ETLViewProps {
   dataset: Dataset;
@@ -232,36 +233,18 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
 
   const getTypeColor = (type: string) => {
     switch (type) {
-      case 'METRIC': return 'bg-emerald-100 text-emerald-700 border-emerald-300';
-      case 'DIMENSION': return 'bg-blue-100 text-blue-700 border-blue-300';
-      case 'DATE': return 'bg-amber-100 text-amber-700 border-amber-300';
-      case 'ID': return 'bg-purple-100 text-purple-700 border-purple-300';
-      default: return 'bg-gray-100 text-gray-700 border-gray-300';
-    }
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case 'applied': return <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />;
-      case 'skipped': return <XCircle className="w-5 h-5 text-slate-400 flex-shrink-0" />;
-      case 'info': return <AlertTriangle className="w-5 h-5 text-amber-500 flex-shrink-0" />;
-      default: return <Info className="w-5 h-5 text-blue-500 flex-shrink-0" />;
-    }
-  };
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'applied': return 'bg-emerald-100 text-emerald-700 border-emerald-300';
-      case 'skipped': return 'bg-slate-100 text-slate-500 border-slate-300';
-      case 'info': return 'bg-amber-100 text-amber-700 border-amber-300';
-      default: return 'bg-blue-100 text-blue-700 border-blue-300';
+      case 'METRIC': return 'bg-emerald-100 text-emerald-700 border-emerald-300 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30';
+      case 'DIMENSION': return 'bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30';
+      case 'DATE': return 'bg-amber-100 text-amber-700 border-amber-300 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30';
+      case 'ID': return 'bg-purple-100 text-purple-700 border-purple-300 dark:bg-purple-500/15 dark:text-purple-300 dark:border-purple-500/30';
+      default: return 'bg-gray-100 text-gray-700 border-gray-300 dark:bg-white/10 dark:text-slate-300 dark:border-white/15';
     }
   };
 
   const getQualityColor = (score: number) => {
-    if (score >= 90) return 'text-emerald-600';
-    if (score >= 70) return 'text-amber-600';
-    return 'text-red-600';
+    if (score >= 90) return 'text-emerald-600 dark:text-emerald-400';
+    if (score >= 70) return 'text-amber-600 dark:text-amber-400';
+    return 'text-red-600 dark:text-red-400';
   };
 
   const getQualityBarColor = (score: number) => {
@@ -270,31 +253,30 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
     return 'bg-red-500';
   };
 
-  const hasExpandableContent = (entry: ETLLog) => {
-    return !!(
-      entry.affectedColumns?.length ||
-      entry.rowsBefore !== undefined ||
-      entry.affectedRows !== undefined ||
-      (entry.removedRowSamples && entry.removedRowSamples.length > 0) ||
-      (entry.transformSamples && entry.transformSamples.length > 0)
-    );
-  };
+  const FILTERS: { key: LogFilter; label: string; count: number; active: string }[] = [
+    { key: 'all', label: 'All steps', count: stats.total, active: 'bg-indigo-600 text-white shadow-sm shadow-indigo-200 dark:shadow-none' },
+    { key: 'applied', label: 'Applied', count: stats.applied, active: 'bg-emerald-600 text-white shadow-sm shadow-emerald-200 dark:shadow-none' },
+    { key: 'skipped', label: 'Not needed', count: stats.skipped, active: 'bg-slate-600 text-white shadow-sm' },
+    { key: 'info', label: 'Flagged for review', count: stats.flagged, active: 'bg-amber-500 text-white shadow-sm shadow-amber-200 dark:shadow-none' },
+  ];
+
+  const card = 'bg-white dark:bg-slate-800/60 border border-slate-200 dark:border-white/10 rounded-xl shadow-sm';
 
   return (
     <>
-      <div className="h-full w-full overflow-auto bg-slate-50">
+      <div className="h-full w-full overflow-auto bg-slate-50 dark:bg-slate-900">
         <div className="max-w-7xl mx-auto p-6 animate-fade-in">
 
           {/* ─── Header ─────────────────────────────────────────────────── */}
           <div className="mb-6">
             <div className="flex items-center gap-3 mb-1">
-              <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-200">
+              <div className="p-2 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none">
                 <Shield className="w-6 h-6 text-white" />
               </div>
               <div className="flex-1">
-                <h2 className="text-2xl font-bold text-slate-900">ETL Pipeline</h2>
-                <p className="text-sm text-slate-500">
-                  {etlMode === 'auto' ? 'Automated' : 'Manual approval'} data cleaning for <span className="font-mono font-semibold text-indigo-600">{dataset.name}</span>
+                <h2 className="text-2xl font-bold text-slate-900 dark:text-white">How we cleaned your data</h2>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  {etlMode === 'auto' ? 'Automatic' : 'Manual approval'} cleaning for <span className="font-mono font-semibold text-indigo-600 dark:text-indigo-400">{dataset.name}</span> — every step explained
                 </p>
               </div>
 
@@ -306,18 +288,18 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
                   setSkippedSteps(new Set());
                 }}
                 className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold border transition-all duration-200 ${etlMode === 'manual'
-                  ? 'bg-amber-50 text-amber-700 border-amber-300 shadow-sm shadow-amber-100 hover:bg-amber-100'
-                  : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                  ? 'bg-amber-50 text-amber-700 border-amber-300 shadow-sm shadow-amber-100 hover:bg-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30 dark:shadow-none'
+                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 dark:bg-slate-800 dark:text-slate-300 dark:border-white/10 dark:hover:bg-white/5'
                   }`}
                 title={etlMode === 'auto' ? 'Switch to Manual ETL (per-step approval)' : 'Switch to Auto ETL'}
               >
-                {etlMode === 'manual' ? <ToggleRight className="w-5 h-5 text-amber-600" /> : <ToggleLeft className="w-5 h-5 text-slate-400" />}
+                {etlMode === 'manual' ? <ToggleRight className="w-5 h-5 text-amber-600 dark:text-amber-400" /> : <ToggleLeft className="w-5 h-5 text-slate-400" />}
                 {etlMode === 'manual' ? 'Manual Mode' : 'Auto Mode'}
               </button>
 
               <button
                 onClick={handleDownloadCleanedData}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl text-sm font-semibold shadow-lg shadow-emerald-200 hover:shadow-xl hover:shadow-emerald-300 hover:scale-105 transition-all duration-200"
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl text-sm font-semibold shadow-lg shadow-emerald-200 dark:shadow-none hover:shadow-xl hover:shadow-emerald-300 hover:scale-105 transition-all duration-200"
                 title="Download cleaned dataset as CSV"
               >
                 <Download className="w-4 h-4" />
@@ -329,22 +311,22 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
             {dataset.connectionMode && (
               <div className="flex items-center gap-3 mt-2 ml-[52px]">
                 {dataset.connectionMode === 'live' ? (
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-200 rounded-lg">
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-lg">
                     <Zap className="w-3.5 h-3.5 text-emerald-500" />
-                    <span className="text-xs font-bold text-emerald-700">Live Connection</span>
+                    <span className="text-xs font-bold text-emerald-700 dark:text-emerald-300">Live Connection</span>
                     <span className="text-[10px] text-emerald-500 ml-1">Real-time data from {dataset.liveConnection?.dbType || 'database'}</span>
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg">
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-white/10 rounded-lg">
                       <Upload className="w-3.5 h-3.5 text-slate-400" />
-                      <span className="text-xs font-bold text-slate-600">Import Mode</span>
+                      <span className="text-xs font-bold text-slate-600 dark:text-slate-300">Import Mode</span>
                       <span className="text-[10px] text-slate-400 ml-1">Static snapshot</span>
                     </div>
                     {onSwitchToLive && (
                       <button
                         onClick={onSwitchToLive}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-semibold text-emerald-700 transition-all hover:shadow-sm"
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg text-xs font-semibold text-emerald-700 transition-all hover:shadow-sm dark:bg-emerald-500/10 dark:text-emerald-300 dark:border-emerald-500/20"
                         title="Reconnect to the database in Live mode for real-time data"
                       >
                         <Zap className="w-3.5 h-3.5" />
@@ -369,431 +351,135 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
 
           {/* ─── Summary Cards ─────────────────────────────────────────── */}
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+            <div className={`${card} p-4`}>
               <div className="flex items-center gap-2 mb-1">
                 <Layers className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-500 uppercase tracking-wider font-medium">Rows In</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Rows In</span>
               </div>
-              <div className="text-2xl font-bold text-slate-900">{stats.rowsBefore.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{stats.rowsBefore.toLocaleString()}</div>
             </div>
 
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+            <div className={`${card} p-4`}>
               <div className="flex items-center gap-2 mb-1">
                 <ArrowDownUp className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-500 uppercase tracking-wider font-medium">Rows Out</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Rows Out</span>
               </div>
-              <div className="text-2xl font-bold text-emerald-600">{stats.rowsAfter.toLocaleString()}</div>
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{stats.rowsAfter.toLocaleString()}</div>
               {stats.rowsBefore !== stats.rowsAfter && (
                 <div className="text-xs text-red-500 mt-0.5">−{(stats.rowsBefore - stats.rowsAfter).toLocaleString()} removed</div>
               )}
             </div>
 
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+            <div className={`${card} p-4`}>
               <div className="flex items-center gap-2 mb-1">
                 <Database className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-500 uppercase tracking-wider font-medium">Columns</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Columns</span>
               </div>
-              <div className="text-2xl font-bold text-slate-900">{dataset.columns.length}</div>
+              <div className="text-2xl font-bold text-slate-900 dark:text-white tabular-nums">{dataset.columns.length}</div>
             </div>
 
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+            <div className={`${card} p-4`}>
               <div className="flex items-center gap-2 mb-1">
                 <CheckCircle className="w-4 h-4 text-emerald-500" />
-                <span className="text-xs text-slate-500 uppercase tracking-wider font-medium">Applied</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Applied</span>
               </div>
-              <div className="text-2xl font-bold text-emerald-600">{stats.applied}</div>
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{stats.applied}</div>
             </div>
 
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+            <div className={`${card} p-4`}>
               <div className="flex items-center gap-2 mb-1">
-                <XCircle className="w-4 h-4 text-slate-400" />
-                <span className="text-xs text-slate-500 uppercase tracking-wider font-medium">Skipped</span>
+                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                <span className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Flagged</span>
               </div>
-              <div className="text-2xl font-bold text-slate-500">{stats.skipped}</div>
+              <div className="text-2xl font-bold text-amber-600 dark:text-amber-400 tabular-nums">{stats.flagged}</div>
             </div>
 
-            <div className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm">
+            <div className={`${card} p-4`}>
               <div className="flex items-center gap-2 mb-1">
                 <BarChart3 className="w-4 h-4 text-emerald-500" />
-                <span className="text-xs text-slate-500 uppercase tracking-wider font-medium">Cleaning Report</span>
+                <span className="text-xs text-slate-500 dark:text-slate-400 uppercase tracking-wider font-medium">Quality</span>
               </div>
-              <div className={`text-2xl font-bold ${getQualityColor(stats.qualityScore)}`}>{stats.qualityScore}/100</div>
-              <div className="w-full h-1.5 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                <div
-                  className={`h-full rounded-full transition-all duration-700 ${getQualityBarColor(stats.qualityScore)}`}
-                  style={{ width: `${stats.qualityScore}%` }}
-                />
+              <div className={`text-2xl font-bold ${getQualityColor(stats.qualityScore)} tabular-nums`}>{stats.qualityScore}/100</div>
+              <div className="w-full h-1.5 bg-slate-100 dark:bg-white/10 rounded-full mt-1 overflow-hidden">
+                <div className={`h-full rounded-full transition-all duration-700 ${getQualityBarColor(stats.qualityScore)}`} style={{ width: `${stats.qualityScore}%` }} />
               </div>
-              {stats.cleaningNotes.length > 0 && (
-                <div className="mt-2 space-y-0.5">
-                  {stats.cleaningNotes.slice(0, 3).map((note, i) => (
-                    <div key={i} className="text-[10px] text-emerald-600 flex items-center gap-1">
-                      <CheckCircle className="w-2.5 h-2.5 flex-shrink-0" />
-                      <span className="truncate">{note}</span>
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-            {/* ─── Left: Pipeline Timeline ──────────────────────────────── */}
+            {/* ─── Left: Step Cards ─────────────────────────────────────── */}
             <div className="lg:col-span-2 space-y-4">
 
               {/* Filter Bar */}
-              <div className="flex items-center gap-2 bg-white rounded-xl px-4 py-3 border border-slate-200 shadow-sm">
+              <div className={`flex items-center gap-2 flex-wrap ${card} px-4 py-3`}>
                 <Filter className="w-4 h-4 text-slate-400" />
-                <span className="text-sm text-slate-600 font-medium mr-2">Filter:</span>
-                {([
-                  { key: 'all' as LogFilter, label: 'All', count: stats.total },
-                  { key: 'applied' as LogFilter, label: 'Applied', count: stats.applied },
-                  { key: 'skipped' as LogFilter, label: 'Skipped', count: stats.skipped },
-                  { key: 'info' as LogFilter, label: 'Flagged', count: stats.flagged },
-                ]).map(f => (
+                <span className="text-sm text-slate-600 dark:text-slate-300 font-medium mr-1">Show:</span>
+                {FILTERS.map(f => (
                   <button
                     key={f.key}
                     onClick={() => setLogFilter(f.key)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${logFilter === f.key
-                      ? f.key === 'applied' ? 'bg-emerald-600 text-white shadow-sm shadow-emerald-200'
-                        : f.key === 'skipped' ? 'bg-slate-600 text-white shadow-sm'
-                          : f.key === 'info' ? 'bg-amber-500 text-white shadow-sm shadow-amber-200'
-                            : 'bg-indigo-600 text-white shadow-sm shadow-indigo-200'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200 ${logFilter === f.key ? f.active : 'bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-white/10'}`}
                   >
                     {f.label} ({f.count})
                   </button>
                 ))}
               </div>
 
-              {/* Pipeline Steps */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-indigo-500" />
-                    <h3 className="font-semibold text-slate-700">Pipeline Steps</h3>
-                  </div>
-                  <span className="text-xs text-slate-400">{filteredLogs.length} step(s)</span>
+              {/* Section heading */}
+              <div className="flex items-center justify-between px-1">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="w-4 h-4 text-indigo-500" />
+                  <h3 className="font-semibold text-slate-700 dark:text-slate-200">Cleaning steps</h3>
                 </div>
-
-                <div className="divide-y divide-slate-100">
-                  {filteredLogs.length === 0 ? (
-                    <div className="p-8 text-center text-slate-400 text-sm">
-                      No steps match the current filter.
-                    </div>
-                  ) : (
-                    filteredLogs.map((entry, idx) => {
-                      const isExpanded = expandedSteps.has(entry._key);
-                      const expandable = hasExpandableContent(entry);
-
-                      return (
-                        <div
-                          key={entry._key}
-                          className={`transition-colors ${entry.status === 'applied' ? 'hover:bg-emerald-50/50' :
-                            entry.status === 'info' ? 'hover:bg-amber-50/50' :
-                              'hover:bg-slate-50/50'
-                            }`}
-                        >
-                          {/* Main row */}
-                          <div
-                            className={`px-5 py-3.5 flex items-start gap-3 select-none ${expandable ? 'cursor-pointer' : ''}`}
-                            onClick={() => expandable && toggleStep(entry._key)}
-                          >
-                            {/* Step number + status line */}
-                            <div className="flex flex-col items-center gap-1 pt-0.5">
-                              {getStatusIcon(entry.status)}
-                              {idx < filteredLogs.length - 1 && (
-                                <div className={`w-0.5 h-6 rounded-full ${entry.status === 'applied' ? 'bg-emerald-200' :
-                                  entry.status === 'info' ? 'bg-amber-200' : 'bg-slate-200'
-                                  }`} />
-                              )}
-                            </div>
-
-                            {/* Content */}
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  {entry.stepNumber && (
-                                    <span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-500 text-xs font-bold flex items-center justify-center">
-                                      {entry.stepNumber}
-                                    </span>
-                                  )}
-                                  <h4 className="font-semibold text-slate-900 truncate">{entry.step}</h4>
-                                  <span className={`flex-shrink-0 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${getStatusBadge(entry.status)}`}>
-                                    {entry.status}
-                                  </span>
-                                </div>
-                                <div className="flex items-center gap-2 flex-shrink-0">
-                                  <span className="text-[10px] text-slate-400 font-mono hidden sm:block">
-                                    {new Date(entry.timestamp).toLocaleTimeString()}
-                                  </span>
-                                  {expandable && (
-                                    <div className={`p-1 rounded transition-all ${isExpanded ? 'bg-indigo-100' : 'bg-slate-50 hover:bg-slate-100'}`}>
-                                      {isExpanded
-                                        ? <ChevronDown className="w-4 h-4 text-indigo-600" />
-                                        : <ChevronRight className="w-4 h-4 text-slate-400" />
-                                      }
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                              {/* Render log details — Transform Plans get a clean table */}
-                              {entry.step === 'Transform Plans' ? (
-                                <div className="mt-2">
-                                  <p className="text-xs text-slate-500 mb-2">Each column gets a series of cleaning steps applied automatically:</p>
-                                  <div className="overflow-auto max-h-64 rounded-lg border border-slate-200 bg-white">
-                                    <table className="w-full text-[11px]">
-                                      <thead className="bg-slate-50 sticky top-0">
-                                        <tr>
-                                          <th className="px-3 py-2 text-left font-bold text-slate-700 uppercase tracking-wider border-b border-slate-200">Column</th>
-                                          <th className="px-3 py-2 text-left font-bold text-indigo-600 uppercase tracking-wider border-b border-slate-200">Type</th>
-                                          <th className="px-3 py-2 text-left font-bold text-slate-600 uppercase tracking-wider border-b border-slate-200">Cleaning Steps</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100">
-                                        {entry.details.split('\n').filter(line => line.includes(':')).slice(1).map((line, li) => {
-                                          const match = line.match(/^(.+?)\s*\((\w+)\):\s*(.+)$/);
-                                          if (!match) return null;
-                                          const [, colName, colType, stepsRaw] = match;
-                                          const STEP_LABELS: Record<string, { label: string; icon: string }> = {
-                                            'TITLE_CASE': { label: 'Standardize text casing', icon: '🔤' },
-                                            'SYNONYM_MAP': { label: 'Normalize category names', icon: '🔄' },
-                                            'IMPUTE_UNKNOWN': { label: 'Fill blanks with "Unknown"', icon: '🔲' },
-                                            'PARSE_NUMBER': { label: 'Convert to number', icon: '🔢' },
-                                            'IMPUTE_NULL': { label: 'Handle missing values', icon: '⬜' },
-                                            'REMOVE_CURRENCY': { label: 'Remove currency symbols ($, €)', icon: '💲' },
-                                            'REMOVE_PERCENTAGE': { label: 'Remove % symbols', icon: '📊' },
-                                            'CAST_ID': { label: 'Clean ID format', icon: '🔑' },
-                                            'NORMALIZE_BOOLEAN': { label: 'Standardize yes/no values', icon: '✅' },
-                                            'WORD_TO_NUMBER': { label: 'Convert text to numbers', icon: '🔡' },
-                                          };
-                                          const steps = stepsRaw.split('→').map(s => s.trim());
-                                          return (
-                                            <tr key={li} className="hover:bg-slate-50/50">
-                                              <td className="px-3 py-1.5 font-mono font-medium text-slate-800 whitespace-nowrap">{colName.trim()}</td>
-                                              <td className="px-3 py-1.5">
-                                                <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${getTypeColor(colType)}`}>{colType}</span>
-                                              </td>
-                                              <td className="px-3 py-1.5">
-                                                <div className="flex flex-wrap gap-1">
-                                                  {steps.map((step, si) => {
-                                                    const dateMatch = step.match(/^PARSE_DATE\((.+)\)$/);
-                                                    const info = dateMatch
-                                                      ? { label: `Parse date (${dateMatch[1]})`, icon: '📅' }
-                                                      : STEP_LABELS[step] || { label: step, icon: '⚙️' };
-                                                    return (
-                                                      <span key={si} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] border border-indigo-100" title={step}>
-                                                        <span>{info.icon}</span> {info.label}
-                                                      </span>
-                                                    );
-                                                  })}
-                                                </div>
-                                              </td>
-                                            </tr>
-                                          );
-                                        })}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-                              ) : (
-                                <p className="text-sm text-slate-600 mt-1 leading-relaxed whitespace-pre-wrap">{entry.details}</p>
-                              )}
-
-                              {/* Manual Mode: Approval Buttons */}
-                              {etlMode === 'manual' && entry.status === 'applied' && (
-                                <div className="flex items-center gap-2 mt-2" onClick={e => e.stopPropagation()}>
-                                  {approvedSteps.has(entry._key) ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 bg-emerald-100 px-3 py-1 rounded-full">
-                                      <Check className="w-3.5 h-3.5" /> Approved
-                                    </span>
-                                  ) : skippedSteps.has(entry._key) ? (
-                                    <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-                                      <SkipForward className="w-3.5 h-3.5" /> Skipped
-                                    </span>
-                                  ) : (
-                                    <>
-                                      <button
-                                        onClick={() => setApprovedSteps(prev => new Set([...prev, entry._key]))}
-                                        className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300 px-3 py-1.5 rounded-lg transition-all shadow-sm"
-                                      >
-                                        <Check className="w-3.5 h-3.5" /> Approve
-                                      </button>
-                                      <button
-                                        onClick={() => setSkippedSteps(prev => new Set([...prev, entry._key]))}
-                                        className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 bg-slate-50 hover:bg-slate-100 border border-slate-300 px-3 py-1.5 rounded-lg transition-all"
-                                      >
-                                        <SkipForward className="w-3.5 h-3.5" /> Skip
-                                      </button>
-                                      {entry.removedRowSamples && entry.removedRowSamples.length > 0 && (
-                                        <button
-                                          onClick={() => setEditingRemovedRows({ stepKey: entry._key, rows: entry.removedRowSamples! })}
-                                          className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-300 px-3 py-1.5 rounded-lg transition-all"
-                                        >
-                                          <Edit3 className="w-3.5 h-3.5" /> Edit Removed Rows
-                                        </button>
-                                      )}
-                                    </>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Expanded detail panel */}
-                          {isExpanded && expandable && (
-                            <div className="px-5 pb-4 pl-14 animate-fade-in">
-                              <div className="bg-slate-50 rounded-lg p-4 border border-slate-200 space-y-3">
-
-                                {/* Row count change */}
-                                {(entry.rowsBefore !== undefined && entry.rowsAfter !== undefined) && (
-                                  <div className="flex items-center gap-4 text-xs">
-                                    <span className="text-slate-500 font-medium">Rows:</span>
-                                    <span className="font-mono font-bold text-slate-700">{entry.rowsBefore.toLocaleString()}</span>
-                                    <span className="text-slate-400">→</span>
-                                    <span className="font-mono font-bold text-emerald-600">{entry.rowsAfter.toLocaleString()}</span>
-                                    {entry.rowsBefore !== entry.rowsAfter && (
-                                      <span className="text-red-500 font-semibold bg-red-50 px-2 py-0.5 rounded-full">
-                                        −{(entry.rowsBefore - entry.rowsAfter).toLocaleString()} removed
-                                      </span>
-                                    )}
-                                  </div>
-                                )}
-
-                                {/* Cells affected */}
-                                {entry.affectedRows !== undefined && !entry.rowsBefore && (
-                                  <div className="flex items-center gap-2 text-xs">
-                                    <span className="text-slate-500 font-medium">Cells affected:</span>
-                                    <span className="font-mono font-bold text-indigo-600">{entry.affectedRows.toLocaleString()}</span>
-                                  </div>
-                                )}
-
-                                {/* Affected columns */}
-                                {entry.affectedColumns && entry.affectedColumns.length > 0 && (
-                                  <div className="text-xs">
-                                    <span className="text-slate-500 font-medium mr-2">Columns:</span>
-                                    <div className="flex flex-wrap gap-1 mt-1">
-                                      {entry.affectedColumns.slice(0, 15).map((col, i) => (
-                                        <span key={i} className="inline-block px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded-md text-[10px] font-mono border border-indigo-200">
-                                          {col}
-                                        </span>
-                                      ))}
-                                      {entry.affectedColumns.length > 15 && (
-                                        <span className="text-slate-400 text-[10px]">
-                                          +{entry.affectedColumns.length - 15} more
-                                        </span>
-                                      )}
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* ─── REMOVED ROWS TABLE ─── */}
-                                {entry.removedRowSamples && entry.removedRowSamples.length > 0 && (
-                                  <div className="mt-2">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <Eye className="w-3.5 h-3.5 text-red-500" />
-                                      <span className="text-xs font-semibold text-red-700">Removed Rows Preview</span>
-                                      <span className="text-[10px] text-slate-400">
-                                        (showing {entry.removedRowSamples.length} of {entry.rowsBefore !== undefined && entry.rowsAfter !== undefined ? entry.rowsBefore - entry.rowsAfter : entry.removedRowSamples.length})
-                                      </span>
-                                    </div>
-                                    <div className="overflow-auto max-h-48 rounded-lg border border-red-200 bg-white">
-                                      <table className="w-full text-[11px]">
-                                        <thead className="bg-red-50 sticky top-0">
-                                          <tr>
-                                            {Object.keys(entry.removedRowSamples[0]).map(col => (
-                                              <th key={col} className="px-2 py-1.5 text-left font-bold text-red-700 uppercase tracking-wider border-b border-red-200 whitespace-nowrap">
-                                                {col}
-                                              </th>
-                                            ))}
-                                          </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-red-100">
-                                          {entry.removedRowSamples.map((row, ri) => (
-                                            <tr key={ri} className="hover:bg-red-50/50">
-                                              {Object.keys(entry.removedRowSamples![0]).map(col => {
-                                                const val = row[col];
-                                                const isEmpty = val === null || val === undefined || val === '';
-                                                return (
-                                                  <td key={col} className={`px-2 py-1 font-mono whitespace-nowrap ${isEmpty ? 'text-red-400 italic' : 'text-slate-700'}`}>
-                                                    {isEmpty ? '∅' : String(val)}
-                                                  </td>
-                                                );
-                                              })}
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* ─── TRANSFORM SAMPLES (BEFORE / AFTER) ─── */}
-                                {entry.transformSamples && entry.transformSamples.length > 0 && (
-                                  <div className="mt-2">
-                                    <div className="flex items-center gap-2 mb-2">
-                                      <Table className="w-3.5 h-3.5 text-indigo-500" />
-                                      <span className="text-xs font-semibold text-indigo-700">Transform Samples</span>
-                                    </div>
-                                    <div className="overflow-auto max-h-40 rounded-lg border border-indigo-200 bg-white">
-                                      <table className="w-full text-[11px]">
-                                        <thead className="bg-indigo-50 sticky top-0">
-                                          <tr>
-                                            <th className="px-2 py-1.5 text-left font-bold text-indigo-700 uppercase tracking-wider border-b border-indigo-200">Column</th>
-                                            <th className="px-2 py-1.5 text-left font-bold text-red-600 uppercase tracking-wider border-b border-indigo-200">Before</th>
-                                            <th className="px-2 py-1.5 text-center text-slate-400 border-b border-indigo-200">→</th>
-                                            <th className="px-2 py-1.5 text-left font-bold text-emerald-600 uppercase tracking-wider border-b border-indigo-200">After</th>
-                                          </tr>
-                                        </thead>
-                                        <tbody className="divide-y divide-indigo-100">
-                                          {entry.transformSamples.map((s, si) => (
-                                            <tr key={si} className="hover:bg-indigo-50/50">
-                                              <td className="px-2 py-1 font-mono text-indigo-700 font-semibold whitespace-nowrap">{s.column}</td>
-                                              <td className="px-2 py-1 font-mono text-red-600 whitespace-nowrap bg-red-50/30">{s.before === null || s.before === undefined ? '∅' : String(s.before)}</td>
-                                              <td className="px-2 py-1 text-center text-slate-300">→</td>
-                                              <td className="px-2 py-1 font-mono text-emerald-700 font-semibold whitespace-nowrap bg-emerald-50/30">{s.after === null || s.after === undefined ? '∅' : String(s.after)}</td>
-                                            </tr>
-                                          ))}
-                                        </tbody>
-                                      </table>
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
+                <span className="text-xs text-slate-400">{filteredLogs.length} step{filteredLogs.length === 1 ? '' : 's'}</span>
               </div>
+
+              {/* Card grid */}
+              {filteredLogs.length === 0 ? (
+                <div className={`${card} p-10 text-center text-slate-400 text-sm`}>No steps match this filter.</div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredLogs.map(entry => (
+                    <ETLStepCard
+                      key={entry._key}
+                      entry={entry}
+                      isExpanded={expandedSteps.has(entry._key)}
+                      onToggle={toggleStep}
+                      etlMode={etlMode}
+                      isApproved={approvedSteps.has(entry._key)}
+                      isSkipped={skippedSteps.has(entry._key)}
+                      onApprove={(k) => setApprovedSteps(prev => new Set([...prev, k]))}
+                      onSkip={(k) => setSkippedSteps(prev => new Set([...prev, k]))}
+                      onEditRemoved={(k, rows) => setEditingRemovedRows({ stepKey: k, rows })}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
 
             {/* ─── Right: Schema + Column Info ─────────────────────────── */}
             <div className="space-y-4">
 
               {/* Column Type Distribution */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <h3 className="font-semibold text-slate-900 mb-3 flex items-center gap-2">
+              <div className={`${card} p-5`}>
+                <h3 className="font-semibold text-slate-900 dark:text-white mb-3 flex items-center gap-2">
                   <BarChart3 className="w-4 h-4 text-indigo-500" />
                   Column Distribution
                 </h3>
                 <div className="space-y-2">
                   {([
-                    { type: 'METRIC', color: 'bg-emerald-500', lightColor: 'bg-emerald-100' },
-                    { type: 'DIMENSION', color: 'bg-blue-500', lightColor: 'bg-blue-100' },
-                    { type: 'DATE', color: 'bg-amber-500', lightColor: 'bg-amber-100' },
-                    { type: 'ID', color: 'bg-purple-500', lightColor: 'bg-purple-100' },
+                    { type: 'METRIC', color: 'bg-emerald-500', lightColor: 'bg-emerald-100 dark:bg-emerald-500/15' },
+                    { type: 'DIMENSION', color: 'bg-blue-500', lightColor: 'bg-blue-100 dark:bg-blue-500/15' },
+                    { type: 'DATE', color: 'bg-amber-500', lightColor: 'bg-amber-100 dark:bg-amber-500/15' },
+                    { type: 'ID', color: 'bg-purple-500', lightColor: 'bg-purple-100 dark:bg-purple-500/15' },
                   ] as const).map(({ type, color, lightColor }) => {
                     const count = dataset.columns.filter(c => c.type === type).length;
                     const pct = dataset.columns.length > 0 ? (count / dataset.columns.length) * 100 : 0;
                     return (
                       <div key={type}>
                         <div className="flex justify-between items-center text-xs mb-1">
-                          <span className="font-medium text-slate-600">{type}</span>
+                          <span className="font-medium text-slate-600 dark:text-slate-300">{type}</span>
                           <span className="text-slate-400">{count} ({pct.toFixed(0)}%)</span>
                         </div>
                         <div className={`w-full h-2 rounded-full ${lightColor} overflow-hidden`}>
@@ -806,8 +492,8 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
               </div>
 
               {/* Schema Editor */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
-                <h3 className="font-semibold text-slate-900 mb-1 flex items-center gap-2">
+              <div className={`${card} p-5`}>
+                <h3 className="font-semibold text-slate-900 dark:text-white mb-1 flex items-center gap-2">
                   <Database className="w-4 h-4 text-indigo-500" />
                   Schema Editor
                 </h3>
@@ -815,8 +501,8 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
 
                 <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
                   {dataset.columns.map((col, i) => (
-                    <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-slate-50 transition-colors group">
-                      <span className="font-mono text-xs text-slate-600 truncate flex-1 mr-3 group-hover:text-slate-900 transition-colors">{col.name}</span>
+                    <div key={i} className="flex items-center justify-between py-1.5 px-2 rounded-lg hover:bg-slate-50 dark:hover:bg-white/5 transition-colors group">
+                      <span className="font-mono text-xs text-slate-600 dark:text-slate-300 truncate flex-1 mr-3 group-hover:text-slate-900 dark:group-hover:text-white transition-colors">{col.name}</span>
 
                       {editingColumn === col.name ? (
                         <select
@@ -827,10 +513,10 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
                           className="px-2 py-1 rounded-lg text-xs font-medium border-2 border-indigo-400 focus:outline-none bg-white text-slate-900 shadow-sm"
                           style={{ color: '#0f172a', backgroundColor: '#ffffff' }}
                         >
-                          <option value="METRIC" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>METRIC</option>
-                          <option value="DIMENSION" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>DIMENSION</option>
-                          <option value="DATE" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>DATE</option>
-                          <option value="ID" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>ID</option>
+                          <option value="METRIC">METRIC</option>
+                          <option value="DIMENSION">DIMENSION</option>
+                          <option value="DATE">DATE</option>
+                          <option value="ID">ID</option>
                         </select>
                       ) : (
                         <button
@@ -848,23 +534,23 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
 
               {/* Timeline Metadata */}
               {dataset.timeContext && (
-                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-5 border border-indigo-100">
-                  <h3 className="font-semibold text-indigo-900 mb-3 flex items-center gap-2">
+                <div className="bg-gradient-to-br from-indigo-50 to-purple-50 dark:from-indigo-500/10 dark:to-purple-500/10 rounded-xl p-5 border border-indigo-100 dark:border-indigo-500/20">
+                  <h3 className="font-semibold text-indigo-900 dark:text-indigo-200 mb-3 flex items-center gap-2">
                     <Clock className="w-4 h-4 text-indigo-500" />
                     Time Context
                   </h3>
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between">
-                      <span className="text-indigo-600">Earliest</span>
-                      <span className="font-mono font-bold text-indigo-900">{dataset.timeContext.minDate}</span>
+                      <span className="text-indigo-600 dark:text-indigo-300">Earliest</span>
+                      <span className="font-mono font-bold text-indigo-900 dark:text-indigo-100">{dataset.timeContext.minDate}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-indigo-600">Latest</span>
-                      <span className="font-mono font-bold text-indigo-900">{dataset.timeContext.maxDate}</span>
+                      <span className="text-indigo-600 dark:text-indigo-300">Latest</span>
+                      <span className="font-mono font-bold text-indigo-900 dark:text-indigo-100">{dataset.timeContext.maxDate}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-indigo-600">Anchor Date</span>
-                      <span className="font-mono font-bold text-indigo-900">{dataset.timeContext.defaultAnchorDate}</span>
+                      <span className="text-indigo-600 dark:text-indigo-300">Anchor Date</span>
+                      <span className="font-mono font-bold text-indigo-900 dark:text-indigo-100">{dataset.timeContext.defaultAnchorDate}</span>
                     </div>
                   </div>
                 </div>
