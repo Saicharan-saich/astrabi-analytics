@@ -1030,7 +1030,6 @@ function App() {
   // ── Auto-Dashboard: build a full dashboard from auto-insights ──
   const [isBuildingDashboard, setIsBuildingDashboard] = useState(false);
   const [buildDashboardMsg, setBuildDashboardMsg] = useState('');
-  const autoBuildAttemptedRef = useRef(false);
 
   const handleBuildDashboard = async () => {
     if (!dataset || isBuildingDashboard) return;
@@ -1051,19 +1050,10 @@ function App() {
     }
   };
 
-  // First upload → auto-build a starter dashboard once processing completes,
-  // but only when no dashboard has any cards yet (never clobber existing work).
-  useEffect(() => {
-    if (autoBuildAttemptedRef.current) return;
-    if (isProcessing) return;
-    if (!dataset?.id || !(dataset.rows && dataset.rows.length > 0)) return;
-    const dashboards = useAppStore.getState().dashboards || [];
-    const hasCards = dashboards.some((d: any) => (d.items?.length || 0) > 0);
-    if (hasCards) return;
-    autoBuildAttemptedRef.current = true;
-    handleBuildDashboard();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dataset?.id, isProcessing]);
+  // NOTE: Building the dashboard is now OPT-IN only. It used to auto-run here on
+  // mount, which meant it fired on every login/refresh (this ref resets on each
+  // fresh mount) — irritating and unwanted. Users trigger it themselves via the
+  // "Build my dashboard" / "Auto-build" buttons on the Dashboard tab.
 
   const handleEditAnalysis = (item: any) => {
     const config = { ...item.result.config };
