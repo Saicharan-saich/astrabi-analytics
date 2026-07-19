@@ -27,15 +27,25 @@ interface DataCleaningPanelProps {
 
 type CleaningTool = 'quality' | 'duplicates' | 'missing' | 'strings' | 'outliers' | 'findreplace' | 'split' | 'merge';
 
+// Static accent classes per tool (compiled Tailwind purges dynamic `bg-${x}` names,
+// so the active-tab colours must be spelled out) + a plain-English description.
+const TOOL_META: Record<CleaningTool, { active: string; icon: string; desc: string }> = {
+    quality: { active: 'bg-indigo-600 border-indigo-600 text-white', icon: 'text-indigo-500', desc: 'A health report for your data — completeness, uniqueness, consistency, and any issues found.' },
+    duplicates: { active: 'bg-rose-600 border-rose-600 text-white', icon: 'text-rose-500', desc: 'Find and remove duplicate rows so counts and totals aren’t inflated.' },
+    missing: { active: 'bg-blue-600 border-blue-600 text-white', icon: 'text-blue-500', desc: 'Fill or handle blank values in a column with a strategy you choose.' },
+    strings: { active: 'bg-purple-600 border-purple-600 text-white', icon: 'text-purple-500', desc: 'Tidy text — trim spaces, fix casing, and collapse duplicate spacing.' },
+    outliers: { active: 'bg-amber-500 border-amber-500 text-white', icon: 'text-amber-500', desc: 'Detect and handle extreme values that would distort averages and totals.' },
+    findreplace: { active: 'bg-teal-600 border-teal-600 text-white', icon: 'text-teal-500', desc: 'Search a column and replace matching values — optionally with regex.' },
+    split: { active: 'bg-orange-600 border-orange-600 text-white', icon: 'text-orange-500', desc: 'Split one column into several using a delimiter (e.g. "red;blue").' },
+    merge: { active: 'bg-cyan-600 border-cyan-600 text-white', icon: 'text-cyan-500', desc: 'Combine several columns into one (e.g. first + last name).' },
+};
+
 // ─── Quality Score Badge ─────────────────────────────────────────
 const QualityBadge: React.FC<{ score: number; size?: 'sm' | 'lg' }> = ({ score, size = 'sm' }) => {
-    const color = score >= 90 ? 'emerald' : score >= 70 ? 'amber' : 'red';
+    // Static classes only — compiled Tailwind purges dynamic `text-${color}-600`.
+    const color = score >= 90 ? 'text-emerald-600 dark:text-emerald-400' : score >= 70 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400';
     const cls = size === 'lg' ? 'text-4xl' : 'text-lg';
-    return (
-        <span className={`${cls} font-black text-${color}-600`}>
-            {score.toFixed(0)}%
-        </span>
-    );
+    return <span className={`${cls} font-black ${color} tabular-nums`}>{score.toFixed(0)}%</span>;
 };
 
 // ─── Column Quality Bar ──────────────────────────────────────────
@@ -43,11 +53,11 @@ const QualityBar: React.FC<{ value: number; label: string }> = ({ value, label }
     const color = value >= 90 ? 'bg-emerald-500' : value >= 70 ? 'bg-amber-500' : 'bg-red-500';
     return (
         <div className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-500 w-20 shrink-0">{label}</span>
-            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+            <span className="text-[10px] text-slate-500 dark:text-slate-400 w-20 shrink-0">{label}</span>
+            <div className="flex-1 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
                 <div className={`h-full ${color} rounded-full transition-all duration-500`} style={{ width: `${value}%` }} />
             </div>
-            <span className="text-[10px] font-bold text-slate-600 w-8 text-right">{value.toFixed(0)}%</span>
+            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 w-8 text-right tabular-nums">{value.toFixed(0)}%</span>
         </div>
     );
 };
@@ -122,22 +132,22 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
         { key: 'merge', label: 'Merge Columns', icon: <Merge className="w-4 h-4" />, color: 'cyan' },
     ];
 
-    const selectClass = "w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all";
-    const inputClass = "w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm text-slate-800 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all";
-    const btnPrimary = "flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-200 hover:shadow-xl hover:scale-[1.02] transition-all duration-200";
-    const labelClass = "block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5";
+    const selectClass = "w-full px-3 py-2 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all";
+    const inputClass = "w-full px-3 py-2 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all";
+    const btnPrimary = "flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none hover:shadow-xl hover:scale-[1.02] transition-all duration-200";
+    const labelClass = "block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5";
 
     return (
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden">
             {/* ── Header ── */}
-            <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-indigo-50/30">
+            <div className="px-6 py-4 border-b border-slate-100 dark:border-white/10 bg-gradient-to-r from-slate-50 to-indigo-50/40 dark:from-white/[0.03] dark:to-indigo-500/[0.06]">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-xl shadow-lg shadow-indigo-200">
+                    <div className="p-2 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none">
                         <Sparkles className="w-5 h-5 text-white" />
                     </div>
                     <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900">Data Cleaning Studio</h3>
-                        <p className="text-xs text-slate-500">Interactive tools to clean, normalize, and validate your data</p>
+                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Cleaning Tools</h3>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">Pick a tool below — fix, transform, and refine your data by hand</p>
                     </div>
                     {qualityReport && (
                         <div className="text-right">
@@ -148,22 +158,29 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                 </div>
             </div>
 
-            {/* ── Tool Tabs ── */}
-            <div className="flex border-b border-slate-100 overflow-x-auto scrollbar-none">
-                {tools.map(tool => (
-                    <button
-                        key={tool.key}
-                        onClick={() => setActiveTool(tool.key)}
-                        className={`flex items-center gap-1.5 px-4 py-3 text-xs font-bold whitespace-nowrap transition-all border-b-2 ${
-                            activeTool === tool.key
-                                ? `text-${tool.color}-600 border-${tool.color}-500 bg-${tool.color}-50/50`
-                                : 'text-slate-400 border-transparent hover:text-slate-600 hover:bg-slate-50'
-                        }`}
-                    >
-                        {tool.icon}
-                        {tool.label}
-                    </button>
-                ))}
+            {/* ── Tool Selector (pills) + active description ── */}
+            <div className="px-4 pt-4 pb-3 border-b border-slate-100 dark:border-white/10">
+                <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
+                    {tools.map(tool => {
+                        const active = activeTool === tool.key;
+                        const meta = TOOL_META[tool.key];
+                        return (
+                            <button
+                                key={tool.key}
+                                onClick={() => setActiveTool(tool.key)}
+                                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap border transition-all ${
+                                    active
+                                        ? `${meta.active} shadow-sm`
+                                        : 'bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10'
+                                }`}
+                            >
+                                <span className={active ? 'text-white' : meta.icon}>{tool.icon}</span>
+                                {tool.label}
+                            </button>
+                        );
+                    })}
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2.5 px-1">{TOOL_META[activeTool].desc}</p>
             </div>
 
             {/* ── Tool Content ── */}
@@ -174,12 +191,12 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                         {/* Issues */}
                         {qualityReport.issues.length > 0 && (
                             <div className="space-y-2">
-                                <h4 className="text-sm font-bold text-slate-700">Issues Found</h4>
+                                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200">Issues Found</h4>
                                 {qualityReport.issues.slice(0, 10).map((issue, i) => (
                                     <div key={i} className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs ${
-                                        issue.severity === 'critical' ? 'bg-red-50 border border-red-200 text-red-700' :
-                                        issue.severity === 'warning' ? 'bg-amber-50 border border-amber-200 text-amber-700' :
-                                        'bg-blue-50 border border-blue-200 text-blue-700'
+                                        issue.severity === 'critical' ? 'bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-700 dark:text-red-300' :
+                                        issue.severity === 'warning' ? 'bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-300' :
+                                        'bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 text-blue-700 dark:text-blue-300'
                                     }`}>
                                         {issue.severity === 'critical' ? <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> :
                                          issue.severity === 'warning' ? <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> :
@@ -191,12 +208,12 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                         )}
                         {/* Per-column quality */}
                         <div>
-                            <h4 className="text-sm font-bold text-slate-700 mb-3">Column Quality</h4>
+                            <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-3">Column Quality</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {qualityReport.columns.map(col => (
-                                    <div key={col.column} className="bg-slate-50 rounded-xl p-4 border border-slate-100">
+                                    <div key={col.column} className="bg-slate-50 dark:bg-white/5 rounded-xl p-4 border border-slate-100 dark:border-white/10">
                                         <div className="flex items-center justify-between mb-2">
-                                            <span className="text-sm font-bold text-slate-800">{col.column.replace(/_/g, ' ')}</span>
+                                            <span className="text-sm font-bold text-slate-800 dark:text-slate-100 capitalize">{col.column.replace(/_/g, ' ')}</span>
                                             <QualityBadge score={col.overallScore} />
                                         </div>
                                         <div className="space-y-1.5">
@@ -204,7 +221,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                                             <QualityBar value={Math.min(col.uniqueness, 100)} label="Unique" />
                                             <QualityBar value={col.consistency} label="Consistent" />
                                         </div>
-                                        <div className="flex gap-3 mt-2 text-[10px] text-slate-400">
+                                        <div className="flex gap-3 mt-2 text-[10px] text-slate-400 dark:text-slate-500">
                                             {col.nullCount > 0 && <span>🕳️ {col.nullCount} nulls</span>}
                                             {col.outlierCount > 0 && <span>📊 {col.outlierCount} outliers</span>}
                                             <span className="ml-auto">{col.dataType}</span>
@@ -230,8 +247,8 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                                         )}
                                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                                             dedupColumns.includes(col)
-                                                ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                                                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                                                ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-500/40'
+                                                : 'bg-white dark:bg-white/5 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
                                         }`}
                                     >
                                         {col.replace(/_/g, ' ')}
@@ -268,7 +285,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                             </div>
                         )}
                         {dedupPreview && dedupPreview.length === 0 && (
-                            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-700 flex items-center gap-2">
+                            <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
                                 <CheckCircle className="w-4 h-4" /> No duplicates found!
                             </div>
                         )}
@@ -404,11 +421,11 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                         {outlierColumn && (() => {
                             const det = detectOutliers(dataset.rows, outlierColumn, outlierMethod, outlierThreshold);
                             return det.outlierCount > 0 ? (
-                                <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xs text-amber-700">
+                                <div className="bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 rounded-xl p-3 text-xs text-amber-700 dark:text-amber-300">
                                     Found <strong>{det.outlierCount}</strong> outliers in "{outlierColumn}" — bounds: [{det.lowerBound.toFixed(2)}, {det.upperBound.toFixed(2)}]
                                 </div>
                             ) : (
-                                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-xs text-emerald-700 flex items-center gap-2">
+                                <div className="bg-emerald-50 dark:bg-emerald-500/10 border border-emerald-200 dark:border-emerald-500/20 rounded-xl p-3 text-xs text-emerald-700 dark:text-emerald-300 flex items-center gap-2">
                                     <CheckCircle className="w-4 h-4" /> No outliers detected
                                 </div>
                             );
@@ -521,7 +538,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                                         className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition-all ${
                                             mergeCols.includes(col)
                                                 ? 'bg-cyan-100 text-cyan-700 border-cyan-300'
-                                                : 'bg-white text-slate-500 border-slate-200 hover:border-slate-300'
+                                                : 'bg-white dark:bg-white/5 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20'
                                         }`}
                                     >
                                         {col.replace(/_/g, ' ')}
@@ -562,13 +579,13 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
 
             {/* ── Cleaning Log ── */}
             {cleaningLogs.length > 0 && (
-                <div className="border-t border-slate-100 px-6 py-4 bg-slate-50/50">
-                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Cleaning History ({cleaningLogs.length} operations)</h4>
+                <div className="border-t border-slate-100 dark:border-white/10 px-6 py-4 bg-slate-50/50 dark:bg-white/[0.02]">
+                    <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-2">Cleaning History ({cleaningLogs.length} operations)</h4>
                     <div className="space-y-1.5 max-h-40 overflow-y-auto">
                         {cleaningLogs.map((log, i) => (
-                            <div key={i} className="flex items-center gap-2 text-xs text-slate-600 bg-white px-3 py-2 rounded-lg border border-slate-100">
+                            <div key={i} className="flex items-center gap-2 text-xs text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900/50 px-3 py-2 rounded-lg border border-slate-100 dark:border-white/10">
                                 <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                                <span className="font-bold text-slate-700">{log.operation}</span>
+                                <span className="font-bold text-slate-700 dark:text-slate-200">{log.operation}</span>
                                 <span className="text-slate-400">—</span>
                                 <span className="flex-1 truncate">{log.details}</span>
                                 <span className="text-slate-400 shrink-0">{log.rowsAffected} affected</span>
