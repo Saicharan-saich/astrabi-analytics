@@ -19,6 +19,7 @@ import { preloadDuckDB } from './services/duckdbEngine';
 import { Sidebar } from './components/Sidebar';
 import { UploadView } from './components/UploadView';
 import { ETLView } from './components/ETLView';
+import { DataStudioView } from './components/DataStudioView';
 import { DataExplorerView } from './components/DataExplorerView';
 import { DatasetSummaryView } from './components/DatasetSummaryView';
 import { WorkbenchView } from './components/WorkbenchView';
@@ -1617,6 +1618,13 @@ function App() {
                       saveDatasetToDB(updated);
                       console.log(`[App] Recovered ${recoveredRows.length} rows. New total: ${updatedRows.length}`);
                     }}
+                    onSwitchToLive={() => setActiveTab(Tab.UPLOAD)}
+                  />
+                </div>
+
+                <div className={`h-full w-full ${activeTab === Tab.DATA_STUDIO ? '' : 'hidden'}`}>
+                  <DataStudioView
+                    dataset={dataset}
                     onDataCleaned={(newRows, log) => {
                       if (!dataset) return;
                       const updated: Dataset = {
@@ -1628,7 +1636,6 @@ function App() {
                       saveDatasetToDB(updated);
                       console.log(`[App] Data cleaning: ${log.operation} — ${log.rowsAffected} rows affected. New total: ${newRows.length}`);
                     }}
-                    onSwitchToLive={() => setActiveTab(Tab.UPLOAD)}
                   />
                 </div>
 
