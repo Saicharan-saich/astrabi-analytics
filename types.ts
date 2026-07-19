@@ -478,6 +478,7 @@ export enum Tab {
   WORKBENCH = 'WORKBENCH',
   DATA = 'DATA',
   ETL = 'ETL',
+  DATA_STUDIO = 'DATA_STUDIO',
   SCHEMA = 'SCHEMA',
   CONNECTORS = 'CONNECTORS',
   NLQ = 'NLQ',

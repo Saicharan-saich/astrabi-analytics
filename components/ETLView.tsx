@@ -7,7 +7,6 @@ import {
   Zap, Upload, Edit3,
 } from 'lucide-react';
 import { Dataset, ETLLog, ColumnType } from '../types';
-import { DataCleaningPanel } from './DataCleaningPanel';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { ETLStepCard } from './ETLStepCard';
 
@@ -337,16 +336,6 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
                 )}
               </div>
             )}
-          </div>
-
-          {/* ─── Data Cleaning Studio ─────────────────────────────────── */}
-          <div className="mb-6">
-            <DataCleaningPanel
-              dataset={dataset}
-              onDataCleaned={(newRows, log) => {
-                if (onDataCleaned) onDataCleaned(newRows, log);
-              }}
-            />
           </div>
 
           {/* ─── Summary Cards ─────────────────────────────────────────── */}
