@@ -63,4 +63,29 @@ describe('runETLPipeline — correctness hardening wired end-to-end', () => {
         const etl = runETLPipeline(rows, 'miss.csv');
         expect(flagText(etl.logs)).toMatch(/Missing Data Flag[\s\S]*score/i);
     });
+
+    it('preserves leading-zero codes (zip) instead of summing them away', () => {
+        const rows = Array.from({ length: 12 }, (_, i) => ({
+            id: i, postal_code: ['01234', '00567', '02890', '01000'][i % 4], amount: 100 + i,
+        }));
+        const etl = runETLPipeline(rows, 'zip.csv');
+        const zipCol = etl.columns.find(c => c.name === 'postal_code')!;
+        expect(zipCol.type).toBe('ID');                            // not a metric
+        expect(etl.rows.every(r => /^0\d+$/.test(String(r.postal_code)))).toBe(true); // zeros intact
+    });
+
+    it('parses scientific-notation numbers instead of nulling them', () => {
+        const rows = Array.from({ length: 6 }, (_, i) => ({ id: i, big_value: `1.2${i}E+6` }));
+        const etl = runETLPipeline(rows, 'sci.csv');
+        expect(etl.rows.every(r => typeof r.big_value === 'number' && r.big_value > 1_000_000)).toBe(true);
+    });
+
+    it('FLAGS coercion loss when real values cannot be parsed as numbers', () => {
+        const rows = [
+            ...Array.from({ length: 16 }, (_, i) => ({ id: i, amount: 100 + i })),
+            { id: 98, amount: 'approx 500' }, { id: 99, amount: '1-2' }, // real but unparseable
+        ];
+        const etl = runETLPipeline(rows, 'coerce.csv');
+        expect(flagText(etl.logs)).toMatch(/Coercion Loss Flag[\s\S]*amount/i);
+    });
 });
