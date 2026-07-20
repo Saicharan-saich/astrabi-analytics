@@ -657,3 +657,48 @@ export async function reloadDataTable(rows: any[]): Promise<void> {
     loadedTables.delete('dim_date');
     await loadDataIntoTable('data', rows);
 }
+
+// ── Benchmark support (multi-table) ──────────────────────────────────
+// The AI-SQL pipeline is single-table, but the text-to-SQL benchmark needs to
+// stand up small multi-table databases to execute GOLD SQL for ground truth.
+// These helpers reuse the same WASM engine + loader as the app.
+
+/**
+ * Load a set of named tables fresh (dropping any prior version of each), so a
+ * benchmark case starts from a clean, known state.
+ */
+export async function loadBenchmarkTables(tables: { name: string; rows: any[] }[]): Promise<void> {
+    await initDuckDB();
+    if (!conn) throw new Error('DuckDB connection not available');
+    for (const t of tables) {
+        const safe = sanitizeTableName(t.name);
+        loadedTables.delete(safe);
+        await conn.query(`DROP TABLE IF EXISTS "${safe}"`);
+        await loadDataIntoTable(t.name, t.rows);
+    }
+}
+
+/**
+ * Run arbitrary SQL against the already-loaded benchmark tables. Unlike the
+ * pipeline path this does NOT normalize the SQL — gold queries are plain DuckDB.
+ */
+export async function runRawSQLViaDuckDB(sql: string): Promise<SQLExecutionResult> {
+    await initDuckDB();
+    if (!conn) throw new Error('DuckDB connection not available');
+    const result = await executeSQLQuery(sql);
+    if (!result.success) return { data: [], columns: [], error: result.error };
+    return { data: result.data, columns: result.columns };
+}
+
+/**
+ * Drop the given tables plus the pipeline's "data"/"dim_date" tables and clear
+ * their load cache, so the next case (and the next pipeline run) reloads fresh.
+ */
+export async function clearBenchmarkTables(names: string[]): Promise<void> {
+    if (!conn) return;
+    for (const n of [...names, 'data', 'dim_date']) {
+        const safe = sanitizeTableName(n);
+        loadedTables.delete(safe);
+        try { await conn.query(`DROP TABLE IF EXISTS "${safe}"`); } catch { /* ignore */ }
+    }
+}
