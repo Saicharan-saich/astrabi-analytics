@@ -10,6 +10,7 @@ import { buildSemanticModel } from '../services/ai-sql/semanticLayer';
 import { correctSQL } from '../services/ai-sql/sqlCorrectionEngine';
 import { normalizeSQLForDuckDB } from '../services/duckdbEngine';
 import { applyCountSemantics } from '../services/ai-sql/intentPlanner';
+import { validatePlan } from '../services/ai-sql/planValidator';
 import type { AnalysisPlan } from '../services/ai-sql/types';
 
 function patients(n = 500) {
@@ -56,6 +57,14 @@ describe('applyCountSemantics — the plan-level fix', () => {
         const plan = P({ metrics: [{ field: 'doctor', agg: 'count' }], filters: [] });
         applyCountSemantics('count_distinct', plan, model);
         expect(plan.metrics).toEqual([{ field: 'doctor', agg: 'count_distinct' }]);
+    });
+
+    it('validators ACCEPT the "*" row-count sentinel (no phantom-field error)', () => {
+        const plan = P({ metrics: [{ field: '*', agg: 'count' }], filters: [{ field: 'gender', op: '=', value: 'Male' }] });
+        const v = validatePlan(plan, model);
+        const fieldErrors = v.errors.filter(e => e.rule === 'field_exists' && e.field === '*');
+        expect(fieldErrors).toHaveLength(0);
+        expect(v.valid).toBe(true);
     });
 });
 
