@@ -476,10 +476,12 @@ function enforceIntentFromKeywords(plan: AnalysisPlan, question: string): void {
  * This ensures weighted formulas like SUM(profit)/SUM(sales) are used
  * instead of AVG(profit/sales) which gives misleading results.
  */
-function enforceCompositeMetrics(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+export function enforceCompositeMetrics(plan: AnalysisPlan, question: string, model: SemanticModel): void {
     const q = question.toLowerCase();
 
-    // Map of keyword patterns → composite metric IDs
+    // Map of keyword patterns → composite metric IDs.
+    // ORDER MATTERS: more specific patterns first (e.g. "revenue per customer"
+    // must win over the generic "revenue" → computed_revenue at the end).
     const compositePatterns: { pattern: RegExp; metricId: string }[] = [
         { pattern: /\b(profit\s+margin|net\s+margin|profit\s+pct|margin\s+%|profit\s+percentage)\b/, metricId: 'net_profit_margin_pct' },
         { pattern: /\b(gross\s+margin|markup|margin\s+percent)\b/, metricId: 'gross_margin_pct' },
@@ -487,6 +489,9 @@ function enforceCompositeMetrics(plan: AnalysisPlan, question: string, model: Se
         { pattern: /\b(items?\s+per\s+order|basket\s+size|order\s+size)\b/, metricId: 'avg_items_per_order' },
         { pattern: /\b(revenue\s+per\s+customer|arpu|ltv|clv|customer\s+value|per\s+customer\s+revenue)\b/, metricId: 'revenue_per_customer' },
         { pattern: /\b(discount\s+rate|markdown\s+rate|discount\s+pct|discount\s+percentage)\b/, metricId: 'discount_rate' },
+        // Generic revenue → price × quantity, only when the model actually has the
+        // computed_revenue composite (i.e. price + quantity but no revenue column).
+        { pattern: /\b(revenue|total\s+sales|turnover|gmv|gross\s+revenue|sales\s+value)\b/, metricId: 'computed_revenue' },
     ];
 
     for (const { pattern, metricId } of compositePatterns) {
