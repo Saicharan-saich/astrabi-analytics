@@ -772,6 +772,39 @@ function enforceAggregateFilter(plan: AnalysisPlan, question: string, model: Sem
  * Even if the LLM returns "sum" when the user said "average",
  * this function forcefully corrects it.
  */
+/**
+ * COUNT questions count ENTITIES (rows), not a numeric field that merely appears
+ * as a FILTER. "count of male patients whose age is above 50" means COUNT(*) with
+ * gender/age as filters — it must NEVER become SUM(age). This is the single most
+ * important correction for count-style questions.
+ *
+ * Rewrites the plan's metric to COUNT(*) (or COUNT(DISTINCT <dimension>) when the
+ * user explicitly asks for distinct values of a categorical entity that isn't a
+ * filter). Returns true when it rewrote the metric. Exported for testing.
+ */
+export function applyCountSemantics(
+    explicitAgg: string | null,
+    plan: AnalysisPlan,
+    model: SemanticModel,
+): boolean {
+    if (explicitAgg !== 'count' && explicitAgg !== 'count_distinct') return false;
+    const filterFields = new Set((plan.filters || []).map(f => String(f.field).toLowerCase()));
+    const primary = plan.metrics.find(m => !(m as any).compositeId);
+    const pf = primary ? model.fields.find(f => f.name.toLowerCase() === String(primary.field).toLowerCase()) : undefined;
+
+    // "how many distinct doctors" / "unique hospitals" → COUNT(DISTINCT dim),
+    // but only when the target is a categorical entity that is NOT a filter.
+    if (explicitAgg === 'count_distinct' && pf && pf.role === 'dimension'
+        && !filterFields.has(String(primary!.field).toLowerCase())) {
+        plan.metrics = [{ field: primary!.field, agg: 'count_distinct' } as any];
+    } else {
+        // Plain count → count rows. A numeric field used as a filter (age) is
+        // never the count target.
+        plan.metrics = [{ field: '*', agg: 'count' } as any];
+    }
+    return true;
+}
+
 function enforceAggregation(plan: AnalysisPlan, question: string, model: SemanticModel): void {
     const explicitAgg = detectExplicitAggregation(question);
     const compoundGrain = detectCompoundAverage(question);
@@ -809,6 +842,13 @@ function enforceAggregation(plan: AnalysisPlan, question: string, model: Semanti
     if (!explicitAgg) return; // User didn't specify — keep LLM's choice
 
     console.log(`[Intent Planner] Detected explicit aggregation: "${explicitAgg}" from question`);
+
+    // COUNT questions count rows/entities — handle before the generic override so
+    // "count of patients whose age > 50" becomes COUNT(*), never SUM(age).
+    if (applyCountSemantics(explicitAgg, plan, model)) {
+        console.log('[Intent Planner] COUNT question → COUNT(*) of rows (a filter/attribute is never the count target)');
+        return;
+    }
 
     // Override all metric aggregations to match the user's explicit request
     for (const met of plan.metrics) {

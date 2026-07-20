@@ -1276,6 +1276,13 @@ function buildMetricExpressions(metrics: PlanMetric[], model: SemanticModel, apd
             }
         }
 
+        // Row count: a "count of <entities>" question counts ROWS, not a column.
+        // Emit COUNT(*) (unquoted star) rather than COUNT("*").
+        if (met.field === '*') {
+            exprs.push(`COUNT(*) AS ${q('count')}`);
+            continue;
+        }
+
         // Standard aggregation â€” quote all identifiers for safety
         const fld = q(met.field);
 
