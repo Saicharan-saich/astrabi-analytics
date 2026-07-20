@@ -12,12 +12,13 @@
  */
 
 import type { Dataset } from '../../types';
-import { BenchCase, allBenchTableNames } from './spiderCases';
+import { BenchCase } from './spiderCases';
 import { compareResults } from './resultCompare';
 import { loadBenchmarkTables, runRawSQLViaDuckDB, clearBenchmarkTables } from '../duckdbEngine';
 import { runAISQLPipeline } from '../ai-sql/pipeline';
 import { runETLPipeline } from '../etlPipeline';
 import { autoJoinDatasets } from '../analysisEngine';
+import { classifyFailure, FailureCategory, FAILURE_LABELS } from './errorClassifier';
 
 export interface CaseResult {
     id: string;
@@ -35,6 +36,15 @@ export interface CaseResult {
     latencyMs: number;
     tokens: number;
     error?: string;
+    /** SQL executed without throwing (independent of whether it was correct). */
+    executed: boolean;
+    /** Pipeline self-repair attempts before the SQL ran. */
+    repairAttempts: number;
+    /** Pipeline confidence 0..100 (semantic-match proxy). */
+    confidence: number;
+    /** Why it failed (or 'correct'). */
+    failCategory: FailureCategory;
+    failDetail: string;
     expectedSample: Record<string, any>[];
     actualSample: Record<string, any>[];
 }
@@ -89,14 +99,17 @@ function buildDataset(c: BenchCase): { dataset: Dataset; masterRows: number; joi
 export async function runBenchmarkCase(c: BenchCase): Promise<CaseResult> {
     let predictedSQL = '';
     let tokens = 0;
+    let repairAttempts = 0;
+    let confidence = 0;
     let error: string | undefined;
     let expected: Record<string, any>[] = [];
     let actual: Record<string, any>[] = [];
 
     const start = (typeof performance !== 'undefined' ? performance.now() : Date.now());
     try {
-        // Clean slate, then ground truth from the gold SQL.
-        await clearBenchmarkTables(allBenchTableNames());
+        // Clean slate for this case (loadBenchmarkTables drops+recreates each of
+        // its own tables; we also clear the pipeline's "data"/"dim_date" cache).
+        await clearBenchmarkTables(c.tables.map(t => t.name));
         await loadBenchmarkTables(c.tables);
         const gold = await runRawSQLViaDuckDB(c.goldSQL);
         if (gold.error) throw new Error(`Gold SQL failed: ${gold.error}`);
@@ -108,6 +121,8 @@ export async function runBenchmarkCase(c: BenchCase): Promise<CaseResult> {
         const result = await runAISQLPipeline(c.question, dataset);
         predictedSQL = result.sql || '';
         tokens = result.tokenUsage?.total || 0;
+        repairAttempts = result.repairAttempts || 0;
+        confidence = result.confidence?.score || 0;
         actual = (result.rawData && result.rawData.length ? result.rawData : result.chartData) || [];
     } catch (e: any) {
         error = e?.message || String(e);
@@ -118,13 +133,22 @@ export async function runBenchmarkCase(c: BenchCase): Promise<CaseResult> {
         ? { match: false, reason: error, expectedRows: expected.length, actualRows: actual.length }
         : compareResults(expected, actual, { orderMatters: c.orderMatters });
 
+    const expectedSample = expected.slice(0, 8);
+    const actualSample = actual.slice(0, 8);
+    const cls = classifyFailure({
+        match: cmp.match, error, reason: cmp.reason, tableCount: c.tableCount,
+        expectedRows: cmp.expectedRows, actualRows: cmp.actualRows, expectedSample, actualSample,
+    });
+
     return {
         id: c.id, question: c.question, suite: c.suite, difficulty: c.difficulty,
         tableCount: c.tableCount, tags: c.tags,
         match: cmp.match, reason: cmp.reason,
         expectedRows: cmp.expectedRows, actualRows: cmp.actualRows,
         goldSQL: c.goldSQL, predictedSQL, latencyMs, tokens, error,
-        expectedSample: expected.slice(0, 8), actualSample: actual.slice(0, 8),
+        executed: !error, repairAttempts, confidence,
+        failCategory: cls.category, failDetail: cls.detail,
+        expectedSample, actualSample,
     };
 }
 
@@ -139,7 +163,8 @@ export async function runBenchmark(
         // eslint-disable-next-line no-await-in-loop
         results.push(await runBenchmarkCase(cases[i]));
     }
-    await clearBenchmarkTables(allBenchTableNames());
+    const allNames = [...new Set(cases.flatMap(c => c.tables.map(t => t.name)))];
+    await clearBenchmarkTables(allNames);
     onProgress?.({ done: cases.length, total: cases.length, current: 'Done' });
     return results;
 }
@@ -148,16 +173,22 @@ export async function runBenchmark(
 
 export interface Bucket { label: string; total: number; passed: number; }
 
+export interface FailBucket { category: FailureCategory; label: string; count: number; }
+
 export interface BenchmarkSummary {
     total: number;
     passed: number;
-    accuracy: number;              // 0..1
+    accuracy: number;              // 0..1 (execution accuracy)
+    executionSuccess: number;      // 0..1 (SQL ran without throwing)
+    repairRate: number;            // 0..1 (needed ≥1 self-repair)
     avgLatencyMs: number;
     totalTokens: number;
     avgTokens: number;
+    avgConfidence: number;         // 0..100 (semantic-match proxy)
     bySuite: Bucket[];
     byDifficulty: Bucket[];
     byTableClass: Bucket[];        // single-table vs multi-table
+    failureBreakdown: FailBucket[];
     errors: number;
 }
 
@@ -171,24 +202,43 @@ export function summarize(results: CaseResult[]): BenchmarkSummary {
     const passed = results.filter(r => r.match).length;
     const totalTokens = results.reduce((s, r) => s + (r.tokens || 0), 0);
     const totalLatency = results.reduce((s, r) => s + (r.latencyMs || 0), 0);
+    const executed = results.filter(r => r.executed).length;
+    const repaired = results.filter(r => (r.repairAttempts || 0) > 0).length;
+    const totalConfidence = results.reduce((s, r) => s + (r.confidence || 0), 0);
     const diffs: BenchCase['difficulty'][] = ['easy', 'medium', 'hard', 'extra'];
+
+    // Failure breakdown across the taxonomy (only categories that occur).
+    const failCounts = new Map<FailureCategory, number>();
+    for (const r of results) failCounts.set(r.failCategory, (failCounts.get(r.failCategory) || 0) + 1);
+    const failureBreakdown: FailBucket[] = [...failCounts.entries()]
+        .filter(([cat]) => cat !== 'correct')
+        .map(([category, count]) => ({ category, label: FAILURE_LABELS[category], count }))
+        .sort((a, b) => b.count - a.count);
+
     return {
         total,
         passed,
         accuracy: total ? passed / total : 0,
+        executionSuccess: total ? executed / total : 0,
+        repairRate: total ? repaired / total : 0,
         avgLatencyMs: total ? Math.round(totalLatency / total) : 0,
         totalTokens,
         avgTokens: total ? Math.round(totalTokens / total) : 0,
+        avgConfidence: total ? Math.round(totalConfidence / total) : 0,
         errors: results.filter(r => r.error).length,
+        failureBreakdown,
         bySuite: [
             bucket(results, 'Spider-style', r => r.suite === 'spider'),
             bucket(results, 'Spider 2.0-style', r => r.suite === 'spider2'),
-        ],
-        byDifficulty: diffs.map(d => bucket(results, d, r => r.difficulty === d)),
+            bucket(results, 'BIRD-style', r => r.suite === 'bird'),
+            bucket(results, 'Internal Sales', r => r.suite === 'internal'),
+            bucket(results, 'User', r => r.suite === 'user'),
+        ].filter(b => b.total > 0),
+        byDifficulty: diffs.map(d => bucket(results, d, r => r.difficulty === d)).filter(b => b.total > 0),
         byTableClass: [
             bucket(results, 'Single-table', r => r.tableCount === 1),
             bucket(results, 'Multi-table', r => r.tableCount > 1),
-        ],
+        ].filter(b => b.total > 0),
     };
 }
 

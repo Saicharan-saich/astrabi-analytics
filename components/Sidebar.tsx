@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb, Bell, Activity, Zap, Shield, Gamepad2, Settings, Wand2 } from 'lucide-react';
+import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb, Bell, Activity, Zap, Shield, Gamepad2, Settings, Wand2, FlaskConical } from 'lucide-react';
 import { Tab, UserRole } from '../types';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { useAlertStore } from '../store/useAlertStore';
@@ -94,7 +94,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         { id: Tab.SMART_QUESTIONS, label: 'Smart Insights', icon: Lightbulb, requiresCreateVisuals: true, tooltip: 'AI-curated questions tailored to your dataset. Click any card to instantly run the analysis.' },
         { id: Tab.BUILDER, label: 'Question Builder', icon: Search, requiresCreateVisuals: true, tooltip: 'A simplified natural-language-style builder: "Show me [metric] by [dimension]" with intuitive dropdowns.' },
         { id: Tab.AI_SQL, label: 'AI SQL', icon: Sparkles, requiresCreateVisuals: true, tooltip: 'Ask questions in natural language — AI generates and executes SQL on your dataset. Powered by Gemini.' },
-        ...(userRole === UserRole.ADMIN ? [{ id: Tab.BENCHMARK, label: 'AI SQL Benchmark', icon: Play, tooltip: 'Run Spider & Spider 2.0-style text-to-SQL benchmarks against the AI SQL engine — execution accuracy, latency, and token cost per case. No dataset required.' }] : []),
+        ...(userRole === UserRole.ADMIN ? [{ id: Tab.BENCHMARK, label: 'Benchmark Lab', icon: FlaskConical, tooltip: 'Auto-run Spider, Spider 2.0, BIRD, Internal and your own benchmarks against the AI SQL engine — execution accuracy, latency, tokens, error taxonomy, and exportable research reports. No dataset required.' }] : []),
         ...(hasVisualResult ? [{ id: Tab.VISUAL_PREVIEW, label: 'Visual Result', icon: BarChart2, requiresCreateVisuals: true, tooltip: 'View your latest AI SQL result — chart, table, SQL, and formatting controls.' }] : []),
         { id: Tab.DERIVED_COLUMNS, label: 'Derived Columns', icon: Lightbulb, requiresCreateVisuals: true, tooltip: 'AI-suggested and custom derived columns — create new business metrics from your data.' },
         { id: Tab.CUSTOM_QUESTIONS, label: 'Custom Questions', icon: Wrench, requiresManageQuestions: true, tooltip: 'Build custom analytical questions with SQL. Admin only.' },
