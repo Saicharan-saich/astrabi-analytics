@@ -17,6 +17,7 @@ import { compareResults } from './resultCompare';
 import { loadBenchmarkTables, runRawSQLViaDuckDB, clearBenchmarkTables } from '../duckdbEngine';
 import { runAISQLPipeline } from '../ai-sql/pipeline';
 import { runETLPipeline } from '../etlPipeline';
+import { autoJoinDatasets } from '../analysisEngine';
 
 export interface CaseResult {
     id: string;
@@ -44,13 +45,35 @@ export interface BenchmarkProgress {
     current: string;
 }
 
-/** Build a single-table Dataset (via the real ETL) for the pipeline to consume. */
-function buildDataset(c: BenchCase): Dataset {
-    const primary = c.tables.find(t => t.name === c.primaryTable) || c.tables[0];
-    const etl = runETLPipeline(primary.rows, `${primary.name}.csv`);
-    return {
+/**
+ * Build the Dataset the pipeline consumes — REPLICATING THE REAL APP PATH:
+ *   • single-table case → that table,
+ *   • multi-table case  → the denormalized master table produced by the same
+ *     autoJoinDatasets() the connector uses (fact-first LEFT JOIN cascade).
+ * The pipeline is single-table; the app makes multi-table work by widening first.
+ */
+function buildDataset(c: BenchCase): { dataset: Dataset; masterRows: number; joinLogs: string[] } {
+    let rows: Record<string, any>[];
+    let name: string;
+    let joinLogs: string[] = [];
+
+    if (c.tables.length > 1) {
+        const tableMap: Record<string, any[]> = {};
+        for (const t of c.tables) tableMap[t.name] = t.rows;
+        const joined = autoJoinDatasets(tableMap, c.joinEdges);
+        rows = joined.mergedRows;
+        joinLogs = joined.joinLogs;
+        name = `${c.db}_master`;
+    } else {
+        const primary = c.tables.find(t => t.name === c.primaryTable) || c.tables[0];
+        rows = primary.rows;
+        name = primary.name;
+    }
+
+    const etl = runETLPipeline(rows, `${name}.csv`);
+    const dataset = {
         id: `bench_${c.id}`,
-        name: primary.name,
+        name,
         rows: etl.rows,
         columns: etl.columns,
         totalRows: etl.rows.length,
@@ -59,6 +82,8 @@ function buildDataset(c: BenchCase): Dataset {
         createdAt: Date.now(),
         version: 1,
     } as unknown as Dataset;
+
+    return { dataset, masterRows: rows.length, joinLogs };
 }
 
 export async function runBenchmarkCase(c: BenchCase): Promise<CaseResult> {
@@ -77,8 +102,9 @@ export async function runBenchmarkCase(c: BenchCase): Promise<CaseResult> {
         if (gold.error) throw new Error(`Gold SQL failed: ${gold.error}`);
         expected = gold.data || [];
 
-        // System prediction via the single-table pipeline.
-        const dataset = buildDataset(c);
+        // System prediction — denormalize (if multi-table) exactly like the app,
+        // then run the pipeline on the resulting single wide table.
+        const { dataset } = buildDataset(c);
         const result = await runAISQLPipeline(c.question, dataset);
         predictedSQL = result.sql || '';
         tokens = result.tokenUsage?.total || 0;

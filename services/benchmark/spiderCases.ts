@@ -13,15 +13,21 @@
  * adapter hook is provided so the real dev JSON + databases can be plugged in
  * later behind the exact same runner.
  *
- * WHY THIS IS AN HONEST TEST OF *THIS* ENGINE:
- *   QuickInsight's AI-SQL pipeline is a SINGLE-TABLE analytical engine — it
- *   builds a semantic model from one table and answers questions over it. So:
- *     • single-table cases (tableCount === 1) are inside its design envelope,
- *     • multi-table JOIN / nested cases are deliberately outside it.
- *   Running both and reporting the split is the point — it shows exactly where
- *   the deterministic single-table approach wins and where a general text-to-SQL
- *   system (with join planning) would be needed.
+ * HOW THIS MAPS TO *THIS* APP'S ARCHITECTURE:
+ *   QuickInsight handles multiple tables by DENORMALIZING them up front —
+ *   `autoJoinDatasets` merges the source tables into ONE master table (a
+ *   fact-first LEFT JOIN cascade), and the AI-SQL pipeline then answers over
+ *   that single wide table (the "One Big Table" pattern). So the benchmark
+ *   runner replicates the real path: for multi-table cases it builds the master
+ *   table with the SAME join engine the connector uses, then runs the pipeline
+ *   on it. `joinEdges` below define those joins.
+ *
+ *   The single- vs multi-table split is still reported, because the join +
+ *   denormalize step is exactly where aggregation correctness can go wrong
+ *   (join fan-out changing the grain), so it is worth measuring on its own.
  */
+
+import type { JoinEdge } from '../analysisEngine';
 
 export type Suite = 'spider' | 'spider2';
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'extra';
@@ -43,8 +49,12 @@ export interface BenchCase {
     tableCount: number;
     /** All tables in this mini-database. */
     tables: BenchTable[];
-    /** The table handed to the single-table pipeline as its "dataset". */
+    /** The table handed to the pipeline for SINGLE-table cases. For multi-table
+     *  cases the pipeline instead receives the denormalized master table. */
     primaryTable: string;
+    /** Join edges used to denormalize multi-table cases into one master table
+     *  (via the app's autoJoinDatasets). Required when tableCount > 1. */
+    joinEdges?: JoinEdge[];
     /** True when the gold query's ORDER BY makes row order significant. */
     orderMatters?: boolean;
     tags: string[];
@@ -73,23 +83,33 @@ const stadium: BenchTable = {
     ],
 };
 
+// concert is the fact for [stadium, concert] cases — kept unambiguously larger
+// than stadium so the fact-first join bases on concert (each concert → 1 stadium).
 const concert: BenchTable = {
     name: 'concert',
     rows: [
         { concert_id: 1, concert_name: 'Gala', theme: 'Classic', stadium_id: 2, year: 2023 },
         { concert_id: 2, concert_name: 'Summer Fest', theme: 'Pop', stadium_id: 1, year: 2023 },
         { concert_id: 3, concert_name: 'Winter Night', theme: 'Jazz', stadium_id: 2, year: 2024 },
+        { concert_id: 4, concert_name: 'Spring Show', theme: 'Pop', stadium_id: 1, year: 2024 },
+        { concert_id: 5, concert_name: 'Night Fever', theme: 'Jazz', stadium_id: 2, year: 2024 },
     ],
 };
 
+// The bridge (many-to-many) is the fact for the singers-in-concert case — kept
+// larger than both singer and concert so the join bases on it (1 row per
+// performance → 1 singer + 1 concert), which is the correct grain.
 const singerInConcert: BenchTable = {
     name: 'singer_in_concert',
     rows: [
         { concert_id: 1, singer_id: 1 },
         { concert_id: 1, singer_id: 3 },
+        { concert_id: 1, singer_id: 6 },
         { concert_id: 2, singer_id: 2 },
         { concert_id: 3, singer_id: 1 },
         { concert_id: 3, singer_id: 5 },
+        { concert_id: 4, singer_id: 4 },
+        { concert_id: 5, singer_id: 5 },
     ],
 };
 
@@ -252,6 +272,7 @@ export const BENCHMARK_CASES: BenchCase[] = [
         question: 'Show the distinct names of stadiums that have hosted a concert.',
         goldSQL: 'SELECT DISTINCT s.name FROM stadium s JOIN concert c ON s.stadium_id = c.stadium_id',
         difficulty: 'medium', tableCount: 2, tables: [stadium, concert], primaryTable: 'concert',
+        joinEdges: [{ leftTable: 'concert', rightTable: 'stadium', leftColumn: 'stadium_id', rightColumn: 'stadium_id', type: 'fk' }],
         tags: ['join', 'distinct'],
     },
     {
@@ -259,6 +280,7 @@ export const BENCHMARK_CASES: BenchCase[] = [
         question: 'For each concert, show the concert name and the capacity of its stadium.',
         goldSQL: 'SELECT c.concert_name, s.capacity FROM concert c JOIN stadium s ON c.stadium_id = s.stadium_id',
         difficulty: 'medium', tableCount: 2, tables: [stadium, concert], primaryTable: 'concert',
+        joinEdges: [{ leftTable: 'concert', rightTable: 'stadium', leftColumn: 'stadium_id', rightColumn: 'stadium_id', type: 'fk' }],
         tags: ['join'],
     },
     {
@@ -266,6 +288,10 @@ export const BENCHMARK_CASES: BenchCase[] = [
         question: "What are the names of singers who performed in the concert named 'Gala'?",
         goldSQL: "SELECT si.name FROM singer si JOIN singer_in_concert sic ON si.singer_id = sic.singer_id JOIN concert c ON sic.concert_id = c.concert_id WHERE c.concert_name = 'Gala'",
         difficulty: 'hard', tableCount: 3, tables: [singer, concert, singerInConcert], primaryTable: 'singer',
+        joinEdges: [
+            { leftTable: 'singer_in_concert', rightTable: 'singer', leftColumn: 'singer_id', rightColumn: 'singer_id', type: 'fk' },
+            { leftTable: 'singer_in_concert', rightTable: 'concert', leftColumn: 'concert_id', rightColumn: 'concert_id', type: 'fk' },
+        ],
         tags: ['join', 'multi_join', 'filter'],
     },
     {
@@ -273,6 +299,7 @@ export const BENCHMARK_CASES: BenchCase[] = [
         question: 'What is the average employee salary for each shop name?',
         goldSQL: 'SELECT sh.shop_name, AVG(e.salary) AS avg_salary FROM employee e JOIN shop sh ON e.shop_id = sh.shop_id GROUP BY sh.shop_name',
         difficulty: 'hard', tableCount: 2, tables: [employee, shop], primaryTable: 'employee',
+        joinEdges: [{ leftTable: 'employee', rightTable: 'shop', leftColumn: 'shop_id', rightColumn: 'shop_id', type: 'fk' }],
         tags: ['join', 'group_by', 'avg'],
     },
     {
@@ -280,6 +307,7 @@ export const BENCHMARK_CASES: BenchCase[] = [
         question: 'Which customer placed the most orders? Return the customer name.',
         goldSQL: 'SELECT cu.customer_name FROM customer cu JOIN orders o ON cu.customer_id = o.customer_id GROUP BY cu.customer_name ORDER BY COUNT(*) DESC LIMIT 1',
         difficulty: 'hard', tableCount: 2, tables: [customer, orders], primaryTable: 'orders',
+        joinEdges: [{ leftTable: 'orders', rightTable: 'customer', leftColumn: 'customer_id', rightColumn: 'customer_id', type: 'fk' }],
         orderMatters: true, tags: ['join', 'group_by', 'order', 'limit'],
     },
     {
@@ -287,6 +315,7 @@ export const BENCHMARK_CASES: BenchCase[] = [
         question: 'What is the total order amount for each customer name?',
         goldSQL: 'SELECT cu.customer_name, SUM(o.amount) AS total FROM customer cu JOIN orders o ON cu.customer_id = o.customer_id GROUP BY cu.customer_name',
         difficulty: 'hard', tableCount: 2, tables: [customer, orders], primaryTable: 'orders',
+        joinEdges: [{ leftTable: 'orders', rightTable: 'customer', leftColumn: 'customer_id', rightColumn: 'customer_id', type: 'fk' }],
         tags: ['join', 'group_by', 'sum'],
     },
 
