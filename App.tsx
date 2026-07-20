@@ -53,6 +53,7 @@ import ReconnectModal from './components/ReconnectModal';
 import { AlertsView } from './components/AlertsView';
 import { UserInsightsView } from './components/UserInsightsView';
 import { QuickInsightsView } from './components/QuickInsightsView';
+import { BenchmarkView } from './components/BenchmarkView';
 import { NotificationCenter } from './components/NotificationCenter';
 import { useAlertStore } from './store/useAlertStore';
 import { evaluateAllAlerts } from './services/alertEngine';
@@ -1769,6 +1770,10 @@ function App() {
                       onAskQuestion={handleSmartQuestion}
                     />
                   )}
+                </div>
+
+                <div className={`h-full w-full ${activeTab === Tab.BENCHMARK ? '' : 'hidden'}`}>
+                  <BenchmarkView dataset={dataset} />
                 </div>
               </main>
             </div>
