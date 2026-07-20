@@ -440,5 +440,9 @@ export interface AISQLPipelineResult {
     trust?: TrustVerification;
     /** Pipeline transparency trace — step-by-step engine telemetry */
     trace?: PipelineTrace;
+    /** Exact LLM token cost for this question. Only the planning step uses the
+     *  LLM (prompt = column metadata, never rows), so this is independent of
+     *  dataset size; SQL compilation + execution cost 0 tokens. */
+    tokenUsage?: { prompt: number; completion: number; total: number };
 }
 
