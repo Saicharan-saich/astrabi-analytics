@@ -173,13 +173,14 @@ export const BenchmarkView: React.FC = () => {
             <div className="mt-4 rounded-xl border border-indigo-200 dark:border-indigo-500/20 bg-indigo-50/60 dark:bg-indigo-500/[0.06] p-3.5 text-sm text-indigo-900 dark:text-indigo-200 flex gap-2.5">
                 <Info className="w-4 h-4 shrink-0 mt-0.5" />
                 <div>
-                    <strong>How to read this.</strong> QuickInsight's engine is a <em>single-table</em> analytical
-                    system (it builds a semantic model over one table). So single-table cases are inside its design
-                    envelope, while multi-table JOIN and window-function cases are deliberately outside it — the
-                    split below shows exactly where the deterministic approach wins and where full join-planning would
-                    be needed. These are self-contained cases in the spirit of the official benchmarks (which ship
-                    ~200 databases / cloud-warehouse workloads that can't run in a browser), so results measure this
-                    engine, not the full public leaderboard.
+                    <strong>How to read this.</strong> QuickInsight handles multiple tables by <em>denormalizing
+                    them into one master table</em> up front (the same fact-first join the connector runs), then the
+                    AI-SQL pipeline queries that single wide table. So the runner mirrors the real path: multi-table
+                    cases are joined into a master table first, exactly like production. The single- vs multi-table
+                    split below is reported because the join step is where aggregation grain can change (join
+                    fan-out) — worth watching on its own. These are self-contained cases in the spirit of the official
+                    benchmarks (which ship ~200 databases / cloud-warehouse workloads that can't run in a browser),
+                    so results measure this engine, not the full public leaderboard.
                 </div>
             </div>
 
