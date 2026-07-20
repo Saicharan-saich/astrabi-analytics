@@ -1458,6 +1458,7 @@ function validateSemantics(plan: AnalysisPlan, model: SemanticModel): void {
     const compositeIds = new Set(model.compositeMetrics.map(m => m.id.toLowerCase()));
     for (const met of plan.metrics) {
         if (met.compositeId) continue;
+        if (met.field === '*') continue; // row-count sentinel — COUNT(*), not a column
         const lower = met.field.toLowerCase();
         if (!fieldMap.has(lower) && !compositeIds.has(lower)) {
             warnings.push(

@@ -76,6 +76,7 @@ export function validatePlan(plan: AnalysisPlan, model: SemanticModel): Validati
     // ── Rule 3: All metric fields must exist in the model ──
     for (const met of plan.metrics) {
         if (met.compositeId) continue; // Composite metrics are handled separately
+        if (met.field === '*') continue; // row-count sentinel — COUNT(*), not a column
 
         const field = fieldMap.get(met.field.toLowerCase());
         if (!field) {

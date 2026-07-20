@@ -500,7 +500,7 @@ export function validateGuardrails(
         }
 
         // Rule 7: Metric field doesn't exist in model (phantom field)
-        if (!field && !met.compositeId && !met.derivedMetricId) {
+        if (!field && !met.compositeId && !met.derivedMetricId && met.field !== '*') {
             violations.push({
                 rule: 'PHANTOM_FIELD',
                 message: `Field "${met.field}" does not exist in the dataset.`,
