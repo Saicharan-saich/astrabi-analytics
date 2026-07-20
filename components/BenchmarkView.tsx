@@ -209,18 +209,44 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
         reader.onload = () => {
             try {
                 const parsed = JSON.parse(String(reader.result));
-                if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Expected a non-empty JSON array of cases');
-                // Minimal shape check.
-                for (const c of parsed.slice(0, 3)) {
-                    if (!c.question || !c.goldSQL || !Array.isArray(c.tables)) throw new Error('Each case needs question, goldSQL, tables[]');
+                let cases: BenchCase[];
+
+                if (parsed && !Array.isArray(parsed) && parsed.databases && Array.isArray(parsed.cases)) {
+                    // Compact bundle from extractSpider: tables stored ONCE per db.
+                    // Attach them to each case BY REFERENCE (no per-question copy).
+                    const dbs: Record<string, Record<string, any[]>> = parsed.databases;
+                    cases = parsed.cases.map((c: any, i: number) => {
+                        const tblMap = dbs[c.db] || {};
+                        const tables = Object.entries(tblMap).map(([name, rows]) => ({ name, rows: rows as any[] }));
+                        const primary = c.primaryTable
+                            || [...tables].sort((a, b) => b.rows.length - a.rows.length)[0]?.name;
+                        return {
+                            difficulty: 'medium', tags: ['official'], ...c,
+                            suite, id: c.id || `${suite}-official-${i}`,
+                            tables, primaryTable: primary,
+                            tableCount: c.tableCount ?? tables.length,
+                        };
+                    });
+                } else if (Array.isArray(parsed) && parsed.length > 0) {
+                    // Legacy: a plain array of self-contained cases (tables inline).
+                    for (const c of parsed.slice(0, 3)) {
+                        if (!c.question || !c.goldSQL || !Array.isArray(c.tables)) {
+                            throw new Error('Each case needs question, goldSQL, tables[]');
+                        }
+                    }
+                    cases = parsed.map((c: any, i: number) => ({ ...c, suite, id: c.id || `${suite}-official-${i}` }));
+                } else {
+                    throw new Error('Expected a {databases, cases} bundle or a non-empty array of cases');
                 }
-                const withSuite = parsed.map((c: any, i: number) => ({ ...c, suite, id: c.id || `${suite}-official-${i}` }));
-                setLoaded(prev => ({ ...prev, [suite]: withSuite }));
-                setImportMsg(`Loaded ${withSuite.length} official ${suiteMeta(suite)?.name} cases`);
+
+                if (cases.length === 0) throw new Error('No cases found in file');
+                setLoaded(prev => ({ ...prev, [suite]: cases }));
+                setLimit(l => (l === 0 ? 0 : Math.min(l, 25)));
+                setImportMsg(`Loaded ${cases.length} official ${suiteMeta(suite)?.name} cases. Set “Max questions” before running — each is a live LLM call.`);
             } catch (e: any) {
                 setImportMsg(`Import failed: ${e.message}`);
             }
-            setTimeout(() => setImportMsg(''), 5000);
+            setTimeout(() => setImportMsg(''), 8000);
         };
         reader.readAsText(file);
     };
