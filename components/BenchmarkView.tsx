@@ -138,6 +138,10 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
     const [progress, setProgress] = useState<BenchmarkProgress | null>(null);
     const [results, setResults] = useState<CaseResult[] | null>(null);
     const [importMsg, setImportMsg] = useState('');
+    // Credit guard: cap how many questions actually run (0 = all). Random sample
+    // avoids only ever hitting the first/easiest cases.
+    const [limit, setLimit] = useState(10);
+    const [randomSample, setRandomSample] = useState(false);
     // User-benchmark authoring
     const [userCases, setUserCases] = useState<{ question: string; goldSQL: string }[]>([]);
     const [uq, setUq] = useState(''); const [ug, setUg] = useState('');
@@ -160,20 +164,36 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
         return casesForSuite(activeSuite, loaded);
     }, [activeSuite, loaded, userCases, dataset]);
 
+    // Apply the credit guard: 0/blank = all, else first N (or a random N).
+    const casesToRun = useMemo<BenchCase[]>(() => {
+        const n = Number.isFinite(limit) && limit > 0 ? limit : cases.length;
+        if (n >= cases.length) return cases;
+        if (!randomSample) return cases.slice(0, n);
+        const shuffled = [...cases];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled.slice(0, n);
+    }, [cases, limit, randomSample]);
+
     const summary = useMemo(() => results ? summarize(results) : null, [results]);
 
     const runActive = async () => {
-        if (!activeSuite || cases.length === 0) return;
+        if (!activeSuite || casesToRun.length === 0) return;
         setRunning(true); setResults(null);
-        setProgress({ done: 0, total: cases.length, current: 'Starting…' });
+        setProgress({ done: 0, total: casesToRun.length, current: 'Starting…' });
         try {
-            const res = await runBenchmark(cases, p => setProgress(p));
+            const res = await runBenchmark(casesToRun, p => setProgress(p));
             setResults(res);
             const s = summarize(res);
+            const sampledNote = casesToRun.length < cases.length
+                ? `Ran ${casesToRun.length}/${cases.length} cases (${randomSample ? 'random sample' : 'first N'})`
+                : undefined;
             const run: BenchmarkRun = {
                 id: `run_${Date.now()}`, timestamp: Date.now(), engine: ENGINE,
                 suites: [activeSuite], usedOfficial: !!loaded[activeSuite]?.length,
-                results: res, summary: s,
+                results: res, summary: s, note: sampledNote,
             };
             addRun(run);
         } catch (e) {
@@ -248,6 +268,9 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
                         <SuitePanel
                             suite={activeSuite}
                             cases={cases}
+                            runCount={casesToRun.length}
+                            limit={limit} setLimit={setLimit}
+                            randomSample={randomSample} setRandomSample={setRandomSample}
                             hasDataset={!!dataset}
                             running={running}
                             progress={progress}
@@ -270,7 +293,8 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
 // ── Suite panel ──────────────────────────────────────────────────────
 
 const SuitePanel: React.FC<any> = ({
-    suite, cases, hasDataset, running, progress, results, summary, importMsg, onRun, onImport,
+    suite, cases, runCount, limit, setLimit, randomSample, setRandomSample,
+    hasDataset, running, progress, results, summary, importMsg, onRun, onImport,
     userCases, uq, ug, setUq, setUg, addUserCase, removeUserCase,
 }) => {
     const meta = suiteMeta(suite)!;
@@ -321,17 +345,40 @@ const SuitePanel: React.FC<any> = ({
                     {cases.length} case{cases.length === 1 ? '' : 's'} · {single} single-table · {cases.length - single} multi-table
                 </span>
                 <div className="flex-1" />
+
+                {/* Credit guard: how many questions to actually run */}
+                <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+                    <span className="whitespace-nowrap">Max questions</span>
+                    <input
+                        type="number" min={0} max={cases.length} step={1}
+                        value={limit}
+                        onChange={e => setLimit(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                        disabled={running}
+                        title="How many questions to run this pass. 0 = all. Each question is a live LLM call."
+                        className="w-20 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.03] text-sm tabular-nums"
+                    />
+                </label>
+                <label className="inline-flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-300 select-none" title="Sample randomly instead of always taking the first N (avoids only testing the easiest cases).">
+                    <input type="checkbox" checked={randomSample} onChange={e => setRandomSample(e.target.checked)} disabled={running} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500" />
+                    random
+                </label>
+
                 {meta.officialImportable && (
                     <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-white/[0.1] hover:bg-gray-50 dark:hover:bg-white/[0.05] cursor-pointer">
                         <Upload className="w-4 h-4" /> Import official (JSON)
                         <input type="file" accept="application/json,.json" className="hidden" onChange={e => e.target.files?.[0] && onImport(suite, e.target.files[0])} />
                     </label>
                 )}
-                <button onClick={onRun} disabled={running || cases.length === 0}
+                <button onClick={onRun} disabled={running || runCount === 0}
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold text-white bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 shadow-lg shadow-indigo-500/25 disabled:opacity-60 disabled:cursor-not-allowed">
                     {running ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />}
-                    {running ? 'Running…' : `Run ${cases.length}`}
+                    {running ? 'Running…' : `Run ${runCount}`}
                 </button>
+            </div>
+            <div className="mt-1.5 text-xs text-gray-400">
+                {runCount < cases.length
+                    ? <>Will run <strong>{runCount}</strong> of {cases.length} questions this pass{randomSample ? ' (random sample)' : ' (first N)'} — {cases.length - runCount} skipped to save credits.</>
+                    : <>Will run all {cases.length} questions — set “Max questions” to cap live LLM calls.</>}
             </div>
             {importMsg && <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">{importMsg}</div>}
 
