@@ -1773,7 +1773,7 @@ function App() {
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.BENCHMARK ? '' : 'hidden'}`}>
-                  <BenchmarkView />
+                  <BenchmarkView dataset={dataset} />
                 </div>
               </main>
             </div>
