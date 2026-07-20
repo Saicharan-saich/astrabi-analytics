@@ -226,6 +226,7 @@ export async function runAISQLPipeline(
             columnsUsed: [],
             executionTimeMs: executionTime,
             repairAttempts: 0,
+            tokenUsage: (plan as any).tokenUsage || { prompt: 0, completion: 0, total: 0 },
         };
     }
 
@@ -665,6 +666,7 @@ export async function runAISQLPipeline(
             ].filter((v, i, a) => a.indexOf(v) === i),
             executionTimeMs: Math.round(executionTimeEmpty),
             repairAttempts,
+            tokenUsage: (plan as any).tokenUsage || { prompt: 0, completion: 0, total: 0 },
         };
     }
 
@@ -886,6 +888,9 @@ export async function runAISQLPipeline(
         executionTimeMs: Math.round(executionTime),
         repairAttempts,
         trace: pipelineTrace,
+        // Surface the planner's exact token cost (0 if the deterministic fallback
+        // answered). Only the LLM planning step spends tokens; everything else is free.
+        tokenUsage: (plan as any).tokenUsage || { prompt: 0, completion: 0, total: 0 },
     };
 
 

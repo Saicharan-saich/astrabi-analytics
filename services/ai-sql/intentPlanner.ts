@@ -1176,6 +1176,11 @@ export async function generatePlan(
         clearTimeout(timeout);
         const content = data.choices?.[0]?.message?.content?.trim();
 
+        // Exact LLM token cost for THIS question. The prompt is built only from the
+        // semantic model (column metadata), never the rows — so this is independent
+        // of dataset size. The deterministic steps that follow cost 0 tokens.
+        const tokens = extractTokenUsage(data);
+
         if (!content) {
             throw new Error('Empty response from intent planner');
         }
@@ -1184,19 +1189,37 @@ export async function generatePlan(
         // is unusable, degrade to a deterministic plan instead of failing the query.
         const parsed = extractPlanJson(content);
         if (parsed) {
-            return finalizePlan(parsed, question, model, classification, grainOverride);
+            return withTokens(finalizePlan(parsed, question, model, classification, grainOverride), tokens);
         }
         console.warn('[Intent Planner] LLM returned unparseable JSON — using deterministic fallback plan.');
-        return finalizePlan(buildDeterministicParsed(classification, fieldMapping, model), question, model, classification, grainOverride);
+        return withTokens(finalizePlan(buildDeterministicParsed(classification, fieldMapping, model), question, model, classification, grainOverride), tokens);
 
     } catch (err: any) {
         clearTimeout(timeout);
         // Never fail the whole query because the LLM step errored (timeout, network,
         // bad JSON): fall back to a deterministic plan from the classifier + field
-        // mapper so the user still gets an answer.
+        // mapper so the user still gets an answer. No usable LLM response → 0 tokens.
         console.warn(`[Intent Planner] Plan generation failed (${err?.name === 'AbortError' ? 'timeout' : err?.message}) — using deterministic fallback plan.`);
-        return finalizePlan(buildDeterministicParsed(classification, fieldMapping, model), question, model, classification, grainOverride);
+        return withTokens(finalizePlan(buildDeterministicParsed(classification, fieldMapping, model), question, model, classification, grainOverride), { prompt: 0, completion: 0, total: 0 });
     }
+}
+
+/** Token usage for one planner call (the only LLM step in answering a question). */
+export interface TokenUsage { prompt: number; completion: number; total: number; }
+
+/** Pull exact token counts from the LLM API response (OpenAI/OpenRouter shape). */
+function extractTokenUsage(data: any): TokenUsage {
+    const u = data?.usage || {};
+    const prompt = Number(u.prompt_tokens) || 0;
+    const completion = Number(u.completion_tokens) || 0;
+    const total = Number(u.total_tokens) || prompt + completion;
+    return { prompt, completion, total };
+}
+
+/** Attach the planner's token cost to the plan so the pipeline/UI can surface it. */
+function withTokens(plan: AnalysisPlan, tokens: TokenUsage): AnalysisPlan {
+    (plan as any).tokenUsage = tokens;
+    return plan;
 }
 
 /**

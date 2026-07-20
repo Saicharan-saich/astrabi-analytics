@@ -205,6 +205,14 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
             <div className="text-[11px] text-gray-400 dark:text-slate-500 flex items-center gap-2">
               <span>{activeResult.data.length} rows</span>
               {activePipeline && <span>· {(activePipeline as any).executionTimeMs}ms</span>}
+              {(activePipeline as any)?.tokenUsage && (
+                <span
+                  title={`AI tokens for this question: ${(activePipeline as any).tokenUsage.prompt} prompt + ${(activePipeline as any).tokenUsage.completion} completion. Only the AI planning step uses tokens — the prompt is your column metadata, never the rows — so this cost is independent of how large your dataset is. SQL generation and execution cost 0 tokens.`}
+                  className="cursor-help"
+                >
+                  · 🪙 {(((activePipeline as any).tokenUsage.total) || 0).toLocaleString()} tokens
+                </span>
+              )}
               {(activePipeline as any)?.chart?.growth && (
                 <span className={(activePipeline as any).chart.growth.pct >= 0 ? 'text-emerald-500' : 'text-red-500'}>
                   {(activePipeline as any).chart.growth.pct >= 0 ? '▲' : '▼'} {(activePipeline as any).chart.growth.pct >= 0 ? '+' : ''}{(activePipeline as any).chart.growth.pct.toFixed(1)}%
