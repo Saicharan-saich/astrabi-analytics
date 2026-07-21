@@ -40,6 +40,7 @@ import { mapPlanToQBConfig } from './qbMapper';
 import { buildQueryPlan } from '../queryPlan/buildQueryPlan';
 import { compileSQL } from '../queryPlan/sqlCompiler';
 import { getDates } from '../dateHelpers';
+import { applyTableCalculation } from '../../utils/tableCalculations';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -244,6 +245,10 @@ export async function runAISQLPipeline(
     _s1 = performance.now();
     const qbResult = mapPlanToQBConfig(plan, semanticModel);
     let qbSQL: string | null = null;
+    // For share-of-total the builder applies its "% of total" table calculation
+    // to the base result (each group ÷ grand total); we capture the metric alias
+    // to convert after execution.
+    let qbShareValueKey: string | null = null;
     if (qbResult.fits) {
         try {
             const anchor = semanticModel.timeContext?.anchorDate
@@ -252,10 +257,12 @@ export async function runAISQLPipeline(
             const dates = getDates(anchor);
             const qp = buildQueryPlan(qbResult.config, qbResult.dateColumnKey, dates, 'data');
             qbSQL = compileSQL(qp);
+            if (qbResult.shareOfTotal && qp.metrics[0]) qbShareValueKey = qp.metrics[0].alias;
             console.log('[Pipeline] QB-mapped SQL:', qbSQL);
         } catch (qbErr: any) {
             console.warn('[Pipeline] QB compilation failed, falling back to AI SQL:', qbErr.message);
             qbSQL = null;
+            qbShareValueKey = null;
         }
     }
     let qbNotes: string[] = [];
@@ -402,6 +409,16 @@ export async function runAISQLPipeline(
 
     let rawData = execResult.data || [];
     const columns = execResult.columns || [];
+
+    // ─── Step 5b′: QB Share-of-Total Table Calculation ───────────
+    // When the Question Builder gate mapped a share-of-total question, apply the
+    // builder's "% of total" table calc (each group ÷ grand total) — the exact
+    // mechanism the click-driven builder uses — producing a pct_of_total column.
+    if (qbShareValueKey && rawData.length > 0) {
+        const calc = applyTableCalculation(rawData, qbShareValueKey, 'percent_of_total', qbShareValueKey, 'raw', 'pct_of_total');
+        rawData = calc.transformedData;
+        console.log(`[Pipeline] QB share-of-total: added pct_of_total from "${qbShareValueKey}"`);
+    }
 
     // ─── Step 5c: Time Intelligence Engine ─────────────────────────
     // Post-SQL time intelligence (LAG/running totals computed in JS for consistency).
