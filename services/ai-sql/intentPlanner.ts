@@ -877,6 +877,36 @@ export function applyCountSemantics(
     return true;
 }
 
+/**
+ * Over-grouping guard. The field mapper sometimes adds an IDENTIFIER (order_id)
+ * or a RAW date column (order_date, no grain) to the GROUP BY of an aggregated
+ * query — which collapses the aggregation to one row per record. Example:
+ * "which time of day has the highest average order value" was grouped by
+ * time_of_day + order_date + order_id, returning a single order.
+ *
+ * When an aggregated query has >1 grouping dimension and at least one is an
+ * id / raw-date column while a genuine categorical dimension remains, drop the
+ * id/raw-date dimensions. A date WITH a time grain (monthly, weekly) is kept —
+ * that's an intentional time breakdown.
+ */
+export function enforceAggregationGrain(plan: AnalysisPlan, model: SemanticModel): void {
+    if (plan.dimensions.length <= 1) return;
+    if (!plan.metrics.some(m => m.agg && (m.agg as string) !== 'none')) return;
+
+    const keep = plan.dimensions.filter(d => {
+        const f = model.fields.find(x => x.name.toLowerCase() === String(d.field).toLowerCase());
+        if (!f) return true; // unknown column — leave it
+        const isId = f.semanticType === 'identifier' || f.name.toLowerCase().endsWith('_id');
+        const isRawDate = f.semanticType === 'date' && !(d as any).timeGrain;
+        return !isId && !isRawDate;
+    });
+
+    if (keep.length >= 1 && keep.length < plan.dimensions.length) {
+        console.log(`[Intent Planner] Aggregation grain: dropped ${plan.dimensions.length - keep.length} id/raw-date dimension(s), kept [${keep.map(d => d.field).join(', ')}]`);
+        plan.dimensions = keep;
+    }
+}
+
 function enforceAggregation(plan: AnalysisPlan, question: string, model: SemanticModel): void {
     const explicitAgg = detectExplicitAggregation(question);
     const compoundGrain = detectCompoundAverage(question);
@@ -1416,6 +1446,7 @@ function finalizePlan(
     enforceIntentFromKeywords(plan, question);
     enforceCompositeMetrics(plan, question, model);
     enforceNativeCyclicDimension(plan, question, model);
+    enforceAggregationGrain(plan, model);
     enforceAggregateFilter(plan, question, model);
     enforceGrowthAnalysis(plan, question, model);
     enforcePluralLimit(plan, question);
