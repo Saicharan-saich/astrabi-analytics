@@ -54,6 +54,7 @@ import { AlertsView } from './components/AlertsView';
 import { UserInsightsView } from './components/UserInsightsView';
 import { QuickInsightsView } from './components/QuickInsightsView';
 import { BenchmarkView } from './components/BenchmarkView';
+import { ParametersView } from './components/ParametersView';
 import { NotificationCenter } from './components/NotificationCenter';
 import { useAlertStore } from './store/useAlertStore';
 import { evaluateAllAlerts } from './services/alertEngine';
@@ -1774,6 +1775,9 @@ function App() {
 
                 <div className={`h-full w-full ${activeTab === Tab.BENCHMARK ? '' : 'hidden'}`}>
                   <BenchmarkView dataset={dataset} />
+                </div>
+                <div className={`h-full w-full ${activeTab === Tab.PARAMETERS ? '' : 'hidden'}`}>
+                  {activeTab === Tab.PARAMETERS && <ParametersView />}
                 </div>
               </main>
             </div>
