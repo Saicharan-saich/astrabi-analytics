@@ -110,6 +110,27 @@ export function buildCompositeMetrics(fields: SemanticField[]): MetricDefinition
     const discountField = findField('discount');
     const orderIdField = findAnyField('order_id', 'transaction_id', 'invoice');
     const customerIdField = findAnyField('customer_id', 'client_id', 'customer');
+    // Unit price — but NOT a *total* amount column (those are the revenue itself).
+    const priceField = findField('unit_price', 'unit price', 'unitprice', 'price', 'unit_cost', 'rate');
+
+    // ---------- Computed Revenue (price × quantity) ----------
+    // Many datasets carry a unit price and a quantity but NO explicit revenue/
+    // amount column (e.g. product catalogs, line items). "Total revenue" then
+    // means SUM(price × quantity), not SUM(price). Only synthesize this when
+    // there is no real revenue column to use instead — otherwise the explicit
+    // column is authoritative.
+    if (!revenueField && priceField && quantityField && priceField.name !== quantityField.name) {
+        metrics.push({
+            id: 'computed_revenue',
+            label: 'Revenue',
+            formula: `SUM(${priceField.name} * ${quantityField.name})`,
+            dependsOn: [priceField.name, quantityField.name],
+            semanticType: 'currency',
+            preAggregated: true,
+            description: `Total revenue = unit price (${priceField.name}) × quantity (${quantityField.name}), summed across rows`,
+            synonyms: ['revenue', 'total revenue', 'sales', 'total sales', 'turnover', 'income', 'gross revenue', 'gmv', 'sales value'],
+        });
+    }
 
     // Gross Margin %
     if (revenueField && costField) {
