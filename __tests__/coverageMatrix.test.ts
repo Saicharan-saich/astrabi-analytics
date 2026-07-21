@@ -70,6 +70,8 @@ const CASES: Case[] = [
     { label: 'anti-join', question: 'customers who bought Burger but never Pizza', plan: P({ intent: 'breakdown', dimensions: [{ field: 'customer_id' }] }), tier: 'antijoin', check: (r) => expect(r.map((x: any) => String(x.customer_id))).toEqual(['C4']) },
     { label: 'period comparison', question: 'revenue this month vs last month', plan: P({ intent: 'total_comparison', metrics: [{ field: 'total_price', agg: 'sum' }], comparison: { type: 'previous_period', mode: 'total' } }), tier: 'correction' },
     { label: 'two-stage derived', question: 'average daily sales', plan: P({ intent: 'derived_metric', metrics: [{ field: 'total_price', agg: 'avg', derivedMetricId: 'avg_daily' }] }), tier: 'correction' },
+    { label: 'contribution / mix-shift', question: 'what drove the change in revenue by channel', plan: P({ intent: 'total_comparison', dimensions: [{ field: 'channel' }], metrics: [{ field: 'total_price', agg: 'sum' }], comparison: { type: 'previous_period', mode: 'total' } }), tier: 'correction' },
+    { label: 'numeric row filter', question: 'orders over $15', plan: P({ intent: 'single_metric', metrics: [{ field: '*', agg: 'count' }], filters: [{ field: 'total_price', op: '>', value: 15 }] }), tier: 'qb', check: scalarIs(2) },
 ];
 
 function runQb(plan: AnalysisPlan): any[] {
