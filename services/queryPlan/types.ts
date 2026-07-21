@@ -86,6 +86,18 @@ export interface GroupFilter {
     value: number;
 }
 
+/** Row-level comparison of a column against an aggregate of a column, e.g.
+ *  "orders above the average order value":
+ *    WHERE "total_price" > (SELECT AVG("total_price") FROM "data")
+ *  Deterministic and additive — only compileSQL reads it, so the click-driven
+ *  builder (JS engine / validator) is unaffected. */
+export interface AggregateComparisonFilter {
+    column: string;                                  // left side (row value)
+    op: '>' | '<' | '>=' | '<=';
+    compareAgg: 'AVG' | 'SUM' | 'MIN' | 'MAX';       // aggregate on the right
+    compareColumn: string;                           // column the aggregate is over
+}
+
 export interface Filters {
     row: RowFilter[];
     range: RangeFilter[];
@@ -135,6 +147,9 @@ export interface QueryPlan {
     // Execution hints (not part of SQL, used by JS engine)
     _dateColumnKey?: string;         // Resolved date column for time bucketing
     _emptyBucketMode?: 'include' | 'exclude'; // time → include, categorical → exclude
+    /** Row-level "vs aggregate" filters (e.g. above-average). Read only by the
+     *  SQL compiler; the JS engine ignores it. Set by the AI QB mapper. */
+    _aggregateFilters?: AggregateComparisonFilter[];
 }
 
 // ── ENRICHED QUERY (Feature Layer) ──────────────────────────────

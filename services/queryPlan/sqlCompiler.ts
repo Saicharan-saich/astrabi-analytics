@@ -251,6 +251,12 @@ export function compileSQL(plan: QueryPlan): string {
     for (const df of plan.filters.date) {
         whereClauses.push(compileDateFilter(df));
     }
+    // Row-level "vs aggregate" filters (e.g. above-average order value).
+    for (const af of plan._aggregateFilters || []) {
+        const col = safeId(af.column);
+        const cmpCol = safeId(af.compareColumn);
+        whereClauses.push(`${col} ${af.op} (SELECT ${af.compareAgg}(${cmpCol}) FROM "${plan.source.replace(/"/g, '""')}")`);
+    }
     if (whereClauses.length > 0) {
         parts.push(`WHERE ${whereClauses.join(' AND ')}`);
     }

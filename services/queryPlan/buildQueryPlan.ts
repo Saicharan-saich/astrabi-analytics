@@ -6,7 +6,7 @@
 
 import {
     QueryPlan, Metric, Dimension, Filters, RowFilter, RangeFilter, DateFilter,
-    GroupFilter, OrderBy, AggregationType, TimeGrain, Expression
+    GroupFilter, OrderBy, AggregationType, TimeGrain, Expression, AggregateComparisonFilter
 } from './types';
 import { DateRange } from '../dateHelpers';
 
@@ -17,8 +17,12 @@ export interface UIQueryConfig {
     dimension?: string;
     timeFilter?: string;
     filters?: Record<string, string[]>;
+    /** Exclusion filters — column → values to exclude (NOT IN). */
+    excludeFilters?: Record<string, string[]>;
     measureFilters?: Array<{ column: string; operator: string; value: number }>;
     dateFilters?: Array<{ column: string; timeGrain: string; values: string[] }>;
+    /** Row-level "vs aggregate" filters (e.g. above-average). */
+    aggregateFilters?: AggregateComparisonFilter[];
     sort?: string;
     limit?: number;
     secondaryMetrics?: string[];
@@ -147,6 +151,15 @@ export function buildQueryPlan(
         }
     }
 
+    // 2b. Exclusion filters (NOT IN)
+    if (query.excludeFilters) {
+        for (const [col, vals] of Object.entries(query.excludeFilters)) {
+            if (vals.length > 0) {
+                rowFilters.push({ column: col, op: 'NOT_IN', value: vals });
+            }
+        }
+    }
+
     // 3. Measure filters → GROUP (HAVING) — this is the critical semantic fix
     if (query.measureFilters) {
         for (const mf of query.measureFilters) {
@@ -217,5 +230,6 @@ export function buildQueryPlan(
         limit,
         _dateColumnKey: dateColumnKey,
         _emptyBucketMode: isTimeDim ? 'include' : 'exclude',
+        _aggregateFilters: query.aggregateFilters && query.aggregateFilters.length > 0 ? query.aggregateFilters : undefined,
     };
 }
