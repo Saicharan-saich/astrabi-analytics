@@ -16,6 +16,7 @@ import { mapPlanToQBConfig } from '../services/ai-sql/qbMapper';
 import { buildQueryPlan } from '../services/queryPlan/buildQueryPlan';
 import { compileSQL } from '../services/queryPlan/sqlCompiler';
 import { getDates } from '../services/dateHelpers';
+import { applyTableCalculation } from '../utils/tableCalculations';
 import type { AnalysisPlan } from '../services/ai-sql/types';
 
 const ROWS = [
@@ -44,10 +45,14 @@ const P = (o: Partial<AnalysisPlan>): AnalysisPlan => ({
 /** Map a plan → QB config → SQL, run it, return rows. Fails loudly on no-fit. */
 function runQB(plan: AnalysisPlan): Record<string, any>[] {
     const res = mapPlanToQBConfig(plan, model);
-    if (!res.fits) throw new Error(`expected fit, got no-fit: ${res.reason}`);
+    if (!res.fits) throw new Error(`expected fit, got no-fit: ${(res as { reason?: string }).reason}`);
     const dates = getDates(model.timeContext?.anchorDate || '2025-03-12');
     const qp = buildQueryPlan(res.config, res.dateColumnKey, dates, 'data');
-    return duck.query(compileSQL(qp));
+    let rows = duck.query(compileSQL(qp));
+    if (res.shareOfTotal && qp.metrics[0]) {
+        rows = applyTableCalculation(rows, qp.metrics[0].alias, 'percent_of_total', qp.metrics[0].alias, 'raw', 'pct_of_total').transformedData;
+    }
+    return rows;
 }
 const num = (v: any) => (typeof v === 'bigint' ? Number(v) : Number(v));
 const scalar = (rows: Record<string, any>[]) => num(Object.values(rows[0])[0]);
@@ -118,13 +123,29 @@ describe('QB mapper — FIT cases produce correct answers', () => {
         }));
         expect(scalar(rows)).toBe(6);
     });
+
+    it('share_of_total: revenue share by channel sums to 100% with correct splits', () => {
+        // Total revenue = 93; Delivery 43, Dine-in 30, Online 20.
+        const rows = runQB(P({
+            intent: 'share_of_total',
+            dimensions: [{ field: 'channel' }],
+            metrics: [{ field: 'total_price', agg: 'sum' }],
+        }));
+        const by: Record<string, number> = {};
+        for (const r of rows) by[String(r.channel).toLowerCase()] = num(r.pct_of_total);
+        expect(by.delivery).toBeCloseTo(4300 / 93, 4);
+        expect(by['dine-in']).toBeCloseTo(3000 / 93, 4);
+        expect(by.online).toBeCloseTo(2000 / 93, 4);
+        const total = Object.values(by).reduce((a, b) => a + b, 0);
+        expect(total).toBeCloseTo(100, 4);
+    });
 });
 
 describe('QB mapper — NO-FIT cases fall back to AI SQL', () => {
     const noFit = (plan: AnalysisPlan) => {
         const r = mapPlanToQBConfig(plan, model);
         expect(r.fits).toBe(false);
-        return r.fits === false ? r.reason : '';
+        return (r as { reason?: string }).reason || '';
     };
 
     it('above-average filter has no builder knob', () => {
@@ -135,8 +156,12 @@ describe('QB mapper — NO-FIT cases fall back to AI SQL', () => {
         }))).toMatch(/advanced engine|not a builder/i);
     });
 
-    it('share_of_total needs the advanced engine', () => {
-        expect(noFit(P({ intent: 'share_of_total', dimensions: [{ field: 'channel' }], metrics: [{ field: 'total_price', agg: 'sum' }] }))).toMatch(/advanced engine/i);
+    it('scalar (filtered, no-dimension) share needs the advanced engine', () => {
+        expect(noFit(P({
+            intent: 'share_of_total',
+            metrics: [{ field: 'total_price', agg: 'sum' }],
+            filters: [{ field: 'category', op: '=', value: 'Beverage' }],
+        }))).toMatch(/advanced engine/i);
     });
 
     it('period comparison is not a base knob', () => {
