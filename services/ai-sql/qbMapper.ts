@@ -51,6 +51,7 @@ export type QBMapResult = QBFit | QBNoFit;
  *  aggregate-filter) is routed to the advanced engine. */
 const FIT_INTENTS = new Set<AnalysisPlan['intent']>([
     'single_metric', 'breakdown', 'trend', 'ranking', 'share_of_total', 'aggregate_filter',
+    'correlation', 'distribution',
 ]);
 
 const AGG_MAP: Record<PlanMetric['agg'], string> = {
@@ -90,6 +91,24 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
     // ── Gate 2: no period comparison overlay ─────────────────────
     if (plan.comparison) {
         return { fits: false, reason: 'Period-over-period comparison is not a base builder knob.' };
+    }
+
+    // ── Distribution / histogram (special shape) ─────────────────
+    // Bins one numeric column into buckets and counts rows per bucket.
+    if (plan.intent === 'distribution') {
+        const src = plan.metrics[0]?.field || plan.dimensions[0]?.field || '';
+        const col = resolveField(src, model);
+        if (!col) return { fits: false, reason: 'Distribution needs a numeric column that exists in the dataset.' };
+        const f = model.fields.find(fl => fl.name === col);
+        if (f && f.physicalType !== 'number') {
+            return { fits: false, reason: `Distribution requires a numeric column ("${col}" is not numeric).` };
+        }
+        return {
+            fits: true,
+            config: { metric: col, aggregation: 'COUNT_ALL', distribution: { column: col, bins: 10 } },
+            dateColumnKey: model.timeContext?.primaryDateColumn || '',
+            notes: [`distribution of ${col} into 10 bins`],
+        };
     }
 
     // ── Gate 3: metrics ──────────────────────────────────────────
@@ -173,6 +192,7 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
     const measureFilters: Array<{ column: string; operator: string; value: number }> = [];
     const dateFilters: Array<{ column: string; timeGrain: string; values: string[] }> = [];
     const aggregateFilters: Array<{ column: string; op: '>' | '<' | '>=' | '<='; compareAgg: 'AVG'; compareColumn: string }> = [];
+    const likeFilters: Array<{ column: string; pattern: string; negate?: boolean }> = [];
     let timeFilter: string | undefined;
 
     for (const f of plan.filters) {
@@ -253,7 +273,17 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
             continue;
         }
 
-        // op ∈ { like } and any residual — no builder knob.
+        if (op === 'like') {
+            const col = resolveField(f.field, model);
+            if (!col) return { fits: false, reason: `Text filter column "${f.field}" not found.` };
+            let pattern = String(f.value ?? '');
+            if (!pattern.includes('%') && !pattern.includes('_')) pattern = `%${pattern}%`;
+            likeFilters.push({ column: col, pattern });
+            notes.push(`where ${col} like ${pattern}`);
+            continue;
+        }
+
+        // Any residual operator — no builder knob.
         return { fits: false, reason: `Filter operator "${op}" is not a builder option.` };
     }
 
@@ -296,6 +326,7 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
         measureFilters: measureFilters.length > 0 ? measureFilters : undefined,
         dateFilters: dateFilters.length > 0 ? dateFilters : undefined,
         aggregateFilters: aggregateFilters.length > 0 ? aggregateFilters : undefined,
+        likeFilters: likeFilters.length > 0 ? likeFilters : undefined,
         sort,
         limit: plan.limit || undefined,
         secondaryMetrics: secondaryMetrics.length > 0 ? secondaryMetrics : undefined,

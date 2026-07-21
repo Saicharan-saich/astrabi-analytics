@@ -150,6 +150,12 @@ export interface QueryPlan {
     /** Row-level "vs aggregate" filters (e.g. above-average). Read only by the
      *  SQL compiler; the JS engine ignores it. Set by the AI QB mapper. */
     _aggregateFilters?: AggregateComparisonFilter[];
+    /** Text-contains filters (LIKE / NOT LIKE). Read only by the SQL compiler. */
+    _likeFilters?: Array<{ column: string; pattern: string; negate?: boolean }>;
+    /** Numeric distribution / histogram: bins a column into `bins` buckets and
+     *  counts rows per bucket. When set, the SQL compiler emits a binning query
+     *  and ignores dimensions/metrics. Read only by the SQL compiler. */
+    _distribution?: { column: string; bins: number };
 }
 
 // ── ENRICHED QUERY (Feature Layer) ──────────────────────────────

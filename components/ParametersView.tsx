@@ -11,7 +11,8 @@
 import React, { useMemo, useState } from 'react';
 import { SlidersHorizontal, CheckCircle2, CircleDashed, Cpu, Play } from 'lucide-react';
 import {
-    DETERMINISTIC_KNOBS, AI_ROUTED_SHAPES, DETERMINISTIC_COUNT, AI_ROUTED_COUNT,
+    DETERMINISTIC_KNOBS, CORRECTION_ENGINE_SHAPES, AI_ROUTED_SHAPES,
+    DETERMINISTIC_COUNT, CORRECTION_COUNT, AI_ROUTED_COUNT, CORRECTION_ENGINE_INTENTS,
     type KnobDoc,
 } from '../services/ai-sql/qbKnobCatalog';
 import { mapPlanToQBConfig } from '../services/ai-sql/qbMapper';
@@ -61,29 +62,44 @@ const DEMO_QUESTIONS: Array<{ q: string; plan: AnalysisPlan }> = [
     { q: 'Revenue excluding Online orders', plan: P({ intent: 'single_metric', metrics: [{ field: 'total_price', agg: 'sum' }], filters: [{ field: 'channel', op: '!=', value: 'Online' }] }) },
     { q: 'How many orders are above the average order value?', plan: P({ intent: 'aggregate_filter', metrics: [{ field: '*', agg: 'count' }], filters: [{ field: 'total_price', op: 'above_avg', value: null }] }) },
     { q: 'What share of revenue does each channel represent?', plan: P({ intent: 'share_of_total', dimensions: [{ field: 'channel' }], metrics: [{ field: 'total_price', agg: 'sum' }] }) },
+    { q: 'Distribution of order values', plan: P({ intent: 'distribution', metrics: [{ field: 'total_price', agg: 'sum' }] }) },
+    { q: 'Products whose name contains "Pro"', plan: P({ intent: 'single_metric', metrics: [{ field: 'total_price', agg: 'sum' }], filters: [{ field: 'product', op: 'like', value: 'Pro' }] }) },
     { q: 'Revenue by month', plan: P({ intent: 'trend', dimensions: [{ field: 'order_date', timeGrain: 'month' }], metrics: [{ field: 'total_price', agg: 'sum' }] }) },
     { q: 'Revenue this month vs last month', plan: P({ intent: 'total_comparison', metrics: [{ field: 'total_price', agg: 'sum' }], comparison: { type: 'previous_period', mode: 'total' } }) },
     { q: 'Average daily sales', plan: P({ intent: 'derived_metric', metrics: [{ field: 'total_price', agg: 'avg', derivedMetricId: 'avg_daily' }] }) },
-    { q: 'Products whose name contains "Pro"', plan: P({ intent: 'breakdown', dimensions: [{ field: 'product' }], metrics: [{ field: 'total_price', agg: 'sum' }], filters: [{ field: 'product', op: 'like', value: '%Pro%' }] }) },
+    { q: 'Customers who bought A but never B', plan: P({ intent: 'breakdown', dimensions: [{ field: 'customer_id' }], metrics: [{ field: 'total_price', agg: 'sum' }], filters: [{ field: 'product', op: 'not_in', value: ['B'] }, { field: 'product', op: '=', value: 'A' }] }) },
 ];
 
-function mapDemo(plan: AnalysisPlan): { deterministic: boolean; detail: string; sql?: string } {
+type Tier = 'qb' | 'correction' | 'llm';
+function mapDemo(plan: AnalysisPlan): { tier: Tier; detail: string; sql?: string } {
     const res = mapPlanToQBConfig(plan, DEMO_MODEL);
-    if (!res.fits) return { deterministic: false, detail: (res as { reason?: string }).reason || 'routed to AI' };
-    try {
-        const qp = buildQueryPlan(res.config, res.dateColumnKey, getDates('2025-06-30'), 'data');
-        return { deterministic: true, detail: res.notes.join('; '), sql: compileSQL(qp) };
-    } catch {
-        return { deterministic: false, detail: 'compilation failed' };
+    if (res.fits) {
+        try {
+            const qp = buildQueryPlan(res.config, res.dateColumnKey, getDates('2025-06-30'), 'data');
+            return { tier: 'qb', detail: res.notes.join('; '), sql: compileSQL(qp) };
+        } catch {
+            return { tier: 'llm', detail: 'compilation failed' };
+        }
     }
+    // Not QB-mapped — but the correction engine still builds these deterministically.
+    if (CORRECTION_ENGINE_INTENTS.has(plan.intent)) {
+        return { tier: 'correction', detail: 'built deterministically by the correction engine (no LLM SQL)' };
+    }
+    return { tier: 'llm', detail: (res as { reason?: string }).reason || 'routed to the LLM' };
 }
+
+const TIER_META: Record<Tier, { label: string; cls: string }> = {
+    qb: { label: 'QUESTION BUILDER', cls: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
+    correction: { label: 'CORRECTION ENGINE', cls: 'bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300' },
+    llm: { label: 'LLM SQL', cls: 'bg-gray-100 dark:bg-white/[0.06] text-gray-500 dark:text-gray-400' },
+};
 
 const GROUPS: KnobDoc['group'][] = ['Aggregation', 'Group-by', 'Filter', 'Shape', 'Ordering'];
 
 export const ParametersView: React.FC = () => {
     const [open, setOpen] = useState<number | null>(0);
     const demo = useMemo(() => DEMO_QUESTIONS.map(d => ({ ...d, result: mapDemo(d.plan) })), []);
-    const detCount = demo.filter(d => d.result.deterministic).length;
+    const detCount = demo.filter(d => d.result.tier !== 'llm').length;
 
     return (
         <div className="h-full overflow-y-auto px-6 py-6 max-w-5xl mx-auto">
@@ -94,20 +110,21 @@ export const ParametersView: React.FC = () => {
                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300">ADMIN</span>
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-3xl">
-                AI SQL answers a question by mapping it onto the Question Builder's finite, typed knob set and
-                running the hardened deterministic engine — the same one users drive by clicking. It falls back to
-                the LLM only when a question needs a shape no knob covers. This page is the map of that knob set.
+                AI SQL generates its SQL deterministically — by rules, not by the LLM. Most questions map onto the
+                Question Builder's knob set; comparison, growth and two-stage metrics are built by the deterministic
+                correction engine. The LLM only turns the question into a plan (and writes SQL solely for the last
+                genuine gaps). This page is the map of that coverage.
             </p>
 
             {/* Coverage tiles */}
             <div className="grid grid-cols-3 gap-3 mb-8">
                 <div className="rounded-xl border border-gray-200 dark:border-white/[0.08] p-4">
                     <div className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">{DETERMINISTIC_COUNT}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">deterministic knobs</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">Question Builder knobs</div>
                 </div>
                 <div className="rounded-xl border border-gray-200 dark:border-white/[0.08] p-4">
-                    <div className="text-2xl font-extrabold text-gray-500 dark:text-gray-300">{AI_ROUTED_COUNT}</div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">shapes routed to AI</div>
+                    <div className="text-2xl font-extrabold text-sky-600 dark:text-sky-400">{CORRECTION_COUNT}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">correction-engine shapes</div>
                 </div>
                 <div className="rounded-xl border border-gray-200 dark:border-white/[0.08] p-4">
                     <div className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400">{detCount}/{demo.length}</div>
@@ -124,12 +141,14 @@ export const ParametersView: React.FC = () => {
                 {demo.map((d, i) => (
                     <div key={i} className="rounded-lg border border-gray-200 dark:border-white/[0.08] overflow-hidden">
                         <button onClick={() => setOpen(open === i ? null : i)} className="w-full flex items-center gap-3 px-4 py-2.5 text-left hover:bg-gray-50 dark:hover:bg-white/[0.03]">
-                            {d.result.deterministic
+                            {d.result.tier === 'qb'
                                 ? <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
-                                : <Cpu className="w-4 h-4 text-gray-400 shrink-0" />}
+                                : d.result.tier === 'correction'
+                                    ? <CheckCircle2 className="w-4 h-4 text-sky-500 shrink-0" />
+                                    : <Cpu className="w-4 h-4 text-gray-400 shrink-0" />}
                             <span className="text-sm text-gray-800 dark:text-gray-100 flex-1">{d.q}</span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${d.result.deterministic ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' : 'bg-gray-100 dark:bg-white/[0.06] text-gray-500 dark:text-gray-400'}`}>
-                                {d.result.deterministic ? 'DETERMINISTIC' : 'AI SQL'}
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${TIER_META[d.result.tier].cls}`}>
+                                {TIER_META[d.result.tier].label}
                             </span>
                         </button>
                         {open === i && (
@@ -147,7 +166,7 @@ export const ParametersView: React.FC = () => {
             {/* Deterministic knob catalog */}
             <div className="flex items-center gap-2 mb-3">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                <h2 className="text-sm font-extrabold text-gray-900 dark:text-white uppercase tracking-wide">Deterministic knobs</h2>
+                <h2 className="text-sm font-extrabold text-gray-900 dark:text-white uppercase tracking-wide">Question Builder knobs (deterministic)</h2>
             </div>
             <div className="space-y-6 mb-10">
                 {GROUPS.map(group => (
@@ -166,19 +185,32 @@ export const ParametersView: React.FC = () => {
                 ))}
             </div>
 
-            {/* AI-routed shapes */}
+            {/* Correction-engine shapes (deterministic, non-QB-base) */}
+            <div className="flex items-center gap-2 mb-3">
+                <CheckCircle2 className="w-4 h-4 text-sky-500" />
+                <h2 className="text-sm font-extrabold text-gray-900 dark:text-white uppercase tracking-wide">Correction engine (deterministic)</h2>
+            </div>
+            <div className="rounded-xl border border-gray-200 dark:border-white/[0.08] divide-y divide-gray-100 dark:divide-white/[0.06] mb-10">
+                {CORRECTION_ENGINE_SHAPES.map(s => (
+                    <div key={s.name} className="px-4 py-3 grid grid-cols-1 md:grid-cols-3 gap-1 md:gap-4">
+                        <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">{s.name}</div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 italic">“{s.example}”</div>
+                        <code className="text-[11px] text-sky-700 dark:text-sky-300 break-words">{s.sqlShape}</code>
+                    </div>
+                ))}
+            </div>
+
+            {/* Genuine remaining gaps */}
             <div className="flex items-center gap-2 mb-3">
                 <CircleDashed className="w-4 h-4 text-gray-400" />
-                <h2 className="text-sm font-extrabold text-gray-900 dark:text-white uppercase tracking-wide">Routed to the AI engine</h2>
+                <h2 className="text-sm font-extrabold text-gray-900 dark:text-white uppercase tracking-wide">Still LLM-written ({AI_ROUTED_COUNT})</h2>
             </div>
             <div className="rounded-xl border border-gray-200 dark:border-white/[0.08] divide-y divide-gray-100 dark:divide-white/[0.06] mb-10">
                 {AI_ROUTED_SHAPES.map(s => (
                     <div key={s.name} className="px-4 py-3">
                         <div className="flex items-center gap-2 mb-1">
                             <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">{s.name}</span>
-                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${s.kind === 'wip' ? 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300' : 'bg-gray-100 dark:bg-white/[0.06] text-gray-500 dark:text-gray-400'}`}>
-                                {s.kind === 'wip' ? 'BUILDER CAN — WIRING PENDING' : 'NEEDS NEW KNOB'}
-                            </span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.06] text-gray-500 dark:text-gray-400">NEEDS NEW KNOB</span>
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 italic mb-1">“{s.example}”</div>
                         <div className="text-xs text-gray-600 dark:text-gray-300">{s.reason}</div>
