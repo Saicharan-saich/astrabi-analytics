@@ -41,6 +41,7 @@ import { buildQueryPlan } from '../queryPlan/buildQueryPlan';
 import { compileSQL } from '../queryPlan/sqlCompiler';
 import { getDates } from '../dateHelpers';
 import { applyTableCalculation } from '../../utils/tableCalculations';
+import { buildValueCatalog, groundFilters } from './valueGrounding';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -180,6 +181,25 @@ export async function runAISQLPipeline(
                 console.log(`[Pipeline] Injected external filter: ${ef.field} ${ef.op} ${JSON.stringify(ef.value)}`);
             }
         }
+    }
+
+    // ─── Step 2b′: Value Grounding ───────────────────────────────
+    // Recover filters the plan dropped by matching question phrases against the
+    // dataset's actual dimension values (deterministic, no LLM). Fixes the
+    // "revenue from Delivery → filter vanished" class of bug, and works even
+    // when the LLM planner is unavailable/rate-limited.
+    try {
+        const catalog = buildValueCatalog(dataset.rows, semanticModel);
+        const grounded = groundFilters(question, catalog, plan, semanticModel);
+        if (grounded.added.length > 0) {
+            plan.filters.push(...grounded.added);
+            console.log(`[Pipeline] Value grounding recovered ${grounded.added.length} filter(s): ${grounded.added.map(f => `${f.field} ${f.op} ${JSON.stringify(f.value)}`).join(', ')}`);
+        }
+        if (grounded.setLogicFields.length > 0) {
+            console.log(`[Pipeline] Value grounding: set-logic detected on [${grounded.setLogicFields.join(', ')}] — left for the anti-join knob, not grounded as a filter.`);
+        }
+    } catch (gErr: any) {
+        console.warn('[Pipeline] Value grounding skipped:', gErr?.message);
     }
 
     // ─── Step 2c: APDME — Derived Metrics & Guardrails ─────────────
