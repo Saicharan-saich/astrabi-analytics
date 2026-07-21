@@ -76,13 +76,13 @@ function mapDifficulty(d?: string): BenchCase['difficulty'] {
     }
 }
 
-/** Tables referenced by a SQL string (FROM/JOIN targets). */
-function referencedTables(sql: string): number {
+/** Table names referenced by a SQL string (FROM/JOIN targets), lowercased. */
+export function referencedTableNames(sql: string): string[] {
     const names = new Set<string>();
     const re = /\b(?:from|join)\s+`?([a-zA-Z_][\w]*)`?/gi;
     let m: RegExpExecArray | null;
     while ((m = re.exec(sql))) names.add(m[1].toLowerCase());
-    return names.size || 1;
+    return [...names];
 }
 
 /**
@@ -102,7 +102,18 @@ export function buildBirdCases(
         if (!tblMap || Object.keys(tblMap).length === 0) continue;
 
         const tables = Object.entries(tblMap).map(([name, rows]) => ({ name, rows }));
-        const primary = [...tables].sort((a, b) => b.rows.length - a.rows.length)[0].name;
+
+        // Primary table = the table the GOLD query actually reads (NOT the biggest
+        // table in the database). For a single-table question this points the
+        // pipeline at the right table; for multi-table it's the largest of the
+        // referenced tables (the others are denormalized in).
+        const refs = referencedTableNames(gold);
+        const byName = new Map(tables.map(t => [t.name.toLowerCase(), t]));
+        const referenced = refs.map(r => byName.get(r)).filter(Boolean) as { name: string; rows: any[] }[];
+        const pool = referenced.length ? referenced : tables;
+        const primary = [...pool].sort((a, b) => b.rows.length - a.rows.length)[0].name;
+        const tableCount = Math.max(1, Math.min(referenced.length || 1, tables.length));
+
         // Attach BIRD's evidence as a hint (external knowledge the model may need).
         const question = q.evidence && q.evidence.trim()
             ? `${q.question}  (Hint: ${q.evidence.trim()})`
@@ -115,7 +126,7 @@ export function buildBirdCases(
             question,
             goldSQL: gold,
             difficulty: mapDifficulty(q.difficulty),
-            tableCount: Math.min(referencedTables(gold), tables.length),
+            tableCount,
             tables,
             primaryTable: primary,
             orderMatters: /\border\s+by\b/i.test(gold),
