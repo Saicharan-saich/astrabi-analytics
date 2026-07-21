@@ -36,6 +36,10 @@ import { resolveTimeContext, augmentQuestionWithTime } from './timeResolver';
 import { processPlan } from './derivedMetricEngine';
 import { formatSQL } from '../sqlFormatter';
 import { generateTrustVerification } from './trustEngine';
+import { mapPlanToQBConfig } from './qbMapper';
+import { buildQueryPlan } from '../queryPlan/buildQueryPlan';
+import { compileSQL } from '../queryPlan/sqlCompiler';
+import { getDates } from '../dateHelpers';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -68,7 +72,7 @@ export async function runAISQLPipeline(
 ): Promise<AISQLPipelineResult> {
     const startTime = performance.now();
     let repairAttempts = 0;
-    const TOTAL_STEPS = 11;
+    const TOTAL_STEPS = 12;
     const reportProgress = (step: string, stepNumber: number) => {
         onProgress?.({ step, stepNumber, totalSteps: TOTAL_STEPS, percent: Math.round((stepNumber / TOTAL_STEPS) * 100) });
     };
@@ -230,40 +234,100 @@ export async function runAISQLPipeline(
         };
     }
 
+    // ─── Step 2d: Question Builder Mapping Gate (QB-first) ───────
+    // Try to answer through the hardened Question Builder engine first. The
+    // mapper lands the plan on the builder's finite, typed knob set; only when
+    // the question needs a shape the builder has no knob for do we fall back to
+    // the AI SQL correction engine below.
+    reportProgress('Mapping to Question Builder...', 4);
+    console.log('[Pipeline] Step 2d: Question Builder mapping gate...');
+    _s1 = performance.now();
+    const qbResult = mapPlanToQBConfig(plan, semanticModel);
+    let qbSQL: string | null = null;
+    if (qbResult.fits) {
+        try {
+            const anchor = semanticModel.timeContext?.anchorDate
+                || semanticModel.timeContext?.maxDate
+                || new Date().toISOString().slice(0, 10);
+            const dates = getDates(anchor);
+            const qp = buildQueryPlan(qbResult.config, qbResult.dateColumnKey, dates, 'data');
+            qbSQL = compileSQL(qp);
+            console.log('[Pipeline] QB-mapped SQL:', qbSQL);
+        } catch (qbErr: any) {
+            console.warn('[Pipeline] QB compilation failed, falling back to AI SQL:', qbErr.message);
+            qbSQL = null;
+        }
+    }
+    let qbNotes: string[] = [];
+    let qbReason: string | null = null;
+    let qbTraceDetails: Record<string, any>;
+    if (qbResult.fits === true) {
+        qbNotes = qbResult.notes;
+        qbTraceDetails = { fits: true, config: qbResult.config, notes: qbNotes, sql: qbSQL };
+    } else {
+        qbReason = 'reason' in qbResult ? qbResult.reason : null;
+        qbTraceDetails = { fits: false, reason: qbReason };
+    }
+    traceStep({
+        stepNumber: 5, name: 'Question Builder Gate', engine: 'qbMapper', icon: '🎛️',
+        status: qbSQL ? 'pass' : 'skip',
+        summary: qbSQL
+            ? `Answered by the builder — ${qbNotes.join('; ')}`
+            : `Fell back to AI SQL — ${qbReason || 'compilation failed'}`,
+        details: qbTraceDetails,
+    }, _s1);
+
     // ─── Step 3: Generate SQL (Step B — deterministic + LLM fallback) ─
     reportProgress('Generating SQL...', 4);
     console.log('[Pipeline] Step 3: Generating SQL...');
     _s1 = performance.now();
-    let sqlResult = await generateSQLFromPlan(plan, semanticModel, apdmeResult.derivedMetrics);
+    let sqlResult: { sql: string; method: string; explanation?: string };
+    if (qbSQL) {
+        // Builder answered — skip the AI SQL generator entirely.
+        sqlResult = { sql: qbSQL, method: 'question-builder', explanation: '' };
+    } else {
+        sqlResult = await generateSQLFromPlan(plan, semanticModel, apdmeResult.derivedMetrics);
+    }
     const aiGeneratedSQL = sqlResult.sql; // Keep AI's SQL for reference
     const sqlMethod = sqlResult.method;
     traceStep({
-        stepNumber: 5, name: 'SQL Generator', engine: 'sqlGenerator', icon: '⚡',
+        stepNumber: 6, name: 'SQL Generator', engine: 'sqlGenerator', icon: '⚡',
         status: 'pass',
-        summary: `Generated via ${sqlMethod === 'deterministic' ? 'deterministic rules' : 'AI/LLM fallback'}`,
+        summary: qbSQL
+            ? 'Compiled from Question Builder configuration'
+            : `Generated via ${sqlMethod === 'deterministic' ? 'deterministic rules' : 'AI/LLM fallback'}`,
         details: { method: sqlMethod, sql: aiGeneratedSQL },
     }, _s1);
 
     // ─── Step 3b: SQL Correction Engine ──────────────────────────
+    // Skipped when the Question Builder answered — its SQL is already the
+    // hardened, deterministic output.
     reportProgress('Correcting SQL...', 5);
-    console.log('[Pipeline] Step 3b: Running SQL Correction Engine...');
     _s1 = performance.now();
     let currentSQL: string;
-    let _correctionStatus: 'pass' | 'warn' = 'pass';
-    try {
-        currentSQL = correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
-        console.log('[Pipeline] Correction Engine SQL:', currentSQL);
-    } catch (correctionErr: any) {
-        console.warn('[Pipeline] Correction engine failed, using AI SQL:', correctionErr.message);
-        currentSQL = aiGeneratedSQL; // Fallback to AI SQL if engine fails
-        _correctionStatus = 'warn';
+    let _correctionStatus: 'pass' | 'warn' | 'skip' = 'pass';
+    if (qbSQL) {
+        currentSQL = qbSQL;
+        _correctionStatus = 'skip';
+    } else {
+        console.log('[Pipeline] Step 3b: Running SQL Correction Engine...');
+        try {
+            currentSQL = correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
+            console.log('[Pipeline] Correction Engine SQL:', currentSQL);
+        } catch (correctionErr: any) {
+            console.warn('[Pipeline] Correction engine failed, using AI SQL:', correctionErr.message);
+            currentSQL = aiGeneratedSQL; // Fallback to AI SQL if engine fails
+            _correctionStatus = 'warn';
+        }
     }
     traceStep({
-        stepNumber: 6, name: 'SQL Correction Engine', engine: 'sqlCorrectionEngine', icon: '🔧',
+        stepNumber: 7, name: 'SQL Correction Engine', engine: 'sqlCorrectionEngine', icon: '🔧',
         status: _correctionStatus,
-        summary: _correctionStatus === 'pass'
-            ? 'SQL rebuilt deterministically — verified column names, GROUP BY, aggregations'
-            : 'Correction engine failed — using AI-generated SQL as fallback',
+        summary: _correctionStatus === 'skip'
+            ? 'Skipped — Question Builder produced the SQL directly'
+            : _correctionStatus === 'pass'
+                ? 'SQL rebuilt deterministically — verified column names, GROUP BY, aggregations'
+                : 'Correction engine failed — using AI-generated SQL as fallback',
         details: { correctedSQL: currentSQL, usedFallback: _correctionStatus === 'warn' },
     }, _s1);
 
@@ -288,7 +352,7 @@ export async function runAISQLPipeline(
     const _failedChecks = validation.checks.filter(c => c.status === 'fail');
     const _warnChecks = validation.checks.filter(c => c.status === 'warn');
     traceStep({
-        stepNumber: 7, name: 'SQL Validator', engine: 'sqlValidator', icon: '✅',
+        stepNumber: 8, name: 'SQL Validator', engine: 'sqlValidator', icon: '✅',
         status: _failedChecks.length > 0 ? 'fail' : _warnChecks.length > 0 ? 'warn' : 'pass',
         summary: `${validation.checks.filter(c => c.status === 'pass').length}/${validation.checks.length} checks passed${_failedChecks.length > 0 ? `, ${_failedChecks.length} failed` : ''}`,
         details: { checks: validation.checks },
@@ -324,7 +388,7 @@ export async function runAISQLPipeline(
     }
 
     traceStep({
-        stepNumber: 8, name: 'DuckDB Execution', engine: 'duckdbEngine', icon: '🦆',
+        stepNumber: 9, name: 'DuckDB Execution', engine: 'duckdbEngine', icon: '🦆',
         status: repairAttempts > 0 ? 'warn' : 'pass',
         summary: `${(execResult.data || []).length} rows returned${repairAttempts > 0 ? ` (after ${repairAttempts} repair attempt${repairAttempts > 1 ? 's' : ''})` : ''}`,
         details: {
@@ -736,7 +800,7 @@ export async function runAISQLPipeline(
     _s1 = performance.now();
     const profile = profileResult(rawData, plan, semanticModel);
     traceStep({
-        stepNumber: 9, name: 'Result Profiler', engine: 'resultProfiler', icon: '📊',
+        stepNumber: 10, name: 'Result Profiler', engine: 'resultProfiler', icon: '📊',
         status: 'pass',
         summary: `${profile.rowCount} rows, ${profile.metricCount} metric(s), ${profile.dimensionCount} dim(s), time=${profile.hasTimeDimension}`,
         details: {
@@ -754,7 +818,7 @@ export async function runAISQLPipeline(
     _s1 = performance.now();
     const chartRec = recommendChart(profile, plan, semanticModel);
     traceStep({
-        stepNumber: 10, name: 'Chart Recommender', engine: 'chartRecommender', icon: '📈',
+        stepNumber: 11, name: 'Chart Recommender', engine: 'chartRecommender', icon: '📈',
         status: 'pass',
         summary: `${chartRec.chartType} — ${chartRec.reason}`,
         details: {
@@ -818,7 +882,9 @@ export async function runAISQLPipeline(
     // ─── Step 10: Score Confidence ───────────────────────────────
     console.log('[Pipeline] Step 10: Scoring confidence...');
     _s1 = performance.now();
-    const confidence = scoreConfidence(plan, semanticModel, validation, sqlMethod, repairAttempts, currentSQL);
+    // The Question Builder path is deterministic — score it as such.
+    const confidenceMethod: 'deterministic' | 'llm' = sqlMethod === 'llm' ? 'llm' : 'deterministic';
+    const confidence = scoreConfidence(plan, semanticModel, validation, confidenceMethod, repairAttempts, currentSQL);
     // Apply APDME guardrail penalties (e.g., -50 for SUM on a date column)
     if (apdmeResult.confidencePenalty > 0) {
         confidence.score = Math.max(0, confidence.score - apdmeResult.confidencePenalty);
@@ -827,7 +893,7 @@ export async function runAISQLPipeline(
         console.log(`[Pipeline] APDME penalty applied: -${apdmeResult.confidencePenalty} → ${confidence.score}/100`);
     }
     traceStep({
-        stepNumber: 11, name: 'Confidence Scorer', engine: 'confidenceScorer', icon: '🏆',
+        stepNumber: 12, name: 'Confidence Scorer', engine: 'confidenceScorer', icon: '🏆',
         status: confidence.level === 'low' ? 'warn' : 'pass',
         summary: `Score: ${confidence.score}/100 (${confidence.level})`,
         details: { score: confidence.score, level: confidence.level, factors: confidence.factors, reasons: confidence.reasons },
