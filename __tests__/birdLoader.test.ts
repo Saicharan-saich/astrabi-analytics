@@ -67,6 +67,13 @@ describe('buildBirdCases', () => {
         expect(cases[1].tags).toContain('bird');
     });
 
+    it('sets primaryTable to the table the GOLD reads (not the biggest table)', () => {
+        // `account` has 3 rows, `loan` has 3 rows here; gold #0 reads ONLY account,
+        // so primary must be account even though another table exists.
+        const cases = buildBirdCases(questions, databases());
+        expect(cases[0].primaryTable).toBe('account');
+    });
+
     it('respects a load limit', () => {
         expect(buildBirdCases(questions, databases(), { limit: 1 })).toHaveLength(1);
     });
