@@ -923,8 +923,8 @@ function buildGrowthAnalysisSQL(plan: AnalysisPlan, model: SemanticModel): strin
 
     // TRY_CAST so a metric loaded as text (CSV) doesn't break the aggregate.
     const qMetricNum = `TRY_CAST(${qMetricField} AS DOUBLE)`;
-    const currentExpr = `${aggFn}(CASE WHEN ${qDateField} >= DATE '${currentStart}' THEN ${qMetricNum} ELSE 0 END)`;
-    const previousExpr = `${aggFn}(CASE WHEN ${qDateField} < DATE '${previousEnd}' THEN ${qMetricNum} ELSE 0 END)`;
+    const currentExpr = `${aggFn}(CASE WHEN CAST(${qDateField} AS DATE) >= DATE '${currentStart}' THEN ${qMetricNum} ELSE 0 END)`;
+    const previousExpr = `${aggFn}(CASE WHEN CAST(${qDateField} AS DATE) < DATE '${previousEnd}' THEN ${qMetricNum} ELSE 0 END)`;
 
     const growthExpr = `ROUND(CASE WHEN ${previousExpr} > 0 THEN (${currentExpr} - ${previousExpr}) / ${previousExpr} * 100 ELSE NULL END, 2)`;
 
@@ -1247,11 +1247,11 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
         const sql = [
             `SELECT 'Current' AS period, ${metExprs.join(', ')}`,
             fromTable(),
-            `WHERE ${dateField} BETWEEN DATE '${currentStart}' AND DATE '${currentEnd}'`,
+            `WHERE CAST(${dateField} AS DATE) BETWEEN DATE '${currentStart}' AND DATE '${currentEnd}'`,
             `UNION ALL`,
             `SELECT 'Previous' AS period, ${metExprs.join(', ')}`,
             fromTable(),
-            `WHERE ${dateField} BETWEEN DATE '${prevDates.start}' AND DATE '${prevDates.end}'`,
+            `WHERE CAST(${dateField} AS DATE) BETWEEN DATE '${prevDates.start}' AND DATE '${prevDates.end}'`,
         ];
         return sql.join('\n');
     }
@@ -1419,7 +1419,7 @@ function buildWhereClause(filters: PlanFilter[]): string {
         if (TEMPORAL.has(f.op)) {
             const r = resolveTemporalRange(f.op);
             if (r) {
-                parts.push(`${fld(f.field)} >= DATE '${r.start}' AND ${fld(f.field)} <= DATE '${r.end}'`);
+                parts.push(`CAST(${fld(f.field)} AS DATE) >= DATE '${r.start}' AND CAST(${fld(f.field)} AS DATE) <= DATE '${r.end}'`);
             } else {
                 logger.warn('[SQL Correction]', `Temporal filter "${f.op}" on "${f.field}" could not be resolved (no anchor date). Filter skipped.`);
             }
