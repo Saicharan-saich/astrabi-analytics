@@ -19,6 +19,14 @@ import { runAISQLPipeline } from '../ai-sql/pipeline';
 import { runETLPipeline } from '../etlPipeline';
 import { autoJoinDatasets } from '../analysisEngine';
 import { classifyFailure, FailureCategory, FAILURE_LABELS } from './errorClassifier';
+import { resampleTables, mulberry32, RTable } from './resample';
+
+export interface RunOptions {
+    /** Number of database instances for test-suite accuracy (1 = original only). */
+    testSuiteInstances?: number;
+    /** Timed repetitions when measuring VES execution efficiency. */
+    vesRuns?: number;
+}
 
 export interface CaseResult {
     id: string;
@@ -45,6 +53,12 @@ export interface CaseResult {
     /** Why it failed (or 'correct'). */
     failCategory: FailureCategory;
     failDetail: string;
+    /** BIRD Valid Efficiency Score reward = sqrt(t_gold / t_pred); 0 if incorrect. */
+    vesReward: number;
+    /** Instances the test-suite check ran against (1 = single-instance only). */
+    testSuiteInstances: number;
+    /** Matched gold on ALL test-suite instances (robust to coincidence). */
+    robustMatch: boolean;
     expectedSample: Record<string, any>[];
     actualSample: Record<string, any>[];
 }
@@ -62,20 +76,21 @@ export interface BenchmarkProgress {
  *     autoJoinDatasets() the connector uses (fact-first LEFT JOIN cascade).
  * The pipeline is single-table; the app makes multi-table work by widening first.
  */
-function buildDataset(c: BenchCase): { dataset: Dataset; masterRows: number; joinLogs: string[] } {
+function buildDataset(c: BenchCase, tablesOverride?: RTable[]): { dataset: Dataset; masterRows: number; joinLogs: string[] } {
+    const srcTables = tablesOverride || c.tables;
     let rows: Record<string, any>[];
     let name: string;
     let joinLogs: string[] = [];
 
-    if (c.tables.length > 1) {
+    if (srcTables.length > 1) {
         const tableMap: Record<string, any[]> = {};
-        for (const t of c.tables) tableMap[t.name] = t.rows;
+        for (const t of srcTables) tableMap[t.name] = t.rows;
         const joined = autoJoinDatasets(tableMap, c.joinEdges);
         rows = joined.mergedRows;
         joinLogs = joined.joinLogs;
         name = `${c.db}_master`;
     } else {
-        const primary = c.tables.find(t => t.name === c.primaryTable) || c.tables[0];
+        const primary = srcTables.find(t => t.name === c.primaryTable) || srcTables[0];
         rows = primary.rows;
         name = primary.name;
     }
@@ -96,7 +111,24 @@ function buildDataset(c: BenchCase): { dataset: Dataset; masterRows: number; joi
     return { dataset, masterRows: rows.length, joinLogs };
 }
 
-export async function runBenchmarkCase(c: BenchCase): Promise<CaseResult> {
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+/** Average execution time (ms) of a SQL over N runs; floored so tiny data ≠ 0. */
+async function timeExec(sql: string, runs: number): Promise<number> {
+    let total = 0;
+    for (let i = 0; i < runs; i++) {
+        const t0 = now();
+        const r = await runRawSQLViaDuckDB(sql);
+        total += now() - t0;
+        if (r.error) return NaN; // can't time a failing query
+    }
+    return Math.max(0.01, total / runs);
+}
+
+export async function runBenchmarkCase(c: BenchCase, opts: RunOptions = {}): Promise<CaseResult> {
+    const K = Math.max(1, Math.floor(opts.testSuiteInstances || 1));
+    const vesRuns = Math.max(1, Math.floor(opts.vesRuns || 3));
+
     let predictedSQL = '';
     let tokens = 0;
     let repairAttempts = 0;
@@ -140,6 +172,47 @@ export async function runBenchmarkCase(c: BenchCase): Promise<CaseResult> {
         expectedRows: cmp.expectedRows, actualRows: cmp.actualRows, expectedSample, actualSample,
     });
 
+    // ── VES (Valid Efficiency Score) — reward only CORRECT predictions ──
+    // Runs BEFORE the test-suite loop, while the original tables + "data" master
+    // are still the loaded instance.
+    let vesReward = 0;
+    if (cmp.match && predictedSQL && !error) {
+        try {
+            const tGold = await timeExec(c.goldSQL, vesRuns);
+            const tPred = await timeExec(predictedSQL, vesRuns);
+            vesReward = (isFinite(tGold) && isFinite(tPred) && tPred > 0)
+                ? Math.min(2, Math.max(0, Math.sqrt(tGold / tPred)))  // clamp noisy tiny-data ratios
+                : 1;                                                   // couldn't distinguish → neutral
+        } catch { vesReward = 1; }
+    }
+
+    // ── Test-suite (multi-instance) robustness ──
+    // Only bother if the original instance matched — a fail is already incorrect.
+    let robustMatch = cmp.match;
+    let instancesRun = 1;
+    if (K > 1 && cmp.match && predictedSQL && !error) {
+        const rng = mulberry32(hashSeed(c.id));
+        const names = c.tables.map(t => t.name);
+        for (let k = 1; k < K && robustMatch; k++) {
+            let matched: boolean | null = null;
+            for (let attempt = 0; attempt < 3 && matched === null; attempt++) {
+                const resampled = resampleTables(c.tables as RTable[], rng);
+                try {
+                    await clearBenchmarkTables([...names, 'data', 'master']);
+                    await loadBenchmarkTables(resampled);
+                    const goldR = await runRawSQLViaDuckDB(c.goldSQL);
+                    if (goldR.error || (goldR.data || []).length === 0) continue; // non-informative resample
+                    const { dataset: dsR } = buildDataset(c, resampled);
+                    await loadBenchmarkTables([{ name: 'data', rows: dsR.rows }]);
+                    const predR = await runRawSQLViaDuckDB(predictedSQL);
+                    matched = compareResults(goldR.data || [], predR.data || [], { orderMatters: c.orderMatters }).match;
+                } catch { matched = false; }
+            }
+            if (matched === false) robustMatch = false;
+            if (matched !== null) instancesRun++;
+        }
+    }
+
     return {
         id: c.id, question: c.question, suite: c.suite, difficulty: c.difficulty,
         tableCount: c.tableCount, tags: c.tags,
@@ -148,20 +221,29 @@ export async function runBenchmarkCase(c: BenchCase): Promise<CaseResult> {
         goldSQL: c.goldSQL, predictedSQL, latencyMs, tokens, error,
         executed: !error, repairAttempts, confidence,
         failCategory: cls.category, failDetail: cls.detail,
+        vesReward, testSuiteInstances: instancesRun, robustMatch,
         expectedSample, actualSample,
     };
+}
+
+/** Small deterministic string→int hash for a reproducible resample seed. */
+function hashSeed(s: string): number {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
 }
 
 export async function runBenchmark(
     cases: BenchCase[],
     onProgress?: (p: BenchmarkProgress) => void,
+    opts: RunOptions = {},
 ): Promise<CaseResult[]> {
     const results: CaseResult[] = [];
     for (let i = 0; i < cases.length; i++) {
         onProgress?.({ done: i, total: cases.length, current: cases[i].question });
         // Sequential on purpose: DuckDB tables + the "data" table are shared state.
         // eslint-disable-next-line no-await-in-loop
-        results.push(await runBenchmarkCase(cases[i]));
+        results.push(await runBenchmarkCase(cases[i], opts));
     }
     const allNames = [...new Set(cases.flatMap(c => c.tables.map(t => t.name)))];
     await clearBenchmarkTables(allNames);
@@ -185,6 +267,12 @@ export interface BenchmarkSummary {
     totalTokens: number;
     avgTokens: number;
     avgConfidence: number;         // 0..100 (semantic-match proxy)
+    /** BIRD Valid Efficiency Score, 0..1 (mean of correct-weighted efficiency reward). */
+    ves: number;
+    /** Test-suite accuracy 0..1 — matched gold on ALL instances (0 if K=1: same as accuracy). */
+    testSuiteAccuracy: number;
+    /** Max instances any case was evaluated on (1 = test-suite disabled). */
+    testSuiteInstances: number;
     bySuite: Bucket[];
     byDifficulty: Bucket[];
     byTableClass: Bucket[];        // single-table vs multi-table
@@ -205,6 +293,10 @@ export function summarize(results: CaseResult[]): BenchmarkSummary {
     const executed = results.filter(r => r.executed).length;
     const repaired = results.filter(r => (r.repairAttempts || 0) > 0).length;
     const totalConfidence = results.reduce((s, r) => s + (r.confidence || 0), 0);
+    // VES = mean over ALL cases of (correct ? efficiency reward : 0) — BIRD convention.
+    const vesSum = results.reduce((s, r) => s + (r.match ? (r.vesReward || 0) : 0), 0);
+    const robust = results.filter(r => r.robustMatch).length;
+    const maxInstances = results.reduce((m, r) => Math.max(m, r.testSuiteInstances || 1), 1);
     const diffs: BenchCase['difficulty'][] = ['easy', 'medium', 'hard', 'extra'];
 
     // Failure breakdown across the taxonomy (only categories that occur).
@@ -225,6 +317,9 @@ export function summarize(results: CaseResult[]): BenchmarkSummary {
         totalTokens,
         avgTokens: total ? Math.round(totalTokens / total) : 0,
         avgConfidence: total ? Math.round(totalConfidence / total) : 0,
+        ves: total ? vesSum / total : 0,
+        testSuiteAccuracy: total ? robust / total : 0,
+        testSuiteInstances: maxInstances,
         errors: results.filter(r => r.error).length,
         failureBreakdown,
         bySuite: [
@@ -244,10 +339,11 @@ export function summarize(results: CaseResult[]): BenchmarkSummary {
 
 /** CSV export of the per-case results for offline analysis. */
 export function resultsToCSV(results: CaseResult[]): string {
-    const head = ['id', 'suite', 'difficulty', 'tables', 'match', 'latency_ms', 'tokens', 'question', 'gold_sql', 'predicted_sql', 'reason'];
+    const head = ['id', 'suite', 'difficulty', 'tables', 'match', 'robust_match', 'ves_reward', 'ts_instances', 'latency_ms', 'tokens', 'question', 'gold_sql', 'predicted_sql', 'reason'];
     const esc = (v: any) => `"${String(v ?? '').replace(/"/g, '""')}"`;
     const lines = results.map(r => [
-        r.id, r.suite, r.difficulty, r.tableCount, r.match ? 1 : 0, r.latencyMs, r.tokens,
+        r.id, r.suite, r.difficulty, r.tableCount, r.match ? 1 : 0, r.robustMatch ? 1 : 0,
+        (r.vesReward ?? 0).toFixed(3), r.testSuiteInstances ?? 1, r.latencyMs, r.tokens,
         r.question, r.goldSQL, r.predictedSQL, r.error || r.reason,
     ].map(esc).join(','));
     return [head.join(','), ...lines].join('\n');

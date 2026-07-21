@@ -124,6 +124,27 @@ Notes:
 - BIRD questions frequently *need* their `evidence` (external knowledge); it is
   appended to the question as `(Hint: …)`, the standard way BIRD is consumed.
 
+## Evaluation metrics
+
+Beyond plain execution accuracy the runner reports:
+
+- **VES (Valid Efficiency Score)** — BIRD's efficiency metric. For each *correct*
+  prediction it times the gold and generated SQL and rewards `sqrt(t_gold /
+  t_pred)`; VES is the mean of that reward over all cases (incorrect → 0). On the
+  tiny built-in packs times are ~0 so VES ≈ accuracy; it becomes meaningful on
+  real BIRD-scale data.
+- **Test-suite accuracy** — set **Test-suite instances = N** (>1) in the controls.
+  Each correct answer is re-checked on N bootstrap-resampled copies of the
+  database; it only stays "correct" if it matches gold on **all** of them. This
+  removes the false positives of single-instance execution accuracy (two
+  different queries coincidentally agreeing on one dataset). No extra LLM calls —
+  only the already-generated SQL is re-executed.
+
+  > This is an **approximation** of Zhong et al. (2020) test suites — we resample
+  > the loaded data rather than shipping their distilled databases. For the
+  > strongest claim, evaluate Spider with the official test-suite databases;
+  > cite this as "bootstrap multi-instance robustness" otherwise.
+
 ## Spider 2.0 — why there's no auto-extract
 
 Spider 2.0 is a **cloud data-warehouse** benchmark: its workloads target BigQuery
