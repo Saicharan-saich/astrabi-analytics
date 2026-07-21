@@ -53,6 +53,16 @@ const plan = (over: Partial<AnalysisPlan>): AnalysisPlan => ({
     comparison: { type: 'previous_period', mode: 'total' }, ...over,
 } as AnalysisPlan);
 
+describe('Period comparison SQL', () => {
+    it('casts the date column so a VARCHAR order_date does not crash BETWEEN', () => {
+        // Regression: "col BETWEEN DATE '…'" threw "Cannot mix VARCHAR and DATE"
+        // when order_date was loaded as text. The column must be cast to DATE.
+        const sql = correctSQL(plan({ filters: [{ field: 'order_date', op: 'between', value: ['2024-05-01', '2024-05-31'] }] }), model);
+        expect(sql).toMatch(/CAST\(\s*"?order_date"?\s+AS DATE\)\s+BETWEEN/i);
+        expect(sql).not.toMatch(/"order_date"\s+BETWEEN\s+DATE/i);
+    });
+});
+
 describe('Period comparison accuracy', () => {
     it('single month vs previous month', () => {
         const res = byPeriod(run(plan({ filters: [{ field: 'order_date', op: 'between', value: ['2024-05-01', '2024-05-31'] }] })));
