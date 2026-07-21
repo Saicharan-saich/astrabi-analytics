@@ -124,6 +124,34 @@ describe('QB mapper — FIT cases produce correct answers', () => {
         expect(scalar(rows)).toBe(6);
     });
 
+    it('aggregate_filter: orders above the average order value = 2', () => {
+        // total_prices 20,15,15,8,20,15 → avg 15.5; above: 20,20 → 2 orders.
+        const rows = runQB(P({
+            intent: 'aggregate_filter',
+            metrics: [{ field: '*', agg: 'count' }],
+            filters: [{ field: 'total_price', op: 'above_avg', value: null }],
+        }));
+        expect(scalar(rows)).toBe(2);
+    });
+
+    it('exclusion (!=): revenue excluding Delivery = 50', () => {
+        const rows = runQB(P({
+            intent: 'single_metric',
+            metrics: [{ field: 'total_price', agg: 'sum' }],
+            filters: [{ field: 'channel', op: '!=', value: 'Delivery' }],
+        }));
+        expect(scalar(rows)).toBe(50);
+    });
+
+    it('exclusion (not_in): revenue excluding Delivery and Online = 30 (Dine-In only)', () => {
+        const rows = runQB(P({
+            intent: 'single_metric',
+            metrics: [{ field: 'total_price', agg: 'sum' }],
+            filters: [{ field: 'channel', op: 'not_in', value: ['Delivery', 'Online'] }],
+        }));
+        expect(scalar(rows)).toBe(30);
+    });
+
     it('share_of_total: revenue share by channel sums to 100% with correct splits', () => {
         // Total revenue = 93; Delivery 43, Dine-in 30, Online 20.
         const rows = runQB(P({
@@ -148,14 +176,6 @@ describe('QB mapper — NO-FIT cases fall back to AI SQL', () => {
         return (r as { reason?: string }).reason || '';
     };
 
-    it('above-average filter has no builder knob', () => {
-        expect(noFit(P({
-            intent: 'aggregate_filter',
-            metrics: [{ field: 'total_price', agg: 'sum' }],
-            filters: [{ field: 'total_price', op: 'above_avg', value: null }],
-        }))).toMatch(/advanced engine|not a builder/i);
-    });
-
     it('scalar (filtered, no-dimension) share needs the advanced engine', () => {
         expect(noFit(P({
             intent: 'share_of_total',
@@ -175,8 +195,16 @@ describe('QB mapper — NO-FIT cases fall back to AI SQL', () => {
         expect(noFit(P({ intent: 'derived_metric', metrics: [{ field: 'total_price', agg: 'avg', derivedMetricId: 'avg_daily' }] }))).toMatch(/advanced engine|derived/i);
     });
 
-    it('LIKE / NOT_IN filters are not builder options', () => {
+    it('LIKE filter is not a builder option', () => {
         expect(noFit(P({ intent: 'breakdown', dimensions: [{ field: 'channel' }], metrics: [{ field: 'total_price', agg: 'sum' }], filters: [{ field: 'product', op: 'like', value: '%Burg%' }] }))).toMatch(/not a builder option/i);
-        expect(noFit(P({ intent: 'breakdown', dimensions: [{ field: 'channel' }], metrics: [{ field: 'total_price', agg: 'sum' }], filters: [{ field: 'channel', op: 'not_in', value: ['Online'] }] }))).toMatch(/not a builder option/i);
+    });
+
+    it('grouped above-average (HAVING a group total vs the average of totals) needs the advanced engine', () => {
+        expect(noFit(P({
+            intent: 'aggregate_filter',
+            dimensions: [{ field: 'customer_id' }],
+            metrics: [{ field: 'total_price', agg: 'sum' }],
+            filters: [{ field: 'total_price', op: 'above_avg', value: null, isHaving: true }],
+        }))).toMatch(/advanced engine/i);
     });
 });
