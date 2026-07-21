@@ -29,7 +29,7 @@
 
 import type { JoinEdge } from '../analysisEngine';
 
-export type Suite = 'spider' | 'spider2' | 'bird' | 'internal' | 'user';
+export type Suite = 'spider' | 'spider2' | 'bird' | 'internal' | 'user' | 'smb';
 export type Difficulty = 'easy' | 'medium' | 'hard' | 'extra';
 
 export interface BenchTable {
