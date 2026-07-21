@@ -21,12 +21,19 @@ import { autoJoinDatasets } from '../analysisEngine';
 import { classifyFailure, FailureCategory, FAILURE_LABELS } from './errorClassifier';
 import { resampleTables, mulberry32, RTable } from './resample';
 import { toDuckDBDialect } from './sqlDialect';
+import { serializeSchema } from '../ai-sql/schemaSerializer';
+import { generateDirectSQL } from '../ai-sql/directSqlEngine';
+
+export type BenchEngine = 'plan' | 'sql';
 
 export interface RunOptions {
     /** Number of database instances for test-suite accuracy (1 = original only). */
     testSuiteInstances?: number;
     /** Timed repetitions when measuring VES execution efficiency. */
     vesRuns?: number;
+    /** Which engine produces the prediction: the analytical plan engine (default)
+     *  or the direct SQL-semantics engine. */
+    engine?: BenchEngine;
 }
 
 export interface CaseResult {
@@ -152,15 +159,28 @@ export async function runBenchmarkCase(c: BenchCase, opts: RunOptions = {}): Pro
         if (gold.error) throw new Error(`Gold SQL failed: ${gold.error}`);
         expected = gold.data || [];
 
-        // System prediction — denormalize (if multi-table) exactly like the app,
-        // then run the pipeline on the resulting single wide table.
-        const { dataset } = buildDataset(c);
-        const result = await runAISQLPipeline(c.question, dataset);
-        predictedSQL = result.sql || '';
-        tokens = result.tokenUsage?.total || 0;
-        repairAttempts = result.repairAttempts || 0;
-        confidence = result.confidence?.score || 0;
-        actual = (result.rawData && result.rawData.length ? result.rawData : result.chartData) || [];
+        if (opts.engine === 'sql') {
+            // Direct SQL-semantics engine: schema-only → LLM SQL → run on the
+            // ORIGINAL multi-table database (real joins), no denormalization.
+            const schema = serializeSchema(c.tables, c.joinEdges);
+            const gen = await generateDirectSQL(c.question, schema);
+            predictedSQL = gen.sql;
+            tokens = gen.tokens;
+            if (gen.error) throw new Error(gen.error);
+            const exec = await runRawSQLViaDuckDB(toDuckDBDialect(gen.sql));
+            if (exec.error) throw new Error(exec.error);
+            actual = exec.data || [];
+        } else {
+            // Analytical plan engine — denormalize (if multi-table) exactly like the
+            // app, then run the pipeline on the resulting single wide table.
+            const { dataset } = buildDataset(c);
+            const result = await runAISQLPipeline(c.question, dataset);
+            predictedSQL = result.sql || '';
+            tokens = result.tokenUsage?.total || 0;
+            repairAttempts = result.repairAttempts || 0;
+            confidence = result.confidence?.score || 0;
+            actual = (result.rawData && result.rawData.length ? result.rawData : result.chartData) || [];
+        }
     } catch (e: any) {
         error = e?.message || String(e);
     }
@@ -207,9 +227,15 @@ export async function runBenchmarkCase(c: BenchCase, opts: RunOptions = {}): Pro
                     await loadBenchmarkTables(resampled);
                     const goldR = await runRawSQLViaDuckDB(toDuckDBDialect(c.goldSQL));
                     if (goldR.error || (goldR.data || []).length === 0) continue; // non-informative resample
-                    const { dataset: dsR } = buildDataset(c, resampled);
-                    await loadBenchmarkTables([{ name: 'data', rows: dsR.rows }]);
-                    const predR = await runRawSQLViaDuckDB(predictedSQL);
+                    let predR;
+                    if (opts.engine === 'sql') {
+                        // Direct-SQL prediction runs on the ORIGINAL (resampled) tables.
+                        predR = await runRawSQLViaDuckDB(toDuckDBDialect(predictedSQL));
+                    } else {
+                        const { dataset: dsR } = buildDataset(c, resampled);
+                        await loadBenchmarkTables([{ name: 'data', rows: dsR.rows }]);
+                        predR = await runRawSQLViaDuckDB(predictedSQL);
+                    }
                     matched = compareResults(goldR.data || [], predR.data || [], { orderMatters: c.orderMatters }).match;
                 } catch { matched = false; }
             }
