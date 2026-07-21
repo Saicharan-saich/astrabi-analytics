@@ -10,6 +10,7 @@ import {
     EnrichedQuery, ComparisonConfig, TableCalculation
 } from './types';
 import { sanitizeIdentifier, escapeStringValue } from '../analysisValidator';
+import { dateRangePredicate } from './sqlPrimitives';
 
 // ── HELPERS ──────────────────────────────────────────────────────
 
@@ -144,19 +145,9 @@ function compileRowFilter(f: RowFilter): string {
 }
 
 function compileRangeFilter(f: RangeFilter): string {
-    const col = safeId(f.column);
-    // Cast to TIMESTAMP so DuckDB can compare VARCHAR date strings
-    const colTs = `${col}::TIMESTAMP`;
-    if (f.start && f.end) {
-        return `${colTs} BETWEEN ${safeDate(f.start)} AND ${safeDate(f.end)}`;
-    }
-    if (f.start) {
-        return `${colTs} >= ${safeDate(f.start)}`;
-    }
-    if (f.end) {
-        return `${colTs} <= ${safeDate(f.end)}`;
-    }
-    return '1=1'; // Should not happen — validator catches this
+    // Shared day-granularity date predicate (casts to DATE — inclusive end day,
+    // safe on text-loaded date columns). Same primitive the correction engine uses.
+    return dateRangePredicate(safeId(f.column), f.start, f.end);
 }
 
 function compileGroupFilter(gf: GroupFilter, metrics: Metric[]): string {
