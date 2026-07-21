@@ -30,6 +30,10 @@ export interface QBFit {
     config: UIQueryConfig;
     /** The date column the builder should bucket/resolve time against. */
     dateColumnKey: string;
+    /** When true, apply the builder's "% of total" table calculation to the base
+     *  result (each group's value ÷ grand total). Mirrors how the click-driven
+     *  builder computes share-of-total. */
+    shareOfTotal?: boolean;
     /** Human-readable record of which knobs were set (explainability / trace). */
     notes: string[];
 }
@@ -46,7 +50,7 @@ export type QBMapResult = QBFit | QBNoFit;
  *  else (comparisons, share, derived, distribution, correlation, growth,
  *  aggregate-filter) is routed to the advanced engine. */
 const FIT_INTENTS = new Set<AnalysisPlan['intent']>([
-    'single_metric', 'breakdown', 'trend', 'ranking',
+    'single_metric', 'breakdown', 'trend', 'ranking', 'share_of_total',
 ]);
 
 const AGG_MAP: Record<PlanMetric['agg'], string> = {
@@ -240,6 +244,20 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
         else sort = 'desc';
     }
 
+    // ── Share of total → the builder's percent-of-total table calc ──
+    // Only "share by <dimension>" is expressible (share of the group total).
+    // A filtered scalar share ("what % of revenue is Beverages") is not — the
+    // percent-of-total window would divide the filtered rows by their own sum
+    // and yield 100%. Send that to the advanced engine instead.
+    let shareOfTotal = false;
+    if (plan.intent === 'share_of_total') {
+        if (!hasGrouping) {
+            return { fits: false, reason: 'A filtered scalar share needs the advanced engine (percent-of-total requires a group-by dimension).' };
+        }
+        shareOfTotal = true;
+        notes.push('as percent of total');
+    }
+
     const config: UIQueryConfig = {
         metric: metricCol,
         aggregation,
@@ -255,5 +273,5 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
         secondaryDimensions: secondaryDimensions.length > 0 ? secondaryDimensions : undefined,
     };
 
-    return { fits: true, config, dateColumnKey, notes };
+    return { fits: true, config, dateColumnKey, shareOfTotal, notes };
 }
