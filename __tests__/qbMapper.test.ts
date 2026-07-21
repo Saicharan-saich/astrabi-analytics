@@ -169,6 +169,16 @@ describe('QB mapper — FIT cases produce correct answers', () => {
         expect(scalar(rows)).toBeCloseTo(93 / 6, 6);
     });
 
+    it('median: "median order value" → MEDIAN(total_price) = 15', () => {
+        // total_prices 20,15,15,8,20,15 → sorted 8,15,15,15,20,20 → median 15.
+        const rows = runQB(P({
+            intent: 'single_metric',
+            metrics: [{ field: 'total_price', agg: 'avg' }],
+            originalQuestion: 'what is the median order value',
+        }));
+        expect(scalar(rows)).toBe(15);
+    });
+
     it('LIKE: revenue for products containing "Burger" = 40', () => {
         const rows = runQB(P({
             intent: 'single_metric',

@@ -17,6 +17,7 @@ export type Expression =
 export type AggregationType =
     | 'SUM'
     | 'AVG'
+    | 'MEDIAN'          // MEDIAN(column) — the middle value (robust to outliers)
     | 'MIN'
     | 'MAX'
     | 'COUNT'           // COUNT(column) — skips nulls
