@@ -99,6 +99,31 @@ number on full Spider, not a leaderboard score** — the value is a truthful
 measurement plus the error taxonomy showing *where* it breaks (join grain,
 nesting, set ops). Report N (how many questions you ran) alongside the accuracy.
 
+## Running official BIRD (no scripts — load the folder in-app)
+
+BIRD (Li et al., 2023) runs entirely from the browser — no Node step, no JSON
+conversion.
+
+1. Download the **Dev** release from https://bird-bench.github.io and unzip it.
+   Expected layout:
+   ```
+   dev/
+     dev.json                              [{ db_id, question, evidence, SQL, difficulty }]
+     dev_databases/<db_id>/<db_id>.sqlite
+   ```
+2. In the Lab open **BIRD → Load BIRD folder** and pick the `dev/` folder.
+   The app reads `dev.json` + the `.sqlite` files **in your browser** (via sql.js,
+   a WASM SQLite reader), attaches BIRD's `evidence` hint to each question, and
+   builds the cases. Nothing is uploaded; only column metadata reaches the LLM.
+3. Set **Max questions**, press **Run**. Results save to the Results Dashboard.
+
+Notes:
+- The first ~300 questions are loaded (only the databases those questions need
+  are read, to keep the browser light). BIRD's full dev databases are ~1 GB, so
+  run subsets.
+- BIRD questions frequently *need* their `evidence` (external knowledge); it is
+  appended to the question as `(Hint: …)`, the standard way BIRD is consumed.
+
 ## Spider 2.0 — why there's no auto-extract
 
 Spider 2.0 is a **cloud data-warehouse** benchmark: its workloads target BigQuery
