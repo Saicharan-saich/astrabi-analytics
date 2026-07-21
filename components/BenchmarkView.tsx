@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
     Play, Loader2, CheckCircle2, XCircle, Download, ChevronDown, ChevronRight,
     Gauge, Timer, Coins, Database, AlertTriangle, Info, Upload, Trash2, Plus,
-    LayoutDashboard, FlaskConical, History, ShieldCheck,
+    LayoutDashboard, FlaskConical, History, ShieldCheck, Zap,
 } from 'lucide-react';
 import type { Dataset } from '../types';
 import { BenchCase, Suite } from '../services/benchmark/spiderCases';
@@ -95,9 +95,11 @@ const ResultsBlock: React.FC<{ results: CaseResult[]; summary: BenchmarkSummary 
     <>
         <div className="mt-6 grid gap-3 grid-cols-2 lg:grid-cols-4">
             <StatCard icon={<Gauge className="w-3.5 h-3.5" />} label="Accuracy" value={p1(s.accuracy)} sub={`${s.passed}/${s.total} passed`} />
-            <StatCard icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Exec success" value={p1(s.executionSuccess)} sub={`repair ${p1(s.repairRate)}`} />
-            <StatCard icon={<Timer className="w-3.5 h-3.5" />} label="Avg latency" value={`${s.avgLatencyMs}ms`} sub={`conf ${s.avgConfidence}/100`} />
-            <StatCard icon={<Coins className="w-3.5 h-3.5" />} label="Avg tokens" value={s.avgTokens.toLocaleString()} sub={`${s.totalTokens.toLocaleString()} total`} />
+            {s.testSuiteInstances > 1
+                ? <StatCard icon={<ShieldCheck className="w-3.5 h-3.5" />} label={`Test-suite (${s.testSuiteInstances}×)`} value={p1(s.testSuiteAccuracy)} sub="robust to coincidence" />
+                : <StatCard icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Exec success" value={p1(s.executionSuccess)} sub={`repair ${p1(s.repairRate)}`} />}
+            <StatCard icon={<Zap className="w-3.5 h-3.5" />} label="VES" value={p1(s.ves)} sub="efficiency (BIRD)" />
+            <StatCard icon={<Coins className="w-3.5 h-3.5" />} label="Avg tokens" value={s.avgTokens.toLocaleString()} sub={`${s.avgLatencyMs}ms · conf ${s.avgConfidence}`} />
         </div>
         <div className="mt-5 grid gap-5 md:grid-cols-3">
             <div className="rounded-xl border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03] p-4">
@@ -143,6 +145,8 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
     // avoids only ever hitting the first/easiest cases.
     const [limit, setLimit] = useState(10);
     const [randomSample, setRandomSample] = useState(false);
+    // Test-suite (multi-instance) robustness: 1 = single-instance execution acc.
+    const [testSuiteK, setTestSuiteK] = useState(1);
     // User-benchmark authoring
     const [userCases, setUserCases] = useState<{ question: string; goldSQL: string }[]>([]);
     const [uq, setUq] = useState(''); const [ug, setUg] = useState('');
@@ -185,7 +189,7 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
         setRunning(true); setResults(null);
         setProgress({ done: 0, total: casesToRun.length, current: 'Starting…' });
         try {
-            const res = await runBenchmark(casesToRun, p => setProgress(p));
+            const res = await runBenchmark(casesToRun, p => setProgress(p), { testSuiteInstances: testSuiteK });
             setResults(res);
             const s = summarize(res);
             const sampledNote = casesToRun.length < cases.length
@@ -314,6 +318,7 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
                             runCount={casesToRun.length}
                             limit={limit} setLimit={setLimit}
                             randomSample={randomSample} setRandomSample={setRandomSample}
+                            testSuiteK={testSuiteK} setTestSuiteK={setTestSuiteK}
                             hasDataset={!!dataset}
                             running={running}
                             progress={progress}
@@ -337,7 +342,7 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
 // ── Suite panel ──────────────────────────────────────────────────────
 
 const SuitePanel: React.FC<any> = ({
-    suite, cases, runCount, limit, setLimit, randomSample, setRandomSample,
+    suite, cases, runCount, limit, setLimit, randomSample, setRandomSample, testSuiteK, setTestSuiteK,
     hasDataset, running, progress, results, summary, importMsg, onRun, onImport, onImportBirdFolder,
     userCases, uq, ug, setUq, setUg, addUserCase, removeUserCase,
 }) => {
@@ -420,6 +425,16 @@ const SuitePanel: React.FC<any> = ({
                 <label className="inline-flex items-center gap-1.5 text-sm text-gray-600 dark:text-gray-300 select-none" title="Sample randomly instead of always taking the first N (avoids only testing the easiest cases).">
                     <input type="checkbox" checked={randomSample} onChange={e => setRandomSample(e.target.checked)} disabled={running} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500" />
                     random
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300" title="Test-suite accuracy: re-check each correct answer on N bootstrap-resampled database instances. A prediction counts as correct only if it matches gold on ALL of them — this removes coincidental single-instance matches. 1 = off. Higher N = more DuckDB executions (no extra LLM calls).">
+                    <span className="whitespace-nowrap">Test-suite&nbsp;instances</span>
+                    <input
+                        type="number" min={1} max={10} step={1}
+                        value={testSuiteK}
+                        onChange={e => setTestSuiteK(Math.min(10, Math.max(1, Math.floor(Number(e.target.value) || 1))))}
+                        disabled={running}
+                        className="w-16 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.03] text-sm tabular-nums"
+                    />
                 </label>
 
                 {suite === 'bird' && (
