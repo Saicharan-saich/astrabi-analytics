@@ -50,7 +50,7 @@ export type QBMapResult = QBFit | QBNoFit;
  *  else (comparisons, share, derived, distribution, correlation, growth,
  *  aggregate-filter) is routed to the advanced engine. */
 const FIT_INTENTS = new Set<AnalysisPlan['intent']>([
-    'single_metric', 'breakdown', 'trend', 'ranking', 'share_of_total',
+    'single_metric', 'breakdown', 'trend', 'ranking', 'share_of_total', 'aggregate_filter',
 ]);
 
 const AGG_MAP: Record<PlanMetric['agg'], string> = {
@@ -169,12 +169,40 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
 
     // ── Gate 5: filters ──────────────────────────────────────────
     const inFilters: Record<string, string[]> = {};
+    const excludeFilters: Record<string, string[]> = {};
     const measureFilters: Array<{ column: string; operator: string; value: number }> = [];
     const dateFilters: Array<{ column: string; timeGrain: string; values: string[] }> = [];
+    const aggregateFilters: Array<{ column: string; op: '>' | '<' | '>=' | '<='; compareAgg: 'AVG'; compareColumn: string }> = [];
     let timeFilter: string | undefined;
 
     for (const f of plan.filters) {
         const op = f.op;
+
+        // Above / below the average of a raw column → row-level "vs aggregate"
+        // filter (WHERE col > (SELECT AVG(col) FROM data)). A HAVING-style
+        // grouped average (e.g. clients whose TOTAL exceeds the average total)
+        // is a nested two-stage query → advanced engine.
+        if (op === 'above_avg' || op === 'below_avg') {
+            if (f.isHaving) {
+                return { fits: false, reason: 'Grouped above/below-average (compare a group total to the average of group totals) needs the advanced engine.' };
+            }
+            const col = resolveField(f.field, model);
+            if (!col) return { fits: false, reason: `Above/below-average column "${f.field}" not found.` };
+            aggregateFilters.push({ column: col, op: op === 'above_avg' ? '>' : '<', compareAgg: 'AVG', compareColumn: col });
+            notes.push(`where ${col} ${op === 'above_avg' ? '>' : '<'} average ${col}`);
+            continue;
+        }
+
+        if (op === '!=' || op === 'not_in') {
+            const col = resolveField(f.field, model);
+            if (!col) return { fits: false, reason: `Exclusion filter column "${f.field}" not found.` };
+            const vals = op === 'not_in'
+                ? (Array.isArray(f.value) ? f.value : [f.value]).map(v => String(v))
+                : [String(f.value)];
+            excludeFilters[col] = (excludeFilters[col] || []).concat(vals);
+            notes.push(`where ${col} not in [${vals.join(', ')}]`);
+            continue;
+        }
 
         if (op === '=' || op === 'in') {
             const col = resolveField(f.field, model);
@@ -225,7 +253,7 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
             continue;
         }
 
-        // op ∈ { !=, not_in, like, above_avg, below_avg } — no builder knob.
+        // op ∈ { like } and any residual — no builder knob.
         return { fits: false, reason: `Filter operator "${op}" is not a builder option.` };
     }
 
@@ -264,8 +292,10 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
         dimension,
         timeFilter,
         filters: Object.keys(inFilters).length > 0 ? inFilters : undefined,
+        excludeFilters: Object.keys(excludeFilters).length > 0 ? excludeFilters : undefined,
         measureFilters: measureFilters.length > 0 ? measureFilters : undefined,
         dateFilters: dateFilters.length > 0 ? dateFilters : undefined,
+        aggregateFilters: aggregateFilters.length > 0 ? aggregateFilters : undefined,
         sort,
         limit: plan.limit || undefined,
         secondaryMetrics: secondaryMetrics.length > 0 ? secondaryMetrics : undefined,
