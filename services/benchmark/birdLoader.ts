@@ -18,6 +18,7 @@
  */
 
 import type { BenchCase } from './spiderCases';
+import type { JoinEdge } from '../analysisEngine';
 
 export interface BirdQuestion {
     db_id: string;
@@ -66,6 +67,40 @@ export function readSqliteTables(SQL: any, bytes: Uint8Array, maxRows = 0): Reco
     return tables;
 }
 
+/**
+ * Read the FOREIGN KEYS of every table in an sql.js database. These are what let
+ * the app denormalize multi-table questions correctly — BIRD join keys often
+ * differ in name across tables (satscores.cds → schools.CDSCode), which the
+ * name-match join can't discover, but the declared FK can.
+ */
+export function readSqliteForeignKeys(SQL: any, bytes: Uint8Array): JoinEdge[] {
+    const db = new SQL.Database(bytes);
+    const edges: JoinEdge[] = [];
+    try {
+        const names: string[] = (db.exec("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")[0]?.values || [])
+            .map((r: any[]) => String(r[0]));
+        for (const table of names) {
+            const res = db.exec(`PRAGMA foreign_key_list("${table}")`);
+            if (!res.length) continue;
+            const cols: string[] = res[0].columns; // id, seq, table, from, to, ...
+            const iTable = cols.indexOf('table');
+            const iFrom = cols.indexOf('from');
+            const iTo = cols.indexOf('to');
+            for (const row of res[0].values) {
+                const rightTable = String(row[iTable]);
+                const leftColumn = String(row[iFrom]);
+                const rightColumn = row[iTo] != null ? String(row[iTo]) : leftColumn;
+                if (rightTable && leftColumn) {
+                    edges.push({ leftTable: table, rightTable, leftColumn, rightColumn, type: 'fk' });
+                }
+            }
+        }
+    } finally {
+        db.close();
+    }
+    return edges;
+}
+
 /** Map BIRD's difficulty labels to the Lab's scale. */
 function mapDifficulty(d?: string): BenchCase['difficulty'] {
     switch ((d || '').toLowerCase()) {
@@ -92,6 +127,7 @@ export function referencedTableNames(sql: string): string[] {
 export function buildBirdCases(
     questions: BirdQuestion[],
     databases: Record<string, Record<string, any[]>>,
+    foreignKeys?: Record<string, JoinEdge[]>,
     opts?: { limit?: number },
 ): BenchCase[] {
     const cases: BenchCase[] = [];
@@ -114,6 +150,13 @@ export function buildBirdCases(
         const primary = [...pool].sort((a, b) => b.rows.length - a.rows.length)[0].name;
         const tableCount = Math.max(1, Math.min(referenced.length || 1, tables.length));
 
+        // Real foreign keys for this database (both sides must be present tables),
+        // so multi-table questions denormalize into a correct wide master.
+        const present = new Set(tables.map(t => t.name.toLowerCase()));
+        const joinEdges = (foreignKeys?.[q.db_id] || []).filter(
+            e => present.has(e.leftTable.toLowerCase()) && present.has(e.rightTable.toLowerCase()),
+        );
+
         // Attach BIRD's evidence as a hint (external knowledge the model may need).
         const question = q.evidence && q.evidence.trim()
             ? `${q.question}  (Hint: ${q.evidence.trim()})`
@@ -129,6 +172,7 @@ export function buildBirdCases(
             tableCount,
             tables,
             primaryTable: primary,
+            joinEdges: joinEdges.length ? joinEdges : undefined,
             orderMatters: /\border\s+by\b/i.test(gold),
             tags: ['official', 'bird'],
         });
