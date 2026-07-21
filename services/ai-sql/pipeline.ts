@@ -24,7 +24,7 @@ import { AISQLPipelineResult, AuditEntry, PlanFilter, PipelineStepTrace, Pipelin
 import { buildSemanticModel } from './semanticLayer';
 import { generatePlan } from './intentPlanner';
 import { generateSQLFromPlan, repairSQL } from './sqlGenerator';
-import { correctSQL } from './sqlCorrectionEngine';
+import { correctSQL, normalizeFilterOp } from './sqlCorrectionEngine';
 import { validateSQL, validateResult } from './sqlValidator';
 import { executeSQLViaDuckDB } from '../duckdbEngine';
 import { profileResult } from './resultProfiler';
@@ -765,11 +765,15 @@ export async function runAISQLPipeline(
     validation.checks.push(...resultChecks);
 
     // ─── Step 6b: Total Consistency Check ──────────────────────────
-    // For trend/breakdown: verify that SUM of parts ≈ grand total
-    if (['trend', 'breakdown'].includes(plan.intent) && plan.metrics.length > 0 && rawData.length > 1) {
+    // For trend/breakdown: verify that SUM of parts ≈ grand total. Only runs for
+    // a plain SUM of a real column — composite / derived / non-SUM metrics have no
+    // meaningful grand total and would emit invalid SQL (e.g. NONE(expr)).
+    const _pm6b = plan.metrics[0];
+    if (['trend', 'breakdown'].includes(plan.intent) && plan.metrics.length > 0 && rawData.length > 1
+        && _pm6b.agg === 'sum' && !_pm6b.compositeId && !_pm6b.derivedMetricId) {
         try {
-            const primaryMetricField = plan.metrics[0].field;
-            const primaryAgg = plan.metrics[0].agg;
+            const primaryMetricField = _pm6b.field;
+            const primaryAgg = _pm6b.agg;
             const metricAlias = `${primaryMetricField}_${primaryAgg}`;
             // Sum all values in the result set
             const resultTotal = rawData.reduce((sum, row) => {
@@ -781,10 +785,11 @@ export async function runAISQLPipeline(
             // Run a grand total query with the same filters
             const filterClause = plan.filters.length > 0
                 ? ' WHERE ' + plan.filters.map(f => {
-                    if (f.op === 'between' && Array.isArray(f.value)) {
+                    const fop = normalizeFilterOp(f.op);
+                    if (fop === 'between' && Array.isArray(f.value)) {
                         return `${f.field} BETWEEN '${f.value[0]}' AND '${f.value[1]}'`;
                     }
-                    return `${f.field} ${f.op} '${f.value}'`;
+                    return `${f.field} ${fop} '${f.value}'`;
                 }).join(' AND ')
                 : '';
             const grandTotalSQL = `SELECT ${primaryAgg.toUpperCase()}(${primaryMetricField}) AS grand_total FROM data${filterClause}`;
