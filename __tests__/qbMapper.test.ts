@@ -251,12 +251,16 @@ describe('QB mapper — NO-FIT cases fall back to AI SQL', () => {
         expect(noFit(P({ intent: 'derived_metric', metrics: [{ field: 'total_price', agg: 'avg', derivedMetricId: 'avg_daily' }] }))).toMatch(/advanced engine|derived/i);
     });
 
-    it('grouped above-average (HAVING a group total vs the average of totals) needs the advanced engine', () => {
-        expect(noFit(P({
+    it('grouped above-average: customers billing above the average customer', () => {
+        // Per-customer totals: C1 35, C2 30, C3 8, C4 20 → avg 23.25.
+        // Above average: C1 (35), C2 (30).
+        const rows = runQB(P({
             intent: 'aggregate_filter',
             dimensions: [{ field: 'customer_id' }],
             metrics: [{ field: 'total_price', agg: 'sum' }],
             filters: [{ field: 'total_price', op: 'above_avg', value: null, isHaving: true }],
-        }))).toMatch(/advanced engine/i);
+        }));
+        const custs = rows.map(r => String(r.customer_id)).sort();
+        expect(custs).toEqual(['C1', 'C2']);
     });
 });

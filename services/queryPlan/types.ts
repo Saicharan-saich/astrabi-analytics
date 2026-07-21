@@ -157,6 +157,10 @@ export interface QueryPlan {
      *  counts rows per bucket. When set, the SQL compiler emits a binning query
      *  and ignores dimensions/metrics. Read only by the SQL compiler. */
     _distribution?: { column: string; bins: number };
+    /** Grouped above/below-average: keep only groups whose aggregate is above (or
+     *  below) the AVERAGE of all group aggregates — a nested HAVING. e.g. clients
+     *  billed above the average client. Read only by the SQL compiler. */
+    _groupAvgHaving?: { op: '>' | '<' | '>=' | '<='; metricIndex: number };
 }
 
 // ── ENRICHED QUERY (Feature Layer) ──────────────────────────────
