@@ -137,6 +137,11 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
         const pAgg = normalizeAgg(primary.agg) as PlanMetric['agg'];
         aggregation = pAgg === 'count' ? 'COUNT' : AGG_MAP[pAgg];
         if (!aggregation) return { fits: false, reason: `Aggregation "${primary.agg}" is not a builder option.` };
+        // "median order value" → MEDIAN (the planner has no median agg, so detect
+        // it from the question and override the numeric aggregation).
+        if (/\bmedian\b/i.test(plan.originalQuestion || '') && aggregation !== 'COUNT' && aggregation !== 'COUNT_DISTINCT') {
+            aggregation = 'MEDIAN';
+        }
     }
     notes.push(`${aggregation} of ${metricCol}`);
 

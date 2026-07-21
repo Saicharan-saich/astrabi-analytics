@@ -59,6 +59,7 @@ function compileAggregation(agg: AggregationType, expr: string): string {
         case 'COUNT': return `COUNT(${expr})`;
         case 'SUM': return `SUM(${expr})`;
         case 'AVG': return `AVG(${expr})`;
+        case 'MEDIAN': return `MEDIAN(${expr})`;
         case 'MIN': return `MIN(${expr})`;
         case 'MAX': return `MAX(${expr})`;
         case 'NONE': return expr; // Raw column — no aggregation
