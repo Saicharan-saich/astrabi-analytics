@@ -174,18 +174,25 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
         const sampleRow = rows[0];
         const columns = Object.keys(sampleRow);
 
-        const colDefs = columns.map(col => {
-            // Sample up to 100 rows to infer type
-            const sampleSize = Math.min(rows.length, 100);
+        const colInfos = columns.map(col => {
+            // Infer the column type by scanning ALL rows — NOT just the first 100.
+            // A column can look numeric in the first rows but hold codes like
+            // "00D5" further down (common in real datasets, e.g. BIRD's schools).
+            // Sampling only the head types it DOUBLE and the INSERT then fails
+            // ("Could not convert string '00D5' to DOUBLE"). We stop early the
+            // moment we see a non-numeric, non-date value — that column is text.
             let hasDate = false;
             let hasNumber = false;
             let hasString = false;
 
-            for (let i = 0; i < sampleSize; i++) {
+            for (let i = 0; i < rows.length; i++) {
                 const val = rows[i][col];
                 if (val === null || val === undefined || val === '') continue;
-                const strVal = String(val);
 
+                // A native JS number is unambiguously numeric.
+                if (typeof val === 'number') { hasNumber = true; continue; }
+
+                const strVal = String(val);
                 // Check if it's a date
                 if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(strVal)) {
                     hasDate = true;
@@ -195,6 +202,7 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
                     hasNumber = true;
                 } else {
                     hasString = true;
+                    break; // definitively text — no need to scan further
                 }
             }
 
@@ -203,9 +211,11 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
             if (!hasString && !hasDate && hasNumber) sqlType = 'DOUBLE';
             else if (!hasString && hasDate && !hasNumber) sqlType = 'VARCHAR'; // Keep dates as strings to match JS engine behavior
 
-            const safCol = `"${col.replace(/"/g, '""')}"`;
-            return `${safCol} ${sqlType}`;
+            return { col, sqlType };
         });
+
+        const colDefs = colInfos.map(ci => `"${ci.col.replace(/"/g, '""')}" ${ci.sqlType}`);
+        const colType = new Map(colInfos.map(ci => [ci.col, ci.sqlType]));
 
         // Create table
         const createSQL = `CREATE TABLE "${safeName}" (${colDefs.join(', ')})`;
@@ -221,10 +231,12 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
                     const v = row[col];
                     if (v === null || v === undefined) return 'NULL';
                     const s = String(v).replace(/'/g, "''");
-                    // Try to keep numbers as numbers
-                    const cleaned = s.replace(/[$,]/g, '');
-                    if (!isNaN(Number(cleaned)) && cleaned.trim() !== '') {
-                        return cleaned;
+                    // Quote per the COLUMN type, not the value: a text column keeps
+                    // codes/leading-zeros intact; a numeric column takes bare
+                    // numbers (or NULL if a stray value isn't numeric).
+                    if (colType.get(col) === 'DOUBLE') {
+                        const cleaned = s.replace(/[$,]/g, '');
+                        return (cleaned.trim() !== '' && !isNaN(Number(cleaned))) ? cleaned : 'NULL';
                     }
                     return `'${s}'`;
                 });
