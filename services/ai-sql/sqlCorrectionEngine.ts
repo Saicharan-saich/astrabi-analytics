@@ -1242,6 +1242,13 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
     // of a rate), TRY_CAST (no "avg(VARCHAR)"), and identifier quoting.
     const metExprs = buildMetricExpressions(plan.metrics, model);
 
+    // Contribution / mix-shift: a categorical dimension + comparison → the
+    // per-segment current-vs-previous delta ("what drove the change").
+    const catDim = plan.dimensions.find(d => !d.timeGrain);
+    if (catDim) {
+        return buildContributionSQL(plan, model, dateField, currentStart, currentEnd, prevDates, catDim.field);
+    }
+
     if (plan.comparison.mode === 'total') {
         // Total comparison: two rows (current + previous) with a period label
         const sql = [
@@ -1277,6 +1284,46 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
     ];
 
     return sql.join('\n');
+}
+
+/** The aggregate expression for one metric, used in the contribution CTEs. */
+function contributionAgg(m: PlanMetric): string {
+    const col = q(m.field);
+    switch (m.agg) {
+        case 'count': return m.field === '*' ? 'COUNT(*)' : `COUNT(${col})`;
+        case 'count_distinct': return `COUNT(DISTINCT ${col})`;
+        case 'avg': return `AVG(TRY_CAST(${col} AS DOUBLE))`;
+        case 'min': return `MIN(TRY_CAST(${col} AS DOUBLE))`;
+        case 'max': return `MAX(TRY_CAST(${col} AS DOUBLE))`;
+        default: return `SUM(TRY_CAST(${col} AS DOUBLE))`;
+    }
+}
+
+/**
+ * Contribution / mix-shift: for a categorical dimension over two periods, the
+ * per-segment current value, previous value, and the delta each segment
+ * contributed to the total change — ranked. Deterministic; answers "what drove
+ * the change in <metric> by <dimension>".
+ */
+function buildContributionSQL(
+    plan: AnalysisPlan, model: SemanticModel, dateField: string,
+    curStart: string, curEnd: string, prevDates: { start: string; end: string }, dimFieldName: string,
+): string {
+    const dimCol = q(dimFieldName);
+    const aggExpr = contributionAgg(plan.metrics[0] || { field: '*', agg: 'count' } as PlanMetric);
+    const period = (s: string, e: string) =>
+        `SELECT ${dimCol} AS __d, ${aggExpr} AS __v ${fromTable()} ` +
+        `WHERE CAST(${dateField} AS DATE) BETWEEN DATE '${s}' AND DATE '${e}' GROUP BY ${dimCol}`;
+    return [
+        `WITH cur AS (${period(curStart, curEnd)}),`,
+        `     prev AS (${period(prevDates.start, prevDates.end)})`,
+        `SELECT COALESCE(cur.__d, prev.__d) AS ${dimCol},`,
+        `       COALESCE(cur.__v, 0) AS current_value,`,
+        `       COALESCE(prev.__v, 0) AS previous_value,`,
+        `       COALESCE(cur.__v, 0) - COALESCE(prev.__v, 0) AS contribution`,
+        `FROM cur FULL OUTER JOIN prev ON cur.__d = prev.__d`,
+        `ORDER BY contribution DESC`,
+    ].join('\n');
 }
 
 
