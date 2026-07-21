@@ -23,6 +23,10 @@ export interface UIQueryConfig {
     dateFilters?: Array<{ column: string; timeGrain: string; values: string[] }>;
     /** Row-level "vs aggregate" filters (e.g. above-average). */
     aggregateFilters?: AggregateComparisonFilter[];
+    /** Text-contains filters (LIKE / NOT LIKE). */
+    likeFilters?: Array<{ column: string; pattern: string; negate?: boolean }>;
+    /** Numeric distribution / histogram over a column. */
+    distribution?: { column: string; bins: number };
     sort?: string;
     limit?: number;
     secondaryMetrics?: string[];
@@ -231,5 +235,7 @@ export function buildQueryPlan(
         _dateColumnKey: dateColumnKey,
         _emptyBucketMode: isTimeDim ? 'include' : 'exclude',
         _aggregateFilters: query.aggregateFilters && query.aggregateFilters.length > 0 ? query.aggregateFilters : undefined,
+        _likeFilters: query.likeFilters && query.likeFilters.length > 0 ? query.likeFilters : undefined,
+        _distribution: query.distribution,
     };
 }
