@@ -338,6 +338,12 @@ export async function runAISQLPipeline(
         details: { correctedSQL: currentSQL, usedFallback: _correctionStatus === 'warn' },
     }, _s1);
 
+    // Which engine actually produced `currentSQL` — surfaced in the SQL tab.
+    const sqlEngine: 'question-builder' | 'correction-engine' | 'llm' =
+        qbSQL ? 'question-builder'
+            : _correctionStatus === 'pass' ? 'correction-engine'
+                : (sqlMethod === 'llm' ? 'llm' : 'correction-engine');
+
     // Surface fallback reason from the correction engine (e.g., hour grain without time data)
     if ((plan as any)._fallbackReason) {
         sqlResult.explanation = (plan as any)._fallbackReason;
@@ -721,6 +727,7 @@ export async function runAISQLPipeline(
         return {
             plan,
             sql: currentSQL,
+            engine: sqlEngine,
             validation,
             rawData: [],
             chartData: [],
@@ -960,6 +967,7 @@ export async function runAISQLPipeline(
     const pipelineResult: AISQLPipelineResult = {
         plan,
         sql: currentSQL,
+        engine: sqlEngine,
         validation,
         rawData,
         chartData: reshaped.data,
