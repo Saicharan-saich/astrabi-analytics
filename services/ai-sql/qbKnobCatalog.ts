@@ -52,7 +52,8 @@ export const DETERMINISTIC_KNOBS: KnobDoc[] = [
     { group: 'Filter', name: 'Text contains (LIKE)', example: 'Revenue for products containing "Pro"', sqlShape: "WHERE product LIKE '%Pro%'" },
     { group: 'Filter', name: 'Date range', example: 'Revenue between two dates', sqlShape: 'WHERE order_date::TIMESTAMP BETWEEN … AND …' },
     { group: 'Filter', name: 'Relative date', example: 'Revenue this month', sqlShape: 'WHERE order_date IN (this month)' },
-    { group: 'Filter', name: 'Above / below average', example: 'How many orders are above the average order value?', sqlShape: 'WHERE total_price > (SELECT AVG(total_price) FROM data)' },
+    { group: 'Filter', name: 'Above / below average (rows)', example: 'How many orders are above the average order value?', sqlShape: 'WHERE total_price > (SELECT AVG(total_price) FROM data)' },
+    { group: 'Filter', name: 'Above / below average (groups)', example: 'Customers billing above the average customer', sqlShape: 'HAVING SUM(x) > (SELECT AVG(g) FROM (SELECT SUM(x) g … GROUP BY …))' },
     { group: 'Filter', name: 'Post-aggregate threshold (HAVING)', example: 'Channels with revenue over 10,000', sqlShape: 'HAVING SUM(total_price) > 10000' },
     { group: 'Filter', name: 'Set / anti-join (has X but not Y)', example: 'Customers who bought Coffee but never Tea', sqlShape: 'WHERE product IN (X) AND entity NOT IN (SELECT entity … WHERE product IN (Y))' },
 

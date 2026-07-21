@@ -201,6 +201,7 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
     const dateFilters: Array<{ column: string; timeGrain: string; values: string[] }> = [];
     const aggregateFilters: Array<{ column: string; op: '>' | '<' | '>=' | '<='; compareAgg: 'AVG'; compareColumn: string }> = [];
     const likeFilters: Array<{ column: string; pattern: string; negate?: boolean }> = [];
+    let groupAvgHaving: { op: '>' | '<' | '>=' | '<='; metricIndex: number } | undefined;
     let timeFilter: string | undefined;
 
     for (const f of plan.filters) {
@@ -213,13 +214,19 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
         // grouped average (e.g. clients whose TOTAL exceeds the average total)
         // is a nested two-stage query → advanced engine.
         if (op === 'above_avg' || op === 'below_avg') {
-            if (f.isHaving) {
-                return { fits: false, reason: 'Grouped above/below-average (compare a group total to the average of group totals) needs the advanced engine.' };
-            }
             const col = resolveField(f.field, model);
             if (!col) return { fits: false, reason: `Above/below-average column "${f.field}" not found.` };
-            aggregateFilters.push({ column: col, op: op === 'above_avg' ? '>' : '<', compareAgg: 'AVG', compareColumn: col });
-            notes.push(`where ${col} ${op === 'above_avg' ? '>' : '<'} average ${col}`);
+            const cmp = op === 'above_avg' ? '>' : '<';
+            if (hasGrouping) {
+                // Grouped: compare each group's aggregate to the average of the
+                // group aggregates (nested HAVING). e.g. clients above the average client.
+                groupAvgHaving = { op: cmp, metricIndex: 0 };
+                notes.push(`having ${aggregation}(${metricCol}) ${cmp} the average across groups`);
+            } else {
+                // Row-level: WHERE col op (SELECT AVG(col) FROM data).
+                aggregateFilters.push({ column: col, op: cmp, compareAgg: 'AVG', compareColumn: col });
+                notes.push(`where ${col} ${cmp} average ${col}`);
+            }
             continue;
         }
 
@@ -338,6 +345,7 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
         dateFilters: dateFilters.length > 0 ? dateFilters : undefined,
         aggregateFilters: aggregateFilters.length > 0 ? aggregateFilters : undefined,
         likeFilters: likeFilters.length > 0 ? likeFilters : undefined,
+        groupAvgHaving,
         sort,
         limit: plan.limit || undefined,
         secondaryMetrics: secondaryMetrics.length > 0 ? secondaryMetrics : undefined,

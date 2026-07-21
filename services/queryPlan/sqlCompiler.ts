@@ -295,10 +295,23 @@ export function compileSQL(plan: QueryPlan): string {
     }
 
     // ── HAVING (group filters) ───────────────────────────────────
-    if (plan.filters.group.length > 0) {
-        const havingClauses = plan.filters.group.map(gf =>
-            compileGroupFilter(gf, plan.metrics)
-        );
+    const havingClauses: string[] = plan.filters.group.map(gf => compileGroupFilter(gf, plan.metrics));
+
+    // Grouped above/below-average: compare each group's aggregate to the AVERAGE
+    // of all group aggregates (a nested subquery over the same grouping).
+    if (plan._groupAvgHaving && plan.dimensions.length > 0) {
+        const m = plan.metrics[plan._groupAvgHaving.metricIndex];
+        if (m) {
+            const aggExpr = compileAggregation(m.aggregation, compileExpression(m.expression));
+            const src = `"${plan.source.replace(/"/g, '""')}"`;
+            const whereStr = whereClauses.length > 0 ? ` WHERE ${whereClauses.join(' AND ')}` : '';
+            const groupStr = plan.dimensions.map(compileDimensionGroupBy).join(', ');
+            const inner = `SELECT ${aggExpr} AS __g FROM ${src}${whereStr} GROUP BY ${groupStr}`;
+            havingClauses.push(`${aggExpr} ${plan._groupAvgHaving.op} (SELECT AVG(__g) FROM (${inner}))`);
+        }
+    }
+
+    if (havingClauses.length > 0) {
         parts.push(`HAVING ${havingClauses.join(' AND ')}`);
     }
 

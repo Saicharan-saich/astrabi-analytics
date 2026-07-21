@@ -27,6 +27,8 @@ export interface UIQueryConfig {
     likeFilters?: Array<{ column: string; pattern: string; negate?: boolean }>;
     /** Numeric distribution / histogram over a column. */
     distribution?: { column: string; bins: number };
+    /** Grouped above/below-average HAVING (compare each group to the group average). */
+    groupAvgHaving?: { op: '>' | '<' | '>=' | '<='; metricIndex: number };
     sort?: string;
     limit?: number;
     secondaryMetrics?: string[];
@@ -237,5 +239,6 @@ export function buildQueryPlan(
         _aggregateFilters: query.aggregateFilters && query.aggregateFilters.length > 0 ? query.aggregateFilters : undefined,
         _likeFilters: query.likeFilters && query.likeFilters.length > 0 ? query.likeFilters : undefined,
         _distribution: query.distribution,
+        _groupAvgHaving: query.groupAvgHaving,
     };
 }
