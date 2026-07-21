@@ -43,6 +43,7 @@ import { getDates } from '../dateHelpers';
 import { applyTableCalculation } from '../../utils/tableCalculations';
 import { buildValueCatalog, groundFilters } from './valueGrounding';
 import { verifyPlan } from './planVerification';
+import { detectAntiJoin, buildAntiJoinSQL } from './antiJoin';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -283,40 +284,57 @@ export async function runAISQLPipeline(
     reportProgress('Mapping to Question Builder...', 4);
     console.log('[Pipeline] Step 2d: Question Builder mapping gate...');
     _s1 = performance.now();
-    const qbResult = mapPlanToQBConfig(plan, semanticModel);
+    // Anti-join knob first: "which X did A but never B" is a set-logic shape no
+    // base builder knob covers. Detected from the value catalog (a field with
+    // both a positive and a negated value) and answered with a NOT EXISTS template.
+    const antiJoin = _valueCatalog ? detectAntiJoin(question, _valueCatalog, semanticModel) : null;
+
     let qbSQL: string | null = null;
     // For share-of-total the builder applies its "% of total" table calculation
     // to the base result (each group ÷ grand total); we capture the metric alias
     // to convert after execution.
     let qbShareValueKey: string | null = null;
-    if (qbResult.fits) {
-        try {
-            const anchor = semanticModel.timeContext?.anchorDate
-                || semanticModel.timeContext?.maxDate
-                || new Date().toISOString().slice(0, 10);
-            const dates = getDates(anchor);
-            const qp = buildQueryPlan(qbResult.config, qbResult.dateColumnKey, dates, 'data');
-            qbSQL = compileSQL(qp);
-            if (qbResult.shareOfTotal && qp.metrics[0]) qbShareValueKey = qp.metrics[0].alias;
-            console.log('[Pipeline] QB-mapped SQL:', qbSQL);
-        } catch (qbErr: any) {
-            console.warn('[Pipeline] QB compilation failed, falling back to AI SQL:', qbErr.message);
-            qbSQL = null;
-            qbShareValueKey = null;
-        }
-    }
     let qbNotes: string[] = [];
     let qbReason: string | null = null;
     let qbTraceDetails: Record<string, any>;
-    if (qbResult.fits === true) {
-        qbNotes = qbResult.notes;
-        qbTraceDetails = { fits: true, config: qbResult.config, notes: qbNotes, sql: qbSQL };
+
+    if (antiJoin) {
+        qbSQL = buildAntiJoinSQL(antiJoin, 'data');
+        qbNotes = [`anti-join: ${antiJoin.entity} where ${antiJoin.filterField} in [${antiJoin.hasValues.join(', ')}] but never [${antiJoin.notValues.join(', ')}]`];
+        qbTraceDetails = { antiJoin: true, spec: antiJoin, sql: qbSQL };
+        console.log('[Pipeline] Anti-join SQL:', qbSQL);
+        // The set-logic values are handled by the anti-join, not dropped — clear
+        // the spurious dropped-filter verification issues.
+        const cleaned = _verification.issues.filter(i => i.code !== 'dropped_filter');
+        _verification = { ok: !cleaned.some(i => i.severity === 'error'), issues: cleaned };
     } else {
-        qbReason = 'reason' in qbResult ? qbResult.reason : null;
-        qbTraceDetails = { fits: false, reason: qbReason };
+        const qbResult = mapPlanToQBConfig(plan, semanticModel);
+        if (qbResult.fits) {
+            try {
+                const anchor = semanticModel.timeContext?.anchorDate
+                    || semanticModel.timeContext?.maxDate
+                    || new Date().toISOString().slice(0, 10);
+                const dates = getDates(anchor);
+                const qp = buildQueryPlan(qbResult.config, qbResult.dateColumnKey, dates, 'data');
+                qbSQL = compileSQL(qp);
+                if (qbResult.shareOfTotal && qp.metrics[0]) qbShareValueKey = qp.metrics[0].alias;
+                console.log('[Pipeline] QB-mapped SQL:', qbSQL);
+            } catch (qbErr: any) {
+                console.warn('[Pipeline] QB compilation failed, falling back to AI SQL:', qbErr.message);
+                qbSQL = null;
+                qbShareValueKey = null;
+            }
+        }
+        if (qbResult.fits === true) {
+            qbNotes = qbResult.notes;
+            qbTraceDetails = { fits: true, config: qbResult.config, notes: qbNotes, sql: qbSQL };
+        } else {
+            qbReason = 'reason' in qbResult ? qbResult.reason : null;
+            qbTraceDetails = { fits: false, reason: qbReason };
+        }
     }
     traceStep({
-        stepNumber: 5, name: 'Question Builder Gate', engine: 'qbMapper', icon: '🎛️',
+        stepNumber: 5, name: antiJoin ? 'Anti-Join Knob' : 'Question Builder Gate', engine: 'qbMapper', icon: '🎛️',
         status: qbSQL ? 'pass' : 'skip',
         summary: qbSQL
             ? `Answered by the builder — ${qbNotes.join('; ')}`

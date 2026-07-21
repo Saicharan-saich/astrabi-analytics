@@ -53,6 +53,7 @@ export const DETERMINISTIC_KNOBS: KnobDoc[] = [
     { group: 'Filter', name: 'Relative date', example: 'Revenue this month', sqlShape: 'WHERE order_date IN (this month)' },
     { group: 'Filter', name: 'Above / below average', example: 'How many orders are above the average order value?', sqlShape: 'WHERE total_price > (SELECT AVG(total_price) FROM data)' },
     { group: 'Filter', name: 'Post-aggregate threshold (HAVING)', example: 'Channels with revenue over 10,000', sqlShape: 'HAVING SUM(total_price) > 10000' },
+    { group: 'Filter', name: 'Set / anti-join (has X but not Y)', example: 'Customers who bought Coffee but never Tea', sqlShape: 'WHERE product IN (X) AND entity NOT IN (SELECT entity … WHERE product IN (Y))' },
 
     { group: 'Shape', name: 'Top-N / ranking', example: 'Top 5 products by revenue', sqlShape: '… ORDER BY SUM(total_price) DESC LIMIT 5' },
     { group: 'Shape', name: 'Share of total', example: 'What share of revenue does each channel represent?', sqlShape: 'each group ÷ grand total × 100 (% of total)' },
@@ -73,7 +74,6 @@ export const CORRECTION_ENGINE_SHAPES: CorrectionDoc[] = [
 
 /** Tier 3 — genuinely still LLM-written (or unsupported) SQL. */
 export const AI_ROUTED_SHAPES: FallbackDoc[] = [
-    { name: 'Set / anti-join logic', example: 'Customers who bought A but never B', reason: 'Requires NOT EXISTS / relational logic across the grouped set — no deterministic knob yet.' },
     { name: 'Raw two-variable scatter', example: 'Every order plotted as price vs quantity', reason: 'Row-level (non-aggregated) two-metric output; the builder is aggregation-oriented.' },
 ];
 
