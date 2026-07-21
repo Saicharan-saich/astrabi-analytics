@@ -75,7 +75,7 @@ describe('buildBirdCases', () => {
     });
 
     it('respects a load limit', () => {
-        expect(buildBirdCases(questions, databases(), { limit: 1 })).toHaveLength(1);
+        expect(buildBirdCases(questions, databases(), undefined, { limit: 1 })).toHaveLength(1);
     });
 });
 
