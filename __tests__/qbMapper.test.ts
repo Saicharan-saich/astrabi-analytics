@@ -152,6 +152,23 @@ describe('QB mapper — FIT cases produce correct answers', () => {
         expect(scalar(rows)).toBe(30);
     });
 
+    it('normalizes planner op spellings: "eq" filter maps to the builder (Delivery revenue = 43)', () => {
+        const rows = runQB(P({
+            intent: 'single_metric',
+            metrics: [{ field: 'total_price', agg: 'sum' }],
+            filters: [{ field: 'channel', op: 'eq' as any, value: 'Delivery' }],
+        }));
+        expect(scalar(rows)).toBe(43);
+    });
+
+    it('normalizes planner agg spellings: "average" → AVG (avg order value = 15.5)', () => {
+        const rows = runQB(P({
+            intent: 'single_metric',
+            metrics: [{ field: 'total_price', agg: 'average' as any }],
+        }));
+        expect(scalar(rows)).toBeCloseTo(93 / 6, 6);
+    });
+
     it('LIKE: revenue for products containing "Burger" = 40', () => {
         const rows = runQB(P({
             intent: 'single_metric',

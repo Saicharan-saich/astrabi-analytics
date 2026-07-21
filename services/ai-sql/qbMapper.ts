@@ -23,6 +23,7 @@
 
 import type { AnalysisPlan, PlanFilter, PlanMetric, SemanticModel } from './types';
 import type { UIQueryConfig } from '../queryPlan/buildQueryPlan';
+import { normalizeFilterOp, normalizeAgg } from './sqlCorrectionEngine';
 
 export interface QBFit {
     fits: true;
@@ -133,7 +134,8 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
         const resolved = resolveField(primary.field, model);
         if (!resolved) return { fits: false, reason: `Metric column "${primary.field}" not found in the dataset.` };
         metricCol = resolved;
-        aggregation = primary.agg === 'count' ? 'COUNT' : AGG_MAP[primary.agg];
+        const pAgg = normalizeAgg(primary.agg) as PlanMetric['agg'];
+        aggregation = pAgg === 'count' ? 'COUNT' : AGG_MAP[pAgg];
         if (!aggregation) return { fits: false, reason: `Aggregation "${primary.agg}" is not a builder option.` };
     }
     notes.push(`${aggregation} of ${metricCol}`);
@@ -144,8 +146,9 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
     for (const m of plan.metrics.slice(1)) {
         const resolved = resolveField(m.field, model);
         if (!resolved) return { fits: false, reason: `Secondary metric column "${m.field}" not found.` };
+        const sAgg = normalizeAgg(m.agg) as PlanMetric['agg'];
         secondaryMetrics.push(resolved);
-        secondaryMetricAggregations[resolved] = m.agg === 'count' ? 'COUNT' : AGG_MAP[m.agg];
+        secondaryMetricAggregations[resolved] = sAgg === 'count' ? 'COUNT' : AGG_MAP[sAgg];
     }
 
     // ── Gate 4: dimensions ───────────────────────────────────────
@@ -196,7 +199,9 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
     let timeFilter: string | undefined;
 
     for (const f of plan.filters) {
-        const op = f.op;
+        // Normalize the LLM's operator spelling ("eq"→"=", "in_list"→"in", …) so
+        // filters map to real builder knobs instead of silently no-fitting.
+        const op = normalizeFilterOp(f.op);
 
         // Above / below the average of a raw column → row-level "vs aggregate"
         // filter (WHERE col > (SELECT AVG(col) FROM data)). A HAVING-style
@@ -291,10 +296,11 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
     let sort: string | undefined;
     if (plan.sort && plan.sort.length > 0) {
         const s = plan.sort[0];
+        const dir = /^(asc|ascending|up|increasing|rising|oldest|earliest|smallest|lowest|least)$/i.test(String(s.dir)) ? 'asc' : 'desc';
         if (timeDimFields.has(s.field.toLowerCase())) {
-            sort = s.dir === 'asc' ? 'oldest' : 'newest';
+            sort = dir === 'asc' ? 'oldest' : 'newest';
         } else {
-            sort = s.dir; // 'asc' | 'desc' → sort by primary metric
+            sort = dir; // 'asc' | 'desc' → sort by primary metric
         }
     } else {
         // Sensible defaults matching the builder's own behaviour.
