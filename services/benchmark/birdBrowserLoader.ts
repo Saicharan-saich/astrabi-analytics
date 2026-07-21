@@ -12,7 +12,8 @@ import initSqlJs from 'sql.js';
 // @ts-ignore - ?url is a Vite import suffix
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 import type { BenchCase } from './spiderCases';
-import { readSqliteTables, buildBirdCases, BirdQuestion } from './birdLoader';
+import type { JoinEdge } from '../analysisEngine';
+import { readSqliteTables, readSqliteForeignKeys, buildBirdCases, BirdQuestion } from './birdLoader';
 
 let _sql: Promise<any> | null = null;
 function getSQL(): Promise<any> {
@@ -56,6 +57,7 @@ export async function loadBirdFromFiles(files: File[], opts: BirdLoadOptions = {
     // 3. Read only those .sqlite files.
     const SQL = await getSQL();
     const databases: Record<string, Record<string, any[]>> = {};
+    const foreignKeys: Record<string, JoinEdge[]> = {};
     let done = 0;
     for (const dbId of neededDbIds) {
         const file = files.find(f => new RegExp(`(^|/)${dbId}/${dbId}\\.sqlite$`).test(pathOf(f)))
@@ -67,10 +69,11 @@ export async function loadBirdFromFiles(files: File[], opts: BirdLoadOptions = {
         onProgress(`Reading database ${dbId} (${++done}/${neededDbIds.length})…`);
         const bytes = new Uint8Array(await file.arrayBuffer());
         databases[dbId] = readSqliteTables(SQL, bytes, opts.maxRows || 0);
+        foreignKeys[dbId] = readSqliteForeignKeys(SQL, bytes);
     }
 
     // 4. Build cases (drops questions whose DB was missing).
-    const cases = buildBirdCases(questions, databases);
+    const cases = buildBirdCases(questions, databases, foreignKeys);
     onProgress(`Loaded ${cases.length} BIRD cases across ${Object.keys(databases).length} databases`);
     if (cases.length === 0) throw new Error('No runnable BIRD cases — check the folder structure (dev.json + dev_databases/<db>/<db>.sqlite).');
     return cases;

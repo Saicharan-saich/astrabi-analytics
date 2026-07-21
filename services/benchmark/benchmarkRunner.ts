@@ -83,7 +83,11 @@ function buildDataset(c: BenchCase, tablesOverride?: RTable[]): { dataset: Datas
     let name: string;
     let joinLogs: string[] = [];
 
-    if (srcTables.length > 1) {
+    // Branch on how many tables the QUESTION needs (tableCount), NOT how many
+    // tables the database happens to contain. A single-table question must be
+    // answered against just its primary table — otherwise the whole database
+    // gets denormalized and the pipeline analyses the wrong (biggest) table.
+    if (c.tableCount > 1) {
         const tableMap: Record<string, any[]> = {};
         for (const t of srcTables) tableMap[t.name] = t.rows;
         const joined = autoJoinDatasets(tableMap, c.joinEdges);
