@@ -706,7 +706,54 @@ function buildDistributionSQL(plan: AnalysisPlan, model: SemanticModel): string 
  *              FROM "data" WHERE ... GROUP BY "product_name"
  *          ))
  */
+/**
+ * ROW-LEVEL "above/below the average <attribute>" — a listing, not an aggregate.
+ *
+ * "Which products have a price above the average product price?" is a row filter:
+ *   SELECT product_name FROM data WHERE price > (SELECT AVG(price) FROM data)
+ * NOT a GROUP BY … HAVING AVG(price) > … (which the analytical engine defaults to,
+ * and which also leaks an extra metric column). This fires only when the compared
+ * field is an AVG-comparison attribute (agg 'avg' or no distinct metric) and the
+ * user is listing entities — leaving "products whose TOTAL sales are above
+ * average" (agg 'sum') on the HAVING path where it belongs.
+ */
+function tryRowLevelAvgFilterSQL(plan: AnalysisPlan, model: SemanticModel): string | null {
+    // A composite HAVING (margin, AOV, …) is a genuine aggregate filter — leave it.
+    // The row-level case is distinguished by the AVG aggregation below, not isHaving.
+    const aa = plan.filters.find(f => !f.compositeRef && ['above_avg', 'below_avg'].includes(f.op as string));
+    if (!aa || plan.dimensions.length === 0) return null;
+
+    // Only when the comparison is against a per-row value's MEAN, not an aggregate.
+    const m = plan.metrics.find(mm => mm.field?.toLowerCase() === aa.field.toLowerCase());
+    const isRowLevel = m ? m.agg === 'avg' : plan.metrics.length === 0
+        || plan.metrics.every(mm => mm.field?.toLowerCase() === aa.field.toLowerCase());
+    if (!isRowLevel) return null;
+
+    const dims = buildDimensionExpressions(plan.dimensions).join(', ');
+    const cmp = aa.op === 'above_avg' ? '>' : '<';
+    const otherWhere = buildWhereClause(plan.filters); // excludes the above/below_avg filter
+    const scalar = `${q(aa.field)} ${cmp} (SELECT AVG(${q(aa.field)}) ${fromTable()})`;
+    const whereClause = [otherWhere, scalar].filter(Boolean).join(' AND ');
+
+    const parts = [`SELECT ${dims}`, fromTable(), `WHERE ${whereClause}`];
+    if (plan.sort.length > 0) {
+        // Order by the RAW attribute (a real column), never the aggregate alias the
+        // planner may have attached — there is no GROUP BY / metric column here.
+        const dir = (plan.sort[0].dir || 'desc').toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+        parts.push(`ORDER BY ${q(aa.field)} ${dir}`);
+    }
+    if (plan.limit) parts.push(`LIMIT ${plan.limit}`);
+    return parts.join('\n');
+}
+
 function buildAggregateFilterSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?: DerivedMetric[]): string {
+    // Row-level "above/below the average <attribute>" listing takes precedence.
+    const rowLevel = tryRowLevelAvgFilterSQL(plan, model);
+    if (rowLevel) {
+        logger.info('[SQL Correction]', 'Row-level above/below-average filter (projection, no GROUP BY)');
+        return rowLevel;
+    }
+
     const dimExprs = buildDimensionExpressions(plan.dimensions);
     const metExprs = buildMetricExpressions(plan.metrics, model, apdmeMetrics);
     const groupBy = buildGroupByClause(plan.dimensions);
