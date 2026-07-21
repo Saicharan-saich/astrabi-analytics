@@ -22,6 +22,7 @@
 import { SemanticModel, AnalysisPlan, PlanMetric, PlanDimension, PlanFilter, DerivedMetricDefinition } from './types';
 import type { DerivedMetric } from './derivedMetricEngine';
 import { logger } from '../logger';
+import { dateRangePredicate } from '../queryPlan/sqlPrimitives';
 
 // â”€â”€â”€ Table Reference â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Set dynamically by correctSQL() so all builder functions use the
@@ -1254,11 +1255,11 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
         const sql = [
             `SELECT 'Current' AS period, ${metExprs.join(', ')}`,
             fromTable(),
-            `WHERE CAST(${dateField} AS DATE) BETWEEN DATE '${currentStart}' AND DATE '${currentEnd}'`,
+            `WHERE ${dateRangePredicate(dateField, currentStart, currentEnd)}`,
             `UNION ALL`,
             `SELECT 'Previous' AS period, ${metExprs.join(', ')}`,
             fromTable(),
-            `WHERE CAST(${dateField} AS DATE) BETWEEN DATE '${prevDates.start}' AND DATE '${prevDates.end}'`,
+            `WHERE ${dateRangePredicate(dateField, prevDates.start, prevDates.end)}`,
         ];
         return sql.join('\n');
     }
@@ -1313,7 +1314,7 @@ function buildContributionSQL(
     const aggExpr = contributionAgg(plan.metrics[0] || { field: '*', agg: 'count' } as PlanMetric);
     const period = (s: string, e: string) =>
         `SELECT ${dimCol} AS __d, ${aggExpr} AS __v ${fromTable()} ` +
-        `WHERE CAST(${dateField} AS DATE) BETWEEN DATE '${s}' AND DATE '${e}' GROUP BY ${dimCol}`;
+        `WHERE ${dateRangePredicate(dateField, s, e)} GROUP BY ${dimCol}`;
     return [
         `WITH cur AS (${period(curStart, curEnd)}),`,
         `     prev AS (${period(prevDates.start, prevDates.end)})`,
@@ -1466,7 +1467,7 @@ function buildWhereClause(filters: PlanFilter[]): string {
         if (TEMPORAL.has(f.op)) {
             const r = resolveTemporalRange(f.op);
             if (r) {
-                parts.push(`CAST(${fld(f.field)} AS DATE) >= DATE '${r.start}' AND CAST(${fld(f.field)} AS DATE) <= DATE '${r.end}'`);
+                parts.push(dateRangePredicate(fld(f.field), r.start, r.end));
             } else {
                 logger.warn('[SQL Correction]', `Temporal filter "${f.op}" on "${f.field}" could not be resolved (no anchor date). Filter skipped.`);
             }
