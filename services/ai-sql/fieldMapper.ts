@@ -137,14 +137,17 @@ export function mapFieldsFromQuestion(question: string, model: SemanticModel): M
     // ── Pass 2: If no metrics found, use smart defaults ──
     if (metrics.length === 0) {
         const q = question.toLowerCase();
+        // Money words → a revenue/amount question. Prefer a currency metric so
+        // "total revenue" maps to total_price, not whatever sum-metric (e.g.
+        // quantity) happens to come first in column order.
+        const wantsMoney = /\b(revenue|sales|income|earnings|turnover|billing|billed|amount|spend|spending|profit|price|cost)\b/.test(q);
+        const currencyMetric = model.fields.find(f => f.role === 'metric' && f.semanticType === 'currency');
+        const sumMetric = model.fields.find(f =>
+            f.role === 'metric' && f.defaultAgg === 'sum' && f.semanticType !== 'identifier');
 
-        // Look for metric intent in the question
-        const defaultMeasure = model.fields.find(f =>
-            f.role === 'metric' && (
-                (f.semanticType === 'currency') ||
-                (f.defaultAgg === 'sum' && f.semanticType !== 'identifier')
-            )
-        );
+        const defaultMeasure = (wantsMoney && currencyMetric)
+            ? currencyMetric
+            : (currencyMetric || sumMetric);
 
         if (defaultMeasure) {
             metrics.push(defaultMeasure);
