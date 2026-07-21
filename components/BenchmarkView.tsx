@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import {
     Play, Loader2, CheckCircle2, XCircle, Download, ChevronDown, ChevronRight,
     Gauge, Timer, Coins, Database, AlertTriangle, Info, Upload, Trash2, Plus,
-    LayoutDashboard, FlaskConical, History, ShieldCheck,
+    LayoutDashboard, FlaskConical, History, ShieldCheck, Zap,
 } from 'lucide-react';
 import type { Dataset } from '../types';
 import { BenchCase, Suite } from '../services/benchmark/spiderCases';
@@ -12,6 +12,7 @@ import {
 } from '../services/benchmark/benchmarkRunner';
 import { useBenchmarkStore, BenchmarkRun } from '../store/useBenchmarkStore';
 import { runToMarkdown, runToJSON } from '../services/benchmark/report';
+import { loadBirdFromFiles } from '../services/benchmark/birdBrowserLoader';
 
 const ENGINE = 'QuickInsight (Gemini)';
 type Nav = Suite | 'dashboard';
@@ -94,9 +95,11 @@ const ResultsBlock: React.FC<{ results: CaseResult[]; summary: BenchmarkSummary 
     <>
         <div className="mt-6 grid gap-3 grid-cols-2 lg:grid-cols-4">
             <StatCard icon={<Gauge className="w-3.5 h-3.5" />} label="Accuracy" value={p1(s.accuracy)} sub={`${s.passed}/${s.total} passed`} />
-            <StatCard icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Exec success" value={p1(s.executionSuccess)} sub={`repair ${p1(s.repairRate)}`} />
-            <StatCard icon={<Timer className="w-3.5 h-3.5" />} label="Avg latency" value={`${s.avgLatencyMs}ms`} sub={`conf ${s.avgConfidence}/100`} />
-            <StatCard icon={<Coins className="w-3.5 h-3.5" />} label="Avg tokens" value={s.avgTokens.toLocaleString()} sub={`${s.totalTokens.toLocaleString()} total`} />
+            {s.testSuiteInstances > 1
+                ? <StatCard icon={<ShieldCheck className="w-3.5 h-3.5" />} label={`Test-suite (${s.testSuiteInstances}×)`} value={p1(s.testSuiteAccuracy)} sub="robust to coincidence" />
+                : <StatCard icon={<ShieldCheck className="w-3.5 h-3.5" />} label="Exec success" value={p1(s.executionSuccess)} sub={`repair ${p1(s.repairRate)}`} />}
+            <StatCard icon={<Zap className="w-3.5 h-3.5" />} label="VES" value={p1(s.ves)} sub="efficiency (BIRD)" />
+            <StatCard icon={<Coins className="w-3.5 h-3.5" />} label="Avg tokens" value={s.avgTokens.toLocaleString()} sub={`${s.avgLatencyMs}ms · conf ${s.avgConfidence}`} />
         </div>
         <div className="mt-5 grid gap-5 md:grid-cols-3">
             <div className="rounded-xl border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-white/[0.03] p-4">
@@ -142,6 +145,8 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
     // avoids only ever hitting the first/easiest cases.
     const [limit, setLimit] = useState(10);
     const [randomSample, setRandomSample] = useState(false);
+    // Test-suite (multi-instance) robustness: 1 = single-instance execution acc.
+    const [testSuiteK, setTestSuiteK] = useState(1);
     // User-benchmark authoring
     const [userCases, setUserCases] = useState<{ question: string; goldSQL: string }[]>([]);
     const [uq, setUq] = useState(''); const [ug, setUg] = useState('');
@@ -184,7 +189,7 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
         setRunning(true); setResults(null);
         setProgress({ done: 0, total: casesToRun.length, current: 'Starting…' });
         try {
-            const res = await runBenchmark(casesToRun, p => setProgress(p));
+            const res = await runBenchmark(casesToRun, p => setProgress(p), { testSuiteInstances: testSuiteK });
             setResults(res);
             const s = summarize(res);
             const sampledNote = casesToRun.length < cases.length
@@ -209,20 +214,62 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
         reader.onload = () => {
             try {
                 const parsed = JSON.parse(String(reader.result));
-                if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Expected a non-empty JSON array of cases');
-                // Minimal shape check.
-                for (const c of parsed.slice(0, 3)) {
-                    if (!c.question || !c.goldSQL || !Array.isArray(c.tables)) throw new Error('Each case needs question, goldSQL, tables[]');
+                let cases: BenchCase[];
+
+                if (parsed && !Array.isArray(parsed) && parsed.databases && Array.isArray(parsed.cases)) {
+                    // Compact bundle from extractSpider: tables stored ONCE per db.
+                    // Attach them to each case BY REFERENCE (no per-question copy).
+                    const dbs: Record<string, Record<string, any[]>> = parsed.databases;
+                    cases = parsed.cases.map((c: any, i: number) => {
+                        const tblMap = dbs[c.db] || {};
+                        const tables = Object.entries(tblMap).map(([name, rows]) => ({ name, rows: rows as any[] }));
+                        const primary = c.primaryTable
+                            || [...tables].sort((a, b) => b.rows.length - a.rows.length)[0]?.name;
+                        return {
+                            difficulty: 'medium', tags: ['official'], ...c,
+                            suite, id: c.id || `${suite}-official-${i}`,
+                            tables, primaryTable: primary,
+                            tableCount: c.tableCount ?? tables.length,
+                        };
+                    });
+                } else if (Array.isArray(parsed) && parsed.length > 0) {
+                    // Legacy: a plain array of self-contained cases (tables inline).
+                    for (const c of parsed.slice(0, 3)) {
+                        if (!c.question || !c.goldSQL || !Array.isArray(c.tables)) {
+                            throw new Error('Each case needs question, goldSQL, tables[]');
+                        }
+                    }
+                    cases = parsed.map((c: any, i: number) => ({ ...c, suite, id: c.id || `${suite}-official-${i}` }));
+                } else {
+                    throw new Error('Expected a {databases, cases} bundle or a non-empty array of cases');
                 }
-                const withSuite = parsed.map((c: any, i: number) => ({ ...c, suite, id: c.id || `${suite}-official-${i}` }));
-                setLoaded(prev => ({ ...prev, [suite]: withSuite }));
-                setImportMsg(`Loaded ${withSuite.length} official ${suiteMeta(suite)?.name} cases`);
+
+                if (cases.length === 0) throw new Error('No cases found in file');
+                setLoaded(prev => ({ ...prev, [suite]: cases }));
+                setLimit(l => (l === 0 ? 0 : Math.min(l, 25)));
+                setImportMsg(`Loaded ${cases.length} official ${suiteMeta(suite)?.name} cases. Set “Max questions” before running — each is a live LLM call.`);
             } catch (e: any) {
                 setImportMsg(`Import failed: ${e.message}`);
             }
-            setTimeout(() => setImportMsg(''), 5000);
+            setTimeout(() => setImportMsg(''), 8000);
         };
         reader.readAsText(file);
+    };
+
+    // Load BIRD directly from the user's downloaded dev/ folder (in-browser).
+    const importBirdFolder = async (fileList: FileList | null) => {
+        if (!fileList || fileList.length === 0) return;
+        const files = Array.from(fileList);
+        setImportMsg('Loading BIRD folder…');
+        try {
+            const cases = await loadBirdFromFiles(files, { loadLimit: 300, onProgress: m => setImportMsg(m) });
+            setLoaded(prev => ({ ...prev, bird: cases }));
+            setLimit(l => (l === 0 ? 0 : Math.min(l, 25)));
+            setImportMsg(`Loaded ${cases.length} BIRD cases. Set “Max questions” before running — each is a live LLM call.`);
+        } catch (e: any) {
+            setImportMsg(`BIRD load failed: ${e.message}`);
+        }
+        setTimeout(() => setImportMsg(''), 9000);
     };
 
     // ── Nav tree ─────────────────────────────────────────────
@@ -271,6 +318,7 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
                             runCount={casesToRun.length}
                             limit={limit} setLimit={setLimit}
                             randomSample={randomSample} setRandomSample={setRandomSample}
+                            testSuiteK={testSuiteK} setTestSuiteK={setTestSuiteK}
                             hasDataset={!!dataset}
                             running={running}
                             progress={progress}
@@ -279,6 +327,7 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
                             importMsg={importMsg}
                             onRun={runActive}
                             onImport={importOfficial}
+                            onImportBirdFolder={importBirdFolder}
                             // user authoring
                             userCases={userCases} uq={uq} ug={ug} setUq={setUq} setUg={setUg}
                             addUserCase={() => { if (uq.trim() && ug.trim()) { setUserCases(c => [...c, { question: uq.trim(), goldSQL: ug.trim() }]); setUq(''); setUg(''); } }}
@@ -293,8 +342,8 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
 // ── Suite panel ──────────────────────────────────────────────────────
 
 const SuitePanel: React.FC<any> = ({
-    suite, cases, runCount, limit, setLimit, randomSample, setRandomSample,
-    hasDataset, running, progress, results, summary, importMsg, onRun, onImport,
+    suite, cases, runCount, limit, setLimit, randomSample, setRandomSample, testSuiteK, setTestSuiteK,
+    hasDataset, running, progress, results, summary, importMsg, onRun, onImport, onImportBirdFolder,
     userCases, uq, ug, setUq, setUg, addUserCase, removeUserCase,
 }) => {
     const meta = suiteMeta(suite)!;
@@ -314,6 +363,21 @@ const SuitePanel: React.FC<any> = ({
                     {meta.kind === 'builtin' && <> These <strong>{cases.length}</strong> cases are <strong>representative</strong> (built-in), not the official split — {meta.officialImportable ? 'import the official dev set below for publishable numbers.' : 'for internal measurement.'}</>}
                 </div>
             </div>
+
+            {/* BIRD folder loader instructions */}
+            {suite === 'bird' && (
+                <div className="mt-4 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/60 dark:bg-emerald-500/[0.06] p-3.5 text-sm text-emerald-900 dark:text-emerald-200 flex gap-2.5">
+                    <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                        <strong>Run the official BIRD dev set from your machine.</strong> Download the Dev release from
+                        {' '}<span className="font-mono">bird-bench.github.io</span>, unzip it, then click <strong>Load BIRD folder</strong> and
+                        pick the <span className="font-mono">dev/</span> folder (it must contain <span className="font-mono">dev.json</span> and
+                        {' '}<span className="font-mono">dev_databases/&lt;db&gt;/&lt;db&gt;.sqlite</span>). The databases are read
+                        <strong> in your browser</strong> — nothing is uploaded, only column metadata reaches the AI. The first
+                        ~300 questions are loaded; cap live LLM calls with <strong>Max questions</strong> before running.
+                    </div>
+                </div>
+            )}
 
             {/* User benchmark authoring */}
             {suite === 'user' && (
@@ -362,7 +426,27 @@ const SuitePanel: React.FC<any> = ({
                     <input type="checkbox" checked={randomSample} onChange={e => setRandomSample(e.target.checked)} disabled={running} className="rounded border-gray-300 text-indigo-500 focus:ring-indigo-500" />
                     random
                 </label>
+                <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300" title="Test-suite accuracy: re-check each correct answer on N bootstrap-resampled database instances. A prediction counts as correct only if it matches gold on ALL of them — this removes coincidental single-instance matches. 1 = off. Higher N = more DuckDB executions (no extra LLM calls).">
+                    <span className="whitespace-nowrap">Test-suite&nbsp;instances</span>
+                    <input
+                        type="number" min={1} max={10} step={1}
+                        value={testSuiteK}
+                        onChange={e => setTestSuiteK(Math.min(10, Math.max(1, Math.floor(Number(e.target.value) || 1))))}
+                        disabled={running}
+                        className="w-16 px-2 py-1.5 rounded-lg border border-gray-200 dark:border-white/[0.1] bg-white dark:bg-white/[0.03] text-sm tabular-nums"
+                    />
+                </label>
 
+                {suite === 'bird' && (
+                    <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/[0.08] hover:bg-emerald-100 dark:hover:bg-emerald-500/[0.14] cursor-pointer">
+                        <Upload className="w-4 h-4" /> Load BIRD folder
+                        <input
+                            {...({ webkitdirectory: '', directory: '' } as any)}
+                            type="file" multiple className="hidden"
+                            onChange={e => { onImportBirdFolder(e.target.files); e.currentTarget.value = ''; }}
+                        />
+                    </label>
+                )}
                 {meta.officialImportable && (
                     <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-white/[0.1] hover:bg-gray-50 dark:hover:bg-white/[0.05] cursor-pointer">
                         <Upload className="w-4 h-4" /> Import official (JSON)

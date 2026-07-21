@@ -13,6 +13,8 @@ function summaryTable(s: BenchmarkSummary): string {
         '| Metric | Value |',
         '| --- | --- |',
         `| Execution accuracy | ${pct(s.accuracy)} (${s.passed}/${s.total}) |`,
+        s.testSuiteInstances > 1 ? `| Test-suite accuracy (${s.testSuiteInstances} instances) | ${pct(s.testSuiteAccuracy)} |` : '',
+        `| Valid Efficiency Score (VES) | ${pct(s.ves)} |`,
         `| Execution success (SQL ran) | ${pct(s.executionSuccess)} |`,
         `| Self-repair rate | ${pct(s.repairRate)} |`,
         `| Avg latency | ${s.avgLatencyMs} ms |`,
@@ -20,7 +22,7 @@ function summaryTable(s: BenchmarkSummary): string {
         `| Total tokens | ${s.totalTokens.toLocaleString()} |`,
         `| Avg confidence (semantic proxy) | ${s.avgConfidence}/100 |`,
         `| Execution errors | ${s.errors} |`,
-    ].join('\n');
+    ].filter(Boolean).join('\n');
 }
 
 function bucketTable(title: string, rows: { label: string; passed: number; total: number }[]): string {

@@ -37,7 +37,7 @@ export const SUITES: SuiteMeta[] = [
     },
     {
         id: 'bird', name: 'BIRD', reference: 'Li et al., 2023',
-        blurb: 'Big, real-world databases with numeric reasoning and ratio/derived-metric questions.',
+        blurb: 'Big real-world databases with numeric reasoning. Load your downloaded BIRD dev/ folder to run the official split in-browser.',
         kind: 'builtin', officialImportable: true,
     },
     {
