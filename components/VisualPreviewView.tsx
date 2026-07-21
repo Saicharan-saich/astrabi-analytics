@@ -89,6 +89,14 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const activeQuery = drillDown?.query || query;
   const sql = activeResult.sql || activePipeline?.sql || '';
   const explanation = activeResult.insight || activePipeline?.explanation || '';
+  const sqlEngine = activePipeline?.engine;
+  const engineBadge = sqlEngine === 'question-builder'
+    ? { label: 'Question Builder', cls: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' }
+    : sqlEngine === 'correction-engine'
+      ? { label: 'Correction Engine', cls: 'bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300' }
+      : sqlEngine === 'llm'
+        ? { label: 'LLM', cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300' }
+        : null;
 
   // ── Drill-Down Handler ──
   const handleDrillDown = useCallback(async (dimensionValue: string) => {
@@ -344,7 +352,12 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
             <div className="h-full overflow-auto p-4 space-y-4">
               <div className={`rounded-xl border p-4 ${isDark ? 'bg-slate-800/50 border-white/[0.06]' : 'bg-white border-gray-200'}`}>
                 <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2"><Sparkles className="w-3.5 h-3.5 text-amber-400" /> AI-Generated SQL</span>
+                  <span className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Generated SQL
+                    {engineBadge && (
+                      <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded normal-case tracking-normal ${engineBadge.cls}`}>{engineBadge.label}</span>
+                    )}
+                  </span>
                   <button onClick={handleCopySQL} className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-500 flex items-center gap-1">
                     {copiedSQL ? <><Check className="w-3 h-3" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy</>}
                   </button>
