@@ -201,6 +201,8 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
     const dateFilters: Array<{ column: string; timeGrain: string; values: string[] }> = [];
     const aggregateFilters: Array<{ column: string; op: '>' | '<' | '>=' | '<='; compareAgg: 'AVG'; compareColumn: string }> = [];
     const likeFilters: Array<{ column: string; pattern: string; negate?: boolean }> = [];
+    const numericFilters: Array<{ column: string; op: '>' | '<' | '>=' | '<=' | '=' | '!='; value: number }> = [];
+    const numericRanges: Array<{ column: string; min: number; max: number }> = [];
     let groupAvgHaving: { op: '>' | '<' | '>=' | '<='; metricIndex: number } | undefined;
     let timeFilter: string | undefined;
 
@@ -255,15 +257,19 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
         if (op === 'between') {
             const col = resolveField(f.field, model);
             if (!col) return { fits: false, reason: `Filter column "${f.field}" not found.` };
-            const role = fieldRole(f.field, model);
-            if (role !== 'date') {
-                return { fits: false, reason: `Numeric range (BETWEEN) on "${f.field}" is not a builder knob.` };
-            }
             if (!Array.isArray(f.value) || f.value.length !== 2) {
-                return { fits: false, reason: `Malformed date range on "${f.field}".` };
+                return { fits: false, reason: `Malformed range on "${f.field}".` };
             }
-            dateFilters.push({ column: col, timeGrain: 'day', values: [`${f.value[0]}__${f.value[1]}`] });
-            notes.push(`where ${col} between ${f.value[0]} and ${f.value[1]}`);
+            const role = fieldRole(f.field, model);
+            if (role === 'date') {
+                dateFilters.push({ column: col, timeGrain: 'day', values: [`${f.value[0]}__${f.value[1]}`] });
+                notes.push(`where ${col} between ${f.value[0]} and ${f.value[1]}`);
+            } else {
+                const lo = Number(f.value[0]), hi = Number(f.value[1]);
+                if (Number.isNaN(lo) || Number.isNaN(hi)) return { fits: false, reason: `Non-numeric range on "${f.field}".` };
+                numericRanges.push({ column: col, min: Math.min(lo, hi), max: Math.max(lo, hi) });
+                notes.push(`where ${col} between ${lo} and ${hi}`);
+            }
             continue;
         }
 
@@ -274,19 +280,21 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
         }
 
         if (NUMERIC_OPS.has(op)) {
-            // The builder's only numeric comparison is a post-aggregate HAVING on
-            // the PRIMARY metric. It cannot express a row-level WHERE on a raw
-            // number, nor a HAVING on a non-primary metric.
             const col = resolveField(f.field, model);
             const numVal = Number(f.value);
             if (!col || Number.isNaN(numVal)) {
-                return { fits: false, reason: `Numeric filter on "${f.field}" is not expressible as a builder measure filter.` };
+                return { fits: false, reason: `Numeric filter on "${f.field}" is not expressible.` };
             }
-            if (!hasGrouping || col !== metricCol) {
-                return { fits: false, reason: `Filter "${f.field} ${op} ${f.value}" requires a shape the builder has no knob for.` };
+            if (hasGrouping && col === metricCol) {
+                // Grouped comparison on the aggregated metric → post-aggregate HAVING
+                // ("channels with revenue over 10000").
+                measureFilters.push({ column: col, operator: op, value: numVal });
+                notes.push(`having ${aggregation}(${col}) ${op} ${numVal}`);
+            } else {
+                // Row-level WHERE on a raw number ("orders over $15").
+                numericFilters.push({ column: col, op: op as '>' | '<' | '>=' | '<=', value: numVal });
+                notes.push(`where ${col} ${op} ${numVal}`);
             }
-            measureFilters.push({ column: col, operator: op, value: numVal });
-            notes.push(`having ${aggregation}(${col}) ${op} ${numVal}`);
             continue;
         }
 
@@ -345,6 +353,8 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
         dateFilters: dateFilters.length > 0 ? dateFilters : undefined,
         aggregateFilters: aggregateFilters.length > 0 ? aggregateFilters : undefined,
         likeFilters: likeFilters.length > 0 ? likeFilters : undefined,
+        numericFilters: numericFilters.length > 0 ? numericFilters : undefined,
+        numericRanges: numericRanges.length > 0 ? numericRanges : undefined,
         groupAvgHaving,
         sort,
         limit: plan.limit || undefined,

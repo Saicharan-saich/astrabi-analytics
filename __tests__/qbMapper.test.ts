@@ -169,6 +169,25 @@ describe('QB mapper — FIT cases produce correct answers', () => {
         expect(scalar(rows)).toBeCloseTo(93 / 6, 6);
     });
 
+    it('numeric row filter: orders over $15 = 2', () => {
+        // total_prices 20,15,15,8,20,15 → > 15: 20, 20 → 2 orders.
+        const rows = runQB(P({
+            intent: 'single_metric',
+            metrics: [{ field: '*', agg: 'count' }],
+            filters: [{ field: 'total_price', op: '>', value: 15 }],
+        }));
+        expect(scalar(rows)).toBe(2);
+    });
+
+    it('numeric range: orders between $10 and $18 = 3', () => {
+        const rows = runQB(P({
+            intent: 'single_metric',
+            metrics: [{ field: '*', agg: 'count' }],
+            filters: [{ field: 'total_price', op: 'between', value: [10, 18] }],
+        }));
+        expect(scalar(rows)).toBe(3);
+    });
+
     it('median: "median order value" → MEDIAN(total_price) = 15', () => {
         // total_prices 20,15,15,8,20,15 → sorted 8,15,15,15,20,20 → median 15.
         const rows = runQB(P({
