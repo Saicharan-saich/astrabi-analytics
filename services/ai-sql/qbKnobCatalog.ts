@@ -72,6 +72,7 @@ export const CORRECTION_ENGINE_SHAPES: CorrectionDoc[] = [
     { name: 'Period comparison', example: 'Revenue this month vs last month', sqlShape: 'current vs previous period, UNION ALL — built deterministically, growth computed post-SQL' },
     { name: 'Trend comparison', example: 'Revenue this year vs last year over time', sqlShape: 'two overlapping period series with LAG-style growth' },
     { name: 'Growth ranking', example: 'Which products are growing fastest?', sqlShape: 'per-entity period-over-period change, ranked' },
+    { name: 'Contribution / mix-shift', example: 'What drove the change in revenue by channel?', sqlShape: 'per-segment current vs previous delta (FULL OUTER JOIN of two periods), ranked' },
     { name: 'Two-stage derived metric', example: 'Average daily sales', sqlShape: 'AVG(SUM(sales) GROUP BY day) — nested aggregation' },
 ];
 
