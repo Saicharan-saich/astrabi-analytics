@@ -29,6 +29,10 @@ export interface UIQueryConfig {
     distribution?: { column: string; bins: number };
     /** Grouped above/below-average HAVING (compare each group to the group average). */
     groupAvgHaving?: { op: '>' | '<' | '>=' | '<='; metricIndex: number };
+    /** Row-level numeric comparisons (WHERE col > value) — pre-aggregation. */
+    numericFilters?: Array<{ column: string; op: '>' | '<' | '>=' | '<=' | '=' | '!='; value: number }>;
+    /** Row-level numeric ranges (WHERE col BETWEEN min AND max). */
+    numericRanges?: Array<{ column: string; min: number; max: number }>;
     sort?: string;
     limit?: number;
     secondaryMetrics?: string[];
@@ -163,6 +167,19 @@ export function buildQueryPlan(
             if (vals.length > 0) {
                 rowFilters.push({ column: col, op: 'NOT_IN', value: vals });
             }
+        }
+    }
+
+    // 2c. Row-level numeric comparisons and ranges (pre-aggregation WHERE)
+    if (query.numericFilters) {
+        for (const nf of query.numericFilters) {
+            rowFilters.push({ column: nf.column, op: nf.op as RowFilter['op'], value: nf.value });
+        }
+    }
+    if (query.numericRanges) {
+        for (const nr of query.numericRanges) {
+            rowFilters.push({ column: nr.column, op: '>=', value: nr.min });
+            rowFilters.push({ column: nr.column, op: '<=', value: nr.max });
         }
     }
 
