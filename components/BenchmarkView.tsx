@@ -147,6 +147,8 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
     const [randomSample, setRandomSample] = useState(false);
     // Test-suite (multi-instance) robustness: 1 = single-instance execution acc.
     const [testSuiteK, setTestSuiteK] = useState(1);
+    // Which engine produces predictions: analytical plan engine or direct SQL.
+    const [engine, setEngine] = useState<'plan' | 'sql'>('plan');
     // User-benchmark authoring
     const [userCases, setUserCases] = useState<{ question: string; goldSQL: string }[]>([]);
     const [uq, setUq] = useState(''); const [ug, setUg] = useState('');
@@ -189,14 +191,15 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
         setRunning(true); setResults(null);
         setProgress({ done: 0, total: casesToRun.length, current: 'Starting…' });
         try {
-            const res = await runBenchmark(casesToRun, p => setProgress(p), { testSuiteInstances: testSuiteK });
+            const res = await runBenchmark(casesToRun, p => setProgress(p), { testSuiteInstances: testSuiteK, engine });
             setResults(res);
             const s = summarize(res);
             const sampledNote = casesToRun.length < cases.length
                 ? `Ran ${casesToRun.length}/${cases.length} cases (${randomSample ? 'random sample' : 'first N'})`
                 : undefined;
+            const engineLabel = engine === 'sql' ? 'QuickInsight Direct-SQL (Gemini)' : 'QuickInsight Plan (Gemini)';
             const run: BenchmarkRun = {
-                id: `run_${Date.now()}`, timestamp: Date.now(), engine: ENGINE,
+                id: `run_${Date.now()}`, timestamp: Date.now(), engine: engineLabel,
                 suites: [activeSuite], usedOfficial: !!loaded[activeSuite]?.length,
                 results: res, summary: s, note: sampledNote,
             };
@@ -319,6 +322,7 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
                             limit={limit} setLimit={setLimit}
                             randomSample={randomSample} setRandomSample={setRandomSample}
                             testSuiteK={testSuiteK} setTestSuiteK={setTestSuiteK}
+                            engine={engine} setEngine={setEngine}
                             hasDataset={!!dataset}
                             running={running}
                             progress={progress}
@@ -342,7 +346,7 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
 // ── Suite panel ──────────────────────────────────────────────────────
 
 const SuitePanel: React.FC<any> = ({
-    suite, cases, runCount, limit, setLimit, randomSample, setRandomSample, testSuiteK, setTestSuiteK,
+    suite, cases, runCount, limit, setLimit, randomSample, setRandomSample, testSuiteK, setTestSuiteK, engine, setEngine,
     hasDataset, running, progress, results, summary, importMsg, onRun, onImport, onImportBirdFolder,
     userCases, uq, ug, setUq, setUg, addUserCase, removeUserCase,
 }) => {
@@ -409,6 +413,18 @@ const SuitePanel: React.FC<any> = ({
                     {cases.length} case{cases.length === 1 ? '' : 's'} · {single} single-table · {cases.length - single} multi-table
                 </span>
                 <div className="flex-1" />
+
+                {/* Engine: analytical plan engine vs direct SQL-semantics engine */}
+                <div className="inline-flex rounded-lg border border-gray-200 dark:border-white/[0.1] overflow-hidden" title="Plan = the analytical plan engine (deterministic, governed). SQL = direct schema-to-SQL from the LLM (general: joins, subqueries). Benchmark both on the same cases.">
+                    {(['plan', 'sql'] as const).map(e => (
+                        <button key={e} onClick={() => setEngine(e)} disabled={running}
+                            className={`px-2.5 py-1.5 text-xs font-semibold transition-colors ${engine === e
+                                ? 'bg-violet-500 text-white'
+                                : 'bg-white dark:bg-transparent text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-white/[0.05]'}`}>
+                            {e === 'plan' ? 'Plan engine' : 'Direct SQL'}
+                        </button>
+                    ))}
+                </div>
 
                 {/* Credit guard: how many questions to actually run */}
                 <label className="inline-flex items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
