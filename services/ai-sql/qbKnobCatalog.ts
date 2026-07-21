@@ -50,6 +50,7 @@ export const DETERMINISTIC_KNOBS: KnobDoc[] = [
     { group: 'Filter', name: 'Equals / in', example: 'Total revenue from Delivery orders', sqlShape: "WHERE channel IN ('Delivery')" },
     { group: 'Filter', name: 'Exclude (≠ / not in)', example: 'Revenue excluding Online orders', sqlShape: "WHERE channel NOT IN ('Online')" },
     { group: 'Filter', name: 'Text contains (LIKE)', example: 'Revenue for products containing "Pro"', sqlShape: "WHERE product LIKE '%Pro%'" },
+    { group: 'Filter', name: 'Numeric compare / range', example: 'Orders over $15 / between $10 and $18', sqlShape: 'WHERE total_price > 15  ·  WHERE total_price BETWEEN 10 AND 18' },
     { group: 'Filter', name: 'Date range', example: 'Revenue between two dates', sqlShape: 'WHERE order_date::TIMESTAMP BETWEEN … AND …' },
     { group: 'Filter', name: 'Relative date', example: 'Revenue this month', sqlShape: 'WHERE order_date IN (this month)' },
     { group: 'Filter', name: 'Above / below average (rows)', example: 'How many orders are above the average order value?', sqlShape: 'WHERE total_price > (SELECT AVG(total_price) FROM data)' },
