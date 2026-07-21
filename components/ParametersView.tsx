@@ -71,7 +71,15 @@ const DEMO_QUESTIONS: Array<{ q: string; plan: AnalysisPlan }> = [
 ];
 
 type Tier = 'qb' | 'correction' | 'llm';
-function mapDemo(plan: AnalysisPlan): { tier: Tier; detail: string; sql?: string } {
+function mapDemo(question: string, plan: AnalysisPlan): { tier: Tier; detail: string; sql?: string } {
+    // Anti-join knob (set logic) is detected from the question + value catalog at
+    // pipeline time; illustrate it here from the "but never/not" pattern.
+    if (/\bbut (never|not)\b/i.test(question)) {
+        return {
+            tier: 'qb', detail: 'anti-join knob — set logic (has X but not Y)',
+            sql: 'SELECT DISTINCT customer_id\nFROM data\nWHERE product IN (\'A\')\n  AND customer_id NOT IN (SELECT customer_id FROM data WHERE product IN (\'B\'))',
+        };
+    }
     const res = mapPlanToQBConfig(plan, DEMO_MODEL);
     if (res.fits) {
         try {
@@ -98,7 +106,7 @@ const GROUPS: KnobDoc['group'][] = ['Aggregation', 'Group-by', 'Filter', 'Shape'
 
 export const ParametersView: React.FC = () => {
     const [open, setOpen] = useState<number | null>(0);
-    const demo = useMemo(() => DEMO_QUESTIONS.map(d => ({ ...d, result: mapDemo(d.plan) })), []);
+    const demo = useMemo(() => DEMO_QUESTIONS.map(d => ({ ...d, result: mapDemo(d.q, d.plan) })), []);
     const detCount = demo.filter(d => d.result.tier !== 'llm').length;
 
     return (
