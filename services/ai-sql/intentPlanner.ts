@@ -246,11 +246,18 @@ CRITICAL RULES:
  * are NOT aggregation overrides — they indicate SORT DIRECTION.
  * Only override to min/max when used as scalar functions ("what is the max sales").
  */
-function detectExplicitAggregation(question: string): 'avg' | 'sum' | 'count' | 'count_distinct' | 'max' | 'min' | null {
+export function detectExplicitAggregation(question: string): 'avg' | 'sum' | 'count' | 'count_distinct' | 'max' | 'min' | null {
     const q = question.toLowerCase();
 
     // Order matters: check specific patterns first
     if (/\b(average|avg|mean)\b/.test(q)) return 'avg';
+
+    // "how many DISTINCT/UNIQUE customers", "number of unique items", "count of
+    // distinct servers" → COUNT(DISTINCT entity), not COUNT(*). Must come before
+    // the generic "how many → count" rule below.
+    if (/\b(distinct|unique|different)\b/.test(q) && /\b(how many|number of|count of|count|distinct count)\b/.test(q)) {
+        return 'count_distinct';
+    }
 
     // "total orders", "total customers", "total transactions" → COUNT, not SUM
     // These are count-like nouns where "total" means "how many" not "sum of"
@@ -284,11 +291,42 @@ function detectExplicitAggregation(question: string): 'avg' | 'sum' | 'count' | 
  * "highest" / "most" / "best" / "top" → descending sort
  * Returns null if no ranking direction detected.
  */
-function detectRankingDirection(question: string): 'asc' | 'desc' | null {
+export function detectRankingDirection(question: string): 'asc' | 'desc' | null {
     const q = question.toLowerCase();
+    // Compound phrases FIRST — "highest to lowest" contains both words, and the
+    // ORDER (high→low = desc) is what matters, not which word appears.
+    if (/\b(highest|high|most|largest|biggest|greatest|top)\s+to\s+(lowest|low|least|smallest|bottom)\b/.test(q)
+        || /\bdescending\b/.test(q) || /\bhigh\s+to\s+low\b/.test(q)) return 'desc';
+    if (/\b(lowest|low|least|smallest|bottom)\s+to\s+(highest|high|most|largest|top)\b/.test(q)
+        || /\bascending\b/.test(q) || /\blow\s+to\s+high\b/.test(q)) return 'asc';
+    // Single-word superlatives.
     if (/\b(lowest|least|worst|bottom|smallest|fewest|minimum)\b/.test(q)) return 'asc';
     if (/\b(highest|most|best|top|largest|biggest|greatest|maximum)\b/.test(q)) return 'desc';
     return null;
+}
+
+/**
+ * When a question asks for a cyclic calendar dimension (day of the week) and the
+ * dataset already HAS that column (e.g. "DayOfWeek"), group by that column
+ * directly — do NOT derive it from the date column or apply a time-period
+ * filter. "Day of the week" is a category, not "this week".
+ */
+export function enforceNativeCyclicDimension(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    const q = question.toLowerCase();
+    if (!/\bday(s)?\s+of\s+(the\s+)?week\b|\bweekday\b/.test(q)) return;
+
+    const norm = (s: string) => s.toLowerCase().replace(/[_\s]/g, '');
+    const dowField = model.fields.find(f => ['dayofweek', 'weekday', 'dayoftheweek'].includes(norm(f.name)));
+    if (!dowField) return;
+
+    // Force the native day-of-week column as the sole grouping dimension.
+    plan.dimensions = [{ field: dowField.name } as any];
+    // Strip any date-column filters — a cyclic category isn't a date range.
+    plan.filters = (plan.filters || []).filter(f => {
+        const ff = model.fields.find(x => x.name.toLowerCase() === String(f.field).toLowerCase());
+        return !(ff && ff.semanticType === 'date');
+    });
+    console.log(`[Intent Planner] Native day-of-week column enforced: ${dowField.name}`);
 }
 
 /**
@@ -787,26 +825,55 @@ function enforceAggregateFilter(plan: AnalysisPlan, question: string, model: Sem
  * user explicitly asks for distinct values of a categorical entity that isn't a
  * filter). Returns true when it rewrote the metric. Exported for testing.
  */
+/**
+ * Resolve the entity noun in a "distinct/unique <noun>" question to a model
+ * field — e.g. "distinct customers" → customer_id, "unique servers" → server_name.
+ * Prefers an identifier column so COUNT(DISTINCT) counts entities, not attributes.
+ */
+function resolveDistinctEntityField(question: string, model: SemanticModel): string | null {
+    const m = question.toLowerCase().match(/\b(?:distinct|unique|different)\s+([a-z][a-z_]*)/);
+    if (!m) return null;
+    const noun = m[1].replace(/s$/, ''); // customers → customer, items → item
+    if (noun.length < 3) return null;
+    const candidates = model.fields.filter(f => {
+        const n = f.name.toLowerCase();
+        return n.includes(noun) || (f.synonyms || []).some(s => s.toLowerCase().includes(noun));
+    });
+    if (candidates.length === 0) return null;
+    // Prefer an identifier / *_id column, else the first match.
+    const idField = candidates.find(f => f.semanticType === 'identifier' || f.name.toLowerCase().endsWith('_id'));
+    return (idField || candidates[0]).name;
+}
+
 export function applyCountSemantics(
     explicitAgg: string | null,
     plan: AnalysisPlan,
     model: SemanticModel,
+    question = '',
 ): boolean {
     if (explicitAgg !== 'count' && explicitAgg !== 'count_distinct') return false;
     const filterFields = new Set((plan.filters || []).map(f => String(f.field).toLowerCase()));
     const primary = plan.metrics.find(m => !(m as any).compositeId);
     const pf = primary ? model.fields.find(f => f.name.toLowerCase() === String(primary.field).toLowerCase()) : undefined;
 
-    // "how many distinct doctors" / "unique hospitals" → COUNT(DISTINCT dim),
-    // but only when the target is a categorical entity that is NOT a filter.
-    if (explicitAgg === 'count_distinct' && pf && pf.role === 'dimension'
-        && !filterFields.has(String(primary!.field).toLowerCase())) {
-        plan.metrics = [{ field: primary!.field, agg: 'count_distinct' } as any];
-    } else {
-        // Plain count → count rows. A numeric field used as a filter (age) is
-        // never the count target.
-        plan.metrics = [{ field: '*', agg: 'count' } as any];
+    if (explicitAgg === 'count_distinct') {
+        // 1) The plan already targets a categorical entity that isn't a filter.
+        if (pf && pf.role !== 'metric' && !filterFields.has(String(primary!.field).toLowerCase())) {
+            plan.metrics = [{ field: primary!.field, agg: 'count_distinct' } as any];
+            return true;
+        }
+        // 2) Resolve the entity from the question ("distinct customers" → customer_id).
+        const entity = resolveDistinctEntityField(question, model);
+        if (entity) {
+            plan.metrics = [{ field: entity, agg: 'count_distinct' } as any];
+            return true;
+        }
+        // else fall through to COUNT(*) — nothing sensible to distinct-count.
     }
+
+    // Plain count → count rows. A numeric field used as a filter (age) is
+    // never the count target.
+    plan.metrics = [{ field: '*', agg: 'count' } as any];
     return true;
 }
 
@@ -850,7 +917,7 @@ function enforceAggregation(plan: AnalysisPlan, question: string, model: Semanti
 
     // COUNT questions count rows/entities — handle before the generic override so
     // "count of patients whose age > 50" becomes COUNT(*), never SUM(age).
-    if (applyCountSemantics(explicitAgg, plan, model)) {
+    if (applyCountSemantics(explicitAgg, plan, model, question)) {
         console.log('[Intent Planner] COUNT question → COUNT(*) of rows (a filter/attribute is never the count target)');
         return;
     }
@@ -1348,6 +1415,7 @@ function finalizePlan(
     enforceCyclicGrain(plan, question, model);
     enforceIntentFromKeywords(plan, question);
     enforceCompositeMetrics(plan, question, model);
+    enforceNativeCyclicDimension(plan, question, model);
     enforceAggregateFilter(plan, question, model);
     enforceGrowthAnalysis(plan, question, model);
     enforcePluralLimit(plan, question);
