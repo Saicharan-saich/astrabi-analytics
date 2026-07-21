@@ -12,6 +12,7 @@ import {
 } from '../services/benchmark/benchmarkRunner';
 import { useBenchmarkStore, BenchmarkRun } from '../store/useBenchmarkStore';
 import { runToMarkdown, runToJSON } from '../services/benchmark/report';
+import { loadBirdFromFiles } from '../services/benchmark/birdBrowserLoader';
 
 const ENGINE = 'QuickInsight (Gemini)';
 type Nav = Suite | 'dashboard';
@@ -251,6 +252,22 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
         reader.readAsText(file);
     };
 
+    // Load BIRD directly from the user's downloaded dev/ folder (in-browser).
+    const importBirdFolder = async (fileList: FileList | null) => {
+        if (!fileList || fileList.length === 0) return;
+        const files = Array.from(fileList);
+        setImportMsg('Loading BIRD folder…');
+        try {
+            const cases = await loadBirdFromFiles(files, { loadLimit: 300, onProgress: m => setImportMsg(m) });
+            setLoaded(prev => ({ ...prev, bird: cases }));
+            setLimit(l => (l === 0 ? 0 : Math.min(l, 25)));
+            setImportMsg(`Loaded ${cases.length} BIRD cases. Set “Max questions” before running — each is a live LLM call.`);
+        } catch (e: any) {
+            setImportMsg(`BIRD load failed: ${e.message}`);
+        }
+        setTimeout(() => setImportMsg(''), 9000);
+    };
+
     // ── Nav tree ─────────────────────────────────────────────
     const NavButton: React.FC<{ id: Nav; label: string; icon: React.ReactNode; badge?: string }> = ({ id, label, icon, badge }) => (
         <button
@@ -305,6 +322,7 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
                             importMsg={importMsg}
                             onRun={runActive}
                             onImport={importOfficial}
+                            onImportBirdFolder={importBirdFolder}
                             // user authoring
                             userCases={userCases} uq={uq} ug={ug} setUq={setUq} setUg={setUg}
                             addUserCase={() => { if (uq.trim() && ug.trim()) { setUserCases(c => [...c, { question: uq.trim(), goldSQL: ug.trim() }]); setUq(''); setUg(''); } }}
@@ -320,7 +338,7 @@ export const BenchmarkView: React.FC<{ dataset?: Dataset | null }> = ({ dataset 
 
 const SuitePanel: React.FC<any> = ({
     suite, cases, runCount, limit, setLimit, randomSample, setRandomSample,
-    hasDataset, running, progress, results, summary, importMsg, onRun, onImport,
+    hasDataset, running, progress, results, summary, importMsg, onRun, onImport, onImportBirdFolder,
     userCases, uq, ug, setUq, setUg, addUserCase, removeUserCase,
 }) => {
     const meta = suiteMeta(suite)!;
@@ -340,6 +358,21 @@ const SuitePanel: React.FC<any> = ({
                     {meta.kind === 'builtin' && <> These <strong>{cases.length}</strong> cases are <strong>representative</strong> (built-in), not the official split — {meta.officialImportable ? 'import the official dev set below for publishable numbers.' : 'for internal measurement.'}</>}
                 </div>
             </div>
+
+            {/* BIRD folder loader instructions */}
+            {suite === 'bird' && (
+                <div className="mt-4 rounded-xl border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/60 dark:bg-emerald-500/[0.06] p-3.5 text-sm text-emerald-900 dark:text-emerald-200 flex gap-2.5">
+                    <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                        <strong>Run the official BIRD dev set from your machine.</strong> Download the Dev release from
+                        {' '}<span className="font-mono">bird-bench.github.io</span>, unzip it, then click <strong>Load BIRD folder</strong> and
+                        pick the <span className="font-mono">dev/</span> folder (it must contain <span className="font-mono">dev.json</span> and
+                        {' '}<span className="font-mono">dev_databases/&lt;db&gt;/&lt;db&gt;.sqlite</span>). The databases are read
+                        <strong> in your browser</strong> — nothing is uploaded, only column metadata reaches the AI. The first
+                        ~300 questions are loaded; cap live LLM calls with <strong>Max questions</strong> before running.
+                    </div>
+                </div>
+            )}
 
             {/* User benchmark authoring */}
             {suite === 'user' && (
@@ -389,6 +422,16 @@ const SuitePanel: React.FC<any> = ({
                     random
                 </label>
 
+                {suite === 'bird' && (
+                    <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-500/30 bg-emerald-50 dark:bg-emerald-500/[0.08] hover:bg-emerald-100 dark:hover:bg-emerald-500/[0.14] cursor-pointer">
+                        <Upload className="w-4 h-4" /> Load BIRD folder
+                        <input
+                            {...({ webkitdirectory: '', directory: '' } as any)}
+                            type="file" multiple className="hidden"
+                            onChange={e => { onImportBirdFolder(e.target.files); e.currentTarget.value = ''; }}
+                        />
+                    </label>
+                )}
                 {meta.officialImportable && (
                     <label className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-white/[0.1] hover:bg-gray-50 dark:hover:bg-white/[0.05] cursor-pointer">
                         <Upload className="w-4 h-4" /> Import official (JSON)
