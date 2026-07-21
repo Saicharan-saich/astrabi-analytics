@@ -216,6 +216,27 @@ function compileOrderBy(ob: OrderBy, plan: QueryPlan): string {
 // ═══════════════════════════════════════════════════════════════════
 
 export function compileSQL(plan: QueryPlan): string {
+    // ── Distribution / histogram (special shape) ─────────────────
+    // Bins a numeric column into N buckets and counts rows per bucket.
+    if (plan._distribution) {
+        const src = `"${plan.source.replace(/"/g, '""')}"`;
+        const col = safeId(plan._distribution.column);
+        const n = Math.max(2, Math.min(50, Math.floor(plan._distribution.bins) || 10));
+        // Equal-width bins without width_bucket (not in DuckDB-WASM): normalise the
+        // value to [0,1] over [min,max], scale to n, floor, and cap the top value
+        // into the last bucket.
+        const minSub = `(SELECT MIN(${col}) FROM ${src})`;
+        const rangeSub = `NULLIF((SELECT MAX(${col}) - MIN(${col}) FROM ${src}), 0)`;
+        return [
+            `SELECT LEAST(CAST(FLOOR((${col} - ${minSub}) / ${rangeSub} * ${n}) AS BIGINT), ${n - 1}) AS bucket,`,
+            `       COUNT(*) AS count`,
+            `FROM ${src}`,
+            `WHERE ${col} IS NOT NULL`,
+            `GROUP BY bucket`,
+            `ORDER BY bucket`,
+        ].join('\n');
+    }
+
     const parts: string[] = [];
 
     // ── SELECT ───────────────────────────────────────────────────
@@ -256,6 +277,11 @@ export function compileSQL(plan: QueryPlan): string {
         const col = safeId(af.column);
         const cmpCol = safeId(af.compareColumn);
         whereClauses.push(`${col} ${af.op} (SELECT ${af.compareAgg}(${cmpCol}) FROM "${plan.source.replace(/"/g, '""')}")`);
+    }
+    // Text-contains filters (LIKE / NOT LIKE).
+    for (const lf of plan._likeFilters || []) {
+        const col = safeId(lf.column);
+        whereClauses.push(`${col} ${lf.negate ? 'NOT LIKE' : 'LIKE'} '${escapeStringValue(lf.pattern)}'`);
     }
     if (whereClauses.length > 0) {
         parts.push(`WHERE ${whereClauses.join(' AND ')}`);

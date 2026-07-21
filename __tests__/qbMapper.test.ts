@@ -152,6 +152,35 @@ describe('QB mapper — FIT cases produce correct answers', () => {
         expect(scalar(rows)).toBe(30);
     });
 
+    it('LIKE: revenue for products containing "Burger" = 40', () => {
+        const rows = runQB(P({
+            intent: 'single_metric',
+            metrics: [{ field: 'total_price', agg: 'sum' }],
+            filters: [{ field: 'product', op: 'like', value: 'Burger' }],
+        }));
+        expect(scalar(rows)).toBe(40);
+    });
+
+    it('distribution: histogram of order values covers all 6 rows', () => {
+        const rows = runQB(P({
+            intent: 'distribution',
+            metrics: [{ field: 'total_price', agg: 'sum' }],
+        }));
+        expect(Object.keys(rows[0])).toEqual(expect.arrayContaining(['bucket', 'count']));
+        const totalCounted = rows.reduce((s, r) => s + num(r.count), 0);
+        expect(totalCounted).toBe(6);
+    });
+
+    it('correlation: two aggregated metrics by category', () => {
+        const rows = runQB(P({
+            intent: 'correlation',
+            dimensions: [{ field: 'category' }],
+            metrics: [{ field: 'total_price', agg: 'sum' }, { field: 'quantity', agg: 'sum' }],
+        }));
+        const cols = Object.keys(rows[0]);
+        expect(cols).toEqual(expect.arrayContaining(['category', 'sum_total_price', 'sum_quantity']));
+    });
+
     it('share_of_total: revenue share by channel sums to 100% with correct splits', () => {
         // Total revenue = 93; Delivery 43, Dine-in 30, Online 20.
         const rows = runQB(P({
@@ -193,10 +222,6 @@ describe('QB mapper — NO-FIT cases fall back to AI SQL', () => {
 
     it('derived (two-stage) metric is not a single aggregation', () => {
         expect(noFit(P({ intent: 'derived_metric', metrics: [{ field: 'total_price', agg: 'avg', derivedMetricId: 'avg_daily' }] }))).toMatch(/advanced engine|derived/i);
-    });
-
-    it('LIKE filter is not a builder option', () => {
-        expect(noFit(P({ intent: 'breakdown', dimensions: [{ field: 'channel' }], metrics: [{ field: 'total_price', agg: 'sum' }], filters: [{ field: 'product', op: 'like', value: '%Burg%' }] }))).toMatch(/not a builder option/i);
     });
 
     it('grouped above-average (HAVING a group total vs the average of totals) needs the advanced engine', () => {
