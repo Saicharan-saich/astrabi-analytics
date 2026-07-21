@@ -38,6 +38,7 @@ export interface FallbackDoc {
 /** Tier 1 — the deterministic Question Builder base engine. */
 export const DETERMINISTIC_KNOBS: KnobDoc[] = [
     { group: 'Aggregation', name: 'Sum / Average / Min / Max', example: 'What is the total revenue?', sqlShape: 'SELECT SUM(total_price) FROM data' },
+    { group: 'Aggregation', name: 'Median', example: 'What is the median order value?', sqlShape: 'SELECT MEDIAN(total_price) FROM data' },
     { group: 'Aggregation', name: 'Count', example: 'How many orders are there?', sqlShape: 'SELECT COUNT(*) FROM data' },
     { group: 'Aggregation', name: 'Count distinct', example: 'How many distinct customers ordered?', sqlShape: 'SELECT COUNT(DISTINCT customer_id) FROM data' },
     { group: 'Aggregation', name: 'Multiple metrics / correlation', example: 'Revenue vs quantity by category', sqlShape: 'SELECT category, SUM(total_price), SUM(quantity) … GROUP BY category' },
