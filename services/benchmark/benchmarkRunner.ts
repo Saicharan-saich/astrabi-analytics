@@ -20,6 +20,7 @@ import { runETLPipeline } from '../etlPipeline';
 import { autoJoinDatasets } from '../analysisEngine';
 import { classifyFailure, FailureCategory, FAILURE_LABELS } from './errorClassifier';
 import { resampleTables, mulberry32, RTable } from './resample';
+import { toDuckDBDialect } from './sqlDialect';
 
 export interface RunOptions {
     /** Number of database instances for test-suite accuracy (1 = original only). */
@@ -143,7 +144,7 @@ export async function runBenchmarkCase(c: BenchCase, opts: RunOptions = {}): Pro
         // its own tables; we also clear the pipeline's "data"/"dim_date" cache).
         await clearBenchmarkTables(c.tables.map(t => t.name));
         await loadBenchmarkTables(c.tables);
-        const gold = await runRawSQLViaDuckDB(c.goldSQL);
+        const gold = await runRawSQLViaDuckDB(toDuckDBDialect(c.goldSQL));
         if (gold.error) throw new Error(`Gold SQL failed: ${gold.error}`);
         expected = gold.data || [];
 
@@ -178,7 +179,7 @@ export async function runBenchmarkCase(c: BenchCase, opts: RunOptions = {}): Pro
     let vesReward = 0;
     if (cmp.match && predictedSQL && !error) {
         try {
-            const tGold = await timeExec(c.goldSQL, vesRuns);
+            const tGold = await timeExec(toDuckDBDialect(c.goldSQL), vesRuns);
             const tPred = await timeExec(predictedSQL, vesRuns);
             vesReward = (isFinite(tGold) && isFinite(tPred) && tPred > 0)
                 ? Math.min(2, Math.max(0, Math.sqrt(tGold / tPred)))  // clamp noisy tiny-data ratios
@@ -200,7 +201,7 @@ export async function runBenchmarkCase(c: BenchCase, opts: RunOptions = {}): Pro
                 try {
                     await clearBenchmarkTables([...names, 'data', 'master']);
                     await loadBenchmarkTables(resampled);
-                    const goldR = await runRawSQLViaDuckDB(c.goldSQL);
+                    const goldR = await runRawSQLViaDuckDB(toDuckDBDialect(c.goldSQL));
                     if (goldR.error || (goldR.data || []).length === 0) continue; // non-informative resample
                     const { dataset: dsR } = buildDataset(c, resampled);
                     await loadBenchmarkTables([{ name: 'data', rows: dsR.rows }]);
