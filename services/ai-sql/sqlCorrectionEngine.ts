@@ -56,7 +56,7 @@ const FILTER_OP_ALIASES: Record<string, string> = {
     current_quarter: 'this_quarter', qtd: 'this_quarter',
     above_average: 'above_avg', below_average: 'below_avg', above_mean: 'above_avg', below_mean: 'below_avg',
 };
-function normalizeFilterOp(op: any): string {
+export function normalizeFilterOp(op: any): string {
     if (typeof op !== 'string') return op;
     const k = op.toLowerCase().trim();
     return FILTER_OP_ALIASES[k] ?? k;
@@ -74,7 +74,7 @@ const AGG_ALIASES: Record<string, string> = {
     min: 'min', minimum: 'min', smallest: 'min', lowest: 'min', least: 'min',
     max: 'max', maximum: 'max', largest: 'max', highest: 'max', greatest: 'max', peak: 'max',
 };
-function normalizeAgg(agg: any): string {
+export function normalizeAgg(agg: any): string {
     if (typeof agg !== 'string') return agg;
     const k = agg.toLowerCase().trim();
     return AGG_ALIASES[k] ?? k;
