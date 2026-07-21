@@ -42,6 +42,7 @@ import { compileSQL } from '../queryPlan/sqlCompiler';
 import { getDates } from '../dateHelpers';
 import { applyTableCalculation } from '../../utils/tableCalculations';
 import { buildValueCatalog, groundFilters } from './valueGrounding';
+import { verifyPlan } from './planVerification';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -188,9 +189,10 @@ export async function runAISQLPipeline(
     // dataset's actual dimension values (deterministic, no LLM). Fixes the
     // "revenue from Delivery → filter vanished" class of bug, and works even
     // when the LLM planner is unavailable/rate-limited.
+    let _valueCatalog: ReturnType<typeof buildValueCatalog> | null = null;
     try {
-        const catalog = buildValueCatalog(dataset.rows, semanticModel);
-        const grounded = groundFilters(question, catalog, plan, semanticModel);
+        _valueCatalog = buildValueCatalog(dataset.rows, semanticModel);
+        const grounded = groundFilters(question, _valueCatalog, plan, semanticModel);
         if (grounded.added.length > 0) {
             plan.filters.push(...grounded.added);
             console.log(`[Pipeline] Value grounding recovered ${grounded.added.length} filter(s): ${grounded.added.map(f => `${f.field} ${f.op} ${JSON.stringify(f.value)}`).join(', ')}`);
@@ -201,6 +203,24 @@ export async function runAISQLPipeline(
     } catch (gErr: any) {
         console.warn('[Pipeline] Value grounding skipped:', gErr?.message);
     }
+
+    // ─── Step 2b″: Plan Verification (faithfulness gate) ─────────
+    // Deterministic invariant checks: does the plan actually represent the
+    // question? Surfaces dropped filters / wrong metric / missing ranking so a
+    // mismatch becomes a flagged, low-confidence answer instead of a silent
+    // wrong one.
+    let _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
+    if (_verification.issues.length > 0) {
+        console.warn(`[Pipeline] Plan verification: ${_verification.issues.length} issue(s) — ${_verification.issues.map(i => `[${i.severity}] ${i.code}`).join(', ')}`);
+    }
+    traceStep({
+        stepNumber: 4, name: 'Plan Verification', engine: 'planVerification', icon: '🔎',
+        status: _verification.ok ? (_verification.issues.length ? 'warn' : 'pass') : 'fail',
+        summary: _verification.issues.length === 0
+            ? 'Plan faithfully represents the question'
+            : `${_verification.issues.length} faithfulness issue(s): ${_verification.issues.map(i => i.code).join(', ')}`,
+        details: { ok: _verification.ok, issues: _verification.issues },
+    }, performance.now());
 
     // ─── Step 2c: APDME — Derived Metrics & Guardrails ─────────────
     reportProgress('Analyzing derived metrics...', 3);
@@ -941,6 +961,18 @@ export async function runAISQLPipeline(
         confidence.reasons.push(...apdmeResult.violations.map(v => v.message));
         console.log(`[Pipeline] APDME penalty applied: -${apdmeResult.confidencePenalty} → ${confidence.score}/100`);
     }
+    // Faithfulness penalty: a plan that doesn't verify against the question must
+    // not read as high-confidence, even if the SQL ran cleanly.
+    {
+        const errs = _verification.issues.filter(i => i.severity === 'error').length;
+        const warns = _verification.issues.filter(i => i.severity === 'warn').length;
+        if (errs || warns) {
+            confidence.score = Math.max(0, confidence.score - errs * 30 - warns * 10);
+            confidence.level = confidence.score >= 70 ? 'high' : confidence.score >= 40 ? 'medium' : 'low';
+            confidence.reasons.push(..._verification.issues.map(i => i.message));
+            console.log(`[Pipeline] Verification penalty applied: -${errs * 30 + warns * 10} → ${confidence.score}/100`);
+        }
+    }
     traceStep({
         stepNumber: 12, name: 'Confidence Scorer', engine: 'confidenceScorer', icon: '🏆',
         status: confidence.level === 'low' ? 'warn' : 'pass',
@@ -980,7 +1012,13 @@ export async function runAISQLPipeline(
     // Build the explanation from ACTUAL RESULTS, not the plan
     const chartDataForAnswer = reshaped.data.length > 0 ? reshaped.data : rawData;
     const dataAnswer = generateDataDrivenAnswer(question, plan, chartDataForAnswer, semanticModel);
-    const finalExplanation = dataAnswer || sqlResult.explanation;
+    // Surface ERROR-level faithfulness issues to the user rather than answering
+    // silently — the "never a silent wrong answer" guarantee.
+    const _vErrors = _verification.issues.filter(i => i.severity === 'error');
+    const verificationCaveat = _vErrors.length > 0
+        ? ` ⚠️ Heads up: ${_vErrors.map(i => i.message).join(' ')} Please double-check or rephrase.`
+        : '';
+    const finalExplanation = (dataAnswer || sqlResult.explanation || '') + verificationCaveat;
 
     // ─── Build Pipeline Trace ─────────────────────────────────────
     const pipelineTrace: PipelineTrace = {
