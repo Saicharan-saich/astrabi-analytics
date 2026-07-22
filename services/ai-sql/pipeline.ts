@@ -46,6 +46,7 @@ import { verifyPlan } from './planVerification';
 import { detectAntiJoin, buildAntiJoinSQL } from './antiJoin';
 import { generateDirectSQL } from './directSqlEngine';
 import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerializer';
+import { getPrivacyMode } from './privacyMode';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -357,10 +358,16 @@ export async function runAISQLPipeline(
     if (!qbSQL) {
         _s1 = performance.now();
         try {
-            // Bounded category domains (low-cardinality categoricals only; PII and
-            // identifiers excluded) so the LLM writes real value literals instead of
-            // guessing. Never sends transaction rows.
-            const domains = collectSafeDomains(dataset.rows, semanticModel);
+            // Privacy mode gates what the LLM may see. Strict (default) = metadata
+            // only, no data values ever leave the browser. Enhanced = also send
+            // bounded category domains (low-cardinality, non-sensitive categoricals;
+            // PII, identifiers, and sensitive categoricals excluded) so the LLM
+            // writes real value literals. Transaction rows are never sent in either.
+            const privacyMode = getPrivacyMode();
+            const domains = privacyMode === 'enhanced'
+                ? collectSafeDomains(dataset.rows, semanticModel)
+                : undefined;
+            console.log(`[Pipeline] Direct-SQL privacy mode: ${privacyMode}${domains ? ` (${domains.size} category domain(s) shared)` : ' (metadata only)'}`);
             const richSchema = serializeSemanticModelSchema(semanticModel, 'data', domains);
             const ds = await generateDirectSQL(question, richSchema);
             directSqlTokens = ds.tokens || 0;
