@@ -24,6 +24,7 @@
 import type { AnalysisPlan, PlanFilter, PlanMetric, SemanticModel } from './types';
 import type { UIQueryConfig } from '../queryPlan/buildQueryPlan';
 import { normalizeFilterOp, normalizeAgg } from './sqlCorrectionEngine';
+import { isRowIdentifier } from './modelHelpers';
 
 export interface QBFit {
     fits: true;
@@ -158,7 +159,11 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
 
     // ── Gate 4: dimensions ───────────────────────────────────────
     const timeDims = plan.dimensions.filter(d => d.timeGrain);
-    const catDims = plan.dimensions.filter(d => !d.timeGrain);
+    // Drop row-identifier dimensions (e.g. order_id): grouping by a column that is
+    // unique-per-row is never a real breakdown — it produces one group per row and
+    // wrecks aggregate-filter / contribution knobs. A stray "order_id" dimension
+    // from the plan is dropped, so an aggregate becomes a proper scalar.
+    const catDims = plan.dimensions.filter(d => !d.timeGrain && !isRowIdentifier(d.field, model));
     if (timeDims.length > 1) {
         return { fits: false, reason: 'Two time-bucketed dimensions are not expressible in a single builder query.' };
     }
