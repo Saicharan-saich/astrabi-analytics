@@ -92,6 +92,16 @@ export function verifyPlan(
         }
     }
 
+    // ── 5b. Non-additive SUM (per-unit price / rate) ─────────────
+    // Summing a per-unit price or a rate is meaningless (SUM(unit_price) is not
+    // revenue). Flag it — usually the intended metric is the line total.
+    if (plan.metrics[0] && plan.metrics[0].agg === 'sum') {
+        const mn = plan.metrics[0].field.toLowerCase();
+        if (/(unit[_ ]?price|per[_ ]|rate|hourly|price_per|_each)/.test(mn)) {
+            issues.push({ severity: 'error', code: 'nonadditive_sum', message: `Summing "${plan.metrics[0].field}" (a per-unit price / rate) is not a meaningful total — did you mean the line total?` });
+        }
+    }
+
     // ── 6. Grounded value present but not filtered (ERROR) ───────
     // The strongest check: a distinctive dimension value named in the question
     // that the plan does not filter on → a dropped filter → wrong answer.
@@ -99,7 +109,7 @@ export function verifyPlan(
         for (const [key, entries] of catalog.index) {
             if (entries.length !== 1) continue; // ambiguous — skip
             const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const re = new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i');
+            const re = new RegExp(`(^|[^a-z0-9])${escaped}(?:s|es)?([^a-z0-9]|$)`, 'i');
             const m = re.exec(q);
             if (!m) continue;
             const at = m.index + m[1].length;
