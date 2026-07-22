@@ -32,7 +32,7 @@ const NEGATION_CUES = ['not ', "n't ", 'never ', 'without ', 'excluding ', 'excl
 
 function matchedNegated(qLower: string, key: string): { matched: boolean; negated: boolean } {
     const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i');
+    const re = new RegExp(`(^|[^a-z0-9])${escaped}(?:s|es)?([^a-z0-9]|$)`, 'i');
     const m = re.exec(qLower);
     if (!m) return { matched: false, negated: false };
     const at = m.index + m[1].length;

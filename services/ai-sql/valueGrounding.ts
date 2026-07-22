@@ -109,9 +109,10 @@ export function groundFilters(
     const perField = new Map<string, { pos: Set<string>; neg: Set<string> }>();
 
     for (const [key, entries] of catalog.index) {
-        // Whole-phrase, boundary-aware match.
+        // Whole-phrase, boundary-aware match, tolerant of a trailing plural
+        // ("Beverages" matches the value "Beverage").
         const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const re = new RegExp(`(^|[^a-z0-9])${escaped}([^a-z0-9]|$)`, 'i');
+        const re = new RegExp(`(^|[^a-z0-9])${escaped}(?:s|es)?([^a-z0-9]|$)`, 'i');
         const m = re.exec(qLower);
         if (!m) continue;
 

@@ -23,6 +23,7 @@ import { SemanticModel, AnalysisPlan, PlanMetric, PlanDimension, PlanFilter, Der
 import type { DerivedMetric } from './derivedMetricEngine';
 import { logger } from '../logger';
 import { dateRangePredicate } from '../queryPlan/sqlPrimitives';
+import { isRowIdentifier } from './modelHelpers';
 
 // â”€â”€â”€ Table Reference â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Set dynamically by correctSQL() so all builder functions use the
@@ -1244,8 +1245,9 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
     const metExprs = buildMetricExpressions(plan.metrics, model);
 
     // Contribution / mix-shift: a categorical dimension + comparison → the
-    // per-segment current-vs-previous delta ("what drove the change").
-    const catDim = plan.dimensions.find(d => !d.timeGrain);
+    // per-segment current-vs-previous delta ("what drove the change"). Never on a
+    // row-identifier dimension (order_id) — that produces one group per row.
+    const catDim = plan.dimensions.find(d => !d.timeGrain && !isRowIdentifier(d.field, model));
     if (catDim) {
         return buildContributionSQL(plan, model, dateField, currentStart, currentEnd, prevDates, catDim.field);
     }

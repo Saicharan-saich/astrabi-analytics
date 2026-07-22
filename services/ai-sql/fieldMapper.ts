@@ -141,13 +141,27 @@ export function mapFieldsFromQuestion(question: string, model: SemanticModel): M
         // "total revenue" maps to total_price, not whatever sum-metric (e.g.
         // quantity) happens to come first in column order.
         const wantsMoney = /\b(revenue|sales|income|earnings|turnover|billing|billed|amount|spend|spending|profit|price|cost)\b/.test(q);
-        const currencyMetric = model.fields.find(f => f.role === 'metric' && f.semanticType === 'currency');
+
+        // Rank currency metrics by ADDITIVITY: a total ("total_price", "amount")
+        // is summable and is what "revenue" means; a per-unit price ("unit_price",
+        // a rate) is NOT — summing it is meaningless. Prefer the additive total.
+        const additivityScore = (f: SemanticField): number => {
+            const n = f.name.toLowerCase();
+            let s = 0;
+            if (/(unit|per[_ ]|each|rate|hourly|_pu\b|price_per)/.test(n)) s -= 5;
+            if (/(total|amount|revenue|sales|spend|gross|net|subtotal|line_?total|turnover|billed|billing)/.test(n)) s += 3;
+            if (f.defaultAgg === 'sum') s += 1;
+            return s;
+        };
+        const currencyMetrics = model.fields
+            .filter(f => f.role === 'metric' && f.semanticType === 'currency')
+            .sort((a, b) => additivityScore(b) - additivityScore(a));
         const sumMetric = model.fields.find(f =>
             f.role === 'metric' && f.defaultAgg === 'sum' && f.semanticType !== 'identifier');
 
-        const defaultMeasure = (wantsMoney && currencyMetric)
-            ? currencyMetric
-            : (currencyMetric || sumMetric);
+        const defaultMeasure = (wantsMoney && currencyMetrics[0])
+            ? currencyMetrics[0]
+            : (currencyMetrics[0] || sumMetric);
 
         if (defaultMeasure) {
             metrics.push(defaultMeasure);
