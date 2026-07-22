@@ -86,6 +86,13 @@ export function isSensitiveColumn(f: SemanticField): boolean {
     const person = /(customer|client|patient|employee|person|people|\buser\b|contact|staff|\bmember\b|guest|buyer|seller|owner|holder|attendee|applicant|resident|tenant|donor|driver|passenger|cardholder|account[_ ]?holder)/;
     if (person.test(n) && /(name|full|first|last|middle)/.test(n)) return true;
     if (/^(first|last|full|middle)[_ ]?name$/.test(n)) return true;
+    // Sensitive categoricals — low-cardinality columns whose VALUES are
+    // themselves sensitive (health, protected characteristics, financial /
+    // legal status). These would slip past the name/PII checks above, so
+    // exclude their value domains outright.
+    if (/(diagnos|disease|condition|symptom|medication|\bdrug\b|treatment|\bicd\b|procedure|health|medical|clinical|mental|disabilit|pregnan|\bhiv\b)/.test(n)) return true;
+    if (/(ethnic|\brace\b|religio|\bfaith\b|\bcaste\b|nationalit|citizenship|immigration|\bgender\b|\bsex\b|sexual|orientation|marital|\bpolitic\b|union[_ ]?member|veteran)/.test(n)) return true;
+    if (/(salary|\bwage\b|\bincome\b|\bpay\b|compensation|credit[_ ]?score|\bdebt\b|\bloan\b|bankrupt|net[_ ]?worth|criminal|convict|offen[sc]e|arrest)/.test(n)) return true;
     return false;
 }
 

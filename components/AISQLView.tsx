@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, MessageSquare, RotateCcw } from 'lucide-react';
+import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, MessageSquare, RotateCcw, Shield, ShieldCheck } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { MODEL } from '../services/ai-sql/intentPlanner';
+import { getPrivacyMode, setPrivacyMode, PrivacyMode } from '../services/ai-sql/privacyMode';
 import { Tooltip } from './Tooltip';
 import { checkAiSqlLimit, formatResetTime, AI_SQL_LIMITS } from '../services/aiSqlRateLimiter';
 import { useAuthStore } from '../store/useAuthStore';
@@ -30,6 +31,14 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const [error, setError] = useState<string | null>(null);
     const [noDataMsg, setNoDataMsg] = useState<string | null>(null);
     const [noDataSQL, setNoDataSQL] = useState<string | null>(null);
+
+    // ── AI SQL Privacy Mode (default strict — data values stay on-device) ──
+    const [privacyMode, setPrivacyModeState] = useState<PrivacyMode>(getPrivacyMode());
+    const togglePrivacyMode = () => {
+        const next: PrivacyMode = privacyMode === 'strict' ? 'enhanced' : 'strict';
+        setPrivacyMode(next);
+        setPrivacyModeState(next);
+    };
 
     // ── Conversation History for follow-up context ──
     const [conversationHistory, setConversationHistory] = useState<ConversationTurn[]>([]);
@@ -243,6 +252,23 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                 </span>
                             )}
                         </p>
+                        <Tooltip
+                            position="left"
+                            text={privacyMode === 'strict'
+                                ? 'Strict privacy: only column metadata (names, types, meaning) is sent to the AI — no data values ever leave your browser. Click to allow sharing low-cardinality category values (never PII, IDs, or rows) for more accurate filters.'
+                                : 'Enhanced accuracy: low-cardinality category values (e.g. item names, regions) are shared with the AI so it filters on real values. Person PII, identifiers, sensitive categories, and rows are never sent. Click to return to strict metadata-only.'}
+                        >
+                            <button
+                                onClick={togglePrivacyMode}
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${privacyMode === 'strict'
+                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30'
+                                    : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/30'}`}
+                                title="Toggle AI SQL privacy mode"
+                            >
+                                {privacyMode === 'strict' ? <ShieldCheck className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
+                                {privacyMode === 'strict' ? 'Strict privacy' : 'Enhanced'}
+                            </button>
+                        </Tooltip>
                         {conversationHistory.length > 0 && (
                             <button
                                 onClick={() => setConversationHistory([])}
