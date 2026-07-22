@@ -1371,25 +1371,62 @@ function withTokens(plan: AnalysisPlan, tokens: TokenUsage): AnalysisPlan {
  */
 export function extractPlanJson(content: string): any | null {
     if (!content) return null;
-    let s = content.replace(/```json\s*|```\s*/g, '').trim();
+    const s = content.replace(/```json\s*|```\s*/g, '').trim();
     const start = s.indexOf('{');
-    if (start >= 0) {
-        let depth = 0, end = -1;
-        for (let i = start; i < s.length; i++) {
-            const c = s[i];
-            if (c === '{') depth++;
-            else if (c === '}') { depth--; if (depth === 0) { end = i; break; } }
+    if (start < 0) return null;
+
+    // String-aware brace scan: a "}" inside a string value must not close the
+    // object, and we remember whether we ever returned to depth 0 so a TRUNCATED
+    // response (cut at max_tokens mid-JSON — the "unparseable JSON" case) can still
+    // be recovered by closing the open brackets.
+    let depth = 0, end = -1, inStr = false, esc = false;
+    for (let i = start; i < s.length; i++) {
+        const c = s[i];
+        if (inStr) {
+            if (esc) esc = false;
+            else if (c === '\\') esc = true;
+            else if (c === '"') inStr = false;
+            continue;
         }
-        if (end > start) s = s.substring(start, end + 1);
+        if (c === '"') inStr = true;
+        else if (c === '{') depth++;
+        else if (c === '}') { depth--; if (depth === 0) { end = i; break; } }
     }
+
+    const candidates: string[] = [];
+    if (end > start) {
+        candidates.push(s.substring(start, end + 1));
+    } else {
+        // Truncated — close the object by appending the missing brackets/braces.
+        let body = s.substring(start);
+        if (inStr) body += '"';
+        body = body.replace(/,\s*$/, '');
+        const openers: string[] = [];
+        let st = false, es = false;
+        for (const ch of body) {
+            if (st) { if (es) es = false; else if (ch === '\\') es = true; else if (ch === '"') st = false; continue; }
+            if (ch === '"') st = true;
+            else if (ch === '{' || ch === '[') openers.push(ch);
+            else if (ch === '}' || ch === ']') openers.pop();
+        }
+        while (openers.length) body += openers.pop() === '[' ? ']' : '}';
+        candidates.push(body);
+    }
+    candidates.push(s.substring(start)); // last resort
+
     const repairs: Array<(x: string) => string> = [
         x => x,
         x => x.replace(/,(\s*[}\]])/g, '$1'),                                                    // trailing commas
         x => x.replace(/\/\/[^\n\r]*/g, '').replace(/,(\s*[}\]])/g, '$1'),                        // line comments
         x => x.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n\r]*/g, '').replace(/,(\s*[}\]])/g, '$1'), // block comments
     ];
-    for (const r of repairs) {
-        try { const v = JSON.parse(r(s)); if (v && typeof v === 'object') return v; } catch { /* next */ }
+    for (const cand of candidates) {
+        for (const r of repairs) {
+            try {
+                const v = JSON.parse(r(cand));
+                if (v && typeof v === 'object' && Object.keys(v).length > 0) return v;
+            } catch { /* next */ }
+        }
     }
     return null;
 }
