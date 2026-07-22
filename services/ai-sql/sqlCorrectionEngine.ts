@@ -156,7 +156,12 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
         filters: (plan.filters || []).map(f => ({ ...f, op: normalizeFilterOp(f.op) as PlanFilter['op'] })),
         metrics: (plan.metrics || []).map(m => ({ ...m, agg: normalizeAgg(m.agg) as PlanMetric['agg'] })),
         sort: (plan.sort || []).map(s => ({ ...s, dir: normalizeSortDir(s.dir) })),
-        dimensions: (plan.dimensions || []).map(d => (d.timeGrain ? { ...d, timeGrain: normalizeGrain(d.timeGrain) } : d)),
+        // Drop row-identifier dimensions (order_id): grouping by a unique-per-row
+        // column produces one group per row and wrecks aggregate-filter /
+        // comparison queries. Keep time-grain dimensions.
+        dimensions: (plan.dimensions || [])
+            .filter(d => d.timeGrain || !isRowIdentifier(d.field, model))
+            .map(d => (d.timeGrain ? { ...d, timeGrain: normalizeGrain(d.timeGrain) } : d)),
     };
     logger.info('[SQL Correction]', `Building SQL for intent="${plan.intent}" table=${TABLE_REF}`);
 
@@ -761,10 +766,20 @@ function buildAggregateFilterSQL(plan: AnalysisPlan, model: SemanticModel, apdme
     const groupBy = buildGroupByClause(plan.dimensions);
     const where = buildWhereClause(plan.filters); // Only pre-aggregate filters
 
-    // Collect HAVING filters (above_avg / below_avg)
-    const havingFilters = plan.filters.filter(f =>
-        f.isHaving || ['above_avg', 'below_avg'].includes(f.op)
-    );
+    // Collect HAVING filters. ONLY the aggregate-vs-average ops belong here —
+    // the planner sometimes flags a text filter (contains / does_not_contain) as
+    // isHaving, which previously became SUM(text_column) and crashed DuckDB.
+    const isNumericField = (name: string): boolean => {
+        const f = model.fields.find(fl => fl.name.toLowerCase() === name.toLowerCase());
+        if (!f) return false;
+        return f.physicalType === 'number'
+            || ['currency', 'quantity', 'count', 'ratio', 'percentage'].includes(f.semanticType);
+    };
+    const havingFilters = plan.filters.filter(f => {
+        if (!['above_avg', 'below_avg'].includes(normalizeFilterOp(f.op))) return false;
+        // Never aggregate a non-numeric column (unless it's a governed composite).
+        return f.compositeRef ? true : isNumericField(f.field);
+    });
 
     if (havingFilters.length === 0) {
         // No HAVING conditions — fall back to regular breakdown

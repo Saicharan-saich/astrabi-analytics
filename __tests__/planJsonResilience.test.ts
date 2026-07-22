@@ -45,6 +45,19 @@ describe('extractPlanJson — LLM JSON resilience', () => {
         expect(v.a.b.c).toBe(1);
     });
 
+    it('recovers a TRUNCATED response by closing open braces/brackets', () => {
+        // The "LLM returned unparseable JSON" case — cut at max_tokens mid-array.
+        const v = extractPlanJson('{"intent":"single_metric","metrics":[{"field":"total_price","agg":"sum"');
+        expect(v.intent).toBe('single_metric');
+        expect(v.metrics[0].field).toBe('total_price');
+    });
+
+    it('does not close on a "}" inside a string value', () => {
+        const v = extractPlanJson('{"intent":"breakdown","note":"group by {region}","limit":3}');
+        expect(v.intent).toBe('breakdown');
+        expect(v.note).toBe('group by {region}');
+    });
+
     it('returns null (never throws) on truly unusable content', () => {
         // These must degrade to the deterministic fallback path, not crash the query.
         expect(extractPlanJson('')).toBeNull();
