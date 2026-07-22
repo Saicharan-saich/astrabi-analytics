@@ -3,7 +3,7 @@
  * gate, and SQL extraction). The LLM call itself runs live in the browser.
  */
 import { describe, it, expect } from 'vitest';
-import { serializeSchema } from '../services/ai-sql/schemaSerializer';
+import { serializeSchema, serializeSemanticModelSchema } from '../services/ai-sql/schemaSerializer';
 import { validateReadOnlySQL } from '../services/ai-sql/sqlSafety';
 import { extractSQL } from '../services/ai-sql/directSqlEngine';
 
@@ -30,6 +30,50 @@ describe('serializeSchema — metadata only, never rows', () => {
         expect(s).not.toContain('Alpha');
         expect(s).not.toContain('450');
         expect(s).not.toMatch(/\bA\b/); // the 'A' code value never appears
+    });
+});
+
+describe('serializeSemanticModelSchema — rich metadata, never rows', () => {
+    const fld = (name: string, role: 'metric' | 'dimension', semanticType: string, physicalType: string, distinctCount: number, extra: any = {}): any => ({
+        name, role, semanticType, physicalType,
+        defaultAgg: role === 'metric' ? 'sum' : 'none',
+        synonyms: [], valueDescriptors: [], distinctCount, hasNulls: false,
+        displayLabel: name, timeGrainSupport: [], ...extra,
+    });
+    const model: any = {
+        fields: [
+            fld('order_id', 'dimension', 'identifier', 'number', 550),
+            fld('order_date', 'dimension', 'date', 'date', 90),
+            fld('menu_category', 'dimension', 'category', 'string', 4),
+            fld('unit_price', 'metric', 'currency', 'number', 30),
+            fld('total_price', 'metric', 'currency', 'number', 300, { range: { min: 1, max: 500 } }),
+        ],
+        compositeMetrics: [], derivedMetrics: [], datasetName: 'data', rowCount: 550, grain: 'order',
+        timeContext: { anchorDate: '2025-06-30', minDate: '2025-01-01', maxDate: '2025-06-30', primaryDateColumn: 'order_date' },
+    };
+
+    it('marks a row-identifier so the LLM never groups by it', () => {
+        const s = serializeSemanticModelSchema(model);
+        expect(s).toMatch(/order_id:.*row identifier/i);
+        expect(s).toMatch(/never GROUP BY/i);
+    });
+    it('flags a per-unit price as non-additive and the line total as additive', () => {
+        const s = serializeSemanticModelSchema(model);
+        expect(s).toMatch(/unit_price:.*do NOT SUM/i);
+        expect(s).toMatch(/total_price:.*additive/i);
+    });
+    it('surfaces the date column and its range for time filters', () => {
+        const s = serializeSemanticModelSchema(model);
+        expect(s).toMatch(/order_date:.*date/i);
+        expect(s).toContain('2025-01-01..2025-06-30');
+    });
+    it('reports low-cardinality dimension distinct counts', () => {
+        const s = serializeSemanticModelSchema(model);
+        expect(s).toMatch(/menu_category:.*4 distinct/i);
+    });
+    it('emits no raw row values (privacy)', () => {
+        const s = serializeSemanticModelSchema(model);
+        expect(s).not.toMatch(/Beverage|Food|Retail/);
     });
 });
 

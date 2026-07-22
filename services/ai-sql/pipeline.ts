@@ -44,6 +44,8 @@ import { applyTableCalculation } from '../../utils/tableCalculations';
 import { buildValueCatalog, groundFilters } from './valueGrounding';
 import { verifyPlan } from './planVerification';
 import { detectAntiJoin, buildAntiJoinSQL } from './antiJoin';
+import { generateDirectSQL } from './directSqlEngine';
+import { serializeSemanticModelSchema } from './schemaSerializer';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -342,6 +344,43 @@ export async function runAISQLPipeline(
         details: qbTraceDetails,
     }, _s1);
 
+    // ─── Step 2e: Direct-SQL Engine (primary for the long tail) ──
+    // When no Question Builder knob fits, the LLM writes SQL directly from the
+    // rich, METADATA-ONLY schema (roles, additivity, identifiers, date range —
+    // never raw rows). This is the primary path for questions the deterministic
+    // knobs can't express. The deterministic correction engine below stays as a
+    // safety net for when the LLM is unavailable, rate-limited, or returns SQL
+    // that fails the read-only gate or won't execute.
+    let directSQL: string | null = null;
+    let directSqlTokens = 0;
+    let directSqlError: string | null = null;
+    if (!qbSQL) {
+        _s1 = performance.now();
+        try {
+            const richSchema = serializeSemanticModelSchema(semanticModel, 'data');
+            const ds = await generateDirectSQL(question, richSchema);
+            directSqlTokens = ds.tokens || 0;
+            if (ds.sql && !ds.error) {
+                directSQL = ds.sql;
+                console.log('[Pipeline] Direct-SQL engine SQL:', directSQL);
+            } else {
+                directSqlError = ds.error || 'empty SQL';
+                console.warn('[Pipeline] Direct-SQL not usable:', directSqlError);
+            }
+        } catch (dErr: any) {
+            directSqlError = dErr?.message || String(dErr);
+            console.warn('[Pipeline] Direct-SQL engine failed — falling back to correction engine:', directSqlError);
+        }
+        traceStep({
+            stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
+            status: directSQL ? 'pass' : 'skip',
+            summary: directSQL
+                ? 'LLM wrote SQL directly from the metadata-only schema'
+                : `Skipped — ${directSqlError || 'no SQL'} (using deterministic correction engine)`,
+            details: { sql: directSQL, error: directSqlError, tokens: directSqlTokens },
+        }, _s1);
+    }
+
     // ─── Step 3: Generate SQL (Step B — deterministic + LLM fallback) ─
     reportProgress('Generating SQL...', 4);
     console.log('[Pipeline] Step 3: Generating SQL...');
@@ -350,6 +389,9 @@ export async function runAISQLPipeline(
     if (qbSQL) {
         // Builder answered — skip the AI SQL generator entirely.
         sqlResult = { sql: qbSQL, method: 'question-builder', explanation: '' };
+    } else if (directSQL) {
+        // Direct-SQL engine answered — the LLM wrote the SQL from the schema.
+        sqlResult = { sql: directSQL, method: 'llm-sql', explanation: '' };
     } else {
         sqlResult = await generateSQLFromPlan(plan, semanticModel, apdmeResult.derivedMetrics);
     }
@@ -360,7 +402,9 @@ export async function runAISQLPipeline(
         status: 'pass',
         summary: qbSQL
             ? 'Compiled from Question Builder configuration'
-            : `Generated via ${sqlMethod === 'deterministic' ? 'deterministic rules' : 'AI/LLM fallback'}`,
+            : directSQL
+                ? 'SQL written directly by the LLM from the metadata-only schema'
+                : `Generated via ${sqlMethod === 'deterministic' ? 'deterministic rules' : 'AI/LLM fallback'}`,
         details: { method: sqlMethod, sql: aiGeneratedSQL },
     }, _s1);
 
@@ -371,13 +415,21 @@ export async function runAISQLPipeline(
     _s1 = performance.now();
     let currentSQL: string;
     let _correctionStatus: 'pass' | 'warn' | 'skip' = 'pass';
+    // Keep the deterministic correction-engine SQL as a safety net even when the
+    // direct-SQL engine answered, so a direct-SQL execution failure can fall back
+    // to something that always runs (computed lazily below).
+    let deterministicSQL: string | null = null;
     if (qbSQL) {
         currentSQL = qbSQL;
+        _correctionStatus = 'skip';
+    } else if (directSQL) {
+        currentSQL = directSQL;
         _correctionStatus = 'skip';
     } else {
         console.log('[Pipeline] Step 3b: Running SQL Correction Engine...');
         try {
             currentSQL = correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
+            deterministicSQL = currentSQL;
             console.log('[Pipeline] Correction Engine SQL:', currentSQL);
         } catch (correctionErr: any) {
             console.warn('[Pipeline] Correction engine failed, using AI SQL:', correctionErr.message);
@@ -389,7 +441,7 @@ export async function runAISQLPipeline(
         stepNumber: 7, name: 'SQL Correction Engine', engine: 'sqlCorrectionEngine', icon: '🔧',
         status: _correctionStatus,
         summary: _correctionStatus === 'skip'
-            ? 'Skipped — Question Builder produced the SQL directly'
+            ? (qbSQL ? 'Skipped — Question Builder produced the SQL directly' : 'Skipped — the direct-SQL engine produced the SQL')
             : _correctionStatus === 'pass'
                 ? 'SQL rebuilt deterministically — verified column names, GROUP BY, aggregations'
                 : 'Correction engine failed — using AI-generated SQL as fallback',
@@ -397,10 +449,12 @@ export async function runAISQLPipeline(
     }, _s1);
 
     // Which engine actually produced `currentSQL` — surfaced in the SQL tab.
-    const sqlEngine: 'question-builder' | 'correction-engine' | 'llm' =
+    // May be downgraded to 'correction-engine' below if direct-SQL fails to run.
+    let sqlEngine: 'question-builder' | 'llm-sql' | 'correction-engine' | 'llm' =
         qbSQL ? 'question-builder'
-            : _correctionStatus === 'pass' ? 'correction-engine'
-                : (sqlMethod === 'llm' ? 'llm' : 'correction-engine');
+            : directSQL ? 'llm-sql'
+                : _correctionStatus === 'pass' ? 'correction-engine'
+                    : (sqlMethod === 'llm' ? 'llm' : 'correction-engine');
 
     // Surface fallback reason from the correction engine (e.g., hour grain without time data)
     if ((plan as any)._fallbackReason) {
@@ -454,6 +508,26 @@ export async function runAISQLPipeline(
         }
     }
 
+    // ─── Step 5b′: Deterministic Safety Net ─────────────────────
+    // If the direct-SQL engine's output still won't execute after repair, fall
+    // back to the deterministic correction engine — it always produces runnable
+    // SQL from the plan. This keeps a failed LLM SQL from crashing the query.
+    if (execResult.error && directSQL) {
+        console.warn('[Pipeline] Direct-SQL failed to execute after repair — falling back to the deterministic correction engine.');
+        try {
+            const fallbackSQL = deterministicSQL ?? correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
+            const fallbackExec = await executeSQLViaDuckDB(dataset.rows, fallbackSQL, semanticModel.timeContext);
+            if (!fallbackExec.error) {
+                currentSQL = fallbackSQL;
+                execResult = fallbackExec;
+                sqlEngine = 'correction-engine';
+                console.log('[Pipeline] Deterministic fallback succeeded — engine downgraded to correction-engine.');
+            }
+        } catch (fbErr: any) {
+            console.warn('[Pipeline] Deterministic fallback also failed:', fbErr?.message);
+        }
+    }
+
     if (execResult.error) {
         throw new Error(`SQL execution failed: ${execResult.error}`);
     }
@@ -473,6 +547,15 @@ export async function runAISQLPipeline(
 
     let rawData = execResult.data || [];
     const columns = execResult.columns || [];
+
+    // Combined LLM token cost: the planner step + the direct-SQL step (0 when the
+    // deterministic knobs/correction engine answered). Only LLM calls spend tokens.
+    const _planTokens = (plan as any).tokenUsage || { prompt: 0, completion: 0, total: 0 };
+    const totalTokenUsage = {
+        prompt: _planTokens.prompt || 0,
+        completion: _planTokens.completion || 0,
+        total: (_planTokens.total || 0) + directSqlTokens,
+    };
 
     // ─── Step 5b′: QB Share-of-Total Table Calculation ───────────
     // When the Question Builder gate mapped a share-of-total question, apply the
@@ -812,7 +895,7 @@ export async function runAISQLPipeline(
             ].filter((v, i, a) => a.indexOf(v) === i),
             executionTimeMs: Math.round(executionTimeEmpty),
             repairAttempts,
-            tokenUsage: (plan as any).tokenUsage || { prompt: 0, completion: 0, total: 0 },
+            tokenUsage: totalTokenUsage,
         };
     }
 
@@ -1060,9 +1143,10 @@ export async function runAISQLPipeline(
         executionTimeMs: Math.round(executionTime),
         repairAttempts,
         trace: pipelineTrace,
-        // Surface the planner's exact token cost (0 if the deterministic fallback
-        // answered). Only the LLM planning step spends tokens; everything else is free.
-        tokenUsage: (plan as any).tokenUsage || { prompt: 0, completion: 0, total: 0 },
+        // Surface the exact LLM token cost — the planner step plus the direct-SQL
+        // step (0 if the deterministic knobs/correction engine answered). Only LLM
+        // calls spend tokens; the deterministic steps are free.
+        tokenUsage: totalTokenUsage,
     };
 
 

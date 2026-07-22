@@ -92,11 +92,13 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const sqlEngine = activePipeline?.engine;
   const engineBadge = sqlEngine === 'question-builder'
     ? { label: 'Question Builder', cls: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' }
-    : sqlEngine === 'correction-engine'
-      ? { label: 'Correction Engine', cls: 'bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300' }
-      : sqlEngine === 'llm'
-        ? { label: 'LLM', cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300' }
-        : null;
+    : sqlEngine === 'llm-sql'
+      ? { label: 'AI SQL', cls: 'bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300' }
+      : sqlEngine === 'correction-engine'
+        ? { label: 'Correction Engine', cls: 'bg-sky-100 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300' }
+        : sqlEngine === 'llm'
+          ? { label: 'LLM', cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300' }
+          : null;
 
   // ── Drill-Down Handler ──
   const handleDrillDown = useCallback(async (dimensionValue: string) => {
