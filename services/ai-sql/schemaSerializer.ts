@@ -72,6 +72,73 @@ function isNonAdditiveMetric(f: SemanticField): boolean {
 }
 
 /**
+ * True when a column's VALUES must never leave the browser — identifiers and
+ * person-level PII (customer/patient/employee names, emails, phones, addresses,
+ * SSNs, card numbers, etc.). Note: item/product/category "name" columns are NOT
+ * sensitive — only person-related name columns are excluded.
+ */
+export function isSensitiveColumn(f: SemanticField): boolean {
+    if (f.semanticType === 'identifier') return true;
+    const n = f.name.toLowerCase();
+    // Explicit PII fields — never send their values.
+    if (/(e[_ ]?mail|phone|mobile|telephone|\bfax\b|address|street|postcode|postal|\bzip\b|ssn|social[_ ]?security|passport|licen[sc]e|\bdob\b|birth|credit[_ ]?card|card[_ ]?number|\biban\b|account[_ ]?number|\bpan\b)/.test(n)) return true;
+    // Person-name columns (customer_name, patient_full_name…) — but NOT item_name / product_name / category_name.
+    const person = /(customer|client|patient|employee|person|people|\buser\b|contact|staff|\bmember\b|guest|buyer|seller|owner|holder|attendee|applicant|resident|tenant|donor|driver|passenger|cardholder|account[_ ]?holder)/;
+    if (person.test(n) && /(name|full|first|last|middle)/.test(n)) return true;
+    if (/^(first|last|full|middle)[_ ]?name$/.test(n)) return true;
+    return false;
+}
+
+/**
+ * Collect the distinct value DOMAINS of low-cardinality, non-sensitive
+ * categorical dimensions (categories, geography, status, payment method, item /
+ * product names, booleans, ordinals). These are the domains an LLM needs to
+ * write correct WHERE/HAVING literals — sending them stops it guessing values it
+ * can't see (e.g. 'Coffee' when the real value is 'Cappuccino').
+ *
+ * Strictly bounded: identifiers and person-level PII are NEVER included (see
+ * isSensitiveColumn), transaction rows are never sent, and each column is capped
+ * at `maxSample` values.
+ */
+export function collectSafeDomains(
+    rows: Record<string, any>[],
+    model: SemanticModel,
+    opts?: { maxCardinality?: number; maxSample?: number },
+): Map<string, { values: string[]; total: number }> {
+    const maxCardinality = opts?.maxCardinality ?? 50;
+    const maxSample = opts?.maxSample ?? 50;
+    const out = new Map<string, { values: string[]; total: number }>();
+    if (!rows || rows.length === 0) return out;
+
+    const ALLOWED: SemanticField['semanticType'][] = ['category', 'geography', 'boolean', 'ordinal'];
+    const fields = model.fields.filter(f =>
+        f.role === 'dimension'
+        && f.physicalType !== 'date'
+        && f.semanticType !== 'date'
+        && ALLOWED.includes(f.semanticType)
+        && !isSensitiveColumn(f)
+        && (f.distinctCount === undefined || f.distinctCount <= maxCardinality));
+
+    for (const f of fields) {
+        const seen = new Set<string>();
+        const values: string[] = [];
+        let truncated = false;
+        for (const row of rows) {
+            const raw = row[f.name];
+            if (raw === null || raw === undefined || raw === '') continue;
+            const val = String(raw).trim();
+            if (!val || seen.has(val)) continue;
+            seen.add(val);
+            if (values.length < maxSample) values.push(val);
+            else { truncated = true; }
+            if (seen.size > maxCardinality) { truncated = true; break; }
+        }
+        if (values.length > 0) out.set(f.name, { values, total: truncated ? seen.size : values.length });
+    }
+    return out;
+}
+
+/**
  * Rich, METADATA-ONLY schema for the direct-SQL engine, derived from the
  * semantic model rather than raw rows. Beyond names + types it annotates each
  * column with the analytical facts an LLM needs to write CORRECT SQL:
@@ -84,7 +151,11 @@ function isNonAdditiveMetric(f: SemanticField): boolean {
  * No raw row values are ever emitted — only structural metadata — so the
  * privacy guarantee is identical to the plan engine's.
  */
-export function serializeSemanticModelSchema(model: SemanticModel, tableName = 'data'): string {
+export function serializeSemanticModelSchema(
+    model: SemanticModel,
+    tableName = 'data',
+    domains?: Map<string, { values: string[]; total: number }>,
+): string {
     const lines: string[] = [];
     const colDefs = model.fields.map(f => `${idn(f.name)} ${duckType(f)}`).join(', ');
     lines.push(`Table ${idn(tableName)}(${colDefs})`);
@@ -120,6 +191,12 @@ export function serializeSemanticModelSchema(model: SemanticModel, tableName = '
             }
         }
         if (f.synonyms?.length) notes.push(`aka ${f.synonyms.slice(0, 4).join(', ')}`);
+        const dom = domains?.get(f.name);
+        if (dom && dom.values.length) {
+            const shown = dom.values.map(v => `'${v}'`).join(', ');
+            const more = dom.total > dom.values.length ? `, …(${dom.total - dom.values.length} more)` : '';
+            notes.push(`values: [${shown}${more}] — use these EXACT values in filters`);
+        }
         lines.push(`  ${idn(f.name)}: ${notes.join('; ')}`);
     }
 

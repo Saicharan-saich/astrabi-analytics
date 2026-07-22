@@ -72,6 +72,41 @@ export function buildValueCatalog(
     return { index };
 }
 
+/**
+ * Safety pass over LLM-written SQL: correct string literals whose casing or
+ * plural form drifted from the real stored value. Only rewrites a literal when
+ * its lowercased (or singularised) form maps UNAMBIGUOUSLY to exactly one real
+ * catalogued value — it never fabricates or guesses. Fixes "coffee" → "Coffee",
+ * "Beverages" → "Beverage"; leaves everything else untouched.
+ */
+export function groundSqlLiterals(sql: string, catalog: ValueCatalog): { sql: string; changed: string[] } {
+    const changed: string[] = [];
+    const resolve = (raw: string): string | null => {
+        const key = raw.toLowerCase();
+        const exact = catalog.index.get(key);
+        if (exact && exact.length === 1 && exact[0].value !== raw) return exact[0].value;
+        if (exact) return null; // present as-is or ambiguous → leave alone
+        // Try singular forms: drop a trailing "s" ("beverages"→"beverage") or
+        // "es" ("boxes"→"box"). Whichever resolves unambiguously wins.
+        for (const cand of [key.replace(/s$/, ''), key.replace(/es$/, '')]) {
+            if (cand === key) continue;
+            const sing = catalog.index.get(cand);
+            if (sing && sing.length === 1) return sing[0].value;
+        }
+        return null;
+    };
+    const out = sql.replace(/'((?:[^']|'')*)'/g, (full, inner: string) => {
+        const raw = inner.replace(/''/g, "'");
+        const fixed = resolve(raw);
+        if (fixed && fixed !== raw) {
+            changed.push(`${raw}→${fixed}`);
+            return `'${fixed.replace(/'/g, "''")}'`;
+        }
+        return full;
+    });
+    return { sql: out, changed };
+}
+
 export interface GroundingResult {
     /** Filters recovered from the question that the plan was missing. */
     added: PlanFilter[];

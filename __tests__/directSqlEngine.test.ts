@@ -3,9 +3,10 @@
  * gate, and SQL extraction). The LLM call itself runs live in the browser.
  */
 import { describe, it, expect } from 'vitest';
-import { serializeSchema, serializeSemanticModelSchema } from '../services/ai-sql/schemaSerializer';
+import { serializeSchema, serializeSemanticModelSchema, collectSafeDomains, isSensitiveColumn } from '../services/ai-sql/schemaSerializer';
 import { validateReadOnlySQL } from '../services/ai-sql/sqlSafety';
 import { extractSQL } from '../services/ai-sql/directSqlEngine';
+import { buildValueCatalog, groundSqlLiterals } from '../services/ai-sql/valueGrounding';
 
 describe('serializeSchema — metadata only, never rows', () => {
     const tables = [
@@ -74,6 +75,80 @@ describe('serializeSemanticModelSchema — rich metadata, never rows', () => {
     it('emits no raw row values (privacy)', () => {
         const s = serializeSemanticModelSchema(model);
         expect(s).not.toMatch(/Beverage|Food|Retail/);
+    });
+});
+
+describe('collectSafeDomains — send category values, never PII', () => {
+    const fld = (name: string, semanticType: string, distinctCount: number): any => ({
+        name, role: 'dimension', semanticType, physicalType: 'string',
+        defaultAgg: 'none', synonyms: [], valueDescriptors: [], distinctCount,
+        hasNulls: false, displayLabel: name, timeGrainSupport: [],
+    });
+    const model: any = {
+        fields: [
+            fld('item_name', 'category', 5),
+            fld('menu_category', 'category', 3),
+            fld('customer_name', 'category', 200),   // person PII — must be excluded
+            fld('customer_email', 'text', 200),       // PII — excluded
+            fld('region', 'geography', 4),
+            fld('order_id', 'identifier', 550),        // identifier — excluded
+        ],
+        compositeMetrics: [], derivedMetrics: [], datasetName: 'data', rowCount: 550, grain: 'order',
+    };
+    const rows = [
+        { item_name: 'Cappuccino', menu_category: 'Coffee', customer_name: 'Jane Doe', customer_email: 'jane@x.com', region: 'North', order_id: 1 },
+        { item_name: 'Green Tea', menu_category: 'Tea', customer_name: 'John Roe', customer_email: 'john@x.com', region: 'South', order_id: 2 },
+    ];
+
+    it('includes low-cardinality category / geography domains', () => {
+        const d = collectSafeDomains(rows, model);
+        expect(d.get('item_name')?.values).toContain('Cappuccino');
+        expect(d.get('menu_category')?.values).toEqual(expect.arrayContaining(['Coffee', 'Tea']));
+        expect(d.get('region')?.values).toContain('North');
+    });
+    it('NEVER includes person names, emails, or identifiers', () => {
+        const d = collectSafeDomains(rows, model);
+        expect(d.has('customer_name')).toBe(false);
+        expect(d.has('customer_email')).toBe(false);
+        expect(d.has('order_id')).toBe(false);
+        expect(isSensitiveColumn(model.fields.find((f: any) => f.name === 'customer_name'))).toBe(true);
+        expect(isSensitiveColumn(model.fields.find((f: any) => f.name === 'item_name'))).toBe(false);
+    });
+    it('the serialized schema shows category values but no customer PII', () => {
+        const d = collectSafeDomains(rows, model);
+        const s = serializeSemanticModelSchema(model, 'data', d);
+        expect(s).toMatch(/menu_category:.*'Coffee'.*'Tea'/);
+        expect(s).not.toContain('Jane Doe');
+        expect(s).not.toContain('jane@x.com');
+    });
+    it('respects the cardinality cap (does not send high-cardinality columns)', () => {
+        const d = collectSafeDomains(rows, model, { maxCardinality: 10 });
+        expect(d.has('customer_name')).toBe(false); // also PII, but cap alone would drop it too
+    });
+});
+
+describe('groundSqlLiterals — fix literal casing/plural, never fabricate', () => {
+    const fld = (name: string, distinctCount: number): any => ({
+        name, role: 'dimension', semanticType: 'category', physicalType: 'string',
+        defaultAgg: 'none', synonyms: [], valueDescriptors: [], distinctCount,
+        hasNulls: false, displayLabel: name, timeGrainSupport: [],
+    });
+    const model: any = { fields: [fld('menu_category', 3)], compositeMetrics: [], derivedMetrics: [], datasetName: 'data', rowCount: 3, grain: 'row' };
+    const catalog = buildValueCatalog([{ menu_category: 'Beverage' }, { menu_category: 'Food' }, { menu_category: 'Retail' }], model);
+
+    it('corrects a lowercased literal to the real stored value', () => {
+        const r = groundSqlLiterals("SELECT * FROM data WHERE menu_category = 'beverage'", catalog);
+        expect(r.sql).toContain("'Beverage'");
+        expect(r.changed).toContain('beverage→Beverage');
+    });
+    it('corrects a plural literal to the singular stored value', () => {
+        const r = groundSqlLiterals("SELECT * FROM data WHERE menu_category = 'Beverages'", catalog);
+        expect(r.sql).toContain("'Beverage'");
+    });
+    it('leaves an unknown literal untouched (never fabricates)', () => {
+        const r = groundSqlLiterals("SELECT * FROM data WHERE menu_category = 'Coffee'", catalog);
+        expect(r.sql).toContain("'Coffee'");
+        expect(r.changed).toHaveLength(0);
     });
 });
 
