@@ -16,9 +16,12 @@ const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
 Given a database schema and a question, output a SINGLE read-only SQL SELECT that answers it.
 Rules:
 - DuckDB dialect. Double-quote identifiers that contain spaces or special characters (e.g. "Free Meal Count (K-12)").
-- Use the EXACT table and column names from the schema.
+- Use the EXACT table and column names from the schema. Do not invent columns.
+- Read the "Column notes": respect additivity (SUM only additive measures; a column marked "per-unit/rate" must use AVG, never SUM), and never GROUP BY or aggregate a column marked "row identifier".
+- When money/revenue/total is asked for, use the additive currency measure, not a per-unit price.
+- For date filters, use the listed date column and cast to DATE when comparing (e.g. CAST(col AS DATE) BETWEEN DATE '2025-01-01' AND DATE '2025-12-31').
 - JOIN across tables when needed, following the listed foreign keys.
-- Do not invent columns. Return ONLY the SQL — no prose, no markdown fences.`;
+- Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
 
 export interface DirectSQLResult { sql: string; tokens: number; error?: string; }
 
@@ -40,7 +43,7 @@ export async function generateDirectSQL(question: string, schemaText: string): P
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: `Schema:\n${schemaText}\n\nQuestion: ${question}\n\nSQL:` },
     ];
-    const { data } = await fetchWithFallback(messages as any, { temperature: 0, max_tokens: 900, model: PLANNER_MODEL });
+    const { data } = await fetchWithFallback(messages as any, { temperature: 0, max_tokens: 2000, model: PLANNER_MODEL });
     const content = data.choices?.[0]?.message?.content || '';
     const usage = data.usage || {};
     const tokens = usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0)) || 0;

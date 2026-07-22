@@ -65,7 +65,10 @@ export async function fetchWithFallback(
     }
 
     const temperature = options?.temperature ?? 0.0;
-    const max_tokens = options?.max_tokens ?? 1500;
+    // 2000 is high enough that a full analysis plan or a moderately complex SQL
+    // statement fits without being cut off mid-JSON at the token ceiling — the
+    // "LLM returned unparseable JSON" truncation failure came from too low a cap.
+    const max_tokens = options?.max_tokens ?? 2000;
     const timeout = options?.timeout ?? DEFAULT_TIMEOUT_MS;
     const model = options?.model ?? PRIMARY_MODEL;
 

@@ -416,9 +416,11 @@ export interface AISQLPipelineResult {
     plan: AnalysisPlan;
     /** Generated SQL */
     sql: string;
-    /** Which engine generated `sql`: the Question Builder mapper, the
-     *  deterministic correction engine, or (rarely) LLM-written SQL. */
-    engine?: 'question-builder' | 'correction-engine' | 'llm';
+    /** Which engine generated `sql`: the Question Builder mapper (fast
+     *  deterministic path), the LLM direct-SQL engine (metadata-only,
+     *  primary for the long tail), the deterministic correction engine, or a
+     *  legacy LLM fallback. */
+    engine?: 'question-builder' | 'llm-sql' | 'correction-engine' | 'llm';
     /** Validation checks */
     validation: ValidationResult;
     /** Raw query result data */

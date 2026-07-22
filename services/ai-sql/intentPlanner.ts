@@ -1312,7 +1312,7 @@ export async function generatePlan(
             // Accuracy-critical step: use the stronger planning model and a larger
             // token budget so complex plans (multi-dim + metrics + filters +
             // comparison) don't truncate into invalid JSON.
-            { temperature: 0.0, max_tokens: 2500, timeout: TIMEOUT_MS, model: PLANNER_MODEL }
+            { temperature: 0.0, max_tokens: 4000, timeout: TIMEOUT_MS, model: PLANNER_MODEL }
         );
 
         clearTimeout(timeout);
