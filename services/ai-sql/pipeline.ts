@@ -41,11 +41,11 @@ import { buildQueryPlan } from '../queryPlan/buildQueryPlan';
 import { compileSQL } from '../queryPlan/sqlCompiler';
 import { getDates } from '../dateHelpers';
 import { applyTableCalculation } from '../../utils/tableCalculations';
-import { buildValueCatalog, groundFilters } from './valueGrounding';
+import { buildValueCatalog, groundFilters, groundSqlLiterals } from './valueGrounding';
 import { verifyPlan } from './planVerification';
 import { detectAntiJoin, buildAntiJoinSQL } from './antiJoin';
 import { generateDirectSQL } from './directSqlEngine';
-import { serializeSemanticModelSchema } from './schemaSerializer';
+import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerializer';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -357,11 +357,24 @@ export async function runAISQLPipeline(
     if (!qbSQL) {
         _s1 = performance.now();
         try {
-            const richSchema = serializeSemanticModelSchema(semanticModel, 'data');
+            // Bounded category domains (low-cardinality categoricals only; PII and
+            // identifiers excluded) so the LLM writes real value literals instead of
+            // guessing. Never sends transaction rows.
+            const domains = collectSafeDomains(dataset.rows, semanticModel);
+            const richSchema = serializeSemanticModelSchema(semanticModel, 'data', domains);
             const ds = await generateDirectSQL(question, richSchema);
             directSqlTokens = ds.tokens || 0;
             if (ds.sql && !ds.error) {
                 directSQL = ds.sql;
+                // Safety net: correct any literal whose casing/plural drifted from
+                // the real stored value (never fabricates).
+                if (_valueCatalog) {
+                    const g = groundSqlLiterals(directSQL, _valueCatalog);
+                    if (g.changed.length) {
+                        directSQL = g.sql;
+                        console.log('[Pipeline] Grounded SQL literals:', g.changed.join(', '));
+                    }
+                }
                 console.log('[Pipeline] Direct-SQL engine SQL:', directSQL);
             } else {
                 directSqlError = ds.error || 'empty SQL';
