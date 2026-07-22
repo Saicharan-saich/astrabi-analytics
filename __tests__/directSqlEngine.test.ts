@@ -125,6 +125,25 @@ describe('collectSafeDomains — send category values, never PII', () => {
         const d = collectSafeDomains(rows, model, { maxCardinality: 10 });
         expect(d.has('customer_name')).toBe(false); // also PII, but cap alone would drop it too
     });
+
+    it('NEVER sends sensitive categoricals (health / demographics / financial)', () => {
+        const cat = (name: string): any => ({
+            name, role: 'dimension', semanticType: 'category', physicalType: 'string',
+            defaultAgg: 'none', synonyms: [], valueDescriptors: [], distinctCount: 4,
+            hasNulls: false, displayLabel: name, timeGrainSupport: [],
+        });
+        const sensitiveModel: any = {
+            fields: [cat('diagnosis'), cat('medication_name'), cat('ethnicity'), cat('religion'), cat('gender'), cat('salary_band'), cat('menu_category')],
+            compositeMetrics: [], derivedMetrics: [], datasetName: 'data', rowCount: 4, grain: 'row',
+        };
+        const sensitiveRows = [{ diagnosis: 'Diabetes', medication_name: 'Metformin', ethnicity: 'Asian', religion: 'Hindu', gender: 'Female', salary_band: '50-60k', menu_category: 'Coffee' }];
+        const d = collectSafeDomains(sensitiveRows, sensitiveModel);
+        for (const col of ['diagnosis', 'medication_name', 'ethnicity', 'religion', 'gender', 'salary_band']) {
+            expect(d.has(col), col).toBe(false);
+        }
+        // A benign category is still shared.
+        expect(d.has('menu_category')).toBe(true);
+    });
 });
 
 describe('groundSqlLiterals — fix literal casing/plural, never fabricate', () => {
