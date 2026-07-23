@@ -337,25 +337,26 @@ export async function runAISQLPipeline(
         }
     }
     traceStep({
-        stepNumber: 5, name: antiJoin ? 'Anti-Join Knob' : 'Question Builder Gate', engine: 'qbMapper', icon: '🎛️',
+        stepNumber: 5, name: antiJoin ? 'Anti-Join Knob (backup)' : 'Question Builder (backup)', engine: 'qbMapper', icon: '🎛️',
         status: qbSQL ? 'pass' : 'skip',
         summary: qbSQL
-            ? `Answered by the builder — ${qbNotes.join('; ')}`
-            : `Fell back to AI SQL — ${qbReason || 'compilation failed'}`,
+            ? `Deterministic backup ready (used only if the LLM fails) — ${qbNotes.join('; ')}`
+            : `No deterministic backup — ${qbReason || 'compilation failed'}`,
         details: qbTraceDetails,
     }, _s1);
 
-    // ─── Step 2e: Direct-SQL Engine (primary for the long tail) ──
-    // When no Question Builder knob fits, the LLM writes SQL directly from the
-    // rich, METADATA-ONLY schema (roles, additivity, identifiers, date range —
-    // never raw rows). This is the primary path for questions the deterministic
-    // knobs can't express. The deterministic correction engine below stays as a
-    // safety net for when the LLM is unavailable, rate-limited, or returns SQL
-    // that fails the read-only gate or won't execute.
+    // ─── Step 2e: Direct-SQL Engine (the AI writes the SQL — always) ──
+    // The LLM writes SQL directly from the rich, METADATA-ONLY schema (roles,
+    // additivity, identifiers, date range — never raw rows). This ALWAYS runs
+    // and is the answer for every AI SQL question. The deterministic engines
+    // (the Question Builder knobs above and the correction engine below) are
+    // now only a QUIET BACKUP: they step in solely when the LLM is unavailable,
+    // rate-limited, or returns SQL that fails the read-only gate or won't run —
+    // so a user still gets an answer instead of an error.
     let directSQL: string | null = null;
     let directSqlTokens = 0;
     let directSqlError: string | null = null;
-    if (!qbSQL) {
+    {
         _s1 = performance.now();
         try {
             // Privacy mode gates what the LLM may see. Strict (default) = metadata
@@ -406,12 +407,17 @@ export async function runAISQLPipeline(
     console.log('[Pipeline] Step 3: Generating SQL...');
     _s1 = performance.now();
     let sqlResult: { sql: string; method: string; explanation?: string };
-    if (qbSQL) {
-        // Builder answered — skip the AI SQL generator entirely.
-        sqlResult = { sql: qbSQL, method: 'question-builder', explanation: '' };
-    } else if (directSQL) {
-        // Direct-SQL engine answered — the LLM wrote the SQL from the schema.
+    if (directSQL) {
+        // The LLM wrote the SQL from the schema — this is the answer.
         sqlResult = { sql: directSQL, method: 'llm-sql', explanation: '' };
+        // The LLM's SQL already computes its own result shape, so drop the
+        // Question Builder's share-of-total table calc (it only applies to
+        // builder-compiled SQL).
+        qbShareValueKey = null;
+    } else if (qbSQL) {
+        // Quiet backup: the LLM was unavailable/unusable — use the deterministic
+        // Question Builder SQL so the user still gets an answer.
+        sqlResult = { sql: qbSQL, method: 'question-builder', explanation: '' };
     } else {
         sqlResult = await generateSQLFromPlan(plan, semanticModel, apdmeResult.derivedMetrics);
     }
@@ -420,10 +426,10 @@ export async function runAISQLPipeline(
     traceStep({
         stepNumber: 6, name: 'SQL Generator', engine: 'sqlGenerator', icon: '⚡',
         status: 'pass',
-        summary: qbSQL
-            ? 'Compiled from Question Builder configuration'
-            : directSQL
-                ? 'SQL written directly by the LLM from the metadata-only schema'
+        summary: directSQL
+            ? 'SQL written directly by the LLM from the metadata-only schema'
+            : qbSQL
+                ? 'LLM unavailable — used the deterministic Question Builder backup'
                 : `Generated via ${sqlMethod === 'deterministic' ? 'deterministic rules' : 'AI/LLM fallback'}`,
         details: { method: sqlMethod, sql: aiGeneratedSQL },
     }, _s1);
@@ -435,18 +441,19 @@ export async function runAISQLPipeline(
     _s1 = performance.now();
     let currentSQL: string;
     let _correctionStatus: 'pass' | 'warn' | 'skip' = 'pass';
-    // Keep the deterministic correction-engine SQL as a safety net even when the
-    // direct-SQL engine answered, so a direct-SQL execution failure can fall back
-    // to something that always runs (computed lazily below).
-    let deterministicSQL: string | null = null;
-    if (qbSQL) {
-        currentSQL = qbSQL;
-        _correctionStatus = 'skip';
-    } else if (directSQL) {
+    // Deterministic backup SQL, kept for the safety net so a failed LLM query can
+    // fall back to something that always runs.
+    let deterministicSQL: string | null = qbSQL;
+    if (directSQL) {
+        // The LLM answered — this is the SQL we run.
         currentSQL = directSQL;
         _correctionStatus = 'skip';
+    } else if (qbSQL) {
+        // Quiet backup — deterministic Question Builder SQL.
+        currentSQL = qbSQL;
+        _correctionStatus = 'skip';
     } else {
-        console.log('[Pipeline] Step 3b: Running SQL Correction Engine...');
+        console.log('[Pipeline] Step 3b: LLM unavailable — running deterministic SQL Correction Engine (backup)...');
         try {
             currentSQL = correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
             deterministicSQL = currentSQL;
@@ -461,18 +468,18 @@ export async function runAISQLPipeline(
         stepNumber: 7, name: 'SQL Correction Engine', engine: 'sqlCorrectionEngine', icon: '🔧',
         status: _correctionStatus,
         summary: _correctionStatus === 'skip'
-            ? (qbSQL ? 'Skipped — Question Builder produced the SQL directly' : 'Skipped — the direct-SQL engine produced the SQL')
+            ? (directSQL ? 'Skipped — the LLM wrote the SQL' : 'Skipped — deterministic backup produced the SQL')
             : _correctionStatus === 'pass'
-                ? 'SQL rebuilt deterministically — verified column names, GROUP BY, aggregations'
+                ? 'Backup: SQL rebuilt deterministically — verified column names, GROUP BY, aggregations'
                 : 'Correction engine failed — using AI-generated SQL as fallback',
         details: { correctedSQL: currentSQL, usedFallback: _correctionStatus === 'warn' },
     }, _s1);
 
     // Which engine actually produced `currentSQL` — surfaced in the SQL tab.
-    // May be downgraded to 'correction-engine' below if direct-SQL fails to run.
+    // May be downgraded to a deterministic backup below if the LLM SQL won't run.
     let sqlEngine: 'question-builder' | 'llm-sql' | 'correction-engine' | 'llm' =
-        qbSQL ? 'question-builder'
-            : directSQL ? 'llm-sql'
+        directSQL ? 'llm-sql'
+            : qbSQL ? 'question-builder'
                 : _correctionStatus === 'pass' ? 'correction-engine'
                     : (sqlMethod === 'llm' ? 'llm' : 'correction-engine');
 
@@ -528,20 +535,22 @@ export async function runAISQLPipeline(
         }
     }
 
-    // ─── Step 5b′: Deterministic Safety Net ─────────────────────
-    // If the direct-SQL engine's output still won't execute after repair, fall
-    // back to the deterministic correction engine — it always produces runnable
-    // SQL from the plan. This keeps a failed LLM SQL from crashing the query.
+    // ─── Step 5b′: Deterministic Safety Net (quiet backup) ──────
+    // If the LLM's SQL still won't execute after repair, fall back to the
+    // deterministic engines — the Question Builder backup if one was built,
+    // otherwise the correction engine — which always produce runnable SQL from
+    // the plan. This keeps a failed LLM query from crashing into an error.
     if (execResult.error && directSQL) {
-        console.warn('[Pipeline] Direct-SQL failed to execute after repair — falling back to the deterministic correction engine.');
+        console.warn('[Pipeline] LLM SQL failed to execute after repair — using the deterministic backup.');
         try {
+            const usingQbBackup = !!deterministicSQL;
             const fallbackSQL = deterministicSQL ?? correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
             const fallbackExec = await executeSQLViaDuckDB(dataset.rows, fallbackSQL, semanticModel.timeContext);
             if (!fallbackExec.error) {
                 currentSQL = fallbackSQL;
                 execResult = fallbackExec;
-                sqlEngine = 'correction-engine';
-                console.log('[Pipeline] Deterministic fallback succeeded — engine downgraded to correction-engine.');
+                sqlEngine = usingQbBackup ? 'question-builder' : 'correction-engine';
+                console.log(`[Pipeline] Deterministic backup succeeded — engine = ${sqlEngine}.`);
             }
         } catch (fbErr: any) {
             console.warn('[Pipeline] Deterministic fallback also failed:', fbErr?.message);
@@ -1073,7 +1082,7 @@ export async function runAISQLPipeline(
     console.log('[Pipeline] Step 10: Scoring confidence...');
     _s1 = performance.now();
     // The Question Builder path is deterministic — score it as such.
-    const confidenceMethod: 'deterministic' | 'llm' = sqlMethod === 'llm' ? 'llm' : 'deterministic';
+    const confidenceMethod: 'deterministic' | 'llm' = (sqlMethod === 'llm' || sqlMethod === 'llm-sql') ? 'llm' : 'deterministic';
     const confidence = scoreConfidence(plan, semanticModel, validation, confidenceMethod, repairAttempts, currentSQL);
     // Apply APDME guardrail penalties (e.g., -50 for SUM on a date column)
     if (apdmeResult.confidencePenalty > 0) {
