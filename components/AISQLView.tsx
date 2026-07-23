@@ -255,18 +255,18 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         <Tooltip
                             position="left"
                             text={privacyMode === 'strict'
-                                ? 'Strict privacy: only column metadata (names, types, meaning) is sent to the AI — no data values ever leave your browser. Click to allow sharing low-cardinality category values (never PII, IDs, or rows) for more accurate filters.'
-                                : 'Enhanced accuracy: low-cardinality category values (e.g. item names, regions) are shared with the AI so it filters on real values. Person PII, identifiers, sensitive categories, and rows are never sent. Click to return to strict metadata-only.'}
+                                ? "Private mode: the AI only sees your column names — never your actual data. Nothing about your customers or records leaves your browser. Tap to also let it see a few example values (like product names) for better answers — it still never sees personal details or full records."
+                                : "Better answers: the AI can see a few example values (like product or region names) so it answers more accurately. It never sees customer names, emails, sensitive details, or your full records. Tap to switch back to Private mode (column names only)."}
                         >
                             <button
                                 onClick={togglePrivacyMode}
                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${privacyMode === 'strict'
                                     ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30'
                                     : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/30'}`}
-                                title="Toggle AI SQL privacy mode"
+                                title="Choose how much the AI can see"
                             >
                                 {privacyMode === 'strict' ? <ShieldCheck className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
-                                {privacyMode === 'strict' ? 'Strict privacy' : 'Enhanced'}
+                                {privacyMode === 'strict' ? 'Private mode' : 'Better answers'}
                             </button>
                         </Tooltip>
                         {conversationHistory.length > 0 && (
