@@ -19,7 +19,7 @@ Rules:
 - Use the EXACT table and column names from the schema. Do not invent columns.
 - Read the "Column notes": respect additivity (SUM only additive measures; a column marked "per-unit/rate" must use AVG, never SUM), and never GROUP BY or aggregate a column marked "row identifier".
 - When money/revenue/total is asked for, use the additive currency measure, not a per-unit price.
-- For date filters, use the listed date column and cast to DATE when comparing (e.g. CAST(col AS DATE) BETWEEN DATE '2025-01-01' AND DATE '2025-12-31').
+- DATE COLUMNS ARE STORED AS TEXT (VARCHAR). You MUST wrap them in CAST(col AS DATE) before ANY date function or comparison — DATE_TRUNC, EXTRACT, strftime, date_diff, ordering by month, or BETWEEN. Example: DATE_TRUNC('month', CAST(order_date AS DATE)), and CAST(order_date AS DATE) BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'. Writing DATE_TRUNC('month', order_date) directly WILL fail.
 - JOIN across tables when needed, following the listed foreign keys.
 - Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
 
