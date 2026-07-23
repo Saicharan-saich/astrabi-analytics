@@ -55,11 +55,20 @@ export function serializeSchema(tables: SchemaTable[], edges?: SchemaEdge[]): st
     return lines.join('\n');
 }
 
-/** DuckDB physical type from a semantic field's detected physical type. */
+/** True when a field holds a date/time (by physical or semantic type). */
+function isDateField(f: SemanticField): boolean {
+    return f.physicalType === 'date' || f.semanticType === 'date';
+}
+
+/**
+ * The ACTUAL DuckDB column type in this app. Dates are loaded from CSV as text
+ * (VARCHAR), NOT as DATE — so we report VARCHAR for them, otherwise the model
+ * writes DATE_TRUNC(order_date) and DuckDB rejects it ("date_trunc(…, VARCHAR)").
+ */
 function duckType(f: SemanticField): string {
+    if (isDateField(f)) return 'VARCHAR';
     switch (f.physicalType) {
         case 'number': return f.semanticType === 'count' || f.semanticType === 'identifier' ? 'BIGINT' : 'DOUBLE';
-        case 'date': return f.hasTimeComponent ? 'TIMESTAMP' : 'DATE';
         case 'boolean': return 'BOOLEAN';
         default: return 'VARCHAR';
     }
@@ -188,8 +197,8 @@ export function serializeSemanticModelSchema(
             } else if (f.semanticType === 'identifier') {
                 notes.push('identifier');
             }
-            if (f.physicalType === 'date') {
-                notes.push('date');
+            if (isDateField(f)) {
+                notes.push("date stored as TEXT (e.g. '2025-06-30') — you MUST wrap it in CAST(col AS DATE) before DATE_TRUNC / EXTRACT / strftime or any date comparison");
                 if (model.timeContext?.primaryDateColumn === f.name && model.timeContext) {
                     notes.push(`spans ${model.timeContext.minDate}..${model.timeContext.maxDate}`);
                 }

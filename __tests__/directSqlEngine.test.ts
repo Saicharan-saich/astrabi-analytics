@@ -68,6 +68,15 @@ describe('serializeSemanticModelSchema — rich metadata, never rows', () => {
         expect(s).toMatch(/order_date:.*date/i);
         expect(s).toContain('2025-01-01..2025-06-30');
     });
+    it('marks date columns as TEXT and tells the model to CAST before date functions', () => {
+        // DuckDB loads CSV dates as VARCHAR, so DATE_TRUNC(order_date) fails unless cast.
+        const s = serializeSemanticModelSchema(model);
+        // The column type in the table definition must be VARCHAR, not DATE.
+        expect(s).toMatch(/order_date VARCHAR/);
+        expect(s).not.toMatch(/order_date DATE\b/);
+        // And the notes must instruct casting.
+        expect(s).toMatch(/order_date:.*CAST\(col AS DATE\)/i);
+    });
     it('reports low-cardinality dimension distinct counts', () => {
         const s = serializeSemanticModelSchema(model);
         expect(s).toMatch(/menu_category:.*4 distinct/i);
