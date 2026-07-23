@@ -7,14 +7,17 @@
  *                against your values on-device. This is the privacy-first
  *                guarantee: your data never leaves your device.
  *
- *   'enhanced' — additionally sends the distinct VALUES of low-cardinality,
- *                NON-sensitive category columns (item/product names, region,
- *                status…) so the LLM writes real value literals instead of
- *                guessing. Person PII, identifiers, and sensitive categoricals
- *                (health, demographics, financial bands) are still never sent,
- *                and transaction rows are never sent.
+ *   'enhanced' (default) — additionally sends the distinct VALUES of
+ *                low-cardinality, NON-sensitive category columns (item/product
+ *                names, region, status…) so the LLM writes real value literals
+ *                instead of guessing. Person PII, identifiers, and sensitive
+ *                categoricals (health, demographics, financial bands) are still
+ *                never sent, and transaction rows are never sent.
  *
- * Default is 'strict' — privacy-first unless the user explicitly opts in.
+ * Default is 'enhanced': most everyday questions ("Coffee vs Tea", "revenue
+ * from Delivery") only work when the AI can see category values, and Enhanced
+ * still never exposes PII, sensitive fields, identifiers, or rows. Users who
+ * want zero data values to leave the browser can switch to 'strict'.
  */
 
 export type PrivacyMode = 'strict' | 'enhanced';
@@ -23,9 +26,10 @@ const STORAGE_KEY = 'qi_ai_privacy_mode';
 
 export function getPrivacyMode(): PrivacyMode {
     try {
-        return localStorage.getItem(STORAGE_KEY) === 'enhanced' ? 'enhanced' : 'strict';
+        // Default to 'enhanced' unless the user explicitly chose 'strict'.
+        return localStorage.getItem(STORAGE_KEY) === 'strict' ? 'strict' : 'enhanced';
     } catch {
-        return 'strict';
+        return 'enhanced';
     }
 }
 
