@@ -877,6 +877,30 @@ export async function runAISQLPipeline(
         }
     }
 
+    // ── Empty-aggregate detection ────────────────────────────────
+    // A SUM/COUNT(CASE WHEN col = 'value' …) with no matching rows returns a
+    // single row of all-NULLs — that's "no data", not a real answer, and it
+    // otherwise renders as a confusing blank table. It usually means a value
+    // literal in the query doesn't exist in the data (the AI guessed a word).
+    // Collapse it to the no-data path and name the likely-wrong values.
+    let unmatchedLiterals: string[] = [];
+    if (rawData.length > 0 && rawData.every(r => Object.values(r).every(v => v === null || v === undefined))) {
+        if (_valueCatalog) {
+            const seen = new Set<string>();
+            const re = /'((?:[^']|'')*)'/g;
+            let m: RegExpExecArray | null;
+            while ((m = re.exec(currentSQL)) !== null) {
+                const raw = m[1].replace(/''/g, "'");
+                if (!raw || /^\d{4}-\d{2}-\d{2}/.test(raw) || /^-?\d+(\.\d+)?$/.test(raw)) continue; // skip dates/numbers
+                if (seen.has(raw)) continue;
+                seen.add(raw);
+                if (!_valueCatalog.index.has(raw.toLowerCase())) unmatchedLiterals.push(raw);
+            }
+        }
+        console.warn('[Pipeline] Aggregate returned all-NULL (no matching rows) — treating as no data.', unmatchedLiterals.length ? `Unmatched values: ${unmatchedLiterals.join(', ')}` : '');
+        rawData = [];
+    }
+
     if (rawData.length === 0) {
         // Build a helpful no-data message instead of throwing
         const tc = semanticModel.timeContext;
@@ -887,9 +911,14 @@ export async function runAISQLPipeline(
             ? ` The dataset contains data from ${tc.minDate} to ${tc.maxDate}.`
             : '';
 
-        const noDataExplanation =
-            `No data found ${periodDesc}.${rangeNote} ` +
-            `Try broadening your date range, removing filters, or checking if your data covers this period.`;
+        const valueNote = unmatchedLiterals.length > 0
+            ? ` These value(s) weren't found in your data: ${unmatchedLiterals.map(v => `"${v}"`).join(', ')}. Check the spelling, or they may be stored in a different column${getPrivacyMode() === 'strict' ? ' — or switch to "Better answers" mode so the AI can see your real values' : ''}.`
+            : '';
+
+        const noDataExplanation = unmatchedLiterals.length > 0
+            ? `No matching data found.${valueNote}`
+            : `No data found ${periodDesc}.${rangeNote} ` +
+              `Try broadening your date range, removing filters, or checking if your data covers this period.`;
 
         console.warn('[Pipeline] Query returned 0 rows —', noDataExplanation);
 
