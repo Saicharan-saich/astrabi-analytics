@@ -138,9 +138,59 @@ export async function runAISQLPipeline(
         console.log(`[Pipeline] Time resolved: "${resolvedTime.matchedPhrase}" → ${resolvedTime.description}`);
     }
 
-    // ─── Step 2: Generate Analysis Plan (Step A — LLM) ───────────
-    reportProgress('Generating analysis plan (AI)...', 3);
-    console.log('[Pipeline] Step 2: Generating analysis plan...');
+    // ─── Step 1c: Value Catalog + Direct-SQL Kickoff (PARALLEL) ──
+    // The LLM writes SQL from the question + schema alone — it does NOT need the
+    // analysis plan. So fire that call NOW, concurrently with the planner below,
+    // instead of waiting for the plan first. Two sequential LLM round trips
+    // become one wall-clock wait, roughly halving time-to-answer.
+    let _valueCatalog: ReturnType<typeof buildValueCatalog> | null = null;
+    try {
+        _valueCatalog = buildValueCatalog(dataset.rows, semanticModel);
+    } catch (cErr: any) {
+        console.warn('[Pipeline] Value catalog build skipped:', cErr?.message);
+    }
+
+    const _directSqlStart = performance.now();
+    // Always resolves (never rejects) so it can safely be awaited later.
+    const directSqlPromise: Promise<{ sql: string | null; tokens: number; error: string | null }> = (async () => {
+        try {
+            // Privacy mode gates what the LLM may see. Strict = metadata only, no
+            // data values leave the browser. Enhanced = also send bounded category
+            // domains (non-sensitive, low-cardinality; PII, identifiers and
+            // sensitive categoricals excluded). Rows are never sent in either.
+            const privacyMode = getPrivacyMode();
+            const domains = privacyMode === 'enhanced'
+                ? collectSafeDomains(dataset.rows, semanticModel)
+                : undefined;
+            console.log(`[Pipeline] Direct-SQL privacy mode: ${privacyMode}${domains ? ` (${domains.size} category domain(s) shared)` : ' (metadata only)'}`);
+            const richSchema = serializeSemanticModelSchema(semanticModel, 'data', domains);
+            const ds = await generateDirectSQL(question, richSchema);
+            if (ds.sql && !ds.error) {
+                let sql = ds.sql;
+                // Safety net: correct any literal whose casing/plural drifted from
+                // the real stored value (never fabricates).
+                if (_valueCatalog) {
+                    const g = groundSqlLiterals(sql, _valueCatalog);
+                    if (g.changed.length) {
+                        sql = g.sql;
+                        console.log('[Pipeline] Grounded SQL literals:', g.changed.join(', '));
+                    }
+                }
+                console.log('[Pipeline] Direct-SQL engine SQL:', sql);
+                return { sql, tokens: ds.tokens || 0, error: null };
+            }
+            console.warn('[Pipeline] Direct-SQL not usable:', ds.error || 'empty SQL');
+            return { sql: null, tokens: ds.tokens || 0, error: ds.error || 'empty SQL' };
+        } catch (dErr: any) {
+            const msg = dErr?.message || String(dErr);
+            console.warn('[Pipeline] Direct-SQL engine failed — deterministic backup will answer:', msg);
+            return { sql: null, tokens: 0, error: msg };
+        }
+    })();
+
+    // ─── Step 2: Generate Analysis Plan (Step A — LLM, in parallel) ─
+    reportProgress('Asking the AI...', 3);
+    console.log('[Pipeline] Step 2: Generating analysis plan (in parallel with direct-SQL)...');
     _s1 = performance.now();
     const plan = await generatePlan(augmentedQuestion, semanticModel, grainOverride, conversationHistory);
     traceStep({
@@ -193,9 +243,8 @@ export async function runAISQLPipeline(
     // dataset's actual dimension values (deterministic, no LLM). Fixes the
     // "revenue from Delivery → filter vanished" class of bug, and works even
     // when the LLM planner is unavailable/rate-limited.
-    let _valueCatalog: ReturnType<typeof buildValueCatalog> | null = null;
     try {
-        _valueCatalog = buildValueCatalog(dataset.rows, semanticModel);
+        if (!_valueCatalog) throw new Error('value catalog unavailable');
         const grounded = groundFilters(question, _valueCatalog, plan, semanticModel);
         if (grounded.added.length > 0) {
             plan.filters.push(...grounded.added);
@@ -253,9 +302,13 @@ export async function runAISQLPipeline(
         console.warn(`[Pipeline] APDME: ${apdmeResult.violations.length} guardrail violation(s), penalty: -${apdmeResult.confidencePenalty}`);
     }
 
-    // If the plan is ambiguous, return early with clarification request
-    if (plan.ambiguous) {
-        console.log('[Pipeline] Plan is ambiguous, requesting clarification');
+    // Only ask the user to rephrase if the planner was unsure AND the AI couldn't
+    // write usable SQL either. When the AI did understand the question well enough
+    // to write SQL, answer it — the planner's uncertainty must not dead-end a
+    // question the AI handled fine. (The promise is already in flight, so this
+    // await costs nothing extra.)
+    if (plan.ambiguous && !(await directSqlPromise).sql) {
+        console.log('[Pipeline] Plan is ambiguous and no AI SQL — requesting clarification');
         const executionTime = performance.now() - startTime;
         return {
             plan,
@@ -353,53 +406,24 @@ export async function runAISQLPipeline(
     // now only a QUIET BACKUP: they step in solely when the LLM is unavailable,
     // rate-limited, or returns SQL that fails the read-only gate or won't run —
     // so a user still gets an answer instead of an error.
+    // It was kicked off back in Step 1c, in parallel with the planner — so by the
+    // time we get here it is usually already finished (zero extra wait).
     let directSQL: string | null = null;
     let directSqlTokens = 0;
     let directSqlError: string | null = null;
     {
-        _s1 = performance.now();
-        try {
-            // Privacy mode gates what the LLM may see. Strict (default) = metadata
-            // only, no data values ever leave the browser. Enhanced = also send
-            // bounded category domains (low-cardinality, non-sensitive categoricals;
-            // PII, identifiers, and sensitive categoricals excluded) so the LLM
-            // writes real value literals. Transaction rows are never sent in either.
-            const privacyMode = getPrivacyMode();
-            const domains = privacyMode === 'enhanced'
-                ? collectSafeDomains(dataset.rows, semanticModel)
-                : undefined;
-            console.log(`[Pipeline] Direct-SQL privacy mode: ${privacyMode}${domains ? ` (${domains.size} category domain(s) shared)` : ' (metadata only)'}`);
-            const richSchema = serializeSemanticModelSchema(semanticModel, 'data', domains);
-            const ds = await generateDirectSQL(question, richSchema);
-            directSqlTokens = ds.tokens || 0;
-            if (ds.sql && !ds.error) {
-                directSQL = ds.sql;
-                // Safety net: correct any literal whose casing/plural drifted from
-                // the real stored value (never fabricates).
-                if (_valueCatalog) {
-                    const g = groundSqlLiterals(directSQL, _valueCatalog);
-                    if (g.changed.length) {
-                        directSQL = g.sql;
-                        console.log('[Pipeline] Grounded SQL literals:', g.changed.join(', '));
-                    }
-                }
-                console.log('[Pipeline] Direct-SQL engine SQL:', directSQL);
-            } else {
-                directSqlError = ds.error || 'empty SQL';
-                console.warn('[Pipeline] Direct-SQL not usable:', directSqlError);
-            }
-        } catch (dErr: any) {
-            directSqlError = dErr?.message || String(dErr);
-            console.warn('[Pipeline] Direct-SQL engine failed — falling back to correction engine:', directSqlError);
-        }
+        const _ds = await directSqlPromise;
+        directSQL = _ds.sql;
+        directSqlTokens = _ds.tokens;
+        directSqlError = _ds.error;
         traceStep({
             stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
             status: directSQL ? 'pass' : 'skip',
             summary: directSQL
-                ? 'LLM wrote SQL directly from the metadata-only schema'
-                : `Skipped — ${directSqlError || 'no SQL'} (using deterministic correction engine)`,
+                ? 'LLM wrote the SQL from the metadata-only schema (ran in parallel with the planner)'
+                : `Skipped — ${directSqlError || 'no SQL'} (using the deterministic backup)`,
             details: { sql: directSQL, error: directSqlError, tokens: directSqlTokens },
-        }, _s1);
+        }, _directSqlStart);
     }
 
     // ─── Step 3: Generate SQL (Step B — deterministic + LLM fallback) ─
