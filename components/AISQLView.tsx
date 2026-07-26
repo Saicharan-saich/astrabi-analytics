@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, MessageSquare, RotateCcw, Shield, ShieldCheck } from 'lucide-react';
+import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, Shield, ShieldCheck } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { MODEL } from '../services/ai-sql/intentPlanner';
@@ -7,16 +7,6 @@ import { getPrivacyMode, setPrivacyMode, PrivacyMode } from '../services/ai-sql/
 import { Tooltip } from './Tooltip';
 import { checkAiSqlLimit, formatResetTime, AI_SQL_LIMITS } from '../services/aiSqlRateLimiter';
 import { useAuthStore } from '../store/useAuthStore';
-
-/** A single turn in the conversation */
-interface ConversationTurn {
-    id: string;
-    question: string;
-    explanation: string;
-    sql: string;
-    planSummary: string;
-    timestamp: number;
-}
 
 interface AISQLViewProps {
     dataset: Dataset | null;
@@ -40,14 +30,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         setPrivacyModeState(next);
     };
 
-    // ── Conversation History for follow-up context ──
-    const [conversationHistory, setConversationHistory] = useState<ConversationTurn[]>([]);
-    const chatEndRef = useRef<HTMLDivElement>(null);
-
-    // Auto-scroll chat thread to bottom when new turns are added
-    useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [conversationHistory]);
+    // Every question is answered STANDALONE — no conversation history is kept or
+    // sent, so an answer can never inherit context from a previous question.
 
     // Rate limiting
     const currentUser = useAuthStore(s => s.currentUser);
@@ -115,11 +99,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         try {
             const timeoutMs = 60000;
             const result = await Promise.race([
-                runAISQLPipeline(
-                    query, dataset,
-                    undefined, undefined, undefined, undefined,
-                    conversationHistory.map(t => ({ question: t.question, planSummary: t.planSummary }))
-                ),
+                runAISQLPipeline(query, dataset),
                 new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Query timed out after 60 seconds. Please try again.')), timeoutMs))
             ]);
 
@@ -181,23 +161,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
             // ── Increment usage AFTER successful query ──
             incrementAiSqlUsage();
 
-            // ── Record this turn in conversation history ──
-            const planSummary = JSON.stringify({
-                intent: result.plan.intent,
-                metrics: result.plan.metrics.map((m: any) => m.field),
-                dimensions: result.plan.dimensions.map((d: any) => d.field || d.timeGrain),
-                filters: result.plan.filters.map((f: any) => `${f.field} ${f.op} ${f.value}`),
-                limit: result.plan.limit,
-            });
-            setConversationHistory(prev => [...prev, {
-                id: `turn-${Date.now()}`,
-                question: query.trim(),
-                explanation: result.explanation || 'Query executed successfully.',
-                sql: result.sql || '',
-                planSummary,
-                timestamp: Date.now(),
-            }]);
-
         } catch (err: any) {
             console.error('[AI SQL Pipeline] Error:', err);
             setError(err.message || 'An unexpected error occurred.');
@@ -246,11 +209,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     <div className="flex items-center gap-2">
                         <p className="text-gray-500 dark:text-slate-400 text-sm flex-1">
                             Ask any question about your data — AI generates SQL, executes it, and takes you to a full visual result.
-                            {conversationHistory.length > 0 && (
-                                <span className="ml-1 text-indigo-500 dark:text-indigo-400 font-medium">
-                                    Follow-up questions use previous context.
-                                </span>
-                            )}
+                            Each question is answered on its own, with no memory of previous ones.
                         </p>
                         <Tooltip
                             position="left"
@@ -269,16 +228,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                 {privacyMode === 'strict' ? 'Private mode' : 'Better answers'}
                             </button>
                         </Tooltip>
-                        {conversationHistory.length > 0 && (
-                            <button
-                                onClick={() => setConversationHistory([])}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-red-50 dark:hover:bg-red-900/20 text-slate-500 hover:text-red-600 dark:text-slate-400 dark:hover:text-red-400 text-xs font-medium border border-slate-200 dark:border-white/10 hover:border-red-300 dark:hover:border-red-500/30 transition-all"
-                                title="Start a new conversation (clears context)"
-                            >
-                                <RotateCcw className="w-3 h-3" />
-                                New Chat
-                            </button>
-                        )}
                     </div>
                 </div>
 
@@ -433,48 +382,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     </div>
                 )}
 
-                {/* ── Conversation Thread ── */}
-                {conversationHistory.length > 0 && !isLoading && (
-                    <div className="flex-1 overflow-y-auto min-h-0 space-y-3 pr-1">
-                        {conversationHistory.map((turn, idx) => (
-                            <div key={turn.id} className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/10 rounded-xl p-4 space-y-2 shadow-sm">
-                                {/* User question */}
-                                <div className="flex items-start gap-2">
-                                    <div className="w-6 h-6 rounded-full bg-indigo-500/15 dark:bg-indigo-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                                        <MessageSquare className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
-                                    </div>
-                                    <div className="flex-1">
-                                        <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase tracking-wider">You</span>
-                                        <p className="text-sm font-medium text-gray-900 dark:text-white mt-0.5">{turn.question}</p>
-                                    </div>
-                                    <span className="text-[10px] text-gray-400 dark:text-slate-500 tabular-nums shrink-0">
-                                        #{idx + 1}
-                                    </span>
-                                </div>
-                                {/* AI response */}
-                                <div className="flex items-start gap-2 ml-0.5">
-                                    <div className="w-6 h-6 rounded-full bg-amber-500/15 dark:bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                                        <Sparkles className="w-3 h-3 text-amber-600 dark:text-amber-400" />
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <span className="text-xs font-bold text-amber-600 dark:text-amber-400 uppercase tracking-wider">AI</span>
-                                        <p className="text-sm text-gray-600 dark:text-slate-300 mt-0.5 leading-relaxed">{turn.explanation}</p>
-                                        {turn.sql && (
-                                            <details className="mt-2">
-                                                <summary className="text-[11px] text-emerald-600 dark:text-emerald-400 cursor-pointer hover:underline font-medium">View SQL</summary>
-                                                <pre className="mt-1 text-[10px] text-emerald-700 dark:text-emerald-300 font-mono bg-gray-50 dark:bg-slate-900/60 rounded-lg p-2 border border-gray-100 dark:border-white/5 overflow-x-auto">{turn.sql}</pre>
-                                            </details>
-                                        )}
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                        <div ref={chatEndRef} />
-                    </div>
-                )}
 
-                {/* Example Suggestions — show only when NO conversation history */}
-                {!isLoading && !error && !noDataMsg && conversationHistory.length === 0 && (
+                {/* Example Suggestions */}
+                {!isLoading && !error && !noDataMsg && (
                     <div className="flex-1 flex flex-col items-center justify-center opacity-60">
                         <p className="text-gray-500 dark:text-slate-400 mb-6 uppercase tracking-wider text-xs font-bold">Try asking:</p>
                         <div className="flex flex-wrap justify-center gap-3 max-w-2xl">

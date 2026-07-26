@@ -74,8 +74,7 @@ export async function runAISQLPipeline(
     externalFilters?: PlanFilter[],
     onProgress?: (progress: PipelineProgress) => void,
     grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year',
-    forceRefresh?: boolean,
-    conversationHistory?: Array<{ question: string; planSummary: string }>
+    forceRefresh?: boolean
 ): Promise<AISQLPipelineResult> {
     const startTime = performance.now();
     let repairAttempts = 0;
@@ -192,7 +191,7 @@ export async function runAISQLPipeline(
     reportProgress('Asking the AI...', 3);
     console.log('[Pipeline] Step 2: Generating analysis plan (in parallel with direct-SQL)...');
     _s1 = performance.now();
-    const plan = await generatePlan(augmentedQuestion, semanticModel, grainOverride, conversationHistory);
+    const plan = await generatePlan(augmentedQuestion, semanticModel, grainOverride);
     traceStep({
         stepNumber: 3, name: 'Intent Planner', engine: 'intentPlanner', icon: '🎯',
         status: plan.ambiguous ? 'warn' : 'pass',

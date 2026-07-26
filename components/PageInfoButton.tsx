@@ -171,7 +171,7 @@ const PAGE_INFO: Record<PageKey, PageInfo> = {
     },
     AI_SQL: {
         title: 'AI SQL Chat',
-        description: 'A conversational interface for data exploration. Have a back-and-forth conversation with AI about your data — each follow-up question builds on the previous context.',
+        description: 'Ask questions about your data in plain English. Every question is answered on its own — nothing is carried over from previous questions, so each answer depends only on what you just asked.',
         features: [
             'Conversational, multi-turn data exploration',
             'Schema-aware SQL generation',
