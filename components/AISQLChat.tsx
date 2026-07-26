@@ -67,7 +67,7 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
         setIsLoading(true);
 
         try {
-            const result = await generateSQL(question, dataset, [...messages, userMsg]);
+            const result = await generateSQL(question, dataset);
 
             const assistantMsg: ChatMessage = {
                 id: `ai-${Date.now()}`,

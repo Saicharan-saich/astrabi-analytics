@@ -157,8 +157,7 @@ Respond ONLY with the JSON object, nothing else.`;
  */
 export async function generateSQL(
     question: string,
-    dataset: Dataset,
-    conversationHistory: ChatMessage[] = []
+    dataset: Dataset
 ): Promise<SQLGenerationResult> {
     if (!API_KEY) {
         return {
@@ -172,27 +171,12 @@ export async function generateSQL(
     const metadata = extractMetadata(dataset);
     const systemPrompt = buildSystemPrompt(metadata);
 
+    // Every question is STANDALONE — no prior turns are ever sent, so an answer
+    // can never inherit context or filters from an earlier question.
     const messages: Array<{ role: string; content: string }> = [
-        { role: 'system', content: systemPrompt }
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: question },
     ];
-
-    const recentHistory = conversationHistory.slice(-6);
-    recentHistory.forEach(msg => {
-        if (msg.role === 'user') {
-            messages.push({ role: 'user', content: msg.content });
-        } else if (msg.role === 'assistant' && msg.sql) {
-            messages.push({
-                role: 'assistant',
-                content: JSON.stringify({
-                    sql: msg.sql,
-                    explanation: msg.explanation || '',
-                    columns_used: msg.columnsUsed || []
-                })
-            });
-        }
-    });
-
-    messages.push({ role: 'user', content: question });
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT_MS);

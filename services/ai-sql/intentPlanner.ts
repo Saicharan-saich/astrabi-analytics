@@ -1131,8 +1131,7 @@ function enforceTimeComparison(plan: AnalysisPlan, question: string, model: Sema
 export async function generatePlan(
     question: string,
     model: SemanticModel,
-    grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year',
-    conversationHistory?: Array<{ question: string; planSummary: string }>
+    grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year'
 ): Promise<AnalysisPlan> {
     if (!API_KEY) {
         throw new Error('OpenRouter API key not configured. Set VITE_OPENROUTER_API_KEY in .env');
@@ -1149,26 +1148,13 @@ export async function generatePlan(
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-    // Build conversation messages with history for follow-up context
+    // Every question is STANDALONE — no prior turns are ever sent. Intent is
+    // derived from this question plus the semantic model alone, so answers can
+    // never inherit filters or context from an earlier question.
     const llmMessages: Array<{ role: string; content: string }> = [
-        { role: 'system', content: systemPrompt }
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: question },
     ];
-
-    // Inject conversation history (last 4 turns) so the LLM understands follow-ups
-    if (conversationHistory && conversationHistory.length > 0) {
-        const recentHistory = conversationHistory.slice(-4);
-        for (const turn of recentHistory) {
-            llmMessages.push({ role: 'user', content: turn.question });
-            llmMessages.push({ role: 'assistant', content: turn.planSummary });
-        }
-        // Add a context hint for the current follow-up question
-        llmMessages.push({
-            role: 'user',
-            content: `Follow-up question (build on the previous context): ${question}`
-        });
-    } else {
-        llmMessages.push({ role: 'user', content: question });
-    }
 
     try {
         const { data } = await fetchWithFallback(

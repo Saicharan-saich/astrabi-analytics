@@ -23,8 +23,6 @@ interface VisualPreviewViewProps {
   onBack: () => void;
   onPin?: (title: string, result: AnalysisResult) => void;
   onFormatChange?: (formatting: FormattingConfig) => void;
-  conversationHistory?: Array<{ question: string; planSummary: string }>;
-  onConversationUpdate?: (history: Array<{ question: string; planSummary: string }>) => void;
 }
 
 interface DrillDownResult {
@@ -36,7 +34,6 @@ interface DrillDownResult {
 export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   dataset, result: initialResult, pipelineResult: initialPipeline, query,
   formatting, onBack, onPin, onFormatChange,
-  conversationHistory: externalHistory, onConversationUpdate,
 }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -60,10 +57,9 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const [drillDown, setDrillDown] = useState<DrillDownResult | null>(null);
   const [isDrilling, setIsDrilling] = useState(false);
 
-  // ── Feature 2: Conversational Follow-ups ──
+  // ── Ask another question (standalone — no memory of the previous one) ──
   const [followUpQuery, setFollowUpQuery] = useState('');
   const [isFollowUpLoading, setIsFollowUpLoading] = useState(false);
-  const [convHistory, setConvHistory] = useState<Array<{ question: string; planSummary: string }>>(externalHistory || []);
   const followUpRef = useRef<HTMLInputElement>(null);
 
   // ── Sync internal state when new query results arrive ──
@@ -106,8 +102,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
     setIsDrilling(true);
     const drillQuery = `Show breakdown of ${pipeline?.plan?.metrics?.[0]?.field || 'sales'} for "${dimensionValue}"`;
     try {
-      const history = [...convHistory, { question: query, planSummary: pipeline?.plan?.resultGrain || '' }];
-      const res = await runAISQLPipeline(drillQuery, dataset, undefined, undefined, undefined, false, history);
+      const res = await runAISQLPipeline(drillQuery, dataset);
       if (res.rawData.length === 0) { setIsDrilling(false); return; }
       const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'bar' };
       setDrillDown({
@@ -125,22 +120,20 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       });
       setActiveTab('chart');
     } catch { /* ignore */ } finally { setIsDrilling(false); }
-  }, [dataset, isDrilling, pipeline, query, convHistory]);
+  }, [dataset, isDrilling, pipeline, query]);
 
-  // ── Follow-Up Handler ──
+  // ── Ask-Another-Question Handler (standalone) ──
   const handleFollowUp = useCallback(async () => {
     if (!dataset || !followUpQuery.trim() || isFollowUpLoading) return;
     setIsFollowUpLoading(true);
     const q = followUpQuery.trim();
     setFollowUpQuery('');
     try {
-      const history = [...convHistory, { question: activeQuery, planSummary: activePipeline?.plan?.resultGrain || '' }];
-      const res = await runAISQLPipeline(q, dataset, undefined, undefined, undefined, false, history);
+      // Standalone: a follow-up is treated as a brand-new question, with no
+      // memory of earlier ones.
+      const res = await runAISQLPipeline(q, dataset);
       if (res.rawData.length === 0) { setIsFollowUpLoading(false); return; }
       const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'bar' };
-      const newHistory = [...history, { question: q, planSummary: res.plan.resultGrain || '' }];
-      setConvHistory(newHistory);
-      onConversationUpdate?.(newHistory);
       // Replace current result with follow-up result
       setDrillDown(null);
       setResult({
@@ -156,7 +149,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       setChartType(chartMap[res.chart.chartType] || 'bar');
       setActiveTab('chart');
     } catch { /* ignore */ } finally { setIsFollowUpLoading(false); }
-  }, [dataset, followUpQuery, isFollowUpLoading, activeQuery, activePipeline, convHistory, onConversationUpdate]);
+  }, [dataset, followUpQuery, isFollowUpLoading, activeQuery, activePipeline]);
 
   const updateFormatting = useCallback((f: FormattingConfig) => {
     setLocalFormatting(f);
@@ -449,7 +442,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           value={followUpQuery}
           onChange={e => setFollowUpQuery(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleFollowUp(); } }}
-          placeholder="Ask a follow-up... e.g. 'Break that down by region' or 'Now show the trend'"
+          placeholder="Ask another question... e.g. 'Revenue by region' or 'Monthly sales trend'"
           className={`flex-1 text-sm bg-transparent outline-none placeholder:text-gray-400 dark:placeholder:text-slate-500 ${isDark ? 'text-white' : 'text-gray-900'}`}
           disabled={isFollowUpLoading}
         />
