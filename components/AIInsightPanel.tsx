@@ -48,7 +48,7 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({
         setInsight('');
 
         // Capture ONLY the visual — the rendered chart image
-        const imageBase64 = captureChartAsImage(chartContainerRef.current);
+        const imageBase64 = await captureChartAsImage(chartContainerRef.current);
         if (!imageBase64) {
             setError('Could not capture the chart visual. Please ensure a chart is rendered.');
             setLoading(false);
