@@ -40,40 +40,64 @@ function quickHash(str: string): string {
  * Capture a chart canvas element as a base64 PNG.
  * This is the ONLY data the AI ever sees — a rendered image.
  */
-export function captureChartAsImage(chartContainer: HTMLElement): string | null {
-    // Try to find a canvas element (Chart.js renders to canvas)
+/**
+ * Downscale a rendered canvas to a compact JPEG data URL.
+ *
+ * A full-res high-DPI chart is several MB as PNG and blows past the request-body
+ * limit (413). A ~1000px JPEG is legible for the vision model but typically
+ * <100 KB — small, fast, and cheap.
+ */
+function canvasToCompactJpeg(canvas: HTMLCanvasElement): string {
+    const srcW = canvas.width, srcH = canvas.height;
+    if (!srcW || !srcH) return canvas.toDataURL('image/png');
+
+    const MAX_EDGE = 1000;
+    const scale = Math.min(1, MAX_EDGE / Math.max(srcW, srcH));
+    const w = Math.max(1, Math.round(srcW * scale));
+    const h = Math.max(1, Math.round(srcH * scale));
+
+    const off = document.createElement('canvas');
+    off.width = w; off.height = h;
+    const ctx = off.getContext('2d');
+    if (!ctx) return canvas.toDataURL('image/png');
+
+    // JPEG has no alpha — paint an opaque white ground so the visual isn't
+    // composited onto black. (Marks/text stay legible for the AI.)
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(canvas, 0, 0, w, h);
+
+    return off.toDataURL('image/jpeg', 0.85);
+}
+
+export async function captureChartAsImage(chartContainer: HTMLElement): Promise<string | null> {
+    // Fast path: Chart.js renders to a <canvas>, which we can read directly.
     const canvas = chartContainer.querySelector('canvas');
-    if (!canvas) return null;
+    if (canvas) {
+        try {
+            return canvasToCompactJpeg(canvas);
+        } catch (err) {
+            console.warn('[AI Service] Failed to capture chart canvas:', err);
+            return null;
+        }
+    }
 
+    // No canvas — KPI cards, tables and other DOM-rendered visuals. Rasterise
+    // the container instead, the same way the PNG export does, so Smart Insight
+    // works on every result type rather than only Chart.js charts.
     try {
-        const srcW = canvas.width, srcH = canvas.height;
-        if (!srcW || !srcH) return canvas.toDataURL('image/png');
-
-        // Downscale so the longest edge is at most MAX_EDGE px. A full-res
-        // high-DPI chart is several MB as PNG and blows past the request-body
-        // limit (413). A ~1000px JPEG is legible for the vision model but
-        // typically <100 KB — small, fast, and cheap.
-        const MAX_EDGE = 1000;
-        const scale = Math.min(1, MAX_EDGE / Math.max(srcW, srcH));
-        const w = Math.max(1, Math.round(srcW * scale));
-        const h = Math.max(1, Math.round(srcH * scale));
-
-        const off = document.createElement('canvas');
-        off.width = w; off.height = h;
-        const ctx = off.getContext('2d');
-        if (!ctx) return canvas.toDataURL('image/png');
-
-        // JPEG has no alpha — paint an opaque white ground so the chart isn't
-        // composited onto black. (Chart marks/text stay legible for the AI.)
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, w, h);
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(canvas, 0, 0, w, h);
-
-        return off.toDataURL('image/jpeg', 0.85);
+        const { default: html2canvas } = await import('html2canvas');
+        const rendered = await html2canvas(chartContainer, {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+        });
+        return canvasToCompactJpeg(rendered);
     } catch (err) {
-        console.warn('[AI Service] Failed to capture chart canvas:', err);
+        console.warn('[AI Service] Failed to rasterise chart container:', err);
         return null;
     }
 }
