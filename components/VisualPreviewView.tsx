@@ -331,9 +331,18 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                   </tr></thead>
                   <tbody>{result.data.map((row: any, i: number) => (
                     <tr key={i} className={`border-t ${isDark ? 'border-white/[0.04] hover:bg-white/[0.02]' : 'border-gray-100 hover:bg-gray-50'}`}>
-                      {Object.values(row).map((val: any, j: number) => (
-                        <td key={j} className="px-3 py-2 font-mono text-xs">{typeof val === 'number' ? val.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(val ?? '')}</td>
-                      ))}
+                      {Object.entries(row).map(([col, val]: [string, any], j: number) => {
+                        // Identifiers and years are numbers but not quantities —
+                        // "order 1,154" / "year 2,025" reads as a bug, so show them bare.
+                        const isIdLike = /(^|_)(id|no|num|number|code|zip|postcode|year)$/i.test(col);
+                        return (
+                          <td key={j} className="px-3 py-2 font-mono text-xs">
+                            {typeof val === 'number'
+                              ? (isIdLike ? String(val) : val.toLocaleString(undefined, { maximumFractionDigits: 2 }))
+                              : String(val ?? '')}
+                          </td>
+                        );
+                      })}
                     </tr>
                   ))}</tbody>
                 </table>

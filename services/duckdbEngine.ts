@@ -19,6 +19,40 @@ import * as duckdb from '@duckdb/duckdb-wasm';
 import { logger } from './logger';
 import { finiteOrNull } from '../utils/numberSafety';
 
+/**
+ * Normalise a DuckDB DATE/TIMESTAMP value to a display-ready string.
+ *
+ * DuckDB-WASM hands these back as epoch offsets (Date32 = days, Date64 /
+ * TIMESTAMP = milliseconds, sometimes as BigInt) rather than dates. Returned
+ * raw they render as "1,751,241,600,000" and are treated as a huge numeric
+ * metric by the profiler and charts. Everything else in the app represents
+ * dates as 'YYYY-MM-DD' strings, so match that. A timestamp carrying a real
+ * time-of-day keeps it.
+ */
+export function epochToDateString(val: any): string | null {
+    if (val === null || val === undefined) return null;
+    if (typeof val === 'string') return val;               // already normalised
+
+    let ms: number;
+    if (val instanceof Date) {
+        ms = val.getTime();
+    } else {
+        const n = typeof val === 'bigint' ? Number(val) : Number(val);
+        if (!Number.isFinite(n)) return null;
+        // Date32 stores DAYS since epoch; anything larger is milliseconds.
+        // 1e6 days is ~year 4707, well beyond any real business date.
+        ms = Math.abs(n) < 1e6 ? n * 86400000 : n;
+    }
+
+    if (!Number.isFinite(ms)) return null;
+    const d = new Date(ms);
+    if (isNaN(d.getTime())) return null;
+
+    const iso = d.toISOString();
+    // Midnight UTC → a plain date; otherwise keep the time component.
+    return iso.endsWith('T00:00:00.000Z') ? iso.slice(0, 10) : iso.slice(0, 19).replace('T', ' ');
+}
+
 // ── Singleton State ──────────────────────────────────────────────
 
 let db: duckdb.AsyncDuckDB | null = null;
@@ -295,16 +329,30 @@ async function executeSQLQuery(sql: string): Promise<DuckDBResult> {
         const columns = result.schema.fields.map(f => f.name);
         const data: any[] = [];
 
+        // Columns DuckDB typed as DATE/TIMESTAMP come back as epoch numbers, not
+        // dates. Left alone they render as "1,751,241,600,000" and get charted as
+        // a giant metric. Normalise them to the same 'YYYY-MM-DD' strings the rest
+        // of the app uses, so they read and chart as dates.
+        const dateCols = new Set<string>();
+        for (const f of result.schema.fields) {
+            const t = String((f as any).type ?? '').toLowerCase();
+            if (t.includes('date') || t.includes('timestamp')) dateCols.add(f.name);
+        }
+
         for (let i = 0; i < result.numRows; i++) {
             const row: any = {};
             for (const col of columns) {
                 const colData = result.getChild(col);
                 if (colData) {
                     const val = colData.get(i);
-                    // Convert BigInt to number (DuckDB returns BigInt for integers).
-                    // Guarantee finiteness at the SQL boundary: any inf/NaN that a
-                    // division or aggregate could yield becomes null, never garbage.
-                    row[col] = typeof val === 'bigint' ? Number(val) : finiteOrNull(val);
+                    if (dateCols.has(col)) {
+                        row[col] = epochToDateString(val);
+                    } else {
+                        // Convert BigInt to number (DuckDB returns BigInt for integers).
+                        // Guarantee finiteness at the SQL boundary: any inf/NaN that a
+                        // division or aggregate could yield becomes null, never garbage.
+                        row[col] = typeof val === 'bigint' ? Number(val) : finiteOrNull(val);
+                    }
                 } else {
                     row[col] = null;
                 }
