@@ -135,6 +135,30 @@ describe('collectSafeDomains — send category values, never PII', () => {
         expect(d.has('customer_name')).toBe(false); // also PII, but cap alone would drop it too
     });
 
+    it('sends a capped SAMPLE for high-cardinality categories (not nothing)', () => {
+        // Regression: a 128-item menu used to be dropped entirely, so the AI had
+        // to guess literals for the column questions ask about most.
+        const bigModel: any = {
+            fields: [
+                { name: 'item_name', role: 'dimension', semanticType: 'category', physicalType: 'string', defaultAgg: 'none', synonyms: [], valueDescriptors: [], distinctCount: 128, hasNulls: false, displayLabel: 'item_name', timeGrainSupport: [] },
+                { name: 'customer_name', role: 'dimension', semanticType: 'category', physicalType: 'string', defaultAgg: 'none', synonyms: [], valueDescriptors: [], distinctCount: 200, hasNulls: false, displayLabel: 'customer_name', timeGrainSupport: [] },
+            ],
+            compositeMetrics: [], derivedMetrics: [], datasetName: 'data', rowCount: 200, grain: 'order',
+        };
+        const bigRows = Array.from({ length: 200 }, (_, i) => ({ item_name: `Item ${i % 128}`, customer_name: `Person ${i}` }));
+        const d = collectSafeDomains(bigRows, bigModel);
+        const dom = d.get('item_name')!;
+        expect(dom).toBeDefined();
+        expect(dom.values.length).toBe(50);   // capped sample
+        expect(dom.total).toBe(128);          // true distinct count reported
+        // Person names stay excluded even though they're "category" typed.
+        expect(d.has('customer_name')).toBe(false);
+        // The schema must flag the list as incomplete so the model doesn't assume it's exhaustive.
+        const s = serializeSemanticModelSchema(bigModel, 'data', d);
+        expect(s).toMatch(/SAMPLE of 50 of 128 values/);
+        expect(s).toMatch(/NOT complete/);
+    });
+
     it('NEVER sends sensitive categoricals (health / demographics / financial)', () => {
         const cat = (name: string): any => ({
             name, role: 'dimension', semanticType: 'category', physicalType: 'string',
@@ -142,8 +166,10 @@ describe('collectSafeDomains — send category values, never PII', () => {
             hasNulls: false, displayLabel: name, timeGrainSupport: [],
         });
         const sensitiveModel: any = {
+            // rowCount well above the distinct counts, so these read as real
+            // categories rather than near-unique/identifier-like columns.
             fields: [cat('diagnosis'), cat('medication_name'), cat('ethnicity'), cat('religion'), cat('gender'), cat('salary_band'), cat('menu_category')],
-            compositeMetrics: [], derivedMetrics: [], datasetName: 'data', rowCount: 4, grain: 'row',
+            compositeMetrics: [], derivedMetrics: [], datasetName: 'data', rowCount: 100, grain: 'row',
         };
         const sensitiveRows = [{ diagnosis: 'Diabetes', medication_name: 'Metformin', ethnicity: 'Asian', religion: 'Hindu', gender: 'Female', salary_band: '50-60k', menu_category: 'Coffee' }];
         const d = collectSafeDomains(sensitiveRows, sensitiveModel);
