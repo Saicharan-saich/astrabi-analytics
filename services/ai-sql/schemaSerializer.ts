@@ -121,7 +121,6 @@ export function collectSafeDomains(
     model: SemanticModel,
     opts?: { maxCardinality?: number; maxSample?: number },
 ): Map<string, { values: string[]; total: number }> {
-    const maxCardinality = opts?.maxCardinality ?? 50;
     const maxSample = opts?.maxSample ?? 50;
     const out = new Map<string, { values: string[]; total: number }>();
     if (!rows || rows.length === 0) return out;
@@ -133,12 +132,13 @@ export function collectSafeDomains(
         && f.semanticType !== 'date'
         && ALLOWED.includes(f.semanticType)
         && !isSensitiveColumn(f)
-        && (f.distinctCount === undefined || f.distinctCount <= maxCardinality));
+        // Skip near-unique columns — those are effectively identifiers / free
+        // text, not categories, and a sample of them helps nobody.
+        && !(model.rowCount > 0 && f.distinctCount >= model.rowCount * 0.9));
 
     for (const f of fields) {
         const seen = new Set<string>();
         const values: string[] = [];
-        let truncated = false;
         for (const row of rows) {
             const raw = row[f.name];
             if (raw === null || raw === undefined || raw === '') continue;
@@ -146,10 +146,14 @@ export function collectSafeDomains(
             if (!val || seen.has(val)) continue;
             seen.add(val);
             if (values.length < maxSample) values.push(val);
-            else { truncated = true; }
-            if (seen.size > maxCardinality) { truncated = true; break; }
         }
-        if (values.length > 0) out.set(f.name, { values, total: truncated ? seen.size : values.length });
+        // `total` is the true distinct count; when it exceeds what we sent, the
+        // serializer marks the list as a partial SAMPLE so the model knows not to
+        // assume the list is exhaustive. High-cardinality category columns (e.g.
+        // 120 menu items) now send a capped sample instead of nothing at all —
+        // previously they were dropped entirely, so the model had to guess
+        // literals for exactly the columns questions ask about most.
+        if (values.length > 0) out.set(f.name, { values, total: seen.size });
     }
     return out;
 }
@@ -210,8 +214,12 @@ export function serializeSemanticModelSchema(
         const dom = domains?.get(f.name);
         if (dom && dom.values.length) {
             const shown = dom.values.map(v => `'${v}'`).join(', ');
-            const more = dom.total > dom.values.length ? `, …(${dom.total - dom.values.length} more)` : '';
-            notes.push(`values: [${shown}${more}] — use these EXACT values in filters`);
+            if (dom.total > dom.values.length) {
+                // Partial list — the model must not assume these are all the values.
+                notes.push(`SAMPLE of ${dom.values.length} of ${dom.total} values: [${shown}] — this list is NOT complete; copy the exact spelling/casing shown, and if the value the user asked for is not listed use a case-insensitive LIKE '%…%' match instead of =`);
+            } else {
+                notes.push(`values (complete list): [${shown}] — use these EXACT values in filters`);
+            }
         }
         lines.push(`  ${idn(f.name)}: ${notes.join('; ')}`);
     }
