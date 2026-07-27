@@ -25,22 +25,6 @@ jobs:
       - name: Unit tests
         run: npx vitest run
 
-  benchmark-gate:
-    name: Benchmark regression gate
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      # Deterministic gate: every built-in gold SQL must execute and every
-      # multi-table case must still reproduce its gold answer through the real
-      # denormalize → single-table path. Fails the build if these regress.
-      - name: Benchmark regression gate
-        run: npx vitest run __tests__/benchmarkRegression.test.ts __tests__/benchmarkCases.test.ts
-
   e2e:
     name: Smoke tests (Playwright)
     runs-on: ubuntu-latest
