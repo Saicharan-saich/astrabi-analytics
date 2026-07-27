@@ -1,4 +1,5 @@
-import { runAutomatedETL, parseCSV, parseExcel, parseExcelMultiSheet, autoJoinDatasets, buildJoinStrategy } from '../services/analysisEngine';
+import { runAutomatedETL, parseCSV, parseExcel, parseExcelMultiSheet, autoJoinDatasets } from '../services/analysisEngine';
+import { discoverRelationships, detectCandidateKeys } from '../services/ai-sql/relationshipDiscovery';
 import type { ColumnInfo, JoinEdge } from '../services/analysisEngine';
 
 // We need to define the listener
@@ -25,55 +26,65 @@ self.onmessage = async (e: MessageEvent) => {
                     const sheetNames = Object.keys(sheets);
 
                     if (sheetNames.length > 1) {
-                        // Multiple sheets detected → treat each as a table
-                        // Build column info from actual data for join detection
-                        const tableColumns: Record<string, ColumnInfo[]> = {};
+                        // Multiple sheets → each is a table. Keys and relationships
+                        // are inferred from the VALUES, not from column names: a
+                        // workbook carries no foreign keys, and "both sheets have
+                        // an id column" is not evidence of a relationship.
+                        const discoveryTables = sheetNames
+                            .filter(n => (sheets[n] || []).length > 0)
+                            .map(n => ({ name: n, rows: sheets[n] }));
+
+                        const { relationships, rejected } = discoverRelationships(discoveryTables);
+
                         const sourceTables: any[] = [];
-
-                        for (const name of sheetNames) {
-                            const rows = sheets[name];
-                            if (rows.length === 0) continue;
-
+                        for (const { name, rows } of discoveryTables) {
+                            const keyInfo = new Map(detectCandidateKeys({ name, rows }).map(k => [k.column, k]));
                             const cols = Object.keys(rows[0]);
-                            const colInfos: ColumnInfo[] = cols.map(c => {
-                                // Infer data type from first non-null value
-                                const sampleVal = rows.find(r => r[c] !== null && r[c] !== undefined && r[c] !== '')?.[c];
-                                let dataType = 'varchar';
-                                if (typeof sampleVal === 'number') dataType = 'numeric';
-                                else if (sampleVal instanceof Date) dataType = 'datetime';
-                                else if (typeof sampleVal === 'string') {
-                                    if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(sampleVal)) dataType = 'datetime';
-                                    else if (!isNaN(Number(sampleVal)) && sampleVal.trim() !== '') dataType = 'numeric';
-                                }
-
-                                const isId = c.toLowerCase().endsWith('id') || c.toLowerCase().endsWith('_id') || c.toLowerCase() === 'id';
-                                return {
-                                    name: c,
-                                    dataType,
-                                    isNullable: rows.some(r => r[c] === null || r[c] === undefined || r[c] === ''),
-                                    isPK: isId && cols.indexOf(c) === 0,
-                                    maxLength: 0
-                                };
-                            });
-
-                            tableColumns[name] = colInfos;
                             sourceTables.push({
                                 name,
                                 rows: rows.length,
-                                columns: colInfos.map(c => ({
-                                    name: c.name,
-                                    dataType: c.dataType,
-                                    isPK: c.isPK,
-                                    isNullable: c.isNullable
-                                }))
+                                columns: cols.map(c => {
+                                    const sampleVal = rows.find(r => r[c] !== null && r[c] !== undefined && r[c] !== '')?.[c];
+                                    let dataType = 'varchar';
+                                    if (typeof sampleVal === 'number') dataType = 'numeric';
+                                    else if (sampleVal instanceof Date) dataType = 'datetime';
+                                    else if (typeof sampleVal === 'string') {
+                                        if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}/.test(sampleVal)) dataType = 'datetime';
+                                        else if (!isNaN(Number(sampleVal)) && sampleVal.trim() !== '') dataType = 'numeric';
+                                    }
+                                    return {
+                                        name: c,
+                                        dataType,
+                                        // A real key: unique and non-null in the data.
+                                        isPK: !!keyInfo.get(c)?.isKey,
+                                        isNullable: (keyInfo.get(c)?.nullCount || 0) > 0,
+                                    };
+                                }),
                             });
                         }
 
-                        // Build join strategy (no FK metadata for Excel, only name matching)
-                        const detectedEdges = buildJoinStrategy(sheetNames, tableColumns, []);
+                        // Only evidence-backed relationships become join edges.
+                        const detectedEdges = relationships.map(r => ({
+                            leftTable: r.fromTable,
+                            leftColumn: r.fromColumn,
+                            rightTable: r.toTable,
+                            rightColumn: r.toColumn,
+                            type: 'fk' as const,
+                        }));
 
-                        // Auto-join all sheets into master table
-                        const { mergedRows, joinLogs } = autoJoinDatasets(sheets, detectedEdges);
+                        const { mergedRows, joinLogs } = autoJoinDatasets(sheets, detectedEdges as any);
+
+                        // Record what was joined and — just as important — what was
+                        // deliberately not, so a surprising result is explainable.
+                        for (const r of relationships) {
+                            joinLogs.push(`JOIN ${r.fromTable}.${r.fromColumn} → ${r.toTable}.${r.toColumn} (${Math.round(r.coverage * 100)}% of values matched, ${r.cardinality}, confidence ${(r.confidence * 100).toFixed(0)}%)`);
+                        }
+                        for (const r of rejected.slice(0, 10)) {
+                            joinLogs.push(`NOT JOINED ${r.fromTable}.${r.fromColumn} → ${r.toTable}.${r.toColumn} — ${r.reason}`);
+                        }
+                        if (relationships.length === 0) {
+                            joinLogs.push('No reliable relationships found between sheets — they were stacked rather than joined, to avoid inventing a link.');
+                        }
 
                         data = mergedRows;
 
