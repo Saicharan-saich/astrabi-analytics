@@ -46,6 +46,7 @@ import { verifyPlan } from './planVerification';
 import { detectAntiJoin, buildAntiJoinSQL } from './antiJoin';
 import { generateDirectSQL } from './directSqlEngine';
 import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerializer';
+import { describeSchemaForLLM, discoverJoinContext } from './joinEngine';
 import { getPrivacyMode } from './privacyMode';
 
 /**
@@ -162,7 +163,17 @@ export async function runAISQLPipeline(
                 ? collectSafeDomains(dataset.rows, semanticModel)
                 : undefined;
             console.log(`[Pipeline] Direct-SQL privacy mode: ${privacyMode}${domains ? ` (${domains.size} category domain(s) shared)` : ' (metadata only)'}`);
-            const richSchema = serializeSemanticModelSchema(semanticModel, 'data', domains);
+            let richSchema = serializeSemanticModelSchema(semanticModel, 'data', domains);
+
+            // When the source had several tables, describe those too. The
+            // flattened "data" table can double-count after a one-to-many join,
+            // so the model is told it may query the real tables and join them
+            // itself, at the correct grain.
+            const joinCtx = discoverJoinContext(dataset.relatedTables, dataset.sourceSchema);
+            if (joinCtx) {
+                richSchema += `\n\nThis dataset came from several tables. "data" is a pre-joined, flattened copy — convenient, but a one-to-many join means totals over it can be double-counted. The original tables are also available and are the safer choice when a question spans more than one of them:\n\n${joinCtx.description}`;
+                console.log(`[Pipeline] Multi-table schema shared: ${joinCtx.tableNames.join(', ')}`);
+            }
             const ds = await generateDirectSQL(question, richSchema);
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
@@ -541,7 +552,7 @@ export async function runAISQLPipeline(
     reportProgress('Executing SQL...', 7);
     console.log('[Pipeline] Step 5: Executing SQL...');
     _s1 = performance.now();
-    let execResult = await executeSQLViaDuckDB(dataset.rows, currentSQL, semanticModel.timeContext);
+    let execResult = await executeSQLViaDuckDB(dataset.rows, currentSQL, semanticModel.timeContext, dataset.relatedTables);
 
     // ─── Step 5b: Repair Loop (max 2 attempts) ──────────────────
     while (execResult.error && repairAttempts < 2) {
@@ -551,7 +562,7 @@ export async function runAISQLPipeline(
             const repaired = await repairSQL(currentSQL, execResult.error, plan, semanticModel, repairAttempts);
             currentSQL = repaired.sql;
             sqlResult.explanation = repaired.explanation;
-            execResult = await executeSQLViaDuckDB(dataset.rows, currentSQL, semanticModel.timeContext);
+            execResult = await executeSQLViaDuckDB(dataset.rows, currentSQL, semanticModel.timeContext, dataset.relatedTables);
         } catch (repairErr: any) {
             console.warn(`[Pipeline] Repair attempt ${repairAttempts} failed:`, repairErr.message);
             break;
@@ -568,7 +579,7 @@ export async function runAISQLPipeline(
         try {
             const usingQbBackup = !!deterministicSQL;
             const fallbackSQL = deterministicSQL ?? correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
-            const fallbackExec = await executeSQLViaDuckDB(dataset.rows, fallbackSQL, semanticModel.timeContext);
+            const fallbackExec = await executeSQLViaDuckDB(dataset.rows, fallbackSQL, semanticModel.timeContext, dataset.relatedTables);
             if (!fallbackExec.error) {
                 currentSQL = fallbackSQL;
                 execResult = fallbackExec;

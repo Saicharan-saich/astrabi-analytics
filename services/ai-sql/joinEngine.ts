@@ -22,6 +22,8 @@
  * to check the join it chose.
  */
 
+import { discoverRelationships, detectCandidateKeys } from './relationshipDiscovery';
+
 export interface JoinColumn {
     name: string;
     /** Primary key (or otherwise unique) — the key fact for fan-out detection. */
@@ -311,6 +313,60 @@ export function describeSchemaForLLM(tables: JoinTable[], links: JoinLink[]): st
     lines.push('');
     lines.push('Join only the tables the question needs. Aggregating after a one-to-many join double-counts, so aggregate at the right grain (a subquery first if necessary).');
     return lines.join('\n');
+}
+
+/**
+ * Build the multi-table context for a dataset, ready to hand to the model.
+ *
+ * Relationships come from the connector's declared foreign keys when we have
+ * them; otherwise they are inferred from the values (relationshipDiscovery).
+ * Returns null for a single-table dataset, so callers can skip this entirely.
+ */
+export function discoverJoinContext(
+    relatedTables?: { name: string; rows: Record<string, any>[] }[],
+    sourceSchema?: {
+        tables?: { name: string; rows: number; columns: { name: string; isPK: boolean }[] }[];
+        joinEdges?: { leftTable: string; rightTable: string; leftColumn: string; rightColumn: string; type?: string }[];
+    },
+): { description: string; tableNames: string[]; tables: JoinTable[]; links: JoinLink[] } | null {
+    if (!relatedTables || relatedTables.length < 2) return null;
+
+    let tables: JoinTable[];
+    let links: JoinLink[];
+
+    if (sourceSchema?.tables?.length && sourceSchema.joinEdges?.length) {
+        // Declared schema — trust it.
+        ({ tables, links } = fromSourceSchema({
+            tables: sourceSchema.tables,
+            joinEdges: sourceSchema.joinEdges,
+        }));
+    } else {
+        // No declared relationships: infer keys and links from the data itself.
+        const discovery = discoverRelationships(relatedTables);
+        tables = relatedTables.map(t => {
+            const keys = new Map(
+                detectCandidateKeys({ name: t.name, rows: t.rows }).map(k => [k.column, k]),
+            );
+            return {
+                name: t.name,
+                rowCount: t.rows.length,
+                columns: Object.keys(t.rows[0] || {}).map(c => ({ name: c, isPK: !!keys.get(c)?.isKey })),
+            };
+        });
+        links = discovery.relationships.map(r => ({
+            leftTable: r.fromTable, leftColumn: r.fromColumn,
+            rightTable: r.toTable, rightColumn: r.toColumn,
+            type: 'fk' as const,
+        }));
+    }
+
+    if (!tables.length) return null;
+    return {
+        description: describeSchemaForLLM(tables, links),
+        tableNames: tables.map(t => t.name),
+        tables,
+        links,
+    };
 }
 
 /**

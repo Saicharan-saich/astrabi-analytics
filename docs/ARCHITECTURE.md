@@ -481,7 +481,7 @@ Documented honestly — these are real, current, and worth knowing before you re
 | **No measured accuracy figure** | There is currently **no published accuracy number** for the product. The Spider/BIRD benchmark harness that could produce one was removed as unnecessary scope; measuring accuracy would mean rebuilding an evaluation path. |
 | **The local intent classifier is approximate** | It classifies by keyword patterns, so unusual phrasings still fall through to `ambiguous` and it can pick the wrong metric. The SQL is unaffected (the AI writes that) — the cost is a less apt chart or summary sentence. The two faults that actively broke answers are fixed: a comparison only counts as a *time* comparison when flanked by time words (so "Coffee vs Tea" stays a category breakdown), no zero-width date range is ever injected, and plain counting questions ("how many customers…") are now recognised. |
 | **AI SQL is probabilistic** | Complex multi-step questions (basket analysis, cohort analysis, nested percentages) will sometimes be wrong. Always check the SQL for consequential decisions. |
-| **Single-table bias** | Most testing has been on single-table datasets. Multi-table joins are less proven. |
+| **Multi-table joins are inferred, not declared** | A workbook carries no foreign keys, so relationships are inferred from the values — measured containment against a real key, with coincidental overlaps of numbered sequences rejected. Strong, but inference over a sample can never be *proven* correct, so each relationship carries a coverage and confidence figure and the join log records what was deliberately not joined. |
 
 ### 8.2 Scale and performance
 
