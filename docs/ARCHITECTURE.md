@@ -479,7 +479,7 @@ Documented honestly — these are real, current, and worth knowing before you re
 | Gap | Detail |
 |---|---|
 | **No measured accuracy figure** | There is currently **no published accuracy number** for the product. The Spider/BIRD benchmark harness that could produce one was removed as unnecessary scope; measuring accuracy would mean rebuilding an evaluation path. |
-| **The local intent classifier is weak** | On harder questions it often reports `intent=ambiguous, confidence=0.00` and guesses the wrong metric. The SQL is unaffected (the AI writes that), but **chart choice and the summary sentence** can be off as a result. |
+| **The local intent classifier is weak** | On harder questions it reports `intent=ambiguous, confidence=0.00` and guesses the wrong metric. The SQL is unaffected (the AI writes that), but **chart choice and the summary sentence** can still be off. The worst symptom — enforcement rules rewriting a good question — has been fixed: a comparison is now only treated as a *time* comparison when it is flanked by time words, so "Coffee vs Tea" stays a category breakdown, and no zero-width date range is ever injected. |
 | **AI SQL is probabilistic** | Complex multi-step questions (basket analysis, cohort analysis, nested percentages) will sometimes be wrong. Always check the SQL for consequential decisions. |
 | **Single-table bias** | Most testing has been on single-table datasets. Multi-table joins are less proven. |
 
@@ -487,7 +487,7 @@ Documented honestly — these are real, current, and worth knowing before you re
 
 | Gap | Detail |
 |---|---|
-| **Browser memory limits** | Data is held in the browser. Very large files (millions of rows) may be slow or fail. |
+| **Browser memory limits** | Data is held in the browser, so the ceiling is this tab's memory. Very large files may be slow. You are now warned at upload above ~500k rows, and more firmly above 1m, rather than discovering it as an unexplained slowdown. |
 | **AI latency** | An AI question takes several seconds — bounded by the AI provider, not the app. |
 | **Daily AI quota** | AI SQL is capped per user per day. The Question Builder is unlimited and free. |
 
@@ -495,17 +495,16 @@ Documented honestly — these are real, current, and worth knowing before you re
 
 | Gap | Detail |
 |---|---|
-| **PII detection is heuristic** | Based on column-name patterns. Oddly-named sensitive columns may not be caught. |
+| **PII detection is heuristic** | Two layers now: column-name patterns, plus a value-level check that inspects the sample itself for emails, phone numbers, postcodes, card numbers, SSNs and IBANs — so a column called `ref` or `notes` holding personal data is still excluded. Strong, but still a heuristic rather than a guarantee. |
 | **Third-party AI provider** | Metadata leaves the browser in both modes. Retention terms need confirming. |
-| **Date ranges are real data** | The schema includes your dataset's actual min/max dates. |
+| **Date ranges are real data** | The dataset's actual min/max dates are now only sent in *Better answers* mode, alongside the other value domains. In Private mode the model is told a finite range exists but not what it is. |
 
 ### 8.4 Product
 
 | Gap | Detail |
 |---|---|
 | **No local-model option yet** | Running the AI entirely on-device (Ollama / WebGPU) is designed but not built. It would remove the third-party dependency entirely. |
-| **Documentation drift** | Older files in `docs/` predate recent architecture changes. **This document is the current source of truth.** |
-| **Stale architecture diagrams** | `architecture.mmd` at the repo root describes an earlier design. |
+| **Documentation drift** | Older files in `docs/` predate some architecture changes and now carry a banner pointing here. **This document is the current source of truth.** |
 | **No conversation/follow-ups** | Deliberate — each question is standalone. If you want to refine, restate the full question. |
 
 ---

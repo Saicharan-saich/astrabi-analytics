@@ -451,6 +451,19 @@ function App() {
         setProcessing(false);
         worker.terminate();
 
+        // Everything is queried in the browser, so the practical ceiling is this
+        // tab's memory rather than a server's. Warn once at upload instead of
+        // letting a very large file surface as an unexplained slowdown later.
+        {
+          const n = newDataset.rows.length;
+          const LARGE = 500_000, VERY_LARGE = 1_000_000;
+          if (n >= VERY_LARGE) {
+            showToast(`⚠️ ${n.toLocaleString()} rows — that's beyond what a browser tab handles comfortably. Expect slow queries, and consider filtering or aggregating the file first.`);
+          } else if (n >= LARGE) {
+            showToast(`ℹ️ ${n.toLocaleString()} rows loaded. Everything runs locally, so very large files can feel slow — filtering the file first will speed things up.`);
+          }
+        }
+
         // Track upload activity
         if (currentUser) {
           trackActivity({

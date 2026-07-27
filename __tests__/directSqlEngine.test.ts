@@ -3,7 +3,7 @@
  * gate, and SQL extraction). The LLM call itself runs live in the browser.
  */
 import { describe, it, expect } from 'vitest';
-import { serializeSchema, serializeSemanticModelSchema, collectSafeDomains, isSensitiveColumn } from '../services/ai-sql/schemaSerializer';
+import { serializeSchema, serializeSemanticModelSchema, collectSafeDomains, isSensitiveColumn, looksLikePersonalData } from '../services/ai-sql/schemaSerializer';
 import { validateReadOnlySQL } from '../services/ai-sql/sqlSafety';
 import { extractSQL } from '../services/ai-sql/directSqlEngine';
 import { buildValueCatalog, groundSqlLiterals } from '../services/ai-sql/valueGrounding';
@@ -63,10 +63,14 @@ describe('serializeSemanticModelSchema — rich metadata, never rows', () => {
         expect(s).toMatch(/unit_price:.*do NOT SUM/i);
         expect(s).toMatch(/total_price:.*additive/i);
     });
-    it('surfaces the date column and its range for time filters', () => {
-        const s = serializeSemanticModelSchema(model);
-        expect(s).toMatch(/order_date:.*date/i);
-        expect(s).toContain('2025-01-01..2025-06-30');
+    it('surfaces the date column, and its range once values are shared', () => {
+        // Strict mode names the column but withholds the real dates.
+        const strict = serializeSemanticModelSchema(model);
+        expect(strict).toMatch(/order_date:.*date/i);
+        expect(strict).not.toContain('2025-01-01');
+        // Enhanced mode (domains present) may include the actual range.
+        const enhanced = serializeSemanticModelSchema(model, 'data', new Map());
+        expect(enhanced).toContain('2025-01-01..2025-06-30');
     });
     it('marks date columns as TEXT and tells the model to CAST before date functions', () => {
         // DuckDB loads CSV dates as VARCHAR, so DATE_TRUNC(order_date) fails unless cast.
@@ -178,6 +182,58 @@ describe('collectSafeDomains — send category values, never PII', () => {
         }
         // A benign category is still shared.
         expect(d.has('menu_category')).toBe(true);
+    });
+});
+
+describe('looksLikePersonalData — value-level PII backstop', () => {
+    it('catches PII in innocuously named columns', () => {
+        expect(looksLikePersonalData(['jane@example.com', 'amir@x.co.uk'])).toBe(true);
+        expect(looksLikePersonalData(['+44 7700 900111', '+44 7700 900222', '020 7946 0018'])).toBe(true);
+        expect(looksLikePersonalData(['SW1A 1AA', 'EC1A 1BB', 'M1 1AE'])).toBe(true);
+        expect(looksLikePersonalData(['4111 1111 1111 1111'])).toBe(true);
+        expect(looksLikePersonalData(['123-45-6789'])).toBe(true);
+    });
+
+    it('leaves genuine category values alone', () => {
+        expect(looksLikePersonalData(['Coffee', 'Tea', 'Food'])).toBe(false);
+        expect(looksLikePersonalData(['London', 'Manchester', 'Leeds'])).toBe(false);
+        expect(looksLikePersonalData(['Gold', 'Silver', 'Bronze'])).toBe(false);
+        expect(looksLikePersonalData(['Card', 'Cash'])).toBe(false);
+        expect(looksLikePersonalData([])).toBe(false);
+    });
+
+    it('a single odd-looking value does not condemn a real category column', () => {
+        // Ambiguous shapes need a majority before the column is dropped.
+        expect(looksLikePersonalData(['Coffee', 'Tea', 'Food', '020 7946 0018'])).toBe(false);
+    });
+
+    it('a column named "ref" holding emails is excluded from the shared domains', () => {
+        const model: any = {
+            fields: [{ name: 'ref', role: 'dimension', semanticType: 'category', physicalType: 'string', defaultAgg: 'none', synonyms: [], valueDescriptors: [], distinctCount: 3, hasNulls: false, displayLabel: 'ref', timeGrainSupport: [] }],
+            compositeMetrics: [], derivedMetrics: [], datasetName: 'data', rowCount: 60, grain: 'row',
+        };
+        const rows = [{ ref: 'jane@example.com' }, { ref: 'john@example.com' }, { ref: 'amir@example.com' }];
+        expect(collectSafeDomains(rows, model).has('ref')).toBe(false);
+    });
+});
+
+describe('date range disclosure follows privacy mode', () => {
+    const model: any = {
+        fields: [{ name: 'order_date', role: 'dimension', semanticType: 'date', physicalType: 'date', defaultAgg: 'none', synonyms: [], valueDescriptors: [], distinctCount: 30, hasNulls: false, displayLabel: 'order_date', timeGrainSupport: [] }],
+        compositeMetrics: [], derivedMetrics: [], datasetName: 'data', rowCount: 550, grain: 'order',
+        timeContext: { anchorDate: '2025-06-30', minDate: '2025-06-01', maxDate: '2025-06-30', primaryDateColumn: 'order_date' },
+    };
+
+    it('strict mode does not reveal the real min/max dates', () => {
+        const s = serializeSemanticModelSchema(model, 'data');   // no domains = strict
+        expect(s).not.toContain('2025-06-01');
+        expect(s).not.toContain('2025-06-30');
+        expect(s).toMatch(/finite range/i);
+    });
+
+    it('enhanced mode includes the range, since values are already shared', () => {
+        const s = serializeSemanticModelSchema(model, 'data', new Map());
+        expect(s).toContain('2025-06-01..2025-06-30');
     });
 });
 

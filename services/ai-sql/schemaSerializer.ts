@@ -106,6 +106,41 @@ export function isSensitiveColumn(f: SemanticField): boolean {
 }
 
 /**
+ * Value-level PII detection — the backstop for columns whose NAME gives nothing
+ * away. Returns true when a sample looks like personal data, in which case the
+ * column's values must never be shared.
+ *
+ * Deliberately conservative on both sides: a single stray match shouldn't
+ * condemn a legitimate category column, so a share of the sample must match
+ * (or any match at all for the unambiguous formats — email, card, SSN, IBAN).
+ */
+export function looksLikePersonalData(values: string[]): boolean {
+    if (!values.length) return false;
+
+    // Formats that are never legitimate category labels — one is enough.
+    const UNAMBIGUOUS = [
+        /[\w.+-]+@[\w-]+\.[\w.]{2,}/,                    // email
+        /\b(?:\d[ -]?){13,19}\b/,                        // card number
+        /\b\d{3}-\d{2}-\d{4}\b/,                         // US SSN
+        /\b[A-Z]{2}\d{2}[A-Z0-9]{10,30}\b/,              // IBAN
+    ];
+    if (values.some(v => UNAMBIGUOUS.some(re => re.test(v)))) return true;
+
+    // Shapes that need a majority to avoid false positives on real categories.
+    const AMBIGUOUS = [
+        /^\+?\d[\d\s().-]{7,}$/,                                        // phone
+        /^[A-Z]{1,2}\d[A-Z\d]?\s*\d[A-Z]{2}$/i,                         // UK postcode
+        /^\d{1,5}\s+\w+(\s+\w+)*\s+(street|st|road|rd|avenue|ave|lane|ln|drive|dr|close|way|court|ct)\b/i, // street address
+        /^\d{4}-\d{2}-\d{2}(T|$)/,                                      // date of birth-ish
+    ];
+    for (const re of AMBIGUOUS) {
+        const hits = values.filter(v => re.test(v)).length;
+        if (hits / values.length >= 0.6) return true;
+    }
+    return false;
+}
+
+/**
  * Collect the distinct value DOMAINS of low-cardinality, non-sensitive
  * categorical dimensions (categories, geography, status, payment method, item /
  * product names, booleans, ordinals). These are the domains an LLM needs to
@@ -147,6 +182,12 @@ export function collectSafeDomains(
             seen.add(val);
             if (values.length < maxSample) values.push(val);
         }
+
+        // Second line of defence: inspect the VALUES, not just the column name.
+        // A column called "ref", "notes" or "contact_1" holding emails or phone
+        // numbers passes every name-based check, so drop any column whose sample
+        // actually looks like personal data.
+        if (looksLikePersonalData(values)) continue;
         // `total` is the true distinct count; when it exceeds what we sent, the
         // serializer marks the list as a partial SAMPLE so the model knows not to
         // assume the list is exhaustive. High-cardinality category columns (e.g.
@@ -202,9 +243,15 @@ export function serializeSemanticModelSchema(
                 notes.push('identifier');
             }
             if (isDateField(f)) {
-                notes.push("date stored as TEXT (e.g. '2025-06-30') — you MUST wrap it in CAST(col AS DATE) before DATE_TRUNC / EXTRACT / strftime or any date comparison");
+                notes.push("date stored as TEXT in YYYY-MM-DD form — you MUST wrap it in CAST(col AS DATE) before DATE_TRUNC / EXTRACT / strftime or any date comparison");
+                // The dataset's real min/max dates are actual data values, so they
+                // are only disclosed alongside the other value domains. In strict
+                // mode (no domains) the model is told the range exists but not
+                // what it is — enough to write a filter, nothing revealed.
                 if (model.timeContext?.primaryDateColumn === f.name && model.timeContext) {
-                    notes.push(`spans ${model.timeContext.minDate}..${model.timeContext.maxDate}`);
+                    notes.push(domains
+                        ? `spans ${model.timeContext.minDate}..${model.timeContext.maxDate}`
+                        : 'primary date column — the dataset covers a finite range; filter relative to it rather than assuming today');
                 }
             } else if (!rowIdentifier) {
                 notes.push(`${f.distinctCount} distinct value(s)`);
