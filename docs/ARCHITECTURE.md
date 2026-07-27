@@ -353,7 +353,6 @@ Each engine below has: **what it does** in plain English, a **worked example**, 
 | **Data Masker** (`dataMasker.ts`) | Detects and anonymises PII |
 | **Auto Dashboard Builder** (`autoDashboardBuilder.ts`) | Assembles a starter dashboard |
 | **Metric Registry** (`metricRegistry.ts`) | ~300 curated business metric templates across industries |
-| **Benchmark Lab** (`services/benchmark/`) | Runs Spider/BIRD text-to-SQL benchmarks to measure accuracy |
 
 ---
 
@@ -479,7 +478,7 @@ Documented honestly — these are real, current, and worth knowing before you re
 
 | Gap | Detail |
 |---|---|
-| **No published accuracy numbers** | The Benchmark Lab (Spider/BIRD) exists but has not been run as a formal, published evaluation. There is currently **no measured accuracy figure** for the product. |
+| **No measured accuracy figure** | There is currently **no published accuracy number** for the product. The Spider/BIRD benchmark harness that could produce one was removed as unnecessary scope; measuring accuracy would mean rebuilding an evaluation path. |
 | **The local intent classifier is weak** | On harder questions it often reports `intent=ambiguous, confidence=0.00` and guesses the wrong metric. The SQL is unaffected (the AI writes that), but **chart choice and the summary sentence** can be off as a result. |
 | **AI SQL is probabilistic** | Complex multi-step questions (basket analysis, cohort analysis, nested percentages) will sometimes be wrong. Always check the SQL for consequential decisions. |
 | **Single-table bias** | Most testing has been on single-table datasets. Multi-table joins are less proven. |

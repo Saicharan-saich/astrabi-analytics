@@ -1,7 +1,7 @@
 /**
  * Engine improvement: infer revenue = unit price × quantity.
  *
- * Reproduces the benchmark failure "total revenue for each product category",
+ * Reproduces the reported failure "total revenue for each product category",
  * where a dataset has `price` + `units_sold` but NO explicit revenue column, and
  * the engine wrongly answered SUM(price) instead of SUM(price * units_sold).
  * The governed `computed_revenue` composite + the deterministic keyword override
