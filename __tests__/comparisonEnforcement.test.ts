@@ -11,6 +11,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { isTimePeriodComparison } from '../services/ai-sql/intentPlanner';
+import { classifyQuestion } from '../services/ai-sql/questionClassifier';
 
 describe('isTimePeriodComparison — category vs period', () => {
     it('does NOT fire on comparisons between data values', () => {
@@ -48,5 +49,28 @@ describe('isTimePeriodComparison — category vs period', () => {
     it('ignores questions with no comparison language at all', () => {
         expect(isTimePeriodComparison('What were total sales?')).toBe(false);
         expect(isTimePeriodComparison('Top 5 products by revenue')).toBe(false);
+    });
+});
+
+describe('classifyQuestion — the classifier agrees with the enforcement layer', () => {
+    it('does not label a category comparison as a period comparison', () => {
+        // Previously scored 0.80 "comparison", which drove the whole bad plan.
+        expect(classifyQuestion('Sales for Coffee vs Tea, side by side.').intent).not.toBe('comparison');
+        expect(classifyQuestion('Compare card vs cash payments').intent).not.toBe('comparison');
+    });
+
+    it('still labels a genuine period comparison', () => {
+        expect(classifyQuestion('How did sales this month compare to last month?').intent).toBe('comparison');
+    });
+
+    it('recognises a plain counting question instead of giving up', () => {
+        // Used to report intent=ambiguous, confidence=0.00.
+        const r = classifyQuestion('How many customers ordered more than once?');
+        expect(r.intent).toBe('single_metric');
+        expect(r.confidence).toBeGreaterThan(0);
+    });
+
+    it('leaves a grouped count as a breakdown, not a scalar', () => {
+        expect(classifyQuestion('How many orders per category?').intent).toBe('breakdown');
     });
 });
