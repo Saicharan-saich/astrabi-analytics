@@ -16,7 +16,11 @@
 import { SemanticModel, SemanticField, AnalysisPlan, AnalysisIntent } from './types';
 import { serializeSemanticModel } from './semanticLayer';
 import { fetchWithFallback, PRIMARY_MODEL, PLANNER_MODEL, API_KEY } from './modelConfig';
-import { classifyQuestion, ClassificationResult } from './questionClassifier';
+import { classifyQuestion, ClassificationResult, isTimePeriodComparison } from './questionClassifier';
+
+// Re-exported: the classifier owns this so both it and the enforcement below
+// judge "vs" the same way.
+export { isTimePeriodComparison };
 import { mapFieldsFromQuestion } from './fieldMapper';
 import { validatePlan } from './planValidator';
 
@@ -937,45 +941,6 @@ function enforceTimeContext(plan: AnalysisPlan, question: string, model: Semanti
  * or breakdown, forcefully upgrade the intent to total_comparison or
  * trend_comparison and inject the comparison metadata.
  */
-/** Tokens that mark a TIME period rather than a data value. */
-const TIME_TOKEN = /^(today|yesterday|tomorrow|now|ytd|mtd|qtd|yoy|mom|qoq|wow|last|previous|prior|this|current|next|year|years|quarter|quarters|month|months|week|weeks|day|days|period|periods|q[1-4]|h[12]|fy\d*|\d{4}|jan\w*|feb\w*|mar\w*|apr\w*|may|jun\w*|jul\w*|aug\w*|sep\w*|oct\w*|nov\w*|dec\w*)$/i;
-
-/**
- * True only when a comparison keyword is flanked by TIME words.
- *
- * "this month vs last month" compares two periods. "Coffee vs Tea" and
- * "card vs cash" compare two CATEGORY VALUES — a filtered breakdown, not a
- * period comparison. A bare /\bvs\b/ test cannot tell them apart and used to
- * rewrite category questions into period comparisons, injecting a spurious
- * date filter and the wrong chart.
- */
-export function isTimePeriodComparison(question: string): boolean {
-    const q = question.toLowerCase();
-    const KEYWORD = /\b(?:vs\b\.?|versus|compared?\s+(?:to|with|against))/g;
-    const STOPWORD = /^(the|a|an|our|my|its|their|of|in|for)$/;
-    const clean = (w: string) => w.replace(/[^a-z0-9]/gi, '');
-
-    // Only the operand IMMEDIATELY either side of the keyword counts (skipping
-    // articles). In "Coffee vs Tea last month" the operands are Coffee and Tea —
-    // "last month" merely scopes the question, so this is still a category
-    // comparison. Looking further out would wrongly catch that trailing period.
-    const firstMeaningful = (words: string[]): string | null => {
-        for (const w of words) {
-            const c = clean(w);
-            if (c && !STOPWORD.test(c)) return c;
-        }
-        return null;
-    };
-
-    let m: RegExpExecArray | null;
-    while ((m = KEYWORD.exec(q)) !== null) {
-        const before = firstMeaningful(q.slice(0, m.index).trim().split(/\s+/).filter(Boolean).reverse());
-        const after = firstMeaningful(q.slice(m.index + m[0].length).trim().split(/\s+/).filter(Boolean));
-        if ((before && TIME_TOKEN.test(before)) || (after && TIME_TOKEN.test(after))) return true;
-    }
-    return false;
-}
-
 function enforceComparison(plan: AnalysisPlan, question: string, model: SemanticModel): void {
     const q = question.toLowerCase();
 

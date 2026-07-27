@@ -7,6 +7,45 @@
  * Priority order: exact pattern match → keyword combination → fallback to LLM
  */
 
+/** Tokens that mark a TIME period rather than a data value. */
+const TIME_TOKEN = /^(today|yesterday|tomorrow|now|ytd|mtd|qtd|yoy|mom|qoq|wow|last|previous|prior|this|current|next|year|years|quarter|quarters|month|months|week|weeks|day|days|period|periods|q[1-4]|h[12]|fy\d*|\d{4}|jan\w*|feb\w*|mar\w*|apr\w*|may|jun\w*|jul\w*|aug\w*|sep\w*|oct\w*|nov\w*|dec\w*)$/i;
+
+/**
+ * True only when a comparison keyword is flanked by TIME words.
+ *
+ * "this month vs last month" compares two periods. "Coffee vs Tea" and
+ * "card vs cash" compare two CATEGORY VALUES — a filtered breakdown, not a
+ * period comparison. A bare /\bvs\b/ test cannot tell them apart and used to
+ * rewrite category questions into period comparisons, injecting a spurious
+ * date filter and the wrong chart.
+ */
+export function isTimePeriodComparison(question: string): boolean {
+    const q = question.toLowerCase();
+    const KEYWORD = /\b(?:vs\b\.?|versus|compared?\s+(?:to|with|against))/g;
+    const STOPWORD = /^(the|a|an|our|my|its|their|of|in|for)$/;
+    const clean = (w: string) => w.replace(/[^a-z0-9]/gi, '');
+
+    // Only the operand IMMEDIATELY either side of the keyword counts (skipping
+    // articles). In "Coffee vs Tea last month" the operands are Coffee and Tea —
+    // "last month" merely scopes the question, so this is still a category
+    // comparison. Looking further out would wrongly catch that trailing period.
+    const firstMeaningful = (words: string[]): string | null => {
+        for (const w of words) {
+            const c = clean(w);
+            if (c && !STOPWORD.test(c)) return c;
+        }
+        return null;
+    };
+
+    let m: RegExpExecArray | null;
+    while ((m = KEYWORD.exec(q)) !== null) {
+        const before = firstMeaningful(q.slice(0, m.index).trim().split(/\s+/).filter(Boolean).reverse());
+        const after = firstMeaningful(q.slice(m.index + m[0].length).trim().split(/\s+/).filter(Boolean));
+        if ((before && TIME_TOKEN.test(before)) || (after && TIME_TOKEN.test(after))) return true;
+    }
+    return false;
+}
+
 export type ClassifiedIntent =
     | 'trend' | 'ranking' | 'breakdown' | 'share_of_total'
     | 'single_metric' | 'comparison' | 'distribution' | 'correlation'
@@ -48,7 +87,10 @@ const SHARE_PATTERNS = [
 ];
 
 const COMPARISON_PATTERNS = [
-    /\b(compare|vs\.?|versus|compared\s+to|against)\b/i,
+    // NOTE: no bare compare/vs/versus pattern — it cannot distinguish
+    // "Coffee vs Tea" (two category VALUES) from "this month vs last month"
+    // (two PERIODS). isTimePeriodComparison() makes that call instead and is
+    // added to the comparison score below.
     /\b(yoy|mom|qoq|wow)\b/i,
     /\b(year|month|quarter|week)\s*(-|\s+)over\s*(-|\s+)(year|month|quarter|week)\b/i,
     /\b(same\s+(day|week|month|quarter)\s+last\s+(week|month|quarter|year))\b/i,
@@ -60,6 +102,10 @@ const SINGLE_METRIC_PATTERNS = [
     /\b(what\s+is|what's|how\s+much|how\s+many|total|overall)\s+(the\s+)?(total|average|avg|sum|count|number\s+of)\b/i,
     /\b(total|overall|grand\s+total)\s+(sales|revenue|profit|orders?|quantity|amount)\b/i,
     /\b(count|number)\s+of\s+(all\s+)?\w+\b/i,
+    // "How many customers ordered more than once?" is a scalar count. Excluded
+    // when the question groups ("how many orders per category"), so the
+    // breakdown intent keeps those.
+    /\bhow\s+many\b(?!.*\b(by|per|for\s+each|across)\b)/i,
 ];
 
 const BREAKDOWN_PATTERNS = [
@@ -170,7 +216,7 @@ export function classifyQuestion(question: string): ClassificationResult {
         { intent: 'trend', score: matchPatterns(q, TREND_PATTERNS), reason: 'time-series keywords detected' },
         { intent: 'ranking', score: matchPatterns(q, RANKING_PATTERNS), reason: 'ranking/superlative keywords detected' },
         { intent: 'share_of_total', score: matchPatterns(q, SHARE_PATTERNS), reason: 'percentage/share keywords detected' },
-        { intent: 'comparison', score: matchPatterns(q, COMPARISON_PATTERNS), reason: 'comparison/growth keywords detected' },
+        { intent: 'comparison', score: matchPatterns(q, COMPARISON_PATTERNS) + (isTimePeriodComparison(q) ? 1 : 0), reason: 'comparison/growth keywords detected' },
         { intent: 'single_metric', score: matchPatterns(q, SINGLE_METRIC_PATTERNS), reason: 'scalar/total keywords detected' },
         { intent: 'breakdown', score: matchPatterns(q, BREAKDOWN_PATTERNS), reason: 'dimension breakdown keywords detected' },
         { intent: 'distribution', score: matchPatterns(q, DISTRIBUTION_PATTERNS), reason: 'distribution/histogram keywords detected' },
