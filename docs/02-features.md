@@ -1,5 +1,10 @@
 # ASTRABI Analytics — Application Documentation
 
+> **⚠️ This document is partially out of date.**
+> For the current architecture and how each engine works, see
+> **[ARCHITECTURE.md](./ARCHITECTURE.md)** — that is the source of truth.
+> This file is kept for the background detail it still covers accurately.
+
 ## Part 2: Features & Services
 
 ---
@@ -8,7 +13,7 @@
 
 ### 6.1 CSV/Excel Upload
 
-**Component**: [UploadView.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/UploadView.tsx)
+**Component**: [UploadView.tsx](components/UploadView.tsx)
 
 - Drag-and-drop or file picker for `.csv`, `.xlsx`, `.xls`
 - Excel parsing via `xlsx` library
@@ -17,7 +22,7 @@
 
 ### 6.2 Live Database Connections
 
-**Component**: [ConnectorsPanel.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/ConnectorsPanel.tsx)
+**Component**: [ConnectorsPanel.tsx](components/ConnectorsPanel.tsx)
 
 Supports two database engines:
 
@@ -39,9 +44,9 @@ Supports two database engines:
 
 ## 7. ETL Pipeline
 
-**Service**: [etlPipeline.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/etlPipeline.ts) (65KB)
-**Worker**: [etl.worker.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/workers/etl.worker.ts)
-**UI**: [ETLView.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/ETLView.tsx)
+**Service**: [etlPipeline.ts](services/etlPipeline.ts) (65KB)
+**Worker**: [etl.worker.ts](workers/etl.worker.ts)
+**UI**: [ETLView.tsx](components/ETLView.tsx)
 
 Runs in a Web Worker to avoid blocking the UI. Steps:
 
@@ -62,7 +67,7 @@ Every step produces an `ETLLog` entry with before/after row counts and sample tr
 
 ## 8. AI Semantic Profiling
 
-**Service**: [aiSemanticProfiler.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/aiSemanticProfiler.ts) (24KB)
+**Service**: [aiSemanticProfiler.ts](services/aiSemanticProfiler.ts) (24KB)
 
 After ETL, AI analyzes column metadata (names, types, samples) to produce a `DatasetDomainProfile`:
 
@@ -97,7 +102,7 @@ interface ColumnSemantic {
 
 ## 9. Semantic Model
 
-**Service**: [semanticModel.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/semanticModel.ts) (23KB)
+**Service**: [semanticModel.ts](services/semanticModel.ts) (23KB)
 
 The deterministic semantic model is the **single source of truth** for all analysis features. It converts the AI profile into structured metadata:
 
@@ -112,7 +117,7 @@ Every feature reads from this model: Question Builder, AI SQL, Dashboard, Alerts
 
 ## 10. Question Builder
 
-**Components**: [QuestionBuilder.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/QuestionBuilder.tsx) (70KB), [BuilderView.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/BuilderView.tsx) (63KB)
+**Components**: [QuestionBuilder.tsx](components/QuestionBuilder.tsx) (70KB), [BuilderView.tsx](components/BuilderView.tsx) (63KB)
 
 Point-and-click analytics tool:
 
@@ -132,7 +137,7 @@ Produces a **QueryPlan** that is compiled to SQL and executed via DuckDB-WASM.
 
 ## 11. Query Plan Engine
 
-**Service**: [queryPlan/](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/queryPlan/)
+**Service**: [queryPlan/](services/queryPlan/)
 
 Deterministic SQL generation pipeline:
 
@@ -152,8 +157,8 @@ User Selection → buildQueryPlan() → validatePlan() → sqlCompiler() → Duc
 
 ## 12. Natural Language Queries (NLQ)
 
-**Service**: [nlqParser.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/nlqParser.ts) (70KB)
-**Component**: [NLQView.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/NLQView.tsx) (62KB)
+**Service**: [nlqParser.ts](services/nlqParser.ts) (70KB)
+**Component**: [NLQView.tsx](components/NLQView.tsx) (62KB)
 
 Parses English questions into QueryPlans **without AI calls** using a deterministic NLP engine:
 
@@ -166,16 +171,16 @@ Parses English questions into QueryPlans **without AI calls** using a determinis
 | Aggregation | "total" → SUM |
 | Build Plan | QueryPlan with SUM(sales) GROUP BY region WHERE date IN Q-1 |
 
-**Dictionary**: [nlqDictionary.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/nlqDictionary.ts) — Synonym mappings for common business terms.
+**Dictionary**: [nlqDictionary.ts](services/nlqDictionary.ts) — Synonym mappings for common business terms.
 
 ---
 
 ## 13. AI SQL Chat
 
-**Service**: [ai-sql/pipeline.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/ai-sql/pipeline.ts) (46KB)
-**Component**: [AISQLChat.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/AISQLChat.tsx) (19KB)
+**Service**: [ai-sql/pipeline.ts](services/ai-sql/pipeline.ts) (46KB)
+**Component**: [AISQLChat.tsx](components/AISQLChat.tsx) (19KB)
 
-Conversational AI that generates SQL from natural language:
+Generates SQL from a natural-language question. Each question is standalone — no conversation history is kept or sent:
 
 ```
 User Question → Intent Classification → Semantic Context → SQL Generation → Validation → Execution → Chart Recommendation → Explanation
@@ -200,7 +205,7 @@ User Question → Intent Classification → Semantic Context → SQL Generation 
 
 ## 14. Analysis Engine
 
-**Service**: [analysisEngine.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/analysisEngine.ts) (88KB)
+**Service**: [analysisEngine.ts](services/analysisEngine.ts) (88KB)
 
 Core computation engine that powers all analysis features:
 
@@ -217,7 +222,7 @@ Core computation engine that powers all analysis features:
 
 ## 15. DuckDB-WASM Engine
 
-**Service**: [duckdbEngine.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/duckdbEngine.ts) (21KB)
+**Service**: [duckdbEngine.ts](services/duckdbEngine.ts) (21KB)
 
 In-browser SQL database for local dataset analysis:
 
@@ -231,7 +236,7 @@ In-browser SQL database for local dataset analysis:
 
 ## 16. Chart Visualization
 
-**Component**: [ChartVisualization.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/ChartVisualization.tsx) (94KB)
+**Component**: [ChartVisualization.tsx](components/ChartVisualization.tsx) (94KB)
 
 Supports 12+ chart types via Chart.js:
 
@@ -255,7 +260,7 @@ Chart type is either user-selected or AI-recommended based on data shape.
 
 ## 17. Dashboard
 
-**Component**: [Dashboard.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/Dashboard.tsx) (76KB)
+**Component**: [Dashboard.tsx](components/Dashboard.tsx) (76KB)
 
 Interactive dashboard with:
 
@@ -271,8 +276,8 @@ Interactive dashboard with:
 
 ## 18. Metric Dictionary
 
-**Service**: [metricTemplates/](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/metricTemplates/)
-**Component**: [DerivedColumnsView.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/DerivedColumnsView.tsx)
+**Service**: [metricTemplates/](services/metricTemplates/)
+**Component**: [DerivedColumnsView.tsx](components/DerivedColumnsView.tsx)
 
 300 curated business metric templates across 6 industries:
 
@@ -297,8 +302,8 @@ Interactive dashboard with:
 
 ## 19. Smart Questions
 
-**Service**: [questionGenerator.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/questionGenerator.ts), [domainQuestions.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/domainQuestions.ts) (86KB)
-**Component**: [SmartQuestionsView.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/SmartQuestionsView.tsx)
+**Service**: [questionGenerator.ts](services/questionGenerator.ts), [domainQuestions.ts](services/domainQuestions.ts) (86KB)
+**Component**: [SmartQuestionsView.tsx](components/SmartQuestionsView.tsx)
 
 AI generates contextual analysis suggestions based on dataset structure:
 
@@ -311,8 +316,8 @@ AI generates contextual analysis suggestions based on dataset structure:
 
 ## 20. Alerts & Monitoring
 
-**Service**: [alertEngine.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/alertEngine.ts) (14KB)
-**Components**: [AlertsView.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/AlertsView.tsx), [AlertRuleWizard.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/AlertRuleWizard.tsx)
+**Service**: [alertEngine.ts](services/alertEngine.ts) (14KB)
+**Components**: [AlertsView.tsx](components/AlertsView.tsx), [AlertRuleWizard.tsx](components/AlertRuleWizard.tsx)
 
 Business rule monitoring system:
 
@@ -329,7 +334,7 @@ Alerts evaluate using the same QueryPlan pipeline as the Question Builder, ensur
 
 ### Column-Level Privacy
 
-**Service**: [dataMasker.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/dataMasker.ts) (12KB)
+**Service**: [dataMasker.ts](services/dataMasker.ts) (12KB)
 
 - Auto-detects PII patterns (email, phone, SSN, credit card)
 - Applies reversible masking or irreversible anonymization
@@ -352,7 +357,7 @@ Alerts evaluate using the same QueryPlan pipeline as the Question Builder, ensur
 
 ## 22. SQL Workbench
 
-**Component**: [Workbench.tsx](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/components/Workbench.tsx) (115KB)
+**Component**: [Workbench.tsx](components/Workbench.tsx) (115KB)
 
 Advanced SQL editor for power users:
 
@@ -366,7 +371,7 @@ Advanced SQL editor for power users:
 
 ## 23. Backend API
 
-**Server**: [backend/server.js](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/backend/server.js) (49KB)
+**Server**: [backend/server.js](backend/server.js) (49KB)
 
 ### Key Endpoints
 
@@ -395,7 +400,7 @@ Key state:
 - Sidebar navigation state
 - Alert configurations
 
-Persistence via IndexedDB ([datasetDB.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/datasetDB.ts), [indexedDBStorage.ts](file:///c:/Users/chepu/OneDrive/Desktop/Youtube/ASTRABI/astrabi-analytics/services/indexedDBStorage.ts))
+Persistence via IndexedDB ([datasetDB.ts](services/datasetDB.ts), [indexedDBStorage.ts](services/indexedDBStorage.ts))
 
 ---
 
