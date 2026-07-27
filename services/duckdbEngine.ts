@@ -618,10 +618,41 @@ function generateDimDateRows(minDate: string, maxDate: string): any[] {
  * The data is loaded into a table called "data" (matching AI prompt conventions).
  * If timeContext is provided, a dim_date table is also registered.
  */
+/**
+ * Load the original, UNJOINED source tables under their own names, alongside the
+ * flattened "data" table.
+ *
+ * A multi-sheet workbook is joined into one wide table for the rest of the app,
+ * but that join can duplicate fact rows — so a SUM over it is inflated. Loading
+ * the real tables lets AI SQL join only what a question needs, at the right
+ * grain. "data" is never overwritten, so nothing that depends on it changes.
+ */
+export async function loadRelatedTables(tables: { name: string; rows: any[] }[]): Promise<string[]> {
+    await initDuckDB();
+    if (!conn) throw new Error('DuckDB connection not available');
+
+    const loaded: string[] = [];
+    for (const t of tables) {
+        const safe = sanitizeTableName(t.name);
+        if (safe === 'data' || safe === 'dim_date') continue;   // never shadow these
+        if (!t.rows?.length) continue;
+        if (loadedTables.has(safe)) { loaded.push(safe); continue; }
+        try {
+            await loadDataIntoTable(t.name, t.rows);
+            loaded.push(safe);
+        } catch (err) {
+            logger.warn('[DuckDB]', `Could not load related table "${t.name}":`, err);
+        }
+    }
+    if (loaded.length) logger.info('[DuckDB]', `Related tables available: ${loaded.join(', ')}`);
+    return loaded;
+}
+
 export async function executeSQLViaDuckDB(
     rows: any[],
     sql: string,
-    timeContext?: { minDate: string; maxDate: string; primaryDateColumn?: string }
+    timeContext?: { minDate: string; maxDate: string; primaryDateColumn?: string },
+    relatedTables?: { name: string; rows: any[] }[]
 ): Promise<SQLExecutionResult> {
     const attemptExecution = async (): Promise<SQLExecutionResult> => {
         // 1. Initialize DuckDB
@@ -644,6 +675,12 @@ export async function executeSQLViaDuckDB(
                     logger.info('[DuckDB]', `dim_date loaded: ${dimRows.length} rows (${timeContext.minDate} → ${timeContext.maxDate})`);
                 }
             }
+        }
+
+        // 3b. Load the unjoined source tables, when the dataset has them, so a
+        // query can reference them by name instead of the flattened join.
+        if (relatedTables?.length) {
+            await loadRelatedTables(relatedTables);
         }
 
         // 4. Normalize SQL for DuckDB

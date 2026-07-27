@@ -10,6 +10,8 @@ self.onmessage = async (e: MessageEvent) => {
         if (type === 'PROCESS_FILE') {
             let data: any[] = [];
             let builtSourceSchema: any = null;
+            // The original tables, kept unjoined, when the source had several.
+            let relatedTables: { name: string; rows: any[] }[] | null = null;
 
             // If rawData is already provided (e.g. from Connector or Sample), use it
             if (rawData) {
@@ -73,6 +75,7 @@ self.onmessage = async (e: MessageEvent) => {
                         }));
 
                         const { mergedRows, joinLogs } = autoJoinDatasets(sheets, detectedEdges as any);
+                        relatedTables = discoveryTables.map(t => ({ name: t.name, rows: t.rows }));
 
                         // Record what was joined and — just as important — what was
                         // deliberately not, so a surprising result is explainable.
@@ -144,6 +147,12 @@ self.onmessage = async (e: MessageEvent) => {
 
             // Attach raw (pre-ETL) rows for Raw vs Clean comparison
             (result as any).rawRows = rowsToProcess;
+
+            // Carry the unjoined tables through, so AI SQL can query them
+            // directly rather than the flattened join.
+            if (relatedTables && relatedTables.length > 1) {
+                (result as any).relatedTables = relatedTables;
+            }
 
             self.postMessage({ type: 'SUCCESS', result });
         }

@@ -119,6 +119,13 @@ export interface Dataset {
   timeContext?: TimeContext;
   dimDate?: DimDateRow[];
   sourceSchema?: SourceSchema;
+  /**
+   * The original tables, kept UNJOINED, when the source had more than one
+   * (multi-sheet workbook or a multi-table connector). `rows` above is the
+   * flattened join that the rest of the app works from; these let AI SQL query
+   * the real tables instead, so a one-to-many join cannot inflate a total.
+   */
+  relatedTables?: RelatedTable[];
   domainProfile?: DatasetDomainProfile;  // AI-generated domain context
   // ── Connection Mode ──
   connectionMode?: ConnectionMode;       // 'import' (default/snapshot) or 'live' (real-time)
@@ -136,6 +143,12 @@ export interface RefreshSchedule {
   intervalMs: number;              // Refresh interval in ms (min 300000 = 5min)
   lastRefreshAt?: number;          // Unix timestamp of last successful refresh
   consecutiveFailures?: number;    // Pause scheduler after 3 consecutive failures
+}
+
+/** One of the original, unjoined source tables. */
+export interface RelatedTable {
+  name: string;
+  rows: Record<string, any>[];
 }
 
 export interface SourceSchema {
