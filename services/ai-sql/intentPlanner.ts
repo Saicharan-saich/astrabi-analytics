@@ -937,27 +937,65 @@ function enforceTimeContext(plan: AnalysisPlan, question: string, model: Semanti
  * or breakdown, forcefully upgrade the intent to total_comparison or
  * trend_comparison and inject the comparison metadata.
  */
+/** Tokens that mark a TIME period rather than a data value. */
+const TIME_TOKEN = /^(today|yesterday|tomorrow|now|ytd|mtd|qtd|yoy|mom|qoq|wow|last|previous|prior|this|current|next|year|years|quarter|quarters|month|months|week|weeks|day|days|period|periods|q[1-4]|h[12]|fy\d*|\d{4}|jan\w*|feb\w*|mar\w*|apr\w*|may|jun\w*|jul\w*|aug\w*|sep\w*|oct\w*|nov\w*|dec\w*)$/i;
+
+/**
+ * True only when a comparison keyword is flanked by TIME words.
+ *
+ * "this month vs last month" compares two periods. "Coffee vs Tea" and
+ * "card vs cash" compare two CATEGORY VALUES — a filtered breakdown, not a
+ * period comparison. A bare /\bvs\b/ test cannot tell them apart and used to
+ * rewrite category questions into period comparisons, injecting a spurious
+ * date filter and the wrong chart.
+ */
+export function isTimePeriodComparison(question: string): boolean {
+    const q = question.toLowerCase();
+    const KEYWORD = /\b(?:vs\b\.?|versus|compared?\s+(?:to|with|against))/g;
+    const STOPWORD = /^(the|a|an|our|my|its|their|of|in|for)$/;
+    const clean = (w: string) => w.replace(/[^a-z0-9]/gi, '');
+
+    // Only the operand IMMEDIATELY either side of the keyword counts (skipping
+    // articles). In "Coffee vs Tea last month" the operands are Coffee and Tea —
+    // "last month" merely scopes the question, so this is still a category
+    // comparison. Looking further out would wrongly catch that trailing period.
+    const firstMeaningful = (words: string[]): string | null => {
+        for (const w of words) {
+            const c = clean(w);
+            if (c && !STOPWORD.test(c)) return c;
+        }
+        return null;
+    };
+
+    let m: RegExpExecArray | null;
+    while ((m = KEYWORD.exec(q)) !== null) {
+        const before = firstMeaningful(q.slice(0, m.index).trim().split(/\s+/).filter(Boolean).reverse());
+        const after = firstMeaningful(q.slice(m.index + m[0].length).trim().split(/\s+/).filter(Boolean));
+        if ((before && TIME_TOKEN.test(before)) || (after && TIME_TOKEN.test(after))) return true;
+    }
+    return false;
+}
+
 function enforceComparison(plan: AnalysisPlan, question: string, model: SemanticModel): void {
     const q = question.toLowerCase();
 
     // Already a comparison or growth_analysis — nothing to do
     if (plan.comparison || plan.intent === 'total_comparison' || plan.intent === 'trend_comparison' || plan.intent === 'growth_analysis') return;
 
-    // Detect comparison patterns in the question
+    // Explicit period-comparison phrasings. Note there is deliberately NO bare
+    // "vs" / "versus" / "compare" pattern here — those need time context, which
+    // isTimePeriodComparison() checks.
     const comparisonPatterns = [
-        /\bcompare\s+(to|with|against)\b/,
-        /\bvs\.?\b/,
-        /\bversus\b/,
-        /\bcompared\s+to\b/,
-        /\bhow\s+do(?:es)?\s+.+\s+compare\b/,
         /\bsame\s+(day|week|month|quarter)\s+last\s+(week|month|quarter|year)\b/,
         /\bthis\s+(week|month|quarter|year)\s+vs\b/,
         /\blast\s+(week|month|quarter|year)\s+vs\b/,
-        /\bthis\s+(\w+)\s+(vs\.?|versus|compared\s+to|against)\s+(last|previous)/,
-        /\b(today|yesterday)\s+(vs\.?|versus|compared\s+to|against)\b/,
+        /\bthis\s+(\w+)\s+(vs\b\.?|versus|compared\s+to|against)\s+(last|previous)/,
+        /\b(today|yesterday)\s+(vs\b\.?|versus|compared\s+to|against)\b/,
+        /\b(yoy|mom|qoq|wow)\b/,
+        /\byear[- ]over[- ]year|month[- ]over[- ]month|quarter[- ]over[- ]quarter\b/,
     ];
 
-    const isComparison = comparisonPatterns.some(p => p.test(q));
+    const isComparison = comparisonPatterns.some(p => p.test(q)) || isTimePeriodComparison(question);
     if (!isComparison) return;
 
     console.log('[Intent Planner] DETECTED comparison language in question — upgrading intent');
@@ -1001,9 +1039,11 @@ function enforceComparison(plan: AnalysisPlan, question: string, model: Semantic
             : new Date();
         const todayStr = anchorDate.toISOString().split('T')[0];
 
-        // Detect if the user mentioned "this week", "this month" for the current period range
-        let startStr = todayStr;
-        let endStr = todayStr;
+        // Only derive a range from a phrase the user actually used. Previously
+        // this defaulted to today..today, so a question with no time phrase got
+        // a ZERO-WIDTH filter that silently collapsed the answer to one day.
+        let startStr: string | null = null;
+        let endStr: string | null = null;
 
         if (/this\s+week|same\s+day\s+last\s+week/i.test(q)) {
             const day = anchorDate.getDay();
@@ -1015,17 +1055,20 @@ function enforceComparison(plan: AnalysisPlan, question: string, model: Semantic
             const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
             startStr = start.toISOString().split('T')[0];
             endStr = todayStr;
-        } else if (/today/i.test(q)) {
+        } else if (/this\s+year/i.test(q)) {
+            startStr = `${anchorDate.getFullYear()}-01-01`;
+            endStr = todayStr;
+        } else if (/\b(today|yesterday)\b/i.test(q)) {
             startStr = todayStr;
             endStr = todayStr;
         }
 
-        plan.filters.push({
-            field: dateField,
-            op: 'between',
-            value: [startStr, endStr]
-        });
-        console.log(`[Intent Planner] Injected comparison date filter: ${dateField} BETWEEN ${startStr} AND ${endStr}`);
+        if (startStr && endStr) {
+            plan.filters.push({ field: dateField, op: 'between', value: [startStr, endStr] });
+            console.log(`[Intent Planner] Injected comparison date filter: ${dateField} BETWEEN ${startStr} AND ${endStr}`);
+        } else {
+            console.log('[Intent Planner] Comparison detected but no period phrase — leaving the range open rather than inventing one.');
+        }
     }
 
     console.log(`[Intent Planner] Comparison enforced: intent=${plan.intent}, type=${compType}, mode=${mode}`);

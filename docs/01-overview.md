@@ -1,5 +1,10 @@
 # ASTRABI Analytics — Application Documentation
 
+> **⚠️ This document is partially out of date.**
+> For the current architecture and how each engine works, see
+> **[ARCHITECTURE.md](./ARCHITECTURE.md)** — that is the source of truth.
+> This file is kept for the background detail it still covers accurately.
+
 ## Part 1: Overview & Architecture
 
 ---
@@ -23,7 +28,7 @@
 | **AI Semantic Profiling** | Auto-detects domain, column types, and business meaning |
 | **Question Builder** | Point-and-click analysis with aggregations, filters, time grains |
 | **Natural Language Queries** | Ask questions in plain English ("What were total sales last quarter?") |
-| **AI SQL Chat** | Conversational AI that generates, executes, and explains SQL |
+| **AI SQL** | Ask in plain English; the AI writes and runs the SQL. Each question is answered standalone — there is no conversation memory. |
 | **Interactive Dashboard** | Pin visuals, drag-resize layouts, apply global filters |
 | **Metric Dictionary** | 300 curated business metric templates across 6 industries |
 | **Smart Questions** | AI-generated analysis suggestions based on dataset context |
