@@ -479,7 +479,7 @@ Documented honestly — these are real, current, and worth knowing before you re
 | Gap | Detail |
 |---|---|
 | **No measured accuracy figure** | There is currently **no published accuracy number** for the product. The Spider/BIRD benchmark harness that could produce one was removed as unnecessary scope; measuring accuracy would mean rebuilding an evaluation path. |
-| **The local intent classifier is weak** | On harder questions it reports `intent=ambiguous, confidence=0.00` and guesses the wrong metric. The SQL is unaffected (the AI writes that), but **chart choice and the summary sentence** can still be off. The worst symptom — enforcement rules rewriting a good question — has been fixed: a comparison is now only treated as a *time* comparison when it is flanked by time words, so "Coffee vs Tea" stays a category breakdown, and no zero-width date range is ever injected. |
+| **The local intent classifier is approximate** | It classifies by keyword patterns, so unusual phrasings still fall through to `ambiguous` and it can pick the wrong metric. The SQL is unaffected (the AI writes that) — the cost is a less apt chart or summary sentence. The two faults that actively broke answers are fixed: a comparison only counts as a *time* comparison when flanked by time words (so "Coffee vs Tea" stays a category breakdown), no zero-width date range is ever injected, and plain counting questions ("how many customers…") are now recognised. |
 | **AI SQL is probabilistic** | Complex multi-step questions (basket analysis, cohort analysis, nested percentages) will sometimes be wrong. Always check the SQL for consequential decisions. |
 | **Single-table bias** | Most testing has been on single-table datasets. Multi-table joins are less proven. |
 
