@@ -408,7 +408,7 @@ function App() {
     worker.onmessage = (event) => {
       const { type, result, error } = event.data;
       if (type === 'SUCCESS') {
-        const { rows, logs, columns, timeContext, sourceSchema, dimDate, rawRows } = result;
+        const { rows, logs, columns, timeContext, sourceSchema, dimDate, rawRows, relatedTables } = result;
 
         // ── APPLY REMEMBERED CORRECTIONS ──
         // If a user previously corrected the role of a column with this name,
@@ -433,6 +433,9 @@ function App() {
           timeContext,
           dimDate,
           sourceSchema,
+          // The unjoined source tables, when the upload had several. AI SQL can
+          // query these directly instead of the flattened join.
+          relatedTables,
           version: 1,
           createdAt: Date.now(),
         };

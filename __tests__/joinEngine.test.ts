@@ -14,6 +14,7 @@ import {
     planJoinsForColumns,
     fromSourceSchema,
     describeSchemaForLLM,
+    discoverJoinContext,
     type JoinTable,
     type JoinLink,
 } from '../services/ai-sql/joinEngine';
@@ -221,5 +222,69 @@ describe('fromSourceSchema + describeSchemaForLLM', () => {
     it('marks an inferred relationship as needing verification', () => {
         const { tables, links } = fromSourceSchema({ ...source, joinEdges: [{ ...source.joinEdges[0], type: 'name_match' }] });
         expect(describeSchemaForLLM(tables, links)).toMatch(/inferred from column names/i);
+    });
+});
+
+describe('discoverJoinContext — what the model is actually told', () => {
+    const relatedTables = [
+        {
+            name: 'customers', rows: [
+                { customer_id: 1, customer_name: 'Jane', city: 'London' },
+                { customer_id: 2, customer_name: 'John', city: 'Leeds' },
+                { customer_id: 3, customer_name: 'Amir', city: 'London' },
+            ],
+        },
+        {
+            name: 'orders', rows: [
+                { order_id: 10, customer_id: 1, total: 20 },
+                { order_id: 11, customer_id: 2, total: 35 },
+                { order_id: 12, customer_id: 1, total: 12 },
+                { order_id: 13, customer_id: 3, total: 44 },
+            ],
+        },
+    ];
+
+    it('returns nothing for a single-table dataset', () => {
+        expect(discoverJoinContext(undefined, undefined)).toBeNull();
+        expect(discoverJoinContext([relatedTables[0]], undefined)).toBeNull();
+    });
+
+    it('infers keys and relationships when no schema was declared', () => {
+        const ctx = discoverJoinContext(relatedTables, undefined)!;
+        expect(ctx.tableNames.sort()).toEqual(['customers', 'orders']);
+        // customer_id is a key on customers but NOT on orders, where it repeats.
+        const customers = ctx.tables.find(t => t.name === 'customers')!;
+        const orders = ctx.tables.find(t => t.name === 'orders')!;
+        expect(customers.columns.find(c => c.name === 'customer_id')!.isPK).toBe(true);
+        expect(orders.columns.find(c => c.name === 'customer_id')!.isPK).toBe(false);
+        // And the relationship points from the fact to the dimension.
+        expect(ctx.links).toHaveLength(1);
+        expect(ctx.links[0]).toMatchObject({ leftTable: 'orders', rightTable: 'customers' });
+    });
+
+    it('prefers a declared schema over inference when one exists', () => {
+        const ctx = discoverJoinContext(relatedTables, {
+            tables: [
+                { name: 'customers', rows: 3, columns: [{ name: 'customer_id', isPK: true }] },
+                { name: 'orders', rows: 4, columns: [{ name: 'order_id', isPK: true }, { name: 'customer_id', isPK: false }] },
+            ],
+            joinEdges: [{ leftTable: 'orders', rightTable: 'customers', leftColumn: 'customer_id', rightColumn: 'customer_id', type: 'fk' }],
+        })!;
+        expect(ctx.links[0].type).toBe('fk');
+        expect(ctx.description).toContain('orders.customer_id = customers.customer_id');
+    });
+
+    it('the description names the tables and warns about double-counting', () => {
+        const ctx = discoverJoinContext(relatedTables, undefined)!;
+        expect(ctx.description).toContain('Table orders');
+        expect(ctx.description).toContain('Table customers');
+        expect(ctx.description).toMatch(/double-count/i);
+    });
+
+    it('a plan built from the inferred context has no fan-out', () => {
+        const ctx = discoverJoinContext(relatedTables, undefined)!;
+        const plan = planJoins(['orders', 'customers'], ctx.tables, ctx.links);
+        expect(plan.baseTable).toBe('orders');
+        expect(plan.fanOutWarnings).toEqual([]);
     });
 });
