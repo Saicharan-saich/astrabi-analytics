@@ -10,8 +10,16 @@ import { runETLPipeline } from '../services/etlPipeline';
 import { buildSemanticModel } from '../services/ai-sql/semanticLayer';
 import { correctSQL } from '../services/ai-sql/sqlCorrectionEngine';
 import { normalizeSQLForDuckDB } from '../services/duckdbEngine';
-import { compareResults } from '../services/benchmark/resultCompare';
 import type { AnalysisPlan } from '../services/ai-sql/types';
+
+/** Order-insensitive row-set equality — enough to check a result matches gold. */
+function sameRows(a: Record<string, any>[], b: Record<string, any>[]): boolean {
+    const norm = (rows: Record<string, any>[]) => rows
+        .map(r => JSON.stringify(Object.keys(r).sort().map(k => [k, r[k]])))
+        .sort();
+    const [x, y] = [norm(a), norm(b)];
+    return x.length === y.length && x.every((v, i) => v === y[i]);
+}
 
 const PRODUCTS = [
     { product_id: 1, product_name: 'Widget', category: 'Hardware', price: 25, units_sold: 400 },
@@ -50,7 +58,7 @@ describe('row-level above-average attribute → projection (matches gold)', () =
 
         const got = duck.query(gen(plan));
         const gold = duck.query('SELECT product_name FROM product WHERE price > (SELECT AVG(price) FROM product)');
-        expect(compareResults(gold, got).match).toBe(true);
+        expect(sameRows(gold, got)).toBe(true);
         // Sanity: Gadget (60) and Cloud Plan (120) are above the mean price (50.6).
         expect(got.map((r: any) => r.product_name).sort()).toEqual(['Cloud Plan', 'Gadget']);
     });
@@ -63,7 +71,7 @@ describe('row-level above-average attribute → projection (matches gold)', () =
         });
         const got = duck.query(gen(plan));
         const gold = duck.query('SELECT product_name FROM product WHERE price < (SELECT AVG(price) FROM product)');
-        expect(compareResults(gold, got).match).toBe(true);
+        expect(sameRows(gold, got)).toBe(true);
     });
 });
 
