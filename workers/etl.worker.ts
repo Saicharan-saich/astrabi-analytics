@@ -1,5 +1,6 @@
 import { runAutomatedETL, parseCSV, parseExcel, parseExcelMultiSheet, autoJoinDatasets } from '../services/analysisEngine';
 import { discoverRelationships, detectCandidateKeys } from '../services/ai-sql/relationshipDiscovery';
+import { selectFlattenableLinks } from '../services/ai-sql/joinEngine';
 import type { ColumnInfo, JoinEdge } from '../services/analysisEngine';
 
 // We need to define the listener
@@ -66,13 +67,28 @@ self.onmessage = async (e: MessageEvent) => {
                         }
 
                         // Only evidence-backed relationships become join edges.
-                        const detectedEdges = relationships.map(r => ({
+                        const allEdges = relationships.map(r => ({
                             leftTable: r.fromTable,
                             leftColumn: r.fromColumn,
                             rightTable: r.toTable,
                             rightColumn: r.toColumn,
                             type: 'fk' as const,
                         }));
+
+                        // Flattening is only lossless when every step is
+                        // many-to-one. A table with several rows per fact row
+                        // would either inflate totals or have rows silently
+                        // dropped, so it is left out of the flat table and stays
+                        // available on its own for AI SQL to join properly.
+                        const flatten = selectFlattenableLinks(
+                            sourceTables.map(t => ({
+                                name: t.name,
+                                rowCount: t.rows,
+                                columns: t.columns.map((c: any) => ({ name: c.name, isPK: c.isPK })),
+                            })),
+                            allEdges,
+                        );
+                        const detectedEdges = flatten.safe;
 
                         const { mergedRows, joinLogs } = autoJoinDatasets(sheets, detectedEdges as any);
                         relatedTables = discoveryTables.map(t => ({ name: t.name, rows: t.rows }));
@@ -84,6 +100,9 @@ self.onmessage = async (e: MessageEvent) => {
                         }
                         for (const r of rejected.slice(0, 10)) {
                             joinLogs.push(`NOT JOINED ${r.fromTable}.${r.fromColumn} → ${r.toTable}.${r.toColumn} — ${r.reason}`);
+                        }
+                        for (const ex of flatten.excluded) {
+                            joinLogs.push(`KEPT SEPARATE ${ex.table} — ${ex.reason}. It is still queryable on its own, so totals stay correct.`);
                         }
                         if (relationships.length === 0) {
                             joinLogs.push('No reliable relationships found between sheets — they were stacked rather than joined, to avoid inventing a link.');
