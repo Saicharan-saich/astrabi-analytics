@@ -107,11 +107,18 @@ export async function buildAutoDashboard(
             numberFormat: insight.kpiFormat === 'currency_usd' ? 'currency_usd'
                 : insight.kpiFormat === 'percent' ? 'percent' : 'auto',
             fontSize: 'md',
-            headerSize: 'md',
+            headerSize: 'xl',
             headerBold: true,
             showLabels: true,
             showDataLabels: showLabels,
             dataLabelMode: showLabels ? 'primary' : 'off',
+            showAxis: true,
+            showXAxis: true,
+            showYAxis: true,
+            headerColor: '#000000',
+            axisColor: '#000000',
+            axisBold: true,
+            axisLabelSize: 'md',
             tableCalculations: [],
         };
 

@@ -298,9 +298,10 @@ function App() {
   const [visualPreviewPipeline, setVisualPreviewPipeline] = useState<any>(null);
   const [visualPreviewQuery, setVisualPreviewQuery] = useState('');
   const [visualPreviewFormatting, setVisualPreviewFormatting] = useState<any>({
-    colorMode: 'vibrant', numberFormat: 'auto', fontSize: 'md', headerSize: 'md',
-    headerBold: true, showLabels: true, showDataLabels: true, tableCalculations: [],
-    showXAxis: true, showYAxis: true,
+    colorMode: 'vibrant', numberFormat: 'auto', fontSize: 'md', headerSize: 'xl',
+    headerBold: true, headerColor: '#000000', showLabels: true, showDataLabels: true,
+    tableCalculations: [], showAxis: true, showXAxis: true, showYAxis: true,
+    axisColor: '#000000', axisBold: true, axisLabelSize: 'md',
   });
 
   // ── Data Story state ──
