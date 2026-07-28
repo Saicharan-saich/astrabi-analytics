@@ -34,13 +34,18 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
         colorMode: 'vibrant',
         numberFormat: 'auto',
         fontSize: 'md',
-        headerSize: 'md',
+        headerSize: 'xl',
         headerBold: true,
+        headerColor: '#000000',
         showLabels: true,
         showDataLabels: true,
         tableCalculations: [],
+        showAxis: true,
         showXAxis: true,
-        showYAxis: true
+        showYAxis: true,
+        axisColor: '#000000',
+        axisBold: true,
+        axisLabelSize: 'md'
     });
     const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
     const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);
