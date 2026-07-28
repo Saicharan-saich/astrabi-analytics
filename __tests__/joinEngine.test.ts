@@ -15,6 +15,7 @@ import {
     fromSourceSchema,
     describeSchemaForLLM,
     discoverJoinContext,
+    selectFlattenableLinks,
     type JoinTable,
     type JoinLink,
 } from '../services/ai-sql/joinEngine';
@@ -286,5 +287,69 @@ describe('discoverJoinContext — what the model is actually told', () => {
         const plan = planJoins(['orders', 'customers'], ctx.tables, ctx.links);
         expect(plan.baseTable).toBe('orders');
         expect(plan.fanOutWarnings).toEqual([]);
+    });
+});
+
+describe('selectFlattenableLinks — a real 8-sheet retail workbook', () => {
+    // Shape taken from a real upload. ProductSuppliers holds ~2 suppliers per
+    // product, so folding it into an OrderItems-grain table inflates revenue.
+    const T: JoinTable[] = [
+        { name: 'Departments', rowCount: 10, columns: [{ name: 'department_id', isPK: true }, { name: 'department_name', isPK: true }] },
+        { name: 'Customers', rowCount: 100, columns: [{ name: 'customer_id', isPK: true }, { name: 'customer_name', isPK: true }, { name: 'region' }, { name: 'email', isPK: true }] },
+        { name: 'Employees', rowCount: 100, columns: [{ name: 'employee_id', isPK: true }, { name: 'employee_name', isPK: true }, { name: 'department_id' }, { name: 'salary' }] },
+        { name: 'Products', rowCount: 100, columns: [{ name: 'product_id', isPK: true }, { name: 'product_name', isPK: true }, { name: 'category' }, { name: 'unit_price' }] },
+        { name: 'Orders', rowCount: 300, columns: [{ name: 'order_id', isPK: true }, { name: 'customer_id' }, { name: 'employee_id' }, { name: 'order_date' }, { name: 'status' }] },
+        { name: 'OrderItems', rowCount: 775, columns: [{ name: 'order_item_id', isPK: true }, { name: 'order_id' }, { name: 'product_id' }, { name: 'quantity' }, { name: 'unit_price' }, { name: 'line_total' }] },
+        { name: 'Suppliers', rowCount: 100, columns: [{ name: 'supplier_id', isPK: true }, { name: 'supplier_name', isPK: true }, { name: 'region' }] },
+        { name: 'ProductSuppliers', rowCount: 200, columns: [{ name: 'id', isPK: true }, { name: 'product_id' }, { name: 'supplier_id' }] },
+    ];
+    const L: JoinLink[] = [
+        { leftTable: 'Employees', leftColumn: 'department_id', rightTable: 'Departments', rightColumn: 'department_id', type: 'fk' },
+        { leftTable: 'Orders', leftColumn: 'customer_id', rightTable: 'Customers', rightColumn: 'customer_id', type: 'fk' },
+        { leftTable: 'Orders', leftColumn: 'employee_id', rightTable: 'Employees', rightColumn: 'employee_id', type: 'fk' },
+        { leftTable: 'OrderItems', leftColumn: 'order_id', rightTable: 'Orders', rightColumn: 'order_id', type: 'fk' },
+        { leftTable: 'OrderItems', leftColumn: 'product_id', rightTable: 'Products', rightColumn: 'product_id', type: 'fk' },
+        { leftTable: 'ProductSuppliers', leftColumn: 'product_id', rightTable: 'Products', rightColumn: 'product_id', type: 'fk' },
+        { leftTable: 'ProductSuppliers', leftColumn: 'supplier_id', rightTable: 'Suppliers', rightColumn: 'supplier_id', type: 'fk' },
+    ];
+
+    const sel = selectFlattenableLinks(T, L);
+
+    it('uses the line-item table as the grain', () => {
+        expect(sel.baseTable).toBe('OrderItems');
+    });
+
+    it('folds in every genuine dimension', () => {
+        const flattened = new Set(sel.safe.flatMap(l => [l.leftTable, l.rightTable]));
+        for (const t of ['Orders', 'Products', 'Customers', 'Employees', 'Departments']) {
+            expect(flattened.has(t), `${t} should be flattened`).toBe(true);
+        }
+    });
+
+    it('refuses to fold in the many-to-many bridge', () => {
+        // Each product has several suppliers — folding this in would inflate
+        // revenue ~2.2x, or silently drop suppliers.
+        expect(sel.excluded.map(e => e.table)).toContain('ProductSuppliers');
+        expect(sel.excluded.find(e => e.table === 'ProductSuppliers')!.reason).toMatch(/duplicate rows|inflate/i);
+    });
+
+    it('also excludes what is only reachable through the excluded bridge', () => {
+        expect(sel.excluded.map(e => e.table)).toContain('Suppliers');
+    });
+
+    it('the resulting flat table cannot fan out', () => {
+        const plan = planJoins(
+            [...new Set(sel.safe.flatMap(l => [l.leftTable, l.rightTable]))],
+            T, sel.safe, { baseTable: sel.baseTable },
+        );
+        expect(plan.fanOutWarnings).toEqual([]);
+    });
+
+    it('supplier questions are still answerable — just not from the flat table', () => {
+        // The engine can still plan the join when a question needs it.
+        const plan = planJoins(['OrderItems', 'Suppliers'], T, L);
+        expect(plan.tablesUsed).toContain('Suppliers');
+        // And it says plainly that aggregating across it is unsafe.
+        expect(plan.fanOutWarnings.length).toBeGreaterThan(0);
     });
 });
