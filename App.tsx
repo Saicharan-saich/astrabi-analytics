@@ -53,7 +53,6 @@ import ReconnectModal from './components/ReconnectModal';
 import { AlertsView } from './components/AlertsView';
 import { UserInsightsView } from './components/UserInsightsView';
 import { QuickInsightsView } from './components/QuickInsightsView';
-import { ParametersView } from './components/ParametersView';
 import { NotificationCenter } from './components/NotificationCenter';
 import { useAlertStore } from './store/useAlertStore';
 import { evaluateAllAlerts } from './services/alertEngine';
@@ -1790,9 +1789,6 @@ function App() {
                   )}
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.PARAMETERS ? '' : 'hidden'}`}>
-                  {activeTab === Tab.PARAMETERS && <ParametersView />}
-                </div>
               </main>
             </div>
 
