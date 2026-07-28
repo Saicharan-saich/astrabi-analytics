@@ -341,6 +341,9 @@ export const useAppStore = create<AppStore>()(
                 axisColor: '#000000',
                 axisBold: true,
                 axisLabelSize: 'md',
+                dataLabelColor: '#000000',
+                dataLabelBold: true,
+                dataLabelSize: 'md',
                 tableCalculations: []
             },
             setWorkbenchState: (config, result) => set({ config, result }),
@@ -642,6 +645,31 @@ export const useAppStore = create<AppStore>()(
                     delete persisted.dashboardFilters;
 
                     console.log(`[Store] Migrated v3 → v4: ${legacyItems.length} items → Dashboard 1`);
+                }
+
+                // ── Chart legibility upgrade ──────────────────────────────
+                // Axes used to default to hidden, and titles/labels rendered in
+                // slate grey at a small size, which read as faint over a chart.
+                // Those choices are stored, so an existing user would keep them
+                // for ever. Clear the stale values once so the new defaults —
+                // axes visible, black, bold, larger — take effect. Any colour or
+                // size the user has since chosen deliberately is left alone.
+                if (persisted?.formatting && !persisted.formatting._legibilityUpgraded) {
+                    const f = persisted.formatting;
+                    if (f.showAxis === false) f.showAxis = true;
+                    if (f.showXAxis === undefined) f.showXAxis = true;
+                    if (f.showYAxis === undefined) f.showYAxis = true;
+                    if (!f.headerColor || f.headerColor === '#1e293b') f.headerColor = '#000000';
+                    if (!f.axisColor || f.axisColor === '#64748b') f.axisColor = '#000000';
+                    if (!f.dataLabelColor || f.dataLabelColor === '#334155') f.dataLabelColor = '#000000';
+                    if (f.axisBold === undefined) f.axisBold = true;
+                    if (f.headerBold === undefined) f.headerBold = true;
+                    if (f.dataLabelBold === undefined) f.dataLabelBold = true;
+                    if (!f.axisLabelSize) f.axisLabelSize = 'md';
+                    if (!f.dataLabelSize) f.dataLabelSize = 'md';
+                    if (!f.headerSize || f.headerSize === 'md' || f.headerSize === 'lg') f.headerSize = 'xl';
+                    f._legibilityUpgraded = true;
+                    console.log('[Store] Chart text upgraded: axes on, titles and labels black, bold and larger.');
                 }
 
                 // After hydration, sync the backward-compat properties
