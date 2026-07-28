@@ -42,13 +42,18 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         colorMode: 'vibrant',
         numberFormat: 'auto',
         fontSize: 'md',
-        headerSize: 'md',
+        headerSize: 'xl',
         headerBold: true,
+        headerColor: '#000000',
         showLabels: true,
         showDataLabels: true,
         tableCalculations: [],
+        showAxis: true,
         showXAxis: true,
-        showYAxis: true
+        showYAxis: true,
+        axisColor: '#000000',
+        axisBold: true,
+        axisLabelSize: 'md'
     };
 
     // Auto-fill and auto-submit when initialQuery is set

@@ -429,6 +429,15 @@ function toISO(y: number, m: number, d: number): string {
     return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 }
 
+/**
+ * A month or weekday name — the marker that a free-text string is a written
+ * date ("Tue Nov 08 2016", "November 8, 2016") rather than a label that merely
+ * contains a number ("Employee 10", "Customer 25").
+ */
+const MONTH_OR_WEEKDAY_NAME = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec|mon|tue|wed|thu|fri|sat|sun)/i;
+/** A plausible calendar year, so "Employee 10" cannot qualify. */
+const FOUR_DIGIT_YEAR = /\b(1[89]\d{2}|20\d{2}|21\d{2})\b/;
+
 function isValidDate(y: number, m: number, d: number): boolean {
     if (y < 1900 || y > 2100 || m < 1 || m > 12 || d < 1 || d > 31) return false;
     const daysInMonth = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -509,8 +518,17 @@ function tryParseDateAny(raw: any): { iso: string; formatId: string } | null {
         return isValidDate(y, m, d) ? { iso: s.replace(' ', 'T').split('.')[0], formatId: 'YYYY-MM-DD' } : null;
     }
     // Try native JS Date parsing for long strings like "Tue Nov 08 2016 00:00:00 GMT..."
-    // Only for strings that look like they might be dates (not pure numbers or short text)
-    if (s.length > 10 && /[a-zA-Z]/.test(s)) {
+    //
+    // new Date() is dangerously lenient: new Date("Employee 10") returns
+    // 2001-10-01, because it ignores the word and reads "10" as a month. A guard
+    // of "longer than 10 characters and contains a letter" lets almost any
+    // labelled text through, which silently turned employee_name and
+    // customer_name into DATE columns — and their fake 1950..2049 range then
+    // drove the whole dataset's time context and dim_date.
+    //
+    // So only hand a string to the native parser when it genuinely reads as a
+    // written date: a month or weekday name AND a four-digit year.
+    if (s.length > 10 && MONTH_OR_WEEKDAY_NAME.test(s) && FOUR_DIGIT_YEAR.test(s)) {
         const nativeDate = new Date(s);
         if (!isNaN(nativeDate.getTime())) {
             const y = nativeDate.getFullYear();
