@@ -85,6 +85,22 @@ function resolveTimeFilter(
 // MAIN: buildQueryPlan
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * Drop values that are not real selections.
+ *
+ * A cross-filter or a cleared control can hand us undefined, which stringifies
+ * into the SQL as the literal text 'undefined' — producing
+ * `WHERE "month" IN ('undefined')`, which matches nothing and blanks the chart.
+ * An empty list means "no constraint", so the caller skips the filter entirely.
+ */
+function cleanFilterValues(values: any[]): string[] {
+    if (!Array.isArray(values)) return [];
+    return values
+        .filter(v => v !== undefined && v !== null)
+        .map(v => String(v))
+        .filter(v => v !== '' && v !== 'undefined' && v !== 'null');
+}
+
 export function buildQueryPlan(
     query: UIQueryConfig,
     dateColumnKey: string,
@@ -154,7 +170,8 @@ export function buildQueryPlan(
 
     // 2. Dimension filters (IN)
     if (query.filters) {
-        for (const [col, vals] of Object.entries(query.filters)) {
+        for (const [col, rawVals] of Object.entries(query.filters)) {
+            const vals = cleanFilterValues(rawVals as any[]);
             if (vals.length > 0) {
                 rowFilters.push({ column: col, op: 'IN', value: vals });
             }
@@ -163,7 +180,8 @@ export function buildQueryPlan(
 
     // 2b. Exclusion filters (NOT IN)
     if (query.excludeFilters) {
-        for (const [col, vals] of Object.entries(query.excludeFilters)) {
+        for (const [col, rawVals] of Object.entries(query.excludeFilters)) {
+            const vals = cleanFilterValues(rawVals as any[]);
             if (vals.length > 0) {
                 rowFilters.push({ column: col, op: 'NOT_IN', value: vals });
             }
@@ -201,13 +219,16 @@ export function buildQueryPlan(
                 // Range mode: "start__end"
                 const [rangeStart, rangeEnd] = df.values[0].split('__');
                 rangeFilters.push({ column: df.column, start: rangeStart, end: rangeEnd });
-            } else if (df.values.length > 0) {
+            } else {
                 // Hierarchy mode: grain-formatted values (e.g. '2018', '2020-Q1')
-                dateFilters.push({
-                    column: df.column,
-                    timeGrain: (df.timeGrain || 'year') as TimeGrain,
-                    values: df.values
-                });
+                const vals = cleanFilterValues(df.values);
+                if (vals.length > 0) {
+                    dateFilters.push({
+                        column: df.column,
+                        timeGrain: (df.timeGrain || 'year') as TimeGrain,
+                        values: vals,
+                    });
+                }
             }
         }
     }

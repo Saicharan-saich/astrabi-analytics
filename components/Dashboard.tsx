@@ -223,6 +223,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     if (item.ignoreGlobalFilter) return item.result.data;
     if (dashboardFilters.length === 0 || !Array.isArray(item.result.data)) return item.result.data;
 
+    // A dashboard can hold cards pinned from DIFFERENT datasets, but filtering
+    // re-aggregates from the dataset that happens to be loaded right now. Doing
+    // that to a card from another dataset looks for columns that are not there
+    // (e.g. an Amazon card asking for "sales"/"ship_mode" inside a different
+    // workbook), every row is skipped, and the card renders "No data to
+    // display". Leave those cards on their pinned figures instead — a stale
+    // number is far better than a blank tile.
+    if (item.datasetId && dataset?.id && item.datasetId !== dataset.id) {
+      return item.result.data;
+    }
+
     const isDateStr = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
     const xKey = item.result.xKey;
     const yKey = item.result.yKey;
