@@ -315,6 +315,74 @@ export function describeSchemaForLLM(tables: JoinTable[], links: JoinLink[]): st
     return lines.join('\n');
 }
 
+export interface FlattenSelection {
+    baseTable: string;
+    /** Links safe to fold into one wide table — every step is many-to-one. */
+    safe: JoinLink[];
+    /** Tables deliberately left out, with the reason. */
+    excluded: { table: string; reason: string }[];
+}
+
+/**
+ * Decide which tables may be folded into a single flat table.
+ *
+ * Flattening is only lossless when every step is many-to-one. A one-to-many
+ * step multiplies the fact rows, so either totals inflate (a true join) or rows
+ * are silently discarded (a first-match join) — both wrong, one quietly.
+ *
+ * Example: OrderItems joined to ProductSuppliers, where a product has several
+ * suppliers, inflates revenue ~2.2x. Such a table is excluded here and stays
+ * available as a separate table, which AI SQL can join at the right grain.
+ * Anything only reachable *through* an excluded table is excluded too.
+ */
+export function selectFlattenableLinks(
+    tables: JoinTable[],
+    links: JoinLink[],
+    opts?: { baseTable?: string },
+): FlattenSelection {
+    const byName = new Map(tables.map(t => [t.name, t]));
+    if (tables.length === 0) return { baseTable: '', safe: [], excluded: [] };
+
+    const baseTable = opts?.baseTable && byName.has(opts.baseTable)
+        ? opts.baseTable
+        : tables.slice().sort((a, b) => (b.rowCount || 0) - (a.rowCount || 0))[0].name;
+
+    const adj = buildAdjacency(links);
+    const included = new Set([baseTable]);
+    const safe: JoinLink[] = [];
+    const excluded: { table: string; reason: string }[] = [];
+
+    // Grow outward from the base, taking only many-to-one steps.
+    let progressed = true;
+    while (progressed) {
+        progressed = false;
+        for (const anchor of [...included]) {
+            for (const { to, link } of adj.get(anchor) || []) {
+                if (included.has(to)) continue;
+                const incomingColumn = link.rightTable === to ? link.rightColumn : link.leftColumn;
+                const { fansOut, reason } = detectFanOut(byName.get(to), incomingColumn);
+                if (fansOut) continue;   // may still be reachable safely elsewhere
+                included.add(to);
+                safe.push(link);
+                progressed = true;
+            }
+        }
+    }
+
+    for (const t of tables) {
+        if (included.has(t.name)) continue;
+        const reachable = (adj.get(t.name) || []).some(n => included.has(n.to));
+        excluded.push({
+            table: t.name,
+            reason: reachable
+                ? `each row of ${baseTable} matches several rows here, so folding it in would duplicate rows and inflate totals`
+                : `only reachable through a table that was already excluded`,
+        });
+    }
+
+    return { baseTable, safe, excluded };
+}
+
 /**
  * Build the multi-table context for a dataset, ready to hand to the model.
  *
