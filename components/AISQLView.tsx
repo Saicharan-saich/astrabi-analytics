@@ -53,7 +53,10 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         showYAxis: true,
         axisColor: '#000000',
         axisBold: true,
-        axisLabelSize: 'md'
+        axisLabelSize: 'md',
+        dataLabelColor: '#000000',
+        dataLabelBold: true,
+        dataLabelSize: 'md'
     };
 
     // Auto-fill and auto-submit when initialQuery is set
