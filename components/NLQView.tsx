@@ -45,7 +45,10 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
         showYAxis: true,
         axisColor: '#000000',
         axisBold: true,
-        axisLabelSize: 'md'
+        axisLabelSize: 'md',
+        dataLabelColor: '#000000',
+        dataLabelBold: true,
+        dataLabelSize: 'md'
     });
     const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
     const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);

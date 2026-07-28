@@ -232,6 +232,8 @@ export type FormattingConfig = {
   showYAxis?: boolean; // Individual Y-axis toggle (overrides showAxis when set)
   yAxisFormat?: 'compact' | 'full' | 'short_currency'; // Y-axis tick format: compact ($2.5K), full ($2,500.00), short_currency ($2.5K)
   showGridLines?: boolean; // Toggle grid lines visibility (default: auto based on chart type)
+  /** Internal: marks that stored formatting has had the one-off legibility upgrade applied. */
+  _legibilityUpgraded?: boolean;
 };
 
 export interface ChartConfig {

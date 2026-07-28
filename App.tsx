@@ -302,6 +302,7 @@ function App() {
     headerBold: true, headerColor: '#000000', showLabels: true, showDataLabels: true,
     tableCalculations: [], showAxis: true, showXAxis: true, showYAxis: true,
     axisColor: '#000000', axisBold: true, axisLabelSize: 'md',
+    dataLabelColor: '#000000', dataLabelBold: true, dataLabelSize: 'md',
   });
 
   // ── Data Story state ──

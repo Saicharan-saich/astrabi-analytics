@@ -119,6 +119,9 @@ export async function buildAutoDashboard(
             axisColor: '#000000',
             axisBold: true,
             axisLabelSize: 'md',
+            dataLabelColor: '#000000',
+            dataLabelBold: true,
+            dataLabelSize: 'md',
             tableCalculations: [],
         };
 

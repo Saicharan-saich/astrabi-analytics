@@ -174,6 +174,9 @@ export const useDashboardStore = create<DashboardState>()(
                 axisColor: '#000000',
                 axisBold: true,
                 axisLabelSize: 'md',
+                dataLabelColor: '#000000',
+                dataLabelBold: true,
+                dataLabelSize: 'md',
                 tableCalculations: []
             },
             updateFormatting: (formatting) => set({ formatting }),
