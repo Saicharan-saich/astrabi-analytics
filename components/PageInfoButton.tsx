@@ -274,7 +274,7 @@ const PAGE_INFO: Record<PageKey, PageInfo> = {
         title: 'GAFS Challenge',
         description: 'Learn the four moves behind every data question — Grouping, Aggregating, Filtering and Sorting — by following one real small business through a year of trading. Then use exactly the same four moves in Question Builder.',
         features: [
-            'Story mode: six illustrated chapters on Ravi\'s farm',
+            'Story mode: six animated chapters on Sam\'s farm',
             'Every chart is the genuine answer, computed from his year of sales',
             'One new move per chapter, building up to all four',
             'Wrong answers explain why, rather than just buzzing',

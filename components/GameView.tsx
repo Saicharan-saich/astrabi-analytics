@@ -1290,7 +1290,7 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit 
               >
                 Start here
               </span>
-              <h2 className="text-xl font-black text-white mt-3 mb-1.5">Ravi's farm — a story in six chapters</h2>
+              <h2 className="text-xl font-black text-white mt-3 mb-1.5">Sam's farm — a story in six chapters</h2>
               <p className="text-sm leading-relaxed mb-4" style={{ color: '#C9BBA8' }}>
                 A farmer with eight products, three sales channels and a shoebox full of receipts. Follow one
                 real business through a year and pick up the four moves as you go. About fifteen minutes.
