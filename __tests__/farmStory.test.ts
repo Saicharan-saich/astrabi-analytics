@@ -217,6 +217,30 @@ describe('chapter integrity', () => {
     }
   });
 
+  // Chapter 1 is the first thing a beginner sees. No chart has been drawn
+  // yet, so it cannot ask which "bar" something should be — grouping is
+  // explained as sorting into piles, and the chart arrives in chapter 2
+  // once there are numbers to draw.
+  it('does not mention charts before one has been shown', () => {
+    const first = CHAPTERS[0];
+    const copy = [
+      first.task,
+      ...first.beats,
+      ...first.outcome,
+      ...Object.values(first.explanation),
+      ...first.chips.flatMap(c => [c.label, c.whyNot ?? '']),
+      first.payoff.caption,
+    ].join(' ').toLowerCase();
+
+    for (const word of ['bar', 'chart', 'axis', 'plot', 'graph']) {
+      expect(copy, `chapter 1 mentions "${word}" before any chart exists`)
+        .not.toMatch(new RegExp(`\\b${word}s?\\b`));
+    }
+
+    // And the chapter that does introduce the chart should say so.
+    expect(`${CHAPTERS[1].task} ${CHAPTERS[1].payoff.caption}`.toLowerCase()).toContain('chart');
+  });
+
   it('gives every GAFS step a concrete example, not just a definition', () => {
     for (const lane of ['G', 'A', 'F', 'S'] as GAFSLane[]) {
       expect(LANE_INFO[lane].plain, `${lane} plain example`).toMatch(/^e\.g\. /);
