@@ -356,194 +356,570 @@ const Ground = ({ y, fill }: { y: number; fill: string }) => (
   <rect x="0" y={y} width="800" height={400 - y} fill={fill} />
 );
 
-// ── Scene 1 · dawn, and a shoebox full of paper ────────────────────
 
-const SunriseFarm = () => (
+// ── Extra cast and props, for the beats that need them ─────────────
+
+/** Sam's sister. Same build, different silhouette, so they read apart. */
+const Sister = ({ x, y, s = 1, flip = false }: { x: number; y: number; s?: number; flip?: boolean }) => (
+  <g transform={`translate(${x} ${y}) scale(${flip ? -s : s} ${s})`}>
+    <ellipse cx="0" cy="1" rx="16" ry="4" fill="#000000" opacity="0.16" />
+    <g className="fs-breathe">
+      <path d="M-13 -30 L13 -30 L10 -2 L-10 -2 Z" fill="#5E7C8C" />
+      <rect x="-10" y="-5" width="8" height="5" rx="2.5" fill="#4A3728" />
+      <rect x="2" y="-5" width="8" height="5" rx="2.5" fill="#4A3728" />
+      <path d="M-14 -56 h28 v18 a6 6 0 0 1 -6 6 h-16 a6 6 0 0 1 -6 -6 Z" fill="#B5695E" />
+      <path d="M-12 -52 q -9 10 -6 19" stroke="#B5695E" strokeWidth="7" strokeLinecap="round" fill="none" />
+      <path d="M12 -52 q 13 -1 17 -11" stroke="#B5695E" strokeWidth="7" strokeLinecap="round" fill="none" />
+      <circle cx="-17" cy="-32" r="4" fill={FARM.skin} />
+      <circle cx="31" cy="-64" r="4.2" fill={FARM.skin} />
+      <rect x="-3.5" y="-62" width="7" height="6" fill={FARM.skin} />
+      <circle cx="0" cy="-70" r="11.5" fill={FARM.skin} />
+      <path d="M-12 -70 a 12 12 0 0 1 24 0 q 3 14 -4 18 q 2 -12 -8 -14 q -10 2 -8 14 q -7 -4 -4 -18 Z" fill="#6B4A2F" />
+      <g className="fs-blink">
+        <circle cx="-4" cy="-70" r="1.5" fill="#3A2C1E" />
+        <circle cx="4.5" cy="-70" r="1.5" fill="#3A2C1E" />
+      </g>
+      <path d="M-3 -65 q 3.5 2.6 7 0" stroke="#3A2C1E" strokeWidth="1.4" fill="none" strokeLinecap="round" />
+    </g>
+  </g>
+);
+
+const FarmSign = ({ x, y, s = 1 }: { x: number; y: number; s?: number }) => (
+  <g transform={`translate(${x} ${y}) scale(${s})`}>
+    <rect x="-52" y="-4" width="7" height="56" fill={FARM.woodDark} />
+    <rect x="45" y="-4" width="7" height="56" fill={FARM.woodDark} />
+    <g className="fs-sway-s" style={{ transformOrigin: '50% 0%' }}>
+      <rect x="-58" y="-40" width="116" height="42" rx="5" fill={FARM.cream} stroke={FARM.woodDark} strokeWidth="4" />
+      <text x="0" y="-24" textAnchor="middle" fill={FARM.barn} fontSize="14" fontWeight="800"
+        letterSpacing="0.6" fontFamily="system-ui, sans-serif">FOXGLOVE</text>
+      <text x="0" y="-9" textAnchor="middle" fill={FARM.leaf} fontSize="12" fontWeight="700"
+        letterSpacing="2.4" fontFamily="system-ui, sans-serif">FARM</text>
+    </g>
+  </g>
+);
+
+const Van = ({ x, y, s = 1, loaded = 0, lightsOn = false }: {
+  x: number; y: number; s?: number; loaded?: number; lightsOn?: boolean;
+}) => (
+  <g transform={`translate(${x} ${y}) scale(${s})`}>
+    <ellipse cx="110" cy="12" rx="128" ry="10" fill="#000000" opacity="0.22" />
+    <path d="M14 -92 L125 -92 L125 -46 L14 -46 Z" fill={FARM.cream} />
+    <path d="M125 -81 L148 -81 L171 -60 L171 -46 L125 -46 Z" fill="#EFE3CE" />
+    <path d="M129 -78 L146 -78 L164 -61 L129 -61 Z" fill="#7FA8C4" />
+    <path d="M129 -78 L141 -78 L129 -66 Z" fill="#A8C8DC" opacity="0.7" />
+    <path d="M14 -92 L-12 -101 L-12 -51 L14 -46 Z" fill="#E4D7C0" />
+    <rect x="26" y="-79" width="75" height="17" rx="3" fill={FARM.leaf} opacity="0.22" />
+    <text x="63" y="-66" textAnchor="middle" fill={FARM.leaf} fontSize="9" fontWeight="800"
+      letterSpacing="0.4" fontFamily="system-ui, sans-serif">FOXGLOVE</text>
+    <circle cx="43" cy="-45" r="12" fill="#241F30" />
+    <g className="fs-spin"><circle cx="43" cy="-45" r="5" fill="#5A5468" /></g>
+    <circle cx="150" cy="-45" r="12" fill="#241F30" />
+    <g className="fs-spin"><circle cx="150" cy="-45" r="5" fill="#5A5468" /></g>
+    {lightsOn && <ellipse className="fs-pulse" cx="170" cy="-56" rx="4" ry="5" fill="#FFEBB8" opacity="0.9" />}
+    <g transform="translate(22 -88)">
+      {[[0, 22, FARM.honey], [25, 22, FARM.cream], [50, 22, '#D9534F'], [12, 4, '#A9784F'], [37, 4, '#C0392B']]
+        .slice(0, loaded)
+        .map(([cx, cy, col], i) => (
+          <Crate key={i} x={cx as number} y={cy as number} w={22} h={14} contents={col as string} />
+        ))}
+    </g>
+  </g>
+);
+
+/** A small labelled vignette — used to show the three sales channels at once. */
+const Vignette = ({ x, y, label, tint, children }: {
+  x: number; y: number; label: string; tint: string; children: React.ReactNode;
+}) => (
+  <g transform={`translate(${x} ${y})`}>
+    <ellipse cx="0" cy="6" rx="56" ry="8" fill="#000000" opacity="0.12" />
+    {children}
+    <rect x="-50" y="14" width="100" height="22" rx="11" fill={tint} />
+    <text x="0" y="29" textAnchor="middle" fill={FARM.cream} fontSize="12" fontWeight="700"
+      fontFamily="system-ui, sans-serif">{label}</text>
+  </g>
+);
+
+const MiniStall = () => (
+  <g transform="translate(-34 -54)">
+    <line x1="4" y1="16" x2="4" y2="54" stroke={FARM.woodDark} strokeWidth="4" />
+    <line x1="64" y1="16" x2="64" y2="54" stroke={FARM.woodDark} strokeWidth="4" />
+    <rect x="-2" y="44" width="72" height="7" rx="2" fill={FARM.wood} />
+    {Array.from({ length: 5 }).map((_, i) => (
+      <path key={i} d={`M${-2 + i * 14.4} 16 L${-2 + (i + 1) * 14.4} 16 L${-2 + (i + 1) * 14.4 - 3} 34 L${-2 + i * 14.4 - 3} 34 Z`}
+        fill={i % 2 ? FARM.cream : FARM.barn} />
+    ))}
+    <circle cx="22" cy="39" r="5" fill="#D9534F" /><circle cx="36" cy="39" r="5" fill={FARM.honey} />
+    <circle cx="50" cy="39" r="5" fill="#A9784F" />
+  </g>
+);
+
+const MiniGate = () => (
+  <g transform="translate(-34 -50)">
+    <rect x="0" y="34" width="68" height="7" rx="2" fill={FARM.wood} />
+    <line x1="6" y1="41" x2="6" y2="50" stroke={FARM.woodDark} strokeWidth="4" />
+    <line x1="62" y1="41" x2="62" y2="50" stroke={FARM.woodDark} strokeWidth="4" />
+    <g stroke={FARM.woodDark} strokeWidth="3" opacity="0.8">
+      <line x1="-4" y1="14" x2="-4" y2="50" /><line x1="72" y1="14" x2="72" y2="50" />
+      <line x1="-4" y1="20" x2="72" y2="20" /><line x1="-4" y1="28" x2="72" y2="28" />
+    </g>
+    <rect x="18" y="24" width="14" height="10" rx="2" fill="#C9B79A" />
+    <circle cx="46" cy="29" r="5.5" fill={FARM.honey} />
+  </g>
+);
+
+const MiniCafe = () => (
+  <g transform="translate(-34 -58)">
+    <rect x="0" y="16" width="68" height="42" fill="#E8DAC4" />
+    <rect x="0" y="16" width="68" height="6" fill={FARM.barnDark} />
+    {Array.from({ length: 4 }).map((_, i) => (
+      <path key={i} d={`M${4 + i * 15} 22 L${4 + (i + 1) * 15} 22 L${4 + (i + 1) * 15 - 2} 34 L${4 + i * 15 - 2} 34 Z`}
+        fill={i % 2 ? FARM.cream : FARM.leaf} />
+    ))}
+    <rect x="8" y="38" width="26" height="20" rx="2" fill="#FFE6AE" />
+    <rect x="42" y="36" width="18" height="22" rx="2" fill={FARM.woodDark} />
+    <SpeechPuff x={20} y={36} s={0.6} />
+  </g>
+);
+
+const Beehive = ({ x, y, s = 1, d = 0 }: { x: number; y: number; s?: number; d?: number }) => (
+  <g transform={`translate(${x} ${y}) scale(${s})`}>
+    <rect x="-18" y="-10" width="36" height="10" rx="2" fill="#D8C39A" />
+    <rect x="-16" y="-22" width="32" height="12" rx="2" fill="#E5D2AC" />
+    <rect x="-14" y="-33" width="28" height="11" rx="2" fill="#D8C39A" />
+    <path d="M-18 -33 L18 -33 L12 -42 L-12 -42 Z" fill={FARM.woodDark} />
+    <circle className="fs-bob" style={delay(d)} cx="24" cy="-30" r="2.4" fill={FARM.honey} />
+    <circle className="fs-bob" style={delay(d + 0.9)} cx="-26" cy="-24" r="2" fill={FARM.honey} />
+  </g>
+);
+
+const Paper = ({ x, y, w = 96, h = 68, rows = 5, title }: {
+  x: number; y: number; w?: number; h?: number; rows?: number; title?: string;
+}) => (
+  <g transform={`translate(${x} ${y})`}>
+    <rect x="0" y="0" width={w} height={h} rx="3" fill={FARM.cream} stroke="#E0D3B8" strokeWidth="1.5" />
+    {title && (
+      <text x={w / 2} y="14" textAnchor="middle" fill={FARM.barn} fontSize="9" fontWeight="800"
+        fontFamily="system-ui, sans-serif">{title}</text>
+    )}
+    <g stroke="#C7B79B" strokeWidth="2" strokeLinecap="round">
+      {Array.from({ length: rows }).map((_, i) => (
+        <line key={i} x1="9" y1={(title ? 24 : 14) + i * 9} x2={w - 9 - (i % 3) * 12} y2={(title ? 24 : 14) + i * 9} />
+      ))}
+    </g>
+  </g>
+);
+
+const ChartBoard = ({ x, y, s = 1, bars, strike = false, title }: {
+  x: number; y: number; s?: number; bars: number[]; strike?: boolean; title?: string;
+}) => (
+  <g transform={`translate(${x} ${y}) scale(${s})`}>
+    <path d="M-6 0 L-16 44 M118 0 L128 44" stroke={FARM.woodDark} strokeWidth="5" strokeLinecap="round" />
+    <rect x="-10" y="-92" width="132" height="94" rx="4" fill={FARM.cream} stroke={FARM.woodDark} strokeWidth="4" />
+    {title && (
+      <text x="56" y="-77" textAnchor="middle" fill={FARM.barnDark} fontSize="10" fontWeight="800"
+        fontFamily="system-ui, sans-serif">{title}</text>
+    )}
+    {bars.map((h, i) => (
+      <rect key={i} x={6 + i * 22} y={-10 - h} width="15" height={h} rx="2"
+        fill={i === 0 ? FARM.honey : `${FARM.leaf}CC`} />
+    ))}
+    <line x1="2" y1="-10" x2="114" y2="-10" stroke={FARM.woodDark} strokeWidth="2" opacity="0.6" />
+    {strike && (
+      <g stroke={FARM.barn} strokeWidth="5" strokeLinecap="round" opacity="0.85">
+        <line x1="0" y1="-70" x2="46" y2="-16" /><line x1="46" y1="-70" x2="0" y2="-16" />
+      </g>
+    )}
+  </g>
+);
+
+const Calendar = ({ x, y, s = 1, litFrom = 5, litTo = 8 }: {
+  x: number; y: number; s?: number; litFrom?: number; litTo?: number;
+}) => (
+  <g transform={`translate(${x} ${y}) scale(${s})`}>
+    <rect x="0" y="0" width="176" height="118" rx="6" fill={FARM.cream} stroke={FARM.woodDark} strokeWidth="4" />
+    <rect x="0" y="0" width="176" height="22" rx="6" fill={FARM.barnDark} />
+    <text x="88" y="16" textAnchor="middle" fill={FARM.cream} fontSize="11" fontWeight="800"
+      letterSpacing="1.4" fontFamily="system-ui, sans-serif">ONE YEAR</text>
+    {Array.from({ length: 12 }).map((_, i) => {
+      const lit = i >= litFrom && i <= litTo;
+      return (
+        <rect key={i} x={12 + (i % 4) * 39} y={32 + Math.floor(i / 4) * 28} width="33" height="22" rx="3"
+          fill={lit ? FARM.honey : '#E6DAC4'} opacity={lit ? 0.95 : 0.8}
+          className={lit ? 'fs-pulse' : undefined} style={lit ? delay(i * 0.25) : undefined} />
+      );
+    })}
+  </g>
+);
+
+const Rain = () => (
+  <g stroke="#B4C4D2" strokeWidth="1.6" strokeLinecap="round" opacity="0.55">
+    {Array.from({ length: 40 }).map((_, i) => {
+      const x = (i * 97) % 810;
+      return (
+        <g key={i} className="fs-rain" style={delay(-((i * 0.17) % 1.1))}>
+          <line x1={x} y1={0} x2={x - 9} y2={26} />
+        </g>
+      );
+    })}
+  </g>
+);
+
+const Shopper = ({ x, y, s = 1, flip = false, coat = '#6E7F94' }: {
+  x: number; y: number; s?: number; flip?: boolean; coat?: string;
+}) => (
+  <g transform={`translate(${x} ${y}) scale(${flip ? -s : s} ${s})`} opacity="0.9">
+    <ellipse cx="0" cy="1" rx="14" ry="3.5" fill="#000000" opacity="0.14" />
+    <g className="fs-breathe">
+      <rect x="-11" y="-48" width="22" height="30" rx="7" fill={coat} />
+      <rect x="-8" y="-20" width="7" height="19" rx="3" fill="#3F4A58" />
+      <rect x="1" y="-20" width="7" height="19" rx="3" fill="#36404C" />
+      <circle cx="0" cy="-58" r="9.5" fill={FARM.skin} />
+      <path d="M-9.5 -60 a 9.5 9.5 0 0 1 19 0 Z" fill="#4A3728" />
+      <path d="M11 -44 q 8 6 6 14" stroke={coat} strokeWidth="6" strokeLinecap="round" fill="none" />
+    </g>
+  </g>
+);
+
+// ═══════════════════════════════════════════════════════════════════
+// THE SCENES
+// Each takes the current beat, so the picture follows the sentence
+// instead of one backdrop sitting behind four different lines.
+// ═══════════════════════════════════════════════════════════════════
+
+type SceneProps = { beat: number; uid: string };
+
+// ── Chapter 1 · dawn, and a shoebox full of paper ──────────────────
+
+const DawnBackdrop = ({ uid }: { uid: string }) => (
   <>
     <defs>
-      <linearGradient id="s1sky" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient id={`${uid}s1sky`} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stopColor="#8FC6E0" /><stop offset="45%" stopColor="#FFD59B" />
         <stop offset="100%" stopColor="#FFB27A" />
       </linearGradient>
-      <linearGradient id="s1field" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient id={`${uid}s1field`} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stopColor="#6FA556" /><stop offset="100%" stopColor="#4E7C3E" />
       </linearGradient>
     </defs>
-    <rect width="800" height="400" fill="url(#s1sky)" />
-    <Sun x={168} y={214} r={40} rise />
+    <rect width="800" height="400" fill={`url(#${uid}s1sky)`} />
+    <Sun x={148} y={214} r={38} rise />
     <Cloud x={-60} y={70} s={1.1} fill="#FFE9CF" o={0.85} slow d={-20} />
     <Cloud x={-60} y={48} s={0.75} fill="#FFF0DC" o={0.7} d={-38} />
-    <Bird x={0} y={96} s={1.1} d={-6} /><Bird x={0} y={78} s={0.8} d={-22} /><Bird x={0} y={70} s={0.7} d={-34} />
-
+    <Bird x={0} y={96} s={1.1} d={-6} /><Bird x={0} y={78} s={0.8} d={-22} />
     <path d="M0 246 q 120 -34 240 -8 q 130 28 250 -14 q 170 -32 310 6 L800 400 L0 400 Z" fill={FARM.leafFar} />
     <path d="M0 274 q 160 -26 300 2 q 150 30 300 -12 q 120 -22 200 4 L800 400 L0 400 Z" fill={FARM.leafMid} />
-    <Ground y={300} fill="url(#s1field)" />
-
-    <g opacity="0.45">
-      {[312, 330, 350, 372, 396].map((y, i) => (
-        <path key={y} d={`M0 ${y} q 400 ${-10 - i * 3} 800 ${i * 2}`} stroke={FARM.soilDark} strokeWidth={2 + i * 0.8} fill="none" />
+    <Ground y={300} fill={`url(#${uid}s1field)`} />
+    <g opacity="0.4">
+      {[314, 336, 360, 388].map((y, i) => (
+        <path key={y} d={`M0 ${y} q 400 ${-10 - i * 3} 800 ${i * 2}`} stroke={FARM.soilDark} strokeWidth={2 + i} fill="none" />
       ))}
     </g>
-
-    <Tree x={92} y={302} s={1.05} canopy="#4F8241" />
-    <Tree x={738} y={306} s={0.85} canopy="#5C8F4A" d={1.6} />
-    <Barn x={506} y={300} s={0.95} />
-    <Fence y={300} from={140} to={452} />
-
-    <CropRow y={334} from={20} to={780} step={26} h={16} fill="#3F6B33" o={0.5} />
-    <Hen x={214} y={320} s={0.72} d={0.4} />
-    <Hen x={258} y={326} s={0.64} flip d={1.9} />
-
-    {/* the shoebox, tipped over, receipts still escaping */}
-    <g transform="translate(96 352)">
-      <ellipse cx="60" cy="30" rx="88" ry="10" fill={FARM.soilDark} opacity="0.25" />
-      <rect x="14" y="-2" width="96" height="32" rx="3" fill="#D9C7A8" />
-      <rect x="14" y="-2" width="96" height="9" rx="3" fill="#C4AE8C" />
-      <path d="M104 -2 L146 -18 L156 6 L114 22 Z" fill="#E8DCC4" />
-      {[[126, -32, -14, 0], [152, -26, 8, 0.7], [172, -16, 22, 1.4], [186, -34, -6, 2.1]].map(([x, y, rot, dl], i) => (
-        <g key={i} className="fs-flutter" style={delay(dl as number)}>
-          <g transform={`rotate(${rot} ${(x as number) + 13} ${(y as number) + 17})`}>
-            <rect x={x} y={y} width="26" height="34" rx="2" fill={FARM.cream} stroke="#E0D3B8" strokeWidth="1" />
-            <g stroke="#BFB096" strokeWidth="1.6" strokeLinecap="round">
-              <line x1={(x as number) + 5} y1={(y as number) + 9} x2={(x as number) + 21} y2={(y as number) + 9} />
-              <line x1={(x as number) + 5} y1={(y as number) + 15} x2={(x as number) + 17} y2={(y as number) + 15} />
-              <line x1={(x as number) + 5} y1={(y as number) + 21} x2={(x as number) + 19} y2={(y as number) + 21} />
-              <line x1={(x as number) + 5} y1={(y as number) + 27} x2={(x as number) + 13} y2={(y as number) + 27} />
-            </g>
-          </g>
-        </g>
-      ))}
-    </g>
-
-    {/* Sam, wondering what any of it means */}
-    <Sam x={352} y={392} s={0.92} pose="thinking" />
   </>
 );
 
-// ── Scene 2 · Saturday market ──────────────────────────────────────
+const SunriseFarm: React.FC<SceneProps> = ({ beat, uid }) => (
+  <>
+    <DawnBackdrop uid={uid} />
 
-const MarketStall = () => (
+    {/* 0 — eleven years, nine acres, twelve hens, one van */}
+    {beat === 0 && (
+      <>
+        <Tree x={62} y={302} s={1} canopy="#4F8241" />
+        <Barn x={228} y={300} s={0.8} />
+        <FarmSign x={128} y={330} s={0.95} />
+        <Van x={520} y={352} s={0.86} />
+        <g>
+          {[[352, 372, 0.62, false, 0.2], [386, 380, 0.56, true, 1.1], [418, 370, 0.5, false, 2.0],
+            [300, 384, 0.6, true, 0.7], [332, 392, 0.52, false, 1.6], [268, 374, 0.5, true, 2.4]]
+            .map(([x, y, s, flip, d], i) => (
+              <Hen key={i} x={x as number} y={y as number} s={s as number} flip={flip as boolean} d={d as number} />
+            ))}
+        </g>
+        <Sam x={690} y={392} s={0.9} pose="idle" flip />
+      </>
+    )}
+
+    {/* 1 — he sells three ways */}
+    {beat === 1 && (
+      <>
+        <CropRow y={318} from={20} to={780} step={30} h={12} fill="#3F6B33" o={0.35} />
+        <Vignette x={168} y={326} label="Saturday market" tint={FARM.barn}><MiniStall /></Vignette>
+        <Vignette x={400} y={326} label="Farm gate" tint={FARM.leaf}><MiniGate /></Vignette>
+        <Vignette x={632} y={326} label="Two cafés" tint={FARM.amber}><MiniCafe /></Vignette>
+      </>
+    )}
+
+    {/* 2 — a year of sales in a shoebox under the counter */}
+    {beat === 2 && (
+      <>
+        <Tree x={92} y={302} s={0.9} canopy="#4F8241" />
+        <Barn x={584} y={300} s={0.72} />
+        <g transform="translate(268 208)">
+          <rect x="0" y="60" width="264" height="14" rx="3" fill={FARM.wood} />
+          <rect x="0" y="74" width="264" height="8" fill={FARM.woodDark} />
+          <line x1="16" y1="82" x2="16" y2="142" stroke={FARM.woodDark} strokeWidth="7" />
+          <line x1="248" y1="82" x2="248" y2="142" stroke={FARM.woodDark} strokeWidth="7" />
+          <rect x="34" y="34" width="60" height="26" rx="3" fill={FARM.woodDark} />
+          <circle cx="50" cy="30" r="8" fill="#D9534F" /><circle cx="70" cy="28" r="9" fill="#C0392B" />
+          <g transform="translate(150 26)">
+            {[[0, 20], [24, 20], [12, 0]].map(([x, y], i) => (
+              <g key={i} transform={`translate(${x} ${y})`}>
+                <rect x="0" y="0" width="18" height="18" rx="3" fill={FARM.honey} />
+                <rect x="1" y="-4" width="16" height="5" rx="2" fill={FARM.barnDark} />
+              </g>
+            ))}
+          </g>
+          {/* the shoebox, tucked underneath, stuffed with paper */}
+          <g transform="translate(92 100)">
+            <ellipse cx="46" cy="42" rx="62" ry="8" fill="#000000" opacity="0.22" />
+            <g className="fs-flutter" style={delay(0.2)}>
+              <rect x="14" y="-14" width="20" height="26" rx="2" fill={FARM.cream} stroke="#E0D3B8" strokeWidth="1" transform="rotate(-10 24 -1)" />
+            </g>
+            <g className="fs-flutter" style={delay(1.1)}>
+              <rect x="40" y="-18" width="20" height="26" rx="2" fill={FARM.cream} stroke="#E0D3B8" strokeWidth="1" transform="rotate(7 50 -5)" />
+            </g>
+            <g className="fs-flutter" style={delay(1.9)}>
+              <rect x="64" y="-12" width="20" height="26" rx="2" fill={FARM.cream} stroke="#E0D3B8" strokeWidth="1" transform="rotate(16 74 1)" />
+            </g>
+            <rect x="0" y="6" width="96" height="36" rx="3" fill="#D9C7A8" />
+            <rect x="0" y="6" width="96" height="10" rx="3" fill="#C4AE8C" />
+            <text x="48" y="32" textAnchor="middle" fill="#8E7B5E" fontSize="11" fontWeight="700"
+              letterSpacing="0.6" fontFamily="system-ui, sans-serif">A YEAR OF SALES</text>
+          </g>
+        </g>
+      </>
+    )}
+
+    {/* 3 — his sister asks the question */}
+    {beat >= 3 && (
+      <>
+        <Tree x={82} y={302} s={1} canopy="#4F8241" />
+        <Barn x={556} y={300} s={0.85} />
+        <Fence y={300} from={180} to={452} />
+        <g transform="translate(300 352)">
+          <ellipse cx="60" cy="30" rx="88" ry="10" fill={FARM.soilDark} opacity="0.25" />
+          <rect x="14" y="-2" width="96" height="32" rx="3" fill="#D9C7A8" />
+          <rect x="14" y="-2" width="96" height="9" rx="3" fill="#C4AE8C" />
+          <path d="M104 -2 L146 -18 L156 6 L114 22 Z" fill="#E8DCC4" />
+          {[[-40, -46, -14, 0], [-8, -56, 8, 0.7], [24, -44, 22, 1.4], [56, -58, -6, 2.1]].map(([x, y, rot, dl], i) => (
+            <g key={i} className="fs-flutter" style={delay(dl as number)}>
+              <g transform={`rotate(${rot} ${(x as number) + 13} ${(y as number) + 17})`}>
+                <rect x={x} y={y} width="26" height="34" rx="2" fill={FARM.cream} stroke="#E0D3B8" strokeWidth="1" />
+                <g stroke="#BFB096" strokeWidth="1.6" strokeLinecap="round">
+                  {[9, 15, 21, 27].map((o, k) => (
+                    <line key={k} x1={(x as number) + 5} y1={(y as number) + o} x2={(x as number) + 21 - (k % 3) * 4} y2={(y as number) + o} />
+                  ))}
+                </g>
+              </g>
+            </g>
+          ))}
+        </g>
+        <Sam x={218} y={392} s={0.92} pose="thinking" />
+        <Sister x={512} y={392} s={0.9} flip />
+      </>
+    )}
+  </>
+);
+
+// ── Chapter 2 · Saturday market ────────────────────────────────────
+
+const MarketBackdrop = ({ uid, dark = false }: { uid: string; dark?: boolean }) => (
   <>
     <defs>
-      <linearGradient id="s2sky" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stopColor="#8ECFE8" /><stop offset="100%" stopColor="#DFF1F8" />
+      <linearGradient id={`${uid}s2sky`} x1="0" y1="0" x2="0" y2="1">
+        {dark
+          ? <><stop offset="0%" stopColor="#2E3B57" /><stop offset="100%" stopColor="#8C7E8E" /></>
+          : <><stop offset="0%" stopColor="#8ECFE8" /><stop offset="100%" stopColor="#DFF1F8" /></>}
       </linearGradient>
     </defs>
-    <rect width="800" height="400" fill="url(#s2sky)" />
-    <Sun x={676} y={78} r={30} />
-    <Cloud x={-60} y={62} s={1} o={0.85} slow d={-14} />
-    <Cloud x={-60} y={44} s={0.7} o={0.7} d={-40} />
-    <Bird x={0} y={92} s={0.8} d={-10} /><Bird x={0} y={76} s={0.6} d={-28} />
-
-    <g opacity="0.28" fill={FARM.slate}>
+    <rect width="800" height="400" fill={`url(#${uid}s2sky)`} />
+    {dark
+      ? <>
+        {[[110, 40], [240, 70], [380, 34], [520, 62], [660, 44], [740, 88]].map(([x, y], i) => (
+          <circle key={i} className="fs-twinkle" style={delay(i * 0.6)} cx={x} cy={y} r={1.6} fill={FARM.cream} />
+        ))}
+      </>
+      : <>
+        <Sun x={676} y={72} r={28} />
+        <Cloud x={-60} y={62} s={1} o={0.85} slow d={-14} />
+        <Bird x={0} y={92} s={0.8} d={-10} />
+      </>}
+    <g opacity={dark ? 0.35 : 0.28} fill={dark ? '#243149' : FARM.slate}>
       <path d="M0 214 L0 170 L52 138 L104 170 L104 214 Z" />
       <path d="M118 214 L118 156 L166 128 L214 156 L214 214 Z" />
       <path d="M596 214 L596 148 L648 118 L700 148 L700 214 Z" />
       <path d="M712 214 L712 168 L756 142 L800 168 L800 214 Z" />
     </g>
-    <Tree x={272} y={216} s={0.8} canopy="#6FA556" />
-    <Tree x={556} y={218} s={0.7} canopy="#7FB069" d={2.2} />
-
-    <rect y="212" width="800" height="188" fill="#C9BFA8" />
-    <g opacity="0.35" stroke="#A99C82" strokeWidth="1.6">
-      {[236, 268, 306, 350, 396].map(y => <line key={y} x1="0" y1={y} x2="800" y2={y} />)}
+    <rect y="212" width="800" height="188" fill={dark ? '#7E7666' : '#C9BFA8'} />
+    <g opacity="0.3" stroke={dark ? '#635C50' : '#A99C82'} strokeWidth="1.6">
+      {[240, 276, 318, 366].map(y => <line key={y} x1="0" y1={y} x2="800" y2={y} />)}
       {[90, 220, 350, 480, 610, 740].map(x => <line key={x} x1={x} y1="212" x2={x} y2="400" />)}
     </g>
-
-    <g transform="translate(232 200)">
-      <line x1="14" y1="0" x2="14" y2="150" stroke={FARM.woodDark} strokeWidth="7" />
-      <line x1="322" y1="0" x2="322" y2="150" stroke={FARM.woodDark} strokeWidth="7" />
-      <path d="M-6 4 L342 4 L342 -14 L-6 -14 Z" fill={FARM.barnDark} />
-      <g className="fs-sway-s" style={{ transformOrigin: '50% 0%' }}>
-        {Array.from({ length: 8 }).map((_, i) => (
-          <path key={i} d={`M${-6 + i * 43.5} 4 L${-6 + (i + 1) * 43.5} 4 L${-6 + (i + 1) * 43.5 - 8} 40 L${-6 + i * 43.5 - 8} 40 Z`}
-            fill={i % 2 ? FARM.cream : FARM.barn} />
-        ))}
-        <path d="M-14 38 q 174 16 350 0 l 0 12 q -176 16 -350 0 Z" fill={FARM.cream} opacity="0.95" />
-      </g>
-
-      <rect x="-4" y="96" width="338" height="16" rx="3" fill={FARM.wood} />
-      <rect x="-4" y="112" width="338" height="8" fill={FARM.woodDark} />
-
-      <g transform="translate(6 60)">
-        <rect x="0" y="14" width="72" height="22" rx="3" fill={FARM.woodDark} />
-        {[10, 26, 42, 58, 18, 34, 50].map((x, i) => (
-          <circle key={i} cx={x} cy={i > 3 ? 6 : 14} r="7.5" fill={i % 2 ? '#C0392B' : '#D9534F'} />
-        ))}
-      </g>
-      <g transform="translate(92 62)">
-        <rect x="0" y="12" width="66" height="24" rx="3" fill={FARM.woodDark} />
-        {[12, 28, 44, 20, 36].map((x, i) => (
-          <ellipse key={i} cx={x} cy={i > 2 ? 6 : 14} rx="9" ry="7" fill={i % 2 ? '#B98A54' : '#A9784F'} />
-        ))}
-      </g>
-      {/* the honey pyramid, catching the light */}
-      <g transform="translate(196 44)">
-        <ellipse cx="52" cy="56" rx="60" ry="9" fill={FARM.honey} opacity="0.16" />
-        {[[16, 34], [46, 34], [76, 34], [31, 8], [61, 8], [46, -18]].map(([x, y], i) => (
-          <g key={i} transform={`translate(${x} ${y})`}>
-            <rect x="0" y="0" width="24" height="24" rx="4" fill={FARM.honey} />
-            <rect x="0" y="0" width="24" height="9" rx="4" fill="#F2B950" />
-            <rect x="2" y="-5" width="20" height="6" rx="2" fill={FARM.barnDark} />
-            <rect x="4" y="10" width="16" height="8" rx="1.5" fill={FARM.cream} opacity="0.85" />
-            <rect className="fs-glint" style={delay(i * 0.9)} x="3" y="2" width="5" height="18" rx="2.5" fill="#FFFFFF" />
-          </g>
-        ))}
-      </g>
-      <g transform="translate(-26 116)">
-        <rect x="0" y="0" width="58" height="44" rx="4" fill={FARM.night} />
-        <rect x="0" y="0" width="58" height="44" rx="4" fill="none" stroke={FARM.wood} strokeWidth="4" />
-        <g stroke={FARM.cream} strokeWidth="2" strokeLinecap="round" opacity="0.8">
-          <line x1="10" y1="14" x2="42" y2="14" /><line x1="10" y1="24" x2="36" y2="24" /><line x1="10" y1="34" x2="44" y2="34" />
-        </g>
-      </g>
-    </g>
-
-    {/* sacks of potatoes, doing the heavy lifting */}
-    <g transform="translate(596 300)">
-      {[[0, 0, 1], [56, 6, 0.9], [28, -34, 0.8]].map(([x, y, s], i) => (
-        <g key={i} transform={`translate(${x} ${y}) scale(${s})`}>
-          <path d="M0 46 q -6 -46 22 -50 q 28 4 22 50 Z" fill="#9E8A6B" />
-          <path d="M12 -6 q 10 -8 20 0 q -10 5 -20 0 Z" fill="#8A785C" />
-          <ellipse cx="22" cy="46" rx="24" ry="5" fill={FARM.soilDark} opacity="0.2" />
-        </g>
-      ))}
-    </g>
-    <Crate x={96} y={332} w={62} h={38} contents="#D9534F" />
-
-    {/* Sam at the end of the stall, clear of the honey */}
-    <Sam x={720} y={392} s={0.86} pose="idle" flip />
   </>
 );
 
-// ── Scene 3 · November, and a half-empty table ─────────────────────
+/** The stall frame, with the table optionally still bare. */
+const Stall = ({ x, y, s = 1, awning = true, children }: {
+  x: number; y: number; s?: number; awning?: boolean; children?: React.ReactNode;
+}) => (
+  <g transform={`translate(${x} ${y}) scale(${s})`}>
+    <line x1="14" y1="0" x2="14" y2="150" stroke={FARM.woodDark} strokeWidth="7" />
+    <line x1="322" y1="0" x2="322" y2="150" stroke={FARM.woodDark} strokeWidth="7" />
+    {awning && (
+      <>
+        <path d="M-6 4 L342 4 L342 -14 L-6 -14 Z" fill={FARM.barnDark} />
+        <g className="fs-sway-s" style={{ transformOrigin: '50% 0%' }}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <path key={i} d={`M${-6 + i * 43.5} 4 L${-6 + (i + 1) * 43.5} 4 L${-6 + (i + 1) * 43.5 - 8} 40 L${-6 + i * 43.5 - 8} 40 Z`}
+              fill={i % 2 ? FARM.cream : FARM.barn} />
+          ))}
+          <path d="M-14 38 q 174 16 350 0 l 0 12 q -176 16 -350 0 Z" fill={FARM.cream} opacity="0.95" />
+        </g>
+      </>
+    )}
+    <rect x="-4" y="96" width="338" height="16" rx="3" fill={FARM.wood} />
+    <rect x="-4" y="112" width="338" height="8" fill={FARM.woodDark} />
+    {children}
+  </g>
+);
 
-const WinterField = () => (
+const HoneyPyramid = ({ glint = true }: { glint?: boolean }) => (
+  <g>
+    <ellipse cx="52" cy="56" rx="60" ry="9" fill={FARM.honey} opacity="0.16" />
+    {[[16, 34], [46, 34], [76, 34], [31, 8], [61, 8], [46, -18]].map(([x, y], i) => (
+      <g key={i} transform={`translate(${x} ${y})`}>
+        <rect x="0" y="0" width="24" height="24" rx="4" fill={FARM.honey} />
+        <rect x="0" y="0" width="24" height="9" rx="4" fill="#F2B950" />
+        <rect x="2" y="-5" width="20" height="6" rx="2" fill={FARM.barnDark} />
+        <rect x="4" y="10" width="16" height="8" rx="1.5" fill={FARM.cream} opacity="0.85" />
+        {glint && <rect className="fs-glint" style={delay(i * 0.9)} x="3" y="2" width="5" height="18" rx="2.5" fill="#FFFFFF" />}
+      </g>
+    ))}
+  </g>
+);
+
+const PotatoSacks = ({ x, y }: { x: number; y: number }) => (
+  <g transform={`translate(${x} ${y})`}>
+    {[[0, 0, 1], [56, 6, 0.9], [28, -34, 0.8]].map(([x2, y2, s], i) => (
+      <g key={i} transform={`translate(${x2} ${y2}) scale(${s})`}>
+        <path d="M0 46 q -6 -46 22 -50 q 28 4 22 50 Z" fill="#9E8A6B" />
+        <path d="M12 -6 q 10 -8 20 0 q -10 5 -20 0 Z" fill="#8A785C" />
+        <ellipse cx="22" cy="46" rx="24" ry="5" fill={FARM.soilDark} opacity="0.2" />
+      </g>
+    ))}
+  </g>
+);
+
+const MarketStall: React.FC<SceneProps> = ({ beat, uid }) => (
+  <>
+    <MarketBackdrop uid={uid} dark={beat === 0} />
+
+    {/* 0 — half six, the stall goes up in the dark */}
+    {beat === 0 && (
+      <>
+        <Stall x={232} y={200} awning={false} />
+        <g className="fs-sway-s" style={{ transformOrigin: '50% 100%' }}>
+          <path d="M226 204 L580 130 L584 148 L230 222 Z" fill={FARM.barnDark} opacity="0.9" />
+        </g>
+        <Van x={40} y={352} s={0.7} lightsOn />
+        <Sam x={556} y={352} s={0.86} pose="pointing" flip />
+        <SpeechPuff x={534} y={300} s={0.9} />
+      </>
+    )}
+
+    {/* 1 — by nine the potatoes are moving in sacks */}
+    {beat === 1 && (
+      <>
+        <Stall x={232} y={200}>
+          <g transform="translate(6 60)">
+            <rect x="0" y="14" width="72" height="22" rx="3" fill={FARM.woodDark} />
+            {[10, 26, 42, 58, 18, 34].map((x, i) => (
+              <ellipse key={i} cx={x} cy={i > 3 ? 6 : 14} rx="9" ry="7" fill={i % 2 ? '#B98A54' : '#A9784F'} />
+            ))}
+          </g>
+        </Stall>
+        <PotatoSacks x={430} y={296} />
+        <PotatoSacks x={584} y={302} />
+        <Shopper x={230} y={392} s={0.92} />
+        <Shopper x={318} y={396} s={0.86} flip coat="#8A6B7E" />
+        <Sam x={690} y={392} s={0.86} pose="carrying" flip />
+        <g transform="translate(700 330)"><Crate x={0} y={0} w={38} h={22} contents="#A9784F" /></g>
+      </>
+    )}
+
+    {/* 2 — the honey sits at the back, some weeks he sells four */}
+    {beat === 2 && (
+      <>
+        <Stall x={232} y={200}>
+          <g transform="translate(112 44) scale(1.25)"><HoneyPyramid /></g>
+        </Stall>
+        <g transform="translate(560 250)">
+          <rect x="0" y="0" width="86" height="30" rx="15" fill={FARM.night} opacity="0.5" />
+          <text x="43" y="20" textAnchor="middle" fill={FARM.cream} fontSize="12" fontWeight="700"
+            fontFamily="system-ui, sans-serif">4 jars</text>
+        </g>
+        <Sam x={666} y={392} s={0.86} pose="idle" flip />
+      </>
+    )}
+
+    {/* 3 — same eight products, the question is what you count */}
+    {beat >= 3 && (
+      <>
+        <Stall x={232} y={200}>
+          <g transform="translate(6 62)">
+            <rect x="0" y="12" width="60" height="22" rx="3" fill={FARM.woodDark} />
+            {[10, 26, 42, 18, 34].map((x, i) => (
+              <circle key={i} cx={x} cy={i > 2 ? 4 : 12} r="7" fill={i % 2 ? '#C0392B' : '#D9534F'} />
+            ))}
+          </g>
+          <g transform="translate(76 64)">
+            <rect x="0" y="10" width="56" height="22" rx="3" fill={FARM.woodDark} />
+            {[10, 26, 42, 18].map((x, i) => (
+              <ellipse key={i} cx={x} cy={i > 2 ? 4 : 12} rx="8" ry="6.5" fill="#A9784F" />
+            ))}
+          </g>
+          <g transform="translate(142 66)">
+            <rect x="0" y="10" width="46" height="20" rx="3" fill="#C9B79A" />
+            {[9, 22, 35].map((x, i) => <ellipse key={i} cx={x} cy={9} rx="6" ry="7.5" fill={FARM.cream} />)}
+          </g>
+          <g transform="translate(196 42) scale(0.82)"><HoneyPyramid glint={false} /></g>
+          <g transform="translate(268 62)">
+            {[0, 22, 44].map((x, i) => (
+              <g key={i} transform={`translate(${x} ${i === 1 ? 24 : 30})`}>
+                <rect x="0" y="0" width="18" height="22" rx="3.5" fill="#C0392B" />
+                <rect x="0" y="0" width="18" height="7" rx="3.5" fill="#D9534F" />
+                <rect x="1" y="-4" width="16" height="5" rx="2" fill={FARM.cream} />
+              </g>
+            ))}
+          </g>
+        </Stall>
+        <g transform="translate(268 344)">
+          <rect x="0" y="0" width="272" height="34" rx="17" fill={FARM.night} opacity="0.45" />
+          <text x="136" y="23" textAnchor="middle" fill={FARM.cream} fontSize="14" fontWeight="700"
+            fontFamily="system-ui, sans-serif">Eight products — count what?</text>
+        </g>
+        <Sam x={690} y={392} s={0.86} pose="thinking" flip />
+      </>
+    )}
+  </>
+);
+
+// ── Chapter 3 · November, and a half-empty table ───────────────────
+
+const WinterBackdrop = ({ uid }: { uid: string }) => (
   <>
     <defs>
-      <linearGradient id="s3sky" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient id={`${uid}s3sky`} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stopColor="#8496AC" /><stop offset="100%" stopColor="#C6D4DF" />
       </linearGradient>
-      <linearGradient id="s3tunnel" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient id={`${uid}s3tunnel`} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stopColor="#FFE3A8" /><stop offset="100%" stopColor="#F0C877" />
       </linearGradient>
     </defs>
-    <rect width="800" height="400" fill="url(#s3sky)" />
+    <rect width="800" height="400" fill={`url(#${uid}s3sky)`} />
     <Cloud x={-60} y={58} s={1.4} fill="#93A5B8" o={0.75} slow d={-30} />
     <Cloud x={-60} y={40} s={1.1} fill="#A3B3C4" o={0.7} slow d={-55} />
-
-    {/* rain */}
-    <g stroke="#B4C4D2" strokeWidth="1.6" strokeLinecap="round" opacity="0.55">
-      {Array.from({ length: 40 }).map((_, i) => {
-        const x = (i * 97) % 810;
-        return (
-          <g key={i} className="fs-rain" style={delay(-((i * 0.17) % 1.1))}>
-            <line x1={x} y1={0} x2={x - 9} y2={26} />
-          </g>
-        );
-      })}
-    </g>
-
+    <Rain />
     <path d="M0 236 q 180 -20 360 0 q 200 22 440 -6 L800 400 L0 400 Z" fill="#8FA98C" />
     <Ground y={278} fill="#7C9377" />
     <g opacity="0.4">
@@ -553,224 +929,383 @@ const WinterField = () => (
     </g>
     <ellipse cx="250" cy="360" rx="86" ry="10" fill="#AFC4D2" opacity="0.55" />
     <ellipse cx="612" cy="386" rx="70" ry="9" fill="#AFC4D2" opacity="0.45" />
-
-    <Tree x={86} y={280} s={1} bare /><Tree x={166} y={286} s={0.75} bare d={1.1} />
-    <Tree x={726} y={284} s={0.9} bare d={2.3} />
-
-    <g transform="translate(430 176)">
-      <path d="M0 104 L0 44 q 96 -58 192 0 L192 104 Z" fill="url(#s3tunnel)" opacity="0.92" />
-      <path d="M0 104 L0 44 q 96 -58 192 0 L192 104 Z" fill="none" stroke={FARM.cream} strokeWidth="3" opacity="0.7" />
-      <g stroke={FARM.cream} strokeWidth="2.4" opacity="0.55" fill="none">
-        <path d="M38 104 L38 26" /><path d="M96 104 L96 16" /><path d="M154 104 L154 26" />
-      </g>
-      <ellipse className="fs-pulse" cx="96" cy="118" rx="130" ry="16" fill={FARM.honey} />
-    </g>
-
-    <Fence y={288} from={210} to={412} />
-    <Hen x={252} y={312} s={0.8} d={0.2} />
-    <Hen x={300} y={318} s={0.7} flip d={1.5} />
-    <Hen x={340} y={308} s={0.65} d={2.7} />
-
-    {/* the near-empty stall */}
-    <g transform="translate(78 292)">
-      <rect x="0" y="34" width="176" height="12" rx="3" fill={FARM.wood} />
-      <rect x="0" y="46" width="176" height="7" fill={FARM.woodDark} />
-      <line x1="10" y1="46" x2="10" y2="92" stroke={FARM.woodDark} strokeWidth="5" />
-      <line x1="166" y1="46" x2="166" y2="92" stroke={FARM.woodDark} strokeWidth="5" />
-      <g transform="translate(10 12)">
-        <rect x="0" y="10" width="42" height="12" rx="2" fill="#C9B79A" />
-        {[7, 18, 29].map(x => <ellipse key={x} cx={x} cy={9} rx="5.5" ry="7" fill={FARM.cream} />)}
-      </g>
-      {[62, 86, 110].map((x, i) => (
-        <g key={x} transform={`translate(${x} ${8}) scale(0.8)`}>
-          <rect x="0" y="0" width="22" height="26" rx="4" fill="#C0392B" opacity="0.85" />
-          <rect x="0" y="0" width="22" height="8" rx="4" fill="#D9534F" />
-          <rect x="2" y="-4" width="18" height="5" rx="2" fill={FARM.cream} />
-        </g>
-      ))}
-      <g transform="translate(134 20)">
-        {[0, 13, 6].map((x, i) => <ellipse key={i} cx={x + 6} cy={i === 2 ? 3 : 12} rx="8" ry="6" fill="#A9784F" />)}
-      </g>
-    </g>
-
-    {/* Sam, out in it, breath showing */}
-    <Sam x={398} y={394} s={0.86} pose="idle" flip />
-    <SpeechPuff x={374} y={334} s={0.9} />
   </>
 );
 
-// ── Scene 4 · five in the morning, five crates ─────────────────────
+const WinterField: React.FC<SceneProps> = ({ beat, uid }) => (
+  <>
+    <WinterBackdrop uid={uid} />
 
-const LoadingVan = () => (
+    {/* 0 — November, rain sideways across the top field */}
+    {beat === 0 && (
+      <>
+        <Tree x={106} y={280} s={1.05} bare /><Tree x={196} y={286} s={0.8} bare d={1.1} />
+        <Tree x={686} y={284} s={0.95} bare d={2.3} /><Tree x={758} y={290} s={0.7} bare d={0.6} />
+        <Fence y={300} from={280} to={600} />
+        <g transform="translate(392 214)">
+          <rect x="0" y="0" width="120" height="30" rx="15" fill={FARM.night} opacity="0.4" />
+          <text x="60" y="20" textAnchor="middle" fill={FARM.cream} fontSize="13" fontWeight="700"
+            letterSpacing="1" fontFamily="system-ui, sans-serif">NOVEMBER</text>
+        </g>
+        <Sam x={452} y={394} s={0.86} pose="idle" />
+        <SpeechPuff x={476} y={334} s={0.9} />
+      </>
+    )}
+
+    {/* 1 — eggs, potatoes and a row of jam jars. that is it. */}
+    {beat === 1 && (
+      <>
+        <Tree x={716} y={284} s={0.9} bare d={2.3} />
+        <g transform="translate(216 240)">
+          <rect x="0" y="60" width="240" height="14" rx="3" fill={FARM.wood} />
+          <rect x="0" y="74" width="240" height="8" fill={FARM.woodDark} />
+          <line x1="14" y1="82" x2="14" y2="150" stroke={FARM.woodDark} strokeWidth="6" />
+          <line x1="226" y1="82" x2="226" y2="150" stroke={FARM.woodDark} strokeWidth="6" />
+          <g transform="translate(18 30)">
+            <rect x="0" y="16" width="52" height="14" rx="2" fill="#C9B79A" />
+            {[9, 22, 35, 15, 29].map((x, i) => <ellipse key={i} cx={x} cy={i > 2 ? 8 : 15} rx="6.5" ry="8" fill={FARM.cream} />)}
+            <rect x="-2" y="52" width="56" height="18" rx="9" fill={FARM.cream} opacity="0.92" />
+            <text x="26" y="65" textAnchor="middle" fill={FARM.barnDark} fontSize="11" fontWeight="700"
+              fontFamily="system-ui, sans-serif">Eggs</text>
+          </g>
+          <g transform="translate(92 28)">
+            {[0, 24, 48].map((x, i) => (
+              <g key={i} transform={`translate(${x} ${i === 1 ? 6 : 12})`}>
+                <rect x="0" y="0" width="20" height="24" rx="4" fill="#C0392B" />
+                <rect x="0" y="0" width="20" height="7" rx="4" fill="#D9534F" />
+                <rect x="1" y="-4" width="18" height="5" rx="2" fill={FARM.cream} />
+              </g>
+            ))}
+            <rect x="6" y="54" width="56" height="18" rx="9" fill={FARM.cream} opacity="0.92" />
+            <text x="34" y="67" textAnchor="middle" fill={FARM.barnDark} fontSize="11" fontWeight="700"
+              fontFamily="system-ui, sans-serif">Jam</text>
+          </g>
+          <g transform="translate(168 34)">
+            <rect x="0" y="14" width="52" height="16" rx="3" fill={FARM.woodDark} />
+            {[10, 26, 42, 18, 34].map((x, i) => <ellipse key={i} cx={x} cy={i > 2 ? 8 : 15} rx="8" ry="6" fill="#A9784F" />)}
+            <rect x="-6" y="52" width="64" height="18" rx="9" fill={FARM.cream} opacity="0.92" />
+            <text x="26" y="65" textAnchor="middle" fill={FARM.barnDark} fontSize="11" fontWeight="700"
+              fontFamily="system-ui, sans-serif">Potatoes</text>
+          </g>
+        </g>
+        <Hen x={548} y={330} s={0.78} d={0.2} />
+        <Hen x={596} y={338} s={0.68} flip d={1.5} />
+        <Sam x={620} y={394} s={0.86} pose="idle" flip />
+      </>
+    )}
+
+    {/* 2 — the summer chart is proud of things that do not exist in January */}
+    {beat >= 2 && (
+      <>
+        <Tree x={92} y={280} s={0.95} bare />
+        <g transform="translate(430 176)">
+          <path d="M0 104 L0 44 q 96 -58 192 0 L192 104 Z" fill={`url(#${uid}s3tunnel)`} opacity="0.92" />
+          <path d="M0 104 L0 44 q 96 -58 192 0 L192 104 Z" fill="none" stroke={FARM.cream} strokeWidth="3" opacity="0.7" />
+          <g stroke={FARM.cream} strokeWidth="2.4" opacity="0.55" fill="none">
+            <path d="M38 104 L38 26" /><path d="M96 104 L96 16" /><path d="M154 104 L154 26" />
+          </g>
+          <ellipse className="fs-pulse" cx="96" cy="118" rx="130" ry="16" fill={FARM.honey} />
+        </g>
+        <ChartBoard x={176} y={352} s={1.05} bars={[62, 54, 40, 26]} strike title="LAST CHAPTER" />
+        <Sam x={358} y={394} s={0.84} pose="pointing" />
+      </>
+    )}
+  </>
+);
+
+// ── Chapter 4 · five in the morning, five crates ───────────────────
+
+const PredawnBackdrop = ({ uid }: { uid: string }) => (
   <>
     <defs>
-      <linearGradient id="s4sky" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient id={`${uid}s4sky`} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stopColor="#33456B" /><stop offset="55%" stopColor="#8E6E86" />
         <stop offset="100%" stopColor="#F0A46A" />
       </linearGradient>
-      <radialGradient id="s4beam" cx="0" cy="0.5" r="1">
+      <radialGradient id={`${uid}s4beam`} cx="0" cy="0.5" r="1">
         <stop offset="0%" stopColor="#FFE9B8" stopOpacity="0.75" />
         <stop offset="100%" stopColor="#FFE9B8" stopOpacity="0" />
       </radialGradient>
     </defs>
-    <rect width="800" height="400" fill="url(#s4sky)" />
-    {[[92, 44], [188, 76], [276, 36], [404, 62], [520, 30], [636, 84], [724, 50], [148, 112], [352, 106], [596, 118]].map(([x, y], i) => (
+    <rect width="800" height="400" fill={`url(#${uid}s4sky)`} />
+    {[[92, 44], [188, 76], [276, 36], [404, 62], [520, 30], [636, 84], [724, 50], [148, 112], [352, 106]].map(([x, y], i) => (
       <circle key={i} className="fs-twinkle" style={delay(i * 0.55)} cx={x} cy={y} r={i % 3 === 0 ? 2 : 1.4} fill={FARM.cream} />
     ))}
-    <Sun x={702} y={252} r={30} glow="#FFB870" rise />
-
+    <Sun x={702} y={252} r={28} glow="#FFB870" rise />
     <path d="M0 258 q 150 -28 300 -6 q 180 26 340 -12 q 110 -22 160 2 L800 400 L0 400 Z" fill="#4A4257" />
     <Ground y={296} fill="#3A3448" />
-    <Barn x={44} y={296} s={0.72} />
-    <Tree x={264} y={298} s={0.8} canopy="#3E5540" />
-
-    <path className="fs-pulse" d="M156 320 L-40 268 L-40 388 Z" fill="url(#s4beam)" opacity="0.3" />
-
-    <g transform="translate(190 176)">
-      <ellipse cx="220" cy="152" rx="220" ry="14" fill="#241F30" opacity="0.5" />
-      <path d="M28 40 L250 40 L250 132 L28 132 Z" fill={FARM.cream} />
-      <path d="M250 62 L296 62 L342 104 L342 132 L250 132 Z" fill="#EFE3CE" />
-      <path d="M258 68 L292 68 L328 102 L258 102 Z" fill="#7FA8C4" />
-      <path d="M258 68 L282 68 L258 92 Z" fill="#A8C8DC" opacity="0.7" />
-      <path d="M28 40 L-24 22 L-24 122 L28 132 Z" fill="#E4D7C0" />
-      <path d="M-24 22 L-30 24 L-30 124 L-24 122 Z" fill={FARM.woodDark} opacity="0.5" />
-      <rect x="52" y="66" width="150" height="34" rx="4" fill={FARM.leaf} opacity="0.22" />
-      <g stroke={FARM.leaf} strokeWidth="3.4" strokeLinecap="round" opacity="0.75">
-        <line x1="64" y1="78" x2="150" y2="78" /><line x1="64" y1="90" x2="120" y2="90" />
-      </g>
-      <circle cx="86" cy="134" r="24" fill="#241F30" />
-      <g className="fs-spin"><circle cx="86" cy="134" r="10" fill="#5A5468" /></g>
-      <circle cx="300" cy="134" r="24" fill="#241F30" />
-      <g className="fs-spin"><circle cx="300" cy="134" r="10" fill="#5A5468" /></g>
-      <ellipse className="fs-pulse" cx="340" cy="112" rx="7" ry="9" fill="#FFEBB8" opacity="0.9" />
-      {/* five crates, loaded */}
-      <g transform="translate(40 48)">
-        <Crate x={0} y={40} w={44} h={28} contents={FARM.honey} />
-        <Crate x={50} y={40} w={44} h={28} contents={FARM.cream} />
-        <Crate x={100} y={40} w={44} h={28} contents="#D9534F" />
-        <Crate x={25} y={10} w={44} h={28} contents="#A9784F" />
-        <Crate x={75} y={10} w={44} h={28} contents="#C0392B" />
-      </g>
-    </g>
-
-    {/* the crate that did not make the cut */}
-    <g transform="translate(88 336)">
-      <Crate x={0} y={0} w={54} h={32} contents="#E8C86A" />
-      <path d="M-8 -4 l 70 44 M62 -4 l -70 44" stroke="#D9534F" strokeWidth="4" strokeLinecap="round" opacity="0.55" />
-    </g>
-
-    {/* Sam, mid-load */}
-    <g className="fs-lift">
-      <Sam x={222} y={392} s={0.86} pose="carrying" />
-      <g transform="translate(200 330)">
-        <Crate x={0} y={0} w={44} h={26} contents={FARM.honey} />
-      </g>
-    </g>
   </>
 );
 
-// ── Scene 5 · Bridge Street, Thursday ──────────────────────────────
+const LoadingVan: React.FC<SceneProps> = ({ beat, uid }) => (
+  <>
+    <PredawnBackdrop uid={uid} />
 
-const CafeDelivery = () => (
+    {/* 0 — the van holds five crates. not six. */}
+    {beat === 0 && (
+      <>
+        <Barn x={30} y={296} s={0.6} />
+        <Van x={220} y={356} s={1.06} loaded={5} lightsOn />
+        <g transform="translate(486 330)">
+          <Crate x={0} y={0} w={54} h={32} contents="#E8C86A" />
+          <path d="M-8 -4 l 70 44 M62 -4 l -70 44" stroke="#D9534F" strokeWidth="5" strokeLinecap="round" opacity="0.7" />
+          <rect x="-14" y="-34" width="82" height="22" rx="11" fill="#D9534F" />
+          <text x="27" y="-19" textAnchor="middle" fill={FARM.cream} fontSize="12" fontWeight="700"
+            fontFamily="system-ui, sans-serif">no room</text>
+        </g>
+        <g transform="translate(600 244)">
+          <rect x="0" y="0" width="150" height="34" rx="17" fill={FARM.night} opacity="0.55" />
+          <text x="75" y="23" textAnchor="middle" fill={FARM.cream} fontSize="14" fontWeight="700"
+            fontFamily="system-ui, sans-serif">Five. Not six.</text>
+        </g>
+      </>
+    )}
+
+    {/* 1 — every Saturday at five he stands in the cold and guesses */}
+    {beat === 1 && (
+      <>
+        <path className="fs-pulse" d="M300 320 L-40 258 L-40 392 Z" fill={`url(#${uid}s4beam)`} opacity="0.3" />
+        <Barn x={22} y={296} s={0.56} />
+        <Van x={520} y={352} s={0.82} lightsOn />
+        <g transform="translate(150 320)">
+          {[[0, 40, FARM.honey], [64, 40, FARM.cream], [128, 40, '#D9534F'], [192, 40, '#A9784F'],
+            [32, 4, '#C0392B'], [96, 4, '#E8C86A'], [160, 4, '#B98A54'], [224, 6, '#7FB069']]
+            .map(([x, y, col], i) => (
+              <Crate key={i} x={x as number} y={y as number} w={54} h={32} contents={col as string} />
+            ))}
+        </g>
+        <Sam x={392} y={394} s={0.94} pose="thinking" />
+        <SpeechPuff x={416} y={330} s={1} />
+        <g transform="translate(300 218)">
+          <rect x="0" y="0" width="130" height="32" rx="16" fill={FARM.night} opacity="0.55" />
+          <text x="65" y="22" textAnchor="middle" fill={FARM.cream} fontSize="14" fontWeight="700"
+            fontFamily="system-ui, sans-serif">05:00</text>
+        </g>
+      </>
+    )}
+
+    {/* 2 — this week he decides the night before, sitting down */}
+    {beat >= 2 && (
+      <>
+        <Barn x={26} y={296} s={0.5} />
+        <Van x={584} y={348} s={0.62} />
+        {/* kitchen table, lamp, and the year spread out on it */}
+        <g transform="translate(228 258)">
+          <ellipse className="fs-pulse" cx="170" cy="10" rx="210" ry="60" fill={FARM.honey} opacity="0.25" />
+          <g transform="translate(276 -84)">
+            <rect x="-4" y="0" width="8" height="66" fill={FARM.woodDark} />
+            <path d="M-26 0 L26 0 L16 -26 L-16 -26 Z" fill={FARM.barn} />
+            <circle className="fs-pulse" cx="0" cy="4" r="14" fill={FARM.honey} />
+          </g>
+          <rect x="0" y="60" width="340" height="16" rx="4" fill={FARM.wood} />
+          <rect x="0" y="76" width="340" height="9" fill={FARM.woodDark} />
+          <line x1="24" y1="85" x2="24" y2="134" stroke={FARM.woodDark} strokeWidth="8" />
+          <line x1="316" y1="85" x2="316" y2="134" stroke={FARM.woodDark} strokeWidth="8" />
+          <g transform="rotate(-5 60 30)"><Paper x={22} y={-6} w={96} h={66} rows={5} title="THE YEAR" /></g>
+          <g transform="rotate(4 190 26)"><Paper x={136} y={-10} w={90} h={68} rows={6} /></g>
+          <ChartBoard x={246} y={58} s={0.62} bars={[54, 44, 36, 24]} />
+        </g>
+        <Sam x={140} y={394} s={0.9} pose="pointing" />
+      </>
+    )}
+  </>
+);
+
+// ── Chapter 5 · Bridge Street, Thursday ────────────────────────────
+
+const StreetBackdrop = ({ uid }: { uid: string }) => (
   <>
     <defs>
-      <linearGradient id="s5sky" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient id={`${uid}s5sky`} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stopColor="#A9D6E8" /><stop offset="100%" stopColor="#E8F3F7" />
       </linearGradient>
-      <linearGradient id="s5win" x1="0" y1="0" x2="0" y2="1">
+      <linearGradient id={`${uid}s5win`} x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stopColor="#FFE6AE" /><stop offset="100%" stopColor="#F5C46B" />
       </linearGradient>
     </defs>
-    <rect width="800" height="400" fill="url(#s5sky)" />
+    <rect width="800" height="400" fill={`url(#${uid}s5sky)`} />
     <Cloud x={-60} y={48} s={0.9} o={0.8} slow d={-18} />
-    <Cloud x={-60} y={34} s={0.7} o={0.65} d={-46} />
-    <Bird x={0} y={54} s={0.7} d={-8} /><Bird x={0} y={40} s={0.55} d={-26} />
-
+    <Bird x={0} y={54} s={0.7} d={-8} />
     <rect x="0" y="96" width="150" height="216" fill="#C7B9A6" />
     <rect x="0" y="96" width="150" height="14" fill="#A99A85" />
     <rect x="24" y="140" width="46" height="60" rx="3" fill="#9FB5C4" opacity="0.7" />
-    <rect x="92" y="140" width="40" height="60" rx="3" fill="#9FB5C4" opacity="0.55" />
     <rect x="650" y="82" width="150" height="230" fill="#BFAF9C" />
     <rect x="650" y="82" width="150" height="14" fill="#A0917C" />
     <rect x="682" y="128" width="44" height="66" rx="3" fill="#9FB5C4" opacity="0.6" />
-
-    <g transform="translate(168 70)">
-      <rect x="0" y="0" width="470" height="242" fill="#E8DAC4" />
-      <rect x="0" y="0" width="470" height="20" rx="3" fill={FARM.barnDark} />
-      <g transform="translate(408 24)">
-        <line x1="0" y1="0" x2="0" y2="16" stroke={FARM.woodDark} strokeWidth="3" />
-        <g className="fs-sway-s" style={{ transformOrigin: '50% 0%' }}>
-          <rect x="-46" y="16" width="92" height="42" rx="5" fill={FARM.leaf} />
-          <g stroke={FARM.cream} strokeWidth="3" strokeLinecap="round" opacity="0.85">
-            <line x1="-30" y1="32" x2="30" y2="32" /><line x1="-22" y1="44" x2="22" y2="44" />
-          </g>
-        </g>
-      </g>
-      <g transform="translate(24 26)">
-        <g className="fs-sway-s" style={{ transformOrigin: '50% 0%' }}>
-          {Array.from({ length: 7 }).map((_, i) => (
-            <path key={i} d={`M${i * 46} 0 L${(i + 1) * 46} 0 L${(i + 1) * 46 - 5} 40 L${i * 46 - 5} 40 Z`}
-              fill={i % 2 ? FARM.cream : FARM.leaf} />
-          ))}
-          <path d="M-8 38 q 162 14 330 0 l 0 10 q -168 14 -330 0 Z" fill="#E8DAC4" />
-        </g>
-      </g>
-      <rect x="34" y="98" width="180" height="112" rx="5" fill="url(#s5win)" />
-      <rect x="34" y="98" width="180" height="112" rx="5" fill="none" stroke={FARM.woodDark} strokeWidth="5" />
-      <line x1="124" y1="98" x2="124" y2="210" stroke={FARM.woodDark} strokeWidth="4" />
-      <g fill={FARM.barnDark} opacity="0.35">
-        <circle cx="72" cy="140" r="12" /><path d="M52 176 q 20 -26 40 0 Z" />
-        <circle cx="168" cy="146" r="11" /><path d="M150 178 q 18 -24 36 0 Z" />
-        <rect x="96" y="168" width="48" height="5" rx="2" />
-      </g>
-      <SpeechPuff x={114} y={162} s={0.8} />
-      <rect x="256" y="106" width="72" height="136" rx="4" fill={FARM.woodDark} />
-      <rect x="266" y="118" width="52" height="62" rx="3" fill="url(#s5win)" opacity="0.9" />
-      <circle cx="318" cy="180" r="4" fill={FARM.honey} />
-      <g transform="translate(358 168)">
-        <path d="M0 74 L14 20 L58 20 L72 74 Z" fill={FARM.woodDark} opacity="0.35" />
-        <rect x="8" y="8" width="56" height="60" rx="4" fill={FARM.night} />
-        <rect x="8" y="8" width="56" height="60" rx="4" fill="none" stroke={FARM.wood} strokeWidth="4" />
-        <g stroke={FARM.cream} strokeWidth="2.2" strokeLinecap="round" opacity="0.8">
-          <line x1="18" y1="24" x2="52" y2="24" /><line x1="18" y1="36" x2="46" y2="36" />
-          <line x1="18" y1="48" x2="54" y2="48" />
-        </g>
-      </g>
-    </g>
-
     <rect y="312" width="800" height="88" fill="#BDB5A8" />
     <g opacity="0.35" stroke="#9A9184" strokeWidth="1.8">
       {[336, 366].map(y => <line key={y} x1="0" y1={y} x2="800" y2={y} />)}
       {[70, 190, 310, 430, 550, 670].map(x => <line key={x} x1={x} y1="312" x2={x} y2="400" />)}
     </g>
-
-    <g transform="translate(64 296)">
-      <Crate x={0} y={22} w={58} h={34} contents={FARM.honey} />
-      <Crate x={66} y={22} w={58} h={34} contents={FARM.cream} />
-      <Crate x={33} y={-12} w={58} h={34} contents="#D9534F" />
-      <ellipse cx="62" cy="62" rx="80" ry="8" fill={FARM.woodDark} opacity="0.2" />
-    </g>
-
-    <g transform="translate(660 322)" stroke={FARM.night} strokeWidth="3.4" fill="none" opacity="0.7">
-      <circle cx="18" cy="42" r="18" /><circle cx="86" cy="42" r="18" />
-      <path d="M18 42 L48 42 L64 14 L86 42 M48 42 L58 14 L74 14" />
-      <path d="M58 14 L52 6" strokeLinecap="round" />
-    </g>
-
-    {/* Sam, taking the order */}
-    <Sam x={252} y={392} s={0.9} pose="pointing" />
   </>
 );
 
-// ── Scene 6 · one field, four seasons ──────────────────────────────
+const CafeFront = ({ uid, street = 'BRIDGE STREET' }: { uid: string; street?: string }) => (
+  <g transform="translate(168 70)">
+    <rect x="0" y="0" width="470" height="242" fill="#E8DAC4" />
+    <rect x="0" y="0" width="470" height="20" rx="3" fill={FARM.barnDark} />
+    <g transform="translate(408 24)">
+      <line x1="0" y1="0" x2="0" y2="16" stroke={FARM.woodDark} strokeWidth="3" />
+      <g className="fs-sway-s" style={{ transformOrigin: '50% 0%' }}>
+        <rect x="-52" y="16" width="104" height="42" rx="5" fill={FARM.leaf} />
+        <text x="0" y="42" textAnchor="middle" fill={FARM.cream} fontSize="12" fontWeight="800"
+          letterSpacing="0.6" fontFamily="system-ui, sans-serif">{street}</text>
+      </g>
+    </g>
+    <g transform="translate(24 26)">
+      <g className="fs-sway-s" style={{ transformOrigin: '50% 0%' }}>
+        {Array.from({ length: 7 }).map((_, i) => (
+          <path key={i} d={`M${i * 46} 0 L${(i + 1) * 46} 0 L${(i + 1) * 46 - 5} 40 L${i * 46 - 5} 40 Z`}
+            fill={i % 2 ? FARM.cream : FARM.leaf} />
+        ))}
+        <path d="M-8 38 q 162 14 330 0 l 0 10 q -168 14 -330 0 Z" fill="#E8DAC4" />
+      </g>
+    </g>
+    <rect x="34" y="98" width="180" height="112" rx="5" fill={`url(#${uid}s5win)`} />
+    <rect x="34" y="98" width="180" height="112" rx="5" fill="none" stroke={FARM.woodDark} strokeWidth="5" />
+    <line x1="124" y1="98" x2="124" y2="210" stroke={FARM.woodDark} strokeWidth="4" />
+    <g fill={FARM.barnDark} opacity="0.35">
+      <circle cx="72" cy="140" r="12" /><path d="M52 176 q 20 -26 40 0 Z" />
+      <circle cx="168" cy="146" r="11" /><path d="M150 178 q 18 -24 36 0 Z" />
+      <rect x="96" y="168" width="48" height="5" rx="2" />
+    </g>
+    <SpeechPuff x={114} y={162} s={0.8} />
+    <rect x="256" y="106" width="72" height="136" rx="4" fill={FARM.woodDark} />
+    <rect x="266" y="118" width="52" height="62" rx="3" fill={`url(#${uid}s5win)`} opacity="0.9" />
+    <circle cx="318" cy="180" r="4" fill={FARM.honey} />
+  </g>
+);
 
-const YearPanorama = () => {
+const CafeDelivery: React.FC<SceneProps> = ({ beat, uid }) => (
+  <>
+    <StreetBackdrop uid={uid} />
+    {beat < 2 && <CafeFront uid={uid} />}
+
+    {/* 0 — Thursday. the café asks if he can supply more. */}
+    {beat === 0 && (
+      <>
+        <Shopper x={430} y={392} s={0.98} coat="#8E6A56" />
+        <Sam x={330} y={392} s={0.9} pose="idle" />
+        <g transform="translate(452 236)">
+          <rect x="0" y="0" width="152" height="34" rx="17" fill={FARM.cream} />
+          <path d="M14 34 l 6 12 l 12 -12 Z" fill={FARM.cream} />
+          <text x="76" y="23" textAnchor="middle" fill={FARM.barnDark} fontSize="13" fontWeight="700"
+            fontFamily="system-ui, sans-serif">Can you send more?</text>
+        </g>
+      </>
+    )}
+
+    {/* 1 — he says yes before working out what that means */}
+    {beat === 1 && (
+      <>
+        <Shopper x={410} y={392} s={0.98} coat="#8E6A56" />
+        <Sam x={330} y={392} s={0.9} pose="pointing" />
+        <g transform="translate(196 240)">
+          <rect x="0" y="0" width="76" height="34" rx="17" fill={FARM.cream} />
+          <path d="M52 34 l -6 12 l -12 -12 Z" fill={FARM.cream} />
+          <text x="38" y="23" textAnchor="middle" fill={FARM.barn} fontSize="15" fontWeight="800"
+            fontFamily="system-ui, sans-serif">Yes!</text>
+        </g>
+        <g transform="translate(470 262)">
+          <text x="0" y="0" fill={FARM.barnDark} fontSize="30" fontWeight="800"
+            fontFamily="system-ui, sans-serif" opacity="0.5">?</text>
+        </g>
+      </>
+    )}
+
+    {/* 2 — three channels, one spreadsheet */}
+    {beat >= 2 && (
+      <>
+        <g transform="translate(58 292)">
+          <Crate x={0} y={22} w={54} h={32} contents={FARM.honey} />
+          <Crate x={62} y={22} w={54} h={32} contents={FARM.cream} />
+          <Crate x={31} y={-12} w={54} h={32} contents="#D9534F" />
+        </g>
+        <g transform="translate(236 150)">
+          {([
+            { label: 'Stall', col: FARM.barn, dx: 0 },
+            { label: 'Gate', col: FARM.leaf, dx: 96 },
+            { label: 'Café', col: FARM.amber, dx: 192 },
+          ] as const).map(({ label, col, dx }) => (
+            <g key={label} transform={`translate(${dx} 0)`}>
+              <rect x="0" y="0" width="82" height="28" rx="14" fill={col} />
+              <text x="41" y="19" textAnchor="middle" fill={FARM.cream} fontSize="13" fontWeight="700"
+                fontFamily="system-ui, sans-serif">{label}</text>
+              <path d={`M41 30 q 0 34 ${137 - dx} 52`} stroke={col} strokeWidth="3"
+                fill="none" opacity="0.7" strokeLinecap="round" strokeDasharray="5 5" />
+            </g>
+          ))}
+          <g transform="translate(117 84)">
+            <Paper x={0} y={0} w={132} h={86} rows={6} title="ONE SPREADSHEET" />
+          </g>
+        </g>
+        <Sam x={686} y={392} s={0.88} pose="pointing" flip />
+      </>
+    )}
+  </>
+);
+
+// ── Chapter 6 · the bank, the calendar, and the whole year ─────────
+
+const YearPanorama: React.FC<SceneProps> = ({ beat, uid }) => {
   const bands = [
     { x: 0, sky: '#9FB3C8', ground: '#8FA98C', label: 'Winter' },
     { x: 200, sky: '#BBD9E8', ground: '#7FB069', label: 'Spring' },
     { x: 400, sky: '#8ECFE8', ground: '#6FA556', label: 'Summer' },
     { x: 600, sky: '#E8C88F', ground: '#B08A4A', label: 'Autumn' },
   ];
+
+  /* 0 — the bank wants a plan before it will lend for the hives */
+  if (beat === 0) {
+    return (
+      <>
+        <StreetBackdrop uid={uid} />
+        <g transform="translate(196 62)">
+          <rect x="0" y="40" width="412" height="212" fill="#D7CDBC" />
+          <path d="M-20 40 L206 -18 L432 40 Z" fill="#C2B7A3" />
+          {[30, 116, 202, 288, 366].map(x => (
+            <g key={x}>
+              <rect x={x} y="70" width="26" height="150" rx="4" fill="#EDE5D6" />
+              <rect x={x - 5} y="62" width="36" height="10" rx="3" fill="#C2B7A3" />
+            </g>
+          ))}
+          <rect x="140" y="132" width="132" height="120" rx="4" fill={FARM.woodDark} />
+          <text x="206" y="26" textAnchor="middle" fill={FARM.barnDark} fontSize="17" fontWeight="800"
+            letterSpacing="3" fontFamily="system-ui, sans-serif">BANK</text>
+        </g>
+        <Sam x={132} y={392} s={0.92} pose="carrying" />
+        <g transform="translate(96 292)"><Paper x={0} y={0} w={78} h={54} rows={4} title="PLAN?" /></g>
+        <Beehive x={668} y={384} s={1.05} /><Beehive x={748} y={390} s={0.85} d={1.3} />
+      </>
+    );
+  }
+
+  /* 1 — not a story about honey. a plan, with months in it. */
+  if (beat === 1) {
+    return (
+      <>
+        <defs>
+          <linearGradient id={`${uid}s6plain`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#8ECFE8" /><stop offset="100%" stopColor="#DFF1F8" />
+          </linearGradient>
+        </defs>
+        <rect width="800" height="400" fill={`url(#${uid}s6plain)`} />
+        <Cloud x={-60} y={54} s={1} o={0.8} slow d={-16} />
+        <path d="M0 268 q 200 -24 400 -6 q 200 20 400 -10 L800 400 L0 400 Z" fill={FARM.leafMid} />
+        <Ground y={310} fill={FARM.leaf} />
+        <g transform="translate(84 148)">
+          <g className="fs-lift"><HoneyPyramid glint={false} /></g>
+          <g stroke={FARM.barn} strokeWidth="7" strokeLinecap="round" opacity="0.8">
+            <line x1="-4" y1="-24" x2="112" y2="72" /><line x1="112" y1="-24" x2="-4" y2="72" />
+          </g>
+        </g>
+        <Calendar x={330} y={150} s={1.12} />
+        <Sam x={252} y={392} s={0.9} pose="pointing" />
+      </>
+    );
+  }
+
+  /* 2 — five questions about products. this one is not. */
   return (
     <>
       {bands.map(b => (
@@ -782,33 +1317,29 @@ const YearPanorama = () => {
       {[200, 400, 600].map(x => (
         <rect key={x} x={x - 26} y="0" width="52" height="400" fill="#FFFFFF" opacity="0.06" />
       ))}
-
       <Cloud x={-60} y={58} s={1.2} fill="#A3B3C4" o={0.7} slow d={-25} />
-      <Cloud x={-60} y={44} s={0.85} o={0.8} d={-50} />
-      <Sun x={506} y={72} r={28} />
-      <Sun x={694} y={86} r={24} glow="#F0A46A" />
-      <Bird x={0} y={92} s={0.7} d={-14} /><Bird x={0} y={78} s={0.55} d={-32} />
+      <Sun x={506} y={72} r={26} />
+      <Sun x={694} y={86} r={22} glow="#F0A46A" />
+      <Bird x={0} y={92} s={0.7} d={-14} />
 
-      {/* snow over winter, leaves over autumn */}
-      <g clipPath="url(#s6winter)">
+      <g clipPath={`url(#${uid}s6winter)`}>
         {Array.from({ length: 14 }).map((_, i) => (
           <circle key={i} className="fs-fall" style={delay(-(i * 0.64))}
             cx={(i * 37) % 200} cy={0} r="2.2" fill={FARM.cream} opacity="0.75" />
         ))}
       </g>
-      <g clipPath="url(#s6autumn)">
+      <g clipPath={`url(#${uid}s6autumn)`}>
         {Array.from({ length: 10 }).map((_, i) => (
           <ellipse key={i} className="fs-fall" style={delay(-(i * 0.9))}
             cx={610 + ((i * 41) % 180)} cy={0} rx="4" ry="2.4" fill={i % 2 ? '#C77B3C' : '#A85C2E'} opacity="0.8" />
         ))}
       </g>
       <defs>
-        <clipPath id="s6winter"><rect x="0" y="0" width="200" height="330" /></clipPath>
-        <clipPath id="s6autumn"><rect x="600" y="0" width="200" height="340" /></clipPath>
+        <clipPath id={`${uid}s6winter`}><rect x="0" y="0" width="200" height="330" /></clipPath>
+        <clipPath id={`${uid}s6autumn`}><rect x="600" y="0" width="200" height="340" /></clipPath>
       </defs>
 
       <path d="M0 252 q 200 -22 400 -4 q 200 20 400 -8 L800 400 L0 400 Z" fill="#000000" opacity="0.06" />
-
       <Tree x={54} y={256} s={0.8} bare /><Tree x={132} y={260} s={0.6} bare d={1.4} />
       <Hen x={92} y={296} s={0.6} d={0.8} />
       <Tree x={252} y={258} s={0.78} canopy="#8FC46F" d={0.6} />
@@ -820,24 +1351,13 @@ const YearPanorama = () => {
           <g key={i} transform={`translate(${x} ${i === 1 ? -8 : 0})`}>
             <rect x="0" y="0" width="15" height="15" rx="3" fill={FARM.honey} />
             <rect x="1" y="-3" width="13" height="4" rx="1.5" fill={FARM.barnDark} />
-            <rect className="fs-glint" style={delay(i * 1.2)} x="2" y="2" width="4" height="11" rx="2" fill="#FFFFFF" />
           </g>
         ))}
       </g>
       <Tree x={664} y={258} s={0.85} canopy="#C77B3C" d={1.9} /><Tree x={746} y={262} s={0.65} canopy="#A85C2E" d={0.3} />
-      <g transform="translate(608 284)">
-        {[[0, 0], [30, 6], [60, 0]].map(([x, y], i) => (
-          <g key={i} transform={`translate(${x} ${y})`}>
-            <path d="M0 26 q -4 -26 13 -28 q 17 2 13 28 Z" fill="#9E8A6B" />
-          </g>
-        ))}
-      </g>
       <CropRow y={330} from={606} to={790} step={19} h={9} fill="#8A6A38" o={0.7} />
 
-      {/* Sam walks the whole year, winter through to autumn */}
-      <g className="fs-walk">
-        <Sam x={60} y={340} s={0.62} pose="walking" />
-      </g>
+      <g className="fs-walk"><Sam x={60} y={340} s={0.62} pose="walking" /></g>
 
       {bands.map(b => (
         <g key={b.label + 'l'}>
@@ -852,7 +1372,7 @@ const YearPanorama = () => {
   );
 };
 
-const SCENES: Record<SceneKey, React.FC> = {
+const SCENES: Record<SceneKey, React.FC<SceneProps>> = {
   'sunrise-farm': SunriseFarm,
   'market-stall': MarketStall,
   'winter-field': WinterField,
@@ -861,37 +1381,75 @@ const SCENES: Record<SceneKey, React.FC> = {
   'year-panorama': YearPanorama,
 };
 
-const SCENE_ALT: Record<SceneKey, string> = {
-  'sunrise-farm': 'Sunrise over Foxglove Farm. Sam stands scratching his head beside a tipped-over shoebox, receipts fluttering across the field.',
-  'market-stall': 'Sam behind his Saturday market stall, sacks of potatoes beside a small pyramid of honey jars.',
-  'winter-field': 'The farm in November: rain, bare trees, a lit polytunnel, and Sam beside a stall holding only eggs, jam and potatoes.',
-  'loading-van': 'Sam loading crates into the van before dawn, with a sixth crate left behind on the ground.',
-  'cafe-delivery': 'Sam outside a café on Bridge Street, crates of honey, eggs and strawberries stacked on the pavement.',
-  'year-panorama': 'Sam walking through the same field across winter, spring, summer and autumn.',
+/** Per-beat alt text, so the picture is described as precisely as it is drawn. */
+const SCENE_ALT: Record<SceneKey, string[]> = {
+  'sunrise-farm': [
+    'Foxglove Farm at sunrise: the farm sign, a flock of hens, the van, and Sam beside the barn.',
+    'Three labelled vignettes: the Saturday market stall, the farm gate, and two cafés.',
+    'A market counter with a shoebox stuffed with a year of receipts tucked underneath.',
+    'Sam scratching his head at the tipped-over shoebox while his sister asks him a question.',
+  ],
+  'market-stall': [
+    'Half past six, still dark. Sam raising the stall frame with the van parked beside him.',
+    'Mid-morning: sacks of potatoes moving fast, shoppers at the table, Sam carrying more.',
+    'The honey pyramid at the back of the stall, barely touched. Four jars sold.',
+    'All eight products laid out on the table, with the question of what to count.',
+  ],
+  'winter-field': [
+    'November. Rain sideways across bare trees and an empty field.',
+    'The stall in winter, holding only eggs, jam and potatoes.',
+    'Last chapter\'s summer chart crossed out, beside the lit polytunnel.',
+  ],
+  'loading-van': [
+    'The van loaded with five crates and a sixth left on the ground, marked no room.',
+    'Five in the morning: Sam in the cold in front of eight crates, guessing which five.',
+    'Sam at the kitchen table under a lamp, the whole year spread out in front of him.',
+  ],
+  'cafe-delivery': [
+    'Outside the café on Bridge Street, the owner asking Sam whether he can send more.',
+    'Sam saying yes, with a question mark hanging over what he has just agreed to.',
+    'Stall, gate and café orders flowing into a single spreadsheet.',
+  ],
+  'year-panorama': [
+    'Sam outside the bank carrying a plan, with beehives waiting at the roadside.',
+    'The honey chart crossed out beside a twelve-month calendar with summer lit up.',
+    'Sam walking the same field across winter, spring, summer and autumn.',
+  ],
 };
 
 export const FarmScene: React.FC<{
   scene: SceneKey;
+  /** Which beat of the chapter to stage. Clamped to the frames that exist. */
+  beat?: number;
   className?: string;
   /**
    * Every scene puts its subject on the ground, so wide, short crops should
    * anchor to the bottom ("ground") rather than centring on empty sky.
    */
   anchor?: 'centre' | 'ground';
-}> = ({ scene, className, anchor = 'centre' }) => {
+}> = ({ scene, beat = 0, className, anchor = 'centre' }) => {
   const Painting = SCENES[scene];
+  const alts = SCENE_ALT[scene];
+  const frame = Math.max(0, Math.min(beat, alts.length - 1));
+  // Gradient and clip-path ids live in one document-wide namespace, so two
+  // scenes on screen at once (a crossfade, a card grid) would share whichever
+  // was defined first. Namespacing them per instance keeps each scene its own.
+  const uid = React.useId().replace(/:/g, '');
   return (
     <svg
       viewBox="0 0 800 400"
       className={`fs ${className ?? ''}`}
       preserveAspectRatio={anchor === 'ground' ? 'xMidYMax slice' : 'xMidYMid slice'}
       role="img"
-      aria-label={SCENE_ALT[scene]}
+      aria-label={alts[frame]}
     >
       <Motion />
-      <Painting />
+      <Painting beat={frame} uid={uid} />
     </svg>
   );
 };
+
+/** How many distinct frames a chapter's scene can stage. */
+export const sceneFrameCount = (scene: SceneKey): number => SCENE_ALT[scene].length;
 
 export default FarmScene;
