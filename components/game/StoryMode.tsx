@@ -5,10 +5,10 @@ import {
   Sparkles, BookOpen, Wheat,
 } from 'lucide-react';
 import {
-  CHAPTERS, LANE_INFO, runQuery, formatMoney,
+  CHAPTERS, LANE_INFO, FARMER, runQuery, formatMoney,
   type GAFSLane, type Chapter, type StoryChip, type AnswerRow, type AnswerSpec,
 } from './farmStory';
-import { FarmScene, FARM } from './FarmScenes';
+import { FarmScene, SamAvatar, FARM } from './FarmScenes';
 
 // ═══════════════════════════════════════════════════════════════════
 // Story mode lives in its own warm world — cream paper on a lamp-lit
@@ -172,6 +172,8 @@ interface StoryModeProps {
 export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilder }) => {
   const [phase, setPhase] = useState<Phase>('cover');
   const [index, setIndex] = useState(0);
+  /** Beats are revealed one line at a time; === beats.length means Sam speaks. */
+  const [beat, setBeat] = useState(0);
   const [placements, setPlacements] = useState<Record<string, Placement>>({});
   const [selectedChip, setSelectedChip] = useState<string | null>(null);
   const [dragLane, setDragLane] = useState<GAFSLane | null>(null);
@@ -198,6 +200,7 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
   }, []);
 
   const resetChapter = useCallback(() => {
+    setBeat(0);
     setPlacements({});
     setSelectedChip(null);
     setDragLane(null);
@@ -331,10 +334,10 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
               A story in six chapters
             </p>
             <h1 className="text-4xl sm:text-5xl font-black text-white leading-[1.05] tracking-tight mb-4">
-              Ravi's farm,<br />and the shoebox<br />under the counter.
+              Sam's farm,<br />and the shoebox<br />under the counter.
             </h1>
             <p className="text-base leading-relaxed mb-8" style={{ color: '#C9BBA8' }}>
-              Ravi grows eight things and sells them three ways. He has a year of receipts and no idea
+              Sam grows eight things and sells them three ways. He has a year of receipts and no idea
               which of it is worth his time. Help him work it out, and you will learn the four moves
               behind every question you will ever ask your own data.
             </p>
@@ -395,7 +398,7 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
             The end of the story
           </p>
           <h1 className="text-3xl sm:text-4xl font-black text-white leading-tight tracking-tight mb-4">
-            Ravi kept the shoebox.
+            Sam kept the shoebox.
           </h1>
           <p className="text-base leading-relaxed mb-6" style={{ color: '#C9BBA8' }}>
             He put it on a shelf in the barn. He does not open it any more, because he can now answer in
@@ -519,23 +522,26 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
           initial={{ opacity: 0, scale: 1.03 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.6 }}
-          className={`w-full overflow-hidden transition-all duration-500 ${phase === 'story' ? 'h-[260px] sm:h-[340px]' : 'h-[150px] sm:h-[180px]'}`}
+          className={`w-full overflow-hidden transition-all duration-500 ${phase === 'story' ? 'h-[320px] sm:h-[420px]' : 'h-[150px] sm:h-[180px]'}`}
         >
           <FarmScene scene={chapter.scene} className="w-full h-full" anchor="ground" />
         </motion.div>
-        {/* The heading tucks up over the artwork, so the lower half has to end
-            fully solid or the chapter meta becomes unreadable on top of it. */}
+        {/* During the story the scene is the stage, so it only gets a thin blend
+            at the bottom edge — Sam stands down there and must stay lit. In the
+            puzzle and payoff phases it drops back to a dimmed decorative band. */}
         <div
           className="absolute inset-0 pointer-events-none"
           style={{
             background: phase === 'story'
-              ? 'linear-gradient(to bottom, rgba(23,19,16,0) 42%, rgba(23,19,16,0.72) 74%, #171310 97%)'
-              : 'linear-gradient(to bottom, rgba(23,19,16,0.35) 0%, rgba(23,19,16,0.82) 48%, #171310 92%)',
+              ? 'linear-gradient(to bottom, rgba(23,19,16,0) 88%, #171310 100%)'
+              : 'linear-gradient(to bottom, rgba(23,19,16,0.38) 0%, rgba(23,19,16,0.84) 48%, #171310 92%)',
           }}
         />
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 pb-20 -mt-10 relative">
+      <div
+        className={`max-w-3xl mx-auto px-4 sm:px-6 pb-20 relative ${phase === 'story' ? 'mt-5' : '-mt-10'}`}
+      >
         {/* chapter heading */}
         <div className="mb-5">
           <div className="flex items-center gap-2.5 mb-2 flex-wrap">
@@ -555,45 +561,100 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
         </div>
 
         <AnimatePresence mode="wait">
-          {/* ── narrative ── */}
+          {/* ── narrative: one line at a time, never a wall of text ── */}
           {phase === 'story' && (
             <motion.div
               key="story"
               initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }}
             >
-              <div className="rounded-2xl p-6 sm:p-8" style={{ background: PAPER, color: INK }}>
-                {chapter.story.map((para, i) => (
-                  <motion.p
-                    key={i}
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.15 + i * 0.12 }}
-                    className={`leading-relaxed ${i === 0 ? 'text-lg' : 'text-base'} ${i > 0 ? 'mt-4' : ''}`}
-                    style={{ color: i === 0 ? INK : INK_SOFT }}
-                  >
-                    {para}
-                  </motion.p>
-                ))}
-
-                <motion.blockquote
-                  initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.6 }}
-                  className="mt-6 pl-4 border-l-4"
-                  style={{ borderColor: FARM.barn }}
-                >
-                  <p className="text-xl font-bold italic leading-snug" style={{ color: INK }}>
-                    “{chapter.quote}”
-                  </p>
-                  <footer className="text-xs mt-1.5 font-semibold" style={{ color: INK_FAINT }}>
-                    — Ravi, Green Acre Farm
-                  </footer>
-                </motion.blockquote>
+              <div className="min-h-[132px] flex items-start">
+                <AnimatePresence mode="wait">
+                  {beat < chapter.beats.length ? (
+                    <motion.div
+                      key={`beat-${beat}`}
+                      initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}
+                      transition={{ duration: 0.28 }}
+                      className="rounded-2xl px-6 py-5 w-full"
+                      style={{ background: PAPER, color: INK }}
+                    >
+                      <p className="text-lg sm:text-xl leading-snug font-medium">{chapter.beats[beat]}</p>
+                    </motion.div>
+                  ) : (
+                    <motion.div
+                      key="quote"
+                      initial={{ opacity: 0, scale: 0.96, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }}
+                      transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+                      className="w-full flex items-start gap-3"
+                    >
+                      <div className="shrink-0 mt-1 rounded-full overflow-hidden" style={{ background: PAPER }}>
+                        <SamAvatar size={52} />
+                      </div>
+                      <div className="relative flex-1 rounded-2xl px-6 py-5" style={{ background: PAPER, color: INK }}>
+                        {/* speech tail, pointing back at Sam's face */}
+                        <div
+                          className="absolute top-5 -left-1.5 w-4 h-4 rotate-45"
+                          style={{ background: PAPER }}
+                        />
+                        <p className="text-xl sm:text-2xl font-bold italic leading-snug relative">
+                          “{chapter.quote}”
+                        </p>
+                        <footer className="text-xs mt-2 font-semibold relative" style={{ color: INK_FAINT }}>
+                          — {FARMER.full}, {FARMER.farm}
+                        </footer>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
-              <button
-                onClick={() => setPhase('puzzle')}
-                className="w-full mt-4 py-4 rounded-xl font-bold text-white transition-transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2.5"
-                style={{ background: `linear-gradient(90deg, ${FARM.barn}, ${FARM.amber})` }}
-              >
-                Help him work it out <ArrowRight className="w-4 h-4" />
-              </button>
+              {/* beat progress */}
+              <div className="flex items-center gap-1.5 mt-4 mb-3">
+                {chapter.beats.map((_, i) => (
+                  <span
+                    key={i}
+                    className="h-1 rounded-full transition-all duration-300"
+                    style={{
+                      width: i === beat ? 22 : 10,
+                      background: i <= beat ? FARM.honey : '#FFFFFF24',
+                    }}
+                  />
+                ))}
+                <span
+                  className="h-1 rounded-full transition-all duration-300"
+                  style={{
+                    width: beat >= chapter.beats.length ? 22 : 10,
+                    background: beat >= chapter.beats.length ? FARM.barn : '#FFFFFF24',
+                  }}
+                />
+              </div>
+
+              {beat < chapter.beats.length ? (
+                <button
+                  onClick={() => setBeat(b => b + 1)}
+                  className="w-full py-3.5 rounded-xl font-semibold border transition-colors hover:bg-white/5 flex items-center justify-center gap-2"
+                  style={{ borderColor: '#FFFFFF1F', background: '#FFFFFF0A', color: '#C9BBA8' }}
+                >
+                  Go on <ArrowRight className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => setPhase('puzzle')}
+                  className="w-full py-4 rounded-xl font-bold text-white transition-transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2.5"
+                  style={{ background: `linear-gradient(90deg, ${FARM.barn}, ${FARM.amber})` }}
+                >
+                  Help him work it out <ArrowRight className="w-4 h-4" />
+                </button>
+              )}
+
+              {beat > 0 && beat < chapter.beats.length && (
+                <button
+                  onClick={() => setBeat(chapter.beats.length)}
+                  className="w-full mt-2 py-2 text-xs font-semibold transition-colors hover:text-white"
+                  style={{ color: '#6B5A48' }}
+                >
+                  Skip to the question
+                </button>
+              )}
             </motion.div>
           )}
 
@@ -681,7 +742,7 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
               {/* chips */}
               <div className="rounded-xl p-4 border" style={{ background: '#FFFFFF06', borderColor: '#FFFFFF12' }}>
                 <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#6B5A48' }}>
-                  Ravi's options — drag one, or click it then click a row
+                  Sam's options — drag one, or click it then click a row
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {poolChips.map((c: StoryChip) => (
@@ -741,7 +802,7 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
             >
               <div className="rounded-2xl p-6 sm:p-8" style={{ background: PAPER, color: INK }}>
                 <p className="text-[11px] font-bold uppercase tracking-wider mb-4" style={{ color: INK_FAINT }}>
-                  Ravi's answer
+                  Sam's answer
                 </p>
                 <Payoff chapter={chapter} />
               </div>
