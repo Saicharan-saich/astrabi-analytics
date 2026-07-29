@@ -4,8 +4,10 @@ import {
   Gamepad2, Trophy, Zap, Star, ChevronRight, RotateCcw,
   Lightbulb, CheckCircle2, XCircle, ArrowRight, Sparkles,
   Target, Brain, Filter, ArrowUpDown, BarChart3, Play,
-  Volume2, VolumeX, Clock, X, Search, BookOpen
+  Volume2, VolumeX, Clock, X, Search, BookOpen, ArrowLeft, Wheat
 } from 'lucide-react';
+import { StoryMode } from './game/StoryMode';
+import { FarmScene, FARM } from './game/FarmScenes';
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES
@@ -286,7 +288,7 @@ interface GameViewProps {
   onExit?: () => void;
 }
 
-export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) => {
+const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) => {
   // Game state
   const [gamePhase, setGamePhase] = useState<GamePhase>('landing');
   const [currentLevel, setCurrentLevel] = useState(0);
@@ -1214,6 +1216,125 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit 
           </div>
 
         </div>
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════════════════════════════════════════════════════════
+// SHELL — story first, practice drill second.
+// ═══════════════════════════════════════════════════════════════════
+
+type GameMode = 'pick' | 'story' | 'practice';
+
+export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) => {
+  const [mode, setMode] = useState<GameMode>('pick');
+
+  if (mode === 'story') {
+    return <StoryMode onExit={() => setMode('pick')} onNavigateToBuilder={onNavigateToBuilder} />;
+  }
+
+  if (mode === 'practice') {
+    return <PracticeGame onExit={() => setMode('pick')} onNavigateToBuilder={onNavigateToBuilder} />;
+  }
+
+  return (
+    <div className="h-full overflow-auto" style={{ background: '#171310' }}>
+      <div className="max-w-4xl mx-auto px-6 py-10">
+        <div className="flex items-start justify-between mb-8 gap-4">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.18em] mb-2" style={{ color: FARM.honey }}>
+              GAFS Challenge
+            </p>
+            <h1 className="text-3xl font-black text-white tracking-tight mb-2">
+              Learn to ask your data a proper question.
+            </h1>
+            <p className="text-sm max-w-xl leading-relaxed" style={{ color: '#9A8770' }}>
+              Every question worth asking comes down to four decisions: what you are comparing, what you
+              are measuring, which rows count, and what order to put them in. Learn those and Question
+              Builder stops being a form and starts being a tool.
+            </p>
+          </div>
+          {onExit && (
+            <button
+              onClick={onExit}
+              className="p-2 rounded-lg shrink-0 transition-colors hover:bg-white/10"
+              style={{ color: '#9A8770' }}
+              aria-label="Leave"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          {/* Story mode — the front door */}
+          <motion.button
+            whileHover={{ y: -3 }}
+            whileTap={{ scale: 0.995 }}
+            onClick={() => setMode('story')}
+            className="md:col-span-3 rounded-2xl overflow-hidden text-left border transition-colors"
+            style={{ background: '#FFFFFF08', borderColor: '#FFFFFF1A' }}
+          >
+            <div className="h-44 relative">
+              <FarmScene scene="sunrise-farm" className="w-full h-full" />
+              <div
+                className="absolute inset-0"
+                style={{ background: 'linear-gradient(to bottom, rgba(23,19,16,0) 45%, rgba(23,19,16,0.85) 100%)' }}
+              />
+            </div>
+            <div className="p-5 -mt-8 relative">
+              <span
+                className="text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider"
+                style={{ background: FARM.honey, color: '#2E2318' }}
+              >
+                Start here
+              </span>
+              <h2 className="text-xl font-black text-white mt-3 mb-1.5">Ravi's farm — a story in six chapters</h2>
+              <p className="text-sm leading-relaxed mb-4" style={{ color: '#C9BBA8' }}>
+                A farmer with eight products, three sales channels and a shoebox full of receipts. Follow one
+                real business through a year and pick up the four moves as you go. About fifteen minutes.
+              </p>
+              <span className="inline-flex items-center gap-2 text-sm font-bold" style={{ color: FARM.honey }}>
+                <Wheat className="w-4 h-4" /> Read the story <ChevronRight className="w-4 h-4" />
+              </span>
+            </div>
+          </motion.button>
+
+          {/* Practice drill */}
+          <motion.button
+            whileHover={{ y: -3 }}
+            whileTap={{ scale: 0.995 }}
+            onClick={() => setMode('practice')}
+            className="md:col-span-2 rounded-2xl p-5 text-left border flex flex-col transition-colors"
+            style={{ background: '#FFFFFF06', borderColor: '#FFFFFF14' }}
+          >
+            <div
+              className="w-11 h-11 rounded-xl flex items-center justify-center mb-4"
+              style={{ background: `${FARM.leaf}26` }}
+            >
+              <Gamepad2 className="w-5 h-5" style={{ color: '#9FC98A' }} />
+            </div>
+            <h2 className="text-lg font-black text-white mb-1.5">Quick practice</h2>
+            <p className="text-sm leading-relaxed flex-1" style={{ color: '#9A8770' }}>
+              Ten timed questions across retail, healthcare, logistics and finance. No story, just the drill,
+              with scores and streaks. Best once the four moves already make sense to you.
+            </p>
+            <span className="inline-flex items-center gap-2 text-sm font-bold mt-4" style={{ color: '#9FC98A' }}>
+              <Play className="w-4 h-4" /> Start the drill <ChevronRight className="w-4 h-4" />
+            </span>
+          </motion.button>
+        </div>
+
+        {onNavigateToBuilder && (
+          <button
+            onClick={onNavigateToBuilder}
+            className="w-full mt-4 py-3 rounded-xl text-sm font-semibold border transition-colors hover:bg-white/5 flex items-center justify-center gap-2"
+            style={{ borderColor: '#FFFFFF14', background: '#FFFFFF06', color: '#9A8770' }}
+          >
+            <ArrowLeft className="w-4 h-4" /> Skip the lesson and open Question Builder
+          </button>
+        )}
       </div>
     </div>
   );
