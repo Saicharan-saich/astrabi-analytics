@@ -272,13 +272,13 @@ const PAGE_INFO: Record<PageKey, PageInfo> = {
     },
     GAME: {
         title: 'GAFS Challenge',
-        description: 'An interactive learning game that teaches analytical thinking through the GAFS framework — Grouping, Aggregating, Filtering, and Sorting. Master these concepts and bridge directly to the Question Builder.',
+        description: 'Learn the four moves behind every data question — Grouping, Aggregating, Filtering and Sorting — by following one real small business through a year of trading. Then use exactly the same four moves in Question Builder.',
         features: [
-            '10 progressive levels across 5+ industries',
-            'Drag-and-drop answer chips into GAFS lanes',
-            'Scoring with speed bonuses and streak multipliers',
-            'Hints system when you get stuck',
-            'Direct bridge to the Question Builder after completing',
+            'Story mode: six illustrated chapters on Ravi\'s farm',
+            'Every chart is the genuine answer, computed from his year of sales',
+            'One new move per chapter, building up to all four',
+            'Wrong answers explain why, rather than just buzzing',
+            'Quick practice: ten timed questions across other industries',
         ],
         tips: [
             'Start by identifying WHAT you\'re comparing (Grouping)',

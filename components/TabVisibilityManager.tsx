@@ -25,7 +25,7 @@ const ALL_TABS: TabInfo[] = [
   { id: Tab.DATA, label: 'Data Explorer', icon: BarChart2, section: 'Explore Data', description: 'Browse cleaned data', canHide: true },
   { id: Tab.DATASET_SUMMARY, label: 'Dataset Summary', icon: BarChart2, section: 'Explore Data', description: 'Column statistics and distributions', canHide: true },
   // Analysis
-  { id: Tab.GAME, label: 'GAFS Challenge', icon: Gamepad2, section: 'Analysis', description: 'Interactive GAFS learning game', canHide: true },
+  { id: Tab.GAME, label: 'GAFS Challenge', icon: Gamepad2, section: 'Analysis', description: 'Story-led GAFS lessons and practice drill', canHide: true },
   { id: Tab.SMART_QUESTIONS, label: 'Smart Insights', icon: Lightbulb, section: 'Analysis', description: 'AI-curated analytical questions', canHide: true },
   { id: Tab.BUILDER, label: 'Question Builder', icon: Search, section: 'Analysis', description: 'Visual no-code query designer', canHide: false },
   { id: Tab.AI_SQL, label: 'AI SQL', icon: Sparkles, section: 'Analysis', description: 'Natural language to SQL', canHide: true },
