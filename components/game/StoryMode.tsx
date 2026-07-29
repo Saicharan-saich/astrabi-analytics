@@ -524,7 +524,12 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
           transition={{ duration: 0.6 }}
           className={`w-full overflow-hidden transition-all duration-500 ${phase === 'story' ? 'h-[320px] sm:h-[420px]' : 'h-[150px] sm:h-[180px]'}`}
         >
-          <FarmScene scene={chapter.scene} className="w-full h-full" anchor="ground" />
+          <FarmScene
+            scene={chapter.scene}
+            beat={phase === 'story' ? beat : chapter.beats.length - 1}
+            className="w-full h-full"
+            anchor="ground"
+          />
         </motion.div>
         {/* During the story the scene is the stage, so it only gets a thin blend
             at the bottom edge — Sam stands down there and must stay lit. In the
@@ -628,23 +633,34 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
                 />
               </div>
 
-              {beat < chapter.beats.length ? (
+              <div className="flex items-center gap-2.5">
                 <button
-                  onClick={() => setBeat(b => b + 1)}
-                  className="w-full py-3.5 rounded-xl font-semibold border transition-colors hover:bg-white/5 flex items-center justify-center gap-2"
+                  onClick={() => setBeat(b => Math.max(0, b - 1))}
+                  disabled={beat === 0}
+                  className="px-5 py-3.5 rounded-xl font-semibold border transition-colors hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   style={{ borderColor: '#FFFFFF1F', background: '#FFFFFF0A', color: '#C9BBA8' }}
                 >
-                  Go on <ArrowRight className="w-4 h-4" />
+                  <ArrowLeft className="w-4 h-4" /> Back
                 </button>
-              ) : (
-                <button
-                  onClick={() => setPhase('puzzle')}
-                  className="w-full py-4 rounded-xl font-bold text-white transition-transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2.5"
-                  style={{ background: `linear-gradient(90deg, ${FARM.barn}, ${FARM.amber})` }}
-                >
-                  Help him work it out <ArrowRight className="w-4 h-4" />
-                </button>
-              )}
+
+                {beat < chapter.beats.length ? (
+                  <button
+                    onClick={() => setBeat(b => b + 1)}
+                    className="flex-1 py-3.5 rounded-xl font-bold text-white transition-transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2"
+                    style={{ background: `linear-gradient(90deg, ${FARM.barn}, ${FARM.amber})` }}
+                  >
+                    Next <ArrowRight className="w-4 h-4" />
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => setPhase('puzzle')}
+                    className="flex-1 py-3.5 rounded-xl font-bold text-white transition-transform hover:scale-[1.01] active:scale-[0.99] flex items-center justify-center gap-2.5"
+                    style={{ background: `linear-gradient(90deg, ${FARM.barn}, ${FARM.amber})` }}
+                  >
+                    Help him work it out <ArrowRight className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
 
               {beat > 0 && beat < chapter.beats.length && (
                 <button

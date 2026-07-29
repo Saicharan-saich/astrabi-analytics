@@ -3,6 +3,7 @@ import {
   SALES, CHAPTERS, PRODUCTS, LANE_INFO, runQuery, formatMoney,
   type GAFSLane,
 } from '../components/game/farmStory';
+import { sceneFrameCount } from '../components/game/FarmScenes';
 
 const revenue = (rows = SALES) => rows.reduce((s, r) => s + r.revenue, 0);
 
@@ -192,6 +193,15 @@ describe('chapter integrity', () => {
         expect(line.length, `chapter ${chapter.id} outcome: "${line}"`).toBeLessThanOrEqual(190);
       }
       expect(chapter.task.length, `chapter ${chapter.id} task`).toBeLessThanOrEqual(170);
+    }
+  });
+
+  // Every beat gets its own staging. If someone adds a line without drawing
+  // the picture for it, that line would silently reuse the previous frame.
+  it('draws exactly one scene frame per beat', () => {
+    for (const chapter of CHAPTERS) {
+      expect(sceneFrameCount(chapter.scene), `chapter ${chapter.id} (${chapter.scene})`)
+        .toBe(chapter.beats.length);
     }
   });
 
