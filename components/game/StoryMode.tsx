@@ -147,11 +147,11 @@ const Payoff: React.FC<{ chapter: Chapter }> = ({ chapter }) => {
       {kind === 'compare' && compareRows && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
-            <p className="text-xs font-bold mb-3" style={{ color: FARM.honey }}>Measuring money</p>
+            <p className="text-xs font-bold mb-3" style={{ color: FARM.honey }}>Adding up the money</p>
             <BarList rows={rows} measure={spec.measure} accent={FARM.honey} dense />
           </div>
           <div>
-            <p className="text-xs font-bold mb-3" style={{ color: FARM.leaf }}>Measuring units sold</p>
+            <p className="text-xs font-bold mb-3" style={{ color: FARM.leaf }}>Adding up how many sold</p>
             <BarList rows={compareRows} measure={compareWith!.measure} accent={FARM.leaf} dense />
           </div>
         </div>
