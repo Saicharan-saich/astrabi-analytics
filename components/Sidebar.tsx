@@ -90,7 +90,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
 
     const analysisSection = [
         { id: Tab.QUICK_INSIGHTS, label: 'Discover', icon: Zap, requiresCreateVisuals: true, tooltip: 'Automatic insight discovery — the moment your data loads, it surfaces what stands out (drops, spikes, concentration, outliers), explains the likely root cause, and writes an executive summary. No question required.' },
-        { id: Tab.GAME, label: 'GAFS Challenge', icon: Gamepad2, tooltip: 'Follow a small farm through a year of trading and learn the four moves behind every data question: Grouping, Aggregating, Filtering and Sorting.' },
+        { id: Tab.GAME, label: 'GAFS Challenge', icon: Gamepad2, tooltip: 'Every chart is 4 steps: split it up, add something up, filter the rows, put them in order. Learn them by helping a small farm find out what makes money.' },
         { id: Tab.SMART_QUESTIONS, label: 'Smart Insights', icon: Lightbulb, requiresCreateVisuals: true, tooltip: 'AI-curated questions tailored to your dataset. Click any card to instantly run the analysis.' },
         { id: Tab.BUILDER, label: 'Question Builder', icon: Search, requiresCreateVisuals: true, tooltip: 'A simplified natural-language-style builder: "Show me [metric] by [dimension]" with intuitive dropdowns.' },
         { id: Tab.AI_SQL, label: 'AI SQL', icon: Sparkles, requiresCreateVisuals: true, tooltip: 'Ask questions in natural language — AI generates and executes SQL on your dataset. Powered by Gemini.' },
