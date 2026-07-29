@@ -1247,12 +1247,12 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit 
               GAFS Challenge
             </p>
             <h1 className="text-3xl font-black text-white tracking-tight mb-2">
-              Learn to ask your data a proper question.
+              Every chart is just 4 steps.
             </h1>
             <p className="text-sm max-w-xl leading-relaxed" style={{ color: '#9A8770' }}>
-              Every question worth asking comes down to four decisions: what you are comparing, what you
-              are measuring, which rows count, and what order to put them in. Learn those and Question
-              Builder stops being a form and starts being a tool.
+              Split it up. Add something up. Keep only the rows you want. Put them in order.
+              That is all a chart is, and it is all Question Builder does. Learn the 4 steps here
+              and the rest of the app makes sense.
             </p>
           </div>
           {onExit && (
@@ -1290,10 +1290,10 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit 
               >
                 Start here
               </span>
-              <h2 className="text-xl font-black text-white mt-3 mb-1.5">Sam's farm — a story in six chapters</h2>
+              <h2 className="text-xl font-black text-white mt-3 mb-1.5">Sam's farm — a story in 6 chapters</h2>
               <p className="text-sm leading-relaxed mb-4" style={{ color: '#C9BBA8' }}>
-                A farmer with eight products, three sales channels and a shoebox full of receipts. Follow one
-                real business through a year and pick up the four moves as you go. About fifteen minutes.
+                Sam sells 8 things in 3 places and has no idea which of it makes money. Help him work it
+                out and you learn one step per chapter. Plain English, about 15 minutes.
               </p>
               <span className="inline-flex items-center gap-2 text-sm font-bold" style={{ color: FARM.honey }}>
                 <Wheat className="w-4 h-4" /> Read the story <ChevronRight className="w-4 h-4" />
@@ -1317,8 +1317,8 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit 
             </div>
             <h2 className="text-lg font-black text-white mb-1.5">Quick practice</h2>
             <p className="text-sm leading-relaxed flex-1" style={{ color: '#9A8770' }}>
-              Ten timed questions across retail, healthcare, logistics and finance. No story, just the drill,
-              with scores and streaks. Best once the four moves already make sense to you.
+              10 timed questions from shops, hospitals and delivery firms. No story, just practice, with
+              scores and streaks. Best once the 4 steps already make sense.
             </p>
             <span className="inline-flex items-center gap-2 text-sm font-bold mt-4" style={{ color: '#9FC98A' }}>
               <Play className="w-4 h-4" /> Start the drill <ChevronRight className="w-4 h-4" />
@@ -1332,7 +1332,7 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit 
             className="w-full mt-4 py-3 rounded-xl text-sm font-semibold border transition-colors hover:bg-white/5 flex items-center justify-center gap-2"
             style={{ borderColor: '#FFFFFF14', background: '#FFFFFF06', color: '#9A8770' }}
           >
-            <ArrowLeft className="w-4 h-4" /> Skip the lesson and open Question Builder
+            <ArrowLeft className="w-4 h-4" /> Skip this and open Question Builder
           </button>
         )}
       </div>
