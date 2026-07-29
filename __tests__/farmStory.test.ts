@@ -6,7 +6,7 @@ import {
 
 const revenue = (rows = SALES) => rows.reduce((s, r) => s + r.revenue, 0);
 
-describe('Ravi\'s farm dataset', () => {
+describe('Sam\'s farm dataset', () => {
   it('has a coherent year of sales', () => {
     expect(SALES.length).toBe(66);
     expect(revenue()).toBe(12163);
@@ -171,12 +171,36 @@ describe('chapter integrity', () => {
 
   it('gives every chapter a scene, a quote, an outcome and a builder bridge', () => {
     for (const chapter of CHAPTERS) {
-      expect(chapter.story.length).toBeGreaterThanOrEqual(2);
+      expect(chapter.beats.length).toBeGreaterThanOrEqual(2);
       expect(chapter.quote.length).toBeGreaterThan(10);
       expect(chapter.outcome.length).toBeGreaterThanOrEqual(2);
       expect(chapter.builderBridge.length).toBeGreaterThan(20);
       expect(chapter.teaches.split(' ').length).toBeLessThanOrEqual(6);
     }
+  });
+
+  // Story mode reveals one beat at a time over the scene, so a beat that
+  // runs long stops being a caption and becomes the wall of text again.
+  it('keeps every beat short enough to read in one breath', () => {
+    for (const chapter of CHAPTERS) {
+      expect(chapter.beats.length, `chapter ${chapter.id} beat count`).toBeLessThanOrEqual(4);
+      for (const line of chapter.beats) {
+        expect(line.length, `chapter ${chapter.id}: "${line}"`).toBeLessThanOrEqual(120);
+      }
+      // The payoff prose is read at rest, so it gets a little more room.
+      for (const line of chapter.outcome) {
+        expect(line.length, `chapter ${chapter.id} outcome: "${line}"`).toBeLessThanOrEqual(190);
+      }
+      expect(chapter.task.length, `chapter ${chapter.id} task`).toBeLessThanOrEqual(170);
+    }
+  });
+
+  it('keeps the whole script lighter than the wall of text it replaced', () => {
+    const words = CHAPTERS.reduce(
+      (n, c) => n + [...c.beats, ...c.outcome, c.task, c.quote].join(' ').split(/\s+/).length,
+      0,
+    );
+    expect(words).toBeLessThan(750);
   });
 
   it('runs every chapter payoff without error and returns rows', () => {
