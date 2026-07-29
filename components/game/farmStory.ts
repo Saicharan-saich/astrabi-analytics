@@ -234,26 +234,26 @@ export const CHAPTERS: Chapter[] = [
       'His sister asks him: which product makes you the most money? Sam has no idea.',
     ],
     quote: 'I have all the numbers. I just cannot see them.',
-    task: 'The paper is now a spreadsheet. First, decide how to split the sales up. What should each bar in the chart be?',
+    task: "All of Sam's sales are in one big pile. To compare products he needs smaller piles. What should each pile be?",
     chips: [
-      { id: 'c1-product', label: 'One bar for each product', lane: 'G', correct: true },
-      { id: 'c1-receipt', label: 'One bar for each sale', lane: 'G', correct: false, whyNot: 'That is 66 bars. Same mess as the box, just on a screen.' },
-      { id: 'c1-day', label: 'One bar for each market day', lane: 'G', correct: false, whyNot: 'That shows you busy days. Sam asked about products.' },
-      { id: 'c1-farm', label: 'One bar for the whole farm', lane: 'G', correct: false, whyNot: 'One bar is one number. You would learn nothing about the products.' },
+      { id: 'c1-product', label: 'By product', lane: 'G', correct: true },
+      { id: 'c1-receipt', label: 'By each single sale', lane: 'G', correct: false, whyNot: 'That makes 66 piles of one slip each. Same mess as the box, just tidier.' },
+      { id: 'c1-day', label: 'By market day', lane: 'G', correct: false, whyNot: 'That tells you which days were busy. Sam asked about products.' },
+      { id: 'c1-farm', label: 'Do not split it at all', lane: 'G', correct: false, whyNot: 'One pile gives you one number for the whole farm, and nothing about products.' },
     ],
     explanation: {
-      G: 'Sam asked about products, so we split the sales up by product. Splitting your data into groups like this is what grouping means.',
+      G: 'Sam asked about products, so he sorts the sales into one pile per product. Sorting rows into piles is all that grouping means.',
     },
     payoff: {
       kind: 'groups',
       spec: { groupBy: 'product', measure: 'revenue', sort: 'desc' },
-      caption: '8 products. A whole year on one screen.',
+      caption: '8 piles, one for each product. No numbers yet.',
     },
     outcome: [
-      'We now have 8 groups, one per product. But there are no numbers yet.',
-      'Grouping only splits the data up. The next chapter adds the numbers.',
+      'The sales are now in 8 piles, one per product. There are still no numbers.',
+      'Grouping only sorts things into piles. Chapter 2 puts a number on each pile.',
     ],
-    builderBridge: 'In Question Builder this is the "by" box. Choose Product.',
+    builderBridge: 'In Question Builder this is the "by" box. Choose Product and it makes one pile per product.',
   },
 
   {
@@ -270,23 +270,23 @@ export const CHAPTERS: Chapter[] = [
       'But "best" can mean two things: most sold, or most money.',
     ],
     quote: 'Potatoes are my bestseller. Ask anyone at the market.',
-    task: 'Keep one bar per product. Now pick which number to add up.',
+    task: 'Keep the 8 piles. Now pick a number to add up for each pile, and we can draw it as a chart.',
     chips: [
-      { id: 'c2-product', label: 'One bar for each product', lane: 'G', correct: true },
-      { id: 'c2-month', label: 'One bar for each month', lane: 'G', correct: false, whyNot: 'Months come in chapter 6. This question is still about products.' },
+      { id: 'c2-product', label: 'By product', lane: 'G', correct: true },
+      { id: 'c2-month', label: 'By month', lane: 'G', correct: false, whyNot: 'Months come in chapter 6. This question is still about products.' },
       { id: 'c2-money', label: 'Add up the money', lane: 'A', correct: true },
       { id: 'c2-units', label: 'Add up how many were sold', lane: 'A', correct: false, whyNot: 'This is what Sam already believes, and it is why he is wrong.' },
       { id: 'c2-avg', label: 'Take the average sale', lane: 'A', correct: false, whyNot: 'An average hides how often you sell. One big order would top the chart.' },
     ],
     explanation: {
-      G: 'Same as chapter 1. One bar per product.',
+      G: 'Same as chapter 1. One pile per product.',
       A: 'Money. You cannot add kg, jars and boxes together, because they are not the same thing. Money is the same for everything.',
     },
     payoff: {
       kind: 'compare',
       spec: { groupBy: 'product', measure: 'revenue', sort: 'desc' },
       compareWith: { groupBy: 'product', measure: 'quantity', sort: 'desc' },
-      caption: 'Same products, same sales. Two different numbers, two different winners.',
+      caption: 'Your first chart. One bar per pile — a longer bar means a bigger number.',
     },
     outcome: [
       'By units, potatoes win: 1,010 kg. By money they come 4th.',
@@ -311,7 +311,7 @@ export const CHAPTERS: Chapter[] = [
     quote: 'In January there is nothing on my table. What actually sells then?',
     task: 'Same bars, same number. Now throw away the months you do not need.',
     chips: [
-      { id: 'c3-product', label: 'One bar for each product', lane: 'G', correct: true },
+      { id: 'c3-product', label: 'By product', lane: 'G', correct: true },
       { id: 'c3-money', label: 'Add up the money', lane: 'A', correct: true },
       { id: 'c3-units', label: 'Add up how many were sold', lane: 'A', correct: false, whyNot: 'Chapter 2 settled this. You cannot add kg and jars together.' },
       { id: 'c3-winter', label: 'Only the winter months', lane: 'F', correct: true },
@@ -319,7 +319,7 @@ export const CHAPTERS: Chapter[] = [
       { id: 'c3-none', label: 'Keep all 12 months', lane: 'F', correct: false, whyNot: 'This is the chart he already has. It mixes summer honey into a winter he never has.' },
     ],
     explanation: {
-      G: 'Still one bar per product.',
+      G: 'Still split by product.',
       A: 'Still money.',
       F: 'A filter removes rows before anything is added up. Take out June to September and the answer changes completely.',
     },
@@ -355,7 +355,7 @@ export const CHAPTERS: Chapter[] = [
     quote: 'Just tell me which 5 to take.',
     task: 'All four steps now. Put the answer in an order that picks the 5 for him.',
     chips: [
-      { id: 'c4-product', label: 'One bar for each product', lane: 'G', correct: true },
+      { id: 'c4-product', label: 'By product', lane: 'G', correct: true },
       { id: 'c4-money', label: 'Add up the money', lane: 'A', correct: true },
       { id: 'c4-none', label: 'Keep all 12 months', lane: 'F', correct: true },
       { id: 'c4-winter', label: 'Only the winter months', lane: 'F', correct: false, whyNot: 'He drives to market all year, so use the whole year.' },
@@ -364,7 +364,7 @@ export const CHAPTERS: Chapter[] = [
       { id: 'c4-az', label: 'A to Z by name', lane: 'S', correct: false, whyNot: 'A to Z is not an answer. Blueberries would win just for starting with B.' },
     ],
     explanation: {
-      G: 'One bar per product.',
+      G: 'Split by product.',
       A: 'Money.',
       F: 'No filter. He goes to market all year, so keep all 12 months.',
       S: 'Biggest first, then keep only 5. That turns a chart into a decision.',
@@ -396,8 +396,8 @@ export const CHAPTERS: Chapter[] = [
     quote: 'They want more. More of what?',
     task: 'All four steps again. This time the filter has nothing to do with dates.',
     chips: [
-      { id: 'c5-product', label: 'One bar for each product', lane: 'G', correct: true },
-      { id: 'c5-channel', label: 'One bar for each place he sells', lane: 'G', correct: false, whyNot: 'That tells you cafés are worth £1,371 a year. It does not tell you what to send them.' },
+      { id: 'c5-product', label: 'By product', lane: 'G', correct: true },
+      { id: 'c5-channel', label: 'By where he sold it', lane: 'G', correct: false, whyNot: 'That tells you cafés are worth £1,371 a year. It does not tell you what to send them.' },
       { id: 'c5-money', label: 'Add up the money', lane: 'A', correct: true },
       { id: 'c5-cafe', label: 'Only café orders', lane: 'F', correct: true },
       { id: 'c5-market', label: 'Only market sales', lane: 'F', correct: false, whyNot: 'Wrong customers. People at the market buy different things.' },
@@ -405,7 +405,7 @@ export const CHAPTERS: Chapter[] = [
       { id: 'c5-all', label: 'Biggest first, keep everything', lane: 'S', correct: false, whyNot: 'He asked what to focus on. A list of everything is not a focus.' },
     ],
     explanation: {
-      G: 'One bar per product, because the café asked what to send.',
+      G: 'Split by product, because the café asked what to send.',
       A: 'Money.',
       F: 'You can filter on any column, not just dates. Here we filter on where the sale happened.',
       S: 'Top 3, because he can grow 3 things, not 8.',
@@ -443,8 +443,8 @@ export const CHAPTERS: Chapter[] = [
     quote: 'They want to know when the money comes in. I have never looked.',
     task: 'Split by month this time. And think about the order, because the usual one is wrong here.',
     chips: [
-      { id: 'c6-month', label: 'One bar for each month', lane: 'G', correct: true },
-      { id: 'c6-product', label: 'One bar for each product', lane: 'G', correct: false, whyNot: 'Products were the answer 5 times. This question asks when, so split by month.' },
+      { id: 'c6-month', label: 'By month', lane: 'G', correct: true },
+      { id: 'c6-product', label: 'By product', lane: 'G', correct: false, whyNot: 'Products were the answer 5 times. This question asks when, so split by month.' },
       { id: 'c6-money', label: 'Add up the money', lane: 'A', correct: true },
       { id: 'c6-none', label: 'Keep all 12 months', lane: 'F', correct: true },
       { id: 'c6-summer', label: 'Only the summer months', lane: 'F', correct: false, whyNot: 'The empty months are the whole point. Removing them removes the answer.' },
@@ -471,7 +471,7 @@ export const CHAPTERS: Chapter[] = [
 ];
 
 export const LANE_INFO: Record<GAFSLane, { letter: string; name: string; asks: string; plain: string }> = {
-  G: { letter: 'G', name: 'Grouping', asks: 'Split it up by what?', plain: 'e.g. one bar per product' },
+  G: { letter: 'G', name: 'Grouping', asks: 'Split it up by what?', plain: 'e.g. by product' },
   A: { letter: 'A', name: 'Aggregating', asks: 'Which number?', plain: 'e.g. add up the money' },
   F: { letter: 'F', name: 'Filtering', asks: 'Which rows?', plain: 'e.g. winter months only' },
   S: { letter: 'S', name: 'Sorting', asks: 'In what order?', plain: 'e.g. biggest first, top 5' },
