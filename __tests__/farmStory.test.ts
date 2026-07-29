@@ -186,13 +186,50 @@ describe('chapter integrity', () => {
     for (const chapter of CHAPTERS) {
       expect(chapter.beats.length, `chapter ${chapter.id} beat count`).toBeLessThanOrEqual(4);
       for (const line of chapter.beats) {
-        expect(line.length, `chapter ${chapter.id}: "${line}"`).toBeLessThanOrEqual(120);
+        expect(line.length, `chapter ${chapter.id}: "${line}"`).toBeLessThanOrEqual(90);
       }
       // The payoff prose is read at rest, so it gets a little more room.
       for (const line of chapter.outcome) {
-        expect(line.length, `chapter ${chapter.id} outcome: "${line}"`).toBeLessThanOrEqual(190);
+        expect(line.length, `chapter ${chapter.id} outcome: "${line}"`).toBeLessThanOrEqual(120);
       }
-      expect(chapter.task.length, `chapter ${chapter.id} task`).toBeLessThanOrEqual(170);
+      expect(chapter.task.length, `chapter ${chapter.id} task`).toBeLessThanOrEqual(120);
+    }
+  });
+
+  // This is a teaching game for people who do not work with data. Long
+  // sentences and long answer buttons are the fastest way to lose them.
+  it('keeps the language plain', () => {
+    for (const chapter of CHAPTERS) {
+      for (const line of [...chapter.beats, ...chapter.outcome, chapter.task]) {
+        for (const sentence of line.split(/(?<=[.?!])\s+/)) {
+          const words = sentence.trim().split(/\s+/).filter(Boolean).length;
+          expect(words, `chapter ${chapter.id}: "${sentence}"`).toBeLessThanOrEqual(20);
+        }
+      }
+      for (const chip of chapter.chips) {
+        // An answer button has to be readable at a glance.
+        expect(chip.label.length, `chapter ${chapter.id} chip "${chip.label}"`).toBeLessThanOrEqual(40);
+        if (chip.whyNot) {
+          expect(chip.whyNot.length, `chapter ${chapter.id} whyNot for "${chip.label}"`)
+            .toBeLessThanOrEqual(110);
+        }
+      }
+    }
+  });
+
+  it('gives every GAFS step a concrete example, not just a definition', () => {
+    for (const lane of ['G', 'A', 'F', 'S'] as GAFSLane[]) {
+      expect(LANE_INFO[lane].plain, `${lane} plain example`).toMatch(/^e\.g\. /);
+      expect(LANE_INFO[lane].asks.split(' ').length, `${lane} question`).toBeLessThanOrEqual(5);
+    }
+  });
+
+  // Every beat gets its own staging. If someone adds a line without drawing
+  // the picture for it, that line would silently reuse the previous frame.
+  it('draws exactly one scene frame per beat', () => {
+    for (const chapter of CHAPTERS) {
+      expect(sceneFrameCount(chapter.scene), `chapter ${chapter.id} (${chapter.scene})`)
+        .toBe(chapter.beats.length);
     }
   });
 
@@ -210,7 +247,7 @@ describe('chapter integrity', () => {
       (n, c) => n + [...c.beats, ...c.outcome, c.task, c.quote].join(' ').split(/\s+/).length,
       0,
     );
-    expect(words).toBeLessThan(750);
+    expect(words).toBeLessThan(620);
   });
 
   it('runs every chapter payoff without error and returns rows', () => {

@@ -331,15 +331,15 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
         <div className="max-w-2xl mx-auto px-6 -mt-24 relative pb-16">
           <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>
             <p className="text-xs font-bold uppercase tracking-[0.18em] mb-3" style={{ color: FARM.honey }}>
-              A story in six chapters
+              6 short chapters · about 15 minutes
             </p>
             <h1 className="text-4xl sm:text-5xl font-black text-white leading-[1.05] tracking-tight mb-4">
-              Sam's farm,<br />and the shoebox<br />under the counter.
+              Sam sells 8 things.<br />Which one makes<br />the money?
             </h1>
             <p className="text-base leading-relaxed mb-8" style={{ color: '#C9BBA8' }}>
-              Sam grows eight things and sells them three ways. He has a year of receipts and no idea
-              which of it is worth his time. Help him work it out, and you will learn the four moves
-              behind every question you will ever ask your own data.
+              Sam sells 8 things in 3 places. He has a year of sales on paper and no idea which of it
+              makes money. Help him find out, and you will learn the 4 steps behind every chart you
+              will ever build. They are the same 4 steps as Question Builder.
             </p>
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-8">
@@ -351,7 +351,8 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
                 >
                   <span className="font-black text-xl" style={{ color: LANE_COLOR[lane] }}>{lane}</span>
                   <p className="text-xs font-semibold text-white mt-0.5">{LANE_INFO[lane].name}</p>
-                  <p className="text-[11px] mt-0.5" style={{ color: '#9A8770' }}>{LANE_INFO[lane].asks}</p>
+                  <p className="text-[11px] mt-0.5 text-white/70">{LANE_INFO[lane].asks}</p>
+                  <p className="text-[11px] mt-1" style={{ color: '#9A8770' }}>{LANE_INFO[lane].plain}</p>
                 </div>
               ))}
             </div>
@@ -398,15 +399,15 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
             The end of the story
           </p>
           <h1 className="text-3xl sm:text-4xl font-black text-white leading-tight tracking-tight mb-4">
-            Sam kept the shoebox.
+            Sam kept the box.
           </h1>
           <p className="text-base leading-relaxed mb-6" style={{ color: '#C9BBA8' }}>
-            He put it on a shelf in the barn. He does not open it any more, because he can now answer in
-            about ninety seconds a question that used to take him an evening and a bottle of wine.
+            It is on a shelf in the barn now. He does not open it, because a question that used to take
+            him a whole evening now takes about a minute.
           </p>
           <p className="text-base leading-relaxed mb-8" style={{ color: '#C9BBA8' }}>
-            You solved {firstTry.size} of {CHAPTERS.length} chapters first time. More usefully, you now
-            know the only four decisions there are:
+            You got {firstTry.size} of {CHAPTERS.length} chapters right first time. More importantly,
+            you now know the only 4 steps there are:
           </p>
 
           <div className="space-y-2.5 mb-8">
@@ -420,10 +421,10 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
                 <div>
                   <p className="text-sm font-bold text-white">{LANE_INFO[lane].name} — {LANE_INFO[lane].asks}</p>
                   <p className="text-xs mt-1" style={{ color: '#9A8770' }}>
-                    {lane === 'G' && 'Chapter one. Get this wrong and every number after it answers a question nobody asked.'}
-                    {lane === 'A' && 'Chapter two. Potatoes by weight, honey by money. Same rows, opposite answers.'}
-                    {lane === 'F' && 'Chapters three and five. Cut by time, or cut by any other column.'}
-                    {lane === 'S' && 'Chapters four and six. Biggest first when you are ranking. Never when you are looking at time.'}
+                    {lane === 'G' && 'Chapter 1. One bar per product. Get this wrong and every number after it is answering a different question.'}
+                    {lane === 'A' && 'Chapter 2. Add up money, not units. Potatoes win on units, honey wins on money.'}
+                    {lane === 'F' && 'Chapters 3 and 5. Keep only some rows: winter months, or café orders.'}
+                    {lane === 'S' && 'Chapters 4 and 6. Biggest first when ranking. Date order when the bars are months.'}
                   </p>
                 </div>
               </div>
@@ -436,11 +437,11 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
           >
             <p className="text-sm font-bold text-white mb-2 flex items-center gap-2">
               <Sparkles className="w-4 h-4" style={{ color: FARM.honey }} />
-              Now do it with your own data
+              Now try it on your own data
             </p>
             <p className="text-xs leading-relaxed" style={{ color: '#C9BBA8' }}>
-              Question Builder has exactly four controls, in exactly this order. Group by, measure,
-              filter, sort. That is the entire tool. You have already used it six times.
+              Question Builder has these same 4 boxes, in this same order: split by, add up, filter,
+              sort. That is the whole tool. You have just used it 6 times.
             </p>
           </div>
 
@@ -758,7 +759,7 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
               {/* chips */}
               <div className="rounded-xl p-4 border" style={{ background: '#FFFFFF06', borderColor: '#FFFFFF12' }}>
                 <p className="text-[11px] font-bold uppercase tracking-wider mb-3" style={{ color: '#6B5A48' }}>
-                  Sam's options — drag one, or click it then click a row
+                  Pick an answer for each row above
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {poolChips.map((c: StoryChip) => (
@@ -818,7 +819,7 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
             >
               <div className="rounded-2xl p-6 sm:p-8" style={{ background: PAPER, color: INK }}>
                 <p className="text-[11px] font-bold uppercase tracking-wider mb-4" style={{ color: INK_FAINT }}>
-                  Sam's answer
+                  The answer
                 </p>
                 <Payoff chapter={chapter} />
               </div>
@@ -833,7 +834,7 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
 
               <div className="rounded-2xl p-5 space-y-3" style={{ background: '#FFFFFF06', border: '1px solid #FFFFFF12' }}>
                 <p className="text-[11px] font-bold uppercase tracking-wider" style={{ color: '#6B5A48' }}>
-                  Why each move was right
+                  Why each step is right
                 </p>
                 {chapter.lanes.map(lane => (
                   <div key={lane} className="flex gap-3 text-sm">
@@ -845,7 +846,7 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
 
               <div className="rounded-2xl p-5" style={{ background: `${FARM.honey}12`, border: `1px solid ${FARM.honey}2E` }}>
                 <p className="text-xs font-bold mb-1.5 flex items-center gap-2" style={{ color: FARM.honey }}>
-                  <Wheat className="w-3.5 h-3.5" /> In your Question Builder
+                  <Wheat className="w-3.5 h-3.5" /> How to do this yourself
                 </p>
                 <p className="text-sm leading-relaxed" style={{ color: '#C9BBA8' }}>{chapter.builderBridge}</p>
               </div>
