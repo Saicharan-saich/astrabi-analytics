@@ -1,9 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, Shield, ShieldCheck } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { MODEL } from '../services/ai-sql/intentPlanner';
-import { getPrivacyMode, setPrivacyMode, PrivacyMode } from '../services/ai-sql/privacyMode';
+import {
+    getPrivacyMode, setPrivacyMode, PrivacyMode,
+    hasEnhancedConsent, grantEnhancedConsent, revokeEnhancedConsent,
+} from '../services/ai-sql/privacyMode';
+import { buildPrivacyDisclosure } from '../services/ai-sql/privacyDisclosure';
+import { buildSemanticModel } from '../services/ai-sql/semanticLayer';
+import { PrivacyConsentDialog } from './PrivacyConsentDialog';
 import { Tooltip } from './Tooltip';
 import { checkAiSqlLimit, formatResetTime, AI_SQL_LIMITS } from '../services/aiSqlRateLimiter';
 import { useAuthStore } from '../store/useAuthStore';
@@ -22,12 +28,53 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const [noDataMsg, setNoDataMsg] = useState<string | null>(null);
     const [noDataSQL, setNoDataSQL] = useState<string | null>(null);
 
-    // ── AI SQL Privacy Mode (default strict — data values stay on-device) ──
+    // ── AI SQL Privacy Mode ──
+    // "Better answers" sends values from the user's data, so it is gated on
+    // explicit consent. The stored preference alone is not permission: until
+    // the user has agreed to the disclosure, the effective mode is strict.
     const [privacyMode, setPrivacyModeState] = useState<PrivacyMode>(getPrivacyMode());
+    const [consented, setConsented] = useState<boolean>(hasEnhancedConsent());
+    const [consentDialog, setConsentDialog] = useState<null | 'consent' | 'review'>(null);
+
+    // Better answers is only genuinely on when it has been agreed to.
+    const enhancedActive = privacyMode === 'enhanced' && consented;
+
+    // Built only while the dialog is open — profiling the dataset is not free,
+    // and this is exactly the data the user is being asked to consent to.
+    const disclosure = useMemo(() => {
+        if (!consentDialog || !dataset?.rows?.length) return null;
+        try {
+            return buildPrivacyDisclosure(dataset.rows, buildSemanticModel(dataset));
+        } catch (e) {
+            console.warn('[Privacy] Could not build disclosure:', e);
+            return null;
+        }
+    }, [consentDialog, dataset]);
+
     const togglePrivacyMode = () => {
-        const next: PrivacyMode = privacyMode === 'strict' ? 'enhanced' : 'strict';
-        setPrivacyMode(next);
-        setPrivacyModeState(next);
+        if (enhancedActive) {
+            // Already on and agreed — open it read-only so they can review or revoke.
+            setConsentDialog('review');
+            return;
+        }
+        // Turning it on always asks first, and asks again if the disclosure changed.
+        setConsentDialog('consent');
+    };
+
+    const acceptEnhanced = () => {
+        grantEnhancedConsent();
+        setPrivacyMode('enhanced');
+        setConsented(true);
+        setPrivacyModeState('enhanced');
+        setConsentDialog(null);
+    };
+
+    const declineEnhanced = () => {
+        revokeEnhancedConsent();
+        setPrivacyMode('strict');
+        setConsented(false);
+        setPrivacyModeState('strict');
+        setConsentDialog(null);
     };
 
     // Every question is answered STANDALONE — no conversation history is kept or
@@ -221,19 +268,19 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         </p>
                         <Tooltip
                             position="left"
-                            text={privacyMode === 'strict'
-                                ? "Private mode: the AI only sees your column names — never your actual data. Nothing about your customers or records leaves your browser. Tap to also let it see a few example values (like product names) for better answers — it still never sees personal details or full records."
-                                : "Better answers: the AI can see a few example values (like product or region names) so it answers more accurately. It never sees customer names, emails, sensitive details, or your full records. Tap to switch back to Private mode (column names only)."}
+                            text={!enhancedActive
+                                ? "Private mode: the AI only sees your column names — never your actual data. Nothing about your customers or records leaves your browser. Tap to see exactly what Better answers would send, and decide."
+                                : "Better answers: the AI can see a few example values (like product or region names) so it answers more accurately. It never sees customer names, emails, sensitive details, or your records. Tap to review exactly what is sent, or turn it back off."}
                         >
                             <button
                                 onClick={togglePrivacyMode}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${privacyMode === 'strict'
+                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${!enhancedActive
                                     ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30'
                                     : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/30'}`}
-                                title="Choose how much the AI can see"
+                                title="See exactly what the AI is sent, and choose"
                             >
-                                {privacyMode === 'strict' ? <ShieldCheck className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
-                                {privacyMode === 'strict' ? 'Private mode' : 'Better answers'}
+                                {!enhancedActive ? <ShieldCheck className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
+                                {!enhancedActive ? 'Private mode' : 'Better answers'}
                             </button>
                         </Tooltip>
                     </div>
@@ -409,6 +456,15 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     </div>
                 )}
             </div>
+
+            <PrivacyConsentDialog
+                open={consentDialog !== null}
+                mode={consentDialog ?? 'consent'}
+                disclosure={disclosure}
+                onAgree={acceptEnhanced}
+                onDecline={declineEnhanced}
+                onClose={() => setConsentDialog(null)}
+            />
         </div>
     );
 };
