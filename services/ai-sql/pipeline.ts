@@ -48,6 +48,7 @@ import { generateDirectSQL } from './directSqlEngine';
 import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerializer';
 import { describeSchemaForLLM, discoverJoinContext } from './joinEngine';
 import { getEffectivePrivacyMode } from './privacyMode';
+import { getSelection, applySelection } from './privacySelection';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -159,9 +160,19 @@ export async function runAISQLPipeline(
             // domains (non-sensitive, low-cardinality; PII, identifiers and
             // sensitive categoricals excluded). Rows are never sent in either.
             const privacyMode = getEffectivePrivacyMode();
-            const domains = privacyMode === 'enhanced'
+            // The automatic filter decides what is eligible; the user's own
+            // per-column and per-value choices then subtract from that.
+            let domains = privacyMode === 'enhanced'
                 ? collectSafeDomains(dataset.rows, semanticModel)
                 : undefined;
+            if (domains) {
+                const before = domains.size;
+                domains = applySelection(domains, getSelection(dataset.name || dataset.id));
+                if (domains.size !== before) {
+                    console.log(`[Pipeline] User switched off ${before - domains.size} column(s) from sharing`);
+                }
+                if (domains.size === 0) domains = undefined;
+            }
             console.log(`[Pipeline] Direct-SQL privacy mode: ${privacyMode}${domains ? ` (${domains.size} category domain(s) shared)` : ' (metadata only)'}`);
             let richSchema = serializeSemanticModelSchema(semanticModel, 'data', domains);
 

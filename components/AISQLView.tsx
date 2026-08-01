@@ -10,6 +10,11 @@ import {
 import { buildPrivacyDisclosure } from '../services/ai-sql/privacyDisclosure';
 import { buildSemanticModel } from '../services/ai-sql/semanticLayer';
 import { PrivacyConsentDialog } from './PrivacyConsentDialog';
+import {
+    getSelection, setSelection, applySelection, countSharedValues,
+    type PrivacySelection, EMPTY_SELECTION,
+} from '../services/ai-sql/privacySelection';
+import { collectSafeDomains } from '../services/ai-sql/schemaSerializer';
 import { Tooltip } from './Tooltip';
 import { checkAiSqlLimit, formatResetTime, AI_SQL_LIMITS } from '../services/aiSqlRateLimiter';
 import { useAuthStore } from '../store/useAuthStore';
@@ -35,6 +40,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const [privacyMode, setPrivacyModeState] = useState<PrivacyMode>(getPrivacyMode());
     const [consented, setConsented] = useState<boolean>(hasEnhancedConsent());
     const [consentDialog, setConsentDialog] = useState<null | 'consent' | 'review'>(null);
+    const datasetKey = dataset?.name || dataset?.id || '';
+    const [selection, setSelectionState] = useState<PrivacySelection>(EMPTY_SELECTION);
+    useEffect(() => { setSelectionState(datasetKey ? getSelection(datasetKey) : EMPTY_SELECTION); }, [datasetKey]);
 
     // Better answers is only genuinely on when it has been agreed to.
     const enhancedActive = privacyMode === 'enhanced' && consented;
@@ -51,6 +59,18 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         }
     }, [consentDialog, dataset]);
 
+    // Same source as the pipeline, so the header line cannot disagree with it.
+    const sharingSummary = useMemo(() => {
+        if (!enhancedActive || !dataset?.rows?.length) return { values: 0, columns: 0 };
+        try {
+            const domains = collectSafeDomains(dataset.rows, buildSemanticModel(dataset));
+            const kept = applySelection(domains, selection);
+            return { values: countSharedValues(domains, selection), columns: kept.size };
+        } catch {
+            return { values: 0, columns: 0 };
+        }
+    }, [enhancedActive, dataset, selection]);
+
     const togglePrivacyMode = () => {
         if (enhancedActive) {
             // Already on and agreed — open it read-only so they can review or revoke.
@@ -61,7 +81,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         setConsentDialog('consent');
     };
 
-    const acceptEnhanced = () => {
+    const acceptEnhanced = (chosen: PrivacySelection) => {
+        if (datasetKey) setSelection(datasetKey, chosen);
+        setSelectionState(chosen);
         grantEnhancedConsent();
         setPrivacyMode('enhanced');
         setConsented(true);
@@ -286,6 +308,33 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     </div>
                 </div>
 
+                {/* Always visible: what the AI is being sent from this file, and a way in. */}
+                {dataset && (
+                    <button
+                        onClick={() => setConsentDialog(enhancedActive ? 'review' : 'consent')}
+                        className="mt-2 inline-flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 transition-colors group"
+                    >
+                        {enhancedActive ? (
+                            <Shield className="w-3.5 h-3.5 text-amber-500" />
+                        ) : (
+                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                        )}
+                        <span>
+                            AI is sent:{' '}
+                            <span className="font-semibold text-gray-700 dark:text-slate-200">
+                                {enhancedActive
+                                    ? sharingSummary.values === 0
+                                        ? 'column names only'
+                                        : `column names + ${sharingSummary.values} value${sharingSummary.values === 1 ? '' : 's'} from ${sharingSummary.columns} column${sharingSummary.columns === 1 ? '' : 's'}`
+                                    : 'column names only — no data values'}
+                            </span>
+                        </span>
+                        <span className="underline decoration-dotted underline-offset-2 group-hover:decoration-solid">
+                            {enhancedActive ? 'Choose what to share' : 'See what could be shared'}
+                        </span>
+                    </button>
+                )}
+
                 {/* Usage Badge — only for limited roles */}
                 {!limitStatus.blocked && limitStatus.limit !== Infinity && (
                     <div className="shrink-0 flex items-center gap-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5">
@@ -461,6 +510,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 open={consentDialog !== null}
                 mode={consentDialog ?? 'consent'}
                 disclosure={disclosure}
+                selection={selection}
                 onAgree={acceptEnhanced}
                 onDecline={declineEnhanced}
                 onClose={() => setConsentDialog(null)}
