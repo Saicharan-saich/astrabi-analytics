@@ -190,3 +190,92 @@ describe('enhanced-mode consent', () => {
         expect(Date.parse(raw.grantedAt)).not.toBeNaN();
     });
 });
+
+const {
+    applySelection, countSharedValues, toggleColumn, toggleValue, excludeAll,
+    getSelection, setSelection, clearSelection, EMPTY_SELECTION,
+} = await import('../services/ai-sql/privacySelection');
+
+type D = Map<string, { values: string[]; total: number }>;
+const domains = (): D => new Map([
+    ['product', { values: ['Coffee', 'Tea', 'Juice'], total: 3 }],
+    ['region', { values: ['North', 'South'], total: 2 }],
+]);
+
+describe('per-column and per-value sharing choices', () => {
+    beforeEach(() => localStorage.clear());
+
+    it('sends everything eligible when nothing is switched off', () => {
+        expect(countSharedValues(domains(), EMPTY_SELECTION)).toBe(5);
+    });
+
+    it('drops a whole column that was switched off', () => {
+        const sel = toggleColumn(EMPTY_SELECTION, 'region');
+        const out = applySelection(domains(), sel);
+        expect([...out.keys()]).toEqual(['product']);
+        expect(countSharedValues(domains(), sel)).toBe(3);
+    });
+
+    it('drops individual values that were switched off', () => {
+        let sel = toggleValue(EMPTY_SELECTION, 'product', 'Tea');
+        sel = toggleValue(sel, 'product', 'Juice');
+        const out = applySelection(domains(), sel);
+        expect(out.get('product')!.values).toEqual(['Coffee']);
+        expect(out.get('region')!.values).toEqual(['North', 'South']);
+        expect(countSharedValues(domains(), sel)).toBe(3);
+    });
+
+    it('drops a column entirely when every one of its values is switched off', () => {
+        let sel = EMPTY_SELECTION;
+        for (const v of ['North', 'South']) sel = toggleValue(sel, 'region', v);
+        expect(applySelection(domains(), sel).has('region')).toBe(false);
+    });
+
+    it('sends nothing at all after "switch all off"', () => {
+        const sel = excludeAll(['product', 'region']);
+        expect(applySelection(domains(), sel).size).toBe(0);
+        expect(countSharedValues(domains(), sel)).toBe(0);
+    });
+
+    // The one-directional guarantee: a choice can only ever remove.
+    it('can never add a column the automatic filter rejected', () => {
+        const tampered = {
+            excludedColumns: [],
+            excludedValues: { customer_email: ['a@b.com'] },
+        };
+        const out = applySelection(domains(), tampered);
+        expect(out.has('customer_email')).toBe(false);
+        expect([...out.keys()].sort()).toEqual(['product', 'region']);
+    });
+
+    it('never invents a value that was not in the eligible set', () => {
+        const out = applySelection(domains(), EMPTY_SELECTION);
+        for (const [col, d] of out) {
+            expect(d.values.every(v => domains().get(col)!.values.includes(v))).toBe(true);
+        }
+    });
+
+    it('toggling twice returns to sharing', () => {
+        const off = toggleColumn(EMPTY_SELECTION, 'product');
+        const back = toggleColumn(off, 'product');
+        expect(applySelection(domains(), back).size).toBe(2);
+    });
+
+    it('remembers choices per dataset', () => {
+        setSelection('sales.csv', toggleColumn(EMPTY_SELECTION, 'region'));
+        expect(getSelection('sales.csv').excludedColumns).toEqual(['region']);
+        // A different file starts clean.
+        expect(getSelection('other.csv').excludedColumns).toEqual([]);
+    });
+
+    it('survives corrupt stored choices by sharing nothing extra', () => {
+        localStorage.setItem('qi_ai_privacy_selection:sales.csv', '{{{ not json');
+        expect(getSelection('sales.csv')).toEqual(EMPTY_SELECTION);
+    });
+
+    it('can be cleared', () => {
+        setSelection('sales.csv', excludeAll(['product']));
+        clearSelection('sales.csv');
+        expect(getSelection('sales.csv').excludedColumns).toEqual([]);
+    });
+});
