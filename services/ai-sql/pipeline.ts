@@ -47,7 +47,7 @@ import { detectAntiJoin, buildAntiJoinSQL } from './antiJoin';
 import { generateDirectSQL } from './directSqlEngine';
 import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerializer';
 import { describeSchemaForLLM, discoverJoinContext } from './joinEngine';
-import { getPrivacyMode } from './privacyMode';
+import { getEffectivePrivacyMode } from './privacyMode';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -158,7 +158,7 @@ export async function runAISQLPipeline(
             // data values leave the browser. Enhanced = also send bounded category
             // domains (non-sensitive, low-cardinality; PII, identifiers and
             // sensitive categoricals excluded). Rows are never sent in either.
-            const privacyMode = getPrivacyMode();
+            const privacyMode = getEffectivePrivacyMode();
             const domains = privacyMode === 'enhanced'
                 ? collectSafeDomains(dataset.rows, semanticModel)
                 : undefined;
@@ -946,7 +946,7 @@ export async function runAISQLPipeline(
             : '';
 
         const valueNote = unmatchedLiterals.length > 0
-            ? ` These value(s) weren't found in your data: ${unmatchedLiterals.map(v => `"${v}"`).join(', ')}. Check the spelling, or they may be stored in a different column${getPrivacyMode() === 'strict' ? ' — or switch to "Better answers" mode so the AI can see your real values' : ''}.`
+            ? ` These value(s) weren't found in your data: ${unmatchedLiterals.map(v => `"${v}"`).join(', ')}. Check the spelling, or they may be stored in a different column${getEffectivePrivacyMode() === 'strict' ? ' — or switch to "Better answers" mode so the AI can see your real values' : ''}.`
             : '';
 
         const noDataExplanation = unmatchedLiterals.length > 0
