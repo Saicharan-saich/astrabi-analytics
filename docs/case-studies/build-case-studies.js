@@ -377,72 +377,104 @@ const clicknsend = [
 const nithya = [
     ...header(
         'Nithyasystems',
-        'Software services · [CITY], [COUNTRY]',
-        'Contracts in one spreadsheet, budgets in another, actuals in a third — and nobody whose '
-        + 'job it was to reconcile them. [N] hours of manual matching became a question anyone could '
-        + 'ask.'),
+        'Data warehousing, database and IT services · [CITY], [COUNTRY]',
+        'A data services company with Power BI in place and one analyst to run it. The bottleneck '
+        + 'was never the tooling — it was that every question, however small, had to go through the '
+        + 'same person.'),
     draftWarning('Nithyasystems'),
 
     h1('At a glance'),
     table([2600, 6426], [
-        { boldFirst: true, cells: ['Sector', 'Software services'] },
+        { boldFirst: true, cells: ['Sector', 'Data warehousing, database and IT services'] },
         { boldFirst: true, cells: ['Location', '[CITY], [COUNTRY]'] },
         { boldFirst: true, cells: ['Size', '[N] employees'] },
         { boldFirst: true, cells: ['Using QuickInsight since', '[MONTH YEAR]'] },
-        { boldFirst: true, cells: ['Used for', 'Contract management and budget tracking'] },
-        { boldFirst: true, cells: ['Data source', '[DESCRIBE — e.g. a contract register spreadsheet plus monthly actuals exported from the accounting system]'] },
+        { boldFirst: true, cells: ['Used alongside', 'Power BI — retained for complex and governed reporting'] },
+        { boldFirst: true, cells: ['Used for', 'Quick ad-hoc sales analysis: daily and weekly sales, and week-, month- and year-to-date figures by product'] },
     ]),
 
-    h1('A finance question nobody had time to answer'),
-    p('Nithyasystems is a software services business with [N] employees. Its client work is '
-        + 'organised around contracts, each with a budget attached, and the money against those '
-        + 'budgets is spent month by month.'),
-    p('Keeping track of that meant [DESCRIBE — e.g. three separate spreadsheets maintained by '
-        + 'different people: a contract register, a budget sheet, and a monthly actuals export from '
-        + 'the accounting system]. Each one was accurate on its own. The difficulty was that the '
-        + 'useful questions all required two of them at once.'),
+    h1('A data company with a data bottleneck'),
+    p('Nithyasystems builds data warehouses, database platforms and IT systems for its clients. Data '
+        + 'infrastructure is what the company does for a living, and it is not a business that lacks '
+        + 'analytical capability or good tooling.'),
+    p('Internally, its own reporting runs on Power BI, maintained by a single data analyst.'),
+    p('That is a perfectly reasonable setup, and for the work Power BI is designed for it works well. '
+        + 'The difficulty was never the platform. It was that one analyst had become the route through '
+        + 'which every question had to travel.'),
 
-    h1('What the work looked like'),
-    p('Answering something as basic as "which contracts are over budget this quarter" meant matching '
-        + 'contract references between sheets by hand, usually with VLOOKUP. It took roughly [N] '
-        + 'hours, and it had to be redone from the beginning whenever the actuals were updated.'),
-    p('The recurring problems were:'),
-    bullet('[DIFFICULTY 1 — e.g. contract references were formatted differently in each sheet, so lookups silently failed and the mismatch was only noticed later]'),
-    bullet('[DIFFICULTY 2 — e.g. budgets and actuals were never reconciled between quarter ends, so overruns surfaced late]'),
-    bullet('[DIFFICULTY 3 — e.g. there was no reliable view of total committed spend across all live contracts]'),
-    p('Because the exercise was expensive, it was done rarely. And because it was done rarely, '
-        + 'problems were found at the point where they were hardest to do anything about.'),
+    h1('What Power BI is for, and what it is not'),
+    p('Power BI is the right tool for governed, recurring, complex reporting — the reports that '
+        + 'matter, that need to be consistent, and that people depend on. Nithyasystems continues to '
+        + 'use it for exactly that, and has no intention of changing.'),
+    p('The mismatch appears at the other end of the scale. Somebody wants to know what was sold '
+        + 'today. Or this week. Or how a particular product is tracking month-to-date against '
+        + 'year-to-date. These are small questions with short answers.'),
+    p('But getting them out of Power BI meant the full path: extract the data, transform it, load it, '
+        + 'model it, and write the queries — and know Power BI well enough to do all of that. For a '
+        + 'question whose answer is a single number, the cost of asking exceeded the value of '
+        + 'knowing.'),
+    p('So the small questions either went into the analyst’s queue, or went unasked.'),
 
-    ...whyNotTheUsualAnswers(
-        'Nithyasystems', '[ROLE — e.g. the finance lead]',
-        'Asking the accountant to produce the analysis was possible but slow and billed by the hour, '
-        + 'and it produced a report rather than the ability to ask a follow-up question. '
+    h1('One analyst, everyone’s questions'),
+    p('The queue is the part that does the damage, and it is easy to miss because nothing about it '
+        + 'looks broken.'),
+    p('Trivial questions and genuinely important ones enter the same queue and are served in roughly '
+        + 'the order they arrive. The analyst spends a meaningful part of the week producing figures '
+        + 'that required no analytical judgement at all, while the work that genuinely needs their '
+        + 'expertise waits behind it. Meanwhile the person who asked for today’s sales figure gets it '
+        + 'tomorrow, by which point they have either moved on or made the decision without it.'),
+    p('Hiring a second analyst would have helped, but it treats a routing problem as a capacity '
+        + 'problem — the new analyst joins the same queue. '
         + '[CONFIRM OR REPLACE WITH WHAT NITHYASYSTEMS ACTUALLY CONSIDERED.]'),
+    p('Giving everyone a Power BI licence would not have helped either. The licence is not the '
+        + 'barrier; the modelling knowledge is. Handing the tool to someone who does not have that '
+        + 'knowledge produces either nothing or, worse, a confidently wrong number.'),
 
-    ...whatChanged(
-        'Nithyasystems', '[ROLE — e.g. The finance lead]',
-        'The contract register and the actuals export are loaded together. QuickInsight works out how '
-        + 'the two sheets relate to each other and joins them automatically — and, importantly, '
-        + 'refuses any join that would duplicate rows and quietly inflate the totals. The figures on '
-        + 'screen match the figures in the source files, which is the part that manual VLOOKUP work '
-        + 'could never guarantee.',
-        [
-            '[QUESTION 1 — e.g. budget versus actual spend by contract, this quarter]',
-            '[QUESTION 2 — e.g. contracts where spend has exceeded budget, largest overrun first]',
-            '[QUESTION 3 — e.g. total committed contract value by client]',
-            '[QUESTION 4 — e.g. month-by-month spend against a named contract]',
-        ],
-        'The budget-versus-actual view is saved as a dashboard, so it is now checked [HOW OFTEN] '
-        + 'rather than [HOW OFTEN IT USED TO BE]. [WHO] reviews it.'),
+    h1('What changed — a hybrid, not a replacement'),
+    p('Nithyasystems began using QuickInsight in [MONTH YEAR] alongside Power BI rather than instead '
+        + 'of it. The two are used for different halves of the problem:'),
+    table([4513, 4513], [
+        { head: true, cells: ['Power BI', 'QuickInsight'] },
+        {
+            cells: [
+                'Governed, recurring reporting. Complex models. Anything the business depends on and needs to be consistent. Built and maintained by the analyst.',
+                'Quick ad-hoc questions. Exploration. Same-day answers. Used directly by the people who have the question.',
+            ],
+        },
+    ]),
+    spacer(220),
+    p('A spreadsheet export is loaded straight into the browser and cleaned automatically — date '
+        + 'columns detected and standardised, additive and non-additive numbers distinguished, '
+        + 'inconsistent category values tidied so the same product spelled two ways is counted once. '
+        + 'There is no extract-transform-load step to build, no model to define, and nothing to '
+        + 'install.'),
+    p('Questions are then asked either through the guided question builder — choosing what to break '
+        + 'the numbers down by, which figure to measure, which rows to include and how to order the '
+        + 'result — or simply typed in plain English. The underlying query stays visible, which '
+        + 'matters in a company where people know enough to want to check it.'),
+    p('The questions it handles are the ones that were clogging the queue:'),
+    bullet('Today’s sales, and this week’s'),
+    bullet('Week-to-date, month-to-date and year-to-date sales by product'),
+    bullet('[QUESTION 4 — e.g. this month against the same month last year, by product]'),
+    bullet('[ADD ANY OTHERS ASKED REGULARLY]'),
+
+    h1('What the analyst got back'),
+    p('The point of the change was not to produce figures faster, although it does. It was to take '
+        + 'the questions that never needed an analyst out of the analyst’s queue.'),
+    p('Work that requires modelling judgement, governance or genuine analytical skill still goes to '
+        + 'the analyst — and now reaches them without waiting behind a request for a daily sales '
+        + 'total. [ADD THE OUTCOME IN NITHYASYSTEMS’ OWN TERMS — e.g. how much of the analyst’s week '
+        + 'was previously spent on ad-hoc requests, and what that time is now spent on instead.]'),
 
     ...dataNote(
-        'A contract register holds client names, negotiated rates and contract values — among the '
-        + 'most commercially sensitive information a services business has. [ADD ANY CLIENT '
-        + 'CONFIDENTIALITY TERM THAT APPLIED.]'),
+        'Sales data by product and client is commercially sensitive, and as a data services business '
+        + 'Nithyasystems applies the same standards to its own information that it applies on behalf '
+        + 'of its clients. [ADD ANY INTERNAL POLICY OR CLIENT CONFIDENTIALITY TERM THAT APPLIED.]'),
 
     ...results('Nithyasystems', [
-        { cells: ['Time to produce the budget-versus-actual review', '[N] hours', '[N] minutes'] },
-        { cells: ['How often the review is actually run', '[e.g. quarterly]', '[e.g. weekly]'] },
+        { cells: ['Wait for an ad-hoc sales figure', '[e.g. next day]', '[e.g. minutes]'] },
+        { cells: ['Analyst time spent on ad-hoc requests', '[N] [hours per week]', '[N] [hours per week]'] },
+        { cells: ['People able to answer a basic sales question', '1', '[N]'] },
         { cells: ['[OTHER MEASURE]', '[VALUE]', '[VALUE]'] },
     ]),
 
