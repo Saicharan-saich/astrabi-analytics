@@ -19,7 +19,7 @@ QuickInsight — https://quickinsight.co.uk
 
 **Evaluation.** We set out a protocol covering four public and two synthetic datasets, four model families, four baselines and a question bank of 200–500 business questions, with pre-registered metrics for context size, exact token usage, end-to-end latency, execution accuracy, plan validity, privacy exposure and cost.
 
-**Results reported here.** We report measured context-size results only. The context QuickInsight sends is invariant to dataset size: 2,445 estimated tokens of semantic model at 10,000 rows and 2,493 at 250,000 rows, against 747,785 and 18,701,319 tokens respectively for the same tables serialised in full. Payload scales with column count (637 → 2,445 tokens for 5 → 14 columns), not row count. We also report a finding that does not favour our system: against a conventional *DDL + 20 sampled rows* prompt (1,840 tokens), our planner prompt is roughly 2.8× **larger**, because it carries a richer semantic description and a longer instruction block. Token reduction is therefore *not* the primary contribution; decoupling context from data volume, and removing rows from the prompt altogether, are.
+**Results reported here.** We report measured context-size results only. The context is invariant to dataset size: 2,445 estimated tokens of semantic model at 10,000 rows and 2,493 at 250,000 rows, against 747,785 and 18,701,319 tokens for the same tables serialised in full. Payload scales with column count (637 → 2,445 tokens for 5 → 14 columns), not row count. Making the planner conditional on the direct-SQL engine failing — rather than always calling both — reduces the typical question from 4,010 to 364 tokens, a 90.9% saving, and puts it 5.1× below a conventional *DDL + 20 sampled rows* prompt (1,840 tokens). We also record a correction: an earlier revision of this paper reported the planner prompt as 5,174 tokens and concluded the architecture was 2.8× *more* expensive than that baseline. That figure was a measurement artifact, not a property of the system (§10.2).
 
 **Contributions.** (i) The HAP architecture and its plan interface; (ii) a semantic-metadata extraction pipeline that produces a row-free, size-invariant model description; (iii) a two-layer privacy filter that excludes identifiers, PII and sensitive categoricals by both column name and value shape; (iv) a deterministic multi-engine execution path with a typed validation gate; (v) measured evidence that prompt size is decoupled from dataset size; (vi) a pre-registered protocol for the accuracy, latency and cost questions we have not yet answered.
 
@@ -150,15 +150,19 @@ An `AnalyticsPlan` is a small, closed, typed structure. That gives three propert
 
 ### 3.3 Bounded, standalone model use
 
-HAP issues **two** model requests per question — one to each engine described in §7.2 — and treats every question as standalone: no conversation history is sent. The requests are issued concurrently, so two attempts cost one wall-clock wait, but they are two requests and roughly double the tokens of a single-engine design. That is a deliberate trade of cost for reliability, and it should be read as such rather than as an efficiency claim.
+HAP issues **one model request for most questions, and a second only when the first fails**, and treats every question as standalone: no conversation history is sent.
 
-Two consequences follow from the standalone discipline.
+The direct-SQL engine is settled first. When it returns usable SQL — the common case — the planner is not called at all: its SQL would have been discarded anyway, and the plan's remaining jobs (choosing the chart, shaping the summary, driving formatting) are covered by a deterministic classifier and field mapper that run locally at zero tokens. The LLM planner is invoked in full only when direct-SQL fails, which is precisely when its judgement is needed.
+
+This is what makes the two-engine design affordable: the expensive engine is on the exception path. §10.1 measures the effect at 90.9% of tokens removed from the typical question.
+
+Two further consequences follow from the standalone discipline.
 
 Cost per question is bounded and predictable — it does not grow with session length, which is a meaningful property when conversational context in comparable systems grows monotonically as a session continues.
 
 And a question cannot silently inherit a filter from an earlier one. This is a correctness property as much as an efficiency one: conversational analytics systems that carry context forward can answer the current question under the previous question's `WHERE` clause, with no visible indication.
 
-The concurrency is what keeps the two-engine design affordable in time if not in tokens: the planning request and the direct-SQL request (§7.2) are in flight together and awaited together, so the user waits once rather than twice.
+Latency improves for the same reason. The planner prompt is an order of magnitude larger than the direct-SQL prompt, so a pipeline that blocked on the planner paid its latency on every question. Settling direct-SQL first means the typical question waits only on the smaller request.
 
 ---
 
@@ -423,28 +427,45 @@ Across a 250× increase in rows, the semantic model varies by 2% and the schema 
 
 Growth is with columns, as predicted. It is not linear — the jump from 8 to 11 columns reflects those columns adding an ordinal field and further categoricals, which trigger additional rule blocks in the serialisation. Prompt size is therefore a function of schema *composition* as well as width.
 
-**Table 3 — HAP against conventional prompt constructions (14 columns, 50,000 rows)**
+**Table 3 — Prompt payloads compared (14 columns, 50,000 rows)**
 
-| Payload | Tokens | vs. HAP planner |
+| Payload | Tokens | vs. planner prompt |
 |---|---:|---:|
-| HAP direct-SQL schema block | 63 | 0.01× |
-| HAP direct-SQL total (schema + instructions) | 364 | 0.07× |
-| HAP semantic model alone | 2,445 | 0.47× |
-| **HAP planner prompt total** | **5,174** | **1.00×** |
-| B1: DDL only | 70 | 0.01× |
-| B2: DDL + 3 rows | 333 | 0.06× |
-| B2: DDL + 20 rows | 1,840 | 0.36× |
-| Full table (50k rows) | 3,740,041 | 722.85× |
+| HAP direct-SQL schema block | 63 | 0.02× |
+| **HAP direct-SQL total** (instructions + schema) | **364** | **0.10×** |
+| HAP semantic model alone | 2,445 | 0.67× |
+| HAP planner prompt total | 3,646 | 1.00× |
+| B1: DDL only | 70 | 0.02× |
+| B2: DDL + 3 rows | 333 | 0.09× |
+| B2: DDL + 20 rows | 1,840 | 0.50× |
+| Full table (50k rows) | 3,740,041 | 1,026× |
 
-**This table contains a result that does not favour the proposed system, and it should be read carefully.** The HAP planner prompt is **2.8× larger** than a conventional DDL + 20-rows prompt. Roughly half of it (2,730 tokens) is a static instruction block encoding analytical rules, and the rest is the semantic model. Against few-shot baselines — which is what practitioners actually use — **HAP does not reduce tokens; it increases them.**
+**Table 4 — Tokens per question, by engine strategy**
 
-The honest answers to RQ3 are therefore three:
+| Strategy | Tokens |
+|---|---:|
+| Always call both engines (previous behaviour) | 4,010 |
+| **Planner only on direct-SQL failure — typical question** | **364** |
+| Planner only on direct-SQL failure — fallback path | 4,010 |
+| **Saving on the typical question** | **90.9%** |
 
-1. Against full-context approaches, reduction is 723× — but full-context is not a serious baseline beyond toy tables.
-2. Against few-shot-row baselines, there is **no reduction**; the planner path costs about 2.8× more.
-3. The property that does hold, and that we claim, is **invariance**: cost per question is fixed by schema, not data, so it does not degrade as the customer's data grows. Note also that a question costs *both* engine prompts — 5,174 + 364 ≈ 5,538 tokens — not the planner alone, so the two-engine design roughly triples the token cost of the DDL + 20-rows baseline. A per-question cost that is constant is more predictable, and eventually cheaper, than one that grows with sampled context; but that is an argument about scaling behaviour, not about absolute token count today.
+Table 4 measures the architecture change described in §3.3. Under the previous behaviour every question paid for both prompts, and the planner accounted for 91% of that total. Making it conditional removes it from the common path entirely.
 
-We flag a clear optimisation the measurements expose: the 2,730-token static instruction block is identical across every question and every dataset, and is a direct candidate for prompt caching, which would cut marginal per-question cost by roughly half without any architectural change.
+The answers to RQ3 are therefore:
+
+1. Against full-context approaches, reduction exceeds 1,000× — but full-context is not a serious baseline beyond toy tables, and we do not lean on it.
+2. **Against few-shot-row baselines, the typical question is now 5.1× cheaper** (364 against 1,840 tokens). When direct-SQL fails and the planner is called, that question costs 4,010 tokens — 2.2× the baseline. The average therefore depends on the direct-SQL success rate, which §9 is designed to measure and this paper does not yet report.
+3. The property that holds regardless of engine strategy is **invariance**: cost per question is fixed by schema width, not row count, so it does not degrade as the customer's data grows.
+
+One optimisation remains available and unimplemented: the 1,201-token static instruction block inside the planner prompt is identical on every call, and is a direct prompt-caching target that would roughly halve the fallback path.
+
+### 10.2 Correction to a previously reported figure
+
+An earlier revision of this paper reported the planner prompt as **5,174 tokens** and concluded, in the abstract and in §10.1, that HAP was **2.8× more expensive** than a DDL + 20-rows baseline. Both statements were wrong.
+
+The cause was in the measurement harness, not in the system. `research/measureContext.ts` extracted the planner's instruction block by matching every template literal in `intentPlanner.ts` from `buildPlannerPrompt` onward, which swept in log strings and prompt fragments belonging to other functions. The harness now extracts only the template that `buildPlannerPrompt` actually returns, bounded explicitly. The corrected figure is 3,646 tokens.
+
+We report this rather than silently restating the numbers, for two reasons. The erroneous figure was the basis of a stated negative result, and a negative result withdrawn without explanation is worse than one never published. And it illustrates a hazard specific to measuring prompts from source: a regex over source text is not a measurement of what a system sends. The protocol in §9.5 avoids the problem entirely by reading exact counts from the provider's `usage` field, and those counts — not these estimates — are what the evaluation will report.
 
 ---
 
@@ -458,7 +479,7 @@ Partially addressed in §10.1 for context size; exact usage pending.
 
 ### 11.2 Accuracy
 
-**Table 4 — Execution accuracy by baseline and difficulty** *(pending)*
+**Table 5 — Execution accuracy by baseline and difficulty** *(pending)*
 
 | System | Simple | Multi-dim | Multi-table | Business-knowledge | Overall |
 |---|---|---|---|---|---|
@@ -469,15 +490,15 @@ Partially addressed in §10.1 for context size; exact usage pending.
 
 ### 11.3 Latency
 
-**Table 5 — End-to-end latency** *(pending)* — p50 and p95, model time and deterministic time separated.
+**Table 6 — End-to-end latency** *(pending)* — p50 and p95, model time and deterministic time separated.
 
 ### 11.4 Privacy exposure
 
-**Table 6 — PII and sensitive values in outbound payloads** *(pending)* — per dataset, per mode. The only defensible result is zero; any non-zero value is a defect, not a data point.
+**Table 7 — PII and sensitive values in outbound payloads** *(pending)* — per dataset, per mode. The only defensible result is zero; any non-zero value is a defect, not a data point.
 
 ### 11.5 Cost
 
-**Table 7 — Cost per 1,000 questions** *(pending)* — by model and baseline, with and without prompt caching.
+**Table 8 — Cost per 1,000 questions** *(pending)* — by model and baseline, with and without prompt caching.
 
 ---
 
@@ -523,7 +544,7 @@ Stated without hedging:
 
 **Schema subsetting** — select candidate columns before serialisation, decoupling context from schema width as it is already decoupled from row count.
 
-**Local planning** — the measured planner context (5,174 tokens) is within reach of small locally hosted models. If planning quality holds, the privacy guarantee strengthens from "no rows leave the device" to "nothing leaves the device", which is a categorical change rather than an incremental one.
+**Local planning** — the typical question now needs only the 364-token direct-SQL prompt, which is well within reach of small locally hosted models; even the 3,646-token planner fallback is not demanding. If planning quality holds, the privacy guarantee strengthens from "no rows leave the device" to "nothing leaves the device", which is a categorical change rather than an incremental one.
 
 **Learned planning from corrections** — every user correction of a plan is a labelled example; whether this yields a planner that improves in deployment without retraining a base model is an open question.
 
@@ -539,7 +560,9 @@ Stated without hedging:
 
 We have described Hybrid Analytics Planning, an architecture that restricts language-model involvement in business intelligence to a single step — mapping an ambiguous question onto a typed, checkable analytical plan — and executes that plan through deterministic engines. The model interprets; code composes.
 
-We report measured evidence for one claim: the context required to answer a question is invariant to the size of the data, varying by 2% across a 250× increase in rows while full serialisation grows 251×. We report, equally, that this invariance does not currently translate into token savings against the few-shot-row prompts practitioners actually use — the planner path costs roughly 2.8× more — and that the benefit is one of predictable scaling rather than immediate economy.
+We report measured evidence on context. First, the context required to answer a question is invariant to the size of the data, varying by 2% across a 250× increase in rows while full serialisation grows 251×. Second, placing the expensive engine on the exception path — calling the planner only when direct-SQL fails — reduces the typical question from 4,010 to 364 tokens, 5.1× below the few-shot-row prompts practitioners use. The average across a workload depends on how often direct-SQL succeeds, which we have not yet measured.
+
+We also withdraw a negative result from an earlier revision, which reported this architecture as 2.8× more expensive than that baseline. That figure came from a flawed harness rather than the system, and §10.2 explains what went wrong.
 
 The privacy property is structural rather than promised: transaction rows do not enter the prompt on any code path, and queries execute in the browser, so there is no server-side query path for data to traverse. Two limits qualify this — column names are still transmitted, and provider retention terms are unaudited.
 

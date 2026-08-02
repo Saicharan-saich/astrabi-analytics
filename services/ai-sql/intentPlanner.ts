@@ -1136,6 +1136,29 @@ function enforceTimeComparison(plan: AnalysisPlan, question: string, model: Sema
  * Generate an AnalysisPlan from a natural language question.
  * This is Step A of the two-step LLM pipeline.
  */
+/**
+ * Build a plan WITHOUT calling the LLM — the deterministic classifier plus the
+ * field mapper, the same path used when the planner errors.
+ *
+ * The pipeline uses this whenever the direct-SQL engine has already produced
+ * usable SQL. In that case the LLM planner's own SQL would be discarded anyway,
+ * and the plan is only needed to choose the chart, shape the summary and drive
+ * formatting — all of which this covers at zero tokens and zero latency.
+ */
+export function generateLocalPlan(
+    question: string,
+    model: SemanticModel,
+    grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+): AnalysisPlan {
+    const classification = classifyQuestion(question);
+    const fieldMapping = mapFieldsFromQuestion(question, model);
+    console.log(`[Intent Planner] LOCAL plan (no LLM call): intent=${classification.intent} confidence=${classification.confidence.toFixed(2)}`);
+    return withTokens(
+        finalizePlan(buildDeterministicParsed(classification, fieldMapping, model), question, model, classification, grainOverride),
+        { prompt: 0, completion: 0, total: 0 },
+    );
+}
+
 export async function generatePlan(
     question: string,
     model: SemanticModel,
