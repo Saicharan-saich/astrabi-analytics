@@ -5,7 +5,7 @@ const {
     LevelFormat, PageBreak,
 } = require('docx');
 
-/* ── helpers (shared with build-docx.js) ─────────────────────────── */
+/* ── helpers ─────────────────────────────────────────────────────── */
 
 function runs(text, opts = {}) {
     return text.split(/(\[[^\]]+\])/g).filter(Boolean).map(p =>
@@ -16,21 +16,25 @@ function runs(text, opts = {}) {
 
 const p = (text, opts = {}) => new Paragraph({
     children: runs(text, opts.run || {}),
-    spacing: { after: opts.after ?? 160, line: 276 },
-    alignment: opts.align,
-    indent: opts.indent,
+    spacing: { after: opts.after ?? 180, line: 288 },
+    alignment: opts.align, indent: opts.indent,
     ...(opts.border ? { border: opts.border } : {}),
 });
 
 const h1 = text => new Paragraph({
-    text, heading: HeadingLevel.HEADING_1, spacing: { before: 340, after: 160 },
-});
-const h2 = text => new Paragraph({
-    text, heading: HeadingLevel.HEADING_2, spacing: { before: 240, after: 120 },
+    text, heading: HeadingLevel.HEADING_1, spacing: { before: 360, after: 160 },
 });
 const spacer = (after = 140) => new Paragraph({ text: '', spacing: { after } });
 
 const RULE = { bottom: { style: BorderStyle.SINGLE, size: 6, color: '999999', space: 6 } };
+
+/** Pull-quote styling for the customer's own words. */
+const pullQuote = text => new Paragraph({
+    children: [new TextRun({ text, italics: true, size: 26, color: '2A2A3E' })],
+    spacing: { before: 160, after: 140, line: 300 },
+    indent: { left: 480 },
+    border: { left: { style: BorderStyle.SINGLE, size: 18, color: 'B0B4C0', space: 12 } },
+});
 
 function cell(text, o = {}) {
     return new TableCell({
@@ -77,7 +81,7 @@ const bullet = text => new Paragraph({
 
 const baseStyles = {
     default: {
-        document: { run: { font: 'Calibri', size: 22 }, paragraph: { spacing: { line: 276 } } },
+        document: { run: { font: 'Calibri', size: 22 }, paragraph: { spacing: { line: 288 } } },
         heading1: { run: { font: 'Calibri', size: 26, bold: true, color: '1A1A2E' } },
         heading2: { run: { font: 'Calibri', size: 23, bold: true, color: '333344' } },
     },
@@ -98,7 +102,7 @@ const draftWarning = company => new Paragraph({
     spacing: { after: 320 }, border: RULE,
 });
 
-function header(company, strapline) {
+function header(company, strapline, standfirst) {
     return [
         new Paragraph({
             children: [new TextRun({ text: 'CASE STUDY', bold: true, size: 20, color: '666677' })],
@@ -110,27 +114,98 @@ function header(company, strapline) {
         }),
         new Paragraph({
             children: [new TextRun({ text: strapline, size: 24, color: '444455' })],
-            spacing: { after: 60 },
+            spacing: { after: 200 },
         }),
-        new Paragraph({ text: '', border: RULE, spacing: { after: 300 } }),
+        new Paragraph({
+            children: runs(standfirst, { size: 25, color: '2A2A3E' }),
+            spacing: { after: 200, line: 300 },
+        }),
+        new Paragraph({ text: '', border: RULE, spacing: { after: 320 } }),
     ];
 }
 
-/** The product description — factual, identical across all three. */
-function howItWorks(dataDescription) {
+/** The "why not just hire someone / buy a BI tool" section — the core thesis. */
+function whyNotTheUsualAnswers(company, roleDoingIt, extra) {
     return [
-        h1('Why the data could not go to a cloud BI tool'),
-        p(dataDescription),
-        p('QuickInsight takes a different approach. It loads the spreadsheet into an analytical '
-            + 'database that runs inside the web browser on the user’s own computer. Cleaning, '
-            + 'profiling, query execution and charting all happen on that machine. The file is never '
-            + 'uploaded to a server.'),
-        p('Where the AI features are used to interpret a typed question, only the structure of the '
-            + 'data is sent — table names, column names and data types. No data values are sent '
-            + 'unless the user explicitly turns that on, and even then the tool automatically '
-            + 'excludes anything that looks like a name, an identifier, contact details or a '
-            + 'sensitive category, and lets the user switch off any remaining column or individual '
-            + 'value before it goes.'),
+        h1('Why the usual answers did not fit'),
+        p(`The obvious solution is to hire someone. A data analyst would have taken the reporting off `
+            + `${roleDoingIt}’s desk entirely. But a salaried analyst was never realistic for a business `
+            + `of ${company}’s size — the cost of the role would have been out of proportion to the `
+            + `problem it solved. [ADD ${company.toUpperCase()}’S OWN WORDS ON WHY HIRING WAS NOT AN `
+            + `OPTION, IF THEY ARE WILLING TO GIVE THEM.]`),
+        p('The second obvious solution is a business intelligence tool. On paper these solve exactly '
+            + 'this problem. In practice they move the difficulty rather than removing it: before a '
+            + 'chart appears, someone has to connect the data, define how tables relate to each other, '
+            + 'and build a model. That is analyst work. Buying the software does not supply the person '
+            + 'who knows how to use it, and for a small team the licence cost arrives on top of a '
+            + 'learning curve nobody has time for.'),
+        p(extra),
+        p(`So the work stayed where it was — with ${roleDoingIt}, in Excel, done by hand.`),
+    ];
+}
+
+/** Product description — accurate, and framed as "what replaced the manual work". */
+function whatChanged(company, whoUses, loadDescription, questions, dashboardLine) {
+    return [
+        h1('What changed'),
+        p(`${company} started using QuickInsight in [MONTH YEAR]. It is a browser-based analysis tool `
+            + `built for people who work with spreadsheets rather than for data specialists.`),
+        p(loadDescription),
+        p('The cleaning that used to be done by hand happens automatically when the file loads. '
+            + 'QuickInsight reads the spreadsheet, works out which columns are dates and standardises '
+            + 'their formats, identifies which numbers can meaningfully be added up and which cannot, '
+            + 'tidies inconsistent category values so that the same thing spelled two ways is counted '
+            + 'once, and flags columns that hold personal information. None of this requires a '
+            + 'decision from the user.'),
+        p('Questions are then asked in one of two ways. The guided question builder works by choosing '
+            + 'what to break the numbers down by, which figure to measure, which rows to include and '
+            + 'how to order the result — the four things every business question is made of. '
+            + 'Alternatively the question can simply be typed in plain English. Either way a chart or '
+            + 'table appears, with the underlying query visible for anyone who wants to check it.'),
+        p(`${whoUses} now asks questions such as:`),
+        ...questions.map(bullet),
+        p(dashboardLine),
+    ];
+}
+
+/** Privacy — demoted to a supporting benefit, which is what it is. */
+function dataNote(sensitivity) {
+    return [
+        h1('A note on the data itself'),
+        p(sensitivity),
+        p('This turned out to matter more than expected. QuickInsight does its work inside the web '
+            + 'browser on the user’s own computer — the spreadsheet is never uploaded to a server. '
+            + 'Where the plain-English question feature is used, only the structure of the data is '
+            + 'sent: table names, column names and data types. No data values are sent unless the '
+            + 'user explicitly switches that on, and even then anything resembling a name, an '
+            + 'identifier, contact details or a sensitive category is excluded automatically, with '
+            + 'the user able to switch off any remaining column or individual value first.'),
+        p('The practical effect is that adopting the tool required no data protection review, no '
+            + 'supplier security assessment, and no conversation about where the data would be '
+            + 'stored. [CONFIRM THIS IS ACCURATE FOR THIS CUSTOMER — DELETE IF A REVIEW WAS IN FACT '
+            + 'CARRIED OUT, OR REPLACE WITH WHAT THEY DID.]'),
+    ];
+}
+
+function results(company, rows) {
+    return [
+        h1('Results'),
+        p(`[${company} to complete. Use only figures ${company} can stand behind. Delete any row that `
+            + `cannot be evidenced.]`),
+        table([4200, 2400, 2426], [{ head: true, cells: ['Measure', 'Before', 'After'] }, ...rows]),
+        spacer(200),
+        p('[ADD ANY OUTCOME THAT IS NOT A TIME SAVING — something the analysis showed that was not '
+            + 'known before, or a decision made differently as a result. A specific incident is more '
+            + 'persuasive than an average.]'),
+    ];
+}
+
+function inTheirWords(company) {
+    return [
+        h1('In their words'),
+        pullQuote('"[QUOTE — the customer’s own words. What the week looks like now compared with '
+            + 'before, and what they would say to another small business in the same position.]"'),
+        p(`— [NAME], [JOB TITLE], ${company}`, { indent: { left: 480 } }),
     ];
 }
 
@@ -160,86 +235,91 @@ function signOff(company) {
             spacing: { before: 200, after: 140 },
         }),
         bullet('Do not fill in the results figures yourself. Ask the customer for them, and use their number even if it is lower than you hoped — a modest verified figure is evidence, an impressive invented one is not.'),
-        bullet('If the customer cannot give a number, delete that row rather than estimating. An empty results table with three real rows beats six rows where three are guesses.'),
-        bullet('Send as PDF once the placeholders are filled. Ask for a signed scan back.'),
+        bullet('If the customer cannot give a number, delete that row rather than estimating.'),
+        bullet('One question gets you most of the results table: "Before QuickInsight, how often did you rebuild this and roughly how long did it take each time? And now?"'),
         bullet('The quote must be the customer’s own words. If they ask you to draft one, send it as a suggestion and let them rewrite it.'),
-        bullet('Keep the signed original. It is a stronger evidence document than anything you write about yourself.'),
+        bullet('Send as PDF once the placeholders are filled. Ask for a signed scan back, and keep the original.'),
     ];
 }
 
 /* ════════════════════════════════════════════════════════════════════
-   1 — ClickNsend
+   1 — ClickNsend   (facts confirmed by the customer are set; the rest
+                     remain placeholders)
    ════════════════════════════════════════════════════════════════════ */
 
 const clicknsend = [
-    ...header('ClickNsend', 'Logistics and parcel delivery · United Kingdom'),
+    ...header(
+        'ClickNsend',
+        'Logistics and parcel delivery · Aberdeen, United Kingdom',
+        'A ten-person parcel company was spending around ten hours a week turning depot '
+        + 'spreadsheets into figures by hand. Hiring an analyst was never on the table. This is '
+        + 'what they did instead.'),
     draftWarning('ClickNsend'),
 
     h1('At a glance'),
     table([2600, 6426], [
         { boldFirst: true, cells: ['Sector', 'Logistics and parcel delivery'] },
-        { boldFirst: true, cells: ['Location', '[CITY], United Kingdom'] },
-        { boldFirst: true, cells: ['Size', '[N] employees'] },
-        { boldFirst: true, cells: ['Using QuickInsight since', '[MONTH YEAR]'] },
+        { boldFirst: true, cells: ['Location', 'Aberdeen, United Kingdom'] },
+        { boldFirst: true, cells: ['Size', '10 employees'] },
+        { boldFirst: true, cells: ['Using QuickInsight since', '2 July 2026'] },
         { boldFirst: true, cells: ['Used for', 'Parcel volume tracking and delivery performance analysis'] },
-        { boldFirst: true, cells: ['Data source', '[DESCRIBE — e.g. daily manifest exports from the courier platform, as Excel files]'] },
+        { boldFirst: true, cells: ['Data source', 'Daily manifest exports from the courier platform, as Excel files'] },
     ]),
 
-    h1('The situation before'),
-    p('ClickNsend’s operational data arrived as [DESCRIBE THE EXPORT — e.g. a spreadsheet per depot '
-        + 'per week, exported from the courier management system]. Reporting was produced by '
-        + '[WHO — e.g. the operations manager] using Excel pivot tables, rebuilt [HOW OFTEN].'),
-    p('Producing a single view of parcel volumes across [DIMENSION — e.g. depots and service tiers] '
-        + 'took approximately [N] hours per [WEEK / MONTH].'),
-    p('The specific difficulties were:'),
-    bullet('[DIFFICULTY 1 — e.g. date and status columns arrived in inconsistent formats and had to be cleaned by hand each time]'),
-    bullet('[DIFFICULTY 2 — e.g. combining depots meant copying sheets together manually, which introduced errors]'),
-    bullet('[DIFFICULTY 3 — e.g. only one person understood how the pivot tables were constructed, so reporting stopped when they were away]'),
+    h1('Ten people, no data team'),
+    p('ClickNsend is a parcel and logistics business in Aberdeen with ten employees. Like most '
+        + 'companies its size, it produces a great deal of operational data without having anyone '
+        + 'whose job is to make sense of it.'),
+    p('The data itself was never the problem. Manifest exports came out of the courier management '
+        + 'system reliably — a spreadsheet per depot, per week. The problem was that turning those '
+        + 'spreadsheets into an answer took a person, and the only person available was the '
+        + 'operations manager, whose actual job is running operations.'),
 
-    ...howItWorks(
-        'Parcel manifests contain recipient names, delivery addresses and contact telephone numbers. '
-        + 'Uploading that data to a third-party analytics service would have meant [DESCRIBE '
-        + 'CLICKNSEND’S POSITION — e.g. carrying out a data protection impact assessment, or would '
-        + 'have been prohibited by internal policy]. [ADD ANY CUSTOMER OR CLIENT CONTRACTUAL '
-        + 'RESTRICTION THAT APPLIED.]'),
+    h1('What the week looked like'),
+    p('Reporting was built in Excel using pivot tables, rebuilt from scratch each time somebody '
+        + 'asked for a figure. Producing a single view of parcel volumes broken down by worker took '
+        + 'around ten hours a week — a quarter of someone’s working time spent on spreadsheet '
+        + 'mechanics rather than on the operation.'),
+    p('Three things made it slower than it should have been:'),
+    bullet('Date and status columns came out of the system in inconsistent formats and had to be cleaned by hand every time.'),
+    bullet('Combining depots meant copying sheets together manually, which introduced errors.'),
+    bullet('Only one person understood how the pivot tables were constructed, so reporting stopped when they were away.'),
+    p('That last point is the one that tends to go unnoticed until it bites. The reporting was not '
+        + 'just slow; it was a single point of failure sitting inside one person’s spreadsheet.'),
 
-    h1('What ClickNsend does with QuickInsight'),
-    p('The operations team loads the [WEEKLY / DAILY] manifest export directly into the browser. '
-        + 'QuickInsight profiles the file automatically — detecting date columns, identifying which '
-        + 'numeric columns can be summed, and flagging columns that contain personal data.'),
-    p('Questions are then asked either through the guided question builder or by typing them in '
-        + 'plain English. Typical questions include:'),
-    bullet('[QUESTION 1 — e.g. parcel volume by depot, by week]'),
-    bullet('[QUESTION 2 — e.g. failed delivery rate by postcode area]'),
-    bullet('[QUESTION 3 — e.g. average parcels per driver per day, ranked]'),
-    bullet('[QUESTION 4 — e.g. week-on-week change in volume by service tier]'),
-    p('The results are saved to a dashboard that [WHO] reviews [HOW OFTEN].'),
+    ...whyNotTheUsualAnswers(
+        'ClickNsend', 'the operations manager',
+        'Outsourcing to a consultant was considered as a middle path, but it fits scheduled reports '
+        + 'rather than the way questions actually arrive in a small business — someone asks something '
+        + 'on a Tuesday afternoon and wants the answer before the end of the day. '
+        + '[CONFIRM OR REPLACE WITH WHAT CLICKNSEND ACTUALLY CONSIDERED.]'),
 
-    h1('Results'),
-    p('[ClickNsend to complete. Use only figures ClickNsend can stand behind. Delete any row that '
-        + 'cannot be evidenced.]'),
-    table([4200, 2400, 2426], [
-        { head: true, cells: ['Measure', 'Before', 'After'] },
-        { cells: ['Time to produce the [WEEKLY] volume report', '[N] hours', '[N] minutes'] },
-        { cells: ['People able to produce it', '[N]', '[N]'] },
+    ...whatChanged(
+        'ClickNsend', 'The operations team',
+        'The manifest export is loaded straight into the browser — the same Excel file that came out '
+        + 'of the courier system, with no preparation step. Nothing is installed and nothing is '
+        + 'configured first.',
+        [
+            '[QUESTION 1 — e.g. parcel volume by depot, by week]',
+            '[QUESTION 2 — e.g. failed delivery rate by postcode area]',
+            '[QUESTION 3 — e.g. average parcels per driver per day, ranked highest first]',
+            '[QUESTION 4 — e.g. week-on-week change in volume by service tier]',
+        ],
+        'The answers that get asked for repeatedly are saved to a dashboard, so the next time the '
+        + 'question comes up it does not need rebuilding at all. [WHO] reviews it [HOW OFTEN].'),
+
+    ...dataNote(
+        'Parcel manifests contain recipient names, delivery addresses and contact telephone '
+        + 'numbers — the personal data of every person ClickNsend delivers to.'),
+
+    ...results('ClickNsend', [
+        { cells: ['Time spent on parcel volume reporting', '10 hours per week', '[N] [minutes / hours] per week'] },
+        { cells: ['People able to produce the figures', '1', '[N]'] },
+        { cells: ['Wait for an ad-hoc question to be answered', '[e.g. next day]', '[e.g. minutes]'] },
         { cells: ['[OTHER MEASURE]', '[VALUE]', '[VALUE]'] },
     ]),
-    spacer(200),
-    p('[ADD ANY OUTCOME THAT IS NOT A TIME SAVING — e.g. a decision that was made differently '
-        + 'because of something the analysis revealed. These are often more persuasive than the '
-        + 'hours saved.]'),
 
-    h1('In their words'),
-    new Paragraph({
-        children: [new TextRun({
-            text: '"[QUOTE — in the customer’s own words. What changed for them, and what they would '
-                + 'say to someone considering it.]"',
-            italics: true, size: 24,
-        })],
-        spacing: { after: 140 }, indent: { left: 480 },
-    }),
-    p('— [NAME], [JOB TITLE], ClickNsend', { indent: { left: 480 } }),
-
+    ...inTheirWords('ClickNsend'),
     ...signOff('ClickNsend'),
 ];
 
@@ -248,7 +328,12 @@ const clicknsend = [
    ════════════════════════════════════════════════════════════════════ */
 
 const nithya = [
-    ...header('Nithyasystems', 'Software services · [COUNTRY]'),
+    ...header(
+        'Nithyasystems',
+        'Software services · [CITY], [COUNTRY]',
+        'Contracts in one spreadsheet, budgets in another, actuals in a third — and nobody whose '
+        + 'job it was to reconcile them. [N] hours of manual matching became a question anyone could '
+        + 'ask.'),
     draftWarning('Nithyasystems'),
 
     h1('At a glance'),
@@ -261,61 +346,60 @@ const nithya = [
         { boldFirst: true, cells: ['Data source', '[DESCRIBE — e.g. a contract register spreadsheet plus monthly actuals exported from the accounting system]'] },
     ]),
 
-    h1('The situation before'),
-    p('Nithyasystems tracked its client contracts and the budget attached to each one across '
-        + '[DESCRIBE — e.g. several spreadsheets maintained by different people: a contract register, '
-        + 'a budget sheet, and a monthly actuals export].'),
-    p('Answering a question as simple as "which contracts are over budget this quarter" required '
-        + '[DESCRIBE THE MANUAL PROCESS — e.g. matching contract references between two sheets by '
-        + 'hand with VLOOKUP], which took roughly [N] hours and had to be redone whenever the '
-        + 'actuals were updated.'),
-    p('The specific difficulties were:'),
-    bullet('[DIFFICULTY 1 — e.g. contract references were formatted differently in each sheet, so lookups silently failed]'),
-    bullet('[DIFFICULTY 2 — e.g. budget figures and actuals lived in separate files that were never reconciled between quarter ends]'),
+    h1('A finance question nobody had time to answer'),
+    p('Nithyasystems is a software services business with [N] employees. Its client work is '
+        + 'organised around contracts, each with a budget attached, and the money against those '
+        + 'budgets is spent month by month.'),
+    p('Keeping track of that meant [DESCRIBE — e.g. three separate spreadsheets maintained by '
+        + 'different people: a contract register, a budget sheet, and a monthly actuals export from '
+        + 'the accounting system]. Each one was accurate on its own. The difficulty was that the '
+        + 'useful questions all required two of them at once.'),
+
+    h1('What the work looked like'),
+    p('Answering something as basic as "which contracts are over budget this quarter" meant matching '
+        + 'contract references between sheets by hand, usually with VLOOKUP. It took roughly [N] '
+        + 'hours, and it had to be redone from the beginning whenever the actuals were updated.'),
+    p('The recurring problems were:'),
+    bullet('[DIFFICULTY 1 — e.g. contract references were formatted differently in each sheet, so lookups silently failed and the mismatch was only noticed later]'),
+    bullet('[DIFFICULTY 2 — e.g. budgets and actuals were never reconciled between quarter ends, so overruns surfaced late]'),
     bullet('[DIFFICULTY 3 — e.g. there was no reliable view of total committed spend across all live contracts]'),
+    p('Because the exercise was expensive, it was done rarely. And because it was done rarely, '
+        + 'problems were found at the point where they were hardest to do anything about.'),
 
-    ...howItWorks(
-        'Contract registers contain client names, negotiated rates and contract values. This is '
-        + 'commercially sensitive information, and [DESCRIBE NITHYASYSTEMS’ POSITION — e.g. several '
-        + 'client contracts include confidentiality terms that prevent the data being shared with '
-        + 'third-party services].'),
+    ...whyNotTheUsualAnswers(
+        'Nithyasystems', '[ROLE — e.g. the finance lead]',
+        'Asking the accountant to produce the analysis was possible but slow and billed by the hour, '
+        + 'and it produced a report rather than the ability to ask a follow-up question. '
+        + '[CONFIRM OR REPLACE WITH WHAT NITHYASYSTEMS ACTUALLY CONSIDERED.]'),
 
-    h1('What Nithyasystems does with QuickInsight'),
-    p('The [ROLE — e.g. finance lead] loads the contract register and the actuals export together. '
-        + 'QuickInsight detects the relationship between the two sheets automatically and joins them, '
-        + 'refusing any join that would duplicate rows and inflate the totals — so the figures on '
-        + 'screen match the figures in the source files.'),
-    p('Typical questions include:'),
-    bullet('[QUESTION 1 — e.g. budget versus actual spend by contract, for the current quarter]'),
-    bullet('[QUESTION 2 — e.g. contracts where actual spend has exceeded budget, largest overrun first]'),
-    bullet('[QUESTION 3 — e.g. total committed contract value by client]'),
-    bullet('[QUESTION 4 — e.g. month-by-month spend against a named contract]'),
-    p('The results are saved to a dashboard reviewed [HOW OFTEN] by [WHO].'),
+    ...whatChanged(
+        'Nithyasystems', '[ROLE — e.g. The finance lead]',
+        'The contract register and the actuals export are loaded together. QuickInsight works out how '
+        + 'the two sheets relate to each other and joins them automatically — and, importantly, '
+        + 'refuses any join that would duplicate rows and quietly inflate the totals. The figures on '
+        + 'screen match the figures in the source files, which is the part that manual VLOOKUP work '
+        + 'could never guarantee.',
+        [
+            '[QUESTION 1 — e.g. budget versus actual spend by contract, this quarter]',
+            '[QUESTION 2 — e.g. contracts where spend has exceeded budget, largest overrun first]',
+            '[QUESTION 3 — e.g. total committed contract value by client]',
+            '[QUESTION 4 — e.g. month-by-month spend against a named contract]',
+        ],
+        'The budget-versus-actual view is saved as a dashboard, so it is now checked [HOW OFTEN] '
+        + 'rather than [HOW OFTEN IT USED TO BE]. [WHO] reviews it.'),
 
-    h1('Results'),
-    p('[Nithyasystems to complete. Use only figures Nithyasystems can stand behind. Delete any row '
-        + 'that cannot be evidenced.]'),
-    table([4200, 2400, 2426], [
-        { head: true, cells: ['Measure', 'Before', 'After'] },
+    ...dataNote(
+        'A contract register holds client names, negotiated rates and contract values — among the '
+        + 'most commercially sensitive information a services business has. [ADD ANY CLIENT '
+        + 'CONFIDENTIALITY TERM THAT APPLIED.]'),
+
+    ...results('Nithyasystems', [
         { cells: ['Time to produce the budget-versus-actual review', '[N] hours', '[N] minutes'] },
-        { cells: ['Frequency the review is actually run', '[e.g. quarterly]', '[e.g. weekly]'] },
+        { cells: ['How often the review is actually run', '[e.g. quarterly]', '[e.g. weekly]'] },
         { cells: ['[OTHER MEASURE]', '[VALUE]', '[VALUE]'] },
     ]),
-    spacer(200),
-    p('[ADD ANY OUTCOME THAT IS NOT A TIME SAVING — e.g. an overrun identified early enough to act '
-        + 'on, or a reconciliation error found. Specific incidents are more persuasive than '
-        + 'averages.]'),
 
-    h1('In their words'),
-    new Paragraph({
-        children: [new TextRun({
-            text: '"[QUOTE — in the customer’s own words.]"',
-            italics: true, size: 24,
-        })],
-        spacing: { after: 140 }, indent: { left: 480 },
-    }),
-    p('— [NAME], [JOB TITLE], Nithyasystems', { indent: { left: 480 } }),
-
+    ...inTheirWords('Nithyasystems'),
     ...signOff('Nithyasystems'),
 ];
 
@@ -324,12 +408,16 @@ const nithya = [
    ════════════════════════════════════════════════════════════════════ */
 
 const technogence = [
-    ...header('Technogence', 'Software services · India'),
+    ...header(
+        'Technogence',
+        'Software services and training · [CITY], India',
+        'Enrolment records sat in a spreadsheet per cohort, counted by hand. The numbers were '
+        + 'usually out of date before they reached anyone who needed them.'),
     draftWarning('Technogence'),
 
     h1('At a glance'),
     table([2600, 6426], [
-        { boldFirst: true, cells: ['Sector', 'Software services'] },
+        { boldFirst: true, cells: ['Sector', 'Software services and training'] },
         { boldFirst: true, cells: ['Location', '[CITY], India'] },
         { boldFirst: true, cells: ['Size', '[N] employees'] },
         { boldFirst: true, cells: ['Using QuickInsight since', '[MONTH YEAR]'] },
@@ -337,60 +425,50 @@ const technogence = [
         { boldFirst: true, cells: ['Data source', 'Excel enrolment records — [DESCRIBE, e.g. one sheet per cohort]'] },
     ]),
 
-    h1('The situation before'),
+    h1('Counting rows by hand'),
     p('Technogence runs [DESCRIBE — e.g. technical training programmes for graduates and corporate '
-        + 'clients]. Enrolment records were kept in Excel, [DESCRIBE THE STRUCTURE — e.g. one sheet '
-        + 'per programme intake, maintained by the programme coordinators].'),
-    p('Understanding how enrolment was tracking across programmes meant [DESCRIBE THE MANUAL '
-        + 'PROCESS — e.g. opening each sheet in turn and counting rows by hand], which took '
-        + '[N] hours per [WEEK / MONTH] and was usually out of date by the time it was circulated.'),
-    p('The specific difficulties were:'),
+        + 'clients]. Enrolment is recorded in Excel, [DESCRIBE THE STRUCTURE — e.g. one sheet per '
+        + 'intake, maintained by the programme coordinators].'),
+    p('It worked well enough for recording. It worked badly for answering questions. Understanding '
+        + 'how enrolment was tracking across programmes meant opening each sheet in turn and counting '
+        + 'rows — [N] hours per [week / month], for a set of numbers that were usually stale by the '
+        + 'time they were circulated.'),
+    p('The recurring problems were:'),
     bullet('[DIFFICULTY 1 — e.g. each coordinator structured their sheet slightly differently, so the columns did not line up]'),
-    bullet('[DIFFICULTY 2 — e.g. enrolment status was recorded as free text, so counting completions meant reading every row]'),
+    bullet('[DIFFICULTY 2 — e.g. enrolment status was free text, so counting completions meant reading every row]'),
     bullet('[DIFFICULTY 3 — e.g. there was no view of drop-off between enrolment and completion across programmes]'),
 
-    ...howItWorks(
-        'Enrolment records contain trainee names, email addresses and telephone numbers. Uploading '
-        + 'them to a third-party analytics service would have meant sharing the personal data of '
-        + 'individuals who had enrolled on a training programme, which [DESCRIBE TECHNOGENCE’S '
-        + 'POSITION — e.g. was not something Technogence was prepared to do, and would have required '
-        + 'consent it had not obtained].'),
+    ...whyNotTheUsualAnswers(
+        'Technogence', '[ROLE — e.g. the programme coordinators]',
+        'Moving the records into a proper system was considered, but replacing a working process for '
+        + 'the sake of reporting is a large change to make for a small question, and the coordinators '
+        + 'were comfortable in Excel. [CONFIRM OR REPLACE WITH WHAT TECHNOGENCE ACTUALLY CONSIDERED.]'),
 
-    h1('What Technogence does with QuickInsight'),
-    p('A coordinator loads the enrolment spreadsheet into the browser. QuickInsight cleans it '
-        + 'automatically — standardising the status values, detecting the date columns, and '
-        + 'identifying the name, email and telephone columns as personal data so they are excluded '
-        + 'from anything sent to the AI features.'),
-    p('Typical questions include:'),
-    bullet('[QUESTION 1 — e.g. enrolments by programme, this intake]'),
-    bullet('[QUESTION 2 — e.g. completion rate by cohort, lowest first]'),
-    bullet('[QUESTION 3 — e.g. enrolment numbers month by month, compared with the same period last year]'),
-    bullet('[QUESTION 4 — e.g. drop-off between enrolment and completion by trainer]'),
-    p('The results are saved to a dashboard shared with [WHO] [HOW OFTEN].'),
+    ...whatChanged(
+        'Technogence', '[ROLE — e.g. The programme team]',
+        'A coordinator loads the enrolment spreadsheet straight into the browser. The inconsistent '
+        + 'status values that made counting so laborious are standardised automatically, so '
+        + '"Completed", "completed" and "COMPLETE" are counted as one thing rather than three.',
+        [
+            '[QUESTION 1 — e.g. enrolments by programme, this intake]',
+            '[QUESTION 2 — e.g. completion rate by cohort, lowest first]',
+            '[QUESTION 3 — e.g. enrolments month by month against the same period last year]',
+            '[QUESTION 4 — e.g. drop-off between enrolment and completion by trainer]',
+        ],
+        'The enrolment summary is now a saved dashboard rather than a task, so the figures are '
+        + 'current whenever anyone looks. It is shared with [WHO] [HOW OFTEN].'),
 
-    h1('Results'),
-    p('[Technogence to complete. Use only figures Technogence can stand behind. Delete any row that '
-        + 'cannot be evidenced.]'),
-    table([4200, 2400, 2426], [
-        { head: true, cells: ['Measure', 'Before', 'After'] },
+    ...dataNote(
+        'Enrolment records hold trainee names, email addresses and telephone numbers — personal data '
+        + 'belonging to individuals who signed up for a course, not to Technogence.'),
+
+    ...results('Technogence', [
         { cells: ['Time to produce the enrolment summary', '[N] hours', '[N] minutes'] },
         { cells: ['How current the figures are when circulated', '[e.g. a week old]', '[e.g. same day]'] },
         { cells: ['[OTHER MEASURE]', '[VALUE]', '[VALUE]'] },
     ]),
-    spacer(200),
-    p('[ADD ANY OUTCOME THAT IS NOT A TIME SAVING — e.g. a programme with unexpectedly high drop-off '
-        + 'that was identified and changed as a result.]'),
 
-    h1('In their words'),
-    new Paragraph({
-        children: [new TextRun({
-            text: '"[QUOTE — in the customer’s own words.]"',
-            italics: true, size: 24,
-        })],
-        spacing: { after: 140 }, indent: { left: 480 },
-    }),
-    p('— [NAME], [JOB TITLE], Technogence', { indent: { left: 480 } }),
-
+    ...inTheirWords('Technogence'),
     ...signOff('Technogence'),
 ];
 
