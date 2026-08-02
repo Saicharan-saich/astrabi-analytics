@@ -13,7 +13,19 @@ const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'QuickInsight-dev-secret-change-in-production';
+// JWT_SECRET must come from the environment in production. A hard-coded fallback
+// would be published the moment this repository goes public, and anyone holding it
+// can mint a valid admin token — so refuse to boot rather than run insecurely.
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+if (IS_PRODUCTION && !process.env.JWT_SECRET) {
+    console.error('[Auth] FATAL: JWT_SECRET is not set. Refusing to start in production.');
+    process.exit(1);
+}
+if (!process.env.JWT_SECRET) {
+    console.warn('[Auth] WARNING: JWT_SECRET not set — using a development-only fallback. '
+        + 'Never run this configuration anywhere reachable from the internet.');
+}
+const JWT_SECRET = process.env.JWT_SECRET || 'QuickInsight-development-only-do-not-deploy';
 const BCRYPT_ROUNDS = 12;
 
 // ═══════════════════════════════════════════
@@ -149,16 +161,30 @@ async function initAuthDatabase() {
         try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_activities_action ON user_activities (action)`); } catch {}
         console.log('[Auth] User activities table ready');
 
-        // Always ensure admin user exists (upsert — won't overwrite if already present)
-        const adminHash = await bcrypt.hash('password', BCRYPT_ROUNDS);
-        const upsertResult = await authPool.query(
-            `INSERT INTO users (id, email, name, role, password_hash)
-             VALUES ($1, $2, $3, $4, $5)
-             ON CONFLICT (email) DO NOTHING`,
-            ['admin_001', 'saicharan@quickinsight.co.uk', 'Sai Charan', 'admin', adminHash]
-        );
-        if (upsertResult.rowCount > 0) {
-            console.log('[Auth] Seeded admin user: saicharan@quickinsight.co.uk');
+        // Seed an admin account ONLY from the environment. This used to hard-code the
+        // address and the password 'password', which meant every fresh database came up
+        // with a known admin login — and the credentials sat in the source for anyone
+        // with repository access to read.
+        const adminEmail = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
+        const adminPassword = process.env.ADMIN_PASSWORD || '';
+        if (!adminEmail || !adminPassword) {
+            console.log('[Auth] No ADMIN_EMAIL / ADMIN_PASSWORD set — skipping admin seed. '
+                + 'Set both to create the first admin account.');
+        } else if (adminPassword.length < 12) {
+            console.error('[Auth] ADMIN_PASSWORD is shorter than 12 characters — refusing to seed.');
+        } else {
+            const adminHash = await bcrypt.hash(adminPassword, BCRYPT_ROUNDS);
+            const upsertResult = await authPool.query(
+                `INSERT INTO users (id, email, name, role, password_hash)
+                 VALUES ($1, $2, $3, $4, $5)
+                 ON CONFLICT (email) DO NOTHING`,
+                ['admin_001', adminEmail, process.env.ADMIN_NAME || 'Administrator', 'admin', adminHash]
+            );
+            // ON CONFLICT DO NOTHING means an existing admin keeps its current password;
+            // changing ADMIN_PASSWORD will not rotate it. Use the change-password route.
+            console.log(upsertResult.rowCount > 0
+                ? `[Auth] Seeded admin user: ${adminEmail}`
+                : '[Auth] Admin user already exists — left unchanged.');
         }
 
         const { rows } = await authPool.query('SELECT COUNT(*) as count FROM users');
