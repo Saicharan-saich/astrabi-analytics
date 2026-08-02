@@ -90,8 +90,13 @@ function table3() {
     // Static instruction blocks, read from source so they cannot drift from the
     // prompts actually shipped.
     const plannerSrc = readFileSync('services/ai-sql/intentPlanner.ts', 'utf8');
-    const plannerFn = plannerSrc.slice(plannerSrc.indexOf('function buildPlannerPrompt'));
-    const plannerInstructions = (plannerFn.match(/`[\s\S]*?`/g) || []).join('');
+    // Take ONLY buildPlannerPrompt's returned template — bounded by `return \`` and
+    // the closing `` `; ``. Sweeping every template literal in the rest of the file
+    // would fold in unrelated console.log strings and make the figure drift.
+    const fnStart = plannerSrc.indexOf('function buildPlannerPrompt');
+    const tplStart = plannerSrc.indexOf('return `', fnStart) + 'return `'.length;
+    const tplEnd = plannerSrc.indexOf('`;', tplStart);
+    const plannerInstructions = plannerSrc.slice(tplStart, tplEnd);
     const directSrc = readFileSync('services/ai-sql/directSqlEngine.ts', 'utf8');
     const directInstructions = (directSrc.match(/const SYSTEM_PROMPT\s*=\s*`[\s\S]*?`/) || [''])[0];
 
@@ -120,6 +125,35 @@ function table3() {
     }
 }
 
+/**
+ * Cost of answering ONE question, before and after the planner became
+ * conditional on the direct-SQL engine failing.
+ */
+function table4() {
+    console.log('\nTable 4 — Tokens per question, both engine strategies (14 cols, 50,000 rows)');
+    const { etl, model } = modelFor(makeRows(50_000));
+
+    const plannerSrc = readFileSync('services/ai-sql/intentPlanner.ts', 'utf8');
+    const fnStart = plannerSrc.indexOf('function buildPlannerPrompt');
+    const tplStart = plannerSrc.indexOf('return `', fnStart) + 'return `'.length;
+    const plannerInstructions = plannerSrc.slice(tplStart, plannerSrc.indexOf('`;', tplStart));
+    const directSrc = readFileSync('services/ai-sql/directSqlEngine.ts', 'utf8');
+    const directInstructions = (directSrc.match(/const SYSTEM_PROMPT\s*=\s*`[\s\S]*?`/) || [''])[0];
+
+    const semantic = serializeSemanticModel(model);
+    const schemaBlock = serializeSchema([{ name: 'sales', rows: etl.rows.slice(0, 200) }]);
+
+    const planner = estTokens(plannerInstructions + semantic);
+    const direct = estTokens(directInstructions + schemaBlock);
+
+    console.log('strategy,tokens');
+    console.log(`Always call both (previous),${direct + planner}`);
+    console.log(`Planner only on direct-SQL failure — typical question,${direct}`);
+    console.log(`Planner only on direct-SQL failure — fallback path,${direct + planner}`);
+    console.log(`Saving on the typical question,${(100 * planner / (direct + planner)).toFixed(1)}%`);
+}
+
 table1();
 table2();
 table3();
+table4();
