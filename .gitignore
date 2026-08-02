@@ -23,9 +23,24 @@ dist-ssr
 *.sln
 *.sw?
 
-# Secrets & sensitive data
+# ─── Secrets & sensitive data ────────────────────────────────────────
+# Ignore every .env variant by default, then re-allow only the files that
+# are safe to publish. Adding a new .env.<something> is then ignored
+# automatically rather than being committed by accident.
 .env
+.env.*
 backend/.env
+backend/.env.*
+
+# Safe to commit: templates with placeholder values only, and the
+# production file which holds a public API URL and nothing secret.
+!.env.example
+!.env.production
+!backend/.env.example
+
+# Local user database — contains email addresses and password hashes
+backend/users.json
+
 test-results/
 playwright-report/
 /blob-report/
