@@ -148,15 +148,17 @@ An `AnalyticsPlan` is a small, closed, typed structure. That gives three propert
 
 *It is explainable.* "Grouping by Region, summing Revenue, filtered to Q3, sorted descending, top 10" is legible to a non-technical user. The equivalent SQL is not. This matters for a product whose users are, by design, people who do not write SQL.
 
-### 3.3 The single-call discipline
+### 3.3 Bounded, standalone model use
 
-HAP issues **one** model call per question, and treats every question as standalone: no conversation history is sent. Two consequences follow.
+HAP issues **two** model requests per question — one to each engine described in §7.2 — and treats every question as standalone: no conversation history is sent. The requests are issued concurrently, so two attempts cost one wall-clock wait, but they are two requests and roughly double the tokens of a single-engine design. That is a deliberate trade of cost for reliability, and it should be read as such rather than as an efficiency claim.
+
+Two consequences follow from the standalone discipline.
 
 Cost per question is bounded and predictable — it does not grow with session length, which is a meaningful property when conversational context in comparable systems grows monotonically as a session continues.
 
 And a question cannot silently inherit a filter from an earlier one. This is a correctness property as much as an efficiency one: conversational analytics systems that carry context forward can answer the current question under the previous question's `WHERE` clause, with no visible indication.
 
-Where the architecture uses concurrency rather than sequence, it does so without adding latency: the planning call and the direct-SQL call (§7.2) are issued in parallel and awaited together, so two model calls cost one wall-clock wait.
+The concurrency is what keeps the two-engine design affordable in time if not in tokens: the planning request and the direct-SQL request (§7.2) are in flight together and awaited together, so the user waits once rather than twice.
 
 ---
 
@@ -384,7 +386,7 @@ Exact prompt and completion token counts are read from each provider's `usage` f
 | Metric | Definition | Status |
 |---|---|---|
 | Context size | Estimated tokens in the assembled prompt | **Measured (§10.1)** |
-| Exact token usage | Prompt + completion, from provider `usage` | Not yet collected |
+| Exact token usage | Prompt + completion, from provider `usage`, summed across **both** engine requests | Not yet collected |
 | End-to-end latency | Question submitted → chart rendered (p50, p95) | Not yet collected |
 | Execution accuracy | Result set matches gold, order-insensitive where appropriate | Not yet collected |
 | Plan validity rate | Plans passing validation without repair | Not yet collected |
@@ -440,7 +442,7 @@ The honest answers to RQ3 are therefore three:
 
 1. Against full-context approaches, reduction is 723× — but full-context is not a serious baseline beyond toy tables.
 2. Against few-shot-row baselines, there is **no reduction**; the planner path costs about 2.8× more.
-3. The property that does hold, and that we claim, is **invariance**: cost per question is fixed by schema, not data, so it does not degrade as the customer's data grows. A system whose per-question cost is constant at 5,174 tokens is more predictable, and eventually cheaper, than one that grows with sampled context — but that is an argument about scaling behaviour, not about absolute token count today.
+3. The property that does hold, and that we claim, is **invariance**: cost per question is fixed by schema, not data, so it does not degrade as the customer's data grows. Note also that a question costs *both* engine prompts — 5,174 + 364 ≈ 5,538 tokens — not the planner alone, so the two-engine design roughly triples the token cost of the DDL + 20-rows baseline. A per-question cost that is constant is more predictable, and eventually cheaper, than one that grows with sampled context; but that is an argument about scaling behaviour, not about absolute token count today.
 
 We flag a clear optimisation the measurements expose: the 2,730-token static instruction block is identical across every question and every dataset, and is a direct candidate for prompt caching, which would cut marginal per-question cost by roughly half without any architectural change.
 
