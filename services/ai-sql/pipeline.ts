@@ -22,7 +22,7 @@
 import { Dataset } from '../../types';
 import { AISQLPipelineResult, AuditEntry, PlanFilter, PipelineStepTrace, PipelineTrace } from './types';
 import { buildSemanticModel } from './semanticLayer';
-import { generatePlan } from './intentPlanner';
+import { generatePlan, generateLocalPlan } from './intentPlanner';
 import { generateSQLFromPlan, repairSQL } from './sqlGenerator';
 import { correctSQL, normalizeFilterOp } from './sqlCorrectionEngine';
 import { validateSQL, validateResult } from './sqlValidator';
@@ -209,15 +209,27 @@ export async function runAISQLPipeline(
         }
     })();
 
-    // ─── Step 2: Generate Analysis Plan (Step A — LLM, in parallel) ─
+    // ─── Step 2: Generate Analysis Plan ─────────────────────────────
+    // The direct-SQL engine is settled FIRST, because its answer decides whether
+    // the LLM planner is worth calling at all.
+    //
+    // When direct-SQL produced usable SQL, the planner's own SQL would be thrown
+    // away — the plan is then only needed to pick the chart, shape the summary
+    // and drive formatting. The deterministic classifier + field mapper cover
+    // that, so we build the plan locally instead: no second request, no ~5k-token
+    // prompt, and no waiting on it. The LLM planner is still called in full when
+    // direct-SQL fails, which is exactly when its judgement is needed.
     reportProgress('Asking the AI...', 3);
-    console.log('[Pipeline] Step 2: Generating analysis plan (in parallel with direct-SQL)...');
     _s1 = performance.now();
-    const plan = await generatePlan(augmentedQuestion, semanticModel, grainOverride);
+    const _dsEarly = await directSqlPromise;
+    const plan = _dsEarly.sql
+        ? generateLocalPlan(augmentedQuestion, semanticModel, grainOverride)
+        : await generatePlan(augmentedQuestion, semanticModel, grainOverride);
+    console.log(`[Pipeline] Step 2: Plan built ${_dsEarly.sql ? 'LOCALLY (direct-SQL succeeded — planner call skipped)' : 'by the LLM planner (direct-SQL unusable)'}`);
     traceStep({
         stepNumber: 3, name: 'Intent Planner', engine: 'intentPlanner', icon: '🎯',
         status: plan.ambiguous ? 'warn' : 'pass',
-        summary: `Intent: ${plan.intent} | ${plan.dimensions.length} dim(s), ${plan.metrics.length} metric(s), ${plan.filters.length} filter(s)${plan.limit ? `, limit ${plan.limit}` : ''}`,
+        summary: `${_dsEarly.sql ? 'Local plan (0 tokens)' : 'LLM plan'} — intent: ${plan.intent} | ${plan.dimensions.length} dim(s), ${plan.metrics.length} metric(s), ${plan.filters.length} filter(s)${plan.limit ? `, limit ${plan.limit}` : ''}`,
         details: {
             intent: plan.intent,
             dimensions: plan.dimensions.map(d => ({ field: d.field, grain: d.timeGrain || null })),
@@ -227,6 +239,7 @@ export async function runAISQLPipeline(
             limit: plan.limit,
             resultGrain: plan.resultGrain,
             ambiguous: plan.ambiguous,
+            plannerCallSkipped: !!_dsEarly.sql,
         },
     }, _s1);
 
@@ -328,7 +341,7 @@ export async function runAISQLPipeline(
     // to write SQL, answer it — the planner's uncertainty must not dead-end a
     // question the AI handled fine. (The promise is already in flight, so this
     // await costs nothing extra.)
-    if (plan.ambiguous && !(await directSqlPromise).sql) {
+    if (plan.ambiguous && !_dsEarly.sql) {
         console.log('[Pipeline] Plan is ambiguous and no AI SQL — requesting clarification');
         const executionTime = performance.now() - startTime;
         return {
@@ -433,7 +446,7 @@ export async function runAISQLPipeline(
     let directSqlTokens = 0;
     let directSqlError: string | null = null;
     {
-        const _ds = await directSqlPromise;
+        const _ds = _dsEarly; // settled before the plan step
         directSQL = _ds.sql;
         directSqlTokens = _ds.tokens;
         directSqlError = _ds.error;
@@ -441,7 +454,7 @@ export async function runAISQLPipeline(
             stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
             status: directSQL ? 'pass' : 'skip',
             summary: directSQL
-                ? 'LLM wrote the SQL from the metadata-only schema (ran in parallel with the planner)'
+                ? 'LLM wrote the SQL from the schema — the planner call was skipped, saving its prompt'
                 : `Skipped — ${directSqlError || 'no SQL'} (using the deterministic backup)`,
             details: { sql: directSQL, error: directSqlError, tokens: directSqlTokens },
         }, _directSqlStart);
