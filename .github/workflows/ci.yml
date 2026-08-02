@@ -10,6 +10,19 @@ on:
     branches: [main]
 
 jobs:
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Tripwire for committed credentials. backend/.env was once committed with
+      # a live API key in it; this makes the next one fail before it merges.
+      - name: Scan tracked files for secrets
+        run: node scripts/scan-secrets.mjs
+
   unit:
     name: Build & unit tests
     runs-on: ubuntu-latest
