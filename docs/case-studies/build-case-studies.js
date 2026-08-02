@@ -458,8 +458,9 @@ const technogence = [
     ...header(
         'Technogence',
         'Software services and training · [CITY], India',
-        'Enrolment records sat in a spreadsheet per cohort, counted by hand. The numbers were '
-        + 'usually out of date before they reached anyone who needed them.'),
+        'Every question meant cleaning a spreadsheet and writing formulas first. Managers were '
+        + 'spending hours proving things that turned out not to be true — and, more often, not '
+        + 'asking at all.'),
     draftWarning('Technogence'),
 
     h1('At a glance'),
@@ -468,50 +469,96 @@ const technogence = [
         { boldFirst: true, cells: ['Location', '[CITY], India'] },
         { boldFirst: true, cells: ['Size', '[N] employees'] },
         { boldFirst: true, cells: ['Using QuickInsight since', '[MONTH YEAR]'] },
-        { boldFirst: true, cells: ['Used for', 'Training programme enrolment analysis'] },
-        { boldFirst: true, cells: ['Data source', 'Excel enrolment records — [DESCRIBE, e.g. one sheet per cohort]'] },
+        { boldFirst: true, cells: ['Used for', 'Student enrolment analysis, management dashboards, and checking ideas before they are presented'] },
+        { boldFirst: true, cells: ['Data source', 'Excel enrolment records for the courses Technogence provides — [DESCRIBE THE STRUCTURE, e.g. one sheet per intake]'] },
     ]),
 
-    h1('Counting rows by hand'),
-    p('Technogence runs [DESCRIBE — e.g. technical training programmes for graduates and corporate '
-        + 'clients]. Enrolment is recorded in Excel, [DESCRIBE THE STRUCTURE — e.g. one sheet per '
-        + 'intake, maintained by the programme coordinators].'),
-    p('It worked well enough for recording. It worked badly for answering questions. Understanding '
-        + 'how enrolment was tracking across programmes meant opening each sheet in turn and counting '
-        + 'rows — [N] hours per [week / month], for a set of numbers that were usually stale by the '
-        + 'time they were circulated.'),
+    h1('An Excel business'),
+    p('Technogence runs [DESCRIBE — e.g. technical courses alongside its software services work]. '
+        + 'Like a great many companies, it runs its analysis in Excel. Not as a stopgap, and not '
+        + 'because nobody knows better — Excel is genuinely the right tool for most of what the team '
+        + 'does. Small tasks, quick checks, one-off pieces of work.'),
+    p('The difficulty is not Excel itself. It is what has to happen before Excel can answer anything.'),
+
+    h1('The cost of a question'),
+    p('Enrolment data arrives as spreadsheets that were built for recording, not for analysis. Before '
+        + 'any question could be answered, someone had to clean the file by hand — standardising '
+        + 'inconsistent entries, fixing date columns, making the same thing spelled three ways count '
+        + 'as one thing — and then write the formulas to produce the answer.'),
+    p('For a single reported figure that is a manageable overhead. Repeated across every question '
+        + 'anyone thinks to ask, it becomes the job.'),
     p('The recurring problems were:'),
     bullet('[DIFFICULTY 1 — e.g. each coordinator structured their sheet slightly differently, so the columns did not line up]'),
-    bullet('[DIFFICULTY 2 — e.g. enrolment status was free text, so counting completions meant reading every row]'),
-    bullet('[DIFFICULTY 3 — e.g. there was no view of drop-off between enrolment and completion across programmes]'),
+    bullet('[DIFFICULTY 2 — e.g. enrolment status was recorded as free text, so counting completions meant reading every row]'),
+    bullet('[DIFFICULTY 3 — e.g. the formulas that produced last quarter’s numbers were not reusable on this quarter’s file]'),
+
+    h1('The questions that never got asked'),
+    p('The obvious cost of all this is time. The less obvious cost, and the more damaging one, is the '
+        + 'analysis that never happens.'),
+    p('When checking an idea takes an hour of cleaning and formula-writing, people stop checking '
+        + 'ideas. A manager with a hunch about which courses were losing students between enrolment '
+        + 'and completion faced a choice: spend the afternoon finding out, or go into the meeting and '
+        + 'say it anyway. Neither is good. The first is expensive; the second means decisions get '
+        + 'made on impressions.'),
+    p('Curiosity had a price, so there was less of it than there should have been.'),
 
     ...whyNotTheUsualAnswers(
-        'Technogence', '[ROLE — e.g. the programme coordinators]',
-        'Moving the records into a proper system was considered, but replacing a working process for '
-        + 'the sake of reporting is a large change to make for a small question, and the coordinators '
-        + 'were comfortable in Excel. [CONFIRM OR REPLACE WITH WHAT TECHNOGENCE ACTUALLY CONSIDERED.]'),
+        'Technogence', 'the managers doing the analysis',
+        'Moving the enrolment records into a proper system was considered, but replacing a working '
+        + 'process for the sake of reporting is a large change to make for a small question, and the '
+        + 'team was comfortable in Excel. '
+        + '[CONFIRM OR REPLACE WITH WHAT TECHNOGENCE ACTUALLY CONSIDERED.]'),
 
-    ...whatChanged(
-        'Technogence', '[ROLE — e.g. The programme team]',
-        'A coordinator loads the enrolment spreadsheet straight into the browser. The inconsistent '
-        + 'status values that made counting so laborious are standardised automatically, so '
-        + '"Completed", "completed" and "COMPLETE" are counted as one thing rather than three.',
-        [
-            '[QUESTION 1 — e.g. enrolments by programme, this intake]',
-            '[QUESTION 2 — e.g. completion rate by cohort, lowest first]',
-            '[QUESTION 3 — e.g. enrolments month by month against the same period last year]',
-            '[QUESTION 4 — e.g. drop-off between enrolment and completion by trainer]',
-        ],
-        'The enrolment summary is now a saved dashboard rather than a task, so the figures are '
-        + 'current whenever anyone looks. It is shared with [WHO] [HOW OFTEN].'),
+    h1('What changed'),
+    p('Technogence started using QuickInsight in [MONTH YEAR], not to replace Excel but to replace '
+        + 'the manual work that had to happen before Excel could be useful.'),
+    p('The enrolment spreadsheet is loaded straight into the browser, exactly as it is. The cleaning '
+        + 'that used to be done by hand happens automatically: date columns are detected and '
+        + 'standardised, numbers that can meaningfully be added up are distinguished from those that '
+        + 'cannot, and inconsistent category values are tidied so that "Completed", "completed" and '
+        + '"COMPLETE" are counted once rather than three times.'),
+    p('Questions are then asked in one of two ways. The guided question builder works by choosing '
+        + 'what to break the numbers down by, which figure to measure, which rows to include and how '
+        + 'to order the result — the four things every business question is made of. Alternatively '
+        + 'the question can simply be typed in plain English. Either way a chart or table appears, '
+        + 'with the underlying query visible for anyone who wants to check it.'),
+    p('Typical questions include:'),
+    bullet('[QUESTION 1 — e.g. enrolments by course, this intake]'),
+    bullet('[QUESTION 2 — e.g. completion rate by course, lowest first]'),
+    bullet('[QUESTION 3 — e.g. enrolments month by month against the same period last year]'),
+    bullet('[QUESTION 4 — e.g. drop-off between enrolment and completion, by course]'),
+    p('No formulas are written. No file is cleaned by hand first.'),
+
+    h1('Checking an idea before taking it upstairs'),
+    p('The use that emerged on its own was not the one anyone planned for.'),
+    p('Managers began using QuickInsight privately, to check whether an idea held up in the data '
+        + 'before presenting it. Someone suspects a particular course is losing students earlier than '
+        + 'the others; rather than building the analysis to find out, they ask the question, look at '
+        + 'the answer, and know within a minute or two whether there is anything there.'),
+    p('The effect is that ideas arrive at management meetings already tested. Three hunches get '
+        + 'checked and the two that were wrong are dropped quietly, instead of one being presented '
+        + 'unverified and argued about in the room. Being wrong in private is cheap; being wrong in '
+        + 'front of the leadership team is not.'),
+    p('This only works because the cost of asking has collapsed. At an hour a question, nobody '
+        + 'explores. At a minute a question, they do. '
+        + '[ADD A SPECIFIC EXAMPLE IF A MANAGER IS WILLING TO GIVE ONE — an idea that was checked and '
+        + 'turned out to be wrong is more convincing here than one that was right.]'),
+
+    h1('Dashboards for management'),
+    p('The analyses that get asked for repeatedly are saved as dashboards and presented to senior '
+        + 'management, rather than being rebuilt into slides each time. The figures are current '
+        + 'whenever anyone opens them, so the enrolment picture shown in a management meeting is the '
+        + 'position today rather than the position on the day someone last had time to compile it.'),
+    p('[CONFIRM HOW OFTEN THESE ARE REVIEWED AND BY WHOM.]'),
 
     ...dataNote(
-        'Enrolment records hold trainee names, email addresses and telephone numbers — personal data '
-        + 'belonging to individuals who signed up for a course, not to Technogence.'),
+        'Enrolment records hold student names, email addresses and telephone numbers — personal data '
+        + 'belonging to the individuals who signed up for a course, not to Technogence.'),
 
     ...results('Technogence', [
+        { cells: ['Time to prepare a file before it can be analysed', '[N] [hours]', 'None — cleaning is automatic'] },
         { cells: ['Time to produce the enrolment summary', '[N] hours', '[N] minutes'] },
-        { cells: ['How current the figures are when circulated', '[e.g. a week old]', '[e.g. same day]'] },
+        { cells: ['How current the figures are when presented', '[e.g. a week old]', '[e.g. same day]'] },
         { cells: ['[OTHER MEASURE]', '[VALUE]', '[VALUE]'] },
     ]),
 
