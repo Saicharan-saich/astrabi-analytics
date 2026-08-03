@@ -251,9 +251,9 @@ const clicknsend = [
     ...header(
         'ClickNsend',
         'Parcel delivery · InPost vendor · Aberdeen, United Kingdom',
-        'One depot, ten employees, and an ambition to win more. The figures that would prove '
-        + 'ClickNsend could handle the work were sitting in daily spreadsheets nobody had time to '
-        + 'open.'),
+        'The owner of a ten-person parcel business had never used a BI tool and describes his Excel '
+        + 'as limited. He now builds his own analysis every week — and uses it to pitch for the work '
+        + 'that will grow the company.'),
     draftWarning('ClickNsend'),
 
     h1('At a glance'),
@@ -262,7 +262,8 @@ const clicknsend = [
         { boldFirst: true, cells: ['Location', 'Aberdeen, United Kingdom'] },
         { boldFirst: true, cells: ['Size', '10 employees, one depot'] },
         { boldFirst: true, cells: ['Using QuickInsight since', '2 July 2026'] },
-        { boldFirst: true, cells: ['Used for', 'Employee and operational performance tracking, and building the figures behind new business pitches'] },
+        { boldFirst: true, cells: ['Prior analytics experience', 'None — no BI tool had been used before; self-described limited Excel'] },
+        { boldFirst: true, cells: ['Used for', 'Per-employee delivery performance, and building the figures behind new business pitches'] },
         { boldFirst: true, cells: ['Data source', 'Daily manifest exports from the courier platform, as Excel files'] },
     ]),
 
@@ -276,48 +277,61 @@ const clicknsend = [
         + 'low, that your team performs consistently.'),
     p('Performance was, in effect, the product being sold. And it was invisible.'),
 
-    h1('The numbers existed. Nobody could get to them.'),
-    p('Every day the courier platform produced a manifest export as an Excel file. Everything the '
-        + 'business needed to know was in those files — every parcel, every outcome, every employee. '
-        + 'The data was never the problem.'),
-    p('Turning it into an answer was. Reporting was built in Excel using pivot tables, rebuilt from '
-        + 'scratch each time somebody asked for a figure. Producing a view of parcel volumes broken '
-        + 'down by employee took around ten hours a week — a quarter of the operations manager’s '
-        + 'working time spent on spreadsheet mechanics rather than on running the depot.'),
+    h1('The reports he was given, and the questions he could not ask'),
+    p('ClickNsend was not starting from nothing. As a vendor, the owner receives analytics from the '
+        + 'courier platform — reports covering the operation, produced to a fixed format.'),
+    p('The limitation is not that those reports are poor. It is that they are finished. They answer '
+        + 'the questions somebody else decided were worth answering, in the breakdown somebody else '
+        + 'chose, and there is no way to ask them anything new. A report can be read. It cannot be '
+        + 'interrogated.'),
+    p('So when the owner wanted to know something the report did not already show — how one employee '
+        + 'compared with another over the last three weeks, or how the return rate moved after a '
+        + 'change to the rounds — there was nowhere to put the question.'),
+
+    h1('Downloading the file and hoping'),
+    p('The alternative was the raw data. Every day the courier platform produced a manifest export as '
+        + 'an Excel file, and the owner downloaded it.'),
+    p('What happened next was the problem. He is not an analyst, and describes his own Excel as '
+        + 'limited. Producing a view of parcel volumes broken down by employee meant cleaning the '
+        + 'file by hand, then building pivot tables from scratch each time somebody asked for a '
+        + 'figure — around ten hours a week, in a business where the owner’s time is the scarcest '
+        + 'thing there is.'),
     p('Three things made it slower than it should have been:'),
     bullet('Date and status columns came out of the platform in inconsistent formats and had to be cleaned by hand every time.'),
     bullet('Building a weekly picture meant stitching that week’s daily exports together manually, which introduced errors.'),
-    bullet('Only one person understood how the pivot tables were constructed, so reporting stopped when they were away.'),
-    p('That last point tends to go unnoticed until it bites. The reporting was not merely slow — it '
-        + 'was a single point of failure sitting inside one person’s spreadsheet.'),
-    p('The practical consequence was that ClickNsend knew its totals but not its breakdown. The '
-        + 'owner could say how many parcels went out. He could not reliably say how many each '
-        + 'employee delivered, how many came back undelivered, or how those figures moved from one '
-        + 'week to the next.'),
+    bullet('The pivot tables were understood by one person, so the reporting stopped when that person was unavailable.'),
+    p('The consequence was that ClickNsend knew its totals but not its breakdown. The owner could say '
+        + 'how many parcels went out. He could not reliably say how many each employee delivered, how '
+        + 'many came back undelivered, or how those figures moved from one week to the next.'),
 
-    h1('Two problems, not one'),
-    p('The first problem was operational. You cannot manage performance you cannot see. Without a '
-        + 'per-employee view there was no way to tell a consistently strong week from a weak one, no '
-        + 'way to spot a driver struggling with a particular round, and no basis for a conversation '
-        + 'about performance beyond impression.'),
-    p('The second problem was commercial, and it was the one that mattered more. To win additional '
-        + 'depots and new clients, the owner needed to walk into a meeting and show what his '
-        + 'operation delivers — delivery rates, return rates, consistency over time, output per '
-        + 'employee. Prospective clients do not take that on trust.'),
-    p('He had the underlying data to prove all of it. What he did not have was any way to put it in '
-        + 'front of somebody. A pivot table rebuilt by hand the night before is not a pitch.'),
+    h1('Why the usual answers did not fit'),
+    p('Hiring an analyst was never realistic for a business of this size — the cost of the role would '
+        + 'have been out of proportion to the problem it solved.'),
+    p('A business intelligence tool was not a real option either, and for a more basic reason than '
+        + 'price. The owner had never used one. These tools assume somebody who can connect a data '
+        + 'source, decide how tables relate to one another and build a model before the first chart '
+        + 'appears. That is a skill, it takes time to acquire, and running a depot does not leave '
+        + 'that time. Buying the software would not have supplied the person who knows how to use it '
+        + '— and that person would have been him.'),
 
-    ...whyNotTheUsualAnswers(
-        'ClickNsend', 'the operations manager',
-        'Outsourcing to a consultant was a possible middle path, but it fits scheduled reports rather '
-        + 'than the way questions actually arrive in a small business — someone asks something on a '
-        + 'Tuesday afternoon and needs the answer before the end of the day, and a pitch meeting '
-        + 'rarely gives a fortnight’s notice. '
-        + '[CONFIRM OR REPLACE WITH WHAT CLICKNSEND ACTUALLY CONSIDERED.]'),
+    h1('Learning the four questions'),
+    p('What made the difference was not a feature. It was learning a way to think about the data.'),
+    p('QuickInsight is built around GAFS — grouping, aggregating, filtering and sorting — the idea '
+        + 'that almost every business question is made of the same four parts. What do you want to '
+        + 'break the numbers down by? Which figure do you want to measure? Which rows should be '
+        + 'included? In what order should the answer come back?'),
+    p('"Parcels delivered per employee last week, highest first" is not one question to be looked up. '
+        + 'It is four choices: group by employee, count parcels, filter to last week, sort descending. '
+        + 'Once that clicks, the number of questions available stops being a fixed list and starts '
+        + 'being whatever the owner can think of.'),
+    p('The owner learned this framework through the product and now applies it himself in the '
+        + 'question builder. He does not write SQL and has not needed to. He uses the plain-English '
+        + 'AI feature occasionally, but the majority of his analysis is built by making those four '
+        + 'choices directly.'),
+    p('This is the change that matters. He did not get a better report. He stopped needing anyone to '
+        + 'produce one.'),
 
-    h1('What changed'),
-    p('ClickNsend started using QuickInsight in July 2026. It is a browser-based analysis tool built '
-        + 'for people who work with spreadsheets rather than for data specialists.'),
+    h1('What that looks like in practice'),
     p('The daily manifest export is loaded straight into the browser — the same Excel file that comes '
         + 'out of the courier platform, with no preparation step, nothing installed and nothing '
         + 'configured first.'),
@@ -325,20 +339,14 @@ const clicknsend = [
         + 'QuickInsight reads the spreadsheet, works out which columns are dates and standardises '
         + 'their formats, identifies which numbers can meaningfully be added up, and tidies '
         + 'inconsistent status values so that the same outcome recorded two different ways is counted '
-        + 'once rather than twice. None of this requires a decision from the user.'),
-    p('Questions are then asked in one of two ways. The guided question builder works by choosing '
-        + 'what to break the numbers down by, which figure to measure, which rows to include and how '
-        + 'to order the result — the four things every business question is made of. Alternatively '
-        + 'the question can simply be typed in plain English. Either way a chart or table appears, '
-        + 'with the underlying query visible for anyone who wants to check it.'),
+        + 'once rather than twice.'),
     p('The questions ClickNsend asks are the ones it could never answer before:'),
     bullet('Parcels delivered per employee, by day and by week'),
     bullet('Parcels undelivered per employee, over the same periods'),
     bullet('Percentage of parcels returned'),
     bullet('Percentage of parcels collected'),
-    bullet('[ADD ANY OTHERS THE OWNER ASKS REGULARLY]'),
-    p('These are saved to a dashboard, so the next time the question comes up it does not need '
-        + 'rebuilding at all. The figures are current whenever anyone looks at them.'),
+    p('The ones asked repeatedly are saved to a dashboard, so they do not need rebuilding. The rest '
+        + 'are built as the question arises — which is the point.'),
 
     h1('Turning performance into a pitch'),
     p('The operational gain was the one ClickNsend went looking for. The commercial one turned out to '
@@ -349,9 +357,9 @@ const clicknsend = [
         + 'or promised in a spreadsheet he would have to build first.'),
     p('For a vendor trying to win a second depot, that is the difference between asserting that the '
         + 'operation performs and demonstrating it.'),
-    p('[ADD THE OUTCOME IF THERE IS ONE YET — e.g. meetings held, tenders submitted, work won. If '
-        + 'nothing has been won yet, say so plainly or delete this line. Do not imply an outcome that '
-        + 'has not happened; the case study is stronger honest and will age better.]'),
+    p('[ADD THE OUTCOME IF THERE IS ONE YET — meetings held, tenders submitted, work won. If nothing '
+        + 'has been won yet, say so plainly or delete this line. Do not imply an outcome that has not '
+        + 'happened; the case study is stronger honest and will age better.]'),
 
     ...dataNote(
         'Parcel manifests contain recipient names, delivery addresses and contact telephone numbers. '
@@ -359,10 +367,9 @@ const clicknsend = [
         + 'which raises rather than lowers the stakes.'),
 
     ...results('ClickNsend', [
-        { cells: ['Time spent on performance reporting', '10 hours per week', '[N] [minutes / hours] per week'] },
-        { cells: ['People able to produce the figures', '1', '[N]'] },
+        { cells: ['Owner’s time spent on performance reporting', 'About 10 hours per week', '[N] [minutes / hours] per week'] },
+        { cells: ['Questions that can be asked of the data', 'Whatever the vendor report already showed', 'Any question the owner can frame'] },
         { cells: ['Per-employee delivery figures', 'Not available', '[e.g. daily and weekly]'] },
-        { cells: ['Wait for an ad-hoc question to be answered', '[e.g. next day]', '[e.g. minutes]'] },
         { cells: ['[OTHER MEASURE]', '[VALUE]', '[VALUE]'] },
     ]),
 
