@@ -91,7 +91,13 @@ const PAGE = { page: { margin: { top: 1440, right: 1440, bottom: 1440, left: 144
 
 /* ── shared blocks ───────────────────────────────────────────────── */
 
-const draftWarning = company => new Paragraph({
+/**
+ * SEND=1 produces the copy that actually goes to the customer: no draft banner
+ * and no internal notes page. Without it you get the working draft.
+ */
+const SEND = process.env.SEND === '1';
+
+const draftWarning = company => SEND ? [] : [new Paragraph({
     children: [new TextRun({
         text: `DRAFT FOR APPROVAL — NOT YET VERIFIED. Every highlighted field must be `
             + `completed and confirmed by ${company}. This document must not be published, `
@@ -100,7 +106,7 @@ const draftWarning = company => new Paragraph({
         italics: true, size: 20, color: '8A1C1C',
     })],
     spacing: { after: 320 }, border: RULE,
-});
+})];
 
 function header(company, strapline, standfirst) {
     return [
@@ -169,7 +175,7 @@ function whatChanged(company, whoUses, loadDescription, questions, dashboardLine
 }
 
 /** Privacy — demoted to a supporting benefit, which is what it is. */
-function dataNote(sensitivity) {
+function dataNote(sensitivity, opts = {}) {
     return [
         h1('A note on the data itself'),
         p(sensitivity),
@@ -182,8 +188,9 @@ function dataNote(sensitivity) {
             + 'the user able to switch off any remaining column or individual value first.'),
         p('The practical effect is that adopting the tool required no data protection review, no '
             + 'supplier security assessment, and no conversation about where the data would be '
-            + 'stored. [CONFIRM THIS IS ACCURATE FOR THIS CUSTOMER — DELETE IF A REVIEW WAS IN FACT '
-            + 'CARRIED OUT, OR REPLACE WITH WHAT THEY DID.]'),
+            + 'stored.'
+            + (opts.confirmed ? '' : ' [CONFIRM THIS IS ACCURATE FOR THIS CUSTOMER — DELETE IF A '
+                + 'REVIEW WAS IN FACT CARRIED OUT, OR REPLACE WITH WHAT THEY DID.]')),
     ];
 }
 
@@ -227,6 +234,7 @@ function signOff(company) {
             { cells: ['Date:', 'Company stamp (if used):'] },
         ]),
         spacer(260),
+        ...(SEND ? [] : [
         new Paragraph({
             children: [new TextRun({
                 text: 'Notes for QuickInsight — delete this section before sending',
@@ -239,6 +247,7 @@ function signOff(company) {
         bullet('One question gets you most of the results table: "Before QuickInsight, how often did you rebuild this and roughly how long did it take each time? And now?"'),
         bullet('The quote must be the customer’s own words. If they ask you to draft one, send it as a suggestion and let them rewrite it.'),
         bullet('Send as PDF once the placeholders are filled. Ask for a signed scan back, and keep the original.'),
+        ]),
     ];
 }
 
@@ -250,18 +259,18 @@ function signOff(company) {
 const clicknsend = [
     ...header(
         'ClickNsend',
-        'Parcel delivery · InPost vendor · Aberdeen, United Kingdom',
+        'Parcel delivery · Aberdeen, United Kingdom',
         'The owner of a ten-person parcel business had never used a BI tool and describes his Excel '
         + 'as limited. He now builds his own analysis every week — and uses it to pitch for the work '
         + 'that will grow the company.'),
-    draftWarning('ClickNsend'),
+    ...draftWarning('ClickNsend'),
 
     h1('At a glance'),
     table([2600, 6426], [
-        { boldFirst: true, cells: ['Sector', 'Parcel delivery — vendor for InPost'] },
+        { boldFirst: true, cells: ['Sector', 'Parcel delivery'] },
         { boldFirst: true, cells: ['Location', 'Aberdeen, United Kingdom'] },
         { boldFirst: true, cells: ['Size', '10 employees, one depot'] },
-        { boldFirst: true, cells: ['Using QuickInsight since', '20 June 2026'] },
+        { boldFirst: true, cells: ['Using QuickInsight since', '2 July 2026'] },
         { boldFirst: true, cells: ['Prior analytics experience', 'None — no BI tool had been used before; self-described limited Excel'] },
         { boldFirst: true, cells: ['Used for', 'Per-employee delivery performance, and building the figures behind new business pitches'] },
         { boldFirst: true, cells: ['Data source', 'Daily manifest exports from the courier platform, as Excel files'] },
@@ -341,7 +350,7 @@ const clicknsend = [
         + 'their formats, identifies which numbers can meaningfully be added up, and tidies '
         + 'inconsistent status values so that the same outcome recorded two different ways is counted '
         + 'once rather than twice.'),
-    p('The questions ClickNsend asks are the ones it could never answer before:'),
+    p('The questions ClickNsend asks:'),
     bullet('Parcels delivered per employee, by day and by week'),
     bullet('Parcels undelivered per employee, over the same periods'),
     bullet('Percentage of parcels returned'),
@@ -362,15 +371,16 @@ const clicknsend = [
     ...dataNote(
         'Parcel manifests contain recipient names, delivery addresses and contact telephone numbers. '
         + 'As a vendor, ClickNsend is handling the personal data of another company’s customers, '
-        + 'which raises rather than lowers the stakes.'),
+        + 'which raises rather than lowers the stakes.', { confirmed: true }),
 
     h1('Results'),
     table([4200, 2400, 2426], [
         { head: true, cells: ['Measure', 'Before', 'After'] },
         { cells: ['Owner’s time spent on performance reporting', 'About 10 hours per week', 'Around 1–2 hours per week'] },
-        { cells: ['Questions that can be asked of the data', 'Whatever the vendor report already showed', 'Any question the owner can frame, using the Question Builder or AI SQL'] },
-        { cells: ['Per-employee delivery figures', 'Not available', 'Available by day, week and selected periods'] },
-        { cells: ['Preparing a downloaded manifest for analysis', 'Manual cleaning, then pivot tables', 'Automatic on upload'] },
+        { cells: ['Questions that can be asked of the data', 'Whatever the vendor report already showed', 'Any question the owner can frame using the Question Builder or AI SQL'] },
+        { cells: ['Per-employee delivery figures', 'Not readily available', 'Available by day, week and selected time periods'] },
+        { cells: ['Weekly analysis of downloaded parcel manifests', 'Manual Excel cleaning and pivot tables', 'Ready for analysis immediately after upload through automated data cleaning'] },
+        { cells: ['Ability to explore new business questions', 'Limited to fixed vendor reports', 'Business owner can build new questions on demand without Excel formulas or SQL'] },
     ]),
     spacer(220),
     p('During day-to-day operations, the owner now explores questions that were previously '
@@ -383,12 +393,12 @@ const clicknsend = [
 
     h1('In their words'),
     pullQuote('"Before QuickInsight, I depended on Excel and the reports provided by the courier '
-        + 'platform, but I could not answer new questions without spending hours rebuilding '
-        + 'spreadsheets. Learning the GAFS approach completely changed how I look at my data. I do '
-        + 'not need to know SQL or use complicated BI software — I can build the analysis myself and '
-        + 'understand how my business is performing whenever I need it. The charts also help me '
+        + 'platform, but I couldn’t answer new questions without spending hours rebuilding '
+        + 'spreadsheets. Learning the GAFS approach completely changed how I look at my data. I '
+        + 'don’t need to know SQL or use complicated BI software — I can build the analysis myself '
+        + 'and understand how my business is performing whenever I need it. The charts also help me '
         + 'present my business more professionally when discussing new opportunities."'),
-    p('— [NAME], Owner, ClickNsend', { indent: { left: 480 } }),
+    p('— [NAME], [JOB TITLE], ClickNsend', { indent: { left: 480 } }),
 
     ...signOff('ClickNsend'),
 ];
@@ -404,7 +414,7 @@ const nithya = [
         'An IT services company with Power BI in place and one analyst to run it. The bottleneck was '
         + 'never the tooling — it was that every question, however small, had to go through the same '
         + 'person.'),
-    draftWarning('Nithyasystems'),
+    ...draftWarning('Nithyasystems'),
 
     h1('At a glance'),
     table([2600, 6426], [
@@ -553,7 +563,7 @@ const technogence = [
         'Every question meant cleaning a spreadsheet and writing formulas first. Managers were '
         + 'spending hours proving things that turned out not to be true — and, more often, not '
         + 'asking at all.'),
-    draftWarning('Technogence'),
+    ...draftWarning('Technogence'),
 
     h1('At a glance'),
     table([2600, 6426], [
