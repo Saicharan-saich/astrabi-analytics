@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>QuickInsight — one page</title>
+<style>
+  @page { size: A4; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --ink:      #14142b;
+    --body:     #3e4257;
+    --muted:    #767b90;
+    --line:     #e3e5ee;
+    --brand:    #5b4bd6;
+    --brand-2:  #8b5cf6;
+    --tint:     #f4f3fd;
+    --good:     #0e9f6e;
+  }
+
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+
+  body {
+    width: 210mm; height: 297mm; overflow: hidden;
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    color: var(--body);
+    font-size: 8.4pt; line-height: 1.42;
+    display: flex; flex-direction: column;
+    background: #fff;
+  }
+
+  /* ── masthead ───────────────────────────────────────────── */
+  header {
+    padding: 8mm 13mm 5.5mm;
+    background: linear-gradient(115deg, #2a2270 0%, #5b4bd6 55%, #8b5cf6 100%);
+    color: #fff;
+  }
+  .brandline { display: flex; align-items: baseline; gap: 3mm; }
+  h1 { font-size: 22pt; letter-spacing: -0.6pt; font-weight: 700; }
+  .tld { font-size: 9pt; opacity: .72; letter-spacing: .3pt; }
+  .promise {
+    margin-top: 2mm; font-size: 10pt; font-weight: 300;
+    line-height: 1.34; max-width: 155mm; opacity: .96;
+  }
+  .badges { margin-top: 3.4mm; display: flex; gap: 2mm; flex-wrap: wrap; }
+  .badge {
+    font-size: 6.9pt; letter-spacing: .35pt; text-transform: uppercase;
+    padding: 1.3mm 2.6mm; border-radius: 20px;
+    background: rgba(255,255,255,.16); border: .3pt solid rgba(255,255,255,.34);
+  }
+
+  /* ── layout ─────────────────────────────────────────────── */
+  main { flex: 1; padding: 4.6mm 13mm 0; display: flex; flex-direction: column; gap: 3.4mm; }
+
+  h2 {
+    font-size: 7.9pt; text-transform: uppercase; letter-spacing: 1.05pt;
+    color: var(--brand); font-weight: 700; margin-bottom: 1.9mm;
+    padding-bottom: 1mm; border-bottom: .8pt solid var(--line);
+  }
+
+  .cols { display: grid; grid-template-columns: 1fr 1fr; gap: 7mm; }
+
+  .lede { font-size: 8.5pt; color: var(--ink); line-height: 1.4; }
+  .lede b { color: var(--brand); font-weight: 700; }
+  p + p { margin-top: 1.8mm; }
+
+  /* ── problem: before / after ────────────────────────────── */
+  .ba { display: grid; grid-template-columns: 1fr 1fr; gap: 3mm; margin-top: 2.1mm; }
+  .ba > div { border: .8pt solid var(--line); border-radius: 2mm; padding: 2.3mm 2.7mm; }
+  .ba .after { background: var(--tint); border-color: #d9d5f7; }
+  .ba h3 { font-size: 7pt; text-transform: uppercase; letter-spacing: .6pt; margin-bottom: 1.6mm; }
+  .ba .before h3 { color: #b4453a; }
+  .ba .after h3 { color: var(--brand); }
+  .ba li { list-style: none; padding-left: 3.6mm; position: relative; margin-bottom: .6mm; font-size: 7.4pt; }
+  .ba .before li::before { content: "×"; position: absolute; left: 0; color: #c9584b; font-weight: 700; }
+  .ba .after li::before { content: "✓"; position: absolute; left: 0; color: var(--good); font-weight: 700; }
+
+  /* ── features ───────────────────────────────────────────── */
+  .feat { display: grid; grid-template-columns: 1fr 1fr; gap: 1.9mm 4.5mm; }
+  .f { display: flex; gap: 2.4mm; }
+  .f .n {
+    flex: 0 0 4.6mm; height: 4.6mm; border-radius: 1.2mm;
+    background: var(--brand); color: #fff; font-size: 6.6pt; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; margin-top: .3mm;
+  }
+  .f strong { color: var(--ink); font-size: 7.8pt; display: block; }
+  .f span { font-size: 7.1pt; color: var(--muted); line-height: 1.32; }
+
+  /* ── architecture ───────────────────────────────────────── */
+  .arch { border: .8pt solid var(--line); border-radius: 2mm; overflow: hidden; }
+  .tier { display: flex; align-items: stretch; border-bottom: .8pt solid var(--line); }
+  .tier:last-child { border-bottom: 0; }
+  .tier .label {
+    flex: 0 0 25mm; padding: 2.1mm 2.8mm;
+    font-size: 6.8pt; text-transform: uppercase; letter-spacing: .5pt;
+    font-weight: 700; color: #fff; display: flex; flex-direction: column; justify-content: center;
+  }
+  .tier .label small { display: block; font-size: 6pt; font-weight: 400; opacity: .8; letter-spacing: 0; text-transform: none; margin-top: .5mm; }
+  .t1 .label { background: linear-gradient(160deg,#5b4bd6,#8b5cf6); }
+  .t2 .label { background: #4b5170; }
+  .t3 .label { background: #6b7186; }
+  .tier .boxes { flex: 1; padding: 2mm 2.8mm; display: flex; flex-wrap: wrap; gap: 1.6mm; align-items: center; }
+  .chip {
+    font-size: 7pt; padding: 1.3mm 2.4mm; border-radius: 1.4mm;
+    background: #f6f7fb; border: .6pt solid var(--line); color: var(--ink);
+  }
+  .chip.key { background: var(--tint); border-color: #cfc8f5; color: var(--brand); font-weight: 700; }
+  .arrow { font-size: 7pt; color: var(--muted); }
+  .archnote { font-size: 6.9pt; color: var(--muted); margin-top: 1.4mm; line-height: 1.36; }
+
+  /* ── privacy strip ──────────────────────────────────────── */
+  .privacy {
+    background: var(--tint); border: .8pt solid #d9d5f7; border-radius: 2mm;
+    padding: 2.4mm 3mm; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3.4mm;
+  }
+  .privacy div strong { display: block; color: var(--brand); font-size: 7.4pt; margin-bottom: .7mm; }
+  .privacy div span { font-size: 6.9pt; color: var(--body); line-height: 1.36; }
+
+  /* ── footer ─────────────────────────────────────────────── */
+  footer {
+    margin-top: auto; padding: 3.6mm 13mm 4mm;
+    background: #14142b; color: #cfd2e0;
+    display: flex; justify-content: space-between; align-items: flex-end; gap: 6mm;
+  }
+  footer .who strong { color: #fff; font-size: 9.4pt; display: block; letter-spacing: -.2pt; }
+  footer .who span { font-size: 7.3pt; color: #9aa0b8; }
+  footer .contact { text-align: right; font-size: 7.6pt; line-height: 1.6; }
+  footer .contact a { color: #b9b2f7; text-decoration: none; }
+  footer .contact .big { font-size: 9pt; color: #fff; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brandline">
+    <h1>QuickInsight</h1><span class="tld">quickinsight.co.uk</span>
+  </div>
+  <p class="promise">
+    Business intelligence for people who work in spreadsheets — not for data specialists.
+    Load a file, ask a question in plain English, get a chart. Your data never leaves your browser.
+  </p>
+  <div class="badges">
+    <span class="badge">Runs in the browser</span>
+    <span class="badge">No data upload</span>
+    <span class="badge">No SQL required</span>
+    <span class="badge">Live at quickinsight.co.uk</span>
+  </div>
+</header>
+
+<main>
+
+  <section>
+    <h2>The problem</h2>
+    <p class="lede">
+      Most small and mid-sized businesses generate real operational data and have
+      <b>nobody whose job is to analyse it</b>. A salaried analyst is out of proportion to the problem.
+      Existing BI tools don't fix that — they move it: somebody still has to connect the data,
+      define how tables relate and build a model before the first chart appears. That is analyst
+      work, and buying the software does not supply the analyst.
+    </p>
+    <div class="ba">
+      <div class="before">
+        <h3>The week before</h3>
+        <ul>
+          <li>Export the file, clean the dates and categories by hand</li>
+          <li>Rebuild the pivot table every time somebody asks</li>
+          <li>One person understands it — reporting stops when they're away</li>
+          <li>Questions nobody anticipated go into a queue, or go unasked</li>
+        </ul>
+      </div>
+      <div class="after">
+        <h3>The week after</h3>
+        <ul>
+          <li>Drop the same file in; cleaning and profiling are automatic</li>
+          <li>Assemble a question from four choices, or type it in English</li>
+          <li>Anyone on the team can answer a routine question themselves</li>
+          <li>Repeat answers become a dashboard that never needs rebuilding</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What it does</h2>
+    <div class="feat">
+      <div class="f"><div class="n">1</div><div>
+        <strong>Automatic data cleaning</strong>
+        <span>A seven-layer pipeline standardises dates, separates numbers that can be summed from those that can't, reconciles categories spelled two ways, and profiles every column.</span>
+      </div></div>
+      <div class="f"><div class="n">2</div><div>
+        <strong>Question Builder — the GAFS method</strong>
+        <span>Every business question is four choices: <b>G</b>roup by what, <b>A</b>ggregate which number, <b>F</b>ilter which rows, <b>S</b>ort in what order. Learn that once and the questions stop being a fixed list.</span>
+      </div></div>
+      <div class="f"><div class="n">3</div><div>
+        <strong>Ask in plain English</strong>
+        <span>Type the question as you'd say it. The generated SQL stays visible and is checked against your real column names and values before it runs.</span>
+      </div></div>
+      <div class="f"><div class="n">4</div><div>
+        <strong>Automatic insights</strong>
+        <span>On load, QuickInsight surfaces what changed, what's concentrated in one product or region, and what looks wrong — before you've asked anything.</span>
+      </div></div>
+      <div class="f"><div class="n">5</div><div>
+        <strong>Dashboards and monitoring</strong>
+        <span>Pin the answers you need repeatedly. They refresh against the current file rather than being rebuilt by hand each period.</span>
+      </div></div>
+      <div class="f"><div class="n">6</div><div>
+        <strong>Multi-sheet joins, safely</strong>
+        <span>Related sheets are detected and joined automatically — and any join that would duplicate rows and inflate your totals is refused rather than silently applied.</span>
+      </div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>How it is built</h2>
+    <div class="arch">
+      <div class="tier t1">
+        <div class="label">Your browser<small>where the data stays</small></div>
+        <div class="boxes">
+          <span class="chip">Spreadsheet / CSV</span><span class="arrow">→</span>
+          <span class="chip key">7-layer ETL</span><span class="arrow">→</span>
+          <span class="chip key">DuckDB-WASM</span><span class="arrow">→</span>
+          <span class="chip">Semantic layer</span><span class="arrow">→</span>
+          <span class="chip">Question Builder</span>
+          <span class="chip">Charts &amp; dashboards</span>
+        </div>
+      </div>
+      <div class="tier t2">
+        <div class="label">Our server<small>metadata only</small></div>
+        <div class="boxes">
+          <span class="chip">Accounts &amp; sign-in</span>
+          <span class="chip">Saved dashboard layouts</span>
+          <span class="chip">Usage quotas</span>
+          <span class="chip">AI request proxy</span>
+        </div>
+      </div>
+      <div class="tier t3">
+        <div class="label">Language model<small>for plain English</small></div>
+        <div class="boxes">
+          <span class="chip">Table &amp; column names</span>
+          <span class="chip">Data types</span>
+          <span class="chip key">No rows. No values by default.</span>
+        </div>
+      </div>
+    </div>
+    <p class="archnote">
+      The analytical database runs inside the browser tab, so the file itself is never uploaded —
+      cleaning, queries and charts are all computed on the user's own machine. The server exists to
+      hold accounts and to keep the model provider's API key off the client.
+    </p>
+  </section>
+
+  <section>
+    <h2>Privacy by architecture, not by policy</h2>
+    <div class="privacy">
+      <div><strong>The file never leaves</strong><span>Analysis happens in the browser. There is no upload step to opt out of, and nothing to delete afterwards.</span></div>
+      <div><strong>Structure, not content</strong><span>Plain-English questions send column names and types only. Sending sample values is off unless switched on.</span></div>
+      <div><strong>Chosen column by column</strong><span>If values are shared, identifiers and personal data are excluded automatically, and every remaining column and value can be switched off individually.</span></div>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="who">
+    <strong>QuickInsight</strong>
+    <span>Founded by Saicharan Chepuri · Aberdeen, United Kingdom</span>
+  </div>
+  <div class="contact">
+    <span class="big">quickinsight.co.uk</span><br>
+    <a href="mailto:support@quickinsight.co.uk">support@quickinsight.co.uk</a><br>
+    <span style="color:#767b90">Book a walkthrough: [PHONE / BOOKING LINK]</span>
+  </div>
+</footer>
+
+</body>
+</html>
