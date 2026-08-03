@@ -377,26 +377,27 @@ const clicknsend = [
 const nithya = [
     ...header(
         'Nithyasystems',
-        'Data warehousing, database and IT services · [CITY], [COUNTRY]',
-        'A data services company with Power BI in place and one analyst to run it. The bottleneck '
-        + 'was never the tooling — it was that every question, however small, had to go through the '
-        + 'same person.'),
+        'Software development, process outsourcing and IT consulting · Texas, USA',
+        'An IT services company with Power BI in place and one analyst to run it. The bottleneck was '
+        + 'never the tooling — it was that every question, however small, had to go through the same '
+        + 'person.'),
     draftWarning('Nithyasystems'),
 
     h1('At a glance'),
     table([2600, 6426], [
-        { boldFirst: true, cells: ['Sector', 'Data warehousing, database and IT services'] },
-        { boldFirst: true, cells: ['Location', '[CITY], [COUNTRY]'] },
-        { boldFirst: true, cells: ['Size', '[N] employees'] },
-        { boldFirst: true, cells: ['Using QuickInsight since', '[MONTH YEAR]'] },
+        { boldFirst: true, cells: ['Sector', 'Software development, process outsourcing and IT consulting'] },
+        { boldFirst: true, cells: ['Location', 'Texas, USA'] },
+        { boldFirst: true, cells: ['Size', '22 employees'] },
+        { boldFirst: true, cells: ['Using QuickInsight since', '2 July 2026'] },
         { boldFirst: true, cells: ['Used alongside', 'Power BI — retained for complex and governed reporting'] },
         { boldFirst: true, cells: ['Used for', 'Quick ad-hoc sales analysis: daily and weekly sales, and week-, month- and year-to-date figures by product'] },
     ]),
 
     h1('A data company with a data bottleneck'),
-    p('Nithyasystems builds data warehouses, database platforms and IT systems for its clients. Data '
-        + 'infrastructure is what the company does for a living, and it is not a business that lacks '
-        + 'analytical capability or good tooling.'),
+    p('Nithyasystems provides software development, process outsourcing and IT consulting to '
+        + 'businesses and government agencies across sectors including banking and finance, '
+        + 'healthcare, education, retail and hospitality. Data work is what the company does for a '
+        + 'living.'),
     p('Internally, its own reporting runs on Power BI, maintained by a single data analyst.'),
     p('That is a perfectly reasonable setup, and for the work Power BI is designed for it works well. '
         + 'The difficulty was never the platform. It was that one analyst had become the route through '
@@ -424,15 +425,14 @@ const nithya = [
         + 'expertise waits behind it. Meanwhile the person who asked for today’s sales figure gets it '
         + 'tomorrow, by which point they have either moved on or made the decision without it.'),
     p('Hiring a second analyst would have helped, but it treats a routing problem as a capacity '
-        + 'problem — the new analyst joins the same queue. '
-        + '[CONFIRM OR REPLACE WITH WHAT NITHYASYSTEMS ACTUALLY CONSIDERED.]'),
+        + 'problem — the new analyst joins the same queue.'),
     p('Giving everyone a Power BI licence would not have helped either. The licence is not the '
         + 'barrier; the modelling knowledge is. Handing the tool to someone who does not have that '
         + 'knowledge produces either nothing or, worse, a confidently wrong number.'),
 
     h1('What changed — a hybrid, not a replacement'),
-    p('Nithyasystems began using QuickInsight in [MONTH YEAR] alongside Power BI rather than instead '
-        + 'of it. The two are used for different halves of the problem:'),
+    p('Nithyasystems began using QuickInsight in July 2026 alongside Power BI rather than instead of '
+        + 'it. The two are used for different halves of the problem:'),
     table([4513, 4513], [
         { head: true, cells: ['Power BI', 'QuickInsight'] },
         {
@@ -455,30 +455,57 @@ const nithya = [
     p('The questions it handles are the ones that were clogging the queue:'),
     bullet('Today’s sales, and this week’s'),
     bullet('Week-to-date, month-to-date and year-to-date sales by product'),
-    bullet('[QUESTION 4 — e.g. this month against the same month last year, by product]'),
-    bullet('[ADD ANY OTHERS ASKED REGULARLY]'),
+    bullet('Product-wise sales distribution breakdown'),
+    bullet('This month against the same month last year, by product'),
 
     h1('What the analyst got back'),
     p('The point of the change was not to produce figures faster, although it does. It was to take '
         + 'the questions that never needed an analyst out of the analyst’s queue.'),
-    p('Work that requires modelling judgement, governance or genuine analytical skill still goes to '
-        + 'the analyst — and now reaches them without waiting behind a request for a daily sales '
-        + 'total. [ADD THE OUTCOME IN NITHYASYSTEMS’ OWN TERMS — e.g. how much of the analyst’s week '
-        + 'was previously spent on ad-hoc requests, and what that time is now spent on instead.]'),
+    p('Ten hours of the analyst’s week were previously spent on ad-hoc requests. That time is now '
+        + 'spent instead on developing more complex dashboards and maintaining the company’s data '
+        + 'infrastructure — work that requires modelling judgement, governance and genuine analytical '
+        + 'skill, and which now reaches the analyst without waiting behind a request for a daily '
+        + 'sales total.'),
 
-    ...dataNote(
-        'Sales data by product and client is commercially sensitive, and as a data services business '
+    h1('Decisions made in the room'),
+    p('The change showed up somewhere nobody had planned for: in meetings.'),
+    p('During routine sales reviews, product-level performance can now be examined immediately, while '
+        + 'the discussion is still happening, rather than being sent away as follow-up analysis to '
+        + 'return later in the week. Meetings end with a decision made on current figures instead of '
+        + 'an action deferred pending a report.'),
+
+    h1('A note on the data itself'),
+    p('Sales data by product and client is commercially sensitive, and as an IT services business '
         + 'Nithyasystems applies the same standards to its own information that it applies on behalf '
-        + 'of its clients. [ADD ANY INTERNAL POLICY OR CLIENT CONFIDENTIALITY TERM THAT APPLIED.]'),
+        + 'of its clients. Certain commercially sensitive figures have been withheld or anonymised in '
+        + 'this document in accordance with internal confidentiality policies and contractual '
+        + 'obligations to clients.'),
+    p('QuickInsight does its work inside the web browser on the user’s own computer. The spreadsheet '
+        + 'is never uploaded to a server at all. Where the plain-English question feature is used, '
+        + 'only the structure of the data is sent — table names, column names and data types. No data '
+        + 'values are sent unless the user explicitly switches that on, and even then anything '
+        + 'resembling a name, an identifier, contact details or a sensitive category is excluded '
+        + 'automatically, with the user able to switch off any remaining column or individual value '
+        + 'first.'),
+    p('Because the analysis happens locally and the data never leaves the machine, adopting the tool '
+        + 'required no supplier security assessment and no decision about where company data would be '
+        + 'stored.'),
 
-    ...results('Nithyasystems', [
-        { cells: ['Wait for an ad-hoc sales figure', '[e.g. next day]', '[e.g. minutes]'] },
-        { cells: ['Analyst time spent on ad-hoc requests', '[N] [hours per week]', '[N] [hours per week]'] },
-        { cells: ['People able to answer a basic sales question', '1', '[N]'] },
-        { cells: ['[OTHER MEASURE]', '[VALUE]', '[VALUE]'] },
+    h1('Results'),
+    table([4200, 2400, 2426], [
+        { head: true, cells: ['Measure', 'Before', 'After'] },
+        { cells: ['Wait for an ad-hoc sales figure', 'Days', 'Minutes'] },
+        { cells: ['Analyst time spent on ad-hoc requests', '10 hours per week', 'Near zero for routine requests'] },
+        { cells: ['People able to answer a basic sales question', '1', 'Business users, directly'] },
     ]),
 
-    ...inTheirWords('Nithyasystems'),
+    h1('In their words'),
+    pullQuote('"QuickInsight has allowed us to keep Power BI for the reporting it does well while '
+        + 'removing the dependency on our analyst for everyday sales questions. People who simply '
+        + 'need an answer can now get it themselves within minutes, allowing our analyst to focus on '
+        + 'higher-value analytical work."'),
+    p('— [NAME], [JOB TITLE], Nithyasystems', { indent: { left: 480 } }),
+
     ...signOff('Nithyasystems'),
 ];
 
