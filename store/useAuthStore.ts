@@ -113,16 +113,21 @@ export const isSessionExpired = (): boolean => {
     return Date.now() - lastActivityTime > SESSION_TIMEOUT_MS;
 };
 
-// Seed admin user
-const SEED_ADMIN: User = {
-    id: 'admin_001',
-    email: 'saicharan@QuickInsight.co.uk',
-    name: 'Sai Charan',
-    role: UserRole.ADMIN,
-    passwordHash: secureHash('password'),
-    createdAt: Date.now(),
-    avatar: '#6366f1', // indigo
-};
+// There is deliberately NO seeded user here.
+//
+// This file is compiled into the JavaScript bundle, so anything in it is
+// readable by anyone who opens the site. A seeded account meant shipping a real
+// email address and a password hash to every visitor — and the password was
+// 'password', which is the first guess in any dictionary attack.
+//
+// Accounts come from the backend (POST /api/auth/login), which holds bcrypt
+// hashes and seeds its first admin from ADMIN_EMAIL / ADMIN_PASSWORD in the
+// environment. See backend/.env.example.
+const SEEDED_ACCOUNTS: User[] = [];
+
+/** Emails that were previously hard-coded and must be purged from any browser
+ *  that persisted them before this was fixed. */
+const REVOKED_SEED_EMAILS = ['saicharan@quickinsight.co.uk'];
 
 // Avatar color palette
 const AVATAR_COLORS = [
@@ -153,7 +158,7 @@ export const useAuthStore = create<AuthState>()(
     persist(
         (set, get) => ({
             currentUser: null,
-            users: [SEED_ADMIN],
+            users: SEEDED_ACCOUNTS,
             isAuthenticated: false,
 
             login: (email: string, password: string) => {
@@ -352,6 +357,24 @@ export const useAuthStore = create<AuthState>()(
                 users: state.users,
                 isAuthenticated: state.isAuthenticated,
             }),
+            // Removing the hard-coded seed from source does not remove it from
+            // browsers that already persisted it. Bumping the version runs this
+            // once per browser to drop the revoked account, and signs it out if
+            // that is who is currently logged in.
+            version: 1,
+            migrate: (persisted: any, fromVersion: number) => {
+                if (fromVersion >= 1 || !persisted) return persisted;
+                const revoked = (u: any) =>
+                    REVOKED_SEED_EMAILS.includes(String(u?.email || '').toLowerCase());
+                const users = Array.isArray(persisted.users) ? persisted.users.filter((u: any) => !revoked(u)) : [];
+                const signedInAsRevoked = revoked(persisted.currentUser);
+                return {
+                    ...persisted,
+                    users,
+                    currentUser: signedInAsRevoked ? null : persisted.currentUser,
+                    isAuthenticated: signedInAsRevoked ? false : persisted.isAuthenticated,
+                };
+            },
         }
     )
 );
