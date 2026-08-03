@@ -410,10 +410,11 @@ const nithya = [
     p('The mismatch appears at the other end of the scale. Somebody wants to know what was sold '
         + 'today. Or this week. Or how a particular product is tracking month-to-date against '
         + 'year-to-date. These are small questions with short answers.'),
-    p('But getting them out of Power BI meant the full path: extract the data, transform it, load it, '
-        + 'model it, and write the queries — and know Power BI well enough to do all of that. For a '
-        + 'question whose answer is a single number, the cost of asking exceeded the value of '
-        + 'knowing.'),
+    p('Where an existing report already covers the question, it is answered in seconds. Where it does '
+        + 'not — which is most of the time for a question nobody anticipated — answering it requires '
+        + 'changes to the dataset, the model or the report logic, and someone who knows Power BI well '
+        + 'enough to make them safely. For a question whose answer is a single number, the cost of '
+        + 'asking exceeded the value of knowing.'),
     p('So the small questions either went into the analyst’s queue, or went unasked.'),
 
     h1('One analyst, everyone’s questions'),
@@ -423,7 +424,8 @@ const nithya = [
         + 'the order they arrive. The analyst spends a meaningful part of the week producing figures '
         + 'that required no analytical judgement at all, while the work that genuinely needs their '
         + 'expertise waits behind it. Meanwhile the person who asked for today’s sales figure gets it '
-        + 'tomorrow, by which point they have either moved on or made the decision without it.'),
+        + 'once the analyst reaches them — by which point they have either moved on or made the '
+        + 'decision without it.'),
     p('Hiring a second analyst would have helped, but it treats a routing problem as a capacity '
         + 'problem — the new analyst joins the same queue.'),
     p('Giving everyone a Power BI licence would not have helped either. The licence is not the '
@@ -443,6 +445,9 @@ const nithya = [
         },
     ]),
     spacer(220),
+    p('The division is deliberate, and Nithyasystems is clear about where the line sits. QuickInsight '
+        + 'is not used for statutory reporting, board reporting or executive dashboards. Those remain '
+        + 'in Power BI, built and governed by the analyst, and there is no plan to move them.'),
     p('A spreadsheet export is loaded straight into the browser and cleaned automatically — date '
         + 'columns detected and standardised, additive and non-additive numbers distinguished, '
         + 'inconsistent category values tidied so the same product spelled two ways is counted once. '
@@ -461,8 +466,8 @@ const nithya = [
     h1('What the analyst got back'),
     p('The point of the change was not to produce figures faster, although it does. It was to take '
         + 'the questions that never needed an analyst out of the analyst’s queue.'),
-    p('Ten hours of the analyst’s week were previously spent on ad-hoc requests. That time is now '
-        + 'spent instead on developing more complex dashboards and maintaining the company’s data '
+    p('About ten hours of the analyst’s week were previously spent on ad-hoc requests. That time is '
+        + 'now spent instead on developing more complex dashboards and maintaining the company’s data '
         + 'infrastructure — work that requires modelling judgement, governance and genuine analytical '
         + 'skill, and which now reaches the analyst without waiting behind a request for a daily '
         + 'sales total.'),
@@ -473,6 +478,12 @@ const nithya = [
         + 'the discussion is still happening, rather than being sent away as follow-up analysis to '
         + 'return later in the week. Meetings end with a decision made on current figures instead of '
         + 'an action deferred pending a report.'),
+    p('[ONE REAL EXAMPLE FROM NITHYASYSTEMS — a specific occasion when this happened. Roughly: '
+        + '"During a sales review, a manager asked why a particular product had fallen behind the '
+        + 'previous week. Rather than requesting a new report, the exported spreadsheet was opened in '
+        + 'QuickInsight and the breakdown was on screen within minutes, and the discussion continued." '
+        + 'Ask them for the actual occasion — do not use this wording as written, and delete this '
+        + 'paragraph entirely if they cannot recall a specific one.]'),
 
     h1('A note on the data itself'),
     p('Sales data by product and client is commercially sensitive, and as an IT services business '
@@ -494,16 +505,15 @@ const nithya = [
     h1('Results'),
     table([4200, 2400, 2426], [
         { head: true, cells: ['Measure', 'Before', 'After'] },
-        { cells: ['Wait for an ad-hoc sales figure', 'Days', 'Minutes'] },
-        { cells: ['Analyst time spent on ad-hoc requests', '10 hours per week', 'Near zero for routine requests'] },
+        { cells: ['Wait for an ad-hoc sales figure', 'Days, depending on analyst availability', 'Minutes'] },
+        { cells: ['Analyst time spent on ad-hoc requests', 'About 10 hours per week', 'Near zero for routine requests'] },
         { cells: ['People able to answer a basic sales question', '1', 'Business users, directly'] },
     ]),
 
     h1('In their words'),
-    pullQuote('"QuickInsight has allowed us to keep Power BI for the reporting it does well while '
-        + 'removing the dependency on our analyst for everyday sales questions. People who simply '
-        + 'need an answer can now get it themselves within minutes, allowing our analyst to focus on '
-        + 'higher-value analytical work."'),
+    pullQuote('"QuickInsight hasn’t replaced Power BI for us — it has reduced the number of everyday '
+        + 'questions reaching our analyst. Staff can answer routine sales questions themselves, while '
+        + 'the analyst spends more time improving our reporting."'),
     p('— [NAME], [JOB TITLE], Nithyasystems', { indent: { left: 480 } }),
 
     ...signOff('Nithyasystems'),
