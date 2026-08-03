@@ -261,7 +261,7 @@ const clicknsend = [
         { boldFirst: true, cells: ['Sector', 'Parcel delivery — vendor for InPost'] },
         { boldFirst: true, cells: ['Location', 'Aberdeen, United Kingdom'] },
         { boldFirst: true, cells: ['Size', '10 employees, one depot'] },
-        { boldFirst: true, cells: ['Using QuickInsight since', '2 July 2026'] },
+        { boldFirst: true, cells: ['Using QuickInsight since', '20 June 2026'] },
         { boldFirst: true, cells: ['Prior analytics experience', 'None — no BI tool had been used before; self-described limited Excel'] },
         { boldFirst: true, cells: ['Used for', 'Per-employee delivery performance, and building the figures behind new business pitches'] },
         { boldFirst: true, cells: ['Data source', 'Daily manifest exports from the courier platform, as Excel files'] },
@@ -324,10 +324,11 @@ const clicknsend = [
         + 'It is four choices: group by employee, count parcels, filter to last week, sort descending. '
         + 'Once that clicks, the number of questions available stops being a fixed list and starts '
         + 'being whatever the owner can think of.'),
-    p('The owner learned this framework through the product and now applies it himself in the '
-        + 'question builder. He does not write SQL and has not needed to. He uses the plain-English '
-        + 'AI feature occasionally, but the majority of his analysis is built by making those four '
-        + 'choices directly.'),
+    p('He learned the framework through the product, and now understands how an analytical question '
+        + 'is constructed and applies that thinking directly in the Question Builder. He does not '
+        + 'write SQL and has not needed to. He uses the plain-English AI SQL feature occasionally for '
+        + 'exploratory questions, while the majority of his day-to-day analysis is built by making '
+        + 'those four choices himself.'),
     p('This is the change that matters. He did not get a better report. He stopped needing anyone to '
         + 'produce one.'),
 
@@ -357,23 +358,38 @@ const clicknsend = [
         + 'or promised in a spreadsheet he would have to build first.'),
     p('For a vendor trying to win a second depot, that is the difference between asserting that the '
         + 'operation performs and demonstrating it.'),
-    p('[ADD THE OUTCOME IF THERE IS ONE YET — meetings held, tenders submitted, work won. If nothing '
-        + 'has been won yet, say so plainly or delete this line. Do not imply an outcome that has not '
-        + 'happened; the case study is stronger honest and will age better.]'),
 
     ...dataNote(
         'Parcel manifests contain recipient names, delivery addresses and contact telephone numbers. '
         + 'As a vendor, ClickNsend is handling the personal data of another company’s customers, '
         + 'which raises rather than lowers the stakes.'),
 
-    ...results('ClickNsend', [
-        { cells: ['Owner’s time spent on performance reporting', 'About 10 hours per week', '[N] [minutes / hours] per week'] },
-        { cells: ['Questions that can be asked of the data', 'Whatever the vendor report already showed', 'Any question the owner can frame'] },
-        { cells: ['Per-employee delivery figures', 'Not available', '[e.g. daily and weekly]'] },
-        { cells: ['[OTHER MEASURE]', '[VALUE]', '[VALUE]'] },
+    h1('Results'),
+    table([4200, 2400, 2426], [
+        { head: true, cells: ['Measure', 'Before', 'After'] },
+        { cells: ['Owner’s time spent on performance reporting', 'About 10 hours per week', 'Around 1–2 hours per week'] },
+        { cells: ['Questions that can be asked of the data', 'Whatever the vendor report already showed', 'Any question the owner can frame, using the Question Builder or AI SQL'] },
+        { cells: ['Per-employee delivery figures', 'Not available', 'Available by day, week and selected periods'] },
+        { cells: ['Preparing a downloaded manifest for analysis', 'Manual cleaning, then pivot tables', 'Automatic on upload'] },
     ]),
+    spacer(220),
+    p('During day-to-day operations, the owner now explores questions that were previously '
+        + 'impractical to answer. Instead of relying solely on the courier platform’s fixed reports, '
+        + 'he can compare employee performance, monitor delivery and return rates across different '
+        + 'time periods, and prepare visual evidence of operational performance for discussions with '
+        + 'prospective clients.'),
+    p('While the analysis is already being used to support new business opportunities, no additional '
+        + 'depot or contract has yet been secured through its use.'),
 
-    ...inTheirWords('ClickNsend'),
+    h1('In their words'),
+    pullQuote('"Before QuickInsight, I depended on Excel and the reports provided by the courier '
+        + 'platform, but I could not answer new questions without spending hours rebuilding '
+        + 'spreadsheets. Learning the GAFS approach completely changed how I look at my data. I do '
+        + 'not need to know SQL or use complicated BI software — I can build the analysis myself and '
+        + 'understand how my business is performing whenever I need it. The charts also help me '
+        + 'present my business more professionally when discussing new opportunities."'),
+    p('— [NAME], Owner, ClickNsend', { indent: { left: 480 } }),
+
     ...signOff('ClickNsend'),
 ];
 
