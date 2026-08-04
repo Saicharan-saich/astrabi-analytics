@@ -57,7 +57,8 @@ export async function generateDirectSQL(question: string, schemaText: string): P
     // for the user's machine/server clock. The caller passes an anchor whenever
     // one exists; reject a query that ignores it so it cannot return misleading
     // zeroes for a historical dataset.
-    if (/\b(?:CURRENT_DATE|CURRENT_TIMESTAMP|LOCALTIME|LOCALTIMESTAMP|NOW)\b\s*(?:\(\s*\))?/i.test(sql)) {
+    const hasDatasetAnchor = /Dataset reporting anchor:/i.test(question);
+    if (hasDatasetAnchor && /\b(?:CURRENT_DATE|CURRENT_TIMESTAMP|LOCALTIME|LOCALTIMESTAMP|NOW)\b\s*(?:\(\s*\))?/i.test(sql)) {
         return {
             sql,
             tokens,
