@@ -228,7 +228,7 @@ export async function runAISQLPipeline(
     traceStep({
         stepNumber: 3, name: 'Intent Planner', engine: 'intentPlanner', icon: '🎯',
         status: plan.ambiguous ? 'warn' : 'pass',
-        summary: `${_dsEarly.sql ? 'Local plan (0 tokens)' : 'LLM plan'} — intent: ${plan.intent} | ${plan.dimensions.length} dim(s), ${plan.metrics.length} metric(s), ${plan.filters.length} filter(s)${plan.limit ? `, limit ${plan.limit}` : ''}`,
+        summary: `Local deterministic plan (0 tokens) — intent: ${plan.intent} | ${plan.dimensions.length} dim(s), ${plan.metrics.length} metric(s), ${plan.filters.length} filter(s)${plan.limit ? `, limit ${plan.limit}` : ''}`,
         details: {
             intent: plan.intent,
             dimensions: plan.dimensions.map(d => ({ field: d.field, grain: d.timeGrain || null })),
@@ -238,7 +238,7 @@ export async function runAISQLPipeline(
             limit: plan.limit,
             resultGrain: plan.resultGrain,
             ambiguous: plan.ambiguous,
-            plannerCallSkipped: !!_dsEarly.sql,
+            plannerCallSkipped: true,
         },
     }, _s1);
 
@@ -459,7 +459,7 @@ export async function runAISQLPipeline(
             summary: directSQL
                 ? 'Escalated fallback: LLM wrote SQL after the deterministic compiler could not represent the request'
                 : 'Not needed — deterministic Question Builder compilation succeeded',
-            details: { sql: directSQL, error: directSqlError, tokens: directSqlTokens },
+            details: { sql: directSQL, error: directSqlError, tokens: directSqlTokens, model: directSqlModel || null },
         }, _directSqlStart);
     }
 
@@ -1247,6 +1247,19 @@ export async function runAISQLPipeline(
         steps: traceSteps,
     };
 
+    const provenance = directSQL
+        ? {
+            strategy: 'llm-sql-fallback' as const,
+            model: directSqlModel,
+            summary: `Escalated to ${directSqlModel || 'an AI model'} because this request could not be represented by the governed deterministic compiler.`,
+            dataAccess: getEffectivePrivacyMode() === 'enhanced' ? 'approved_safe_values' as const : 'metadata_only' as const,
+        }
+        : {
+            strategy: 'deterministic' as const,
+            summary: 'Answered locally using the semantic plan and deterministic analytics compiler. No data was sent to an AI model.',
+            dataAccess: 'metadata_only' as const,
+        };
+
     const pipelineResult: AISQLPipelineResult = {
         plan,
         sql: currentSQL,
@@ -1261,6 +1274,7 @@ export async function runAISQLPipeline(
         columnsUsed,
         executionTimeMs: Math.round(executionTime),
         repairAttempts,
+        provenance,
         trace: pipelineTrace,
         // Surface the exact LLM token cost — the planner step plus the direct-SQL
         // step (0 if the deterministic knobs/correction engine answered). Only LLM
