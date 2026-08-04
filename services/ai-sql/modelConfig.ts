@@ -16,15 +16,19 @@ export const BACKEND_LLM_URL = `${API_BASE}/llm/chat`;
 export const OPENROUTER_API_URL = BACKEND_LLM_URL;
 export const API_KEY = '__ROUTED_THROUGH_BACKEND__';
 
-/** GPT-5.6 Sol is reserved for the AI SQL planning fallback. */
-export const PRIMARY_MODEL = 'gpt-5.6-sol';
+export const LUNA_MODEL = 'openai/gpt-5.6-luna';
+export const TERRA_MODEL = 'openai/gpt-5.6-terra';
+export const SOL_MODEL = 'openai/gpt-5.6-sol';
+
+/** Balanced default for any ordinary AI SQL assistance. */
+export const PRIMARY_MODEL = TERRA_MODEL;
 
 /**
  * GPT-5.6 Sol is called only after deterministic intent planning cannot produce
  * a safe, unambiguous plan. SQL and chart selection remain deterministic.
  * Backend /api/llm/chat already honours a per-call `model` param.
  */
-export const PLANNER_MODEL = 'gpt-5.6-sol';
+export const PLANNER_MODEL = SOL_MODEL;
 
 /** Default timeout for AI requests */
 export const DEFAULT_TIMEOUT_MS = 60000;
@@ -44,7 +48,7 @@ function getAuthToken(): string {
  * Fetch from the AI model via backend proxy with retry logic.
  *
  * 1. Send request to backend proxy with JWT auth
- * 2. Backend validates user, checks quota, then calls the OpenAI Responses API
+ * 2. Backend validates user, checks quota, then calls OpenRouter
  * 3. If 429 (rate limited) → wait 2s and retry up to 3 times
  * 4. If any other error → throw clean user-facing message
  */
