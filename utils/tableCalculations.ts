@@ -317,7 +317,8 @@ export function applyMultipleCalculations(
     calculations: TableCalculation[],
     originalYLabel: string,
     originalNumberFormat: string = 'raw',
-    movingAvgWindow: number = 3
+    movingAvgWindow: number = 3,
+    comparison?: TableCalculationComparison
 ): { transformedData: any[]; columns: CalculatedColumn[] } {
     // Filter out 'none'
     const activeCalcs = calculations.filter(c => c !== 'none');
@@ -338,7 +339,8 @@ export function applyMultipleCalculations(
             originalYLabel,
             originalNumberFormat,
             outputKey,
-            movingAvgWindow
+            movingAvgWindow,
+            comparison
         );
 
         // Merge the calculated column into mergedData
