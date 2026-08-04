@@ -27,9 +27,11 @@ interface BuilderViewProps {
     isLiveRefreshing?: boolean;
     refreshSchedule?: RefreshSchedule;
     onScheduleChange?: (schedule: RefreshSchedule) => void;
+    /** Opens the selected calculation in the dedicated full-page explorer. */
+    onOpenAnalyticsExplorer?: (result: AnalysisResult, formatting: FormattingConfig) => void;
 }
 
-export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange }) => {
+export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange, onOpenAnalyticsExplorer }) => {
     // ── Session persistence key (scoped to dataset) ──
     const storageKey = `qi_builder_${dataset.id}`;
     const savedSession = useMemo(() => {
@@ -316,6 +318,22 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         );
         return { data: transformedData, columns };
     }, [result, formatting?.tableCalculations, formatting?.tableCalculationComparison, formatting?.numberFormat, formatting?.movingAvgWindow]);
+
+    const handleTableCalculationToggle = useCallback((calc: TableCalculation, isSelected: boolean) => {
+        if (!formatting || !onUpdateFormatting) return;
+        const current = formatting.tableCalculations || [];
+        const tableCalculations = isSelected
+            ? current.filter(calculation => calculation !== calc)
+            : [...current, calc];
+        const nextFormatting = { ...formatting, tableCalculations };
+
+        onUpdateFormatting(nextFormatting);
+        // Opening happens only when a calculation is enabled. The Builder itself
+        // remains mounted behind the explorer, so query/filter state is retained.
+        if (!isSelected && tableCalculations.length > 0 && result) {
+            onOpenAnalyticsExplorer?.(result, nextFormatting);
+        }
+    }, [formatting, onUpdateFormatting, onOpenAnalyticsExplorer, result]);
 
     return (
         <div className="flex flex-col h-full bg-slate-50">
@@ -852,7 +870,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                         return (
                                                             <label key={calc} className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all ${isSelected ? 'bg-emerald-100 border border-emerald-500 ring-1 ring-emerald-500 shadow-sm' : 'hover:bg-slate-50 border border-transparent hover:border-slate-200'}`}>
                                                                 <div className="relative flex items-center shrink-0">
-                                                                    <input type="checkbox" checked={isSelected} onChange={() => { const current = formatting.tableCalculations || []; const updated = isSelected ? current.filter(c => c !== calc) : [...current, calc]; onUpdateFormatting({ ...formatting, tableCalculations: updated }); }} className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-slate-400 checked:border-emerald-700 checked:bg-emerald-600 transition-all" />
+                                                                    <input type="checkbox" checked={isSelected} onChange={() => handleTableCalculationToggle(calc, isSelected)} className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-slate-400 checked:border-emerald-700 checked:bg-emerald-600 transition-all" />
                                                                     <div className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 opacity-0 peer-checked:opacity-100 transition-opacity"><svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg></div>
                                                                 </div>
                                                                 <span className={`text-sm ${isSelected ? 'font-bold text-emerald-900' : 'text-slate-700 font-medium'}`}>{getCalculationDisplayName(calc)}</span>
