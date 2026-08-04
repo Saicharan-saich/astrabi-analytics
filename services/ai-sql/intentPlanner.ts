@@ -974,9 +974,18 @@ function enforceComparison(plan: AnalysisPlan, question: string, model: Semantic
     // Determine the mode: if there's a time dimension in the plan, use trend; otherwise total
     const hasTimeDimension = plan.dimensions.some(d => d.timeGrain);
     const mode = hasTimeDimension ? 'trend' : 'total';
+    // A scalar period comparison needs the period grain to derive the matching
+    // previous window (e.g. "this month vs last month" → prior calendar month).
+    // Do not default it to day just because no chart time dimension is present.
+    const inferredGrain: 'day' | 'week' | 'month' | 'quarter' | 'year' =
+        /\b(month|monthly|mom)\b/.test(q) ? 'month'
+            : /\b(quarter|quarterly|qoq)\b/.test(q) ? 'quarter'
+                : /\b(year|yearly|annual|yoy)\b/.test(q) ? 'year'
+                    : /\b(week|weekly|wow)\b/.test(q) ? 'week'
+                        : 'day';
     const grain = hasTimeDimension
-        ? (plan.dimensions.find(d => d.timeGrain)?.timeGrain || 'day')
-        : 'day';
+        ? (plan.dimensions.find(d => d.timeGrain)?.timeGrain || inferredGrain)
+        : inferredGrain;
 
     // Set the comparison object
     plan.comparison = {
@@ -987,6 +996,20 @@ function enforceComparison(plan: AnalysisPlan, question: string, model: Semantic
 
     // Upgrade intent
     plan.intent = mode === 'trend' ? 'trend_comparison' : 'total_comparison';
+
+    // A raw date is sometimes added by field mapping. It is a period filter here,
+    // not an answer dimension: grouping by it turns a simple period comparison
+    // into a daily trend and prevents the two labelled totals from being produced.
+    if (mode === 'total') {
+        const before = plan.dimensions.length;
+        plan.dimensions = plan.dimensions.filter(d => {
+            const field = model.fields.find(f => f.name.toLowerCase() === d.field.toLowerCase());
+            return !(field?.semanticType === 'date' && !d.timeGrain);
+        });
+        if (plan.dimensions.length !== before) {
+            console.log('[Intent Planner] Total comparison: removed raw date grouping dimension');
+        }
+    }
 
     // Ensure there's a date filter — comparison SQL needs a BETWEEN filter to compute previous period
     const dateField = model.fields.find(f => f.semanticType === 'date' && f.role === 'dimension')?.name
@@ -1687,6 +1710,14 @@ function enforceGrowthTimeDimension(plan: AnalysisPlan, question: string, model:
 
     // Only apply to growth/comparison queries
     if (!isGrowthQuestion && !hasComparison && !isComparisonIntent) return;
+
+    // A scalar comparison ("sales this month vs last month") is intentionally
+    // two totals, not a growth trend. Keep it total so the local comparison
+    // compiler can return Current/Previous rows without an LLM escalation.
+    if (plan.comparison?.mode === 'total' && !isGrowthQuestion) {
+        console.log('[Intent Planner] Total comparison preserved — no trend dimension injected');
+        return;
+    }
 
     // Check if a time dimension with grain already exists
     const hasTimeDimWithGrain = plan.dimensions.some(d => d.timeGrain);
