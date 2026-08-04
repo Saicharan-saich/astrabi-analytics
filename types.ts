@@ -220,6 +220,12 @@ export type FormattingConfig = {
   dataLabelBold?: boolean; // Bold data labels (default: true for backward compat)
   dataLabelColor?: string; // Hex color for data labels (default: '#334155')
   tableCalculations: import('./utils/tableCalculations').TableCalculation[];
+  /** Baseline used by row-comparison calculations in the Analytics panel. */
+  tableCalculationComparison?: {
+    mode: 'previous' | 'selected_value';
+    /** String representation of the selected X-axis value. */
+    referenceValue?: string;
+  };
   movingAvgWindow?: number; // Dynamic window size for moving average (default: 3)
   decimals?: number; // 0, 1, 2, or undefined (auto)
   dateFormat?: 'raw' | 'yyyy-mm-dd' | 'mm/dd/yyyy' | 'month_name_year' | 'month_short_year' | 'month_number' | 'month_name_only';
