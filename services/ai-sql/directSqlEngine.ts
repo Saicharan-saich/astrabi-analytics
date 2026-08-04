@@ -22,7 +22,8 @@ Rules:
 - When money/revenue/total is asked for, use the additive currency measure, not a per-unit price.
 - DATE COLUMNS ARE STORED AS TEXT (VARCHAR). You MUST wrap them in CAST(col AS DATE) before ANY date function or comparison — DATE_TRUNC, EXTRACT, strftime, date_diff, ordering by month, or BETWEEN. Example: DATE_TRUNC('month', CAST(order_date AS DATE)), and CAST(order_date AS DATE) BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'. Writing DATE_TRUNC('month', order_date) directly WILL fail.
 - JOIN across tables when needed, following the listed foreign keys.
-- The local Analysis Plan is a binding analytical contract: preserve its metrics, aggregations, filters, dimensions, sorting, limits, and comparison semantics. Do not invent a different business question.
+- The user's explicit question and the verified schema are the source of truth. The local Analysis Plan is a governed draft: preserve valid resolved metrics, filters, comparison semantics, sorting, and limits, but repair any omission or misclassification called out by Planner Verification.
+- Never return a generic scalar total merely because the draft plan has no dimension. If the user asks "by", "over time", a fiscal calendar, a comparison, ranking, or another explicit analytical shape, implement that shape using the available schema.
 - For a total period comparison, return two labelled aggregate rows, 'Current' and 'Previous'. For a trend comparison, retain the period label and the requested time grain.
 - If the question includes a "Dataset reporting anchor", that anchor is the reporting clock. Resolve relative periods using explicit DATE literals from it; NEVER use CURRENT_DATE, CURRENT_TIMESTAMP, NOW(), or other wall-clock functions.
 - Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
@@ -46,13 +47,17 @@ export async function generateDirectSQL(
     question: string,
     schemaText: string,
     analysisPlan?: AnalysisPlan,
+    plannerVerification?: Array<{ code?: string; severity?: string; message?: string }>,
 ): Promise<DirectSQLResult> {
     const planContext = analysisPlan
-        ? `\n\nLocal Analysis Plan (binding):\n${JSON.stringify(analysisPlan, null, 2)}`
+        ? `\n\nLocal Analysis Plan (governed draft):\n${JSON.stringify(analysisPlan, null, 2)}`
+        : '';
+    const verificationContext = plannerVerification?.length
+        ? `\n\nPlanner Verification (repair these gaps when the question and schema support it):\n${JSON.stringify(plannerVerification, null, 2)}`
         : '';
     const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: `Schema:\n${schemaText}${planContext}\n\nQuestion: ${question}\n\nSQL:` },
+        { role: 'user', content: `Schema:\n${schemaText}${planContext}${verificationContext}\n\nQuestion: ${question}\n\nSQL:` },
     ];
     const model = selectAISQLModel(question, 'sql');
     console.log(`[AI SQL] Direct SQL model route: ${model}`);
