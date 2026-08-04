@@ -78,13 +78,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         { id: Tab.UPLOAD, label: 'Data Source', icon: Upload, requiresUpload: true, tooltip: 'Upload CSV/Excel files or connect to databases like SQL Server to import your data.' },
     ];
 
-    // Explore Data sub-items (collapsed under one group)
+    // Dataset preparation lives in one workspace; legacy route IDs remain supported for saved links.
     const exploreDataItems = [
-        { id: Tab.COLUMN_MAPPING, label: 'Column Mapping', icon: Eye, tooltip: 'Review and adjust AI-detected column types, semantic roles, and data formats before analysis.' },
-        { id: Tab.ETL, label: 'ETL Pipeline', icon: Database, requiresEditSchema: true, tooltip: 'View each automated data cleaning step — null handling, type casting, date parsing, and more.' },
-        { id: Tab.DATA_STUDIO, label: 'Data Studio', icon: Wand2, requiresEditSchema: true, tooltip: 'Hands-on cleaning tools — fix values, handle outliers, deduplicate, split/merge columns, and transform your data interactively.' },
-        { id: Tab.SCHEMA, label: 'Schema', icon: GitMerge, requiresEditSchema: true, tooltip: 'See how columns were classified (metric, dimension, date, ID) and override types if needed.' },
-        { id: Tab.DATASET_SUMMARY, label: 'Dataset Workspace', icon: BarChart2, tooltip: 'See dataset health and column statistics, then browse raw or cleaned data with search, filters, sorting and export.' },
+        { id: Tab.DATASET_SUMMARY, label: 'Dataset Workspace', icon: BarChart2, tooltip: 'Explore raw and cleaned data, review column mapping and schema, inspect automated cleaning, and use hands-on data studio tools.' },
     ];
 
     const analysisSection = [
