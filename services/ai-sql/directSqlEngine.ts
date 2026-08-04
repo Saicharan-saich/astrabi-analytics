@@ -21,6 +21,7 @@ Rules:
 - When money/revenue/total is asked for, use the additive currency measure, not a per-unit price.
 - DATE COLUMNS ARE STORED AS TEXT (VARCHAR). You MUST wrap them in CAST(col AS DATE) before ANY date function or comparison — DATE_TRUNC, EXTRACT, strftime, date_diff, ordering by month, or BETWEEN. Example: DATE_TRUNC('month', CAST(order_date AS DATE)), and CAST(order_date AS DATE) BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'. Writing DATE_TRUNC('month', order_date) directly WILL fail.
 - JOIN across tables when needed, following the listed foreign keys.
+- If the question includes a "Dataset reporting anchor", that anchor is the reporting clock. Resolve relative periods using explicit DATE literals from it; NEVER use CURRENT_DATE, CURRENT_TIMESTAMP, NOW(), or other wall-clock functions.
 - Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
 
 export interface DirectSQLResult { sql: string; tokens: number; model?: string; error?: string; }
@@ -51,6 +52,20 @@ export async function generateDirectSQL(question: string, schemaText: string): P
     const tokens = usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0)) || 0;
 
     const sql = extractSQL(content);
+
+    // A fallback must never silently swap the dataset-relative reporting clock
+    // for the user's machine/server clock. The caller passes an anchor whenever
+    // one exists; reject a query that ignores it so it cannot return misleading
+    // zeroes for a historical dataset.
+    if (/\b(?:CURRENT_DATE|CURRENT_TIMESTAMP|LOCALTIME|LOCALTIMESTAMP|NOW)\b\s*(?:\(\s*\))?/i.test(sql)) {
+        return {
+            sql,
+            tokens,
+            model: modelUsed,
+            error: 'Wall-clock SQL rejected: use the dataset reporting anchor with explicit DATE literals',
+        };
+    }
+
     const safe = validateReadOnlySQL(sql);
     if (!safe.ok) return { sql, tokens, model: modelUsed, error: `Unsafe SQL rejected: ${safe.reason}` };
     return { sql: safe.sql, tokens, model: modelUsed };
