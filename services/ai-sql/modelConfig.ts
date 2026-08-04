@@ -16,16 +16,44 @@ export const BACKEND_LLM_URL = `${API_BASE}/llm/chat`;
 export const OPENROUTER_API_URL = BACKEND_LLM_URL;
 export const API_KEY = '__ROUTED_THROUGH_BACKEND__';
 
-/** The model to use for most AI requests (fast, cheap). */
-export const PRIMARY_MODEL = 'google/gemini-2.5-flash';
+/**
+ * OpenRouter model ladder for AI SQL. All three are OpenAI GPT-5.6 models and
+ * are requested through the existing backend proxy, so keys, quotas and the
+ * request/response shape remain unchanged.
+ */
+export const LUNA_MODEL = 'openai/gpt-5.6-luna';
+export const TERRA_MODEL = 'openai/gpt-5.6-terra';
+export const SOL_MODEL = 'openai/gpt-5.6-sol';
+
+/** Fast path for straightforward questions and single-table SQL. */
+export const PRIMARY_MODEL = LUNA_MODEL;
+
+/** Balanced default for structured analytical planning. */
+export const PLANNER_MODEL = TERRA_MODEL;
+
+/** A short, user-readable description for the AI SQL screen. */
+export const MODEL_LADDER_LABEL = 'GPT-5.6 Luna · Terra · Sol';
+
+type AISQLWorkload = 'plan' | 'sql';
 
 /**
- * Stronger reasoning model for the accuracy-critical PLAN step. The plan is the
- * single stochastic decision in the pipeline (SQL + chart are deterministic),
- * so a more capable model here is the highest-leverage accuracy improvement.
- * Backend /api/llm/chat already honours a per-call `model` param.
+ * Route each request to the lightest capable model. This is deliberately a
+ * deterministic choice: it avoids three full model calls for one question,
+ * preserves predictable latency/cost, and escalates only when the request
+ * actually needs deeper reasoning.
  */
-export const PLANNER_MODEL = 'google/gemini-2.5-pro';
+export function selectAISQLModel(question: string, workload: AISQLWorkload): string {
+    const normalized = question.toLowerCase();
+
+    const needsDeepReasoning = /\b(join|across\s+(multiple|several)|subquery|cohort|retention|funnel|correlation|moving\s+(average|avg)|rolling\s+(average|avg)|what[-\s]?if|forecast|anomal(?:y|ies)|compound)\b/.test(normalized);
+    if (needsDeepReasoning) return SOL_MODEL;
+
+    const needsPlanning = workload === 'plan'
+        || /\b(compare|versus|\bvs\b|growth|trend|share|percentage|percent|ratio|rank|top\s+\d+|bottom\s+\d+|distinct|average|between|before|after|month[-\s]?over[-\s]?month|year[-\s]?over[-\s]?year)\b/.test(normalized);
+    if (needsPlanning) return TERRA_MODEL;
+
+    return LUNA_MODEL;
+}
 
 /** Default timeout for AI requests */
 export const DEFAULT_TIMEOUT_MS = 60000;
