@@ -15,7 +15,7 @@
 
 import { SemanticModel, SemanticField, AnalysisPlan, AnalysisIntent } from './types';
 import { serializeSemanticModel } from './semanticLayer';
-import { fetchWithFallback, PRIMARY_MODEL, PLANNER_MODEL, API_KEY } from './modelConfig';
+import { fetchWithFallback, PRIMARY_MODEL, selectAISQLModel, API_KEY } from './modelConfig';
 import { classifyQuestion, ClassificationResult, isTimePeriodComparison } from './questionClassifier';
 
 // Re-exported: the classifier owns this so both it and the enforcement below
@@ -1175,6 +1175,8 @@ export async function generatePlan(
     console.log(`[Field Mapper] dims=[${fieldMapping.dimensions.map(d => d.name).join(', ')}] mets=[${fieldMapping.metrics.map(m => m.name).join(', ')}] confidence=${fieldMapping.confidence.toFixed(2)}`);
 
     const systemPrompt = buildPlannerPrompt(model);
+    const plannerModel = selectAISQLModel(question, 'plan');
+    console.log(`[AI SQL] Intent planner model route: ${plannerModel}`);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
@@ -1193,7 +1195,7 @@ export async function generatePlan(
             // Accuracy-critical step: use the stronger planning model and a larger
             // token budget so complex plans (multi-dim + metrics + filters +
             // comparison) don't truncate into invalid JSON.
-            { temperature: 0.0, max_tokens: 4000, timeout: TIMEOUT_MS, model: PLANNER_MODEL }
+            { temperature: 0.0, max_tokens: 4000, timeout: TIMEOUT_MS, model: plannerModel }
         );
 
         clearTimeout(timeout);

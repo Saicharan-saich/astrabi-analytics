@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, Shield, ShieldCheck } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
-import { MODEL } from '../services/ai-sql/intentPlanner';
+import { MODEL_LADDER_LABEL } from '../services/ai-sql/modelConfig';
 import {
     getPrivacyMode, setPrivacyMode, PrivacyMode,
     hasEnhancedConsent, grantEnhancedConsent, revokeEnhancedConsent,
@@ -265,28 +265,28 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     }
 
     return (
-        <div className="flex flex-col h-full bg-gray-50 dark:bg-slate-900 p-6 overflow-hidden">
+        <div className="flex flex-col h-full bg-slate-50 dark:bg-[#07111f] p-6 overflow-hidden">
             <div className="max-w-3xl mx-auto w-full flex flex-col h-full gap-5">
 
                 {/* Header */}
                 <div className="flex flex-col gap-1 shrink-0">
-                    <Tooltip text="AI SQL uses advanced AI to generate and execute SQL queries on your dataset. Ask questions in plain English and get instant results." position="right">
+                    <Tooltip text="Ask in plain English. AI SQL routes the request to the right GPT-5.6 tier, generates read-only SQL, validates it, and turns the result into a chart." position="right">
                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                             <img src="/ai-sql-logo.png" alt="AI SQL" className="w-7 h-7 rounded-lg object-cover" />
                             AI SQL
                             <span className="text-xs font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20">
-                                Intelligent Analytics
+                                Plan-first analytics
                             </span>
                             <span className="text-xs font-medium bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                {MODEL.includes('gpt') ? `⚡ ${MODEL.split('/').pop()?.toUpperCase()}` : MODEL.includes('gemini') ? `✨ ${MODEL.split('/').pop()}` : MODEL.split('/').pop()}
+                                {MODEL_LADDER_LABEL}
                             </span>
                         </h2>
                     </Tooltip>
                     <div className="flex items-center gap-2">
                         <p className="text-gray-500 dark:text-slate-400 text-sm flex-1">
-                            Ask any question about your data — AI generates SQL, executes it, and takes you to a full visual result.
-                            Each question is answered on its own, with no memory of previous ones.
+                            Ask a business question in plain English. AI SQL selects the right reasoning tier, validates read-only SQL, and creates a visual result.
+                            Each question is handled independently, with no memory of previous ones.
                         </p>
                         <Tooltip
                             position="left"
@@ -298,7 +298,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                 onClick={togglePrivacyMode}
                                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${!enhancedActive
                                     ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30'
-                                    : 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300 border-amber-300 dark:border-amber-500/30'}`}
+                                    : 'bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-500/30'}`}
                                 title="See exactly what the AI is sent, and choose"
                             >
                                 {!enhancedActive ? <ShieldCheck className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
@@ -315,7 +315,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         className="mt-2 inline-flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 transition-colors group"
                     >
                         {enhancedActive ? (
-                            <Shield className="w-3.5 h-3.5 text-amber-500" />
+                            <Shield className="w-3.5 h-3.5 text-cyan-500" />
                         ) : (
                             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                         )}
@@ -371,7 +371,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                             Early Access Preview
                         </span>
                         <span className="text-[12px] text-indigo-600/70 dark:text-indigo-400/70 ml-1.5">
-                            — AI-powered analytics is actively evolving. Results improve continuously as the engine learns your data patterns.
+                            — each question is planned from your dataset schema, safety-checked, and returned with a chart-ready result.
                         </span>
                     </div>
                     <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-300/40 dark:border-indigo-500/30">
@@ -381,8 +381,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
                 {/* Text Input */}
                 <div className="relative group shrink-0">
-                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/30 to-orange-500/30 rounded-2xl blur-lg opacity-0 group-hover:opacity-40 transition-opacity pointer-events-none" />
-                    <div className={`relative bg-white dark:bg-slate-800 border-2 rounded-2xl shadow-lg dark:shadow-2xl transition-all duration-300 ${query.trim() ? 'border-amber-400/50 dark:border-amber-500/40' : 'border-gray-200 dark:border-white/10 hover:border-amber-400/30 dark:hover:border-amber-500/30'}`}>
+                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/30 to-blue-500/30 rounded-2xl blur-lg opacity-0 group-hover:opacity-40 transition-opacity pointer-events-none" />
+                    <div className={`relative bg-white dark:bg-slate-800 border-2 rounded-2xl shadow-lg dark:shadow-2xl transition-all duration-300 ${query.trim() ? 'border-cyan-400/50 dark:border-cyan-500/40' : 'border-gray-200 dark:border-white/10 hover:border-cyan-400/30 dark:hover:border-cyan-500/30'}`}>
                         <textarea
                             className="w-full bg-transparent border-none outline-none text-gray-900 dark:text-white px-5 pt-4 pb-2 placeholder:text-gray-400 dark:placeholder:text-slate-500 font-medium resize-none min-h-[56px] max-h-[160px]"
                             placeholder='Ask a question about your data... e.g. "Show top 10 products by total revenue"'
@@ -400,12 +400,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         <div className="flex items-center justify-between px-4 pb-3">
                             <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
                                 <img src="/ai-sql-logo.png" alt="" className="w-3.5 h-3.5 rounded-sm" />
-                                <span>AI generates SQL &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[10px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
+                                <span>Plan → validate → visualise &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[10px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
                             </div>
                             <button
                                 onClick={handleSubmit}
                                 disabled={!query.trim() || isLoading || (!limitStatus.allowed && !limitStatus.blocked)}
-                                className="bg-amber-600 hover:bg-amber-500 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-md hover:shadow-lg active:scale-95"
+                                className="bg-cyan-600 hover:bg-cyan-500 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-md hover:shadow-lg active:scale-95"
                             >
                                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : !limitStatus.allowed ? <Lock className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
                                 {isLoading ? 'Generating...' : !limitStatus.allowed ? 'Limit Reached' : 'Send'}
@@ -418,44 +418,44 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 {isLoading && (
                     <div className="flex-1 flex flex-col items-center justify-center">
                         <div className="relative mb-6">
-                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
-                                <Sparkles className="w-8 h-8 text-amber-400 animate-pulse" />
+                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center">
+                                <Sparkles className="w-8 h-8 text-cyan-400 animate-pulse" />
                             </div>
-                            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-amber-400 animate-ping" />
+                            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-cyan-400 animate-ping" />
                         </div>
                         <div className="flex items-center gap-3 text-gray-500 dark:text-slate-400 text-sm">
-                            <Loader2 className="w-4 h-4 animate-spin text-amber-400" />
-                            <span>AI is generating SQL for your question...</span>
+                            <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
+                            <span>Planning and validating your question...</span>
                         </div>
                         <div className="mt-4 flex gap-2">
-                            <div className="w-2 h-2 rounded-full bg-amber-400/50 animate-bounce" style={{ animationDelay: '0ms' }} />
-                            <div className="w-2 h-2 rounded-full bg-amber-400/50 animate-bounce" style={{ animationDelay: '150ms' }} />
-                            <div className="w-2 h-2 rounded-full bg-amber-400/50 animate-bounce" style={{ animationDelay: '300ms' }} />
+                            <div className="w-2 h-2 rounded-full bg-cyan-400/50 animate-bounce" style={{ animationDelay: '0ms' }} />
+                            <div className="w-2 h-2 rounded-full bg-cyan-400/50 animate-bounce" style={{ animationDelay: '150ms' }} />
+                            <div className="w-2 h-2 rounded-full bg-cyan-400/50 animate-bounce" style={{ animationDelay: '300ms' }} />
                         </div>
                     </div>
                 )}
 
                 {/* No-data explanation banner */}
                 {noDataMsg && !isLoading && (
-                    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-500/40 rounded-xl p-5 flex items-start gap-4">
-                        <div className="w-9 h-9 rounded-xl bg-amber-100 dark:bg-amber-500/20 flex items-center justify-center shrink-0">
-                            <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                    <div className="bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-300 dark:border-cyan-500/40 rounded-xl p-5 flex items-start gap-4">
+                        <div className="w-9 h-9 rounded-xl bg-cyan-100 dark:bg-cyan-500/20 flex items-center justify-center shrink-0">
+                            <AlertTriangle className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
                         </div>
                         <div className="flex-1">
-                            <div className="font-bold text-amber-800 dark:text-amber-300 mb-1 text-sm">No data found for this query</div>
-                            <p className="text-sm text-amber-700 dark:text-amber-200/80 leading-relaxed">{noDataMsg}</p>
+                            <div className="font-bold text-cyan-800 dark:text-cyan-300 mb-1 text-sm">No data found for this query</div>
+                            <p className="text-sm text-cyan-700 dark:text-cyan-200/80 leading-relaxed">{noDataMsg}</p>
                             {noDataSQL && (
-                                <pre className="mt-3 text-[11px] text-emerald-700 dark:text-emerald-300 font-mono bg-white/60 dark:bg-slate-900/60 rounded-lg p-3 border border-amber-200 dark:border-white/5 overflow-x-auto">{noDataSQL}</pre>
+                                <pre className="mt-3 text-[11px] text-emerald-700 dark:text-emerald-300 font-mono bg-white/60 dark:bg-slate-900/60 rounded-lg p-3 border border-cyan-200 dark:border-white/5 overflow-x-auto">{noDataSQL}</pre>
                             )}
                         </div>
-                        <button onClick={() => { setNoDataMsg(null); setNoDataSQL(null); }} className="text-amber-600 dark:text-amber-400 hover:text-amber-800 dark:hover:text-amber-200 shrink-0"><X className="w-4 h-4" /></button>
+                        <button onClick={() => { setNoDataMsg(null); setNoDataSQL(null); }} className="text-cyan-600 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-200 shrink-0"><X className="w-4 h-4" /></button>
                     </div>
                 )}
 
                 {/* Rate Limit Reached Banner */}
                 {!limitStatus.allowed && !limitStatus.blocked && !isLoading && (
-                    <div className="shrink-0 bg-gradient-to-r from-red-500/10 via-amber-500/10 to-orange-500/10 dark:from-red-500/15 dark:via-amber-500/15 dark:to-orange-500/15 border border-red-300/60 dark:border-red-500/30 rounded-xl px-5 py-4 flex items-start gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-100 to-amber-100 dark:from-red-500/20 dark:to-amber-500/20 flex items-center justify-center shrink-0">
+                    <div className="shrink-0 bg-gradient-to-r from-red-500/10 via-cyan-500/10 to-blue-500/10 dark:from-red-500/15 dark:via-cyan-500/15 dark:to-blue-500/15 border border-red-300/60 dark:border-red-500/30 rounded-xl px-5 py-4 flex items-start gap-4">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-100 to-cyan-100 dark:from-red-500/20 dark:to-cyan-500/20 flex items-center justify-center shrink-0">
                             <Lock className="w-5 h-5 text-red-600 dark:text-red-400" />
                         </div>
                         <div className="flex-1">
@@ -466,7 +466,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                             </p>
                             <div className="mt-2 flex items-center gap-2">
                                 <div className="h-1.5 flex-1 bg-red-200 dark:bg-red-500/20 rounded-full overflow-hidden">
-                                    <div className="h-full bg-gradient-to-r from-red-500 to-amber-500 rounded-full" style={{ width: '100%' }} />
+                                    <div className="h-full bg-gradient-to-r from-red-500 to-cyan-500 rounded-full" style={{ width: '100%' }} />
                                 </div>
                                 <span className="text-[10px] font-bold text-red-600 dark:text-red-400">{limitStatus.used}/{limitStatus.limit}</span>
                             </div>
@@ -496,7 +496,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                 <button
                                     key={i}
                                     onClick={() => setQuery(ex)}
-                                    className="px-4 py-2 rounded-full border border-gray-200 dark:border-white/10 hover:border-amber-500/50 hover:bg-amber-500/10 text-gray-600 dark:text-slate-300 text-sm transition-all"
+                                    className="px-4 py-2 rounded-full border border-gray-200 dark:border-white/10 hover:border-cyan-500/50 hover:bg-cyan-500/10 text-gray-600 dark:text-slate-300 text-sm transition-all"
                                 >
                                     {ex}
                                 </button>
