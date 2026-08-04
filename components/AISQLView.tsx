@@ -270,12 +270,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
                 {/* Header */}
                 <div className="flex flex-col gap-1 shrink-0">
-                    <Tooltip text="Ask in plain English. AI SQL routes the request to the right GPT-5.6 tier, generates read-only SQL, validates it, and turns the result into a chart." position="right">
+                    <Tooltip text="Ask in plain English. Astrabi builds a local semantic plan and a deterministic, read-only query first. If a question needs escalation, it uses the appropriate GPT-5.6 route and clearly shows that in the result." position="right">
                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                             <img src="/ai-sql-logo.png" alt="AI SQL" className="w-7 h-7 rounded-lg object-cover" />
                             AI SQL
                             <span className="text-xs font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20">
-                                Plan-first analytics
+                                Private, governed analytics
                             </span>
                             <span className="text-xs font-medium bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
                                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
@@ -285,8 +285,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     </Tooltip>
                     <div className="flex items-center gap-2">
                         <p className="text-gray-500 dark:text-slate-400 text-sm flex-1">
-                            Ask a business question in plain English. AI SQL selects the right reasoning tier, validates read-only SQL, and creates a visual result.
-                            Each question is handled independently, with no memory of previous ones.
+                            Ask a business question in plain English. Astrabi calculates supported answers locally, validates every read-only query, and creates a visual result.
+                            Each answer shows its calculation path; questions are independent, with no conversational memory.
                         </p>
                         <Tooltip
                             position="left"
@@ -320,13 +320,13 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                         )}
                         <span>
-                            AI is sent:{' '}
+                            If an AI fallback is needed, it receives:{' '}
                             <span className="font-semibold text-gray-700 dark:text-slate-200">
                                 {enhancedActive
                                     ? sharingSummary.values === 0
                                         ? 'column names only'
                                         : `column names + ${sharingSummary.values} value${sharingSummary.values === 1 ? '' : 's'} from ${sharingSummary.columns} column${sharingSummary.columns === 1 ? '' : 's'}`
-                                    : 'column names only — no data values'}
+                                    : 'column names only — no data values or rows'}
                             </span>
                         </span>
                         <span className="underline decoration-dotted underline-offset-2 group-hover:decoration-solid">
@@ -371,7 +371,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                             Early Access Preview
                         </span>
                         <span className="text-[12px] text-indigo-600/70 dark:text-indigo-400/70 ml-1.5">
-                            — each question is planned from your dataset schema, safety-checked, and returned with a chart-ready result.
+                            — local-first answers, visible calculation paths, and a controlled GPT‑5.6 fallback only when needed.
                         </span>
                     </div>
                     <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-300/40 dark:border-indigo-500/30">
@@ -400,7 +400,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         <div className="flex items-center justify-between px-4 pb-3">
                             <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
                                 <img src="/ai-sql-logo.png" alt="" className="w-3.5 h-3.5 rounded-sm" />
-                                <span>Plan → validate → visualise &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[10px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
+                                <span>Local plan → validate → visualise &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[10px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
                             </div>
                             <button
                                 onClick={handleSubmit}
@@ -425,7 +425,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         </div>
                         <div className="flex items-center gap-3 text-gray-500 dark:text-slate-400 text-sm">
                             <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-                            <span>Planning and validating your question...</span>
+                            <span>Building and validating your local analysis...</span>
                         </div>
                         <div className="mt-4 flex gap-2">
                             <div className="w-2 h-2 rounded-full bg-cyan-400/50 animate-bounce" style={{ animationDelay: '0ms' }} />
