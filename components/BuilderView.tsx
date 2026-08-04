@@ -309,10 +309,13 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             activeCalcs,
             result.yLabel,
             formatting?.numberFormat || 'raw',
-            formatting?.movingAvgWindow || 3
+            formatting?.movingAvgWindow || 3,
+            formatting?.tableCalculationComparison
+                ? { ...formatting.tableCalculationComparison, dimensionKey: result.xKey }
+                : undefined
         );
         return { data: transformedData, columns };
-    }, [result, formatting?.tableCalculations, formatting?.numberFormat, formatting?.movingAvgWindow]);
+    }, [result, formatting?.tableCalculations, formatting?.tableCalculationComparison, formatting?.numberFormat, formatting?.movingAvgWindow]);
 
     return (
         <div className="flex flex-col h-full bg-slate-50">
@@ -857,6 +860,50 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                         );
                                                     })}
                                                 </div>
+                                                {(['pct_diff_from_prev', 'diff_from_prev'] as TableCalculation[]).some(calc => (formatting.tableCalculations || []).includes(calc)) && (
+                                                    <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 space-y-2">
+                                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700">Comparison baseline</label>
+                                                        <select
+                                                            value={formatting.tableCalculationComparison?.mode || 'previous'}
+                                                            onChange={e => {
+                                                                const mode = e.target.value as 'previous' | 'selected_value';
+                                                                const values = Array.from(new Set((result.data || []).map((row: any) => String(row[result.xKey] ?? '')).filter(Boolean)));
+                                                                const currentReference = formatting.tableCalculationComparison?.referenceValue;
+                                                                const referenceValue = values.includes(currentReference || '') ? currentReference : values[0];
+                                                                onUpdateFormatting({
+                                                                    ...formatting,
+                                                                    tableCalculationComparison: mode === 'selected_value'
+                                                                        ? { mode, referenceValue }
+                                                                        : { mode },
+                                                                });
+                                                            }}
+                                                            className="w-full rounded-md border border-emerald-300 bg-white px-2 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                                                        >
+                                                            <option value="previous">Previous row (current chart order)</option>
+                                                            <option value="selected_value">Selected {result.xKey} value</option>
+                                                        </select>
+                                                        {(formatting.tableCalculationComparison?.mode || 'previous') === 'selected_value' && (
+                                                            <select
+                                                                value={formatting.tableCalculationComparison?.referenceValue || String(result.data?.[0]?.[result.xKey] ?? '')}
+                                                                onChange={e => onUpdateFormatting({
+                                                                    ...formatting,
+                                                                    tableCalculationComparison: { mode: 'selected_value', referenceValue: e.target.value },
+                                                                })}
+                                                                className="w-full rounded-md border border-emerald-300 bg-white px-2 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                                                                aria-label={`Compare every value with a selected ${result.xKey}`}
+                                                            >
+                                                                {Array.from(new Set((result.data || []).map((row: any) => String(row[result.xKey] ?? '')).filter(Boolean))).map(value => (
+                                                                    <option key={value} value={value}>{value}</option>
+                                                                ))}
+                                                            </select>
+                                                        )}
+                                                        <p className="text-[10px] leading-relaxed text-emerald-700">
+                                                            {(formatting.tableCalculationComparison?.mode || 'previous') === 'selected_value'
+                                                                ? 'Every visible value is compared with the selected baseline.'
+                                                                : 'Each value is compared with the previous visible row, using the current chart order.'}
+                                                        </p>
+                                                    </div>
+                                                )}
                                                 {(formatting.tableCalculations || []).length > 0 && (
                                                     <button onClick={() => onUpdateFormatting({ ...formatting, tableCalculations: [] })} className="mt-1 text-[11px] text-slate-400 hover:text-red-500 transition-colors cursor-pointer">Clear all calculations</button>
                                                 )}
