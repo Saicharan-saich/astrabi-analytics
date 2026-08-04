@@ -34,7 +34,7 @@ import { AdminQuestionBuilder } from './components/AdminQuestionBuilder';
 import { MessageSquare, Zap } from 'lucide-react';
 import clsx from 'clsx';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useAppStore } from './store/useAppStore';
+import { useAppStore, syncDashboardsFromCloud } from './store/useAppStore';
 import { useAuthStore, ROLE_PERMISSIONS } from './store/useAuthStore';
 import { ThemeProvider } from './components/ThemeProvider';
 import { OnboardingTour } from './components/OnboardingTour';
@@ -239,6 +239,9 @@ function App() {
       // Prime the remembered column-classification cache so future uploads can
       // auto-apply corrections. Metadata only (columnName → role) — never data.
       fetchColumnCorrections().catch(() => { /* fail-open */ });
+      // Restore user dashboards normally, or perform the one-time legacy
+      // dashboard cleanup before anything can be shown after a refresh.
+      syncDashboardsFromCloud().catch(() => { /* fail-open: local dashboard state remains usable */ });
     }
     prevAuthRef.current = isAuthenticated;
   }, [isAuthenticated, currentUser]);
