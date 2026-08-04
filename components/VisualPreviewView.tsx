@@ -457,6 +457,50 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               </div>
             </div>
             <div className="p-4 space-y-1">
+              {(['pct_diff_from_prev', 'diff_from_prev'] as TableCalculation[]).some(calc => (localFormatting.tableCalculations || []).includes(calc)) && (
+                <div className="mb-3 rounded-lg border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-500/[0.06] p-3 space-y-2">
+                  <label className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Comparison baseline</label>
+                  <select
+                    value={localFormatting.tableCalculationComparison?.mode || 'previous'}
+                    onChange={e => {
+                      const mode = e.target.value as 'previous' | 'selected_value';
+                      const values = Array.from(new Set(activeResult.data.map((row: any) => String(row[activeResult.xKey] ?? '')).filter(Boolean)));
+                      const currentReference = localFormatting.tableCalculationComparison?.referenceValue;
+                      const referenceValue = values.includes(currentReference || '') ? currentReference : values[0];
+                      updateFormatting({
+                        ...localFormatting,
+                        tableCalculationComparison: mode === 'selected_value'
+                          ? { mode, referenceValue }
+                          : { mode },
+                      });
+                    }}
+                    className="w-full rounded-md border border-emerald-200 dark:border-emerald-500/30 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                  >
+                    <option value="previous">Previous row (current chart order)</option>
+                    <option value="selected_value">Selected {activeResult.xKey} value</option>
+                  </select>
+                  {(localFormatting.tableCalculationComparison?.mode || 'previous') === 'selected_value' && (
+                    <select
+                      value={localFormatting.tableCalculationComparison?.referenceValue || String(activeResult.data[0]?.[activeResult.xKey] ?? '')}
+                      onChange={e => updateFormatting({
+                        ...localFormatting,
+                        tableCalculationComparison: { mode: 'selected_value', referenceValue: e.target.value },
+                      })}
+                      className="w-full rounded-md border border-emerald-200 dark:border-emerald-500/30 bg-white dark:bg-slate-800 px-2 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                      aria-label={`Compare every value with a selected ${activeResult.xKey}`}
+                    >
+                      {Array.from(new Set(activeResult.data.map((row: any) => String(row[activeResult.xKey] ?? '')).filter(Boolean))).map(value => (
+                        <option key={value} value={value}>{value}</option>
+                      ))}
+                    </select>
+                  )}
+                  <p className="text-[10px] leading-relaxed text-emerald-700/80 dark:text-emerald-300/80">
+                    {(localFormatting.tableCalculationComparison?.mode || 'previous') === 'selected_value'
+                      ? 'Every visible value is compared with the selected baseline.'
+                      : 'Each value is compared with the previous visible row, using the current chart order.'}
+                  </p>
+                </div>
+              )}
               {([
                 { id: 'percent_of_total', desc: 'Each value as % of column total' },
                 { id: 'rank_desc', desc: 'Rank highest to lowest' },
