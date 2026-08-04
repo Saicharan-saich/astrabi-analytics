@@ -151,7 +151,9 @@ export async function runAISQLPipeline(
     // The hybrid path deliberately starts with the local semantic engines, then
     // asks a selected GPT-5.6 model to write plan-constrained SQL. The LLM never
     // receives dataset rows; local DuckDB remains the only execution engine.
-    const runHybridSql = async (): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null }> => {
+    const runHybridSql = async (
+        plannerIssues: Array<{ code?: string; severity?: string; message?: string }> = [],
+    ): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null }> => {
         try {
             // Privacy mode gates what the LLM may see. Strict = metadata only, no
             // data values leave the browser. Enhanced = also send bounded category
@@ -192,7 +194,7 @@ export async function runAISQLPipeline(
                 : question;
             // Hybrid SQL: pass the locally governed plan to the selected GPT-5.6
             // model. It receives no dataset rows; DuckDB still executes locally.
-            const ds = await generateDirectSQL(anchoredQuestion, richSchema, plan);
+            const ds = await generateDirectSQL(anchoredQuestion, richSchema, plan, plannerIssues);
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
                 // Safety net: correct any literal whose casing/plural drifted from
@@ -442,7 +444,7 @@ export async function runAISQLPipeline(
         // selected GPT-5.6 model then drafts SQL constrained by that plan. If the
         // model is unavailable or rejected, the local compiler remains a safe
         // continuity fallback rather than executing untrusted SQL.
-        const _ds = await runHybridSql();
+        const _ds = await runHybridSql(_verification.issues);
         directSQL = _ds.sql;
         directSqlTokens = _ds.tokens;
         directSqlModel = _ds.model;
