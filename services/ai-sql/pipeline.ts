@@ -7,8 +7,8 @@
  *
  * Full pipeline:
  * 1. Build Semantic Model → from dataset
- * 2. Generate Analysis Plan → Step A (LLM intent extraction)
- * 3. Generate SQL → Step B (deterministic + LLM fallback)
+ * 2. Generate Analysis Plan → local semantic classifier and typed plan
+ * 3. Generate SQL → deterministic compiler, with governed LLM fallback
  * 4. Validate SQL → pre-execution checks
  * 5. Execute SQL → DuckDB-WASM on local data
  * 6. Validate Result → post-execution sanity checks
@@ -22,7 +22,7 @@
 import { Dataset } from '../../types';
 import { AISQLPipelineResult, AuditEntry, PlanFilter, PipelineStepTrace, PipelineTrace } from './types';
 import { buildSemanticModel } from './semanticLayer';
-import { generatePlan, generateLocalPlan } from './intentPlanner';
+import { generateLocalPlan } from './intentPlanner';
 import { generateSQLFromPlan, repairSQL } from './sqlGenerator';
 import { correctSQL, normalizeFilterOp } from './sqlCorrectionEngine';
 import { validateSQL, validateResult } from './sqlValidator';
@@ -202,21 +202,15 @@ export async function runAISQLPipeline(
             return { sql: null, tokens: ds.tokens || 0, model: ds.model, error: ds.error || 'empty SQL' };
         } catch (dErr: any) {
             const msg = dErr?.message || String(dErr);
-            console.warn('[Pipeline] Direct-SQL engine failed — deterministic backup will answer:', msg);
+            console.warn('[Pipeline] Direct-SQL fallback failed:', msg);
             return { sql: null, tokens: 0, error: msg };
         }
     };
 
     // ─── Step 2: Generate Analysis Plan ─────────────────────────────
-    // The direct-SQL engine is settled FIRST, because its answer decides whether
-    // the LLM planner is worth calling at all.
-    //
-    // When direct-SQL produced usable SQL, the planner's own SQL would be thrown
-    // away — the plan is then only needed to pick the chart, shape the summary
-    // and drive formatting. The deterministic classifier + field mapper cover
-    // that, so we build the plan locally instead: no second request, no ~5k-token
-    // prompt, and no waiting on it. The LLM planner is still called in full when
-    // direct-SQL fails, which is exactly when its judgement is needed.
+    // A typed, local plan is the normal path. It preserves the dataset-relative
+    // reporting anchor and is compiled locally; no row data or question text is
+    // sent to an LLM for questions the governed compiler can represent.
     reportProgress('Asking the AI...', 3);
     _s1 = performance.now();
     // The governed path starts with the deterministic planner. It understands
@@ -242,14 +236,14 @@ export async function runAISQLPipeline(
         },
     }, _s1);
 
-    // Inject the pre-resolved time filter if the LLM didn't include one
+    // Inject the pre-resolved time filter if the local plan did not include one
     if (resolvedTime.filter) {
         const dateField = resolvedTime.filter.field.toLowerCase();
         const hasDateFilter = plan.filters.some(f =>
             f.field.toLowerCase() === dateField && f.op === 'between'
         );
         if (!hasDateFilter) {
-            // Remove any this_ filters the LLM may have added
+            // Remove any unresolved relative-time filters before adding the concrete range
             plan.filters = plan.filters.filter(f => !f.op.startsWith('this_'));
             plan.filters.push(resolvedTime.filter);
             console.log('[Pipeline] Injected pre-resolved time filter into plan');
@@ -335,13 +329,9 @@ export async function runAISQLPipeline(
         console.warn(`[Pipeline] APDME: ${apdmeResult.violations.length} guardrail violation(s), penalty: -${apdmeResult.confidencePenalty}`);
     }
 
-    // Only ask the user to rephrase if the planner was unsure AND the AI couldn't
-    // write usable SQL either. When the AI did understand the question well enough
-    // to write SQL, answer it — the planner's uncertainty must not dead-end a
-    // question the AI handled fine. (The promise is already in flight, so this
-    // await costs nothing extra.)
-    if (plan.ambiguous && !_dsEarly.sql) {
-        console.log('[Pipeline] Plan is ambiguous and no AI SQL — requesting clarification');
+    // Ask for clarification instead of guessing when the governed plan is ambiguous.
+    if (plan.ambiguous) {
+        console.log('[Pipeline] Local plan is ambiguous — requesting clarification');
         const executionTime = performance.now() - startTime;
         return {
             plan,
@@ -365,11 +355,9 @@ export async function runAISQLPipeline(
         };
     }
 
-    // ─── Step 2d: Question Builder Mapping Gate (QB-first) ───────
-    // Try to answer through the hardened Question Builder engine first. The
-    // mapper lands the plan on the builder's finite, typed knob set; only when
-    // the question needs a shape the builder has no knob for do we fall back to
-    // the AI SQL correction engine below.
+    // ─── Step 2d: Deterministic Query Compiler ─────────────────────
+    // Map the typed plan onto the finite Question Builder knob set. Only a
+    // request outside that governed surface can escalate to the AI SQL fallback.
     reportProgress('Mapping to Question Builder...', 4);
     console.log('[Pipeline] Step 2d: Question Builder mapping gate...');
     _s1 = performance.now();
@@ -409,7 +397,7 @@ export async function runAISQLPipeline(
                 if (qbResult.shareOfTotal && qp.metrics[0]) qbShareValueKey = qp.metrics[0].alias;
                 console.log('[Pipeline] QB-mapped SQL:', qbSQL);
             } catch (qbErr: any) {
-                console.warn('[Pipeline] QB compilation failed, falling back to AI SQL:', qbErr.message);
+                console.warn('[Pipeline] QB compilation failed; governed fallback may be required:', qbErr.message);
                 qbSQL = null;
                 qbShareValueKey = null;
             }
@@ -423,24 +411,19 @@ export async function runAISQLPipeline(
         }
     }
     traceStep({
-        stepNumber: 5, name: antiJoin ? 'Anti-Join Knob (backup)' : 'Question Builder (backup)', engine: 'qbMapper', icon: '🎛️',
+        stepNumber: 5, name: antiJoin ? 'Anti-Join Compiler' : 'Question Builder Compiler', engine: 'qbMapper', icon: '🎛️',
         status: qbSQL ? 'pass' : 'skip',
         summary: qbSQL
-            ? `Deterministic backup ready (used only if the LLM fails) — ${qbNotes.join('; ')}`
-            : `No deterministic backup — ${qbReason || 'compilation failed'}`,
+            ? `Governed deterministic query compiled — ${qbNotes.join('; ')}`
+            : `Request requires an approved AI fallback — ${qbReason || 'compilation failed'}`,
         details: qbTraceDetails,
     }, _s1);
 
-    // ─── Step 2e: Direct-SQL Engine (the AI writes the SQL — always) ──
-    // The LLM writes SQL directly from the rich, METADATA-ONLY schema (roles,
-    // additivity, identifiers, date range — never raw rows). This ALWAYS runs
-    // and is the answer for every AI SQL question. The deterministic engines
-    // (the Question Builder knobs above and the correction engine below) are
-    // now only a QUIET BACKUP: they step in solely when the LLM is unavailable,
-    // rate-limited, or returns SQL that fails the read-only gate or won't run —
-    // so a user still gets an answer instead of an error.
-    // It was kicked off back in Step 1c, in parallel with the planner — so by the
-    // time we get here it is usually already finished (zero extra wait).
+    // ─── Step 2e: Governed Direct-SQL Fallback ─────────────────────
+    // When a request is outside the deterministic compiler's supported surface,
+    // the fallback receives only the semantic schema plus explicitly approved
+    // safe domains (if Enhanced privacy mode is enabled). It never receives
+    // dataset rows, and its route and model are returned as provenance.
     let directSQL: string | null = null;
     let directSqlTokens = 0;
     let directSqlModel: string | undefined;
@@ -469,15 +452,14 @@ export async function runAISQLPipeline(
     _s1 = performance.now();
     let sqlResult: { sql: string; method: string; explanation?: string };
     if (directSQL) {
-        // The LLM wrote the SQL from the schema — this is the answer.
+        // The governed fallback wrote SQL from the approved schema context.
         sqlResult = { sql: directSQL, method: 'llm-sql', explanation: '' };
         // The LLM's SQL already computes its own result shape, so drop the
         // Question Builder's share-of-total table calc (it only applies to
         // builder-compiled SQL).
         qbShareValueKey = null;
     } else if (qbSQL) {
-        // Quiet backup: the LLM was unavailable/unusable — use the deterministic
-        // Question Builder SQL so the user still gets an answer.
+        // Normal governed path: locally compiled SQL.
         sqlResult = { sql: qbSQL, method: 'question-builder', explanation: '' };
     } else {
         sqlResult = await generateSQLFromPlan(plan, semanticModel, apdmeResult.derivedMetrics);
@@ -496,25 +478,24 @@ export async function runAISQLPipeline(
     }, _s1);
 
     // ─── Step 3b: SQL Correction Engine ──────────────────────────
-    // Skipped when the Question Builder answered — its SQL is already the
-    // hardened, deterministic output.
+    // Skip correction when the typed compiler produced the query; its output is
+    // already constrained to the supported local surface.
     reportProgress('Correcting SQL...', 5);
     _s1 = performance.now();
     let currentSQL: string;
     let _correctionStatus: 'pass' | 'warn' | 'skip' = 'pass';
-    // Deterministic backup SQL, kept for the safety net so a failed LLM query can
-    // fall back to something that always runs.
+    // Keep the local SQL available as a safety net if a fallback query cannot run.
     let deterministicSQL: string | null = qbSQL;
     if (directSQL) {
-        // The LLM answered — this is the SQL we run.
+        // An approved fallback query is being executed.
         currentSQL = directSQL;
         _correctionStatus = 'skip';
     } else if (qbSQL) {
-        // Quiet backup — deterministic Question Builder SQL.
+        // Locally compiled deterministic SQL.
         currentSQL = qbSQL;
         _correctionStatus = 'skip';
     } else {
-        console.log('[Pipeline] Step 3b: LLM unavailable — running deterministic SQL Correction Engine (backup)...');
+        console.log('[Pipeline] Step 3b: Running deterministic SQL correction engine...');
         try {
             currentSQL = correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
             deterministicSQL = currentSQL;
