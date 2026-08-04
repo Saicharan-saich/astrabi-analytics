@@ -753,8 +753,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                 <p className="text-xs text-gray-500 dark:text-gray-400">
                   {filteredItems.length > 0
                     ? `${filteredItems.length} visual${filteredItems.length !== 1 ? 's' : ''}${selectedDatasetId ? ` · Filtered by dataset` : ''} · Drag to rearrange`
-                    : 'Pin visuals from Builder, NLQ, or Workbench'}
+                    : 'Create a visual in AI SQL or Question Builder, then pin it here'}
                 </p>
+                {dataset && (
+                  <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                    <Database className="w-3 h-3" /> Current dataset · {dataset.totalRows?.toLocaleString() || 0} rows
+                  </span>
+                )}
               </div>
 
               {/* ⚡ Live Connection Badge + Refresh */}
@@ -1251,12 +1256,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               <div className="w-18 h-18 rounded-2xl bg-violet-100 dark:bg-violet-500/15 border border-violet-200 dark:border-violet-500/20 flex items-center justify-center mx-auto mb-5">
                 <LayoutDashboard className="w-9 h-9 text-violet-500 dark:text-violet-400/60" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Build Your Dashboard</h3>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Turn analysis into a clear story</h3>
               <p className="text-gray-500 dark:text-gray-400 mb-6 leading-relaxed text-sm">
-                Let us do it for you — one click turns your data into a full dashboard of the most useful charts. Or pin charts manually from the{' '}
-                <span className="text-violet-600 dark:text-violet-300 font-semibold">Question Builder</span>,{' '}
-                <span className="text-purple-600 dark:text-purple-300 font-semibold">Ask Data</span>, or{' '}
-                <span className="text-teal-600 dark:text-teal-300 font-semibold">Workbench</span>.
+                Start with a useful dashboard from your current dataset, or pin individual visuals as you explore in{' '}
+                <span className="text-violet-600 dark:text-violet-300 font-semibold">Question Builder</span> and{' '}
+                <span className="text-purple-600 dark:text-purple-300 font-semibold">AI SQL</span>.
               </p>
               {onBuildDashboard && dataset && (
                 <button
@@ -1265,7 +1269,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                   className="inline-flex items-center gap-2 px-5 py-2.5 mb-7 rounded-xl text-sm font-semibold text-white bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 shadow-lg shadow-indigo-500/25 hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
                 >
                   <Sparkles className="w-4 h-4" />
-                  {isBuildingDashboard ? 'Building…' : 'Build my dashboard'}
+                  {isBuildingDashboard ? 'Building…' : 'Create a starter dashboard'}
                 </button>
               )}
               <div className="flex items-center justify-center gap-5 text-xs text-gray-400 dark:text-gray-500">
