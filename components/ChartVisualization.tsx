@@ -1139,6 +1139,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const isBarVariant = chartType === 'bar' || chartType === 'horizontalBar' || chartType === 'stackedBar' || chartType === 'groupedBar' || chartType === 'waterfall' || chartType === 'funnel' || chartType === 'lollipop' || chartType === 'combo';
         const isStacked = chartType === 'stackedBar' || chartType === 'stackedArea' || chartType === 'waterfall';
         const isHorizontal = chartType === 'horizontalBar' || chartType === 'funnel';
+        // Difference calculations can legitimately be negative. Keep the familiar
+        // zero baseline for positive-only charts, but do not clip negative bars.
+        const hasNegativeValues = transformedData.some(row => Number(row[yKey]) < 0);
         const fontSize = formatting ? FONT_SIZES[formatting.fontSize || 'md'] : 12;
         const xVisible = formatting?.showXAxis ?? formatting?.showAxis ?? false;
         const yVisible = formatting?.showYAxis ?? formatting?.showAxis ?? false;
@@ -1369,7 +1372,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 x: {
                     display: xVisible ?? true,
                     stacked: isStacked,
-                    ...(isHorizontal ? { beginAtZero: true, min: 0 } : {}),
+                    ...(isHorizontal && !hasNegativeValues ? { beginAtZero: true, min: 0 } : {}),
                     grid: {
                         display: formatting?.showGridLines ?? false, // Clean: no X grid by default
                         drawBorder: false,
@@ -1400,7 +1403,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 },
                 y: {
                     display: yVisible ?? true,
-                    ...(isHorizontal ? {} : { min: 0, beginAtZero: true }),
+                    ...(isHorizontal || hasNegativeValues ? {} : { min: 0, beginAtZero: true }),
                     stacked: isStacked,
                     grid: {
                         display: formatting?.showGridLines ?? true,
