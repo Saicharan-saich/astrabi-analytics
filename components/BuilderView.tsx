@@ -27,11 +27,9 @@ interface BuilderViewProps {
     isLiveRefreshing?: boolean;
     refreshSchedule?: RefreshSchedule;
     onScheduleChange?: (schedule: RefreshSchedule) => void;
-    /** Opens the selected calculation in the dedicated full-page explorer. */
-    onOpenAnalyticsExplorer?: (result: AnalysisResult, formatting: FormattingConfig) => void;
 }
 
-export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange, onOpenAnalyticsExplorer }) => {
+export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange }) => {
     // ── Session persistence key (scoped to dataset) ──
     const storageKey = `qi_builder_${dataset.id}`;
     const savedSession = useMemo(() => {
@@ -51,6 +49,9 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [lastRunConfig, setLastRunConfig] = useState<any>(savedSession?.config || null);
     const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
     const [isBuilderCollapsed, setIsBuilderCollapsed] = useState(false);
+    // Full-screen mode is intentionally local to this Builder instance. Keeping
+    // the same instance alive preserves the query, result, filters and formatting.
+    const [isAnalyticsExplorer, setIsAnalyticsExplorer] = useState(false);
     const [contentTab, setContentTab] = useState<'visual' | 'sql' | 'data'>('visual');
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const [forceGridMode, setForceGridMode] = useState<'auto' | 'grid' | 'combined'>('auto');
@@ -328,18 +329,32 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         const nextFormatting = { ...formatting, tableCalculations };
 
         onUpdateFormatting(nextFormatting);
-        // Opening happens only when a calculation is enabled. The Builder itself
-        // remains mounted behind the explorer, so query/filter state is retained.
+        // The explorer is a mode of this exact Builder instance, not a copied
+        // preview. Its result and all Question Builder controls stay live.
         if (!isSelected && tableCalculations.length > 0 && result) {
-            onOpenAnalyticsExplorer?.(result, nextFormatting);
+            setIsAnalyticsExplorer(true);
         }
-    }, [formatting, onUpdateFormatting, onOpenAnalyticsExplorer, result]);
+    }, [formatting, onUpdateFormatting, result]);
 
     return (
         <div className="flex flex-col h-full bg-slate-50">
+            {isAnalyticsExplorer && (
+                <div className="flex items-center justify-between px-5 py-3 bg-white border-b border-slate-200 shadow-sm shrink-0 z-30">
+                    <div>
+                        <div className="text-sm font-black text-slate-900">Analytics Explorer</div>
+                        <div className="text-xs text-slate-500">{result?.yLabel || 'Explore your current analysis'}</div>
+                    </div>
+                    <button
+                        onClick={() => setIsAnalyticsExplorer(false)}
+                        className="px-3 py-2 text-xs font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 rounded-lg hover:bg-indigo-100 transition-colors"
+                    >
+                        ← Back to Question Builder
+                    </button>
+                </div>
+            )}
 
             {/* â”€â”€â”€ COLLAPSIBLE BUILDER â”€â”€â”€ */}
-            <div className={`relative bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible'}`}>
+            <div className={`relative bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isAnalyticsExplorer ? 'hidden' : (isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible')}`}>
                 <QuestionBuilder
                     key={editingItemId || 'default'}
                     dataset={dataset}
@@ -925,7 +940,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                     </div>
                                                 )}
                                                 {(formatting.tableCalculations || []).length > 0 && (
-                                                    <button onClick={() => onUpdateFormatting({ ...formatting, tableCalculations: [] })} className="mt-1 text-[11px] text-slate-400 hover:text-red-500 transition-colors cursor-pointer">Clear all calculations</button>
+                                                    <div className="mt-2 flex items-center gap-3">
+                                                        <button onClick={() => setIsAnalyticsExplorer(true)} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer">Open Analytics Explorer →</button>
+                                                        <button onClick={() => onUpdateFormatting({ ...formatting, tableCalculations: [] })} className="text-[11px] text-slate-400 hover:text-red-500 transition-colors cursor-pointer">Clear all calculations</button>
+                                                    </div>
                                                 )}
                                             </div>
                                         </div>
