@@ -13,6 +13,17 @@ export type TableCalculation =
     | 'variance'
     | 'linear_forecast';
 
+export interface TableCalculationComparison {
+    /**
+     * Previous uses the current chart result order. Selected value applies one
+     * category's value as the baseline for every visible row.
+     */
+    mode: 'previous' | 'selected_value';
+    referenceValue?: string;
+    /** Supplied by the chart so the utility can resolve the selected category. */
+    dimensionKey?: string;
+}
+
 export interface CalculationResult {
     transformedData: any[];
     yLabel: string;
@@ -29,7 +40,8 @@ export function applyTableCalculation(
     originalYLabel: string,
     originalNumberFormat: string = 'raw',
     outputKey?: string,
-    movingAvgWindow: number = 3
+    movingAvgWindow: number = 3,
+    comparison?: TableCalculationComparison
 ): CalculationResult {
 
     if (!data || data.length === 0 || calculation === 'none') {
@@ -45,6 +57,12 @@ export function applyTableCalculation(
     let suggestedNumberFormat: 'raw' | 'currency_usd' | 'currency_eur' | 'percent' | 'compact';
 
     const targetKey = outputKey || yKey;
+    const referenceRow = comparison?.mode === 'selected_value' && comparison.dimensionKey && comparison.referenceValue !== undefined
+        ? data.find(row => String(row[comparison.dimensionKey!]) === String(comparison.referenceValue))
+        : undefined;
+    const referenceBaseline = referenceRow ? Number(referenceRow[yKey]) || 0 : undefined;
+    const hasSelectedBaseline = referenceBaseline !== undefined;
+    const selectedBaselineLabel = comparison?.referenceValue || 'selected value';
 
     switch (calculation) {
         case 'percent_of_total': {
@@ -113,29 +131,37 @@ export function applyTableCalculation(
 
         case 'pct_diff_from_prev': {
             transformedData = data.map((row, idx) => {
-                if (idx === 0) {
+                if (!hasSelectedBaseline && idx === 0) {
                     return { ...row, [targetKey]: 0 };
                 }
                 const current = Number(row[yKey]) || 0;
-                const prev = Number(data[idx - 1][yKey]) || 0;
-                const pctChange = prev !== 0 ? ((current - prev) / prev) * 100 : 0;
+                const baseline = hasSelectedBaseline
+                    ? referenceBaseline!
+                    : Number(data[idx - 1][yKey]) || 0;
+                const pctChange = baseline !== 0 ? ((current - baseline) / baseline) * 100 : 0;
                 return { ...row, [targetKey]: pctChange };
             });
-            yLabel = `% Change from Previous (${originalYLabel})`;
+            yLabel = hasSelectedBaseline
+                ? `% Change vs ${selectedBaselineLabel} (${originalYLabel})`
+                : `% Change from Previous (${originalYLabel})`;
             suggestedNumberFormat = 'percent';
             break;
         }
 
         case 'diff_from_prev': {
             transformedData = data.map((row, idx) => {
-                if (idx === 0) {
+                if (!hasSelectedBaseline && idx === 0) {
                     return { ...row, [targetKey]: 0 };
                 }
                 const current = Number(row[yKey]) || 0;
-                const prev = Number(data[idx - 1][yKey]) || 0;
-                return { ...row, [targetKey]: current - prev };
+                const baseline = hasSelectedBaseline
+                    ? referenceBaseline!
+                    : Number(data[idx - 1][yKey]) || 0;
+                return { ...row, [targetKey]: current - baseline };
             });
-            yLabel = `Difference from Previous (${originalYLabel})`;
+            yLabel = hasSelectedBaseline
+                ? `Difference vs ${selectedBaselineLabel} (${originalYLabel})`
+                : `Difference from Previous (${originalYLabel})`;
             suggestedNumberFormat = originalNumberFormat as any;
             break;
         }
