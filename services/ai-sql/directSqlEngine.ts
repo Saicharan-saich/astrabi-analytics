@@ -9,7 +9,7 @@
  *
  * Privacy is unchanged: only the schema (names + types + FKs) reaches the model.
  */
-import { fetchWithFallback, PLANNER_MODEL } from './modelConfig';
+import { fetchWithFallback, selectAISQLModel } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
 
 const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
@@ -43,7 +43,9 @@ export async function generateDirectSQL(question: string, schemaText: string): P
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: `Schema:\n${schemaText}\n\nQuestion: ${question}\n\nSQL:` },
     ];
-    const { data } = await fetchWithFallback(messages as any, { temperature: 0, max_tokens: 2000, model: PLANNER_MODEL });
+    const model = selectAISQLModel(question, 'sql');
+    console.log(`[AI SQL] Direct SQL model route: ${model}`);
+    const { data } = await fetchWithFallback(messages as any, { temperature: 0, max_tokens: 2000, model });
     const content = data.choices?.[0]?.message?.content || '';
     const usage = data.usage || {};
     const tokens = usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0)) || 0;
