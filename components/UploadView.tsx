@@ -1,5 +1,5 @@
 import React from 'react';
-import { Upload, FileSpreadsheet, Database, Zap, Trash2, FolderOpen, Clock, Sparkles, BarChart2, Brain } from 'lucide-react';
+import { Upload, FileSpreadsheet, Database, Zap, Trash2, FolderOpen, Clock, Sparkles, BarChart2, Brain, ShieldCheck } from 'lucide-react';
 import { ConnectorsPanel } from './ConnectorsPanel';
 import { Dataset, LiveConnectionInfo } from '../types';
 
@@ -33,22 +33,22 @@ export const UploadView: React.FC<UploadViewProps> = ({
                     {/* Hero Section */}
                     <div className="text-center mb-12">
                         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-violet-500/10 border border-violet-500/20 mb-6">
-                            <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-                            <span className="text-xs font-bold text-violet-400 uppercase tracking-wider">AI-Powered Analytics</span>
+                            <ShieldCheck className="w-3.5 h-3.5 text-violet-400" />
+                            <span className="text-xs font-bold text-violet-400 uppercase tracking-wider">Private by design</span>
                         </div>
                         <h1 className="text-4xl md:text-5xl font-extrabold tracking-tight mb-4">
-                            <span className="gradient-text">Analyze Data Instantly</span>
+                            <span className="gradient-text">Start with your data. Keep control.</span>
                         </h1>
                         <p className="text-lg text-gray-500 dark:text-gray-400 max-w-2xl mx-auto font-medium">
-                            Upload your CSV/Excel files or connect to a database to instantly generate insights.
+                            Bring in a file or connect a data source, then move from clean data to clear decisions in one focused workspace.
                         </p>
 
                         {/* Feature pills */}
                         <div className="flex items-center justify-center gap-4 mt-6">
                             {[
-                                { icon: <BarChart2 className="w-3.5 h-3.5" />, label: '20+ Chart Types' },
-                                { icon: <Brain className="w-3.5 h-3.5" />, label: 'AI SQL Engine' },
-                                { icon: <Zap className="w-3.5 h-3.5" />, label: 'Real-time Insights' },
+                                { icon: <ShieldCheck className="w-3.5 h-3.5" />, label: 'Local-first processing' },
+                                { icon: <Brain className="w-3.5 h-3.5" />, label: 'Governed AI answers' },
+                                { icon: <BarChart2 className="w-3.5 h-3.5" />, label: 'Presentation-ready visuals' },
                             ].map((feat, i) => (
                                 <div key={i} className="flex items-center gap-1.5 text-xs font-medium text-gray-500 dark:text-gray-500">
                                     <span className="text-indigo-400">{feat.icon}</span>
@@ -65,8 +65,8 @@ export const UploadView: React.FC<UploadViewProps> = ({
                             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-violet-500/20 to-indigo-500/20 flex items-center justify-center mb-6 border border-violet-500/10">
                                 <Upload className="w-6 h-6 text-violet-400" />
                             </div>
-                            <h3 className="text-xl font-bold text-white dark:text-white mb-2">Upload Files</h3>
-                            <p className="text-sm text-gray-400 mb-6 font-medium">Support for .csv and .xlsx files. Large datasets processed locally via Web Workers.</p>
+                            <h3 className="text-xl font-bold text-white dark:text-white mb-2">Upload a private dataset</h3>
+                            <p className="text-sm text-gray-400 mb-6 font-medium">CSV and Excel files are prepared locally in your browser, including large files processed through Web Workers.</p>
 
                             <label className={`
                                 flex flex-col items-center justify-center w-full p-6 rounded-xl border-2 border-dashed 
@@ -90,7 +90,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
                                     disabled={processing}
                                     className="text-xs text-gray-400 hover:text-violet-300 flex items-center gap-1.5 transition-colors font-bold px-3 py-1.5 rounded-lg hover:bg-violet-500/10"
                                 >
-                                    <Zap className="w-3.5 h-3.5 text-amber-400" /> Try Sample Data
+                                    <Zap className="w-3.5 h-3.5 text-amber-400" /> Explore sample data
                                 </button>
                             </div>
                         </div>
@@ -100,8 +100,8 @@ export const UploadView: React.FC<UploadViewProps> = ({
                             <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center mb-6 border border-emerald-500/10">
                                 <Database className="w-6 h-6 text-emerald-400" />
                             </div>
-                            <h3 className="text-xl font-bold text-white dark:text-white mb-2">Connect Data Source</h3>
-                            <p className="text-sm text-gray-400 mb-6 font-medium">Directly connect to SQL Server or PostgreSQL databases.</p>
+                            <h3 className="text-xl font-bold text-white dark:text-white mb-2">Connect a data source</h3>
+                            <p className="text-sm text-gray-400 mb-6 font-medium">Bring SQL Server or PostgreSQL data into the same governed analytics workspace.</p>
 
                             <div className="flex-1 -mx-4">
                                 <ConnectorsPanel onDataReady={onConnectorLoad} />
@@ -149,7 +149,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
                                                     </div>
                                                     {isActive && (
                                                         <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
-                                                            Active
+                                                            Current workspace
                                                         </span>
                                                     )}
                                                 </div>
@@ -167,7 +167,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
                                                 )}
                                                 {isActive && (
                                                     <span className="flex-1 text-center text-xs text-emerald-400 font-semibold py-1.5">
-                                                        Currently Loaded
+                                                        Ready to analyse
                                                     </span>
                                                 )}
                                                 {onDeleteDataset && (
