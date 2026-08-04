@@ -183,7 +183,14 @@ export async function runAISQLPipeline(
                 richSchema += `\n\nThis dataset came from several tables. "data" is a pre-joined, flattened copy — convenient, but a one-to-many join means totals over it can be double-counted. The original tables are also available and are the safer choice when a question spans more than one of them:\n\n${joinCtx.description}`;
                 console.log(`[Pipeline] Multi-table schema shared: ${joinCtx.tableNames.join(', ')}`);
             }
-            const ds = await generateDirectSQL(question, richSchema);
+            // Preserve the dataset-relative reporting clock even on the
+            // approved direct-SQL fallback. Relative terms must never resolve
+            // against the browser/server wall clock for historical datasets.
+            const anchorDate = semanticModel.timeContext?.anchorDate || semanticModel.timeContext?.maxDate;
+            const anchoredQuestion = anchorDate
+                ? `${question}\n\nDataset reporting anchor: ${anchorDate}. Interpret relative dates such as "this month" against this dataset anchor, and use date literals rather than CURRENT_DATE, NOW(), or CURRENT_TIMESTAMP.`
+                : question;
+            const ds = await generateDirectSQL(anchoredQuestion, richSchema);
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
                 // Safety net: correct any literal whose casing/plural drifted from
@@ -429,9 +436,13 @@ export async function runAISQLPipeline(
     let directSqlModel: string | undefined;
     let directSqlError: string | null = null;
     {
-        // Only reach the raw-SQL LLM fallback when the governed compiler has no
-        // safe representation for the request. This remains visible to the user.
-        const _ds = qbSQL ? _dsEarly : await runDirectSql();
+        // The local correction engine has a deterministic period-comparison
+        // compiler. Keep comparison requests on that path rather than asking an
+        // LLM to reinterpret the reporting clock or choose a result shape.
+        const locallyCompilable = Boolean(qbSQL || plan.comparison);
+        // Only reach the raw-SQL LLM fallback when no governed compiler can
+        // represent the request. This remains visible to the user.
+        const _ds = locallyCompilable ? _dsEarly : await runDirectSql();
         directSQL = _ds.sql;
         directSqlTokens = _ds.tokens;
         directSqlModel = _ds.model;
@@ -441,7 +452,9 @@ export async function runAISQLPipeline(
             status: directSQL ? 'pass' : 'skip',
             summary: directSQL
                 ? 'Escalated fallback: LLM wrote SQL after the deterministic compiler could not represent the request'
-                : 'Not needed — deterministic Question Builder compilation succeeded',
+                : plan.comparison
+                    ? 'Not needed — deterministic period-comparison compiler selected'
+                    : 'Not needed — deterministic Question Builder compilation succeeded',
             details: { sql: directSQL, error: directSqlError, tokens: directSqlTokens, model: directSqlModel || null },
         }, _directSqlStart);
     }
