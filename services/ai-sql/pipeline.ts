@@ -148,10 +148,10 @@ export async function runAISQLPipeline(
     }
 
     const _directSqlStart = performance.now();
-    // This is deliberately lazy. Governed AI SQL only invokes an LLM after the
-    // deterministic semantic plan and Question Builder compiler cannot represent
-    // the request, so ordinary analytics questions never become raw LLM SQL.
-    const runDirectSql = async (): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null }> => {
+    // The hybrid path deliberately starts with the local semantic engines, then
+    // asks a selected GPT-5.6 model to write plan-constrained SQL. The LLM never
+    // receives dataset rows; local DuckDB remains the only execution engine.
+    const runHybridSql = async (): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null }> => {
         try {
             // Privacy mode gates what the LLM may see. Strict = metadata only, no
             // data values leave the browser. Enhanced = also send bounded category
@@ -190,7 +190,9 @@ export async function runAISQLPipeline(
             const anchoredQuestion = anchorDate
                 ? `${question}\n\nDataset reporting anchor: ${anchorDate}. Interpret relative dates such as "this month" against this dataset anchor, and use date literals rather than CURRENT_DATE, NOW(), or CURRENT_TIMESTAMP.`
                 : question;
-            const ds = await generateDirectSQL(anchoredQuestion, richSchema);
+            // Hybrid SQL: pass the locally governed plan to the selected GPT-5.6
+            // model. It receives no dataset rows; DuckDB still executes locally.
+            const ds = await generateDirectSQL(anchoredQuestion, richSchema, plan);
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
                 // Safety net: correct any literal whose casing/plural drifted from
@@ -436,13 +438,11 @@ export async function runAISQLPipeline(
     let directSqlModel: string | undefined;
     let directSqlError: string | null = null;
     {
-        // The local correction engine has a deterministic period-comparison
-        // compiler. Keep comparison requests on that path rather than asking an
-        // LLM to reinterpret the reporting clock or choose a result shape.
-        const locallyCompilable = Boolean(qbSQL || plan.comparison);
-        // Only reach the raw-SQL LLM fallback when no governed compiler can
-        // represent the request. This remains visible to the user.
-        const _ds = locallyCompilable ? _dsEarly : await runDirectSql();
+        // Hybrid path: the local engines build and verify the plan first; the
+        // selected GPT-5.6 model then drafts SQL constrained by that plan. If the
+        // model is unavailable or rejected, the local compiler remains a safe
+        // continuity fallback rather than executing untrusted SQL.
+        const _ds = await runHybridSql();
         directSQL = _ds.sql;
         directSqlTokens = _ds.tokens;
         directSqlModel = _ds.model;
@@ -451,10 +451,8 @@ export async function runAISQLPipeline(
             stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
             status: directSQL ? 'pass' : 'skip',
             summary: directSQL
-                ? 'Escalated fallback: LLM wrote SQL after the deterministic compiler could not represent the request'
-                : plan.comparison
-                    ? 'Not needed — deterministic period-comparison compiler selected'
-                    : 'Not needed — deterministic Question Builder compilation succeeded',
+                ? `Hybrid SQL: ${directSqlModel || 'GPT-5.6'} wrote plan-constrained SQL from metadata only`
+                : 'Hybrid SQL unavailable or rejected — continuing with the local deterministic compiler',
             details: { sql: directSQL, error: directSqlError, tokens: directSqlTokens, model: directSqlModel || null },
         }, _directSqlStart);
     }
@@ -483,10 +481,10 @@ export async function runAISQLPipeline(
         stepNumber: 6, name: 'SQL Generator', engine: 'sqlGenerator', icon: '⚡',
         status: 'pass',
         summary: directSQL
-            ? 'Escalated fallback: SQL written by the LLM from the metadata-only schema'
+            ? `Hybrid SQL: ${directSqlModel || 'GPT-5.6'} generated SQL from the governed plan and metadata-only schema`
             : qbSQL
-                ? 'Governed deterministic Question Builder SQL'
-                : `Generated via ${sqlMethod === 'deterministic' ? 'deterministic rules' : 'AI/LLM fallback'}`,
+                ? 'Local continuity fallback: deterministic Question Builder SQL'
+                : `Local continuity fallback: generated via ${sqlMethod === 'deterministic' ? 'deterministic rules' : 'AI/LLM fallback'}`,
         details: { method: sqlMethod, sql: aiGeneratedSQL },
     }, _s1);
 
@@ -523,9 +521,9 @@ export async function runAISQLPipeline(
         stepNumber: 7, name: 'SQL Correction Engine', engine: 'sqlCorrectionEngine', icon: '🔧',
         status: _correctionStatus,
         summary: _correctionStatus === 'skip'
-            ? (directSQL ? 'Skipped — escalated LLM fallback produced the SQL' : 'Skipped — governed deterministic compiler produced the SQL')
+            ? (directSQL ? 'Skipped — plan-constrained GPT SQL passed the safety gate' : 'Skipped — local deterministic compiler produced the SQL')
             : _correctionStatus === 'pass'
-                ? 'Backup: SQL rebuilt deterministically — verified column names, GROUP BY, aggregations'
+                ? 'Local continuity fallback: SQL rebuilt deterministically — verified column names, GROUP BY, aggregations'
                 : 'Correction engine failed — using AI-generated SQL as fallback',
         details: { correctedSQL: currentSQL, usedFallback: _correctionStatus === 'warn' },
     }, _s1);
@@ -1243,14 +1241,14 @@ export async function runAISQLPipeline(
 
     const provenance = directSQL
         ? {
-            strategy: 'llm-sql-fallback' as const,
+            strategy: 'hybrid-plan-llm-sql' as const,
             model: directSqlModel,
-            summary: `Escalated to ${directSqlModel || 'an AI model'} because this request could not be represented by the governed deterministic compiler.`,
+            summary: `${directSqlModel || 'GPT-5.6'} generated SQL from the governed local plan; the query ran only in local DuckDB.`,
             dataAccess: getEffectivePrivacyMode() === 'enhanced' ? 'approved_safe_values' as const : 'metadata_only' as const,
         }
         : {
             strategy: 'deterministic' as const,
-            summary: 'Answered locally using the semantic plan and deterministic analytics compiler. No data was sent to an AI model.',
+            summary: 'The GPT SQL draft was unavailable or rejected, so the governed local compiler answered this request without sending dataset rows to an AI model.',
             dataAccess: 'metadata_only' as const,
         };
 
