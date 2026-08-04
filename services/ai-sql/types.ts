@@ -413,8 +413,8 @@ export interface PipelineTrace {
 
 export interface AIQueryProvenance {
     /** Whether a deterministic compiler answered the question or an LLM fallback was needed. */
-    strategy: 'deterministic' | 'llm-sql-fallback' | 'llm-plan';
-    /** OpenRouter model used only when an LLM was needed. */
+    strategy: 'deterministic' | 'llm-sql-fallback' | 'llm-plan' | 'hybrid-plan-llm-sql';
+    /** OpenRouter model used when the hybrid LLM SQL draft succeeds. */
     model?: string;
     /** Plain-language explanation suitable for non-technical users. */
     summary: string;
