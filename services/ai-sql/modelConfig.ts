@@ -52,7 +52,7 @@ export interface AISQLModelRoute {
 export function selectAISQLRoute(question: string, workload: AISQLWorkload): AISQLModelRoute {
     const normalized = question.toLowerCase();
 
-    const needsDeepReasoning = /\b(join|across\s+(multiple|several)|subquery|cohort|retention|funnel|correlation|moving\s+(average|avg)|rolling\s+(average|avg)|what[-\s]?if|forecast|anomal(?:y|ies)|compound)\b/.test(normalized);
+    const needsDeepReasoning = /\b(join|across\s+(multiple|several)|subquery|cohort|retention|funnel|correlation|moving\s+(average|avg)|rolling\s+(average|avg)|what[-\s]?if|forecast|anomal(?:y|ies)|compound|fiscal\s+(?:year|quarter|calendar)|custom\s+calendar)\b/.test(normalized);
     if (needsDeepReasoning) {
         return { model: SOL_MODEL, tier: 'sol', workload, reason: 'Complex analytical shape requires deeper reasoning' };
     }
