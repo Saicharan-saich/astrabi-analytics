@@ -2,12 +2,15 @@ import React, { useMemo, useState } from 'react';
 import {
     Database, Columns, BarChart3, Hash, Calendar, Type, Key,
     TrendingUp, TrendingDown, ChevronDown, ChevronRight, Layers,
-    FileText, Eye
+    FileText, Eye, Table2
 } from 'lucide-react';
 import { Dataset } from '../types';
+import { DataExplorerView } from './DataExplorerView';
 
 interface DatasetSummaryViewProps {
     dataset: Dataset | null;
+    /** Lets legacy Data Explorer entry points open the explorer section directly. */
+    initialSection?: 'overview' | 'explore';
 }
 
 interface ColumnStats {
@@ -214,7 +217,8 @@ const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, 
     );
 };
 
-export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({ dataset }) => {
+export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({ dataset, initialSection = 'overview' }) => {
+    const [activeSection, setActiveSection] = useState<'overview' | 'explore'>(initialSection);
     const columnStats = useMemo(() => {
         if (!dataset?.rows || !dataset?.columns) return [];
         return dataset.columns.map(col =>
@@ -265,6 +269,28 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({ dataset 
                     </div>
                 </div>
 
+                {/* Workspace Sections */}
+                <div className="flex items-center gap-1 w-fit p-1 rounded-xl bg-white dark:bg-[#171c26] border border-gray-200 dark:border-white/[0.06] shadow-sm">
+                    <button
+                        onClick={() => setActiveSection('overview')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeSection === 'overview'
+                            ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04]'}`}
+                    >
+                        <BarChart3 className="w-4 h-4" /> Overview
+                    </button>
+                    <button
+                        onClick={() => setActiveSection('explore')}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeSection === 'explore'
+                            ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04]'}`}
+                    >
+                        <Table2 className="w-4 h-4" /> Data Explorer
+                    </button>
+                </div>
+
+                {activeSection === 'overview' ? (
+                    <>
                 {/* Overview KPI Cards */}
                 {overviewStats && (
                     <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -299,46 +325,13 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({ dataset 
                         ))}
                     </div>
                 </div>
-
-                {/* Quick Data Preview */}
-                {dataset.rows && dataset.rows.length > 0 && (
-                    <div className="bg-white dark:bg-[#171c26] rounded-xl border border-gray-200 dark:border-white/[0.06] overflow-hidden">
-                        <div className="px-4 py-3 border-b border-gray-100 dark:border-white/5">
-                            <h3 className="text-sm font-bold text-gray-700 dark:text-white flex items-center gap-2">
-                                <BarChart3 className="w-4 h-4 text-amber-500" />
-                                Data Preview (first 10 rows)
-                            </h3>
-                        </div>
-                        <div className="overflow-x-auto">
-                            <table className="w-full text-xs">
-                                <thead>
-                                    <tr className="border-b border-gray-100 dark:border-white/5">
-                                        {dataset.columns.map(col => (
-                                            <th key={col.name} className="text-left text-slate-400 font-bold uppercase tracking-wider px-3 py-2 bg-gray-50 dark:bg-slate-800/50 sticky top-0 whitespace-nowrap">
-                                                {col.name}
-                                            </th>
-                                        ))}
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {dataset.rows.slice(0, 10).map((row, i) => (
-                                        <tr key={i} className="border-b border-gray-50 dark:border-white/[0.03] hover:bg-gray-50 dark:hover:bg-white/[0.02]">
-                                            {dataset.columns.map(col => (
-                                                <td key={col.name} className="px-3 py-2 text-gray-900 dark:text-white font-mono whitespace-nowrap">
-                                                    {row[col.name] !== null && row[col.name] !== undefined
-                                                        ? (typeof row[col.name] === 'number'
-                                                            ? row[col.name].toLocaleString(undefined, { maximumFractionDigits: 2 })
-                                                            : String(row[col.name]).substring(0, 40))
-                                                        : <span className="text-slate-300 dark:text-slate-600 italic">null</span>}
-                                                </td>
-                                            ))}
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                    </>
+                ) : (
+                    <div className="h-[calc(100vh-12rem)] min-h-[520px] bg-slate-900 rounded-xl border border-white/[0.06] overflow-hidden">
+                        <DataExplorerView dataset={dataset} />
                     </div>
                 )}
+
             </div>
         </div>
     );
