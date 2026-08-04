@@ -877,10 +877,11 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                                         : { mode },
                                                                 });
                                                             }}
-                                                            className="w-full rounded-md border border-emerald-300 bg-white px-2 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                                                            className="w-full rounded-md border border-emerald-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                                                            style={{ colorScheme: 'light' }}
                                                         >
-                                                            <option value="previous">Previous row (current chart order)</option>
-                                                            <option value="selected_value">Selected {result.xKey} value</option>
+                                                            <option value="previous" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Previous row (current chart order)</option>
+                                                            <option value="selected_value" style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>Selected {result.xKey} value</option>
                                                         </select>
                                                         {(formatting.tableCalculationComparison?.mode || 'previous') === 'selected_value' && (
                                                             <select
@@ -889,11 +890,12 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                                     ...formatting,
                                                                     tableCalculationComparison: { mode: 'selected_value', referenceValue: e.target.value },
                                                                 })}
-                                                                className="w-full rounded-md border border-emerald-300 bg-white px-2 py-1.5 text-xs font-medium outline-none focus:ring-2 focus:ring-emerald-500"
+                                                                className="w-full rounded-md border border-emerald-300 bg-white px-2 py-1.5 text-xs font-medium text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                                                            style={{ colorScheme: 'light' }}
                                                                 aria-label={`Compare every value with a selected ${result.xKey}`}
                                                             >
                                                                 {Array.from(new Set((result.data || []).map((row: any) => String(row[result.xKey] ?? '')).filter(Boolean))).map(value => (
-                                                                    <option key={value} value={value}>{value}</option>
+                                                                    <option key={value} value={value} style={{ color: '#0f172a', backgroundColor: '#ffffff' }}>{value}</option>
                                                                 ))}
                                                             </select>
                                                         )}
