@@ -1191,9 +1191,15 @@ export async function runAISQLPipeline(
         const warns = _verification.issues.filter(i => i.severity === 'warn').length;
         if (errs || warns) {
             confidence.score = Math.max(0, confidence.score - errs * 30 - warns * 10);
-            confidence.level = confidence.score >= 70 ? 'high' : confidence.score >= 40 ? 'medium' : 'low';
+
+            // A known question-faithfulness failure must never be shown as a
+            // high-confidence answer. Warnings remain useful, but are explicitly
+            // presented as "needs review"; errors are low confidence.
+            const confidenceCap = errs > 0 ? 39 : 69;
+            confidence.score = Math.min(confidence.score, confidenceCap);
+            confidence.level = errs > 0 ? 'low' : 'medium';
             confidence.reasons.push(..._verification.issues.map(i => i.message));
-            console.log(`[Pipeline] Verification penalty applied: -${errs * 30 + warns * 10} → ${confidence.score}/100`);
+            console.log(`[Pipeline] Verification penalty/cap applied: -${errs * 30 + warns * 10}, max ${confidenceCap} → ${confidence.score}/100`);
         }
     }
     traceStep({
