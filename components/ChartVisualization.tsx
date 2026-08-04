@@ -275,7 +275,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 yLabel || '',
                 formatting?.numberFormat,
                 undefined,
-                formatting?.movingAvgWindow || 3
+                formatting?.movingAvgWindow || 3,
+                formatting?.tableCalculationComparison
+                    ? { ...formatting.tableCalculationComparison, dimensionKey: xKey }
+                    : undefined
             );
         // Output-boundary safety net: no NaN/Infinity can ever reach a chart,
         // regardless of which engine or table-calc produced the data.
