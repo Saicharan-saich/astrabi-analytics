@@ -6,7 +6,6 @@
  * checks that generated SQL has not silently dropped them.
  */
 import type { AnalysisPlan } from './types';
-import type { VerificationIssue } from './planVerification';
 
 export interface QueryContract {
     requirements: string[];
@@ -30,7 +29,7 @@ const FISCAL_CUE = /\bfiscal\s+(?:year|quarter|calendar)\b/i;
 export function buildQueryContract(
     question: string,
     plan: AnalysisPlan,
-    verification: Array<Pick<VerificationIssue, 'code' | 'message'>> = [],
+    verification: Array<{ code?: string; message?: string }> = [],
 ): QueryContract {
     const requirements: string[] = [];
     const requiresFiscalCalendar = FISCAL_CUE.test(question);
