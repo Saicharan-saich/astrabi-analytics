@@ -1710,6 +1710,7 @@ function App() {
                         // so returning preserves the user's calculation choices.
                         if (visualPreviewReturnTab === Tab.BUILDER) updateFormatting(nextFormatting);
                       }}
+                      useLightSurface={visualPreviewReturnTab === Tab.BUILDER}
                     />
                   )}
                 </div>
