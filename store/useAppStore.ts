@@ -68,6 +68,37 @@ export async function syncDashboardsFromCloud(): Promise<void> {
         console.log('[DashSync] 📥 Pulling dashboards from cloud...');
         const fetched = await fetchCloudDashboards();
 
+        // Product reset: dashboards created before this release were legacy/demo
+        // content. Purge them once from both browser storage and the cloud so a
+        // refresh cannot restore them. Dashboards created after this reset use
+        // the normal CRUD flow and are never touched here.
+        if (useAppStore.getState().resetLegacyDashboards) {
+            const legacyIds = [...new Set([
+                ...fetched.map((dashboard: any) => dashboard.id),
+                ...(useAppStore.getState().deletedDashboardIds || []),
+            ])];
+            useAppStore.setState({
+                dashboards: [],
+                activeDashboardId: null,
+                deletedDashboardIds: legacyIds,
+                resetLegacyDashboards: false,
+                ...syncFromActive([], null),
+            });
+            console.log(`[DashSync] Removing ${legacyIds.length} legacy dashboard(s) from cloud and local storage`);
+            for (const id of legacyIds) {
+                deleteCloudDb(id)
+                    .then(ok => {
+                        if (ok) {
+                            useAppStore.setState(state => ({
+                                deletedDashboardIds: (state.deletedDashboardIds || []).filter(x => x !== id),
+                            }));
+                        }
+                    })
+                    .catch(() => { /* retain the tombstone and retry on the next sync */ });
+            }
+            return;
+        }
+
         // Drop anything the user deleted locally. Without this the pull hands
         // back a dashboard they just removed, because the cloud copy outlived
         // it. Any tombstone still present means the cloud delete never
@@ -200,6 +231,8 @@ interface MultiDashboardState {
     deleteDashboard: (id: string) => void;
     /** Dashboards deleted locally whose cloud copy is not yet confirmed gone. */
     deletedDashboardIds: string[];
+    /** One-time migration flag that removes pre-reset dashboards from local and cloud storage. */
+    resetLegacyDashboards: boolean;
     duplicateDashboard: (id: string) => string;
     setActiveDashboard: (id: string) => void;
 
@@ -379,6 +412,7 @@ export const useAppStore = create<AppStore>()(
             dashboards: [],
             activeDashboardId: null,
             deletedDashboardIds: [],
+            resetLegacyDashboards: false,
 
             // Synced backward-compat properties (updated after every mutation)
             items: [],
@@ -663,6 +697,7 @@ export const useAppStore = create<AppStore>()(
                 dashboards: state.dashboards,
                 activeDashboardId: state.activeDashboardId,
                 deletedDashboardIds: state.deletedDashboardIds,
+                resetLegacyDashboards: state.resetLegacyDashboards,
                 formatting: state.formatting,
                 queryHistory: state.queryHistory,
                 savedQuestions: state.savedQuestions,
@@ -671,6 +706,20 @@ export const useAppStore = create<AppStore>()(
             }),
             // ── Migration: v3 (single dashboard) → v4 (multi-dashboard) ──
             migrate: (persisted: any, version: number) => {
+                // v5 is intentionally a clean start for dashboards. The previous
+                // versions may contain seeded/demo dashboards in local storage;
+                // mark them for one-time cloud removal during the first sync.
+                if (persisted && version < 5) {
+                    persisted.dashboards = [];
+                    persisted.activeDashboardId = null;
+                    persisted.items = [];
+                    persisted.dashboardLayout = null;
+                    persisted.dashboardFilters = [];
+                    persisted.deletedDashboardIds = persisted.deletedDashboardIds || [];
+                    persisted.resetLegacyDashboards = true;
+                    console.log('[Store] Dashboard reset v5: legacy dashboards scheduled for removal.');
+                }
+
                 if (persisted && !persisted.dashboards) {
                     const legacyItems = persisted.items || [];
                     const legacyLayout = persisted.dashboardLayout || null;
@@ -730,7 +779,7 @@ export const useAppStore = create<AppStore>()(
 
                 return persisted;
             },
-            version: 4,
+            version: 5,
             // ── Critical: sync backward-compat properties after EVERY rehydrate ──
             // The migrate function only runs on version mismatch. We need this to
             // always sync items/dashboardLayout/dashboardFilters from the active
