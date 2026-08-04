@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyTableCalculation } from './tableCalculations';
+import { applyMultipleCalculations, applyTableCalculation } from './tableCalculations';
 
 const shipModeSales = [
     { ship_mode: 'Standard Class', sales: 60000 },
@@ -70,6 +70,25 @@ describe('analytics comparison baselines', () => {
 
         expect(result.transformedData.map(row => row.sales)).toEqual([0, -40000, -45000, -55000]);
         expect(result.yLabel).toBe('Difference vs Standard Class (Sales)');
+    });
+
+    it('uses the selected baseline in the calculated-table path used by Question Builder', () => {
+        const result = applyMultipleCalculations(
+            shipModeSales,
+            'sales',
+            ['diff_from_prev'],
+            'Sales',
+            'currency_usd',
+            3,
+            {
+                mode: 'selected_value',
+                dimensionKey: 'ship_mode',
+                referenceValue: 'Standard Class',
+            },
+        );
+
+        expect(result.columns[0].key).toBe('calc_diff_from_prev');
+        expect(result.transformedData.map(row => row.calc_diff_from_prev)).toEqual([0, -40000, -45000, -55000]);
     });
 
     it('does not produce an infinite percentage when the selected baseline is zero', () => {
