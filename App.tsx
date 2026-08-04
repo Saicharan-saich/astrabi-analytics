@@ -6,6 +6,7 @@ import {
   AnalysisResult,
   Tab,
   ColumnType,
+  DatasetDomainProfile,
   UserRole
 } from './types';
 import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, getSampleData } from './services/analysisEngine';
@@ -18,8 +19,6 @@ import { refreshLiveDataset } from './services/liveRefreshService';
 import { preloadDuckDB } from './services/duckdbEngine';
 import { Sidebar } from './components/Sidebar';
 import { UploadView } from './components/UploadView';
-import { ETLView } from './components/ETLView';
-import { DataStudioView } from './components/DataStudioView';
 import { DatasetSummaryView } from './components/DatasetSummaryView';
 import { WorkbenchView } from './components/WorkbenchView';
 import { BuilderView } from './components/BuilderView';
@@ -28,7 +27,6 @@ import { AISQLView } from './components/AISQLView';
 import { VisualPreviewView } from './components/VisualPreviewView';
 import { DerivedColumnsView } from './components/DerivedColumnsView';
 import { Dashboard } from './components/Dashboard';
-import { SchemaView } from './components/SchemaView';
 import { QuestionBuilder } from './components/QuestionBuilder';
 import { LoginPage } from './components/LoginPage';
 import { UserManagement } from './components/UserManagement';
@@ -44,7 +42,6 @@ import { DatasetSwitcher } from './components/DatasetSwitcher';
 import { saveDatasetToDB, loadAllDatasetsFromDB, deleteDatasetFromDB } from './services/datasetDB';
 import { inferDefaultAggregation } from './services/smartAggregation';
 import { DomainReviewModal } from './components/DomainReviewModal';
-import { ColumnMappingWizard } from './components/ColumnMappingWizard';
 import { SplashScreen } from './components/SplashScreen';
 import { SmartQuestionsView } from './components/SmartQuestionsView';
 import { PinToDashboardModal } from './components/PinToDashboardModal';
@@ -607,6 +604,63 @@ function App() {
       fileName: dataset.name,
       columnTypeOverrides: overrides,
     });
+  };
+
+  const handleDatasetRowsRecovered = (recoveredRows: Record<string, any>[]) => {
+    if (!dataset) return;
+    const updatedRows = [...dataset.rows, ...recoveredRows];
+    const updated: Dataset = { ...dataset, rows: updatedRows, totalRows: updatedRows.length };
+    setDataset(updated);
+    saveDatasetToDB(updated);
+    console.log(`[App] Recovered ${recoveredRows.length} rows. New total: ${updatedRows.length}`);
+  };
+
+  const handleDatasetDataCleaned = (newRows: Record<string, any>[], log: any) => {
+    if (!dataset) return;
+    const updated: Dataset = { ...dataset, rows: newRows, totalRows: newRows.length };
+    setDataset(updated);
+    saveDatasetToDB(updated);
+    console.log(`[App] Data cleaning: ${log.operation} — ${log.rowsAffected} rows affected. New total: ${newRows.length}`);
+  };
+
+  const handleWorkspaceMappingApply = (
+    updatedProfile: DatasetDomainProfile,
+    columnTypeOverrides: Record<string, ColumnType>,
+  ) => {
+    if (!dataset) return;
+    // Semantic-only update: preserves rows and avoids another ETL run.
+    let finalDataset: Dataset = { ...dataset, domainProfile: updatedProfile };
+    if (Object.keys(columnTypeOverrides).length > 0) {
+      const updatedColumns = dataset.columns.map(col => {
+        const override = columnTypeOverrides[col.name];
+        return override ? { ...col, type: override } : col;
+      });
+      finalDataset = { ...finalDataset, columns: updatedColumns };
+      const sig = datasetSignature(dataset.columns.map(c => c.name));
+      saveColumnCorrections(sig, columnTypeOverrides).catch(() => { /* fail-open */ });
+    }
+    try {
+      const model = buildSemanticModel(finalDataset);
+      (finalDataset as any).semanticModel = model;
+      console.log(`[App] Semantic model rebuilt: ${model.measures.length} measures, ${model.dimensions.length} dimensions`);
+    } catch (err) {
+      console.warn('[App] Semantic model rebuild failed:', err);
+    }
+    setDataset(finalDataset);
+    saveDatasetToDB(finalDataset);
+    setPendingProfile(null);
+    showToast(`Mapping applied: ${updatedProfile.domain} domain · Grain: ${updatedProfile.grain || 'unset'}`);
+  };
+
+  const datasetWorkspaceProps = {
+    mappingProfile: pendingProfile || dataset?.domainProfile || null,
+    isAIProfiling,
+    onApplyMapping: handleWorkspaceMappingApply,
+    onDismissMapping: () => setPendingProfile(null),
+    onSchemaOverride: handleSchemaOverride,
+    onRowsRecovered: handleDatasetRowsRecovered,
+    onDataCleaned: handleDatasetDataCleaned,
+    onSwitchToLive: () => setActiveTab(Tab.UPLOAD),
   };
 
   const handlePromoteToTitle = (columnName: string) => {
@@ -1551,58 +1605,9 @@ function App() {
                   )}
                 </AnimatePresence>
 
-                {/* All tabs stay mounted for state persistence — only the active one is visible */}
-                {/* ── COLUMN MAPPING WIZARD (full-page step) ── */}
+                {/* Dataset preparation tools live inside Dataset Workspace. Legacy routes preserve deep links. */}
                 <div className={`h-full w-full ${activeTab === Tab.COLUMN_MAPPING ? '' : 'hidden'}`}>
-                  {pendingProfile && dataset && (
-                    <ColumnMappingWizard
-                      profile={pendingProfile}
-                      columns={dataset.columns}
-                      fileName={dataset.name}
-                      isAIProfiling={isAIProfiling}
-                      onApply={(updatedProfile, columnTypeOverrides) => {
-                        // SEMANTIC-ONLY: Update profile + column types, rebuild model, NO ETL re-run
-                        let finalDataset = { ...dataset, domainProfile: updatedProfile };
-
-                        // Apply column type overrides directly to columns array (no ETL re-run)
-                        if (Object.keys(columnTypeOverrides).length > 0) {
-                          const updatedColumns = dataset.columns.map(col => {
-                            const override = columnTypeOverrides[col.name];
-                            return override ? { ...col, type: override } : col;
-                          });
-                          finalDataset = { ...finalDataset, columns: updatedColumns };
-                          console.log(`[App] Column types updated: ${Object.keys(columnTypeOverrides).length} overrides (semantic-only, no ETL re-run)`);
-                          // ── REMEMBER CORRECTIONS (scoped to this dataset's schema) ──
-                          // Persist columnName → role under this dataset's signature so
-                          // future uploads of the SAME schema auto-apply — without
-                          // colliding with same-named columns in other datasets.
-                          // Metadata only (names + roles), no data.
-                          const sig = datasetSignature(dataset.columns.map(c => c.name));
-                          saveColumnCorrections(sig, columnTypeOverrides).catch(() => { /* fail-open */ });
-                        }
-
-                        // Rebuild semantic model with user-verified profile
-                        try {
-                          const model = buildSemanticModel(finalDataset);
-                          (finalDataset as any).semanticModel = model;
-                          console.log(`[App] Semantic model rebuilt: ${model.measures.length} measures, ${model.dimensions.length} dimensions`);
-                        } catch (err) {
-                          console.warn('[App] Semantic model rebuild failed:', err);
-                        }
-                        setDataset(finalDataset);
-                        saveDatasetToDB(finalDataset);
-                        setPendingProfile(null);
-                        // Land on Discover so automatic insights are the first
-                        // thing the user sees once their schema is confirmed.
-                        setActiveTab(Tab.QUICK_INSIGHTS);
-                        showToast(`Mapping applied: ${updatedProfile.domain} domain · Grain: ${updatedProfile.grain || 'unset'}`);
-                      }}
-                      onDismiss={() => {
-                        setPendingProfile(null);
-                        setActiveTab(Tab.QUICK_INSIGHTS);
-                      }}
-                    />
-                  )}
+                  <DatasetSummaryView dataset={dataset} initialSection="mapping" {...datasetWorkspaceProps} />
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.UPLOAD ? '' : 'hidden'}`}>
@@ -1620,53 +1625,24 @@ function App() {
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.ETL ? '' : 'hidden'}`}>
-                  <ETLView
-                    dataset={dataset}
-                    onSchemaOverride={handleSchemaOverride}
-                    onRowsRecovered={(recoveredRows) => {
-                      if (!dataset) return;
-                      const updatedRows = [...dataset.rows, ...recoveredRows];
-                      const updated: Dataset = {
-                        ...dataset,
-                        rows: updatedRows,
-                        totalRows: updatedRows.length,
-                      };
-                      setDataset(updated);
-                      saveDatasetToDB(updated);
-                      console.log(`[App] Recovered ${recoveredRows.length} rows. New total: ${updatedRows.length}`);
-                    }}
-                    onSwitchToLive={() => setActiveTab(Tab.UPLOAD)}
-                  />
+                  <DatasetSummaryView dataset={dataset} initialSection="cleaned" {...datasetWorkspaceProps} />
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.DATA_STUDIO ? '' : 'hidden'}`}>
-                  <DataStudioView
-                    dataset={dataset}
-                    onDataCleaned={(newRows, log) => {
-                      if (!dataset) return;
-                      const updated: Dataset = {
-                        ...dataset,
-                        rows: newRows,
-                        totalRows: newRows.length,
-                      };
-                      setDataset(updated);
-                      saveDatasetToDB(updated);
-                      console.log(`[App] Data cleaning: ${log.operation} — ${log.rowsAffected} rows affected. New total: ${newRows.length}`);
-                    }}
-                  />
+                  <DatasetSummaryView dataset={dataset} initialSection="studio" {...datasetWorkspaceProps} />
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.SCHEMA ? '' : 'hidden'}`}>
-                  <SchemaView dataset={dataset} />
+                  <DatasetSummaryView dataset={dataset} initialSection="schema" {...datasetWorkspaceProps} />
                 </div>
 
-                {/* Legacy Data Explorer links now open the Explorer section of the unified dataset workspace. */}
+                {/* Legacy Data Explorer links open the Explorer section of Dataset Workspace. */}
                 <div className={`h-full w-full ${activeTab === Tab.DATA ? '' : 'hidden'}`}>
-                  <DatasetSummaryView dataset={dataset} initialSection="explore" />
+                  <DatasetSummaryView dataset={dataset} initialSection="explore" {...datasetWorkspaceProps} />
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.DATASET_SUMMARY ? '' : 'hidden'}`}>
-                  <DatasetSummaryView dataset={dataset} />
+                  <DatasetSummaryView dataset={dataset} {...datasetWorkspaceProps} />
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.NLQ ? '' : 'hidden'}`}>
