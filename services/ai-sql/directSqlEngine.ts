@@ -9,10 +9,9 @@
  * the user's question, the governed plan, schema metadata, and only
  * user-approved safe category domains when Enhanced privacy is enabled.
  */
-import { fetchWithFallback, selectAISQLModel, SOL_MODEL } from './modelConfig';
+import { fetchWithFallback, LUNA_MODEL, PLANNER_MODEL, SOL_MODEL } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
 import type { AnalysisPlan, SemanticModel } from './types';
-import { buildQueryContract, validateSQLAgainstContract } from './queryContract';
 
 const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
 Given a database schema and a question, output a SINGLE read-only SQL SELECT that answers it.
@@ -28,6 +27,36 @@ Rules:
 - For a total period comparison, return two labelled aggregate rows, 'Current' and 'Previous'. For a trend comparison, retain the period label and the requested time grain.
 - If the question includes a "Dataset reporting anchor", that anchor is the reporting clock. Resolve relative periods using explicit DATE literals from it; NEVER use CURRENT_DATE, CURRENT_TIMESTAMP, NOW(), or other wall-clock functions.
 - Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
+
+interface DynamicQuerySpec {
+    goal: string;
+    operations: {
+        measures?: Array<{ field: string; aggregation?: string; expression?: string }>;
+        groupBy?: Array<{ field: string; grain?: string; expression?: string }>;
+        filters?: Array<{ field?: string; operator?: string; value?: unknown; expression?: string }>;
+        having?: Array<{ expression: string }>;
+        orderBy?: Array<{ expression: string; direction?: 'asc' | 'desc' }>;
+        limit?: number;
+        joins?: Array<{ leftTable: string; rightTable: string; condition: string; purpose?: string }>;
+        tableCalculations?: Array<{ type: string; expression?: string; partitionBy?: string[]; orderBy?: string[] }>;
+    };
+    expectedResult: { grain: string; columns: string[]; explanation?: string };
+    assumptions: string[];
+    clarification?: string;
+}
+
+const SPEC_PROMPT = `You are the planning stage of a privacy-first analytics system.
+Translate the question into a JSON Query Specification. You receive only a database schema and metadata, never data rows.
+Capture all requested analytical operations dynamically: measures/aggregations, filters, GROUP BY, HAVING, sorting, limits, joins, date logic, and window or table calculations. Use only schema fields and table names.
+Return valid JSON only with: goal, operations, expectedResult, assumptions, clarification.
+If the schema cannot answer the question, set clarification instead of inventing a field.`;
+
+function extractJSONObject(content: string): DynamicQuerySpec | null {
+    const raw = (content || '').replace(/\`\`\`json|\`\`\`/gi, '').trim();
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try { return JSON.parse(match[0]) as DynamicQuerySpec; } catch { return null; }
+}
 
 export interface DirectSQLResult {
     sql: string;
@@ -59,58 +88,47 @@ export async function generateDirectSQL(
     semanticModel?: SemanticModel,
 ): Promise<DirectSQLResult> {
     const planContext = analysisPlan
-        ? `\n\nLocal Analysis Plan (governed draft):\n${JSON.stringify(analysisPlan, null, 2)}`
+        ? `\n\nLocal semantic draft (helpful context, not a constraint):\n${JSON.stringify(analysisPlan, null, 2)}`
         : '';
     const verificationContext = plannerVerification?.length
-        ? `\n\nPlanner Verification (repair these gaps when the question and schema support it):\n${JSON.stringify(plannerVerification, null, 2)}`
+        ? `\n\nLocal diagnostics to consider:\n${JSON.stringify(plannerVerification, null, 2)}`
         : '';
-    const contract = analysisPlan
-        ? buildQueryContract(question, analysisPlan, plannerVerification || [], semanticModel)
-        : null;
-    const contractContext = contract?.requirements.length
-        ? `\n\nExecutable Query Contract:\n${contract.requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}`
-        : '';
-    const userContext = `Schema:\n${schemaText}${planContext}${verificationContext}${contractContext}\n\nQuestion: ${question}\n\nSQL:`;
-    const messages = [
+
+    // Terra interprets the question into a typed, open-ended analytical plan.
+    // This is deliberately not a collection of keyword rules: the specification
+    // can represent aggregations, filters, joins, windows, table calculations,
+    // and any schema-grounded analytical shape.
+    const planner = await fetchWithFallback([
+        { role: 'system', content: SPEC_PROMPT },
+        { role: 'user', content: `Schema:\n${schemaText}${planContext}${verificationContext}\n\nQuestion: ${question}` },
+    ] as any, { temperature: 0, max_tokens: 2200, model: PLANNER_MODEL });
+    const specContent = planner.data.choices?.[0]?.message?.content || '';
+    const spec = extractJSONObject(specContent);
+    const plannerUsage = planner.data.usage || {};
+    let tokens = plannerUsage.total_tokens || ((plannerUsage.prompt_tokens || 0) + (plannerUsage.completion_tokens || 0)) || 0;
+    if (!spec) return { sql: '', tokens, model: planner.model, error: 'AI planner returned an invalid query specification', blocked: true };
+    if (spec.clarification) return { sql: '', tokens, model: planner.model, error: spec.clarification, blocked: true };
+
+    const userContext = `Schema:\n${schemaText}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
+    const drafted = await fetchWithFallback([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userContext },
-    ];
-    const model = selectAISQLModel(question, 'sql');
-    console.log(`[AI SQL] Direct SQL model route: ${model}`);
-    const { data, model: modelUsed } = await fetchWithFallback(messages as any, { temperature: 0, max_tokens: 2400, model });
-    let content = data.choices?.[0]?.message?.content || '';
-    const usage = data.usage || {};
-    let tokens = usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0)) || 0;
-    let sql = extractSQL(content);
-    let modelUsedForSQL = modelUsed;
+    ] as any, { temperature: 0, max_tokens: 2400, model: LUNA_MODEL });
+    let sql = extractSQL(drafted.data.choices?.[0]?.message?.content || '');
+    const draftUsage = drafted.data.usage || {};
+    tokens += draftUsage.total_tokens || ((draftUsage.prompt_tokens || 0) + (draftUsage.completion_tokens || 0)) || 0;
 
-    // Contract failure is a semantic failure, not a valid answer with lower
-    // confidence. Ask Sol to review and repair the candidate before execution.
-    let contractIssues = contract ? validateSQLAgainstContract(sql, contract) : [];
-    if (contractIssues.length > 0) {
-        console.warn('[AI SQL] Candidate violated query contract:', contractIssues.map(i => i.code).join(', '));
-        const reviewPrompt = `${SYSTEM_PROMPT}\n\nYou are reviewing a candidate SQL query. Rewrite it so it meets every Executable Query Contract requirement. Do not return the original query if it drops a required analytical shape.`;
-        const reviewMessages = [
-            { role: 'system', content: reviewPrompt },
-            { role: 'user', content: `${userContext}\n\nCandidate SQL to repair:\n${sql}\n\nContract failures:\n${contractIssues.map(i => `- ${i.message}`).join('\n')}\n\nCorrected SQL:` },
-        ];
-        const reviewed = await fetchWithFallback(reviewMessages as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL });
-        content = reviewed.data.choices?.[0]?.message?.content || '';
-        const reviewUsage = reviewed.data.usage || {};
-        tokens += reviewUsage.total_tokens || ((reviewUsage.prompt_tokens || 0) + (reviewUsage.completion_tokens || 0)) || 0;
-        sql = extractSQL(content);
-        modelUsedForSQL = reviewed.model;
-        contractIssues = contract ? validateSQLAgainstContract(sql, contract) : [];
-        if (contractIssues.length > 0) {
-            return {
-                sql,
-                tokens,
-                model: modelUsedForSQL,
-                error: `Faithfulness review rejected SQL: ${contractIssues.map(i => i.message).join(' ')}`,
-                blocked: true,
-            };
-        }
-    }
+    // Sol independently checks every request against the question, schema and
+    // structured plan, then returns the final executable SQL.
+    const reviewed = await fetchWithFallback([
+        { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Check that the candidate implements every operation in the Dynamic Query Specification. Correct omissions, invalid fields, joins, aggregations, filters, grouping, sorting, and table calculations. Return only final SQL.` },
+        { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${sql}\n\nFinal reviewed SQL:` },
+    ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL });
+    sql = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');
+    const reviewUsage = reviewed.data.usage || {};
+    tokens += reviewUsage.total_tokens || ((reviewUsage.prompt_tokens || 0) + (reviewUsage.completion_tokens || 0)) || 0;
+    const modelUsedForSQL = `${planner.model} → ${drafted.model} → ${reviewed.model}`;
+    console.log(`[AI SQL] Dynamic three-model route: ${modelUsedForSQL}`);
 
     // A fallback must never silently swap the dataset-relative reporting clock
     // for the user's machine/server clock. The caller passes an anchor whenever
