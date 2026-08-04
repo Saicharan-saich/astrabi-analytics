@@ -411,15 +411,25 @@ export interface PipelineTrace {
     steps: PipelineStepTrace[];
 }
 
+export interface AIQueryProvenance {
+    /** Whether a deterministic compiler answered the question or an LLM fallback was needed. */
+    strategy: 'deterministic' | 'llm-sql-fallback' | 'llm-plan';
+    /** OpenRouter model used only when an LLM was needed. */
+    model?: string;
+    /** Plain-language explanation suitable for non-technical users. */
+    summary: string;
+    /** Explicit privacy statement for this request. */
+    dataAccess: 'metadata_only' | 'approved_safe_values';
+}
+
 export interface AISQLPipelineResult {
     /** The structured analysis plan */
     plan: AnalysisPlan;
     /** Generated SQL */
     sql: string;
-    /** Which engine generated `sql`: the Question Builder mapper (fast
-     *  deterministic path), the LLM direct-SQL engine (metadata-only,
-     *  primary for the long tail), the deterministic correction engine, or a
-     *  legacy LLM fallback. */
+    /** Which engine generated `sql`: the local typed Question Builder
+     *  compiler, the privacy-governed direct-SQL LLM fallback, or the
+     *  deterministic correction engine. */
     engine?: 'question-builder' | 'llm-sql' | 'correction-engine' | 'llm';
     /** Validation checks */
     validation: ValidationResult;
@@ -445,9 +455,10 @@ export interface AISQLPipelineResult {
     trust?: TrustVerification;
     /** Pipeline transparency trace — step-by-step engine telemetry */
     trace?: PipelineTrace;
-    /** Exact LLM token cost for this question. Only the planning step uses the
-     *  LLM (prompt = column metadata, never rows), so this is independent of
-     *  dataset size; SQL compilation + execution cost 0 tokens. */
+    /** How this answer was produced, including any LLM fallback. */
+    provenance?: AIQueryProvenance;
+    /** Exact LLM token cost for this question. Metadata and user-approved safe
+     * values may be sent only when an LLM fallback is needed; rows remain local. */
     tokenUsage?: { prompt: number; completion: number; total: number };
 }
 

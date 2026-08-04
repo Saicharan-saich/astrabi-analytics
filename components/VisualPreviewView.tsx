@@ -86,6 +86,16 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const sql = activeResult.sql || activePipeline?.sql || '';
   const explanation = activeResult.insight || activePipeline?.explanation || '';
   const sqlEngine = activePipeline?.engine;
+  const provenance = activePipeline?.provenance;
+  const isLocalAnswer = provenance?.strategy === 'deterministic';
+  const provenanceLabel = isLocalAnswer
+    ? 'Local analytics'
+    : provenance?.model
+      ? `AI fallback · ${provenance.model.replace('openai/', '').toUpperCase()}`
+      : provenance ? 'AI fallback' : null;
+  const provenanceClass = isLocalAnswer
+    ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
+    : 'bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300';
   const engineBadge = sqlEngine === 'question-builder'
     ? { label: 'Question Builder', cls: 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' }
     : sqlEngine === 'llm-sql'
@@ -208,9 +218,17 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
             <div className="text-[11px] text-gray-400 dark:text-slate-500 flex items-center gap-2">
               <span>{activeResult.data.length} rows</span>
               {activePipeline && <span>· {(activePipeline as any).executionTimeMs}ms</span>}
-              {(activePipeline as any)?.tokenUsage && (
+              {provenanceLabel && (
                 <span
-                  title={`AI tokens for this question: ${(activePipeline as any).tokenUsage.prompt} prompt + ${(activePipeline as any).tokenUsage.completion} completion. Only the AI planning step uses tokens — the prompt is your column metadata, never the rows — so this cost is independent of how large your dataset is. SQL generation and execution cost 0 tokens.`}
+                  title={provenance?.summary}
+                  className={`cursor-help font-semibold ${isLocalAnswer ? 'text-emerald-600 dark:text-emerald-300' : 'text-violet-600 dark:text-violet-300'}`}
+                >
+                  · {provenanceLabel}
+                </span>
+              )}
+              {(activePipeline as any)?.tokenUsage && !isLocalAnswer && (
+                <span
+                  title={`AI fallback tokens: ${(activePipeline as any).tokenUsage.prompt} prompt + ${(activePipeline as any).tokenUsage.completion} completion. Only schema metadata and approved safe values are shared; dataset rows are not sent to the model.`}
                   className="cursor-help"
                 >
                   · 🪙 {(((activePipeline as any).tokenUsage.total) || 0).toLocaleString()} tokens
@@ -226,7 +244,15 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {/* Trust Badge */}
+          {/* Answer path makes the local-first privacy boundary visible to the user. */}
+          {provenanceLabel && (
+            <span
+              title={provenance?.summary}
+              className={`hidden sm:inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1.5 rounded-lg border border-current/20 ${provenanceClass}`}
+            >
+              <Database className="w-3 h-3" /> {provenanceLabel}
+            </span>
+          )}
           <TrustBadge trust={pipeline?.trust} isDark={isDark} />
           <button onClick={handleRegenerate} disabled={isReloading} className="flex items-center gap-1 text-[12px] font-bold text-cyan-600 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 px-2.5 py-1.5 rounded-lg transition-all border border-cyan-200 dark:border-cyan-500/20 disabled:opacity-50">
             {isReloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Regen
@@ -361,6 +387,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                     {engineBadge && (
                       <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded normal-case tracking-normal ${engineBadge.cls}`}>{engineBadge.label}</span>
                     )}
+                    {provenanceLabel && (
+                      <span title={provenance?.summary} className={`text-[10px] font-bold px-1.5 py-0.5 rounded normal-case tracking-normal ${provenanceClass}`}>
+                        {provenanceLabel}
+                      </span>
+                    )}
                   </span>
                   <button onClick={handleCopySQL} className="text-xs text-amber-600 dark:text-amber-400 hover:text-amber-500 flex items-center gap-1">
                     {copiedSQL ? <><Check className="w-3 h-3" /> Copied!</> : <><Copy className="w-3 h-3" /> Copy</>}
@@ -382,6 +413,15 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                     <div><span className="text-slate-400">Grain:</span><span className="ml-1.5 font-bold">{pipeline.plan.resultGrain}</span></div>
                     <div><span className="text-slate-400">Chart:</span><span className="ml-1.5 font-bold">{pipeline.chart.chartType}</span></div>
                     <div><span className="text-slate-400">Time:</span><span className="ml-1.5 font-bold">{pipeline.executionTimeMs}ms</span></div>
+                    {provenance && (
+                      <div className="col-span-2">
+                        <span className="text-slate-400">Answer path:</span>
+                        <span title={provenance.summary} className={`ml-1.5 font-bold ${isLocalAnswer ? 'text-emerald-600 dark:text-emerald-300' : 'text-violet-600 dark:text-violet-300'}`}>
+                          {provenanceLabel}
+                        </span>
+                        <span className="ml-1.5 text-slate-400">· {provenance.dataAccess === 'metadata_only' ? 'metadata only' : 'approved safe values only'}</span>
+                      </div>
+                    )}
                     {pipeline.repairAttempts > 0 && <div className="col-span-2 text-yellow-500">⚠ SQL required {pipeline.repairAttempts} repair attempt(s)</div>}
                   </div>
                   {pipeline.validation?.checks && (

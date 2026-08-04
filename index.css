@@ -1505,3 +1505,21 @@ html.light .ambient-orb-2 {
     gap: 0.5rem !important;
   }
 }
+
+/* ── Shared Interaction Foundation ────────────────────────
+   A visible, consistent focus treatment lets keyboard users move through every
+   primary workspace confidently without changing component behaviour. */
+:where(button, a, input, select, textarea, [role="button"]):focus-visible {
+  outline: 2px solid var(--color-primary-light);
+  outline-offset: 2px;
+}
+
+/* Respect a user's motion preference across the full application shell. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

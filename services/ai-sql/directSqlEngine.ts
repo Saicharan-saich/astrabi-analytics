@@ -23,7 +23,7 @@ Rules:
 - JOIN across tables when needed, following the listed foreign keys.
 - Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
 
-export interface DirectSQLResult { sql: string; tokens: number; error?: string; }
+export interface DirectSQLResult { sql: string; tokens: number; model?: string; error?: string; }
 
 /** Pull the SQL out of the model's reply (strip code fences / trailing prose). */
 export function extractSQL(content: string): string {
@@ -45,13 +45,13 @@ export async function generateDirectSQL(question: string, schemaText: string): P
     ];
     const model = selectAISQLModel(question, 'sql');
     console.log(`[AI SQL] Direct SQL model route: ${model}`);
-    const { data } = await fetchWithFallback(messages as any, { temperature: 0, max_tokens: 2000, model });
+    const { data, model: modelUsed } = await fetchWithFallback(messages as any, { temperature: 0, max_tokens: 2000, model });
     const content = data.choices?.[0]?.message?.content || '';
     const usage = data.usage || {};
     const tokens = usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0)) || 0;
 
     const sql = extractSQL(content);
     const safe = validateReadOnlySQL(sql);
-    if (!safe.ok) return { sql, tokens, error: `Unsafe SQL rejected: ${safe.reason}` };
-    return { sql: safe.sql, tokens };
+    if (!safe.ok) return { sql, tokens, model: modelUsed, error: `Unsafe SQL rejected: ${safe.reason}` };
+    return { sql: safe.sql, tokens, model: modelUsed };
 }
