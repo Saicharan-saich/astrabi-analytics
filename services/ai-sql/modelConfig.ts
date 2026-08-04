@@ -16,16 +16,15 @@ export const BACKEND_LLM_URL = `${API_BASE}/llm/chat`;
 export const OPENROUTER_API_URL = BACKEND_LLM_URL;
 export const API_KEY = '__ROUTED_THROUGH_BACKEND__';
 
-/** The model to use for most AI requests (fast, cheap). */
-export const PRIMARY_MODEL = 'google/gemini-2.5-flash';
+/** GPT-5.6 Sol is reserved for the AI SQL planning fallback. */
+export const PRIMARY_MODEL = 'gpt-5.6-sol';
 
 /**
- * Stronger reasoning model for the accuracy-critical PLAN step. The plan is the
- * single stochastic decision in the pipeline (SQL + chart are deterministic),
- * so a more capable model here is the highest-leverage accuracy improvement.
+ * GPT-5.6 Sol is called only after deterministic intent planning cannot produce
+ * a safe, unambiguous plan. SQL and chart selection remain deterministic.
  * Backend /api/llm/chat already honours a per-call `model` param.
  */
-export const PLANNER_MODEL = 'google/gemini-2.5-pro';
+export const PLANNER_MODEL = 'gpt-5.6-sol';
 
 /** Default timeout for AI requests */
 export const DEFAULT_TIMEOUT_MS = 60000;
