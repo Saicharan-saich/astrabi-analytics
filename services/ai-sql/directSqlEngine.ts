@@ -29,7 +29,14 @@ Rules:
 - If the question includes a "Dataset reporting anchor", that anchor is the reporting clock. Resolve relative periods using explicit DATE literals from it; NEVER use CURRENT_DATE, CURRENT_TIMESTAMP, NOW(), or other wall-clock functions.
 - Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
 
-export interface DirectSQLResult { sql: string; tokens: number; model?: string; error?: string; }
+export interface DirectSQLResult {
+    sql: string;
+    tokens: number;
+    model?: string;
+    error?: string;
+    /** True when the SQL failed an explicit question-to-SQL contract and must not fall back to a generic answer. */
+    blocked?: boolean;
+}
 
 /** Pull the SQL out of the model's reply (strip code fences / trailing prose). */
 export function extractSQL(content: string): string {
@@ -99,6 +106,7 @@ export async function generateDirectSQL(
                 tokens,
                 model: modelUsedForSQL,
                 error: `Faithfulness review rejected SQL: ${contractIssues.map(i => i.message).join(' ')}`,
+                blocked: true,
             };
         }
     }
