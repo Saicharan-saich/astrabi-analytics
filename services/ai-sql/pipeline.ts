@@ -151,63 +151,11 @@ export async function runAISQLPipeline(
         console.warn('[Pipeline] Value catalog build skipped:', cErr?.message);
     }
 
-    const _directSqlStart = performance.now();
-    // Always resolves (never rejects) so it can safely be awaited later.
-    const directSqlPromise: Promise<{ sql: string | null; tokens: number; error: string | null }> = (async () => {
-        try {
-            // Privacy mode gates what the LLM may see. Strict = metadata only, no
-            // data values leave the browser. Enhanced = also send bounded category
-            // domains (non-sensitive, low-cardinality; PII, identifiers and
-            // sensitive categoricals excluded). Rows are never sent in either.
-            const privacyMode = getEffectivePrivacyMode();
-            // The automatic filter decides what is eligible; the user's own
-            // per-column and per-value choices then subtract from that.
-            let domains = privacyMode === 'enhanced'
-                ? collectSafeDomains(dataset.rows, semanticModel)
-                : undefined;
-            if (domains) {
-                const before = domains.size;
-                domains = applySelection(domains, getSelection(dataset.name || dataset.id));
-                if (domains.size !== before) {
-                    console.log(`[Pipeline] User switched off ${before - domains.size} column(s) from sharing`);
-                }
-                if (domains.size === 0) domains = undefined;
-            }
-            console.log(`[Pipeline] Direct-SQL privacy mode: ${privacyMode}${domains ? ` (${domains.size} category domain(s) shared)` : ' (metadata only)'}`);
-            let richSchema = serializeSemanticModelSchema(semanticModel, 'data', domains);
-
-            // When the source had several tables, describe those too. The
-            // flattened "data" table can double-count after a one-to-many join,
-            // so the model is told it may query the real tables and join them
-            // itself, at the correct grain.
-            const joinCtx = discoverJoinContext(dataset.relatedTables, dataset.sourceSchema);
-            if (joinCtx) {
-                richSchema += `\n\nThis dataset came from several tables. "data" is a pre-joined, flattened copy — convenient, but a one-to-many join means totals over it can be double-counted. The original tables are also available and are the safer choice when a question spans more than one of them:\n\n${joinCtx.description}`;
-                console.log(`[Pipeline] Multi-table schema shared: ${joinCtx.tableNames.join(', ')}`);
-            }
-            const ds = await generateDirectSQL(question, richSchema);
-            if (ds.sql && !ds.error) {
-                let sql = ds.sql;
-                // Safety net: correct any literal whose casing/plural drifted from
-                // the real stored value (never fabricates).
-                if (_valueCatalog) {
-                    const g = groundSqlLiterals(sql, _valueCatalog);
-                    if (g.changed.length) {
-                        sql = g.sql;
-                        console.log('[Pipeline] Grounded SQL literals:', g.changed.join(', '));
-                    }
-                }
-                console.log('[Pipeline] Direct-SQL engine SQL:', sql);
-                return { sql, tokens: ds.tokens || 0, error: null };
-            }
-            console.warn('[Pipeline] Direct-SQL not usable:', ds.error || 'empty SQL');
-            return { sql: null, tokens: ds.tokens || 0, error: ds.error || 'empty SQL' };
-        } catch (dErr: any) {
-            const msg = dErr?.message || String(dErr);
-            console.warn('[Pipeline] Direct-SQL engine failed — deterministic backup will answer:', msg);
-            return { sql: null, tokens: 0, error: msg };
-        }
-    })();
+    // Intent-first policy: never ask a model to write SQL before the governed
+    // planner and deterministic compiler have had a chance to answer. Direct SQL
+    // remains a future, explicitly instrumented fallback for unsupported plans.
+    const directSqlPromise: Promise<{ sql: string | null; tokens: number; error: string | null }> =
+        Promise.resolve({ sql: null, tokens: 0, error: 'deferred until an unsupported-plan fallback is implemented' });
 
     // ─── Step 2: Generate Analysis Plan ─────────────────────────────
     // The direct-SQL engine is settled FIRST, because its answer decides whether
@@ -222,10 +170,13 @@ export async function runAISQLPipeline(
     reportProgress('Asking the AI...', 3);
     _s1 = performance.now();
     const _dsEarly = await directSqlPromise;
-    const plan = _dsEarly.sql
-        ? generateLocalPlan(augmentedQuestion, semanticModel, grainOverride)
-        : await generatePlan(augmentedQuestion, semanticModel, grainOverride);
-    console.log(`[Pipeline] Step 2: Plan built ${_dsEarly.sql ? 'LOCALLY (direct-SQL succeeded — planner call skipped)' : 'by the LLM planner (direct-SQL unusable)'}`);
+    const localPlan = generateLocalPlan(augmentedQuestion, semanticModel, grainOverride);
+    // Most questions map cleanly through deterministic intent and field rules.
+    // GPT-5.6 Sol is the bounded resolver for genuine ambiguity only.
+    const plan = localPlan.ambiguous
+        ? await generatePlan(augmentedQuestion, semanticModel, grainOverride)
+        : localPlan;
+    console.log(`[Pipeline] Step 2: Plan built ${localPlan.ambiguous ? 'by GPT-5.6 Sol (ambiguous local intent)' : 'locally (deterministic intent planner)'}`);
     traceStep({
         stepNumber: 3, name: 'Intent Planner', engine: 'intentPlanner', icon: '🎯',
         status: plan.ambiguous ? 'warn' : 'pass',
