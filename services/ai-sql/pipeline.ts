@@ -194,7 +194,7 @@ export async function runAISQLPipeline(
                 : question;
             // Hybrid SQL: pass the locally governed plan to the selected GPT-5.6
             // model. It receives no dataset rows; DuckDB still executes locally.
-            const ds = await generateDirectSQL(anchoredQuestion, richSchema, plan, plannerIssues);
+            const ds = await generateDirectSQL(anchoredQuestion, richSchema, plan, plannerIssues, semanticModel);
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
                 // Safety net: correct any literal whose casing/plural drifted from
