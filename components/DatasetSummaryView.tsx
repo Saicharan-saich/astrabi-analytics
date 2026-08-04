@@ -2,15 +2,30 @@ import React, { useMemo, useState } from 'react';
 import {
     Database, Columns, BarChart3, Hash, Calendar, Type, Key,
     TrendingUp, TrendingDown, ChevronDown, ChevronRight, Layers,
-    FileText, Eye, Table2
+    FileText, Eye, Table2, Sparkles, Wand2, GitMerge
 } from 'lucide-react';
-import { Dataset } from '../types';
+import { Dataset, DatasetDomainProfile, ColumnType } from '../types';
+import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { DataExplorerView } from './DataExplorerView';
+import { ETLView } from './ETLView';
+import { DataStudioView } from './DataStudioView';
+import { SchemaView } from './SchemaView';
+import { ColumnMappingWizard } from './ColumnMappingWizard';
+
+type DatasetWorkspaceSection = 'overview' | 'explore' | 'cleaned' | 'studio' | 'mapping' | 'schema';
 
 interface DatasetSummaryViewProps {
     dataset: Dataset | null;
-    /** Lets legacy Data Explorer entry points open the explorer section directly. */
-    initialSection?: 'overview' | 'explore';
+    /** Lets legacy entry points open the corresponding workspace section directly. */
+    initialSection?: DatasetWorkspaceSection;
+    mappingProfile?: DatasetDomainProfile | null;
+    isAIProfiling?: boolean;
+    onApplyMapping?: (updatedProfile: DatasetDomainProfile, columnTypeOverrides: Record<string, ColumnType>) => void;
+    onDismissMapping?: () => void;
+    onSchemaOverride?: (columnName: string, newType: ColumnType) => void;
+    onRowsRecovered?: (recoveredRows: Record<string, any>[]) => void;
+    onDataCleaned?: (newRows: Record<string, any>[], log: CleaningLogEntry) => void;
+    onSwitchToLive?: () => void;
 }
 
 interface ColumnStats {
@@ -217,8 +232,19 @@ const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, 
     );
 };
 
-export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({ dataset, initialSection = 'overview' }) => {
-    const [activeSection, setActiveSection] = useState<'overview' | 'explore'>(initialSection);
+export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
+    dataset,
+    initialSection = 'overview',
+    mappingProfile,
+    isAIProfiling = false,
+    onApplyMapping,
+    onDismissMapping,
+    onSchemaOverride,
+    onRowsRecovered,
+    onDataCleaned,
+    onSwitchToLive,
+}) => {
+    const [activeSection, setActiveSection] = useState<DatasetWorkspaceSection>(initialSection);
     const columnStats = useMemo(() => {
         if (!dataset?.rows || !dataset?.columns) return [];
         return dataset.columns.map(col =>
@@ -261,7 +287,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({ dataset,
                     </div>
                     <div>
                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
-                            Dataset Summary
+                            Dataset Workspace
                         </h2>
                         <p className="text-sm text-gray-500 dark:text-slate-400">
                             {dataset.name || 'Unnamed Dataset'} · {overviewStats?.rows.toLocaleString()} rows · {overviewStats?.cols} columns
@@ -270,26 +296,28 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({ dataset,
                 </div>
 
                 {/* Workspace Sections */}
-                <div className="flex items-center gap-1 w-fit p-1 rounded-xl bg-white dark:bg-[#171c26] border border-gray-200 dark:border-white/[0.06] shadow-sm">
-                    <button
-                        onClick={() => setActiveSection('overview')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeSection === 'overview'
-                            ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 shadow-sm'
-                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04]'}`}
-                    >
-                        <BarChart3 className="w-4 h-4" /> Overview
-                    </button>
-                    <button
-                        onClick={() => setActiveSection('explore')}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeSection === 'explore'
-                            ? 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300 shadow-sm'
-                            : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04]'}`}
-                    >
-                        <Table2 className="w-4 h-4" /> Data Explorer
-                    </button>
+                <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-white dark:bg-[#171c26] border border-gray-200 dark:border-white/[0.06] shadow-sm">
+                    {[
+                        { id: 'overview' as const, label: 'Overview', icon: BarChart3, active: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300' },
+                        { id: 'explore' as const, label: 'Explore Data', icon: Table2, active: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
+                        { id: 'cleaned' as const, label: 'Cleaned Data', icon: Sparkles, active: 'bg-teal-50 dark:bg-teal-500/15 text-teal-700 dark:text-teal-300' },
+                        { id: 'studio' as const, label: 'Data Studio', icon: Wand2, active: 'bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300' },
+                        { id: 'mapping' as const, label: 'Column Mapping', icon: Eye, active: 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300' },
+                        { id: 'schema' as const, label: 'Schema', icon: GitMerge, active: 'bg-sky-50 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300' },
+                    ].map(({ id, label, icon: Icon, active }) => (
+                        <button
+                            key={id}
+                            onClick={() => setActiveSection(id)}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all ${activeSection === id
+                                ? `${active} shadow-sm`
+                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04]'}`}
+                        >
+                            <Icon className="w-4 h-4" /> {label}
+                        </button>
+                    ))}
                 </div>
 
-                {activeSection === 'overview' ? (
+                {activeSection === 'overview' && (
                     <>
                 {/* Overview KPI Cards */}
                 {overviewStats && (
@@ -326,9 +354,62 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({ dataset,
                     </div>
                 </div>
                     </>
-                ) : (
+                )}
+
+                {activeSection === 'explore' && (
                     <div className="h-[calc(100vh-12rem)] min-h-[520px] bg-slate-900 rounded-xl border border-white/[0.06] overflow-hidden">
                         <DataExplorerView dataset={dataset} />
+                    </div>
+                )}
+
+                {activeSection === 'cleaned' && (
+                    <div className="h-[calc(100vh-12rem)] min-h-[520px] overflow-hidden">
+                        <ETLView
+                            dataset={dataset}
+                            onSchemaOverride={onSchemaOverride}
+                            onRowsRecovered={onRowsRecovered}
+                            onDataCleaned={onDataCleaned}
+                            onSwitchToLive={onSwitchToLive}
+                        />
+                    </div>
+                )}
+
+                {activeSection === 'studio' && (
+                    <div className="h-[calc(100vh-12rem)] min-h-[520px] overflow-hidden">
+                        <DataStudioView dataset={dataset} onDataCleaned={onDataCleaned} />
+                    </div>
+                )}
+
+                {activeSection === 'mapping' && (
+                    <div className="h-[calc(100vh-12rem)] min-h-[520px] overflow-hidden rounded-xl border border-white/[0.06]">
+                        {(mappingProfile || dataset.domainProfile) ? (
+                            <ColumnMappingWizard
+                                profile={mappingProfile || dataset.domainProfile!}
+                                columns={dataset.columns}
+                                fileName={dataset.name}
+                                isAIProfiling={isAIProfiling}
+                                onApply={(profile, overrides) => {
+                                    onApplyMapping?.(profile, overrides);
+                                    setActiveSection('overview');
+                                }}
+                                onDismiss={() => {
+                                    onDismissMapping?.();
+                                    setActiveSection('overview');
+                                }}
+                            />
+                        ) : (
+                            <div className="h-full flex flex-col items-center justify-center text-center px-6">
+                                <Eye className="w-10 h-10 text-slate-500 mb-3" />
+                                <h3 className="text-lg font-bold text-slate-700 dark:text-white">Column mapping is not ready yet</h3>
+                                <p className="max-w-md text-sm text-slate-500 dark:text-slate-400 mt-2">Finish profiling this dataset, then return here to review its semantic roles and formats.</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {activeSection === 'schema' && (
+                    <div className="h-[calc(100vh-12rem)] min-h-[520px] overflow-hidden">
+                        <SchemaView dataset={dataset} />
                     </div>
                 )}
 
