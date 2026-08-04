@@ -34,25 +34,40 @@ export const PLANNER_MODEL = TERRA_MODEL;
 /** A short, user-readable description for the AI SQL screen. */
 export const MODEL_LADDER_LABEL = 'GPT-5.6 Luna · Terra · Sol';
 
-type AISQLWorkload = 'plan' | 'sql';
+export type AISQLWorkload = 'plan' | 'sql';
+
+export interface AISQLModelRoute {
+    model: string;
+    tier: 'luna' | 'terra' | 'sol';
+    workload: AISQLWorkload;
+    reason: string;
+}
 
 /**
- * Route each request to the lightest capable model. This is deliberately a
- * deterministic choice: it avoids three full model calls for one question,
- * preserves predictable latency/cost, and escalates only when the request
- * actually needs deeper reasoning.
+ * Route only the unresolved part of a request to the lightest capable model.
+ * Most everyday questions are answered by the deterministic semantic plan and
+ * compiler without an LLM call; this selector is used only for plan ambiguity
+ * or a genuinely unsupported analytical shape.
  */
-export function selectAISQLModel(question: string, workload: AISQLWorkload): string {
+export function selectAISQLRoute(question: string, workload: AISQLWorkload): AISQLModelRoute {
     const normalized = question.toLowerCase();
 
     const needsDeepReasoning = /\b(join|across\s+(multiple|several)|subquery|cohort|retention|funnel|correlation|moving\s+(average|avg)|rolling\s+(average|avg)|what[-\s]?if|forecast|anomal(?:y|ies)|compound)\b/.test(normalized);
-    if (needsDeepReasoning) return SOL_MODEL;
+    if (needsDeepReasoning) {
+        return { model: SOL_MODEL, tier: 'sol', workload, reason: 'Complex analytical shape requires deeper reasoning' };
+    }
 
-    const needsPlanning = workload === 'plan'
-        || /\b(compare|versus|\bvs\b|growth|trend|share|percentage|percent|ratio|rank|top\s+\d+|bottom\s+\d+|distinct|average|between|before|after|month[-\s]?over[-\s]?month|year[-\s]?over[-\s]?year)\b/.test(normalized);
-    if (needsPlanning) return TERRA_MODEL;
+    const needsStructuredPlanning = /\b(compare|versus|\bvs\b|growth|trend|share|percentage|percent|ratio|rank|top\s+\d+|bottom\s+\d+|distinct|average|between|before|after|month[-\s]?over[-\s]?month|year[-\s]?over[-\s]?year)\b/.test(normalized);
+    if (workload === 'plan' || needsStructuredPlanning) {
+        return { model: TERRA_MODEL, tier: 'terra', workload, reason: 'Structured analytical planning or validation is required' };
+    }
 
-    return LUNA_MODEL;
+    return { model: LUNA_MODEL, tier: 'luna', workload, reason: 'Straightforward semantic clarification' };
+}
+
+/** Compatibility helper for existing callers. */
+export function selectAISQLModel(question: string, workload: AISQLWorkload): string {
+    return selectAISQLRoute(question, workload).model;
 }
 
 /** Default timeout for AI requests */
