@@ -11,7 +11,7 @@
  */
 import { fetchWithFallback, selectAISQLModel, SOL_MODEL } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
-import type { AnalysisPlan } from './types';
+import type { AnalysisPlan, SemanticModel } from './types';
 import { buildQueryContract, validateSQLAgainstContract } from './queryContract';
 
 const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
@@ -56,6 +56,7 @@ export async function generateDirectSQL(
     schemaText: string,
     analysisPlan?: AnalysisPlan,
     plannerVerification?: Array<{ code?: string; severity?: string; message?: string }>,
+    semanticModel?: SemanticModel,
 ): Promise<DirectSQLResult> {
     const planContext = analysisPlan
         ? `\n\nLocal Analysis Plan (governed draft):\n${JSON.stringify(analysisPlan, null, 2)}`
@@ -64,7 +65,7 @@ export async function generateDirectSQL(
         ? `\n\nPlanner Verification (repair these gaps when the question and schema support it):\n${JSON.stringify(plannerVerification, null, 2)}`
         : '';
     const contract = analysisPlan
-        ? buildQueryContract(question, analysisPlan, plannerVerification || [])
+        ? buildQueryContract(question, analysisPlan, plannerVerification || [], semanticModel)
         : null;
     const contractContext = contract?.requirements.length
         ? `\n\nExecutable Query Contract:\n${contract.requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}`
