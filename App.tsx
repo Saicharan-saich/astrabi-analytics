@@ -296,8 +296,6 @@ function App() {
   const [visualPreviewResult, setVisualPreviewResult] = useState<AnalysisResult | null>(null);
   const [visualPreviewPipeline, setVisualPreviewPipeline] = useState<any>(null);
   const [visualPreviewQuery, setVisualPreviewQuery] = useState('');
-  /** Which workspace should regain focus when the full-page preview closes. */
-  const [visualPreviewReturnTab, setVisualPreviewReturnTab] = useState<Tab>(Tab.AI_SQL);
   const [visualPreviewFormatting, setVisualPreviewFormatting] = useState<any>({
     colorMode: 'vibrant', numberFormat: 'auto', fontSize: 'md', headerSize: 'xl',
     headerBold: true, headerColor: '#000000', showLabels: true, showDataLabels: true,
@@ -1688,7 +1686,6 @@ function App() {
                       setVisualPreviewPipeline(pipelineResult);
                       setVisualPreviewQuery(query);
                       setVisualPreviewFormatting(fmt);
-                      setVisualPreviewReturnTab(Tab.AI_SQL);
                       setActiveTab(Tab.VISUAL_PREVIEW);
                     }}
                   />
@@ -1702,14 +1699,9 @@ function App() {
                       pipelineResult={visualPreviewPipeline}
                       query={visualPreviewQuery}
                       formatting={visualPreviewFormatting}
-                      onBack={() => setActiveTab(visualPreviewReturnTab)}
+                      onBack={() => setActiveTab(Tab.AI_SQL)}
                       onPin={(title, result) => handlePin({ ...result, insight: title })}
-                      onFormatChange={(nextFormatting) => {
-                        setVisualPreviewFormatting(nextFormatting);
-                        // Builder analytics are intentionally shared with the explorer,
-                        // so returning preserves the user's calculation choices.
-                        if (visualPreviewReturnTab === Tab.BUILDER) updateFormatting(nextFormatting);
-                      }}
+                      onFormatChange={setVisualPreviewFormatting}
                     />
                   )}
                 </div>
@@ -1736,14 +1728,6 @@ function App() {
                       isLiveRefreshing={isLiveRefreshing}
                       refreshSchedule={dataset?.refreshSchedule}
                       onScheduleChange={updateRefreshSchedule}
-                      onOpenAnalyticsExplorer={(builderResult, builderFormatting) => {
-                        setVisualPreviewResult(builderResult);
-                        setVisualPreviewPipeline(null);
-                        setVisualPreviewQuery(`Analytics Explorer · ${builderResult.yLabel}`);
-                        setVisualPreviewFormatting(builderFormatting);
-                        setVisualPreviewReturnTab(Tab.BUILDER);
-                        setActiveTab(Tab.VISUAL_PREVIEW);
-                      }}
                     />
                   )}
                 </div>
