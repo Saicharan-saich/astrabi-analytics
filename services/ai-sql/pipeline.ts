@@ -139,11 +139,7 @@ export async function runAISQLPipeline(
         console.log(`[Pipeline] Time resolved: "${resolvedTime.matchedPhrase}" → ${resolvedTime.description}`);
     }
 
-    // ─── Step 1c: Value Catalog + Direct-SQL Kickoff (PARALLEL) ──
-    // The LLM writes SQL from the question + schema alone — it does NOT need the
-    // analysis plan. So fire that call NOW, concurrently with the planner below,
-    // instead of waiting for the plan first. Two sequential LLM round trips
-    // become one wall-clock wait, roughly halving time-to-answer.
+    // ─── Step 1c: Value Catalog (deterministic) ───────────────────────
     let _valueCatalog: ReturnType<typeof buildValueCatalog> | null = null;
     try {
         _valueCatalog = buildValueCatalog(dataset.rows, semanticModel);
@@ -158,15 +154,9 @@ export async function runAISQLPipeline(
         Promise.resolve({ sql: null, tokens: 0, error: 'deferred until an unsupported-plan fallback is implemented' });
 
     // ─── Step 2: Generate Analysis Plan ─────────────────────────────
-    // The direct-SQL engine is settled FIRST, because its answer decides whether
-    // the LLM planner is worth calling at all.
-    //
-    // When direct-SQL produced usable SQL, the planner's own SQL would be thrown
-    // away — the plan is then only needed to pick the chart, shape the summary
-    // and drive formatting. The deterministic classifier + field mapper cover
-    // that, so we build the plan locally instead: no second request, no ~5k-token
-    // prompt, and no waiting on it. The LLM planner is still called in full when
-    // direct-SQL fails, which is exactly when its judgement is needed.
+    // Deterministic classification, time resolution, field mapping and value
+    // grounding are the primary path. The model is a bounded ambiguity resolver,
+    // never the first author of executable SQL.
     reportProgress('Asking the AI...', 3);
     _s1 = performance.now();
     const _dsEarly = await directSqlPromise;
@@ -180,7 +170,7 @@ export async function runAISQLPipeline(
     traceStep({
         stepNumber: 3, name: 'Intent Planner', engine: 'intentPlanner', icon: '🎯',
         status: plan.ambiguous ? 'warn' : 'pass',
-        summary: `${_dsEarly.sql ? 'Local plan (0 tokens)' : 'LLM plan'} — intent: ${plan.intent} | ${plan.dimensions.length} dim(s), ${plan.metrics.length} metric(s), ${plan.filters.length} filter(s)${plan.limit ? `, limit ${plan.limit}` : ''}`,
+        summary: `${localPlan.ambiguous ? 'GPT-5.6 Sol plan' : 'Local plan (0 tokens)'} — intent: ${plan.intent} | ${plan.dimensions.length} dim(s), ${plan.metrics.length} metric(s), ${plan.filters.length} filter(s)${plan.limit ? `, limit ${plan.limit}` : ''}`,
         details: {
             intent: plan.intent,
             dimensions: plan.dimensions.map(d => ({ field: d.field, grain: d.timeGrain || null })),
@@ -190,7 +180,7 @@ export async function runAISQLPipeline(
             limit: plan.limit,
             resultGrain: plan.resultGrain,
             ambiguous: plan.ambiguous,
-            plannerCallSkipped: !!_dsEarly.sql,
+            plannerCallSkipped: !localPlan.ambiguous,
         },
     }, _s1);
 
