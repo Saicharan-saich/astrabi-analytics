@@ -291,8 +291,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         return { ...result, transformedData: capped, truncatedFrom };
     }, [data, yKey, primaryCalc, yLabel, formatting?.numberFormat, formatting?.movingAvgWindow, chartType, (formatting as any)?.maxCategories]);
 
-    // Use calculated number format if available
-    const activeNumberFormat = suggestedNumberFormat || formatting?.numberFormat || 'raw';
+    // Calculation output semantics take precedence over the source metric. For
+    // example, "% of Total (Sales)" is a percentage, while rank is ordinal.
+    const calculationNumberFormat = primaryCalc === 'percent_of_total' || primaryCalc === 'pct_diff_from_prev' || primaryCalc === 'percentile'
+        ? 'percent'
+        : primaryCalc === 'rank_asc' || primaryCalc === 'rank_desc' || primaryCalc === 'std_dev' || primaryCalc === 'z_score' || primaryCalc === 'variance'
+            ? 'raw'
+            : undefined;
+    const activeNumberFormat = calculationNumberFormat || suggestedNumberFormat || formatting?.numberFormat || 'raw';
 
     // Helper for number formatting — uses activeNumberFormat which includes table calculation overrides
     const formatNumber = (value: number | undefined | null) => {
@@ -476,14 +482,18 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             return formatNumber(value);
         }
 
-        // Detect if this is a currency metric
+        // A table calculation changes what the values mean. Only infer from the
+        // source metric when no calculation (or user-selected format) specifies it.
         const metricRef = (config?.metric || yLabel || yKey || '').toLowerCase();
-        const isCurrency = metricRef.includes('sales') || metricRef.includes('revenue') ||
-            metricRef.includes('price') || metricRef.includes('cost') ||
-            metricRef.includes('amount') || metricRef.includes('profit');
-        const isPercent = metricRef.includes('percent') || (metricRef.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(metricRef)) ||
-            metricRef.includes('ratio') || metricRef.includes('share') ||
-            /\bdiscount\b/.test(metricRef) || metricRef.includes('markdown');
+        const hasExplicitFormat = activeNumberFormat !== 'auto';
+        const isCurrency = activeNumberFormat === 'currency_usd' || activeNumberFormat === 'currency_eur' ||
+            (!hasExplicitFormat && (metricRef.includes('sales') || metricRef.includes('revenue') ||
+                metricRef.includes('price') || metricRef.includes('cost') ||
+                metricRef.includes('amount') || metricRef.includes('profit')));
+        const isPercent = activeNumberFormat === 'percent' ||
+            (!hasExplicitFormat && (metricRef.includes('percent') || (metricRef.includes('rate') && !/\b(hourly|daily|weekly|monthly|annual|yearly|billing|bill|pay|charge|base|flat)[_ ]?rate\b/.test(metricRef)) ||
+                metricRef.includes('ratio') || metricRef.includes('share') ||
+                /\bdiscount\b/.test(metricRef) || metricRef.includes('markdown')));
 
         if (isPercent) {
             // Scale fractional percents (0.073 → 7.3%) so axis ticks read correctly.
