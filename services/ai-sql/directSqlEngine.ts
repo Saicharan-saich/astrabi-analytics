@@ -9,9 +9,10 @@
  * the user's question, the governed plan, schema metadata, and only
  * user-approved safe category domains when Enhanced privacy is enabled.
  */
-import { fetchWithFallback, selectAISQLModel } from './modelConfig';
+import { fetchWithFallback, selectAISQLModel, SOL_MODEL } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
 import type { AnalysisPlan } from './types';
+import { buildQueryContract, validateSQLAgainstContract } from './queryContract';
 
 const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
 Given a database schema and a question, output a SINGLE read-only SQL SELECT that answers it.
@@ -55,18 +56,52 @@ export async function generateDirectSQL(
     const verificationContext = plannerVerification?.length
         ? `\n\nPlanner Verification (repair these gaps when the question and schema support it):\n${JSON.stringify(plannerVerification, null, 2)}`
         : '';
+    const contract = analysisPlan
+        ? buildQueryContract(question, analysisPlan, plannerVerification || [])
+        : null;
+    const contractContext = contract?.requirements.length
+        ? `\n\nExecutable Query Contract:\n${contract.requirements.map((r, i) => `${i + 1}. ${r}`).join('\n')}`
+        : '';
+    const userContext = `Schema:\n${schemaText}${planContext}${verificationContext}${contractContext}\n\nQuestion: ${question}\n\nSQL:`;
     const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: `Schema:\n${schemaText}${planContext}${verificationContext}\n\nQuestion: ${question}\n\nSQL:` },
+        { role: 'user', content: userContext },
     ];
     const model = selectAISQLModel(question, 'sql');
     console.log(`[AI SQL] Direct SQL model route: ${model}`);
-    const { data, model: modelUsed } = await fetchWithFallback(messages as any, { temperature: 0, max_tokens: 2000, model });
-    const content = data.choices?.[0]?.message?.content || '';
+    const { data, model: modelUsed } = await fetchWithFallback(messages as any, { temperature: 0, max_tokens: 2400, model });
+    let content = data.choices?.[0]?.message?.content || '';
     const usage = data.usage || {};
-    const tokens = usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0)) || 0;
+    let tokens = usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0)) || 0;
+    let sql = extractSQL(content);
+    let modelUsedForSQL = modelUsed;
 
-    const sql = extractSQL(content);
+    // Contract failure is a semantic failure, not a valid answer with lower
+    // confidence. Ask Sol to review and repair the candidate before execution.
+    let contractIssues = contract ? validateSQLAgainstContract(sql, contract) : [];
+    if (contractIssues.length > 0) {
+        console.warn('[AI SQL] Candidate violated query contract:', contractIssues.map(i => i.code).join(', '));
+        const reviewPrompt = `${SYSTEM_PROMPT}\n\nYou are reviewing a candidate SQL query. Rewrite it so it meets every Executable Query Contract requirement. Do not return the original query if it drops a required analytical shape.`;
+        const reviewMessages = [
+            { role: 'system', content: reviewPrompt },
+            { role: 'user', content: `${userContext}\n\nCandidate SQL to repair:\n${sql}\n\nContract failures:\n${contractIssues.map(i => `- ${i.message}`).join('\n')}\n\nCorrected SQL:` },
+        ];
+        const reviewed = await fetchWithFallback(reviewMessages as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL });
+        content = reviewed.data.choices?.[0]?.message?.content || '';
+        const reviewUsage = reviewed.data.usage || {};
+        tokens += reviewUsage.total_tokens || ((reviewUsage.prompt_tokens || 0) + (reviewUsage.completion_tokens || 0)) || 0;
+        sql = extractSQL(content);
+        modelUsedForSQL = reviewed.model;
+        contractIssues = contract ? validateSQLAgainstContract(sql, contract) : [];
+        if (contractIssues.length > 0) {
+            return {
+                sql,
+                tokens,
+                model: modelUsedForSQL,
+                error: `Faithfulness review rejected SQL: ${contractIssues.map(i => i.message).join(' ')}`,
+            };
+        }
+    }
 
     // A fallback must never silently swap the dataset-relative reporting clock
     // for the user's machine/server clock. The caller passes an anchor whenever
@@ -77,12 +112,12 @@ export async function generateDirectSQL(
         return {
             sql,
             tokens,
-            model: modelUsed,
+            model: modelUsedForSQL,
             error: 'Wall-clock SQL rejected: use the dataset reporting anchor with explicit DATE literals',
         };
     }
 
     const safe = validateReadOnlySQL(sql);
-    if (!safe.ok) return { sql, tokens, model: modelUsed, error: `Unsafe SQL rejected: ${safe.reason}` };
-    return { sql: safe.sql, tokens, model: modelUsed };
+    if (!safe.ok) return { sql, tokens, model: modelUsedForSQL, error: `Unsafe SQL rejected: ${safe.reason}` };
+    return { sql: safe.sql, tokens, model: modelUsedForSQL };
 }
