@@ -1414,6 +1414,7 @@ function finalizePlan(
             plan.intent = classification.intent as any;
         }
     }
+    enforceCustomerExperienceEvidence(plan, question, model);
     console.log('[Intent Planner] Generated plan:', JSON.stringify(plan, null, 2));
     return plan;
 }
@@ -1431,6 +1432,33 @@ function validateIntent(intent: string): AnalysisIntent {
         return intent as AnalysisIntent;
     }
     return 'breakdown';
+}
+
+/**
+ * Evidence gate for questions about customer happiness, satisfaction, or
+ * complaints. An LLM can reason about a supplied plan, but it cannot establish
+ * customer sentiment when the dataset has no sentiment evidence. Never turn
+ * this kind of question into an unrelated sales total.
+ */
+function enforceCustomerExperienceEvidence(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    const asksAboutExperience = /\b(unhappy|unhappiness|dissatisfied|dissatisfaction|satisfied|satisfaction|customer\s+(?:experience|sentiment)|customer\s+feedback|complaints?|reviews?|ratings?|nps|net\s+promoter|csat)\b/i.test(question);
+    if (!asksAboutExperience) return;
+
+    const evidencePattern = /\b(satisfaction|sentiment|feedback|complaint|review|rating|nps|net\s*promoter|csat|experience)\b/i;
+    const evidenceFields = model.fields.filter(field => {
+        const searchable = [field.name, field.displayLabel, ...(field.synonyms || [])].join(' ');
+        return evidencePattern.test(searchable);
+    });
+
+    if (evidenceFields.length > 0) return;
+
+    plan.ambiguous = true;
+    plan.clarificationQuestion =
+        'I can’t determine why customers are unhappy from this dataset because it has no customer-satisfaction evidence such as ratings, reviews, complaints, feedback, CSAT, or NPS. ' +
+        'I can analyse return patterns as a possible proxy, but I would label that as a proxy—not proof of dissatisfaction. ' +
+        'Try asking “Which products or customer segments have the highest return rate?” or upload feedback/survey data for a direct answer.';
+    (plan as any)._evidenceGap = 'customer_experience';
+    console.warn('[Intent Planner] Evidence gate: customer-experience question has no satisfaction, feedback, complaint, review, rating, CSAT, or NPS field');
 }
 
 /**
