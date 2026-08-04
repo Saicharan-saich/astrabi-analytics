@@ -152,8 +152,10 @@ export async function runAISQLPipeline(
     }
 
     const _directSqlStart = performance.now();
-    // Always resolves (never rejects) so it can safely be awaited later.
-    const directSqlPromise: Promise<{ sql: string | null; tokens: number; error: string | null }> = (async () => {
+    // This is deliberately lazy. Governed AI SQL only invokes an LLM after the
+    // deterministic semantic plan and Question Builder compiler cannot represent
+    // the request, so ordinary analytics questions never become raw LLM SQL.
+    const runDirectSql = async (): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null }> => {
         try {
             // Privacy mode gates what the LLM may see. Strict = metadata only, no
             // data values leave the browser. Enhanced = also send bounded category
@@ -198,10 +200,10 @@ export async function runAISQLPipeline(
                     }
                 }
                 console.log('[Pipeline] Direct-SQL engine SQL:', sql);
-                return { sql, tokens: ds.tokens || 0, error: null };
+                return { sql, tokens: ds.tokens || 0, model: ds.model, error: null };
             }
             console.warn('[Pipeline] Direct-SQL not usable:', ds.error || 'empty SQL');
-            return { sql: null, tokens: ds.tokens || 0, error: ds.error || 'empty SQL' };
+            return { sql: null, tokens: ds.tokens || 0, model: ds.model, error: ds.error || 'empty SQL' };
         } catch (dErr: any) {
             const msg = dErr?.message || String(dErr);
             console.warn('[Pipeline] Direct-SQL engine failed — deterministic backup will answer:', msg);
@@ -221,11 +223,12 @@ export async function runAISQLPipeline(
     // direct-SQL fails, which is exactly when its judgement is needed.
     reportProgress('Asking the AI...', 3);
     _s1 = performance.now();
-    const _dsEarly = await directSqlPromise;
-    const plan = _dsEarly.sql
-        ? generateLocalPlan(augmentedQuestion, semanticModel, grainOverride)
-        : await generatePlan(augmentedQuestion, semanticModel, grainOverride);
-    console.log(`[Pipeline] Step 2: Plan built ${_dsEarly.sql ? 'LOCALLY (direct-SQL succeeded — planner call skipped)' : 'by the LLM planner (direct-SQL unusable)'}`);
+    // The governed path starts with the deterministic planner. It understands
+    // the dataset-relative reporting anchor and lets the typed QueryPlan compiler
+    // answer ordinary questions without sending any data or question to an LLM.
+    const _dsEarly = { sql: null as string | null, tokens: 0, model: undefined as string | undefined, error: 'Deferred until deterministic compilation is unavailable' };
+    let plan = generateLocalPlan(augmentedQuestion, semanticModel, grainOverride);
+    console.log('[Pipeline] Step 2: Plan built locally (governed deterministic-first path)');
     traceStep({
         stepNumber: 3, name: 'Intent Planner', engine: 'intentPlanner', icon: '🎯',
         status: plan.ambiguous ? 'warn' : 'pass',
@@ -444,18 +447,22 @@ export async function runAISQLPipeline(
     // time we get here it is usually already finished (zero extra wait).
     let directSQL: string | null = null;
     let directSqlTokens = 0;
+    let directSqlModel: string | undefined;
     let directSqlError: string | null = null;
     {
-        const _ds = _dsEarly; // settled before the plan step
+        // Only reach the raw-SQL LLM fallback when the governed compiler has no
+        // safe representation for the request. This remains visible to the user.
+        const _ds = qbSQL ? _dsEarly : await runDirectSql();
         directSQL = _ds.sql;
         directSqlTokens = _ds.tokens;
+        directSqlModel = _ds.model;
         directSqlError = _ds.error;
         traceStep({
             stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
             status: directSQL ? 'pass' : 'skip',
             summary: directSQL
-                ? 'LLM wrote the SQL from the schema — the planner call was skipped, saving its prompt'
-                : `Skipped — ${directSqlError || 'no SQL'} (using the deterministic backup)`,
+                ? 'Escalated fallback: LLM wrote SQL after the deterministic compiler could not represent the request'
+                : 'Not needed — deterministic Question Builder compilation succeeded',
             details: { sql: directSQL, error: directSqlError, tokens: directSqlTokens },
         }, _directSqlStart);
     }
@@ -485,9 +492,9 @@ export async function runAISQLPipeline(
         stepNumber: 6, name: 'SQL Generator', engine: 'sqlGenerator', icon: '⚡',
         status: 'pass',
         summary: directSQL
-            ? 'SQL written directly by the LLM from the metadata-only schema'
+            ? 'Escalated fallback: SQL written by the LLM from the metadata-only schema'
             : qbSQL
-                ? 'LLM unavailable — used the deterministic Question Builder backup'
+                ? 'Governed deterministic Question Builder SQL'
                 : `Generated via ${sqlMethod === 'deterministic' ? 'deterministic rules' : 'AI/LLM fallback'}`,
         details: { method: sqlMethod, sql: aiGeneratedSQL },
     }, _s1);
@@ -526,7 +533,7 @@ export async function runAISQLPipeline(
         stepNumber: 7, name: 'SQL Correction Engine', engine: 'sqlCorrectionEngine', icon: '🔧',
         status: _correctionStatus,
         summary: _correctionStatus === 'skip'
-            ? (directSQL ? 'Skipped — the LLM wrote the SQL' : 'Skipped — deterministic backup produced the SQL')
+            ? (directSQL ? 'Skipped — escalated LLM fallback produced the SQL' : 'Skipped — governed deterministic compiler produced the SQL')
             : _correctionStatus === 'pass'
                 ? 'Backup: SQL rebuilt deterministically — verified column names, GROUP BY, aggregations'
                 : 'Correction engine failed — using AI-generated SQL as fallback',
