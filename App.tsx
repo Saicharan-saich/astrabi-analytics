@@ -20,7 +20,6 @@ import { Sidebar } from './components/Sidebar';
 import { UploadView } from './components/UploadView';
 import { ETLView } from './components/ETLView';
 import { DataStudioView } from './components/DataStudioView';
-import { DataExplorerView } from './components/DataExplorerView';
 import { DatasetSummaryView } from './components/DatasetSummaryView';
 import { WorkbenchView } from './components/WorkbenchView';
 import { BuilderView } from './components/BuilderView';
@@ -1661,8 +1660,9 @@ function App() {
                   <SchemaView dataset={dataset} />
                 </div>
 
+                {/* Legacy Data Explorer links now open the Explorer section of the unified dataset workspace. */}
                 <div className={`h-full w-full ${activeTab === Tab.DATA ? '' : 'hidden'}`}>
-                  <DataExplorerView dataset={dataset} />
+                  <DatasetSummaryView dataset={dataset} initialSection="explore" />
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.DATASET_SUMMARY ? '' : 'hidden'}`}>
