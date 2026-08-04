@@ -12,6 +12,8 @@ export interface QueryContract {
     requiresGrouping: boolean;
     requiresFiscalCalendar: boolean;
     requiresRanking: boolean;
+    /** Numeric limit explicitly requested by a top/bottom ranking question. */
+    rankingLimit?: number;
     requiresComparison: boolean;
     /** Exact schema field requested for the grouping, when confidently resolved. */
     requiredDimension?: string;
@@ -67,6 +69,8 @@ export function buildQueryContract(
         || verification.some(issue => issue.code === 'missing_dimension');
     const requiresRanking = RANKING_CUE.test(question)
         || verification.some(issue => issue.code === 'missing_ranking');
+    const rankingLimitMatch = question.match(/\b(?:top|bottom)\s+(\d+)\b/i);
+    const rankingLimit = rankingLimitMatch ? Number(rankingLimitMatch[1]) : undefined;
     const requiresComparison = COMPARISON_CUE.test(question) || Boolean(plan.comparison);
     const requiredDimension = requiresGrouping ? resolveRequestedDimension(question, model) : undefined;
 
@@ -76,7 +80,7 @@ export function buildQueryContract(
     if (requiresRanking) requirements.push('Return a ranked result with ORDER BY and an appropriate LIMIT when the question specifies one.');
     if (requiresComparison) requirements.push('Return both requested comparison periods with clearly labelled result columns or rows.');
 
-    return { requirements, requiresGrouping, requiresFiscalCalendar, requiresRanking, requiresComparison, requiredDimension };
+    return { requirements, requiresGrouping, requiresFiscalCalendar, requiresRanking, rankingLimit, requiresComparison, requiredDimension };
 }
 
 /** Verify that the generated SQL still contains every explicit contract shape. */
@@ -112,8 +116,15 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
             message: 'The question requires a ranking, but the SQL has no ORDER BY.',
         });
     }
+    if (contract.rankingLimit !== undefined
+        && !new RegExp('\\blimit\\s+' + contract.rankingLimit + '\\b').test(normalized)) {
+        issues.push({
+            code: 'missing_ranking',
+            message: `The question asks for the top/bottom ${contract.rankingLimit}, but the SQL has no matching LIMIT ${contract.rankingLimit}.`,
+        });
+    }
     if (contract.requiresComparison
-        && !/(?:\bunion\s+all\b|\bcurrent\b|\bprevious\b|\bprior\b|\bcomparison\b)/.test(normalized)) {
+        && !/(?:\bunion\s+all\b|\bcurrent\b|\bprevious\b|\bprior\b|\bcomparison\b|(?:this|last)[_ -]?(?:day|week|month|quarter|year))/i.test(normalized)) {
         issues.push({
             code: 'missing_comparison',
             message: 'The question requires a period comparison, but the SQL does not represent both periods.',
