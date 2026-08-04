@@ -20,6 +20,19 @@ const HIGH_CARDINALITY_THRESHOLD = 15; // More than 15 categories = horizontal b
 const DONUT_MAX_CATEGORIES = 6; // Donut only for small category counts
 
 /**
+ * Entity/identity results answer "which/who" questions. Their labels are the
+ * answer, so a table is more legible and more honest than a crowded bar chart.
+ * This uses semantic metadata first; name-like labels cover datasets where the
+ * semantic classifier conservatively labelled the field as a category.
+ */
+function isAnswerListDimension(column: string, model: SemanticModel): boolean {
+    const field = model.fields.find(f => f.name.toLowerCase() === column.toLowerCase());
+    if (field?.semanticType === 'identifier' || field?.semanticType === 'text') return true;
+    const label = [column, field?.displayLabel || ''].join(' ').toLowerCase();
+    return /\b(?:name|customer|client|person|employee|contact|account|member|vendor|supplier)\b/.test(label);
+}
+
+/**
  * Derive the axis/label format for the primary metric based on its semantic type.
  * Used to ensure data labels always show '%' for discounts, '$' for revenue, etc.
  */
@@ -210,7 +223,23 @@ export function recommendChart(
         return { chartType, xKey, yKey, secondaryYKeys, useDualAxis, leftAxisFormat, rightAxisFormat, reason };
     }
 
-    // ─── Rule 6: Category Dimension ──────────────────────────────
+    // ─── Rule 6: Answer Lists → Table ───────────────────────────
+    // A list of people, customers, accounts, or other named entities is an
+    // answer set, not a visual comparison. Keep its column headings visible.
+    // Ranking is the exception: bars remain useful for deliberate top/bottom
+    // comparisons, and users can still manually switch chart types.
+    const primaryAnswerDimension = dimensionColumns[0];
+    if (primaryAnswerDimension
+        && isAnswerListDimension(primaryAnswerDimension, model)
+        && plan.intent !== 'ranking') {
+        chartType = 'table';
+        xKey = primaryAnswerDimension;
+        yKey = metricColumns[0] || '';
+        reason = `Named answer list (${primaryAnswerDimension}) → Answer Table with labelled columns`;
+        return { chartType, xKey, yKey, useDualAxis, reason };
+    }
+
+    // ─── Rule 7: Category Dimension ──────────────────────────────
     if (dimensionCount >= 1 && metricCount >= 1) {
         const primaryDim = dimensionColumns[0];
         const cardinality = dimensionCardinality[primaryDim] || 0;
