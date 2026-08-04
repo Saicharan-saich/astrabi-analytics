@@ -52,6 +52,26 @@ describe('analytics comparison baselines', () => {
         expect(result.yLabel).toBe('% Change vs Standard Class (Sales)');
     });
 
+    it('declares percentage and ranking outputs independently from the sales currency format', () => {
+        const percentOfTotal = applyTableCalculation(
+            shipModeSales,
+            'sales',
+            'percent_of_total',
+            'Sales',
+            'currency_usd',
+        );
+        const rank = applyTableCalculation(
+            shipModeSales,
+            'sales',
+            'rank_desc',
+            'Sales',
+            'currency_usd',
+        );
+
+        expect(percentOfTotal.suggestedNumberFormat).toBe('percent');
+        expect(rank.suggestedNumberFormat).toBe('raw');
+    });
+
     it('uses the same selected baseline for absolute differences', () => {
         const result = applyTableCalculation(
             shipModeSales,
