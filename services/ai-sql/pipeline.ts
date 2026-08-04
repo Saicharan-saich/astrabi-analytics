@@ -139,11 +139,7 @@ export async function runAISQLPipeline(
         console.log(`[Pipeline] Time resolved: "${resolvedTime.matchedPhrase}" → ${resolvedTime.description}`);
     }
 
-    // ─── Step 1c: Value Catalog + Direct-SQL Kickoff (PARALLEL) ──
-    // The LLM writes SQL from the question + schema alone — it does NOT need the
-    // analysis plan. So fire that call NOW, concurrently with the planner below,
-    // instead of waiting for the plan first. Two sequential LLM round trips
-    // become one wall-clock wait, roughly halving time-to-answer.
+    // ─── Step 1c: Value Catalog + governed fallback preparation ───
     let _valueCatalog: ReturnType<typeof buildValueCatalog> | null = null;
     try {
         _valueCatalog = buildValueCatalog(dataset.rows, semanticModel);
@@ -209,7 +205,7 @@ export async function runAISQLPipeline(
             console.warn('[Pipeline] Direct-SQL engine failed — deterministic backup will answer:', msg);
             return { sql: null, tokens: 0, error: msg };
         }
-    })();
+    };
 
     // ─── Step 2: Generate Analysis Plan ─────────────────────────────
     // The direct-SQL engine is settled FIRST, because its answer decides whether
