@@ -1,16 +1,17 @@
 /**
- * Direct SQL-semantics engine (the second, general path).
+ * Governed plan-to-SQL engine.
  * ─────────────────────────────────────────────────────────────────────
- * Instead of mapping a question onto the analytical plan schema, this asks the
- * LLM to write SQL directly from the METADATA-ONLY schema (no rows). It handles
- * the long tail the plan engine can't express — arbitrary joins, subqueries,
- * set operations — at the cost of the plan engine's determinism and governed
- * metrics. Every query is safety-gated (read-only) before it runs.
+ * The local semantic engines first create a typed AnalysisPlan. The selected
+ * GPT-5.6 model then reasons over that plan plus a metadata-only schema to write
+ * SQL, which is safety-gated and executed only in local DuckDB.
  *
- * Privacy is unchanged: only the schema (names + types + FKs) reaches the model.
+ * Privacy is unchanged: no dataset rows leave the browser. The model receives
+ * the user's question, the governed plan, schema metadata, and only
+ * user-approved safe category domains when Enhanced privacy is enabled.
  */
 import { fetchWithFallback, selectAISQLModel } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
+import type { AnalysisPlan } from './types';
 
 const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
 Given a database schema and a question, output a SINGLE read-only SQL SELECT that answers it.
@@ -21,6 +22,8 @@ Rules:
 - When money/revenue/total is asked for, use the additive currency measure, not a per-unit price.
 - DATE COLUMNS ARE STORED AS TEXT (VARCHAR). You MUST wrap them in CAST(col AS DATE) before ANY date function or comparison — DATE_TRUNC, EXTRACT, strftime, date_diff, ordering by month, or BETWEEN. Example: DATE_TRUNC('month', CAST(order_date AS DATE)), and CAST(order_date AS DATE) BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'. Writing DATE_TRUNC('month', order_date) directly WILL fail.
 - JOIN across tables when needed, following the listed foreign keys.
+- The local Analysis Plan is a binding analytical contract: preserve its metrics, aggregations, filters, dimensions, sorting, limits, and comparison semantics. Do not invent a different business question.
+- For a total period comparison, return two labelled aggregate rows, 'Current' and 'Previous'. For a trend comparison, retain the period label and the requested time grain.
 - If the question includes a "Dataset reporting anchor", that anchor is the reporting clock. Resolve relative periods using explicit DATE literals from it; NEVER use CURRENT_DATE, CURRENT_TIMESTAMP, NOW(), or other wall-clock functions.
 - Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
 
@@ -35,14 +38,21 @@ export function extractSQL(content: string): string {
 }
 
 /**
- * Generate SQL for a question against the given schema text. Returns the SQL and
- * exact token cost; sets `error` (and leaves sql for display) if the model's
- * output fails the read-only safety gate.
+ * Generate SQL from a question, the metadata-only schema, and (when supplied)
+ * the local governed plan. Returns the SQL and exact token cost; sets `error`
+ * (and leaves sql for display) if the model's output fails the read-only safety gate.
  */
-export async function generateDirectSQL(question: string, schemaText: string): Promise<DirectSQLResult> {
+export async function generateDirectSQL(
+    question: string,
+    schemaText: string,
+    analysisPlan?: AnalysisPlan,
+): Promise<DirectSQLResult> {
+    const planContext = analysisPlan
+        ? `\n\nLocal Analysis Plan (binding):\n${JSON.stringify(analysisPlan, null, 2)}`
+        : '';
     const messages = [
         { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: `Schema:\n${schemaText}\n\nQuestion: ${question}\n\nSQL:` },
+        { role: 'user', content: `Schema:\n${schemaText}${planContext}\n\nQuestion: ${question}\n\nSQL:` },
     ];
     const model = selectAISQLModel(question, 'sql');
     console.log(`[AI SQL] Direct SQL model route: ${model}`);
