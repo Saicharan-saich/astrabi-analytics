@@ -153,7 +153,7 @@ export async function runAISQLPipeline(
     // receives dataset rows; local DuckDB remains the only execution engine.
     const runHybridSql = async (
         plannerIssues: Array<{ code?: string; severity?: string; message?: string }> = [],
-    ): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null }> => {
+    ): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null; blocked?: boolean }> => {
         try {
             // Privacy mode gates what the LLM may see. Strict = metadata only, no
             // data values leave the browser. Enhanced = also send bounded category
@@ -210,7 +210,7 @@ export async function runAISQLPipeline(
                 return { sql, tokens: ds.tokens || 0, model: ds.model, error: null };
             }
             console.warn('[Pipeline] Direct-SQL not usable:', ds.error || 'empty SQL');
-            return { sql: null, tokens: ds.tokens || 0, model: ds.model, error: ds.error || 'empty SQL' };
+            return { sql: null, tokens: ds.tokens || 0, model: ds.model, error: ds.error || 'empty SQL', blocked: ds.blocked };
         } catch (dErr: any) {
             const msg = dErr?.message || String(dErr);
             console.warn('[Pipeline] Direct-SQL fallback failed:', msg);
@@ -439,6 +439,7 @@ export async function runAISQLPipeline(
     let directSqlTokens = 0;
     let directSqlModel: string | undefined;
     let directSqlError: string | null = null;
+    let directSqlBlocked = false;
     {
         // Hybrid path: the local engines build and verify the plan first; the
         // selected GPT-5.6 model then drafts SQL constrained by that plan. If the
@@ -449,6 +450,7 @@ export async function runAISQLPipeline(
         directSqlTokens = _ds.tokens;
         directSqlModel = _ds.model;
         directSqlError = _ds.error;
+        directSqlBlocked = !!_ds.blocked;
         traceStep({
             stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
             status: directSQL ? 'pass' : 'skip',
@@ -457,6 +459,13 @@ export async function runAISQLPipeline(
                 : 'Hybrid SQL unavailable or rejected — continuing with the local deterministic compiler',
             details: { sql: directSQL, error: directSqlError, tokens: directSqlTokens, model: directSqlModel || null },
         }, _directSqlStart);
+    }
+
+    // A contract rejection means the candidate SQL demonstrably ignored an
+    // explicit part of the question. Do not quietly run the generic local
+    // fallback: that is exactly how a fiscal-quarter request became total sales.
+    if (directSqlBlocked) {
+        throw new Error(directSqlError || 'AI SQL stopped before execution because it could not preserve the requested analytical shape.');
     }
 
     // ─── Step 3: Generate SQL (Step B — deterministic + LLM fallback) ─
