@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Zap, RotateCcw, Loader2, Database, Pin, Maximize2, X, TrendingUp, BarChart3, PieChart, Activity } from 'lucide-react';
+import { Zap, RotateCcw, Loader2, Database, Pin, Maximize2, X, TrendingUp, BarChart3, PieChart, Activity, Search, Send, ChevronDown } from 'lucide-react';
 import { Bar, Line, Doughnut } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -91,6 +91,9 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
     const [isLoading, setIsLoading] = useState(false);
     const [elapsed, setElapsed] = useState('0.0');
     const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
+    const [activeLens, setActiveLens] = useState<'all' | 'trend' | 'ranking' | 'breakdown'>('all');
+    const [showAllCharts, setShowAllCharts] = useState(false);
+    const [questionDraft, setQuestionDraft] = useState('');
     const cachedDatasetId = useRef<string | null>(null);
 
     // ── Insight Discovery: findings + executive summary (shared) ──
@@ -127,6 +130,7 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
         if (!dataset) return;
         setIsLoading(true);
         setDismissedIds(new Set());
+        setShowAllCharts(false);
         const start = performance.now();
 
         try {
@@ -164,7 +168,22 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
     const visibleInsights = insights.filter(i => !dismissedIds.has(i.id));
     const kpiInsights = visibleInsights.filter(i => i.category === 'kpi');
     const chartInsights = visibleInsights.filter(i => i.category !== 'kpi');
+    const filteredChartInsights = chartInsights.filter(insight => {
+        if (activeLens === 'trend') return insight.category === 'trend';
+        if (activeLens === 'ranking') return insight.category === 'ranking';
+        if (activeLens === 'breakdown') return ['distribution', 'comparative', 'diagnostic'].includes(insight.category);
+        return true;
+    });
+    const displayedChartInsights = showAllCharts ? filteredChartInsights : filteredChartInsights.slice(0, 6);
+    const hasMoreCharts = filteredChartInsights.length > displayedChartInsights.length;
     const domain = (dataset as any)?.domainProfile?.domain || 'General';
+
+    const submitQuestion = () => {
+        const question = questionDraft.trim();
+        if (!question || !onAskQuestion) return;
+        onAskQuestion(question);
+        setQuestionDraft('');
+    };
 
     // ── EMPTY STATE ──
     if (!dataset) {
@@ -247,6 +266,51 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
                     </button>
                 </div>
 
+                {/* ── DISCOVERY CONTROLS ── */}
+                <section className="mb-6 rounded-2xl border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-[#141a28] shadow-sm overflow-hidden">
+                    <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-white/[0.06]">
+                        <div className="flex flex-col xl:flex-row xl:items-center gap-4 justify-between">
+                            <div>
+                                <p className="text-xs font-bold uppercase tracking-[0.12em] text-indigo-600 dark:text-indigo-300">Explore with intent</p>
+                                <p className="text-sm text-gray-600 dark:text-slate-300 mt-1">Start with the strongest signals, then ask a follow-up in your own words.</p>
+                            </div>
+                            <form
+                                onSubmit={(event) => { event.preventDefault(); submitQuestion(); }}
+                                className="flex w-full xl:w-[420px] items-center gap-2 rounded-xl border border-gray-200 dark:border-white/[0.10] bg-gray-50 dark:bg-slate-900/70 px-3 py-1.5 focus-within:border-indigo-400 dark:focus-within:border-indigo-400/70 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all"
+                            >
+                                <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                                <input
+                                    value={questionDraft}
+                                    onChange={(event) => setQuestionDraft(event.target.value)}
+                                    placeholder="Ask about this dataset…"
+                                    className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-gray-900 dark:text-white placeholder:text-slate-400 outline-none"
+                                    disabled={!onAskQuestion}
+                                />
+                                <button
+                                    type="submit"
+                                    disabled={!questionDraft.trim() || !onAskQuestion}
+                                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-slate-300 dark:disabled:bg-white/[0.08] disabled:text-slate-500 transition-colors"
+                                    aria-label="Ask question"
+                                >
+                                    <Send className="w-3.5 h-3.5" />
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3">
+                        <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 mr-1">Show:</span>
+                        <button onClick={() => { setActiveLens('all'); setShowAllCharts(false); }} className={activeLens === 'all' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm shadow-indigo-500/20' : 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/[0.05] text-gray-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/[0.12]'}>All visuals ({chartInsights.length})</button>
+                        <button onClick={() => { setActiveLens('trend'); setShowAllCharts(false); }} className={activeLens === 'trend' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm shadow-indigo-500/20' : 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/[0.05] text-gray-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/[0.12]'}>Trends</button>
+                        <button onClick={() => { setActiveLens('ranking'); setShowAllCharts(false); }} className={activeLens === 'ranking' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm shadow-indigo-500/20' : 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/[0.05] text-gray-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/[0.12]'}>Rankings</button>
+                        <button onClick={() => { setActiveLens('breakdown'); setShowAllCharts(false); }} className={activeLens === 'breakdown' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm shadow-indigo-500/20' : 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/[0.05] text-gray-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/[0.12]'}>Breakdowns</button>
+                        {findings.length > 0 && (
+                            <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">
+                                {findings.filter(f => f.severity === 'critical' || f.severity === 'warning').length} signals need attention
+                            </span>
+                        )}
+                    </div>
+                </section>
+
                 {/* ── EXECUTIVE SUMMARY (findings → business English) ── */}
                 <ExecutiveSummary findings={findings} dataset={dataset} />
 
@@ -278,10 +342,15 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
                                 <div className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider">
                                     {kpi.title}
                                 </div>
-                                <div className="mt-2 flex gap-1.5 opacity-0 group-hover:opacity-100 transition-all">
+                                <div className="mt-2 flex gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
                                     <button onClick={() => handlePin(kpi)} className="p-1 rounded bg-slate-700/40 hover:bg-indigo-500/30 text-slate-400 hover:text-indigo-300" title="Pin to Dashboard">
                                         <Pin className="w-3 h-3" />
                                     </button>
+                                    {onOpenInBuilder && kpi.config && (
+                                        <button onClick={() => onOpenInBuilder(kpi.config)} className="p-1 rounded bg-slate-700/40 hover:bg-emerald-500/30 text-slate-400 hover:text-emerald-300" title="Open in Builder">
+                                            <Maximize2 className="w-3 h-3" />
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         ))}
@@ -289,8 +358,17 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
                 )}
 
                 {/* ── CHART GRID ── */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {chartInsights.map(insight => (
+                {filteredChartInsights.length > 0 ? (
+                    <>
+                        <div className="flex items-center justify-between mb-3">
+                            <div>
+                                <h3 className="text-base font-bold text-gray-900 dark:text-white">Visual exploration</h3>
+                                <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Open a card in Builder to adapt its fields, filters, or chart.</p>
+                            </div>
+                            <span className="text-xs font-medium text-slate-400 dark:text-slate-500">{filteredChartInsights.length} visual{filteredChartInsights.length === 1 ? '' : 's'}</span>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {displayedChartInsights.map(insight => (
                         <InsightCard
                             key={insight.id}
                             insight={insight}
@@ -299,7 +377,23 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
                             onOpenInBuilder={onOpenInBuilder}
                         />
                     ))}
-                </div>
+                        </div>
+                        {hasMoreCharts && (
+                            <div className="flex justify-center mt-5">
+                                <button onClick={() => setShowAllCharts(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-indigo-200 dark:border-indigo-500/25 bg-indigo-50 dark:bg-indigo-500/[0.08] text-sm font-semibold text-indigo-700 dark:text-indigo-200 hover:bg-indigo-100 dark:hover:bg-indigo-500/[0.14] transition-colors">
+                                    Show {filteredChartInsights.length - displayedChartInsights.length} more visual{filteredChartInsights.length - displayedChartInsights.length === 1 ? '' : 's'}
+                                    <ChevronDown className="w-4 h-4" />
+                                </button>
+                            </div>
+                        )}
+                    </>
+                ) : chartInsights.length > 0 ? (
+                    <div className="rounded-xl border border-dashed border-gray-200 dark:border-white/[0.10] py-10 text-center">
+                        <BarChart3 className="w-8 h-8 text-slate-400 mx-auto mb-3" />
+                        <p className="text-sm font-semibold text-gray-700 dark:text-slate-200">No matching visuals for this view</p>
+                        <button onClick={() => setActiveLens('all')} className="mt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300 hover:underline">Show all visuals</button>
+                    </div>
+                ) : null}
 
                 {visibleInsights.length === 0 && !isLoading && (
                     <div className="flex flex-col items-center justify-center py-20 text-slate-400">
@@ -430,7 +524,7 @@ const InsightCard: React.FC<{
             </div>
 
             {/* Actions */}
-            <div className="flex items-center gap-2 px-4 pb-3 pt-1 opacity-0 group-hover:opacity-100 transition-all">
+            <div className="flex items-center gap-2 px-4 pb-3 pt-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
                 <button
                     onClick={onPin}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[11px] font-medium transition-all"
@@ -438,9 +532,9 @@ const InsightCard: React.FC<{
                     <Pin className="w-3 h-3" />
                     Pin
                 </button>
-                {onOpenInBuilder && (
+                {onOpenInBuilder && insight.config && (
                     <button
-                        onClick={() => onOpenInBuilder({ metric: insight.yKey, dimension: insight.xKey })}
+                        onClick={() => onOpenInBuilder(insight.config)}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-medium transition-all"
                     >
                         <Maximize2 className="w-3 h-3" />
