@@ -44,7 +44,7 @@ function getAuthToken(): string {
  * Fetch from the AI model via backend proxy with retry logic.
  *
  * 1. Send request to backend proxy with JWT auth
- * 2. Backend validates user, checks quota, then forwards to OpenRouter
+ * 2. Backend validates user, checks quota, then calls the OpenAI Responses API
  * 3. If 429 (rate limited) → wait 2s and retry up to 3 times
  * 4. If any other error → throw clean user-facing message
  */
