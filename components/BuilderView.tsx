@@ -332,6 +332,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         // The explorer is a mode of this exact Builder instance, not a copied
         // preview. Its result and all Question Builder controls stay live.
         if (!isSelected && tableCalculations.length > 0 && result) {
+            setShowGrowthChart(true);
             setIsAnalyticsExplorer(true);
         }
     }, [formatting, onUpdateFormatting, result]);
@@ -941,7 +942,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                 )}
                                                 {(formatting.tableCalculations || []).length > 0 && (
                                                     <div className="mt-2 flex items-center gap-3">
-                                                        <button onClick={() => setIsAnalyticsExplorer(true)} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer">Open Analytics Explorer →</button>
+                                                        <button onClick={() => { setShowGrowthChart(true); setIsAnalyticsExplorer(true); }} className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition-colors cursor-pointer">Open Analytics Explorer →</button>
                                                         <button onClick={() => onUpdateFormatting({ ...formatting, tableCalculations: [] })} className="text-[11px] text-slate-400 hover:text-red-500 transition-colors cursor-pointer">Clear all calculations</button>
                                                     </div>
                                                 )}
