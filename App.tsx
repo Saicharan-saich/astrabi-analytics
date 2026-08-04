@@ -1755,6 +1755,12 @@ function App() {
                   <QuickInsightsView
                     dataset={dataset}
                     onPin={(title, result) => handlePin(result)}
+                    onOpenInBuilder={(config) => {
+                      setWorkbenchConfig(config);
+                      setWorkbenchResult(undefined);
+                      setEditingDashboardItemId(null);
+                      setActiveTab(Tab.BUILDER);
+                    }}
                     onAskQuestion={handleSmartQuestion}
                   />
                 </div>
