@@ -1419,64 +1419,88 @@ const LLM_RATE_LIMIT = rateLimit({
 });
 
 app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
-    const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
-    if (!OPENROUTER_KEY) {
-        return res.status(500).json({ success: false, error: 'LLM service not configured' });
+    const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+    if (!OPENAI_API_KEY) {
+        return res.status(500).json({ success: false, error: 'OpenAI service not configured' });
     }
 
-    // Require authentication
     const user = extractUser(req);
     if (!user) {
         return res.status(401).json({ success: false, error: 'Authentication required for AI features. Please log in.' });
     }
 
-    // Check quota
     const quota = await checkAIQuota(user.userId);
     if (!quota.allowed) {
         return res.status(429).json({ success: false, error: quota.reason, quotaExceeded: true });
     }
 
     try {
-        const { model, messages, max_tokens, temperature } = req.body;
+        const { model, messages, max_tokens } = req.body;
         if (!messages || !Array.isArray(messages)) {
             return res.status(400).json({ success: false, error: 'messages array is required' });
         }
 
-        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+        // This endpoint serves the governed AI SQL fallback only. Do not let a
+        // browser select arbitrary, billable models.
+        const requestedModel = model || 'gpt-5.6-sol';
+        if (requestedModel !== 'gpt-5.6-sol') {
+            return res.status(400).json({ success: false, error: 'Unsupported AI SQL model' });
+        }
+
+        const input = messages.map(message => ({
+            role: message.role === 'system' ? 'developer' : message.role,
+            content: [{ type: 'input_text', text: typeof message.content === 'string' ? message.content : JSON.stringify(message.content) }],
+        }));
+
+        const response = await fetch('https://api.openai.com/v1/responses', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${OPENROUTER_KEY}`,
+                'Authorization': `Bearer ${OPENAI_API_KEY}`,
                 'Content-Type': 'application/json',
-                'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:5173',
-                'X-Title': 'QuickInsight'
             },
             body: JSON.stringify({
-                model: model || 'google/gemini-2.5-flash',
-                messages,
-                max_tokens: Math.min(max_tokens || 2000, 4000),
-                temperature: temperature ?? 0.1
+                model: requestedModel,
+                input,
+                reasoning: { effort: 'low' },
+                text: { verbosity: 'low' },
+                max_output_tokens: Math.min(max_tokens || 2000, 4000),
             })
         });
 
         if (!response.ok) {
             const errorText = await response.text().catch(() => 'Unknown error');
-            console.error('[LLM Proxy] API error:', response.status, errorText);
-            return res.status(response.status).json({ success: false, error: `LLM service error (${response.status})` });
+            console.error('[LLM Proxy] OpenAI API error:', response.status, errorText);
+            return res.status(response.status).json({ success: false, error: `OpenAI service error (${response.status})` });
         }
 
         const data = await response.json();
-        const tokensUsed = data.usage?.total_tokens || data.usage?.completion_tokens || 0;
+        const content = data.output_text || '';
+        if (!content) {
+            console.error('[LLM Proxy] OpenAI response contained no output text');
+            return res.status(502).json({ success: false, error: 'OpenAI returned an empty response' });
+        }
 
-        // Log usage
-        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, model || 'google/gemini-2.5-flash', `tokens:${tokensUsed}`);
+        const usage = data.usage || {};
+        const tokensUsed = usage.total_tokens || (usage.input_tokens || 0) + (usage.output_tokens || 0);
+        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, requestedModel, `tokens:${tokensUsed}`);
         console.log(`[LLM] User ${user.email} — ${tokensUsed} tokens (${quota.remaining - 1} remaining today)`);
 
-        // Include quota info in response
-        data._quota = { remaining: quota.remaining - 1, limit: quota.limit, used: (quota.used || 0) + 1 };
-        res.json(data);
+        // Keep the existing frontend adapter stable while the backend moves to
+        // the Responses API. The client expects a Chat Completions-like shape.
+        res.json({
+            id: data.id,
+            model: data.model || requestedModel,
+            choices: [{ message: { content } }],
+            usage: {
+                prompt_tokens: usage.input_tokens || 0,
+                completion_tokens: usage.output_tokens || 0,
+                total_tokens: tokensUsed,
+            },
+            _quota: { remaining: quota.remaining - 1, limit: quota.limit, used: (quota.used || 0) + 1 },
+        });
     } catch (error) {
         console.error('[LLM Proxy] Request failed:', error);
-        res.status(500).json({ success: false, error: 'LLM request failed' });
+        res.status(500).json({ success: false, error: 'OpenAI request failed' });
     }
 });
 
@@ -1706,8 +1730,8 @@ app.get('/api/health', (req, res) => {
     if (!process.env.FRONTEND_URL) {
         warnings.push('FRONTEND_URL not set — CORS will only allow localhost origins');
     }
-    if (!process.env.OPENROUTER_API_KEY) {
-        warnings.push('OPENROUTER_API_KEY not set — LLM proxy will not work');
+    if (!process.env.OPENAI_API_KEY) {
+        warnings.push('OPENAI_API_KEY not set — AI SQL fallback will not work');
     }
     res.json({
         status: 'ok',
