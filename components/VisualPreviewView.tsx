@@ -23,8 +23,6 @@ interface VisualPreviewViewProps {
   onBack: () => void;
   onPin?: (title: string, result: AnalysisResult) => void;
   onFormatChange?: (formatting: FormattingConfig) => void;
-  /** Builder uses a deliberately light workspace, independent of app theme. */
-  useLightSurface?: boolean;
 }
 
 interface DrillDownResult {
@@ -35,12 +33,10 @@ interface DrillDownResult {
 
 export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   dataset, result: initialResult, pipelineResult: initialPipeline, query,
-  formatting, onBack, onPin, onFormatChange, useLightSurface = false,
+  formatting, onBack, onPin, onFormatChange,
 }) => {
   const { theme } = useTheme();
-  // A Builder calculation opens in the same light workspace the user just left.
-  // AI SQL previews keep following the application's selected theme.
-  const isDark = !useLightSurface && theme === 'dark';
+  const isDark = theme === 'dark';
   const [activeTab, setActiveTab] = useState<'chart' | 'table' | 'sql'>('chart');
   const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
   const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);
