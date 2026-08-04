@@ -81,7 +81,9 @@ export async function syncDashboardsFromCloud(): Promise<void> {
                 dashboards: [],
                 activeDashboardId: null,
                 deletedDashboardIds: legacyIds,
-                resetLegacyDashboards: false,
+                // Start true for a new browser too: any dashboards from before this
+            // product reset are removed on the first authenticated cloud sync.
+            resetLegacyDashboards: true,
                 ...syncFromActive([], null),
             });
             console.log(`[DashSync] Removing ${legacyIds.length} legacy dashboard(s) from cloud and local storage`);
