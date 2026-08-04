@@ -59,6 +59,34 @@ function extractJSONObject(content: string): DynamicQuerySpec | null {
     try { return JSON.parse(match[0]) as DynamicQuerySpec; } catch { return null; }
 }
 
+/**
+ * Give every model a schema-derived presentation map. It makes the distinction
+ * between an internal identity key and the field a person should actually read
+ * explicit without sharing any values or adding a question-specific rule.
+ */
+export function buildEntityPresentationContext(model?: SemanticModel): string {
+    if (!model) return '';
+    const fields = model.fields || [];
+    const identifiers = fields.filter(field =>
+        field.semanticType === 'identifier' || /(?:^|_)id$|identifier|_key$/i.test(field.name)
+    );
+    const descriptive = fields.filter(field =>
+        field.role === 'dimension'
+        && field.semanticType !== 'identifier'
+        && /(?:^|_)(?:name|label|title|description)$/i.test(field.name)
+    );
+    const hints = descriptive.slice(0, 20).map(field => {
+        const stem = field.name.toLowerCase().replace(/(?:_|-)?(?:name|label|title|description)$/i, '');
+        const identifier = identifiers.find(id =>
+            id.name.toLowerCase().replace(/(?:_|-)?(?:id|key)$/i, '') === stem
+        );
+        return identifier
+            ? `- ${field.name} is the human-readable display field for ${identifier.name}; use ${field.name} as the visible answer and include ${identifier.name} only when a reference is useful.`
+            : `- ${field.name} is a human-readable descriptive field; prefer it over opaque identifiers in visible answers.`;
+    });
+    return hints.length ? `\n\nHuman-readable presentation fields:\n${hints.join('\n')}` : '';
+}
+
 export interface DirectSQLResult {
     sql: string;
     tokens: number;
@@ -94,6 +122,7 @@ export async function generateDirectSQL(
     const verificationContext = plannerVerification?.length
         ? `\n\nLocal diagnostics to consider:\n${JSON.stringify(plannerVerification, null, 2)}`
         : '';
+    const presentationContext = buildEntityPresentationContext(semanticModel);
 
     // Terra interprets the question into a typed, open-ended analytical plan.
     // This is deliberately not a collection of keyword rules: the specification
@@ -101,7 +130,7 @@ export async function generateDirectSQL(
     // and any schema-grounded analytical shape.
     const planner = await fetchWithFallback([
         { role: 'system', content: SPEC_PROMPT },
-        { role: 'user', content: `Schema:\n${schemaText}${planContext}${verificationContext}\n\nQuestion: ${question}` },
+        { role: 'user', content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}\n\nQuestion: ${question}` },
     ] as any, { temperature: 0, max_tokens: 2200, model: PLANNER_MODEL });
     const specContent = planner.data.choices?.[0]?.message?.content || '';
     const spec = extractJSONObject(specContent);
@@ -110,7 +139,7 @@ export async function generateDirectSQL(
     if (!spec) return { sql: '', tokens, model: planner.model, error: 'AI planner returned an invalid query specification', blocked: true };
     if (spec.clarification) return { sql: '', tokens, model: planner.model, error: spec.clarification, blocked: true };
 
-    const userContext = `Schema:\n${schemaText}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
+    const userContext = `Schema:\n${schemaText}${presentationContext}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
     const drafted = await fetchWithFallback([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userContext },
