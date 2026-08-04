@@ -38,7 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     const [pwLoading, setPwLoading] = useState(false);
 
     // Explore Data collapsible state
-    const exploreDataTabs = [Tab.COLUMN_MAPPING, Tab.ETL, Tab.DATA_STUDIO, Tab.SCHEMA, Tab.DATA, Tab.DATASET_SUMMARY];
+    const exploreDataTabs = [Tab.COLUMN_MAPPING, Tab.ETL, Tab.DATA_STUDIO, Tab.SCHEMA, Tab.DATASET_SUMMARY];
     const isExploreActive = exploreDataTabs.includes(activeTab);
     const [exploreDataOpen, setExploreDataOpen] = useState(isExploreActive);
 
@@ -84,8 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         { id: Tab.ETL, label: 'ETL Pipeline', icon: Database, requiresEditSchema: true, tooltip: 'View each automated data cleaning step — null handling, type casting, date parsing, and more.' },
         { id: Tab.DATA_STUDIO, label: 'Data Studio', icon: Wand2, requiresEditSchema: true, tooltip: 'Hands-on cleaning tools — fix values, handle outliers, deduplicate, split/merge columns, and transform your data interactively.' },
         { id: Tab.SCHEMA, label: 'Schema', icon: GitMerge, requiresEditSchema: true, tooltip: 'See how columns were classified (metric, dimension, date, ID) and override types if needed.' },
-        { id: Tab.DATA, label: 'Data Explorer', icon: BarChart2, tooltip: 'Browse your cleaned data in a table view with column stats and distributions.' },
-        { id: Tab.DATASET_SUMMARY, label: 'Dataset Summary', icon: BarChart2, tooltip: 'See column-level statistics, distributions, data quality, and a quick preview of your dataset.' },
+        { id: Tab.DATASET_SUMMARY, label: 'Dataset Workspace', icon: BarChart2, tooltip: 'See dataset health and column statistics, then browse raw or cleaned data with search, filters, sorting and export.' },
     ];
 
     const analysisSection = [
