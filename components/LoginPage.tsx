@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { useDashboardStore } from '../store/useDashboardStore';
 import { UserRole } from '../types';
+import { PreLoginTour } from './PreLoginTour';
 import { Eye, EyeOff, LogIn, Sparkles, AlertCircle, UserPlus, Users, Shield, BarChart2, Brain, Zap, ArrowRight } from 'lucide-react';
 
 interface LoginPageProps {
@@ -18,6 +19,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
     const [error, setError] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [mode, setMode] = useState<'login' | 'register'>('login');
+    const [showTour, setShowTour] = useState(true);
     const loginAsGuest = useAuthStore(s => s.loginAsGuest);
 
     // Typing effect for tagline
@@ -111,6 +113,10 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
     const handleGuestLogin = () => {
         loginAsGuest();
     };
+
+    if (showTour) {
+        return <PreLoginTour onComplete={() => setShowTour(false)} />;
+    }
 
     return (
         <div className="min-h-screen bg-mesh-animated flex items-center justify-center relative overflow-y-auto py-6">
