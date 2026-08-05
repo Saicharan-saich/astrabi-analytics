@@ -244,7 +244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     };
 
     return (
-        <div className="flex flex-col h-full p-3">
+        <div className="app-sidebar-content flex flex-col h-full p-3">
             {/* Header */}
             <div className="flex items-center justify-between mb-4 px-1">
                 <div className="flex items-center gap-2.5">
