@@ -281,15 +281,21 @@ app.use('/api/', apiKeyMiddleware);
 // Register a new user
 app.post('/api/auth/register', async (req, res) => {
     try {
-        const { email, name, password, role } = req.body;
-        if (!email || !password || !name) {
+        const { email, name, password } = req.body;
+        if (typeof email !== 'string' || typeof name !== 'string' || typeof password !== 'string'
+            || !email.trim() || !name.trim() || !password) {
             return res.status(400).json({ success: false, error: 'Email, name, and password are required' });
+        }
+        if (password.length < 8) {
+            return res.status(400).json({ success: false, error: 'Password must be at least 8 characters' });
         }
 
         const emailNorm = email.trim().toLowerCase();
         const hashedPassword = await bcrypt.hash(password, BCRYPT_ROUNDS);
-        const userId = Date.now().toString();
-        const userRole = role || 'viewer';
+        const userId = `usr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        // Public registration always creates a contributor. Administrative roles can
+        // only be assigned through the authenticated admin endpoint below.
+        const userRole = 'contributor';
 
         if (!authPool) {
             return res.status(503).json({ success: false, error: 'Database connection not available' });
@@ -307,7 +313,7 @@ app.post('/api/auth/register', async (req, res) => {
         );
 
         const token = jwt.sign(
-            { userId, email: emailNorm, role: userRole },
+            { userId, email: emailNorm, role: userRole, sv: 1 },
             JWT_SECRET,
             { expiresIn: '24h' }
         );
@@ -1534,6 +1540,73 @@ app.get('/api/admin/usage', async (req, res) => {
         res.json({ success: true, logs: rows });
     } catch (err) {
         res.status(500).json({ error: err.message });
+    }
+});
+
+// Create a user from the admin console (admin only)
+app.post('/api/admin/users', async (req, res) => {
+    const admin = extractUser(req);
+    if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    try {
+        const { email, name, password, role } = req.body || {};
+        if (typeof email !== 'string' || typeof name !== 'string' || typeof password !== 'string'
+            || !email.trim() || !name.trim() || !password) {
+            return res.status(400).json({ error: 'Email, name, and password are required' });
+        }
+        if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+        const userRole = typeof role === 'string' ? role : 'viewer';
+        if (!['admin', 'contributor', 'viewer'].includes(userRole)) {
+            return res.status(400).json({ error: 'Invalid user role' });
+        }
+
+        const emailNorm = email.trim().toLowerCase();
+        const existing = await authPool.query('SELECT id FROM users WHERE email = $1', [emailNorm]);
+        if (existing.rows.length > 0) return res.status(409).json({ error: 'User already exists' });
+
+        const userId = `usr_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS);
+        const { rows } = await authPool.query(
+            `INSERT INTO users (id, email, name, role, password_hash)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING id, email, name, role, is_active, daily_ai_limit, created_at`,
+            [userId, emailNorm, name.trim(), userRole, passwordHash]
+        );
+        console.log(`[Admin] ${admin.email} created ${userRole} user ${emailNorm}`);
+        res.status(201).json({ success: true, user: rows[0] });
+    } catch (err) {
+        console.error('[Admin] Create user failed:', err.message);
+        res.status(500).json({ error: 'Failed to create user' });
+    }
+});
+
+// Persist an admin-console role change (admin only).
+app.patch('/api/admin/users/:id/role', async (req, res) => {
+    const admin = extractUser(req);
+    if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    const { role } = req.body || {};
+    if (!['admin', 'contributor', 'viewer'].includes(role)) {
+        return res.status(400).json({ error: 'Invalid user role' });
+    }
+    if (req.params.id === admin.userId) {
+        return res.status(400).json({ error: 'You cannot change your own role' });
+    }
+
+    try {
+        const { rows } = await authPool.query(
+            'UPDATE users SET role = $1 WHERE id = $2 RETURNING id, email, name, role, is_active, daily_ai_limit, created_at',
+            [role, req.params.id]
+        );
+        if (rows.length === 0) return res.status(404).json({ error: 'User not found' });
+        console.log(`[Admin] ${admin.email} changed role for user ${req.params.id} to ${role}`);
+        res.json({ success: true, user: rows[0] });
+    } catch (err) {
+        console.error('[Admin] Update user role failed:', err.message);
+        res.status(500).json({ error: 'Failed to update user role' });
     }
 });
 
