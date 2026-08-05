@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { UserRole } from '../types';
 import { UserPlus, Trash2, Shield, Edit2, X, Check, Users, Crown, Eye, Pencil, AlertCircle, LogOut, Loader2 } from 'lucide-react';
@@ -8,7 +8,7 @@ interface UserManagementProps {
 }
 
 export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
-    const { users, currentUser, addUser, removeUser, updateUserRole } = useAuthStore();
+    const { users, currentUser, removeUser } = useAuthStore();
     const [showAddForm, setShowAddForm] = useState(false);
     const [newEmail, setNewEmail] = useState('');
     const [newName, setNewName] = useState('');
@@ -18,6 +18,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
     const [editingRoleId, setEditingRoleId] = useState<string | null>(null);
 
     const [isAdding, setIsAdding] = useState(false);
+    const [isLoadingUsers, setIsLoadingUsers] = useState(true);
     const [logoutAllLoading, setLogoutAllLoading] = useState(false);
     const [logoutUserId, setLogoutUserId] = useState<string | null>(null);
     const [logoutSuccess, setLogoutSuccess] = useState('');
@@ -48,6 +49,66 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
         }
     };
 
+    const toStoreUser = (user: any, index: number) => ({
+        id: String(user.id),
+        email: user.email,
+        name: user.name,
+        role: mapRole(user.role),
+        passwordHash: '',
+        createdAt: user.created_at ? new Date(user.created_at).getTime() : Date.now(),
+        avatar: AVATAR_COLORS[index % AVATAR_COLORS.length],
+    });
+
+    const loadUsers = async () => {
+        setIsLoadingUsers(true);
+        try {
+            const token = localStorage.getItem('qi_token');
+            const res = await fetch(`${API_BASE}/api/admin/users`, {
+                headers: token ? { Authorization: `Bearer ${token}` } : {},
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                setError(data.error || 'Failed to load users');
+                return;
+            }
+            useAuthStore.setState({ users: data.users.map(toStoreUser) });
+        } catch (err) {
+            console.error('[UserManagement] Load users failed:', err);
+            setError('Could not load users from the server.');
+        } finally {
+            setIsLoadingUsers(false);
+        }
+    };
+
+    useEffect(() => {
+        void loadUsers();
+    }, []);
+
+    const handleUpdateRole = async (userId: string, role: UserRole) => {
+        setError('');
+        try {
+            const token = localStorage.getItem('qi_token');
+            const res = await fetch(`${API_BASE}/api/admin/users/${userId}/role`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({ role: roleToBackend(role) }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                setError(data.error || 'Failed to update user role');
+                return;
+            }
+            await loadUsers();
+            setEditingRoleId(null);
+        } catch (err) {
+            console.error('[UserManagement] Update role failed:', err);
+            setError('Could not update the user role.');
+        }
+    };
+
     const handleAddUser = async (e: React.FormEvent) => {
         e.preventDefault();
         setError('');
@@ -58,10 +119,13 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
 
         setIsAdding(true);
         try {
-            // Call backend API to register the user in PostgreSQL
-            const res = await fetch(`${API_BASE}/api/auth/register`, {
+            const token = localStorage.getItem('qi_token');
+            const res = await fetch(`${API_BASE}/api/admin/users`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
                 body: JSON.stringify({
                     email: newEmail.trim(),
                     name: newName.trim(),
@@ -69,33 +133,14 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                     role: roleToBackend(newRole),
                 }),
             });
-
             const data = await res.json();
 
             if (!res.ok || !data.success) {
                 setError(data.error || 'Failed to add user');
-                setIsAdding(false);
                 return;
             }
 
-            // Sync the new user into the local Zustand store for immediate UI display
-            const backendUser = data.user;
-            const storeUser = {
-                id: backendUser.id,
-                email: backendUser.email,
-                name: backendUser.name,
-                role: mapRole(backendUser.role),
-                passwordHash: '',
-                createdAt: Date.now(),
-                avatar: AVATAR_COLORS[users.length % AVATAR_COLORS.length],
-            };
-
-            useAuthStore.setState((state) => ({
-                users: state.users.some(u => u.email === storeUser.email)
-                    ? state.users.map(u => u.email === storeUser.email ? storeUser : u)
-                    : [...state.users, storeUser],
-            }));
-
+            await loadUsers();
             setNewEmail('');
             setNewName('');
             setNewPassword('');
@@ -104,8 +149,9 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
         } catch (err: any) {
             console.error('[UserManagement] Add user failed:', err);
             setError('Could not connect to the server. Make sure the backend is running.');
+        } finally {
+            setIsAdding(false);
         }
-        setIsAdding(false);
     };
 
     const handleRemove = (id: string) => {
@@ -187,7 +233,12 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
 
                 {/* User List */}
                 <div className="flex-1 overflow-y-auto p-6 space-y-3">
-                    {users.map(user => (
+                    {isLoadingUsers ? (
+                        <div className="py-10 text-center text-sm text-slate-400 flex items-center justify-center gap-2">
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Loading users from the workspace…
+                        </div>
+                    ) : users.map(user => (
                         <div
                             key={user.id}
                             className={`group p-4 rounded-xl border transition-all ${user.id === currentUser?.id
@@ -223,8 +274,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                                                 <button
                                                     key={role}
                                                     onClick={() => {
-                                                        updateUserRole(user.id, role);
-                                                        setEditingRoleId(null);
+                                                        void handleUpdateRole(user.id, role);
                                                     }}
                                                     className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all ring-1 ${user.role === role
                                                             ? getRoleBadgeClasses(role)
@@ -286,6 +336,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                             </div>
                         </div>
                     ))}
+                    )}
                 </div>
 
                 {/* Add User Form */}
