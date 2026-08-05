@@ -1177,7 +1177,7 @@ function App() {
 
   const getGlobalClasses = () => {
     const classes = [
-      'flex h-screen font-sans selection:bg-violet-500/30',
+      'app-shell flex h-screen font-sans selection:bg-violet-500/30',
       theme === 'dark'
         ? 'text-gray-100'
         : 'text-gray-900'
@@ -1257,7 +1257,7 @@ function App() {
                       animate={{ x: 0, opacity: 1 }}
                       exit={{ x: -300, opacity: 0 }}
                       transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                      className={`fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] border-r overflow-hidden flex-shrink-0 print:hidden ${theme === 'dark' ? 'bg-[#0c0f16] border-white/[0.06]' : 'bg-white border-gray-200'
+                      className={`app-sidebar fixed inset-y-0 left-0 z-50 w-[280px] max-w-[85vw] border-r overflow-hidden flex-shrink-0 print:hidden ${theme === 'dark' ? 'bg-[#0c0f16] border-white/[0.06]' : 'bg-white border-gray-200'
                         }`}
                     >
                       <Sidebar
@@ -1280,7 +1280,7 @@ function App() {
                     initial={{ width: 0, opacity: 0 }}
                     animate={{ width: 260, opacity: 1 }}
                     exit={{ width: 0, opacity: 0 }}
-                    className={`h-full border-r z-20 overflow-hidden flex-shrink-0 relative print:hidden ${theme === 'dark' ? 'bg-[#0c0f16]/90 backdrop-blur-xl border-white/[0.06]' : 'bg-white/90 backdrop-blur-xl border-gray-200'
+                    className={`app-sidebar h-full border-r z-20 overflow-hidden flex-shrink-0 relative print:hidden ${theme === 'dark' ? 'bg-[#0c0f16]/90 backdrop-blur-xl border-white/[0.06]' : 'bg-white/90 backdrop-blur-xl border-gray-200'
                       }`}
                   >
                     <Sidebar
@@ -1299,7 +1299,7 @@ function App() {
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
               {/* Header */}
-              <header className={`h-14 flex items-center justify-between px-3 md:px-5 z-30 relative border-b print:hidden ${theme === 'dark' ? 'bg-[#12161f]/80 backdrop-blur-xl border-white/[0.06]' : 'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm'
+              <header className={`app-topbar h-14 flex items-center justify-between px-3 md:px-5 z-30 relative border-b print:hidden ${theme === 'dark' ? 'bg-[#12161f]/80 backdrop-blur-xl border-white/[0.06]' : 'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm'
                 }`}>
                 <div className="flex items-center gap-2 md:gap-3 min-w-0">
                   {(!isSidebarOpen || isMobile) && (
@@ -1503,7 +1503,7 @@ function App() {
               </header>
 
               {/* Main Content Area */}
-              <main className={`flex-1 overflow-hidden relative ${theme === 'dark' ? 'bg-[#0a0c12]' : 'bg-[#f4f6fb]'
+              <main className={`app-main flex-1 overflow-hidden relative ${theme === 'dark' ? 'bg-[#0a0c12]' : 'bg-[#f4f6fb]'
                 }`}>
 
                 {/* ── FULL-SCREEN PROFILING OVERLAY ── */}
