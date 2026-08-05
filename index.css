@@ -437,7 +437,7 @@ html.light button[class*="bg-gradient-to-r"][class*="from-indigo"] {
 body {
   background-color: var(--bg-app) !important;
   color: var(--text-primary);
-  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  font-family: 'Manrope', 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
   letter-spacing: -0.01em;
   overflow: hidden;
