@@ -336,7 +336,6 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                             </div>
                         </div>
                     ))}
-                    )}
                 </div>
 
                 {/* Add User Form */}
