@@ -32,14 +32,21 @@ const TOUR_STEPS = [
         accent: 'from-emerald-400 to-cyan-500',
     },
     {
-        eyebrow: 'Step 03 · Ask naturally',
+        eyebrow: 'Step 03 · Build without code',
+        title: 'Shape a question, one clear choice at a time.',
+        description: 'Use Question Builder to choose a measure, a breakdown, filters, sorting, and calculations—then refine the result visually before you move on.',
+        icon: Database,
+        accent: 'from-sky-400 to-indigo-500',
+    },
+    {
+        eyebrow: 'Step 04 · Ask naturally',
         title: 'Turn a business question into an answer you can trust.',
         description: 'Ask in plain English. The guided AI SQL experience plans, validates, and runs the final query locally with chart-ready results.',
         icon: Brain,
         accent: 'from-violet-400 to-fuchsia-500',
     },
     {
-        eyebrow: 'Step 04 · Make it useful',
+        eyebrow: 'Step 05 · Make it useful',
         title: 'Move from a number to a decision.',
         description: 'Explore calculations, refine the visual, and pin only the insights that matter to a shareable dashboard.',
         icon: BarChart2,
@@ -131,6 +138,45 @@ const VisualStage: React.FC<{ step: number }> = ({ step }) => {
     }
 
     if (step === 2) {
+        return (
+            <div className="relative rounded-[28px] border border-white/10 bg-slate-900/70 p-5 shadow-2xl shadow-sky-950/30">
+                <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
+                        <Database className="h-4 w-4 text-sky-300" />
+                        Question Builder
+                    </div>
+                    <span className="text-[10px] text-sky-200">No SQL required</span>
+                </div>
+                <div className="mt-5 rounded-2xl border border-white/[0.08] bg-slate-950/55 p-4">
+                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Build your analysis</p>
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+                        <span className="rounded-lg bg-sky-400/10 px-2.5 py-2 font-semibold text-sky-100">SUM of Sales</span>
+                        <ChevronRight className="h-3.5 w-3.5 text-slate-600" />
+                        <span className="rounded-lg bg-indigo-400/10 px-2.5 py-2 font-semibold text-indigo-100">by Region</span>
+                    </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                    {[
+                        ['Filter', 'This year'],
+                        ['Sort', 'Sales high → low'],
+                        ['Calculation', '% of total'],
+                        ['Visual', 'Column chart'],
+                    ].map(([label, value]) => (
+                        <div key={label} className="rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2.5">
+                            <p className="text-[10px] text-slate-500">{label}</p>
+                            <p className="mt-1 text-[11px] font-semibold text-slate-200">{value}</p>
+                        </div>
+                    ))}
+                </div>
+                <div className="mt-4 flex items-center gap-2 rounded-xl border border-sky-300/15 bg-sky-400/[0.06] px-3 py-2.5 text-[11px] text-sky-100">
+                    <Check className="h-3.5 w-3.5 text-cyan-300" />
+                    Your selection is ready to explore.
+                </div>
+            </div>
+        );
+    }
+
+    if (step === 3) {
         return (
             <div className="relative rounded-[28px] border border-white/10 bg-slate-900/70 p-5 shadow-2xl shadow-violet-950/30">
                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-200">
