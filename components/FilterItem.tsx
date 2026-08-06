@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactDOM from 'react-dom';
 import { X, ChevronDown, Search } from 'lucide-react';
+import { QuerySelect } from './QuerySelect';
 
 interface FilterItemProps {
     id: number;
@@ -147,32 +148,34 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                 <>
                     {/* Measure Filter */}
                     <div className="relative group inline-block">
-                        <select
+                        <QuerySelect
                             value={filter.column}
-                            onChange={e => onUpdate(id, 'column', e.target.value)}
-                            className="appearance-none font-bold border-b-2 border-blue-400/40 rounded-lg px-3 py-1 pr-8 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-blue-400/50"
-                            style={{ backgroundColor: '#1e3a5f', color: '#93c5fd' }}
-                        >
-                            {columnOptions.map(m => <option key={m} value={m} style={{ backgroundColor: '#1e3a5f', color: '#e2e8f0' }}>{m.replace(/_/g, ' ')}</option>)}
-                        </select>
-                        <ChevronDown className="w-4 h-4 text-blue-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            onChange={value => onUpdate(id, 'column', value)}
+                            options={columnOptions.map(m => ({ label: m.replace(/_/g, ' '), value: m }))}
+                            colorTextClass="text-blue-400"
+                            colorRingClass="focus:ring-blue-400/50"
+                            searchable={false}
+                            className="min-w-[140px] !py-1 !pl-3 !pr-2 !bg-[#1e3a5f] !border-blue-400/40"
+                        />
                     </div>
 
                     <div className="relative group inline-block">
-                        <select
+                        <QuerySelect
                             value={filter.operator}
-                            onChange={e => onUpdate(id, 'operator', e.target.value)}
-                            className="appearance-none font-bold border-2 border-blue-400/30 rounded-lg px-2 py-1 pr-6 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400/50"
-                            style={{ backgroundColor: '#1e293b', color: '#cbd5e1' }}
-                        >
-                            <option value=">=" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>&gt;=</option>
-                            <option value="<=" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>&lt;=</option>
-                            <option value="=" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>=</option>
-                            <option value="!=" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>!=</option>
-                            <option value=">" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>&gt;</option>
-                            <option value="<" style={{ backgroundColor: '#1e293b', color: '#e2e8f0' }}>&lt;</option>
-                        </select>
-                        <ChevronDown className="w-3 h-3 text-slate-500 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
+                            onChange={value => onUpdate(id, 'operator', value)}
+                            options={[
+                                { label: '≥', value: '>=' },
+                                { label: '≤', value: '<=' },
+                                { label: '=', value: '=' },
+                                { label: '≠', value: '!=' },
+                                { label: '>', value: '>' },
+                                { label: '<', value: '<' },
+                            ]}
+                            colorTextClass="text-blue-300"
+                            colorRingClass="focus:ring-blue-400/50"
+                            searchable={false}
+                            className="min-w-[72px] !py-1 !pl-2 !pr-1 !bg-[#1e293b] !border-blue-400/30"
+                        />
                     </div>
 
                     <input
