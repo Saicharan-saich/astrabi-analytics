@@ -1703,3 +1703,282 @@ html.dark .glass-frost:hover {
     transition-duration: 0.01ms !important;
   }
 }
+
+
+/* ═══════════════════════════════════════════════════════
+   QuickInsight Visual Impact System
+   A high-contrast, colourful "data cockpit" layer.  It is
+   intentionally presentation-only: no application behaviour
+   or analytics workflow is coupled to these styles.
+   ═══════════════════════════════════════════════════════ */
+:root {
+  --qi-frame-border: rgba(142, 153, 255, 0.30);
+  --qi-frame-highlight: rgba(117, 210, 255, 0.22);
+  --qi-frame-shadow: 0 28px 60px -36px rgba(0, 0, 0, 0.92);
+  --qi-panel-bg: linear-gradient(145deg, rgba(23, 31, 51, 0.96), rgba(11, 16, 29, 0.98));
+  --qi-spectrum: linear-gradient(92deg, #8b6fff 0%, #5d8cff 42%, #30d5c8 72%, #ffc44d 100%);
+}
+
+.qi-data-cockpit {
+  background:
+    radial-gradient(54rem 34rem at -5% -10%, rgba(122, 105, 255, 0.17), transparent 60%),
+    radial-gradient(46rem 30rem at 105% 3%, rgba(36, 215, 194, 0.12), transparent 60%),
+    #080b14;
+}
+
+.qi-data-cockpit::after {
+  content: '';
+  position: fixed;
+  pointer-events: none;
+  z-index: -1;
+  inset: 0;
+  opacity: 0.5;
+  background-image:
+    linear-gradient(rgba(132, 148, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(132, 148, 255, 0.025) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.52), transparent 78%);
+}
+
+.qi-sidebar-frame {
+  border-right-width: 2px !important;
+  border-right-color: rgba(135, 151, 255, 0.30) !important;
+  box-shadow: 20px 0 54px -34px rgba(0, 0, 0, 0.95), inset -1px 0 0 rgba(116, 228, 215, 0.16) !important;
+}
+
+.qi-sidebar-frame::before {
+  content: '';
+  position: absolute;
+  z-index: 1;
+  pointer-events: none;
+  top: 0;
+  right: -2px;
+  bottom: 0;
+  width: 2px;
+  background: var(--qi-spectrum);
+  opacity: 0.78;
+}
+
+.qi-topbar-frame {
+  border-bottom-width: 2px !important;
+  border-bottom-color: rgba(135, 151, 255, 0.26) !important;
+  box-shadow: 0 16px 34px -30px rgba(0, 0, 0, 0.95), inset 0 -1px 0 rgba(78, 218, 203, 0.13) !important;
+}
+
+.qi-topbar-frame::after {
+  content: '';
+  position: absolute;
+  right: 1.2rem;
+  bottom: -2px;
+  left: 1.2rem;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--qi-spectrum);
+  opacity: 0.78;
+}
+
+.qi-main-frame {
+  background:
+    linear-gradient(180deg, rgba(25, 34, 57, 0.34), transparent 20rem),
+    radial-gradient(54rem 24rem at 50% 100%, rgba(62, 109, 255, 0.055), transparent 68%) !important;
+}
+
+.qi-data-cockpit .surface-card,
+.qi-data-cockpit .glass-panel,
+.qi-data-cockpit .glass-frost {
+  border-width: 2px !important;
+  border-color: var(--qi-frame-border) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), var(--qi-frame-shadow);
+}
+
+.qi-data-cockpit .surface-card:hover,
+.qi-data-cockpit .glass-panel:hover,
+.qi-data-cockpit .glass-frost:hover {
+  border-color: rgba(109, 225, 213, 0.54) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 26px 60px -34px rgba(61, 74, 225, 0.72);
+}
+
+.qi-workspace-page {
+  background:
+    radial-gradient(42rem 22rem at 5% 0%, rgba(115, 92, 255, 0.10), transparent 64%),
+    transparent !important;
+}
+
+.qi-workspace-page > .max-w-6xl {
+  margin-top: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 1.45rem !important;
+  border: 2px solid var(--qi-frame-border);
+  border-radius: 24px;
+  background: var(--qi-panel-bg);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.055), var(--qi-frame-shadow);
+}
+
+.qi-workspace-hero {
+  position: relative;
+  padding: 0.9rem 1rem;
+  border: 2px solid rgba(133, 149, 255, 0.26);
+  border-radius: 18px;
+  background: linear-gradient(105deg, rgba(126, 99, 255, 0.16), rgba(36, 202, 189, 0.08));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+}
+
+.qi-workspace-hero::after {
+  content: '';
+  position: absolute;
+  right: 1rem;
+  bottom: -2px;
+  left: 4.75rem;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--qi-spectrum);
+  opacity: 0.9;
+}
+
+.qi-workspace-tabs,
+.qi-dashboard-tabs {
+  gap: 0.4rem !important;
+  padding: 0.42rem !important;
+  border: 2px solid var(--qi-frame-border) !important;
+  border-radius: 17px !important;
+  background: linear-gradient(135deg, rgba(20, 28, 47, 0.93), rgba(12, 18, 32, 0.96)) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.055), 0 12px 28px -22px rgba(0,0,0,0.8);
+}
+
+.qi-workspace-tabs button,
+.qi-dashboard-tabs > button {
+  border-width: 2px !important;
+  border-color: transparent;
+  border-radius: 12px !important;
+}
+
+.qi-workspace-tabs button:hover,
+.qi-dashboard-tabs > button:hover {
+  border-color: rgba(121, 202, 244, 0.42) !important;
+  transform: translateY(-1px);
+}
+
+.qi-question-builder {
+  border: 2px solid rgba(155, 138, 255, 0.46) !important;
+  background:
+    radial-gradient(34rem 12rem at 0% 0%, rgba(126, 91, 255, 0.22), transparent 70%),
+    linear-gradient(135deg, #151d34 0%, #0c1324 100%) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.09), 0 26px 56px -34px rgba(33, 28, 106, 0.88) !important;
+}
+
+.qi-question-builder::before {
+  content: 'ANALYSIS BUILDER';
+  position: absolute;
+  top: -0.72rem;
+  left: 1.25rem;
+  padding: 0.16rem 0.55rem;
+  border: 1px solid rgba(160, 145, 255, 0.45);
+  border-radius: 999px;
+  background: #10172a;
+  color: #aa9dff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.qi-ai-workspace {
+  background:
+    radial-gradient(52rem 28rem at 10% -10%, rgba(0, 207, 195, 0.12), transparent 58%),
+    radial-gradient(40rem 26rem at 96% 10%, rgba(112, 93, 255, 0.16), transparent 62%) !important;
+}
+
+.qi-ai-frame {
+  position: relative;
+  padding: 1.35rem !important;
+  border: 2px solid rgba(77, 224, 210, 0.34);
+  border-radius: 25px;
+  background: linear-gradient(145deg, rgba(13, 30, 48, 0.94), rgba(10, 17, 31, 0.98));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.075), 0 28px 60px -36px rgba(3, 159, 166, 0.48);
+}
+
+.qi-ai-frame::before {
+  content: '';
+  position: absolute;
+  top: -2px;
+  right: 12%;
+  left: 12%;
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #21d6c2, #5c8dff, #a678ff);
+  box-shadow: 0 0 22px rgba(67, 210, 209, 0.65);
+}
+
+.qi-upload-workspace {
+  background:
+    radial-gradient(46rem 28rem at 14% 3%, rgba(137, 105, 255, 0.16), transparent 62%),
+    radial-gradient(38rem 24rem at 92% 16%, rgba(37, 218, 193, 0.12), transparent 62%);
+}
+
+.qi-upload-workspace .max-w-5xl {
+  padding: clamp(1rem, 3vw, 2rem);
+  border: 2px solid rgba(142, 153, 255, 0.27);
+  border-radius: 28px;
+  background: linear-gradient(145deg, rgba(21, 28, 48, 0.76), rgba(11, 16, 29, 0.82));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.06), var(--qi-frame-shadow);
+}
+
+.qi-dashboard-workspace {
+  background:
+    radial-gradient(48rem 26rem at 0% 0%, rgba(128, 97, 255, 0.10), transparent 66%),
+    transparent;
+}
+
+.qi-dashboard-workspace > .max-w-\[1900px\] {
+  margin-top: 0.65rem;
+  margin-bottom: 0.75rem;
+  padding: 1.3rem !important;
+  border: 2px solid var(--qi-frame-border);
+  border-radius: 24px;
+  background: linear-gradient(145deg, rgba(18, 25, 43, 0.88), rgba(10, 15, 27, 0.94));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.055), var(--qi-frame-shadow);
+}
+
+html.light .qi-data-cockpit {
+  background:
+    radial-gradient(52rem 34rem at -5% -10%, rgba(111, 94, 250, 0.15), transparent 60%),
+    radial-gradient(46rem 30rem at 105% 3%, rgba(22, 183, 170, 0.12), transparent 60%),
+    #f4f7ff;
+}
+
+html.light .qi-workspace-page > .max-w-6xl,
+html.light .qi-upload-workspace .max-w-5xl,
+html.light .qi-dashboard-workspace > .max-w-\[1900px\],
+html.light .qi-ai-frame {
+  background: linear-gradient(145deg, rgba(255,255,255,0.98), rgba(244,247,255,0.98));
+  border-color: rgba(88, 98, 176, 0.25);
+  box-shadow: inset 0 1px 0 #fff, 0 24px 50px -36px rgba(63, 69, 143, 0.32);
+}
+
+html.light .qi-workspace-tabs,
+html.light .qi-dashboard-tabs {
+  background: linear-gradient(135deg, #ffffff, #f0f4ff) !important;
+  border-color: rgba(88, 98, 176, 0.24) !important;
+}
+
+html.light .qi-workspace-hero {
+  background: linear-gradient(105deg, rgba(111, 94, 250, 0.11), rgba(20, 180, 164, 0.08));
+  border-color: rgba(88, 98, 176, 0.22);
+}
+
+@media (max-width: 768px) {
+  .qi-workspace-page > .max-w-6xl,
+  .qi-dashboard-workspace > .max-w-\[1900px\] {
+    margin: 0.35rem;
+    padding: 1rem !important;
+    border-radius: 18px;
+  }
+
+  .qi-ai-frame {
+    padding: 1rem !important;
+    border-radius: 19px;
+  }
+
+  .qi-upload-workspace .max-w-5xl {
+    border-radius: 20px;
+  }
+}
