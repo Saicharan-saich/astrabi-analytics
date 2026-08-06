@@ -2708,3 +2708,47 @@ html.light .qi-theme-analyst .qi-ai-frame {
 .qi-time-anchor-bar .relative.inline-block > button span {
   white-space: nowrap;
 }
+
+
+/* Opaque dropdown surface system: option labels must never blend with the
+   canvas or builder behind them. */
+.qi-dropdown-surface {
+  background: #0f172a !important;
+  background-color: #0f172a !important;
+  background-image: none !important;
+  color: #e2e8f0 !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  background-blend-mode: normal !important;
+  isolation: isolate;
+}
+
+.qi-dropdown-surface .qi-dropdown-option {
+  background: #0f172a !important;
+  color: #e2e8f0 !important;
+}
+
+.qi-dropdown-surface .qi-dropdown-option:hover,
+.qi-dropdown-surface label:hover,
+.qi-dropdown-surface > button:hover {
+  background: #1e293b !important;
+  color: #f8fafc !important;
+}
+
+.qi-dropdown-surface .qi-dropdown-option--selected {
+  background: #273449 !important;
+  color: #f8fafc !important;
+}
+
+.qi-dropdown-surface input,
+.qi-dropdown-surface input[type="text"] {
+  background: #172033 !important;
+  color: #f8fafc !important;
+  opacity: 1 !important;
+}
+
+.qi-dropdown-surface input::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1;
+}
