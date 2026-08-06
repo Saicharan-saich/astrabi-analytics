@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { QuestionBuilder } from './QuestionBuilder';
 import { QuerySelect } from './QuerySelect';
 import { ChartVisualization } from './ChartVisualization';
@@ -394,7 +395,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 </button>
 
                 {/* Time anchor stays visible in the top command bar. */}
-                <div className="qi-time-anchor-bar flex items-center gap-2 shrink-0">
+                {ReactDOM.createPortal(
+                    <div className="qi-time-anchor-bar flex items-center gap-2 shrink-0">
                     {dataset.timeContext?.dateColumnMaxDates && Object.keys(dataset.timeContext.dateColumnMaxDates).length > 1 && (
                         <Tooltip text="Choose which date column defines the analysis time anchor." position="bottom">
                             <div className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
@@ -426,7 +428,9 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                             />
                         </label>
                     </Tooltip>
-                </div>
+                </div>,
+                    document.body
+                )}
 
                 {/* Content Tabs */}
                 {result && !error && (
