@@ -2671,3 +2671,18 @@ html.light .qi-theme-analyst .qi-ai-frame {
     transform-origin: bottom left !important;
   }
 }
+
+
+/* Builder logo must not inherit full-width control sizing from the dock. */
+.qi-builder-dock .qi-question-builder > .flex > .flex-wrap > img[alt="QuickInsight"] {
+  width: 2.5rem !important;
+  height: 2.5rem !important;
+  min-width: 2.5rem !important;
+  max-width: 2.5rem !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  opacity: 1 !important;
+  border-radius: 0.6rem !important;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.2rem;
+}
