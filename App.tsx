@@ -264,10 +264,21 @@ function App() {
   // If admin revokes sessions via "Logout All Devices", this detects it and auto-logouts.
   const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5002/api';
   useEffect(() => {
-    if (!isAuthenticated) return;
+    if (!isAuthenticated || !currentUser) return;
     const checkSession = async () => {
       const token = localStorage.getItem('qi_token');
-      if (!token) return;
+
+      // Guest access is intentionally local. Every named account must have a
+      // backend-issued JWT; otherwise a legacy persisted browser profile can
+      // claim a role that the database has never authenticated.
+      if (!token) {
+        if (currentUser.id.startsWith('guest_')) return;
+        console.warn('[Session] Local profile has no backend token — requiring a clean sign-in');
+        await logout();
+        window.location.reload();
+        return;
+      }
+
       try {
         const res = await fetch(`${API_BASE}/auth/verify`, {
           headers: { Authorization: `Bearer ${token}` },
@@ -286,10 +297,10 @@ function App() {
       }
     };
     // Check immediately on mount, then every 30 seconds
-    checkSession();
-    const interval = setInterval(checkSession, 30_000);
+    void checkSession();
+    const interval = setInterval(() => { void checkSession(); }, 30_000);
     return () => clearInterval(interval);
-  }, [isAuthenticated]);
+  }, [isAuthenticated, currentUser?.id, logout]);
 
   // ── Visual Preview state (full-page AI SQL result view) ──
   const [visualPreviewResult, setVisualPreviewResult] = useState<AnalysisResult | null>(null);
