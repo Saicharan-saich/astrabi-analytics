@@ -2686,3 +2686,25 @@ html.light .qi-theme-analyst .qi-ai-frame {
   background: rgba(255, 255, 255, 0.06);
   padding: 0.2rem;
 }
+
+
+/* Transparency panel remains a full-height result section and is never
+   squeezed below the visual canvas. The content column owns the scroll. */
+.qi-builder-content > .qi-visual-stage {
+  flex: 0 0 auto;
+}
+
+.qi-builder-content > .no-export {
+  flex: 0 0 auto;
+  min-height: max-content;
+  margin-bottom: 0.75rem;
+}
+
+/* Keep the visible time context compact in the command bar. */
+.qi-time-anchor-bar .relative.inline-block > button {
+  min-height: 1.75rem;
+}
+
+.qi-time-anchor-bar .relative.inline-block > button span {
+  white-space: nowrap;
+}
