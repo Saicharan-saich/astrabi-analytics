@@ -1716,6 +1716,7 @@ function App() {
                       isLiveRefreshing={isLiveRefreshing}
                       refreshSchedule={dataset?.refreshSchedule}
                       onScheduleChange={updateRefreshSchedule}
+                      isActive={activeTab === Tab.BUILDER}
                     />
                   )}
                 </div>
