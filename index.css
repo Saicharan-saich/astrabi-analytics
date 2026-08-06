@@ -2839,3 +2839,12 @@ html.light .qi-theme-analyst .qi-ai-frame {
     grid-column: 1 / -1;
   }
 }
+
+
+/* Upward options panel nested menus follow the same direction as the panel. */
+.qi-builder-options-panel .qi-query-select-menu {
+  top: auto !important;
+  bottom: calc(100% + 0.5rem) !important;
+  margin-top: 0 !important;
+  transform-origin: bottom left !important;
+}
