@@ -18,6 +18,7 @@ interface QuerySelectProps {
     colorRingClass?: string; // e.g., 'focus:ring-purple-500/30'
     className?: string; // for custom width or padding overrides
     buttonContent?: React.ReactNode; // custom completely override button inner content
+    menuPlacement?: 'up' | 'down';
 }
 
 export const QuerySelect: React.FC<QuerySelectProps> = ({
@@ -30,7 +31,8 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
     colorTextClass = 'text-white',
     colorRingClass = 'focus:ring-white/20',
     className = '',
-    buttonContent
+    buttonContent,
+    menuPlacement = 'down'
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -102,8 +104,11 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
             {/* POPOVER DROPDOWN */}
             {isOpen && (
                 <div
-                    className="absolute z-[100] top-full mt-2 left-0 min-w-[240px] max-w-[320px] flex flex-col rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200"
-                    style={{ transformOrigin: 'top left', backgroundColor: '#0f172a', border: '1px solid #475569' }}
+                    className={`qi-dropdown-surface qi-query-select-menu absolute z-[100] left-0 min-w-[240px] max-w-[320px] flex flex-col rounded-2xl overflow-hidden shadow-2xl animate-in fade-in duration-200 ${menuPlacement === 'up'
+                        ? 'bottom-full mb-2 slide-in-from-bottom-2'
+                        : 'top-full mt-2 slide-in-from-top-2'
+                        }`}
+                    style={{ transformOrigin: menuPlacement === 'up' ? 'bottom left' : 'top left', backgroundColor: '#0f172a', border: '1px solid #475569' }}
                 >
                     {searchable && (
                         <div className="p-2 border-b border-white/5">
