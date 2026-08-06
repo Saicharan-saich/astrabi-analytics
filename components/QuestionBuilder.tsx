@@ -1110,7 +1110,6 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             />
                         </div>
                     )}
-                </div>
                 </div>,
                 document.body
             )}
