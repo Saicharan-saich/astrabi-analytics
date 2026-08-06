@@ -696,6 +696,9 @@ export const useAppStore = create<AppStore>()(
             name: 'QuickInsight-storage-v4',
             storage: createJSONStorage(() => localStorage),
             partialize: (state) => ({
+                // Preserve the user's current workspace across a browser refresh.
+                // Dataset payloads remain in IndexedDB; this stores only the Tab enum value.
+                activeTab: state.activeTab,
                 dashboards: state.dashboards,
                 activeDashboardId: state.activeDashboardId,
                 deletedDashboardIds: state.deletedDashboardIds,
