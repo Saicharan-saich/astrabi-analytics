@@ -112,7 +112,7 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
   const isMapType = chartType === 'map';
 
   return (
-    <div className="absolute top-4 right-4 w-[300px] max-h-[calc(100%-2rem)] overflow-y-auto bg-white dark:bg-slate-800/95 backdrop-blur shadow-2xl border border-slate-200 dark:border-white/10 rounded-xl p-5 z-20 animate-in fade-in slide-in-from-right-4 ring-1 ring-black/5">
+    <div className="qi-format-panel absolute top-4 right-4 w-[300px] max-h-[calc(100%-2rem)] overflow-y-auto bg-white dark:bg-slate-800/95 backdrop-blur shadow-2xl border border-slate-200 dark:border-white/10 rounded-xl p-5 z-20 animate-in fade-in slide-in-from-right-4 ring-1 ring-black/5">
       {/* Header */}
       <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100 dark:border-white/5">
         <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-sm">
