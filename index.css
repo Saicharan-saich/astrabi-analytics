@@ -1982,3 +1982,129 @@ html.light .qi-workspace-hero {
     border-radius: 20px;
   }
 }
+
+
+/* ── Builder and visual canvas refinement ─────────────────
+   Keeps all result, chart and analytics logic untouched while
+   giving the Question Builder a deliberate creation space. */
+.qi-question-builder {
+  padding-top: 2.15rem !important;
+}
+
+.qi-question-builder::before {
+  top: 0.55rem;
+  left: 1.15rem;
+  z-index: 30;
+  border-color: rgba(165, 149, 255, 0.62);
+  background: linear-gradient(135deg, #211d4c, #122b4d);
+  box-shadow: 0 6px 16px -10px rgba(130, 106, 255, 0.95);
+}
+
+.qi-builder-workspace {
+  background:
+    radial-gradient(56rem 26rem at 8% 0%, rgba(113, 92, 255, 0.15), transparent 62%),
+    radial-gradient(42rem 28rem at 95% 4%, rgba(25, 190, 180, 0.12), transparent 62%),
+    #eaf0fa !important;
+}
+
+.qi-builder-panel {
+  background: linear-gradient(180deg, rgba(250, 252, 255, 0.88), rgba(235, 241, 252, 0.94)) !important;
+  border-bottom: 2px solid rgba(100, 113, 196, 0.24) !important;
+  padding: 0.7rem 0.75rem 0.55rem;
+  box-shadow: 0 16px 30px -28px rgba(41, 57, 136, 0.65) !important;
+}
+
+.qi-builder-toolbar {
+  margin: 0.6rem 0.75rem 0.65rem;
+  padding: 0.42rem 0.55rem !important;
+  border: 2px solid rgba(112, 127, 211, 0.30) !important;
+  border-radius: 16px !important;
+  background: linear-gradient(105deg, rgba(255,255,255,0.97), rgba(239,244,255,0.96)) !important;
+  box-shadow: inset 0 1px 0 #fff, 0 15px 28px -25px rgba(54, 65, 135, 0.55) !important;
+}
+
+.qi-builder-toolbar > button {
+  border-width: 2px !important;
+}
+
+.qi-visual-stage {
+  isolation: isolate;
+  margin: 0 0.75rem 0.75rem;
+  padding: 0.55rem;
+  border: 2px solid rgba(104, 122, 216, 0.34) !important;
+  border-radius: 22px !important;
+  background:
+    radial-gradient(36rem 16rem at 10% 0%, rgba(107, 102, 255, 0.10), transparent 62%),
+    radial-gradient(28rem 14rem at 96% 8%, rgba(32, 201, 186, 0.09), transparent 62%),
+    linear-gradient(145deg, #ffffff, #f7f9ff) !important;
+  box-shadow: inset 0 1px 0 #fff, 0 24px 44px -30px rgba(48, 65, 143, 0.48) !important;
+}
+
+.qi-visual-stage::before {
+  content: '';
+  position: absolute;
+  z-index: 3;
+  pointer-events: none;
+  top: -2px;
+  right: 14%;
+  left: 14%;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--qi-spectrum);
+  box-shadow: 0 0 18px rgba(88, 131, 255, 0.52);
+  animation: qi-canvas-spectrum 5s ease-in-out infinite alternate;
+}
+
+.qi-visual-stage > * {
+  position: relative;
+  z-index: 1;
+}
+
+.qi-analytics-explorer-header {
+  border-bottom: 2px solid rgba(99, 116, 211, 0.30) !important;
+  background:
+    linear-gradient(105deg, rgba(115, 91, 255, 0.12), rgba(25, 202, 186, 0.07)),
+    #fff !important;
+}
+
+@keyframes qi-canvas-spectrum {
+  from { filter: saturate(0.9) brightness(0.95); transform: scaleX(0.84); }
+  to { filter: saturate(1.25) brightness(1.08); transform: scaleX(1); }
+}
+
+html.dark .qi-builder-workspace {
+  background:
+    radial-gradient(56rem 26rem at 8% 0%, rgba(113, 92, 255, 0.20), transparent 62%),
+    radial-gradient(42rem 28rem at 95% 4%, rgba(25, 190, 180, 0.13), transparent 62%),
+    #09101e !important;
+}
+
+html.dark .qi-builder-panel {
+  background: linear-gradient(180deg, rgba(16, 25, 45, 0.94), rgba(9, 15, 29, 0.98)) !important;
+  border-bottom-color: rgba(135, 150, 255, 0.30) !important;
+}
+
+html.dark .qi-builder-toolbar,
+html.dark .qi-visual-stage {
+  background:
+    radial-gradient(36rem 16rem at 10% 0%, rgba(107, 102, 255, 0.14), transparent 62%),
+    linear-gradient(145deg, #111b31, #0b1324) !important;
+  border-color: rgba(128, 148, 255, 0.34) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.065), 0 24px 44px -30px rgba(0, 0, 0, 0.82) !important;
+}
+
+html.dark .qi-analytics-explorer-header {
+  background: linear-gradient(105deg, rgba(115, 91, 255, 0.17), rgba(25, 202, 186, 0.08)), #0d1629 !important;
+  border-bottom-color: rgba(135, 150, 255, 0.30) !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qi-visual-stage::before { animation: none; }
+}
+
+@media (max-width: 768px) {
+  .qi-builder-panel { padding: 0.45rem; }
+  .qi-builder-toolbar,
+  .qi-visual-stage { margin-right: 0.4rem; margin-left: 0.4rem; }
+  .qi-visual-stage { border-radius: 16px !important; }
+}
