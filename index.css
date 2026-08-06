@@ -2848,3 +2848,119 @@ html.light .qi-theme-analyst .qi-ai-frame {
   margin-top: 0 !important;
   transform-origin: bottom left !important;
 }
+
+
+/* Symmetric Question Builder control system. */
+@media (min-width: 1180px) {
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    grid-auto-flow: row;
+    align-items: stretch !important;
+    gap: 0.75rem !important;
+  }
+
+  .qi-builder-dock :is(
+    .qi-builder-aggregation,
+    .qi-builder-metric,
+    .qi-builder-dimension,
+    .qi-builder-time-grain
+  ) {
+    min-height: 4.65rem;
+    padding: 0.55rem;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.035);
+  }
+
+  .qi-builder-dock :is(
+    .qi-builder-verb,
+    .qi-builder-by,
+    .qi-builder-where
+  ) {
+    min-height: 4.65rem;
+    display: flex;
+    align-items: center !important;
+    padding: 0.7rem !important;
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.025);
+  }
+
+  .qi-builder-dock :is(
+    .qi-builder-aggregation,
+    .qi-builder-metric,
+    .qi-builder-dimension,
+    .qi-builder-time-grain
+  ) .relative.inline-block {
+    width: 100%;
+  }
+
+  .qi-builder-dock :is(
+    .qi-builder-aggregation,
+    .qi-builder-metric,
+    .qi-builder-dimension,
+    .qi-builder-time-grain
+  ) .relative.inline-block > button {
+    width: 100%;
+    min-height: 2.35rem;
+  }
+
+  .qi-builder-dock .qi-builder-actions {
+    width: 100%;
+    align-items: stretch !important;
+  }
+
+  .qi-builder-dock .qi-builder-action-row {
+    width: 100%;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem !important;
+  }
+
+  .qi-builder-dock .qi-builder-action-row > button,
+  .qi-builder-dock .qi-builder-action-row > div,
+  .qi-builder-dock .qi-builder-action-row > div > button {
+    width: 100%;
+  }
+
+  .qi-builder-dock .qi-builder-action-row button {
+    justify-content: center;
+    min-height: 2.5rem;
+  }
+}
+
+.qi-builder-options-panel {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start !important;
+  gap: 0.85rem !important;
+  padding: 1rem !important;
+}
+
+.qi-builder-options-panel > div {
+  width: 100%;
+  min-width: 0;
+  display: flex !important;
+  flex-direction: column;
+  align-items: stretch !important;
+  gap: 0.4rem !important;
+  padding: 0.65rem;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 0.7rem;
+  background: #111c30;
+}
+
+.qi-builder-options-panel .relative.inline-block,
+.qi-builder-options-panel .relative.inline-block > button {
+  width: 100%;
+}
+
+.qi-builder-options-panel .relative.inline-block > button {
+  min-height: 2.35rem;
+}
+
+@media (max-width: 520px) {
+  .qi-builder-options-panel {
+    grid-template-columns: 1fr;
+  }
+}
