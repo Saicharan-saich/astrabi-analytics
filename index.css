@@ -2964,3 +2964,55 @@ html.light .qi-theme-analyst .qi-ai-frame {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* QuickInsight brand halo — a larger, centred mark with an always-visible
+   blue/green loading-style glow. */
+@keyframes qi-brand-halo-pulse {
+  0%, 100% {
+    box-shadow:
+      0 0 0 1px rgba(96, 165, 250, 0.34),
+      0 0 18px rgba(59, 130, 246, 0.38),
+      0 0 34px rgba(16, 185, 129, 0.2);
+    filter:
+      drop-shadow(0 0 8px rgba(96, 165, 250, 0.42))
+      drop-shadow(0 0 15px rgba(16, 185, 129, 0.2));
+  }
+  50% {
+    box-shadow:
+      0 0 0 2px rgba(45, 212, 191, 0.42),
+      0 0 27px rgba(59, 130, 246, 0.58),
+      0 0 48px rgba(16, 185, 129, 0.32);
+    filter:
+      drop-shadow(0 0 13px rgba(96, 165, 250, 0.62))
+      drop-shadow(0 0 22px rgba(16, 185, 129, 0.32));
+  }
+}
+
+.qi-builder-dock .qi-question-builder > .flex > .flex-wrap > img[alt="QuickInsight"] {
+  grid-column: 1 / -1;
+  justify-self: center;
+  width: 4.75rem !important;
+  height: 4.75rem !important;
+  min-width: 4.75rem !important;
+  max-width: 4.75rem !important;
+  margin: 0.3rem auto 0.6rem !important;
+  padding: 0.18rem !important;
+  border: 1px solid rgba(147, 197, 253, 0.48);
+  border-radius: 1.15rem !important;
+  background: #ffffff !important;
+  object-fit: contain !important;
+  opacity: 1 !important;
+  animation: qi-brand-halo-pulse 3.2s ease-in-out infinite;
+  will-change: filter, box-shadow;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap > img[alt="QuickInsight"] {
+    animation: none;
+    box-shadow:
+      0 0 0 1px rgba(96, 165, 250, 0.34),
+      0 0 22px rgba(59, 130, 246, 0.45),
+      0 0 38px rgba(16, 185, 129, 0.24);
+  }
+}
