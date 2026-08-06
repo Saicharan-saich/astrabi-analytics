@@ -2659,3 +2659,15 @@ html.light .qi-theme-analyst .qi-ai-frame {
     padding-bottom: 1.5rem;
   }
 }
+
+
+/* Builder dock dropdowns open upward so their full option lists remain in
+   view while the canvas stays centred. */
+@media (min-width: 1180px) {
+  .qi-builder-dock .qi-question-builder .relative.inline-block > .absolute.top-full {
+    top: auto !important;
+    bottom: calc(100% + 0.5rem) !important;
+    margin-top: 0 !important;
+    transform-origin: bottom left !important;
+  }
+}
