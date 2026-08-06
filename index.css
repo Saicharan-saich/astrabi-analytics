@@ -2183,3 +2183,227 @@ html.dark .qi-visual-stage {
     left: 0.5rem !important;
   }
 }
+
+
+/* ═══════════════════════════════════════════════════════
+   Analyst Studio — shadcn-compatible theme foundation
+   Semantic tokens are intentionally separate from layout.
+   New or migrated components can use these tokens without
+   adding another page-specific palette.
+   ═══════════════════════════════════════════════════════ */
+.qi-theme-analyst {
+  --background: #0b1020;
+  --foreground: #edf2ff;
+  --card: #121a2d;
+  --card-foreground: #edf2ff;
+  --popover: #151f35;
+  --popover-foreground: #edf2ff;
+  --primary: #7771ff;
+  --primary-foreground: #ffffff;
+  --secondary: #1d2942;
+  --secondary-foreground: #dce5ff;
+  --muted: #19243b;
+  --muted-foreground: #9ba9c2;
+  --accent: #173a4a;
+  --accent-foreground: #d9fffb;
+  --destructive: #e66578;
+  --destructive-foreground: #fff7f8;
+  --border: rgba(163, 180, 255, 0.17);
+  --input: rgba(163, 180, 255, 0.23);
+  --ring: #7974ff;
+  --chart-1: #5f7ef7;
+  --chart-2: #21bfae;
+  --chart-3: #f0ad4e;
+  --chart-4: #ab72f5;
+  --chart-5: #ee7186;
+  --sidebar: #0d1425;
+  --sidebar-foreground: #dce5ff;
+  --sidebar-primary: #7771ff;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #18243c;
+  --sidebar-accent-foreground: #f1f4ff;
+  --sidebar-border: rgba(163, 180, 255, 0.15);
+  --sidebar-ring: #7771ff;
+  --radius: 0.8rem;
+  --radius-sm: calc(var(--radius) * 0.70);
+  --radius-md: calc(var(--radius) * 0.88);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.25);
+  color: var(--foreground);
+  background: var(--background);
+}
+
+html.light .qi-theme-analyst {
+  --background: #f5f7fb;
+  --foreground: #16213a;
+  --card: #ffffff;
+  --card-foreground: #16213a;
+  --popover: #ffffff;
+  --popover-foreground: #16213a;
+  --primary: #5b55df;
+  --primary-foreground: #ffffff;
+  --secondary: #edf1fa;
+  --secondary-foreground: #33415e;
+  --muted: #eef2f8;
+  --muted-foreground: #64718a;
+  --accent: #e4f8f5;
+  --accent-foreground: #13685f;
+  --destructive: #cf3d58;
+  --destructive-foreground: #ffffff;
+  --border: #dce3f0;
+  --input: #cbd5e4;
+  --ring: #625cec;
+  --chart-1: #4c67d9;
+  --chart-2: #159b8f;
+  --chart-3: #bd7c1b;
+  --chart-4: #8a55d6;
+  --chart-5: #cf5269;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #27344f;
+  --sidebar-primary: #5b55df;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f0f3fb;
+  --sidebar-accent-foreground: #3431a3;
+  --sidebar-border: #dce3f0;
+  --sidebar-ring: #625cec;
+}
+
+/* The shell uses the semantic tokens, while keeping the existing layout intact. */
+.qi-theme-analyst.qi-data-cockpit {
+  background:
+    radial-gradient(48rem 28rem at 0% -12%, rgba(91, 85, 223, 0.15), transparent 62%),
+    radial-gradient(40rem 26rem at 104% 0%, rgba(33, 191, 174, 0.09), transparent 62%),
+    var(--background) !important;
+}
+
+.qi-theme-analyst .app-sidebar {
+  background: var(--sidebar) !important;
+  border-color: var(--sidebar-border) !important;
+}
+
+.qi-theme-analyst .qi-sidebar-frame {
+  border-right-width: 1px !important;
+  box-shadow: 16px 0 36px -30px rgba(0, 0, 0, 0.85) !important;
+}
+
+.qi-theme-analyst .app-topbar {
+  background: rgba(13, 20, 37, 0.92) !important;
+  border-color: var(--border) !important;
+}
+
+.qi-theme-analyst .qi-topbar-frame {
+  border-bottom-width: 1px !important;
+  box-shadow: 0 12px 30px -28px rgba(0, 0, 0, 0.80) !important;
+}
+
+.qi-theme-analyst .qi-topbar-frame::after,
+.qi-theme-analyst .qi-sidebar-frame::before {
+  opacity: 0.42;
+}
+
+.qi-theme-analyst .app-main,
+.qi-theme-analyst .qi-main-frame {
+  background:
+    radial-gradient(48rem 30rem at 50% 110%, rgba(82, 103, 224, 0.055), transparent 70%),
+    var(--background) !important;
+}
+
+/* Theme surfaces — the same vocabulary for upload, workspace, AI SQL and dashboards. */
+.qi-theme-analyst .qi-upload-workspace,
+.qi-theme-analyst .qi-workspace-page,
+.qi-theme-analyst .qi-dashboard-workspace,
+.qi-theme-analyst .qi-builder-workspace,
+.qi-theme-analyst .qi-ai-workspace {
+  background: transparent !important;
+}
+
+.qi-theme-analyst .qi-upload-workspace .max-w-5xl,
+.qi-theme-analyst .qi-workspace-page > .max-w-6xl,
+.qi-theme-analyst .qi-dashboard-workspace > .max-w-\[1900px\],
+.qi-theme-analyst .qi-ai-frame {
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-xl) !important;
+  background: linear-gradient(145deg, color-mix(in srgb, var(--card) 97%, #ffffff 3%), var(--card)) !important;
+  box-shadow: 0 20px 42px -34px rgba(0, 0, 0, 0.72) !important;
+}
+
+.qi-theme-analyst .qi-workspace-hero,
+.qi-theme-analyst .qi-workspace-tabs,
+.qi-theme-analyst .qi-dashboard-tabs,
+.qi-theme-analyst .qi-builder-toolbar,
+.qi-theme-analyst .qi-analytics-explorer-header {
+  border-color: var(--border) !important;
+  background: var(--secondary) !important;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.035), 0 10px 22px -22px rgba(0,0,0,0.8) !important;
+}
+
+.qi-theme-analyst .qi-workspace-tabs button,
+.qi-theme-analyst .qi-dashboard-tabs > button,
+.qi-theme-analyst .qi-builder-toolbar > button {
+  border-width: 1px !important;
+}
+
+.qi-theme-analyst .qi-question-builder {
+  border: 1px solid var(--border) !important;
+  background:
+    radial-gradient(34rem 14rem at 0% 0%, rgba(112, 105, 255, 0.16), transparent 64%),
+    var(--card) !important;
+  box-shadow: 0 22px 44px -34px rgba(0,0,0,0.74) !important;
+}
+
+.qi-theme-analyst .qi-question-builder::before {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border)) !important;
+  background: var(--popover) !important;
+  color: #bdbaff !important;
+  box-shadow: none;
+}
+
+.qi-theme-analyst .qi-visual-stage {
+  border: 1px solid var(--border) !important;
+  background:
+    radial-gradient(34rem 16rem at 4% 0%, rgba(95, 126, 247, 0.07), transparent 61%),
+    linear-gradient(145deg, #ffffff, #f8faff) !important;
+  box-shadow: 0 18px 38px -30px rgba(32, 50, 111, 0.28) !important;
+}
+
+.qi-theme-analyst .qi-analytics-panel {
+  background: var(--popover) !important;
+  color: var(--popover-foreground) !important;
+  border-color: color-mix(in srgb, var(--chart-2) 56%, var(--border)) !important;
+  box-shadow: 0 24px 52px -26px rgba(0, 0, 0, 0.62) !important;
+}
+
+.qi-theme-analyst .qi-analytics-panel .text-slate-800,
+.qi-theme-analyst .qi-analytics-panel .text-slate-700 {
+  color: var(--popover-foreground) !important;
+}
+
+.qi-theme-analyst .qi-analytics-panel .text-slate-500,
+.qi-theme-analyst .qi-analytics-panel .text-slate-400 {
+  color: var(--muted-foreground) !important;
+}
+
+.qi-theme-analyst :where(button, a, input, select, textarea, [role="button"]):focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+html.light .qi-theme-analyst .app-topbar {
+  background: rgba(255, 255, 255, 0.92) !important;
+}
+
+html.light .qi-theme-analyst .qi-upload-workspace .max-w-5xl,
+html.light .qi-theme-analyst .qi-workspace-page > .max-w-6xl,
+html.light .qi-theme-analyst .qi-dashboard-workspace > .max-w-\[1900px\],
+html.light .qi-theme-analyst .qi-ai-frame {
+  box-shadow: 0 20px 42px -34px rgba(44, 57, 96, 0.22) !important;
+}
+
+@supports not (background: color-mix(in srgb, white, black)) {
+  .qi-theme-analyst .qi-upload-workspace .max-w-5xl,
+  .qi-theme-analyst .qi-workspace-page > .max-w-6xl,
+  .qi-theme-analyst .qi-dashboard-workspace > .max-w-\[1900px\],
+  .qi-theme-analyst .qi-ai-frame {
+    background: var(--card) !important;
+  }
+}
