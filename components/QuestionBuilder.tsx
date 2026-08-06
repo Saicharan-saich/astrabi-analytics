@@ -556,10 +556,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                 {/* ═══════════════ PRIMARY ROW: THE CORE QUESTION ═══════════════ */}
                 <div className="flex flex-wrap items-center gap-3 text-sm leading-snug flex-1 pr-4 pt-1 pb-1">
                     <img src="/logo.jpg" alt="QuickInsight" className="w-5 h-5 rounded-md opacity-80" />
-                    <span className="text-slate-200 text-base font-bold tracking-wide">Show me</span>
+                    <span className="qi-builder-verb text-slate-200 text-base font-bold tracking-wide">Show me</span>
 
                     {/* Aggregation Selector */}
-                    <div className="flex flex-col gap-0.5">
+                    <div className="qi-builder-aggregation flex flex-col gap-0.5">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Aggregation</span>
                         <Tooltip text={isDimensionMetric ? "Counting dimensions: Count tallies rows, Unique Count counts distinct values." : "How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values."} position="bottom">
                             <QuerySelect
@@ -589,7 +589,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     </div>
 
                     {/* Metric Selector */}
-<div className="flex flex-col gap-0.5">
+<div className="qi-builder-metric flex flex-col gap-0.5">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Metric</span>
                         <Tooltip text="Choose the measure to analyze. Pick a numeric metric (e.g. revenue) or a dimension to count (e.g. patient count)." position="bottom">
                             <QuerySelect
@@ -666,10 +666,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         </span>
                     ))}
 
-                    <span className="text-slate-200 text-base font-bold tracking-wide">by</span>
+                    <span className="qi-builder-by text-slate-200 text-base font-bold tracking-wide">by</span>
 
                     {/* Dimension Selector (columns only) */}
-                    <div className="flex flex-col gap-0.5">
+                    <div className="qi-builder-dimension flex flex-col gap-0.5">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400/70 pl-1">Dimension</span>
                         <Tooltip text="Group by a categorical column like product, region, or category." position="bottom">
                             <QuerySelect
@@ -750,7 +750,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     })()}
 
                     {/* Date/Time Grain Selector (separate) */}
-                    <div className="flex flex-col gap-0.5">
+                    <div className="qi-builder-time-grain flex flex-col gap-0.5">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400/70 pl-1">Time Grain</span>
                         <Tooltip text="Group by a time grain to see trends over time. Can be combined with a dimension." position="bottom">
                             <QuerySelect
@@ -779,10 +779,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         </Tooltip>
                     </div>
 
-                    <span className="text-slate-200 text-base font-bold tracking-wide">where</span>
+                    <span className="qi-builder-where text-slate-200 text-base font-bold tracking-wide">where</span>
 
                     {/* Time Filter */}
-                    <div className="flex flex-col gap-0.5">
+                    <div className="qi-builder-time-range flex flex-col gap-0.5">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-green-400/70 pl-1">Time Range</span>
                         <div className="flex items-center gap-2">
                             <Tooltip text="Filter data by time range relative to the AS OF date. 'Time is Anything' includes all data. 'Last...' lets you pick a custom window." position="bottom">
