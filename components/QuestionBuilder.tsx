@@ -550,7 +550,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     };
 
     return (
-        <div className="max-w-7xl mx-auto px-6 pt-5 pb-4 bg-gradient-to-b from-slate-900 to-slate-800 rounded-2xl overflow-visible relative" style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.2)' }}>
+        <div className="qi-question-builder max-w-7xl mx-auto px-6 pt-5 pb-4 bg-gradient-to-b from-slate-900 to-slate-800 rounded-2xl overflow-visible relative" style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.2)' }}>
 
             <div className="flex items-start justify-between w-full">
                 {/* ═══════════════ PRIMARY ROW: THE CORE QUESTION ═══════════════ */}
