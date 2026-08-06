@@ -413,7 +413,12 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     {dataset.timeContext?.dateColumnMaxDates && Object.keys(dataset.timeContext.dateColumnMaxDates).length > 1 && (
                         <Tooltip text="Choose which date column defines the analysis time anchor." position="bottom">
                             <div className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
-                                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 whitespace-nowrap">Date field</span>
+                                <span
+                                    className="text-[10px] font-extrabold uppercase tracking-wide whitespace-nowrap"
+                                    style={{ color: '#000000', fontWeight: 800 }}
+                                >
+                                    Date field
+                                </span>
                                 <QuerySelect
                                     value={anchorColumn || dataset.timeContext?.anchorDateColumn || ''}
                                     onChange={(newAnchor) => { if (newAnchor) handleAnchorColumnChange(newAnchor); }}
@@ -432,7 +437,12 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     <Tooltip text="As of date — defines what “today” means for time queries." position="bottom">
                         <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 shadow-sm cursor-pointer hover:border-indigo-300 transition-colors">
                             <Calendar className="w-3.5 h-3.5 text-indigo-500" />
-                            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">As of</span>
+                            <span
+                                className="text-[10px] font-extrabold uppercase tracking-wide"
+                                style={{ color: '#000000', fontWeight: 800 }}
+                            >
+                                As of
+                            </span>
                             <input
                                 type="date"
                                 value={asOfDate}
