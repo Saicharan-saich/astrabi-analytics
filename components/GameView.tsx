@@ -4,7 +4,7 @@ import {
   Gamepad2, Trophy, Zap, Star, ChevronRight, RotateCcw,
   Lightbulb, CheckCircle2, XCircle, ArrowRight, Sparkles,
   Target, Brain, Filter, ArrowUpDown, BarChart3, Play,
-  Volume2, VolumeX, Clock, X, Search, BookOpen, ArrowLeft, Wheat
+  Clock, X, Search, BookOpen, ArrowLeft, Wheat
 } from 'lucide-react';
 import { StoryMode } from './game/StoryMode';
 import { FarmScene, FARM } from './game/FarmScenes';
@@ -45,6 +45,55 @@ interface LaneState {
   F: string | null;
   S: string | null;
 }
+
+type LaneNumbers = Record<GAFSLane, number>;
+
+interface PracticeProfile {
+  version: 1;
+  completedRuns: number;
+  bestScore: number;
+  bestStreak: number;
+  bestPerfectLevels: number;
+  totalHints: number;
+  totalMistakes: number;
+  laneAttempts: LaneNumbers;
+  laneFirstTryCorrect: LaneNumbers;
+  lastPlayedAt?: string;
+}
+
+const PRACTICE_PROFILE_KEY = 'qi.gafsPractice.profile.v1';
+const emptyLaneNumbers = (): LaneNumbers => ({ G: 0, A: 0, F: 0, S: 0 });
+const EMPTY_PRACTICE_PROFILE: PracticeProfile = {
+  version: 1,
+  completedRuns: 0,
+  bestScore: 0,
+  bestStreak: 0,
+  bestPerfectLevels: 0,
+  totalHints: 0,
+  totalMistakes: 0,
+  laneAttempts: emptyLaneNumbers(),
+  laneFirstTryCorrect: emptyLaneNumbers(),
+};
+
+const loadPracticeProfile = (): PracticeProfile => {
+  try {
+    const saved = JSON.parse(localStorage.getItem(PRACTICE_PROFILE_KEY) || 'null');
+    if (!saved || saved.version !== 1) return EMPTY_PRACTICE_PROFILE;
+    return {
+      ...EMPTY_PRACTICE_PROFILE,
+      ...saved,
+      laneAttempts: { ...emptyLaneNumbers(), ...(saved.laneAttempts || {}) },
+      laneFirstTryCorrect: { ...emptyLaneNumbers(), ...(saved.laneFirstTryCorrect || {}) },
+    };
+  } catch {
+    return EMPTY_PRACTICE_PROFILE;
+  }
+};
+
+const masteryPercent = (profile: PracticeProfile, lane: GAFSLane): number => {
+  const attempts = profile.laneAttempts[lane] || 0;
+  return attempts ? Math.round(((profile.laneFirstTryCorrect[lane] || 0) / attempts) * 100) : 0;
+};
 
 // ═══════════════════════════════════════════════════════════════════
 // LEVEL DATA
@@ -297,13 +346,16 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
   const [bestStreak, setBestStreak] = useState(0);
   const [hintsUsed, setHintsUsed] = useState(0);
   const [perfectLevels, setPerfectLevels] = useState(0);
-  const [levelStartTime, setLevelStartTime] = useState(0);
   const [totalTime, setTotalTime] = useState(0);
   const [showConfetti, setShowConfetti] = useState(false);
+  const [profile, setProfile] = useState<PracticeProfile>(() => loadPracticeProfile());
+  const [runLaneAttempts, setRunLaneAttempts] = useState<LaneNumbers>(() => emptyLaneNumbers());
+  const [runLaneFirstTryCorrect, setRunLaneFirstTryCorrect] = useState<LaneNumbers>(() => emptyLaneNumbers());
+  const [totalMistakes, setTotalMistakes] = useState(0);
 
   // Level state
   const [lanes, setLanes] = useState<LaneState>({ G: null, A: null, F: null, S: null });
-  const [mistakes, setMistakes] = useState(0);
+  const [levelAttempt, setLevelAttempt] = useState(0);
   const [feedback, setFeedback] = useState<Record<GAFSLane, 'correct' | 'wrong' | null>>({ G: null, A: null, F: null, S: null });
   const [selectedChip, setSelectedChip] = useState<string | null>(null);
   const [dragOverLane, setDragOverLane] = useState<GAFSLane | null>(null);
@@ -343,6 +395,38 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [gamePhase]);
 
+  // Practice progress is private to this browser, just like story progress.
+  // It never contains dataset values or user-entered questions.
+  useEffect(() => {
+    if (gamePhase !== 'game-complete') return;
+    setProfile(previous => {
+      const next: PracticeProfile = {
+        ...previous,
+        completedRuns: previous.completedRuns + 1,
+        bestScore: Math.max(previous.bestScore, score),
+        bestStreak: Math.max(previous.bestStreak, bestStreak),
+        bestPerfectLevels: Math.max(previous.bestPerfectLevels, perfectLevels),
+        totalHints: previous.totalHints + hintsUsed,
+        totalMistakes: previous.totalMistakes + totalMistakes,
+        laneAttempts: {
+          G: previous.laneAttempts.G + runLaneAttempts.G,
+          A: previous.laneAttempts.A + runLaneAttempts.A,
+          F: previous.laneAttempts.F + runLaneAttempts.F,
+          S: previous.laneAttempts.S + runLaneAttempts.S,
+        },
+        laneFirstTryCorrect: {
+          G: previous.laneFirstTryCorrect.G + runLaneFirstTryCorrect.G,
+          A: previous.laneFirstTryCorrect.A + runLaneFirstTryCorrect.A,
+          F: previous.laneFirstTryCorrect.F + runLaneFirstTryCorrect.F,
+          S: previous.laneFirstTryCorrect.S + runLaneFirstTryCorrect.S,
+        },
+        lastPlayedAt: new Date().toISOString(),
+      };
+      try { localStorage.setItem(PRACTICE_PROFILE_KEY, JSON.stringify(next)); } catch { /* storage unavailable */ }
+      return next;
+    });
+  }, [gamePhase]);
+
   // Get available chips (not placed in any lane)
   const availableChips = useMemo(() => {
     const placedIds = new Set(Object.values(lanes).filter(Boolean));
@@ -360,13 +444,15 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
     setHintsUsed(0);
     setPerfectLevels(0);
     setTotalTime(0);
+    setTotalMistakes(0);
+    setRunLaneAttempts(emptyLaneNumbers());
+    setRunLaneFirstTryCorrect(emptyLaneNumbers());
     resetLevel();
-    setLevelStartTime(Date.now());
   }, []);
 
   const resetLevel = useCallback(() => {
     setLanes({ G: null, A: null, F: null, S: null });
-    setMistakes(0);
+    setLevelAttempt(0);
     setFeedback({ G: null, A: null, F: null, S: null });
     setSelectedChip(null);
     setDragOverLane(null);
@@ -403,7 +489,6 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
         const correct = correctChips.find(c => c.correctLane === lane);
         if (correct) {
           setRevealedHints(prev => new Set([...prev, lane]));
-          setScore(s => Math.max(0, s - 50));
           setHintsUsed(h => h + 1);
           // Auto-place the hint
           placeChip(correct.id, lane);
@@ -417,38 +502,55 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
     if (!level) return;
     const newFeedback: Record<GAFSLane, 'correct' | 'wrong' | null> = { G: null, A: null, F: null, S: null };
     let allCorrect = true;
-    let correctCount = 0;
     let wrongCount = 0;
 
     for (const lane of ['G', 'A', 'F', 'S'] as GAFSLane[]) {
       const placedChipId = lanes[lane];
-      if (!placedChipId) {
-        newFeedback[lane] = 'wrong';
-        allCorrect = false;
-        wrongCount++;
-        continue;
-      }
-      const chip = level.chips.find(c => c.id === placedChipId);
-      if (chip && !chip.isDistractor && chip.correctLane === lane) {
-        newFeedback[lane] = 'correct';
-        correctCount++;
-      } else {
-        newFeedback[lane] = 'wrong';
+      const chip = placedChipId ? level.chips.find(c => c.id === placedChipId) : undefined;
+      const isCorrect = Boolean(chip && !chip.isDistractor && chip.correctLane === lane);
+      newFeedback[lane] = isCorrect ? 'correct' : 'wrong';
+      if (!isCorrect) {
         allCorrect = false;
         wrongCount++;
       }
     }
 
-    setFeedback(newFeedback);
-    setMistakes(wrongCount);
+    // Mastery records first-attempt understanding by lane. Hinted lanes do not
+    // count as independent first-try success.
+    if (levelAttempt === 0) {
+      setRunLaneAttempts(previous => ({
+        G: previous.G + 1,
+        A: previous.A + 1,
+        F: previous.F + 1,
+        S: previous.S + 1,
+      }));
+      setRunLaneFirstTryCorrect(previous => {
+        const next = { ...previous };
+        for (const lane of ['G', 'A', 'F', 'S'] as GAFSLane[]) {
+          if (newFeedback[lane] === 'correct' && !revealedHints.has(lane)) next[lane] += 1;
+        }
+        return next;
+      });
+    }
 
-    // Calculate score
-    let points = correctCount * 100;
-    points -= wrongCount * 25;
-    const timeTaken = elapsed;
-    if (timeTaken < 15 && allCorrect) points += 50; // Speed bonus
-    if (allCorrect) {
-      points += 200; // Perfect level bonus
+    setFeedback(newFeedback);
+    setGamePhase('feedback');
+
+    if (!allCorrect) {
+      setTotalMistakes(m => m + wrongCount);
+      setLevelAttempt(attempt => attempt + 1);
+      setStreak(0);
+      return;
+    }
+
+    const completedIndependently = levelAttempt === 0 && revealedHints.size === 0;
+    let points = 400;
+    points -= levelAttempt * 50;
+    points -= revealedHints.size * 50;
+    if (elapsed < 15 && completedIndependently) points += 50;
+
+    if (completedIndependently) {
+      points += 200;
       const newStreak = streak + 1;
       setStreak(newStreak);
       if (newStreak > bestStreak) setBestStreak(newStreak);
@@ -461,17 +563,29 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
       setStreak(0);
     }
 
-    setLevelScore(Math.max(0, points));
-    setScore(s => s + Math.max(0, points));
-    setTotalTime(t => t + timeTaken);
+    const earned = Math.max(100, points);
+    setLevelScore(earned);
+    setScore(s => s + earned);
+    setTotalTime(t => t + elapsed);
 
-    setGamePhase('feedback');
-
-    // Auto-advance after showing feedback
     setTimeout(() => {
       setGamePhase('level-complete');
-    }, 1800);
-  }, [level, lanes, elapsed, streak, bestStreak]);
+    }, 900);
+  }, [level, lanes, elapsed, streak, bestStreak, levelAttempt, revealedHints]);
+
+  const retryIncorrect = useCallback(() => {
+    setLanes(previous => {
+      const next = { ...previous };
+      for (const lane of ['G', 'A', 'F', 'S'] as GAFSLane[]) {
+        if (feedback[lane] === 'wrong') next[lane] = null;
+      }
+      return next;
+    });
+    setFeedback({ G: null, A: null, F: null, S: null });
+    setSelectedChip(null);
+    setDragOverLane(null);
+    setGamePhase('playing');
+  }, [feedback]);
 
   const nextLevel = useCallback(() => {
     if (currentLevel + 1 >= LEVELS.length) {
@@ -479,7 +593,6 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
     } else {
       setCurrentLevel(c => c + 1);
       resetLevel();
-      setLevelStartTime(Date.now());
       setGamePhase('playing');
     }
   }, [currentLevel, resetLevel]);
@@ -493,6 +606,9 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
     setHintsUsed(0);
     setPerfectLevels(0);
     setTotalTime(0);
+    setTotalMistakes(0);
+    setRunLaneAttempts(emptyLaneNumbers());
+    setRunLaneFirstTryCorrect(emptyLaneNumbers());
     resetLevel();
   }, [resetLevel]);
 
@@ -509,6 +625,9 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
       setHintsUsed(0);
       setPerfectLevels(0);
       setTotalTime(0);
+      setTotalMistakes(0);
+      setRunLaneAttempts(emptyLaneNumbers());
+      setRunLaneFirstTryCorrect(emptyLaneNumbers());
     }
   }, [onExit, resetLevel]);
 
@@ -794,6 +913,23 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
             <span className="flex items-center gap-1.5"><Zap className="w-4 h-4" /> Speed Bonuses</span>
           </div>
 
+          {profile.completedRuns > 0 && (
+            <div className="grid grid-cols-3 gap-3 mb-6">
+              <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-center">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Personal best</p>
+                <p className="text-xl font-black text-white mt-1">{profile.bestScore.toLocaleString()}</p>
+              </div>
+              <div className="rounded-xl border border-purple-500/20 bg-purple-500/10 p-3 text-center">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-purple-400">Best streak</p>
+                <p className="text-xl font-black text-white mt-1">{profile.bestStreak}×</p>
+              </div>
+              <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-center">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Completed</p>
+                <p className="text-xl font-black text-white mt-1">{profile.completedRuns}</p>
+              </div>
+            </div>
+          )}
+
           {/* Buttons */}
           <div className="space-y-3">
             <motion.button
@@ -872,6 +1008,8 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
               { label: 'Perfect Levels', value: `${perfectLevels}/10`, icon: <CheckCircle2 className="w-4 h-4 text-emerald-400" /> },
               { label: 'Best Streak', value: bestStreak.toString(), icon: <Sparkles className="w-4 h-4 text-purple-400" /> },
               { label: 'Total Time', value: `${Math.floor(totalTime / 60)}m ${totalTime % 60}s`, icon: <Clock className="w-4 h-4 text-cyan-400" /> },
+              { label: 'Hints Used', value: hintsUsed.toString(), icon: <Lightbulb className="w-4 h-4 text-amber-400" /> },
+              { label: 'Decisions Repaired', value: totalMistakes.toString(), icon: <RotateCcw className="w-4 h-4 text-rose-400" /> },
             ].map((stat, i) => (
               <motion.div
                 key={stat.label}
@@ -885,6 +1023,46 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
               </motion.div>
             ))}
           </div>
+
+          {/* Personal mastery — first-attempt accuracy, stored only on this device */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.9 }}
+            className="bg-white/[0.03] border border-white/10 rounded-xl p-5 mb-6"
+          >
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <Target className="w-4 h-4 text-emerald-400" /> Your GAFS mastery
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-1">First-attempt understanding across completed runs</p>
+              </div>
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Private · this device</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {(['G', 'A', 'F', 'S'] as GAFSLane[]).map(lane => {
+                const config = LANE_CONFIG[lane];
+                const percent = masteryPercent(profile, lane);
+                return (
+                  <div key={lane} className={`${config.bg} ${config.border} border rounded-lg p-3`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <span className={`text-xs font-bold ${config.color}`}>{lane} · {config.fullLabel}</span>
+                      <span className="text-sm font-black text-white">{percent}%</span>
+                    </div>
+                    <div className="h-1.5 rounded-full bg-black/20 overflow-hidden">
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: percent + '%' }}
+                        transition={{ delay: 1, duration: 0.6 }}
+                        className="h-full rounded-full bg-white/70"
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </motion.div>
 
           {/* GAFS → Builder Mapping */}
           <motion.div
@@ -1035,6 +1213,31 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
             <p className="text-xl font-bold text-white leading-relaxed">"{level.question}"</p>
           </motion.div>
 
+          {/* Live blueprint makes the analytical plan visible while it is built. */}
+          <div className="rounded-xl border border-white/10 bg-black/10 px-4 py-3">
+            <div className="flex items-center justify-between gap-3 mb-2.5">
+              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Your analysis blueprint</p>
+              <p className="text-[10px] text-slate-600">{Object.values(lanes).filter(Boolean).length}/4 decisions</p>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {(['G', 'A', 'F', 'S'] as GAFSLane[]).map((lane, index) => {
+                const config = LANE_CONFIG[lane];
+                const chip = lanes[lane] ? level.chips.find(candidate => candidate.id === lanes[lane]) : undefined;
+                return (
+                  <div key={lane} className="flex items-center gap-2 min-w-0">
+                    <div className={`w-7 h-7 rounded-lg shrink-0 flex items-center justify-center font-black text-xs border ${chip ? config.bg + ' ' + config.border + ' ' + config.color : 'bg-white/[0.02] border-white/10 text-slate-600'}`}>
+                      {lane}
+                    </div>
+                    <span className={`text-[11px] truncate ${chip ? 'text-slate-300 font-semibold' : 'text-slate-600'}`}>
+                      {chip?.label || config.question}
+                    </span>
+                    {index < 3 && <ChevronRight className="hidden sm:block w-3 h-3 text-slate-700 shrink-0" />}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
           {/* GAFS Lanes */}
           <div className="space-y-3">
             {(['G', 'A', 'F', 'S'] as GAFSLane[]).map((lane) => {
@@ -1103,6 +1306,33 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
               );
             })}
           </div>
+
+          <AnimatePresence>
+            {gamePhase === 'feedback' && Object.values(feedback).some(value => value === 'wrong') && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="rounded-xl border border-rose-500/25 bg-rose-500/10 p-4"
+              >
+                <div className="flex items-start gap-3">
+                  <Brain className="w-5 h-5 text-rose-300 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-white">Good attempt — repair the highlighted decisions</p>
+                    <p className="text-xs text-slate-400 mt-1">Correct decisions stay in place. Only the red lanes will be returned for another try.</p>
+                    <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {(['G', 'A', 'F', 'S'] as GAFSLane[]).filter(lane => feedback[lane] === 'wrong').map(lane => (
+                        <div key={lane} className="rounded-lg bg-black/15 px-3 py-2">
+                          <span className={`text-xs font-black ${LANE_CONFIG[lane].color}`}>{lane}</span>
+                          <span className="text-xs text-slate-300 ml-2">{level.explanation[lane]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Answer Chips Pool */}
           {!isFeedbackPhase && (
@@ -1178,6 +1408,20 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
             </div>
 
             <div className="flex gap-3">
+              {gamePhase === 'feedback' && Object.values(feedback).some(value => value === 'wrong') && (
+                <motion.button
+                  initial={{ opacity: 0, x: 12 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={retryIncorrect}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-rose-600 to-orange-600 text-white font-bold text-sm shadow-lg shadow-rose-500/20 flex items-center gap-2"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  Repair & Retry
+                </motion.button>
+              )}
+
               {!isFeedbackPhase && (
                 <motion.button
                   whileHover={{ scale: 1.03 }}
