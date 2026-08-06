@@ -386,9 +386,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                     <span className={`text-[10px] ${isDark ? 'text-gray-700' : 'text-gray-300'}`}>·</span>
                     <button
                         onClick={() => onTabChange(Tab.LEGAL)}
-                        className={`text-[10px] font-medium transition-colors flex items-center gap-1 ${isDark ? 'text-gray-600 hover:text-indigo-400' : 'text-gray-400 hover:text-indigo-600'}`}
+                        className={`text-xs font-semibold transition-colors flex items-center gap-1.5 rounded-md px-1.5 py-1 ${isDark ? 'text-slate-400 hover:text-indigo-300 hover:bg-white/[0.05]' : 'text-slate-600 hover:text-indigo-700 hover:bg-indigo-50'}`}
                     >
-                        <Shield className="w-2.5 h-2.5" />
+                        <Shield className="w-3.5 h-3.5" />
                         Privacy & Terms
                     </button>
                 </div>
