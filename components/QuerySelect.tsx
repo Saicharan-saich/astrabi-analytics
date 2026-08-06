@@ -102,7 +102,7 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
             {/* POPOVER DROPDOWN */}
             {isOpen && (
                 <div
-                    className="absolute z-[100] top-full mt-2 left-0 min-w-[240px] max-w-[320px] flex flex-col rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200"
+                    className="qi-dropdown-surface qi-query-select-menu absolute z-[100] top-full mt-2 left-0 min-w-[240px] max-w-[320px] flex flex-col rounded-2xl overflow-hidden shadow-2xl animate-in fade-in slide-in-from-top-2 duration-200"
                     style={{ transformOrigin: 'top left', backgroundColor: '#0f172a', border: '1px solid #475569' }}
                 >
                     {searchable && (
