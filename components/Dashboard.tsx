@@ -1442,9 +1442,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     </div>
                   </div>
 
-                  {/* ── Chart Area ── */}
-                  <div className="flex-1 p-2 min-h-0 overflow-hidden flex items-center justify-center">
-                    <div className="w-full h-full">
+                  {/* ── Chart Area ──
+                      Pinned visuals intentionally use the same light canvas as Question Builder.
+                      ChartVisualization is transparent, so the explicit surface keeps stored
+                      axis/data-label colours legible in both light and dark dashboard themes. ── */}
+                  <div className="flex-1 p-2 min-h-0 overflow-hidden flex items-center justify-center bg-white">
+                    <div className="w-full h-full min-h-0 overflow-hidden rounded-xl bg-white">
                       <ErrorBoundary compact label={item.title || 'Chart'}>
                         <ChartVisualization
                           config={item.result.config}
