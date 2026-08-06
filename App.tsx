@@ -275,7 +275,6 @@ function App() {
         if (currentUser.id.startsWith('guest_')) return;
         console.warn('[Session] Local profile has no backend token — requiring a clean sign-in');
         await logout();
-        window.location.reload();
         return;
       }
 
@@ -288,8 +287,7 @@ function App() {
           if (res.status === 401) {
             console.warn('[Session] Token revoked or expired — logging out');
             await logout();
-            // Force reload to show login page
-            window.location.reload();
+            return;
           }
         }
       } catch {
