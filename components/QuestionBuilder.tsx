@@ -1175,7 +1175,7 @@ const DimensionValuePicker: React.FC<{
             {open && ReactDOM.createPortal(
                 <div
                     ref={dropRef}
-                    className="fixed z-[9999] rounded-xl shadow-2xl border border-blue-400/30 overflow-hidden"
+                    className="qi-dropdown-surface qi-dimension-value-menu fixed z-[9999] rounded-xl shadow-2xl border border-blue-400/30 overflow-hidden"
                     style={{ bottom: pos.bottom, left: pos.left, minWidth: 220, maxWidth: 320, backgroundColor: '#0f172a' }}
                 >
                     {/* Search */}
