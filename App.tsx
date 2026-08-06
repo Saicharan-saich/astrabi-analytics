@@ -1177,7 +1177,7 @@ function App() {
 
   const getGlobalClasses = () => {
     const classes = [
-      'app-shell qi-data-cockpit flex h-screen font-sans selection:bg-violet-500/30',
+      'app-shell qi-theme-analyst qi-data-cockpit flex h-screen font-sans selection:bg-violet-500/30',
       theme === 'dark'
         ? 'text-gray-100'
         : 'text-gray-900'
