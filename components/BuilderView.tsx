@@ -340,7 +340,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     return (
         <div className={`qi-builder-workspace qi-builder-layout ${isBuilderCollapsed ? 'qi-builder-layout--builder-collapsed' : ''} ${isAnalyticsExplorer ? 'qi-builder-layout--explorer' : ''} flex flex-col h-full bg-slate-50`}>
             {isAnalyticsExplorer && (
-                <div className="qi-analytics-explorer-header flex items-center justify-between px-5 py-3 bg-white border-b border-slate-200 shadow-sm shrink-0 z-30">
+                <div className="qi-analytics-explorer-header qi-builder-context flex items-center justify-between px-5 py-3 bg-white border-b border-slate-200 shadow-sm shrink-0 z-30">
                     <div>
                         <div className="text-sm font-black text-slate-900">Analytics Explorer</div>
                         <div className="text-xs text-slate-500">{result?.yLabel || 'Explore your current analysis'}</div>
