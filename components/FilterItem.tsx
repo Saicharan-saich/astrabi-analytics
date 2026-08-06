@@ -19,7 +19,13 @@ export const FilterItem: React.FC<FilterItemProps> = ({
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
-    const [dropdownPos, setDropdownPos] = useState<{ bottom: number; left: number; width: number }>({ bottom: 0, left: 0, width: 200 });
+    const [dropdownPos, setDropdownPos] = useState<{
+        top: number;
+        left: number;
+        width: number;
+        maxHeight: number;
+        placement: 'up' | 'down';
+    }>({ top: 0, left: 0, width: 200, maxHeight: 280, placement: 'down' });
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -33,16 +39,36 @@ export const FilterItem: React.FC<FilterItemProps> = ({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Compute position when dropdown opens
+    // Place the value picker on the side with usable viewport space.
     useEffect(() => {
-        if (isOpen && buttonRef.current) {
-            const rect = buttonRef.current.getBoundingClientRect();
+        if (!isOpen || !buttonRef.current) return;
+        const updatePosition = () => {
+            const rect = buttonRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const gap = 6;
+            const viewportPadding = 8;
+            const desiredHeight = 280;
+            const availableAbove = Math.max(0, rect.top - viewportPadding - gap);
+            const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding - gap);
+            const placement: 'up' | 'down' =
+                availableBelow >= desiredHeight || availableBelow >= availableAbove ? 'down' : 'up';
+            const availableHeight = placement === 'up' ? availableAbove : availableBelow;
+            const width = Math.min(320, Math.max(rect.width, 220));
             setDropdownPos({
-                bottom: Math.max(8, window.innerHeight - rect.top + 4),
-                left: rect.left,
-                width: Math.max(rect.width, 220)
+                top: placement === 'up' ? rect.top - gap : rect.bottom + gap,
+                left: Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - width - viewportPadding)),
+                width,
+                maxHeight: Math.max(96, Math.min(desiredHeight, availableHeight)),
+                placement
             });
-        }
+        };
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
     }, [isOpen]);
 
     const selectedValues = Array.isArray(filter.value) ? filter.value : (filter.value ? [filter.value] : []);
@@ -99,11 +125,15 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                                 ref={dropdownRef}
                                 className="qi-dropdown-surface qi-filter-value-menu fixed z-[9999] border border-purple-400/30 rounded-xl shadow-2xl"
                                 style={{
-                                    bottom: dropdownPos.bottom,
+                                    top: dropdownPos.top,
                                     left: dropdownPos.left,
                                     width: dropdownPos.width,
                                     maxWidth: 320,
-                                    backgroundColor: '#0f172a'
+                                    maxHeight: dropdownPos.maxHeight,
+                                    overflow: 'hidden',
+                                    backgroundColor: '#0f172a',
+                                    transform: dropdownPos.placement === 'up' ? 'translateY(-100%)' : 'none',
+                                    transformOrigin: dropdownPos.placement === 'up' ? 'bottom left' : 'top left'
                                 }}
                             >
                                 {/* Search */}
@@ -120,7 +150,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                                         />
                                     </div>
                                 </div>
-                                <div className="max-h-52 overflow-auto">
+                                <div className="overflow-auto" style={{ maxHeight: Math.max(44, dropdownPos.maxHeight - 52) }}>
                                     {availableValues.filter(v => v.toLowerCase().includes(searchTerm.toLowerCase())).length === 0 ? (
                                         <div className="px-3 py-2 text-sm text-slate-500">No values</div>
                                     ) : (
@@ -149,7 +179,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                     {/* Measure Filter */}
                     <div className="relative group inline-block">
                         <QuerySelect
-                            menuPlacement="up"
+                            menuPlacement="auto"
                             value={filter.column}
                             onChange={value => onUpdate(id, 'column', value)}
                             options={columnOptions.map(m => ({ label: m.replace(/_/g, ' '), value: m }))}
@@ -162,7 +192,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
 
                     <div className="relative group inline-block">
                         <QuerySelect
-                            menuPlacement="up"
+                            menuPlacement="auto"
                             value={filter.operator}
                             onChange={value => onUpdate(id, 'operator', value)}
                             options={[
