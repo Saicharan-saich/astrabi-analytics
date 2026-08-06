@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { X, ChevronDown, Calendar, ArrowRight, Check } from 'lucide-react';
+import { QuerySelect } from './QuerySelect';
 
 interface DateFilterItemProps {
     id: number;
@@ -161,15 +162,23 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
 
             {/* Date Column Selector */}
             <div className="relative group inline-block">
-                <select
+                <QuerySelect
+                    menuPlacement="up"
                     value={filter.column}
-                    onChange={e => { onUpdate(id, 'column', e.target.value); onUpdate(id, 'year', []); onUpdate(id, 'quarter', []); onUpdate(id, 'month', []); onUpdate(id, 'day', []); onUpdate(id, 'values', []); }}
-                    className="appearance-none font-bold border-b-2 border-teal-400/40 rounded-lg px-3 py-1 pr-8 cursor-pointer text-sm focus:outline-none focus:ring-2 focus:ring-teal-400/50"
-                    style={{ backgroundColor: '#134e4a', color: '#5eead4' }}
-                >
-                    {dateColumns.map(d => <option key={d} value={d} style={{ backgroundColor: '#134e4a', color: '#e2e8f0' }}>{d.replace(/_/g, ' ')}</option>)}
-                </select>
-                <ChevronDown className="w-4 h-4 text-teal-400 absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    onChange={value => {
+                        onUpdate(id, 'column', value);
+                        onUpdate(id, 'year', []);
+                        onUpdate(id, 'quarter', []);
+                        onUpdate(id, 'month', []);
+                        onUpdate(id, 'day', []);
+                        onUpdate(id, 'values', []);
+                    }}
+                    options={dateColumns.map(column => ({ label: column.replace(/_/g, ' '), value: column }))}
+                    colorTextClass="text-teal-300"
+                    colorRingClass="focus:ring-teal-400/50"
+                    searchable={false}
+                    className="min-w-[140px] !py-1 !pl-3 !pr-2 !bg-[#134e4a] !border-teal-400/40"
+                />
             </div>
 
             {/* Mode toggle */}
