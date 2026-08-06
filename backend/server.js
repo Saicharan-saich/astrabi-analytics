@@ -467,14 +467,17 @@ app.post('/api/auth/logout-all-devices', async (req, res) => {
             return res.status(401).json({ success: false, error: 'Invalid or expired token' });
         }
 
-        // Only admins can force-logout others
-        if (decoded.role !== 'admin') {
-            return res.status(403).json({ success: false, error: 'Admin access required' });
-        }
-
         if (!authPool) {
             return res.status(503).json({ success: false, error: 'Database connection not available' });
         }
+
+        // Use the current database role so a recently promoted admin can manage
+        // users without waiting for an old JWT role snapshot to expire.
+        const currentAdmin = await extractCurrentAdmin(req);
+        if (!currentAdmin) {
+            return res.status(403).json({ success: false, error: 'Admin access required' });
+        }
+        decoded = currentAdmin;
 
         const { targetUserId } = req.body;
 
@@ -1376,6 +1379,35 @@ function extractUser(req) {
     } catch { return null; }
 }
 
+/**
+ * Resolve admin permission from the canonical users table, not the role snapshot
+ * embedded in a JWT. This makes role promotions/demotions effective immediately
+ * while still requiring a valid, non-revoked token for the same database user.
+ */
+async function extractCurrentAdmin(req) {
+    const tokenUser = extractUser(req);
+    if (!tokenUser || !authPool || tokenUser.sv === undefined) return null;
+    try {
+        const { rows } = await authPool.query(
+            'SELECT id, email, name, role, is_active, session_version FROM users WHERE id = $1',
+            [tokenUser.userId]
+        );
+        const dbUser = rows[0];
+        if (!dbUser || dbUser.role !== 'admin' || dbUser.is_active === false) return null;
+        if (Number(dbUser.session_version) !== Number(tokenUser.sv)) return null;
+        return {
+            ...tokenUser,
+            userId: dbUser.id,
+            email: dbUser.email,
+            name: dbUser.name,
+            role: dbUser.role,
+        };
+    } catch (error) {
+        console.error('[Auth] Failed to resolve current admin role:', error.message);
+        return null;
+    }
+}
+
 /** Check if user is active and within daily AI quota */
 async function checkAIQuota(userId) {
     if (!authPool) return { allowed: true, remaining: 999, limit: 999 };
@@ -1492,9 +1524,9 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
 
 // Get all users with usage stats (admin only)
 app.get('/api/admin/users', async (req, res) => {
-    const user = extractUser(req);
-    if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
+    const user = await extractCurrentAdmin(req);
+    if (!user) return res.status(403).json({ error: 'Admin access required' });
 
     try {
         const { rows } = await authPool.query(`
@@ -1545,9 +1577,9 @@ app.get('/api/admin/usage', async (req, res) => {
 
 // Create a user from the admin console (admin only)
 app.post('/api/admin/users', async (req, res) => {
-    const admin = extractUser(req);
-    if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
+    const admin = await extractCurrentAdmin(req);
+    if (!admin) return res.status(403).json({ error: 'Admin access required' });
 
     try {
         const { email, name, password, role } = req.body || {};
@@ -1584,9 +1616,9 @@ app.post('/api/admin/users', async (req, res) => {
 
 // Persist an admin-console role change (admin only).
 app.patch('/api/admin/users/:id/role', async (req, res) => {
-    const admin = extractUser(req);
-    if (!admin || admin.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
+    const admin = await extractCurrentAdmin(req);
+    if (!admin) return res.status(403).json({ error: 'Admin access required' });
 
     const { role } = req.body || {};
     if (!['admin', 'contributor', 'viewer'].includes(role)) {
