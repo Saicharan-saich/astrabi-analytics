@@ -20,7 +20,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
     datasets = [], onLoadDataset, onDeleteDataset, activeDatasetId
 }) => {
     return (
-        <div className="h-full w-full overflow-y-auto">
+        <div className="qi-upload-workspace h-full w-full overflow-y-auto">
             <div className="flex flex-col items-center justify-center min-h-full p-4 md:p-8 relative">
                 {/* Ambient background */}
                 <div className="absolute inset-0 pointer-events-none overflow-hidden">
