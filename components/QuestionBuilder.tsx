@@ -115,8 +115,20 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const [showOptions, setShowOptions] = useState(false);
     const [showFilterMenu, setShowFilterMenu] = useState(false);
     const filterMenuRef = useRef<HTMLDivElement>(null);
+    const filterButtonRef = useRef<HTMLButtonElement>(null);
+    const filterPanelRef = useRef<HTMLDivElement>(null);
     const optionsButtonRef = useRef<HTMLButtonElement>(null);
-    const [optionsPos, setOptionsPos] = useState({ top: 0, left: 8, maxHeight: 320 });
+    const [optionsPos, setOptionsPos] = useState<{
+        top: number;
+        left: number;
+        maxHeight: number;
+        placement: 'up' | 'down';
+    }>({ top: 0, left: 8, maxHeight: 320, placement: 'down' });
+    const [filterMenuPos, setFilterMenuPos] = useState<{
+        top: number;
+        left: number;
+        placement: 'up' | 'down';
+    }>({ top: 0, left: 8, placement: 'down' });
 
     // Computed: is the current grouping a time grain?
     const isTimeDimension = !!timeGrain;
@@ -130,18 +142,26 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         }
     }, [comparison, limit, sort, isTimeDimension, timeGrain]);
 
-    // Keep the Options panel anchored above its trigger, including while the
-    // builder dock scrolls or the viewport changes.
+    // Keep the Options panel in the larger usable side of the viewport.
     useEffect(() => {
         if (!showOptions || !optionsButtonRef.current) return;
         const updatePosition = () => {
             const rect = optionsButtonRef.current?.getBoundingClientRect();
             if (!rect) return;
-            const panelWidth = Math.min(360, window.innerWidth - 16);
+            const viewportPadding = 8;
+            const gap = 8;
+            const desiredHeight = 520;
+            const panelWidth = Math.min(360, window.innerWidth - viewportPadding * 2);
+            const availableAbove = Math.max(0, rect.top - viewportPadding - gap);
+            const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding - gap);
+            const placement: 'up' | 'down' =
+                availableBelow >= desiredHeight || availableBelow >= availableAbove ? 'down' : 'up';
+            const availableHeight = placement === 'up' ? availableAbove : availableBelow;
             setOptionsPos({
-                top: rect.top,
-                left: Math.max(8, Math.min(rect.left, window.innerWidth - panelWidth - 8)),
-                maxHeight: Math.max(180, rect.top - 16),
+                top: placement === 'up' ? rect.top - gap : rect.bottom + gap,
+                left: Math.max(viewportPadding, Math.min(rect.left, window.innerWidth - panelWidth - viewportPadding)),
+                maxHeight: Math.max(180, Math.min(desiredHeight, availableHeight)),
+                placement
             });
         };
         updatePosition();
@@ -153,10 +173,41 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         };
     }, [showOptions]);
 
+    // Keep the compact Add Filter menu visible in the viewport too.
+    useEffect(() => {
+        if (!showFilterMenu || !filterButtonRef.current) return;
+        const updatePosition = () => {
+            const rect = filterButtonRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const viewportPadding = 8;
+            const gap = 8;
+            const desiredHeight = dateColumns.length > 0 ? 150 : 104;
+            const menuWidth = 240;
+            const availableAbove = Math.max(0, rect.top - viewportPadding - gap);
+            const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding - gap);
+            const placement: 'up' | 'down' =
+                availableBelow >= desiredHeight || availableBelow >= availableAbove ? 'down' : 'up';
+            setFilterMenuPos({
+                top: placement === 'up' ? rect.top - gap : rect.bottom + gap,
+                left: Math.max(viewportPadding, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - viewportPadding)),
+                placement
+            });
+        };
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
+    }, [showFilterMenu, dateColumns.length]);
+
     // Close filter menu on outside click
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
-            if (filterMenuRef.current && !filterMenuRef.current.contains(e.target as Node)) {
+            const target = e.target as Node;
+            if (filterMenuRef.current && !filterMenuRef.current.contains(target) &&
+                (!filterPanelRef.current || !filterPanelRef.current.contains(target))) {
                 setShowFilterMenu(false);
             }
         };
@@ -906,6 +957,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         {/* ═══ Enhancement 3: Consolidated Filter Button ═══ */}
                         <div className="relative" ref={filterMenuRef}>
                             <button
+                                ref={filterButtonRef}
                                 onClick={() => setShowFilterMenu(!showFilterMenu)}
                                 className={`flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase border rounded-xl px-3 py-1.5 transition-all duration-200 ${showFilterMenu || filters.length > 0 ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white'}`}
                             >
@@ -913,8 +965,19 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 {filters.length > 0 ? `Filters (${filters.length})` : 'Add Filter'}
                             </button>
 
-                            {showFilterMenu && (
-                                <div className="qi-dropdown-surface qi-filter-menu absolute bottom-full right-0 mb-2 rounded-xl shadow-2xl border border-white/10 py-1 z-50 min-w-[200px] animate-in fade-in slide-in-from-bottom-2 duration-200" style={{ backgroundColor: '#0f172a' }}>
+                            {showFilterMenu && ReactDOM.createPortal(
+                                <div
+                                    ref={filterPanelRef}
+                                    className="qi-dropdown-surface qi-filter-menu fixed z-[9999] rounded-xl shadow-2xl border border-white/10 py-1 min-w-[200px] animate-in fade-in duration-200"
+                                    style={{
+                                        top: filterMenuPos.top,
+                                        left: filterMenuPos.left,
+                                        width: 240,
+                                        backgroundColor: '#0f172a',
+                                        transform: filterMenuPos.placement === 'up' ? 'translateY(-100%)' : 'none',
+                                        transformOrigin: filterMenuPos.placement === 'up' ? 'bottom right' : 'top right'
+                                    }}
+                                >
                                     <button
                                         onClick={() => { addFilter('dimension'); setShowFilterMenu(false); }}
                                         className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-purple-500/20 hover:text-purple-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
@@ -938,7 +1001,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                             <span className="text-[10px] text-slate-500 ml-auto">year, quarter...</span>
                                         </button>
                                     )}
-                                </div>
+                                </div>,
+                                document.body
                             )}
                         </div>
                     </div>
@@ -955,8 +1019,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         width: 'min(360px, calc(100vw - 16px))',
                         maxHeight: optionsPos.maxHeight,
                         overflowY: 'auto',
-                        transform: 'translateY(calc(-100% - 8px))',
-                        transformOrigin: 'bottom left',
+                        transform: optionsPos.placement === 'up' ? 'translateY(-100%)' : 'none',
+                        transformOrigin: optionsPos.placement === 'up' ? 'bottom left' : 'top left',
                     }}
                 >
                     {/* METRIC */}
@@ -1188,7 +1252,12 @@ const DimensionValuePicker: React.FC<{
     const [search, setSearch] = React.useState('');
     const btnRef = React.useRef<HTMLButtonElement>(null);
     const dropRef = React.useRef<HTMLDivElement>(null);
-    const [pos, setPos] = React.useState({ bottom: 0, left: 0 });
+    const [pos, setPos] = React.useState<{
+        top: number;
+        left: number;
+        maxHeight: number;
+        placement: 'up' | 'down';
+    }>({ top: 0, left: 0, maxHeight: 300, placement: 'down' });
 
     React.useEffect(() => {
         if (!open) return;
@@ -1203,10 +1272,33 @@ const DimensionValuePicker: React.FC<{
     }, [open]);
 
     React.useEffect(() => {
-        if (open && btnRef.current) {
-            const r = btnRef.current.getBoundingClientRect();
-            setPos({ bottom: Math.max(8, window.innerHeight - r.top + 4), left: r.left });
-        }
+        if (!open || !btnRef.current) return;
+        const updatePosition = () => {
+            const r = btnRef.current?.getBoundingClientRect();
+            if (!r) return;
+            const gap = 6;
+            const viewportPadding = 8;
+            const desiredHeight = 300;
+            const availableAbove = Math.max(0, r.top - viewportPadding - gap);
+            const availableBelow = Math.max(0, window.innerHeight - r.bottom - viewportPadding - gap);
+            const placement: 'up' | 'down' =
+                availableBelow >= desiredHeight || availableBelow >= availableAbove ? 'down' : 'up';
+            const availableHeight = placement === 'up' ? availableAbove : availableBelow;
+            const menuWidth = Math.min(320, Math.max(r.width, 220));
+            setPos({
+                top: placement === 'up' ? r.top - gap : r.bottom + gap,
+                left: Math.max(viewportPadding, Math.min(r.left, window.innerWidth - menuWidth - viewportPadding)),
+                maxHeight: Math.max(96, Math.min(desiredHeight, availableHeight)),
+                placement
+            });
+        };
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
     }, [open]);
 
     const filtered = allValues.filter(v => v.toLowerCase().includes(search.toLowerCase()));
@@ -1235,7 +1327,17 @@ const DimensionValuePicker: React.FC<{
                 <div
                     ref={dropRef}
                     className="qi-dropdown-surface qi-dimension-value-menu fixed z-[9999] rounded-xl shadow-2xl border border-blue-400/30 overflow-hidden"
-                    style={{ bottom: pos.bottom, left: pos.left, minWidth: 220, maxWidth: 320, backgroundColor: '#0f172a' }}
+                    style={{
+                        top: pos.top,
+                        left: pos.left,
+                        minWidth: 220,
+                        maxWidth: 320,
+                        maxHeight: pos.maxHeight,
+                        overflow: 'hidden',
+                        backgroundColor: '#0f172a',
+                        transform: pos.placement === 'up' ? 'translateY(-100%)' : 'none',
+                        transformOrigin: pos.placement === 'up' ? 'bottom left' : 'top left'
+                    }}
                 >
                     {/* Search */}
                     <div className="px-2 pt-2 pb-1 border-b border-white/10">
@@ -1273,7 +1375,7 @@ const DimensionValuePicker: React.FC<{
                     </div>
 
                     {/* Values list */}
-                    <div className="max-h-52 overflow-auto">
+                    <div className="overflow-auto" style={{ maxHeight: Math.max(44, pos.maxHeight - 92) }}>
                         {filtered.length === 0 ? (
                             <div className="px-3 py-2 text-xs" style={{ color: '#94a3b8' }}>No matches</div>
                         ) : (
