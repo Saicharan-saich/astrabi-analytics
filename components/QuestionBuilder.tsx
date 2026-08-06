@@ -116,7 +116,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const [showFilterMenu, setShowFilterMenu] = useState(false);
     const filterMenuRef = useRef<HTMLDivElement>(null);
     const optionsButtonRef = useRef<HTMLButtonElement>(null);
-    const [optionsPos, setOptionsPos] = useState({ top: 0, left: 8 });
+    const [optionsPos, setOptionsPos] = useState({ top: 0, left: 8, maxHeight: 320 });
 
     // Computed: is the current grouping a time grain?
     const isTimeDimension = !!timeGrain;
@@ -141,6 +141,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             setOptionsPos({
                 top: rect.top,
                 left: Math.max(8, Math.min(rect.left, window.innerWidth - panelWidth - 8)),
+                maxHeight: Math.max(180, rect.top - 16),
             });
         };
         updatePosition();
@@ -587,6 +588,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Aggregation</span>
                         <Tooltip text={isDimensionMetric ? "Counting dimensions: Count tallies rows, Unique Count counts distinct values." : "How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values."} position="bottom">
                             <QuerySelect
+                                menuPlacement="up"
                                 value={aggregation}
                                 onChange={setAggregation}
                                 options={isDimensionMetric
@@ -617,6 +619,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Metric</span>
                         <Tooltip text="Choose the measure to analyze. Pick a numeric metric (e.g. revenue) or a dimension to count (e.g. patient count)." position="bottom">
                             <QuerySelect
+                                menuPlacement="up"
                                 value={metric}
                                 onChange={val => {
                                     setMetric(val);
@@ -697,6 +700,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400/70 pl-1">Dimension</span>
                         <Tooltip text="Group by a categorical column like product, region, or category." position="bottom">
                             <QuerySelect
+                                menuPlacement="up"
                                 value={dimension}
                                 onChange={newDim => {
                                     setDimension(newDim);
@@ -778,6 +782,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400/70 pl-1">Time Grain</span>
                         <Tooltip text="Group by a time grain to see trends over time. Can be combined with a dimension." position="bottom">
                             <QuerySelect
+                                menuPlacement="up"
                                 value={timeGrain}
                                 onChange={newGrain => {
                                     setTimeGrain(newGrain);
@@ -811,6 +816,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="flex items-center gap-2">
                             <Tooltip text="Filter data by time range relative to the AS OF date. 'Time is Anything' includes all data. 'Last...' lets you pick a custom window." position="bottom">
                                 <QuerySelect
+                                    menuPlacement="up"
                                     value={timeFilter.startsWith('last_') && !['last_30_days', 'last_90_days', 'last_year'].includes(timeFilter) ? 'custom' : timeFilter}
                                     onChange={val => {
                                         if (val === 'custom') setTimeFilter('last_7_days');
@@ -873,9 +879,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                 </div>
                 {/* ═══════════════ RIGHT CONTROLS: AS-OF, OPTIONS, FILTERS ═══════════════ */}
-                <div className="flex flex-col items-end gap-2 flex-shrink-0 relative z-[200]">
+                <div className="qi-builder-actions flex flex-col items-end gap-2 flex-shrink-0 relative z-[200]">
                     {/* Time anchor controls live in BuilderView’s top command bar. */}
-                    <div className="flex items-center gap-2">
+                    <div className="qi-builder-action-row flex items-center gap-2">
                         {/* Options button */}
                         <button
                             ref={optionsButtonRef}
@@ -937,7 +943,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         top: optionsPos.top,
                         left: optionsPos.left,
                         width: 'min(360px, calc(100vw - 16px))',
-                        maxHeight: 'min(70vh, 560px)',
+                        maxHeight: optionsPos.maxHeight,
                         overflowY: 'auto',
                         transform: 'translateY(calc(-100% - 8px))',
                         transformOrigin: 'bottom left',
@@ -948,6 +954,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-purple-400 uppercase tracking-wider font-bold">Metric</span>
                             <QuerySelect
+                                menuPlacement="up"
                                 value=""
                                 onChange={val => { if (val) setSecondaryMetrics(prev => [...prev, val]); }}
                                 options={[
@@ -967,6 +974,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-blue-400 uppercase tracking-wider font-bold">Dimension</span>
                             <QuerySelect
+                                menuPlacement="up"
                                 value=""
                                 onChange={val => { if (val) setSecondaryDimensions(prev => [...prev, val]); }}
                                 options={[
@@ -985,6 +993,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-yellow-400 uppercase tracking-wider font-bold">Compare</span>
                         <QuerySelect
+                            menuPlacement="up"
                             value={comparison}
                             onChange={setComparison}
                             options={[
@@ -1046,6 +1055,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">Limit</span>
                             <QuerySelect
+                                menuPlacement="up"
                                 value={(() => {
                                     if (limit === 0) return '0';
                                     const isBottom = sort === 'asc';
@@ -1096,6 +1106,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-amber-400 uppercase tracking-wider font-bold">Sort</span>
                             <QuerySelect
+                                menuPlacement="up"
                                 value={sort}
                                 onChange={val => setSort(val as 'asc' | 'desc' | 'oldest' | 'newest')}
                                 options={[
