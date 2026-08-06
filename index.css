@@ -2572,3 +2572,90 @@ html.light .qi-theme-analyst .qi-ai-frame {
     flex-wrap: nowrap !important;
   }
 }
+
+
+/* Builder controls must remain reachable.
+   This is presentation-only: it makes the existing Question Builder dock own
+   its overflow, so expanded Options and Filter values never sit below the
+   visible workspace. */
+@media (min-width: 1180px) {
+  .qi-builder-layout {
+    grid-template-columns: minmax(350px, 380px) minmax(0, 1fr) !important;
+  }
+
+  .qi-builder-dock {
+    min-height: 0 !important;
+    max-height: 100% !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .qi-builder-dock .qi-question-builder {
+    min-height: auto !important;
+    height: auto !important;
+    overflow: visible !important;
+    padding-bottom: 2rem !important;
+  }
+
+  /* A dock is intentionally narrow: one clear control per line is more
+     legible than squeezing query selectors into partially visible columns. */
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap {
+    display: flex !important;
+    flex-direction: column;
+    align-items: stretch !important;
+    gap: 0.8rem !important;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap > * {
+    width: 100%;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap > .flex-col {
+    gap: 0.3rem;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap > .flex-col > * {
+    width: 100%;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex > .flex-col {
+    align-items: stretch !important;
+    margin-top: 0.8rem;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex > .flex-col > div {
+    justify-content: stretch;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex > .flex-col button,
+  .qi-builder-dock .qi-question-builder > .flex > .flex-col [role="button"] {
+    min-height: 2.4rem;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex + div {
+    padding-bottom: 1rem;
+  }
+}
+
+/* The normal stacked layout gets the same safe scrolling contract when the
+   available viewport is short; nothing is hidden beneath the visual canvas. */
+@media (max-width: 1179px) {
+  .qi-builder-workspace {
+    min-height: 0;
+  }
+
+  .qi-builder-panel:not(.max-h-0) {
+    min-height: 0 !important;
+    max-height: min(62dvh, 560px) !important;
+    overflow: auto !important;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+  }
+
+  .qi-builder-panel:not(.max-h-0) .qi-question-builder {
+    min-height: auto;
+    padding-bottom: 1.5rem;
+  }
+}
