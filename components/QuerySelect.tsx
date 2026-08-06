@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import ReactDOM from 'react-dom';
 import { ChevronDown, Search, Check } from 'lucide-react';
 
 export interface SelectOption {
@@ -14,11 +15,19 @@ interface QuerySelectProps {
     icon?: React.ReactNode;
     placeholder?: string;
     searchable?: boolean;
-    colorTextClass?: string; // e.g., 'text-purple-400'
-    colorRingClass?: string; // e.g., 'focus:ring-purple-500/30'
-    className?: string; // for custom width or padding overrides
-    buttonContent?: React.ReactNode; // custom completely override button inner content
-    menuPlacement?: 'up' | 'down';
+    colorTextClass?: string;
+    colorRingClass?: string;
+    className?: string;
+    buttonContent?: React.ReactNode;
+    menuPlacement?: 'auto' | 'up' | 'down';
+}
+
+interface MenuPosition {
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+    placement: 'up' | 'down';
 }
 
 export const QuerySelect: React.FC<QuerySelectProps> = ({
@@ -32,14 +41,22 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
     colorRingClass = 'focus:ring-white/20',
     className = '',
     buttonContent,
-    menuPlacement = 'down'
+    menuPlacement = 'auto'
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
+    const [menuPosition, setMenuPosition] = useState<MenuPosition>({
+        top: 0,
+        left: 8,
+        width: 240,
+        maxHeight: 300,
+        placement: 'down',
+    });
     const containerRef = useRef<HTMLDivElement>(null);
+    const buttonRef = useRef<HTMLButtonElement>(null);
+    const menuRef = useRef<HTMLDivElement>(null);
     const searchRef = useRef<HTMLInputElement>(null);
 
-    // Group options
     const groupedOptions = options.reduce((acc, opt) => {
         const group = opt.group || 'default';
         if (!acc[group]) acc[group] = [];
@@ -47,31 +64,84 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         return acc;
     }, {} as Record<string, SelectOption[]>);
 
-    // Filter by search
     const filteredGroups = Object.entries(groupedOptions).reduce((acc, [group, opts]) => {
         const filtered = opts.filter(o => o.label.toLowerCase().includes(searchQuery.toLowerCase()));
         if (filtered.length > 0) acc[group] = filtered;
         return acc;
     }, {} as Record<string, SelectOption[]>);
 
-    // Close on click outside
+    const updateMenuPosition = useCallback(() => {
+        const button = buttonRef.current;
+        if (!button) return;
+
+        const rect = button.getBoundingClientRect();
+        const viewportPadding = 8;
+        const gap = 6;
+        const availableAbove = Math.max(0, rect.top - viewportPadding - gap);
+        const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding - gap);
+        const estimatedHeight = Math.min(
+            360,
+            (searchable ? 58 : 8) + Math.max(1, options.length) * 39
+        );
+        const measuredHeight = menuRef.current?.getBoundingClientRect().height || estimatedHeight;
+        const desiredHeight = Math.min(360, Math.max(96, measuredHeight));
+
+        let placement: 'up' | 'down';
+        if (menuPlacement === 'auto') {
+            placement = availableBelow >= desiredHeight || availableBelow >= availableAbove ? 'down' : 'up';
+        } else {
+            const requestedSpace = menuPlacement === 'up' ? availableAbove : availableBelow;
+            const oppositeSpace = menuPlacement === 'up' ? availableBelow : availableAbove;
+            placement = requestedSpace < 96 && oppositeSpace > requestedSpace
+                ? (menuPlacement === 'up' ? 'down' : 'up')
+                : menuPlacement;
+        }
+
+        const availableHeight = placement === 'up' ? availableAbove : availableBelow;
+        const minMenuWidth = Math.min(240, Math.max(160, window.innerWidth - viewportPadding * 2));
+        const width = Math.min(320, Math.max(rect.width, minMenuWidth));
+        const left = Math.max(
+            viewportPadding,
+            Math.min(rect.left, window.innerWidth - width - viewportPadding)
+        );
+
+        setMenuPosition({
+            top: placement === 'up' ? rect.top - gap : rect.bottom + gap,
+            left,
+            width,
+            maxHeight: Math.max(96, Math.min(desiredHeight, availableHeight)),
+            placement,
+        });
+    }, [menuPlacement, options.length, searchable]);
+
     useEffect(() => {
+        if (!isOpen) return;
+
+        updateMenuPosition();
+        const frame = requestAnimationFrame(updateMenuPosition);
         const handleClickOutside = (event: MouseEvent) => {
-            if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+            const target = event.target as Node;
+            if (!containerRef.current?.contains(target) && !menuRef.current?.contains(target)) {
                 setIsOpen(false);
             }
         };
-        if (isOpen) {
-            document.addEventListener('mousedown', handleClickOutside);
-            // Focus search input when opened
-            if (searchable) {
-                setTimeout(() => searchRef.current?.focus(), 50);
-            }
+        const handleViewportChange = () => updateMenuPosition();
+
+        document.addEventListener('mousedown', handleClickOutside);
+        window.addEventListener('resize', handleViewportChange);
+        window.addEventListener('scroll', handleViewportChange, true);
+
+        if (searchable) {
+            window.setTimeout(() => searchRef.current?.focus(), 50);
         }
+
         return () => {
+            cancelAnimationFrame(frame);
             document.removeEventListener('mousedown', handleClickOutside);
+            window.removeEventListener('resize', handleViewportChange);
+            window.removeEventListener('scroll', handleViewportChange, true);
         };
-    }, [isOpen, searchable]);
+    }, [isOpen, searchable, updateMenuPosition]);
 
     const handleSelect = (val: string) => {
         onChange(val);
@@ -80,38 +150,52 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
     };
 
     const selectedOption = options.find(o => o.value === value);
+    const optionsMaxHeight = Math.max(64, menuPosition.maxHeight - (searchable ? 58 : 8));
 
     return (
         <div className="relative inline-block" ref={containerRef}>
-            {/* TRIGGER BUTTON */}
             <button
-                onClick={() => setIsOpen(!isOpen)}
+                ref={buttonRef}
+                onClick={() => {
+                    if (!isOpen) updateMenuPosition();
+                    setIsOpen(!isOpen);
+                }}
                 className={`flex items-center justify-between gap-3 bg-white/5 border rounded-xl py-2 pl-4 pr-3 transition-all outline-none focus:ring-2 ${isOpen ? `bg-white/10 ${colorRingClass} border-white/20` : 'border-white/10 hover:bg-white/8 hover:border-white/20'} ${className}`}
             >
                 {buttonContent ? (
                     buttonContent
                 ) : (
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                         {icon && <span className={colorTextClass}>{icon}</span>}
-                        <span className={`text-sm font-semibold ${selectedOption ? 'text-white' : 'text-slate-400'}`}>
+                        <span className={`truncate text-sm font-semibold ${selectedOption ? 'text-white' : 'text-slate-400'}`}>
                             {selectedOption ? selectedOption.label : placeholder}
                         </span>
                     </div>
                 )}
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isOpen ? 'rotate-180 text-white' : 'text-slate-400'}`} />
+                <ChevronDown className={`w-3.5 h-3.5 shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180 text-white' : 'text-slate-400'}`} />
             </button>
 
-            {/* POPOVER DROPDOWN */}
-            {isOpen && (
+            {isOpen && ReactDOM.createPortal(
                 <div
-                    className={`qi-dropdown-surface qi-query-select-menu absolute z-[100] left-0 min-w-[240px] max-w-[320px] flex flex-col rounded-2xl overflow-hidden shadow-2xl animate-in fade-in duration-200 ${menuPlacement === 'up'
-                        ? 'bottom-full mb-2 slide-in-from-bottom-2'
-                        : 'top-full mt-2 slide-in-from-top-2'
-                        }`}
-                    style={{ transformOrigin: menuPlacement === 'up' ? 'bottom left' : 'top left', backgroundColor: '#0f172a', border: '1px solid #475569' }}
+                    ref={menuRef}
+                    className={`qi-dropdown-surface qi-query-select-menu fixed z-[9999] flex flex-col rounded-2xl overflow-hidden shadow-2xl animate-in fade-in duration-150 ${menuPosition.placement === 'up' ? 'slide-in-from-bottom-2' : 'slide-in-from-top-2'}`}
+                    data-placement={menuPosition.placement}
+                    style={{
+                        position: 'fixed',
+                        top: menuPosition.top,
+                        bottom: 'auto',
+                        left: menuPosition.left,
+                        width: menuPosition.width,
+                        maxWidth: 'calc(100vw - 16px)',
+                        maxHeight: menuPosition.maxHeight,
+                        transform: menuPosition.placement === 'up' ? 'translateY(-100%)' : 'none',
+                        transformOrigin: menuPosition.placement === 'up' ? 'bottom left' : 'top left',
+                        backgroundColor: '#0f172a',
+                        border: '1px solid #475569',
+                    }}
                 >
                     {searchable && (
-                        <div className="p-2 border-b border-white/5">
+                        <div className="p-2 border-b border-white/5 shrink-0">
                             <div className="relative">
                                 <Search className="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                                 <input
@@ -126,7 +210,10 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
                         </div>
                     )}
 
-                    <div className="max-h-[300px] overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+                    <div
+                        className="overflow-y-auto p-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"
+                        style={{ maxHeight: optionsMaxHeight }}
+                    >
                         {Object.keys(filteredGroups).length === 0 ? (
                             <div className="p-3 text-center text-sm text-slate-400 font-medium">No matches found</div>
                         ) : (
@@ -142,8 +229,8 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
                                             key={opt.value}
                                             onClick={() => handleSelect(opt.value)}
                                             className={`qi-dropdown-option w-full flex items-center justify-between text-left px-3 py-2 rounded-lg text-sm font-semibold transition-all ${value === opt.value
-                                                    ? `qi-dropdown-option--selected bg-white/10 ${colorTextClass}`
-                                                    : 'hover:bg-white/10'
+                                                ? `qi-dropdown-option--selected bg-white/10 ${colorTextClass}`
+                                                : 'hover:bg-white/10'
                                                 }`}
                                             style={value !== opt.value ? { color: '#e2e8f0' } : undefined}
                                         >
@@ -155,7 +242,8 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
                             ))
                         )}
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </div>
     );
