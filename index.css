@@ -3043,3 +3043,38 @@ html.light .qi-theme-analyst .qi-ai-frame {
     min-width: 0;
   }
 }
+
+
+/* Compact Question Builder brand header. */
+.qi-question-builder::before {
+  content: 'QUESTION BUILDER' !important;
+}
+
+@media (min-width: 1180px) {
+  .qi-builder-dock .qi-question-builder {
+    padding-top: 4.45rem !important;
+  }
+
+  .qi-builder-dock .qi-question-builder::before {
+    top: 1.18rem !important;
+    left: 4.8rem !important;
+    padding: 0.22rem 0.65rem;
+    font-size: 0.66rem;
+    letter-spacing: 0.13em;
+    white-space: nowrap;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap > img[alt="QuickInsight"] {
+    position: absolute !important;
+    top: 0.62rem;
+    left: 0.9rem;
+    z-index: 31;
+    width: 3.35rem !important;
+    height: 3.35rem !important;
+    min-width: 3.35rem !important;
+    max-width: 3.35rem !important;
+    margin: 0 !important;
+    padding: 0.12rem !important;
+    border-radius: 0.9rem !important;
+  }
+}
