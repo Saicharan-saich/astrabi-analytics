@@ -1158,7 +1158,7 @@ const DimensionValuePicker: React.FC<{
     const [search, setSearch] = React.useState('');
     const btnRef = React.useRef<HTMLButtonElement>(null);
     const dropRef = React.useRef<HTMLDivElement>(null);
-    const [pos, setPos] = React.useState({ top: 0, left: 0 });
+    const [pos, setPos] = React.useState({ bottom: 0, left: 0 });
 
     React.useEffect(() => {
         if (!open) return;
@@ -1175,7 +1175,7 @@ const DimensionValuePicker: React.FC<{
     React.useEffect(() => {
         if (open && btnRef.current) {
             const r = btnRef.current.getBoundingClientRect();
-            setPos({ top: r.bottom + 4, left: r.left });
+            setPos({ bottom: Math.max(8, window.innerHeight - r.top + 4), left: r.left });
         }
     }, [open]);
 
@@ -1205,7 +1205,7 @@ const DimensionValuePicker: React.FC<{
                 <div
                     ref={dropRef}
                     className="fixed z-[9999] rounded-xl shadow-2xl border border-blue-400/30 overflow-hidden"
-                    style={{ top: pos.top, left: pos.left, minWidth: 220, maxWidth: 320, backgroundColor: '#0f172a' }}
+                    style={{ bottom: pos.bottom, left: pos.left, minWidth: 220, maxWidth: 320, backgroundColor: '#0f172a' }}
                 >
                     {/* Search */}
                     <div className="px-2 pt-2 pb-1 border-b border-white/10">
