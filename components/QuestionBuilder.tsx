@@ -849,7 +849,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                 </div>
                 {/* ═══════════════ RIGHT CONTROLS: AS-OF, OPTIONS, FILTERS ═══════════════ */}
-<div className="flex flex-col items-end gap-2 flex-shrink-0 relative z-[200]">
+                <div className="flex flex-col items-end gap-2 flex-shrink-0 relative z-[200]">
                     {/* Time anchor controls live in BuilderView’s top command bar. */}
                     <div className="flex items-center gap-2">
                         {/* Options button */}
@@ -902,6 +902,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         </div>
                     </div>
                 </div>
+            </div>
 
             {/* ═══════════════ ROW 2: SECONDARY CONTROLS (Always visible) ═══════════════ */}
             {showOptions && (
