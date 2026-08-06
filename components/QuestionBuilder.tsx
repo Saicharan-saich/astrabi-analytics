@@ -115,6 +115,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const [showOptions, setShowOptions] = useState(false);
     const [showFilterMenu, setShowFilterMenu] = useState(false);
     const filterMenuRef = useRef<HTMLDivElement>(null);
+    const optionsButtonRef = useRef<HTMLButtonElement>(null);
+    const [optionsPos, setOptionsPos] = useState({ top: 0, left: 8 });
 
     // Computed: is the current grouping a time grain?
     const isTimeDimension = !!timeGrain;
@@ -127,6 +129,28 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             setShowOptions(true);
         }
     }, [comparison, limit, sort, isTimeDimension, timeGrain]);
+
+    // Keep the Options panel anchored above its trigger, including while the
+    // builder dock scrolls or the viewport changes.
+    useEffect(() => {
+        if (!showOptions || !optionsButtonRef.current) return;
+        const updatePosition = () => {
+            const rect = optionsButtonRef.current?.getBoundingClientRect();
+            if (!rect) return;
+            const panelWidth = Math.min(360, window.innerWidth - 16);
+            setOptionsPos({
+                top: rect.top,
+                left: Math.max(8, Math.min(rect.left, window.innerWidth - panelWidth - 8)),
+            });
+        };
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
+    }, [showOptions]);
 
     // Close filter menu on outside click
     useEffect(() => {
@@ -854,6 +878,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     <div className="flex items-center gap-2">
                         {/* Options button */}
                         <button
+                            ref={optionsButtonRef}
                             onClick={() => setShowOptions(!showOptions)}
                             className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase rounded-xl border transition-all duration-200 ${showOptions ? 'bg-white/15 border-white/20 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`}
                             title="Toggle options"
@@ -873,7 +898,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             </button>
 
                             {showFilterMenu && (
-                                <div className="qi-dropdown-surface qi-filter-menu absolute top-full right-0 mt-1 rounded-xl shadow-2xl border border-white/10 py-1 z-50 min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200" style={{ backgroundColor: '#0f172a' }}>
+                                <div className="qi-dropdown-surface qi-filter-menu absolute bottom-full right-0 mb-2 rounded-xl shadow-2xl border border-white/10 py-1 z-50 min-w-[200px] animate-in fade-in slide-in-from-bottom-2 duration-200" style={{ backgroundColor: '#0f172a' }}>
                                     <button
                                         onClick={() => { addFilter('dimension'); setShowFilterMenu(false); }}
                                         className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-purple-500/20 hover:text-purple-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
@@ -905,8 +930,19 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             </div>
 
             {/* ═══════════════ ROW 2: SECONDARY CONTROLS (Always visible) ═══════════════ */}
-            {showOptions && (
-                <div className="flex flex-wrap items-center gap-4 mt-4 pt-3 border-t border-white/5 text-sm animate-in fade-in slide-in-from-top-2 duration-200">
+            {showOptions && ReactDOM.createPortal(
+                <div
+                    className="qi-dropdown-surface qi-builder-options-panel fixed z-[9999] flex flex-wrap items-center gap-4 rounded-xl border border-white/15 p-4 text-sm shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-200"
+                    style={{
+                        top: optionsPos.top,
+                        left: optionsPos.left,
+                        width: 'min(360px, calc(100vw - 16px))',
+                        maxHeight: 'min(70vh, 560px)',
+                        overflowY: 'auto',
+                        transform: 'translateY(calc(-100% - 8px))',
+                        transformOrigin: 'bottom left',
+                    }}
+                >
                     {/* METRIC */}
                     {metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).length > 0 && (
                         <div className="flex items-center gap-2">
@@ -1075,6 +1111,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         </div>
                     )}
                 </div>
+                </div>,
+                document.body
             )}
 
             {/* ═══ Active Filters Row ═══ */}
