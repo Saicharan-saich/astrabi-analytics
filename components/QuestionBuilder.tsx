@@ -849,8 +849,59 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                 </div>
                 {/* ═══════════════ RIGHT CONTROLS: AS-OF, OPTIONS, FILTERS ═══════════════ */}
-                {/* Time anchor controls live in BuilderView’s top command bar. */}
+<div className="flex flex-col items-end gap-2 flex-shrink-0 relative z-[200]">
+                    {/* Time anchor controls live in BuilderView’s top command bar. */}
+                    <div className="flex items-center gap-2">
+                        {/* Options button */}
+                        <button
+                            onClick={() => setShowOptions(!showOptions)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase rounded-xl border transition-all duration-200 ${showOptions ? 'bg-white/15 border-white/20 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`}
+                            title="Toggle options"
+                        >
+                            <SlidersHorizontal className="w-3.5 h-3.5" />
+                            Options
+                        </button>
+
+                        {/* ═══ Enhancement 3: Consolidated Filter Button ═══ */}
+                        <div className="relative" ref={filterMenuRef}>
+                            <button
+                                onClick={() => setShowFilterMenu(!showFilterMenu)}
+                                className={`flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase border rounded-xl px-3 py-1.5 transition-all duration-200 ${showFilterMenu || filters.length > 0 ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white'}`}
+                            >
+                                <Filter className="w-3.5 h-3.5" />
+                                {filters.length > 0 ? `Filters (${filters.length})` : 'Add Filter'}
+                            </button>
+
+                            {showFilterMenu && (
+                                <div className="qi-dropdown-surface qi-filter-menu absolute top-full right-0 mt-1 rounded-xl shadow-2xl border border-white/10 py-1 z-50 min-w-[200px] animate-in fade-in slide-in-from-top-2 duration-200" style={{ backgroundColor: '#0f172a' }}>
+                                    <button
+                                        onClick={() => { addFilter('dimension'); setShowFilterMenu(false); }}
+                                        className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-purple-500/20 hover:text-purple-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
+                                    >
+                                        <span className="text-base">🏷️</span> By Dimension
+                                        <span className="text-[10px] text-slate-500 ml-auto">category, region...</span>
+                                    </button>
+                                    <button
+                                        onClick={() => { addFilter('measure'); setShowFilterMenu(false); }}
+                                        className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-blue-500/20 hover:text-blue-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
+                                    >
+                                        <span className="text-base">📊</span> By Metric Value
+                                        <span className="text-[10px] text-slate-500 ml-auto">sales &gt; 1000...</span>
+                                    </button>
+                                    {dateColumns.length > 0 && (
+                                        <button
+                                            onClick={() => { addFilter('date'); setShowFilterMenu(false); }}
+                                            className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-teal-500/20 hover:text-teal-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
+                                        >
+                                            <span className="text-base">📅</span> By Date
+                                            <span className="text-[10px] text-slate-500 ml-auto">year, quarter...</span>
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
                     </div>
+                </div>
 
             {/* ═══════════════ ROW 2: SECONDARY CONTROLS (Always visible) ═══════════════ */}
             {showOptions && (
