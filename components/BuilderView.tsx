@@ -51,6 +51,19 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [lastRunConfig, setLastRunConfig] = useState<any>(savedSession?.config || null);
     const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
     const [isBuilderCollapsed, setIsBuilderCollapsed] = useState(false);
+
+    // Responsive chart libraries measure their parent. Notify them immediately
+    // and once more after the layout settles when the Builder column changes.
+    React.useEffect(() => {
+        const notifyResize = () => window.dispatchEvent(new Event('resize'));
+        const frame = requestAnimationFrame(notifyResize);
+        const settle = window.setTimeout(notifyResize, 320);
+        return () => {
+            cancelAnimationFrame(frame);
+            window.clearTimeout(settle);
+        };
+    }, [isBuilderCollapsed]);
+
     // Full-screen mode is intentionally local to this Builder instance. Keeping
     // the same instance alive preserves the query, result, filters and formatting.
     const [isAnalyticsExplorer, setIsAnalyticsExplorer] = useState(false);
