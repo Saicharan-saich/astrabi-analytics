@@ -483,25 +483,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     </div>
                 )}
 
-                <div className="flex-1" />
-
                 {/* Compact KPI + Actions */}
                 {result && !error && (
-                    <div className="flex items-center gap-2 flex-wrap">
-                        {/* KPI Summary */}
-                        <div className="flex items-center gap-2 text-xs">
-                            <span className="text-slate-500 font-semibold">Analysis</span>
-                            <span className="text-slate-600 font-medium">of {result.yLabel}</span>
-                            <span className="font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-600 to-teal-500 text-lg">
-                                {result.kpi
-                                    ? (typeof result.kpi === 'number' ? result.kpi.toLocaleString() : result.kpi)
-                                    : (result.data.reduce((a: number, b: any) => a + (Number(b[result.yKey]) || 0), 0)).toLocaleString(undefined, { maximumFractionDigits: 1 })}
-                            </span>
-                            <span className="bg-indigo-100 text-indigo-800 text-[10px] px-1.5 py-0.5 rounded-full font-medium">
-                                {result.data.length} rows
-                            </span>
-                        </div>
-
+                    <div className="flex items-center gap-2 shrink-0">
+                        {/* Actions stay beside the workspace tabs; the redundant summary now lives in the result view. */}
                         {/* Export */}
                         <button onClick={exportToCSV} className="flex items-center text-sm font-bold text-slate-700 hover:text-indigo-700 bg-white hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all border border-slate-300 shadow-sm whitespace-nowrap" title="Export CSV">
                             <Download className="w-4 h-4 mr-1" /> Export
