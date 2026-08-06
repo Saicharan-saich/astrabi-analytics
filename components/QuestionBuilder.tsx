@@ -181,7 +181,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             if (!rect) return;
             const viewportPadding = 8;
             const gap = 8;
-            const desiredHeight = dateColumns.length > 0 ? 150 : 104;
+            const desiredHeight = 150;
             const menuWidth = 240;
             const availableAbove = Math.max(0, rect.top - viewportPadding - gap);
             const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding - gap);
@@ -200,7 +200,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             window.removeEventListener('resize', updatePosition);
             window.removeEventListener('scroll', updatePosition, true);
         };
-    }, [showFilterMenu, dateColumns.length]);
+    }, [showFilterMenu]);
 
     // Close filter menu on outside click
     useEffect(() => {
