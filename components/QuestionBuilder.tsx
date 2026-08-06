@@ -645,31 +645,37 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             <span className="text-teal-500 font-normal text-xs">+</span>
                             <span>{sm.replace(/_/g, ' ')}</span>
                             <span className="text-teal-400/40 mx-0.5">│</span>
-                            <select
+                            <QuerySelect
+                                menuPlacement="up"
                                 value={secondaryMetricAggregations[sm] || 'SUM'}
-                                onChange={e => setSecondaryMetricAggregations(prev => ({ ...prev, [sm]: e.target.value }))}
-                                className="bg-teal-500/20 text-teal-200 text-xs font-bold rounded-md border border-teal-400/30 pl-1.5 pr-5 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400/50 hover:bg-teal-500/30 transition-colors appearance-none"
-                                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center', backgroundSize: '12px' }}
-                                title="Aggregation for this metric"
-                            >
-                                <option value="SUM" className="bg-white text-gray-900">Σ Total</option>
-                                <option value="AVG" className="bg-white text-gray-900">μ Average</option>
-                                <option value="MAX" className="bg-white text-gray-900">↑ Highest</option>
-                                <option value="MIN" className="bg-white text-gray-900">↓ Lowest</option>
-                                <option value="COUNT" className="bg-white text-gray-900"># Count</option>
-                                <option value="COUNT_DISTINCT" className="bg-white text-gray-900">∩ Unique Count</option>
-                            </select>
-                            <select
+                                onChange={value => setSecondaryMetricAggregations(prev => ({ ...prev, [sm]: value }))}
+                                options={[
+                                    { label: 'Σ Total', value: 'SUM' },
+                                    { label: 'μ Average', value: 'AVG' },
+                                    { label: '↑ Highest', value: 'MAX' },
+                                    { label: '↓ Lowest', value: 'MIN' },
+                                    { label: '# Count', value: 'COUNT' },
+                                    { label: '∩ Unique Count', value: 'COUNT_DISTINCT' },
+                                ]}
+                                colorTextClass="text-teal-300"
+                                colorRingClass="focus:ring-teal-400/50"
+                                searchable={false}
+                                className="!py-1 !pl-2 !pr-1.5 !bg-teal-500/20 !border-teal-400/30"
+                            />
+                            <QuerySelect
+                                menuPlacement="up"
                                 value={secondaryMetricVisuals[sm] || 'line'}
-                                onChange={e => setSecondaryMetricVisuals(prev => ({ ...prev, [sm]: e.target.value }))}
-                                className="bg-teal-500/20 text-teal-200 text-xs font-bold rounded-md border border-teal-400/30 pl-1.5 pr-5 py-0.5 cursor-pointer focus:outline-none focus:ring-1 focus:ring-teal-400/50 hover:bg-teal-500/30 transition-colors appearance-none"
-                                style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 4px center', backgroundSize: '12px' }}
-                                title="Visual type for this metric"
-                            >
-                                <option value="line" className="bg-white text-gray-900">📈 Line</option>
-                                <option value="bar" className="bg-white text-gray-900">📊 Bar</option>
-                                <option value="area" className="bg-white text-gray-900">📉 Area</option>
-                            </select>
+                                onChange={value => setSecondaryMetricVisuals(prev => ({ ...prev, [sm]: value }))}
+                                options={[
+                                    { label: '📈 Line', value: 'line' },
+                                    { label: '📊 Bar', value: 'bar' },
+                                    { label: '📉 Area', value: 'area' },
+                                ]}
+                                colorTextClass="text-teal-300"
+                                colorRingClass="focus:ring-teal-400/50"
+                                searchable={false}
+                                className="!py-1 !pl-2 !pr-1.5 !bg-teal-500/20 !border-teal-400/30"
+                            />
                             <button onClick={() => {
                                 setSecondaryMetrics(prev => prev.filter((_, idx) => idx !== i));
                                 setSecondaryMetricVisuals(prev => { const next = { ...prev }; delete next[sm]; return next; });
@@ -856,20 +862,24 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     className="w-16 bg-white/10 border-b-2 border-amber-400/50 rounded px-2 py-1 text-center font-bold text-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
                                 />
                                 <div className="relative inline-block">
-                                    <select
+                                    <QuerySelect
+                                        menuPlacement="up"
                                         value={timeFilter.split('_')[2] || 'days'}
-                                        onChange={e => {
+                                        onChange={unit => {
                                             const n = timeFilter.split('_')[1] || '7';
-                                            const unit = e.target.value;
                                             setTimeFilter(`last_${n}_${unit}`);
                                         }}
-                                        className="appearance-none bg-white/10 border-b-2 border-amber-400/50 rounded px-2 py-1 font-bold text-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-400/50"
-                                    >
-                                        <option value="days">Days</option>
-                                        <option value="weeks">Weeks</option>
-                                        <option value="months">Months</option>
-                                        <option value="years">Years</option>
-                                    </select>
+                                        options={[
+                                            { label: 'Days', value: 'days' },
+                                            { label: 'Weeks', value: 'weeks' },
+                                            { label: 'Months', value: 'months' },
+                                            { label: 'Years', value: 'years' },
+                                        ]}
+                                        colorTextClass="text-amber-300"
+                                        colorRingClass="focus:ring-amber-400/50"
+                                        searchable={false}
+                                        className="!py-1 !pl-2 !pr-1.5 !bg-white/10 !border-amber-400/50"
+                                    />
                                     <ChevronDown className="w-3 h-3 text-amber-400 absolute right-1 top-1/2 -translate-y-1/2 pointer-events-none" />
                                 </div>
                             </div>
