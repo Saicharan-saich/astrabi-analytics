@@ -324,7 +324,7 @@ const MultiSelectPicker: React.FC<{
     const [open, setOpen] = useState(false);
     const btnRef = useRef<HTMLButtonElement>(null);
     const dropRef = useRef<HTMLDivElement>(null);
-    const [pos, setPos] = useState({ top: 0, left: 0 });
+    const [pos, setPos] = useState({ bottom: 0, left: 0 });
     const c = COLORS[color] || COLORS.teal;
 
     useEffect(() => {
@@ -342,7 +342,7 @@ const MultiSelectPicker: React.FC<{
     useEffect(() => {
         if (open && btnRef.current) {
             const r = btnRef.current.getBoundingClientRect();
-            setPos({ top: r.bottom + 4, left: r.left });
+            setPos({ bottom: Math.max(8, window.innerHeight - r.top + 4), left: r.left });
         }
     }, [open]);
 
@@ -362,7 +362,7 @@ const MultiSelectPicker: React.FC<{
                 <div
                     ref={dropRef}
                     className="qi-dropdown-surface qi-date-filter-menu fixed z-[9999] border border-white/15 rounded-xl shadow-2xl max-h-64 overflow-auto"
-                    style={{ top: pos.top, left: pos.left, minWidth: 140, backgroundColor: '#0f172a' }}
+                    style={{ bottom: pos.bottom, left: pos.left, minWidth: 140, backgroundColor: '#0f172a' }}
                 >
                     {/* Clear all */}
                     {selected.length > 0 && (
