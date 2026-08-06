@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useRef } from 'react';
 import { QuestionBuilder } from './QuestionBuilder';
+import { QuerySelect } from './QuerySelect';
 import { ChartVisualization } from './ChartVisualization';
 import { SmallMultiplesGrid } from './SmallMultiplesGrid';
 import { AnalysisResult, Dataset, QueryConfig, FormattingConfig, AggregationType, TimeGrain, AnalysisType, ColumnType, RefreshSchedule } from '../types';
@@ -12,7 +13,7 @@ import { FormatPanel } from './FormatPanel';
 import { AIInsightPanel } from './AIInsightPanel';
 import { TransparencyPanel } from './TransparencyPanel';
 
-import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers } from 'lucide-react';
+import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers, Calendar } from 'lucide-react';
 
 interface BuilderViewProps {
     dataset: Dataset;
@@ -389,7 +390,43 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 >
                     {isBuilderCollapsed ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
                     {isBuilderCollapsed ? 'Show Builder' : 'Hide Builder'}
+
                 </button>
+
+                {/* Time anchor stays visible in the top command bar. */}
+                <div className="qi-time-anchor-bar flex items-center gap-2 shrink-0">
+                    {dataset.timeContext?.dateColumnMaxDates && Object.keys(dataset.timeContext.dateColumnMaxDates).length > 1 && (
+                        <Tooltip text="Choose which date column defines the analysis time anchor." position="bottom">
+                            <div className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
+                                <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500 whitespace-nowrap">Date field</span>
+                                <QuerySelect
+                                    value={anchorColumn || dataset.timeContext?.anchorDateColumn || ''}
+                                    onChange={(newAnchor) => { if (newAnchor) handleAnchorColumnChange(newAnchor); }}
+                                    options={Object.keys(dataset.timeContext.dateColumnMaxDates).map(col => ({
+                                        label: col.replace(/_/g, ' '),
+                                        value: col
+                                    }))}
+                                    colorTextClass="text-indigo-600"
+                                    colorRingClass="focus:ring-indigo-500/30"
+                                    searchable={false}
+                                    className="!border-0 !bg-transparent !py-0.5 !pl-1 !pr-1.5"
+                                />
+                            </div>
+                        </Tooltip>
+                    )}
+                    <Tooltip text="As of date — defines what “today” means for time queries." position="bottom">
+                        <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 shadow-sm cursor-pointer hover:border-indigo-300 transition-colors">
+                            <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                            <span className="text-[10px] font-bold uppercase tracking-wide text-slate-500">As of</span>
+                            <input
+                                type="date"
+                                value={asOfDate}
+                                onChange={(e) => handleAsOfDateChange(e.target.value)}
+                                className="w-[110px] cursor-pointer border-0 bg-transparent p-0 text-xs font-bold text-slate-800 focus:ring-0"
+                            />
+                        </label>
+                    </Tooltip>
+                </div>
 
                 {/* Content Tabs */}
                 {result && !error && (
