@@ -2407,3 +2407,168 @@ html.light .qi-theme-analyst .qi-ai-frame {
     background: var(--card) !important;
   }
 }
+
+
+/* ═══════════════════════════════════════════════════════
+   Builder Studio layout
+   Desktop-only spatial refactor: existing controls, chart,
+   SQL, data and calculation callbacks stay exactly as-is.
+   ═══════════════════════════════════════════════════════ */
+@media (min-width: 1180px) {
+  .qi-builder-layout {
+    display: grid !important;
+    grid-template-columns: minmax(290px, 320px) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .qi-builder-context {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .qi-builder-dock {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    height: 100%;
+    max-height: none !important;
+    min-height: 0;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    border-right: 1px solid var(--border) !important;
+    border-bottom: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .qi-builder-commandbar {
+    grid-column: 2;
+    grid-row: 1;
+    min-width: 0;
+    margin: 0.65rem 0.75rem 0.35rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex-wrap: nowrap !important;
+    scrollbar-width: thin;
+  }
+
+  .qi-builder-content {
+    grid-column: 2;
+    grid-row: 2;
+    min-width: 0;
+    min-height: 0;
+    padding: 0.65rem 0.75rem 0.8rem !important;
+    position: relative;
+    overflow: auto !important;
+  }
+
+  /* Same Question Builder component, rearranged for a narrow build dock. */
+  .qi-builder-dock .qi-question-builder {
+    width: 100%;
+    max-width: none;
+    min-height: 100%;
+    margin: 0;
+    padding: 2.05rem 0.85rem 1rem !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    background: transparent !important;
+  }
+
+  .qi-builder-dock .qi-question-builder::before {
+    top: 0.65rem;
+    left: 0.85rem;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex {
+    display: block !important;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: end;
+    gap: 0.75rem !important;
+    padding-right: 0 !important;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap > * {
+    min-width: 0;
+  }
+
+  .qi-builder-dock .qi-question-builder .flex-wrap > .flex-col {
+    min-width: 0;
+  }
+
+  .qi-builder-dock .qi-question-builder .flex-wrap > .flex-col > * {
+    max-width: 100%;
+  }
+
+  .qi-builder-layout--builder-collapsed {
+    grid-template-columns: 0 minmax(0, 1fr);
+  }
+
+  .qi-builder-layout--builder-collapsed .qi-builder-dock {
+    width: 0;
+    padding: 0 !important;
+    border: 0 !important;
+  }
+
+  /* Analytics Explorer is the same Builder instance in a broader, focused mode. */
+  .qi-builder-layout--explorer {
+    grid-template-rows: auto auto minmax(0, 1fr);
+  }
+
+  .qi-builder-layout--explorer .qi-builder-context {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .qi-builder-layout--explorer .qi-builder-commandbar {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .qi-builder-layout--explorer .qi-builder-content {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  /* An opened inspector claims an intentional right rail; it never pushes
+     the chart below the fold or overlays the data marks. */
+  .qi-visual-stage--inspector-open {
+    margin-right: 20.75rem !important;
+  }
+
+  .qi-visual-stage--inspector-open > .qi-analytics-panel,
+  .qi-visual-stage--inspector-open > .qi-format-panel {
+    position: absolute !important;
+    top: 0 !important;
+    right: -20rem !important;
+    left: auto !important;
+    width: 19.25rem !important;
+    max-height: 100% !important;
+    z-index: 80 !important;
+    border-radius: var(--radius-lg) !important;
+  }
+
+  .qi-visual-stage--inspector-open:has(.qi-format-panel) .qi-analytics-panel {
+    top: calc(50% + 0.35rem) !important;
+    max-height: calc(50% - 0.35rem) !important;
+  }
+
+  .qi-visual-stage--inspector-open:has(.qi-analytics-panel) .qi-format-panel {
+    max-height: calc(50% - 0.35rem) !important;
+  }
+
+  .qi-visual-stage--inspector-open > .qi-analytics-panel {
+    box-shadow: 0 20px 42px -25px rgba(0, 0, 0, 0.55) !important;
+  }
+}
+
+@media (max-width: 1179px) {
+  .qi-builder-commandbar {
+    overflow-x: auto;
+    flex-wrap: nowrap !important;
+  }
+}
