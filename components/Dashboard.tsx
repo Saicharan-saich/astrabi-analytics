@@ -617,11 +617,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   }
 
   return (
-    <div className="h-full overflow-y-auto" ref={containerRef}>
+    <div className="qi-dashboard-workspace h-full overflow-y-auto" ref={containerRef}>
       <div className="max-w-[1900px] mx-auto px-6 py-6 pb-24" ref={dashboardRef}>
 
         {/* ─── Dashboard Tab Bar ─── */}
-        <div className="flex items-center gap-1 mb-4 overflow-x-auto pb-1 print:hidden">
+        <div className="qi-dashboard-tabs flex items-center gap-1 mb-4 overflow-x-auto pb-1 print:hidden">
           {dashboards.map(db => (
             <button
               key={db.id}
