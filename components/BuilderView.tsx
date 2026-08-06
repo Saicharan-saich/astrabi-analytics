@@ -808,7 +808,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
                                 {/* FLOATING ANALYTICS PANEL */}
                                 {isAnalyticsPanelOpen && formatting && onUpdateFormatting && (
-                                    <div className="absolute top-4 left-4 w-72 max-h-[calc(100%-2rem)] overflow-y-auto bg-white shadow-2xl border border-emerald-200 rounded-xl p-5 z-20 animate-in fade-in slide-in-from-left-4 ring-1 ring-black/5">
+                                    <div className="qi-analytics-panel absolute top-4 right-4 w-80 max-h-[calc(100%-2rem)] overflow-y-auto bg-white shadow-2xl border border-emerald-200 rounded-xl p-5 z-[80] animate-in fade-in slide-in-from-right-4 ring-1 ring-black/5">
                                         <div className="flex justify-between items-center mb-4 pb-3 border-b border-emerald-100">
                                             <h3 className="font-bold text-slate-800 flex items-center gap-2"><Activity className="w-5 h-5 text-emerald-600" /> Analytics</h3>
                                             <button onClick={() => setIsAnalyticsPanelOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors p-1 hover:bg-slate-100 rounded-lg"><X className="w-5 h-5" /></button>
