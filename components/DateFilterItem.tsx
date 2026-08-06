@@ -361,7 +361,7 @@ const MultiSelectPicker: React.FC<{
             {open && ReactDOM.createPortal(
                 <div
                     ref={dropRef}
-                    className="fixed z-[9999] border border-white/15 rounded-xl shadow-2xl max-h-64 overflow-auto"
+                    className="qi-dropdown-surface qi-date-filter-menu fixed z-[9999] border border-white/15 rounded-xl shadow-2xl max-h-64 overflow-auto"
                     style={{ top: pos.top, left: pos.left, minWidth: 140, backgroundColor: '#0f172a' }}
                 >
                     {/* Clear all */}
