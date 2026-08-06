@@ -3016,3 +3016,30 @@ html.light .qi-theme-analyst .qi-ai-frame {
       0 0 38px rgba(16, 185, 129, 0.24);
   }
 }
+
+
+/* Collapsed Builder must release its grid column completely. */
+@media (min-width: 1180px) {
+  .qi-builder-layout {
+    transition: grid-template-columns 280ms ease;
+  }
+
+  .qi-builder-layout.qi-builder-layout--builder-collapsed {
+    grid-template-columns: 0 minmax(0, 1fr) !important;
+  }
+
+  .qi-builder-layout--builder-collapsed .qi-builder-dock {
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    visibility: hidden;
+    overflow: hidden !important;
+  }
+
+  .qi-builder-layout--builder-collapsed .qi-builder-commandbar,
+  .qi-builder-layout--builder-collapsed .qi-builder-content {
+    grid-column: 1 / -1 !important;
+    width: auto;
+    min-width: 0;
+  }
+}
