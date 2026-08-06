@@ -163,7 +163,7 @@ export const DateFilterItem: React.FC<DateFilterItemProps> = ({
             {/* Date Column Selector */}
             <div className="relative group inline-block">
                 <QuerySelect
-                    menuPlacement="up"
+                    menuPlacement="auto"
                     value={filter.column}
                     onChange={value => {
                         onUpdate(id, 'column', value);
@@ -333,7 +333,12 @@ const MultiSelectPicker: React.FC<{
     const [open, setOpen] = useState(false);
     const btnRef = useRef<HTMLButtonElement>(null);
     const dropRef = useRef<HTMLDivElement>(null);
-    const [pos, setPos] = useState({ top: 0, left: 0 });
+    const [pos, setPos] = useState<{
+        top: number;
+        left: number;
+        maxHeight: number;
+        placement: 'up' | 'down';
+    }>({ top: 0, left: 0, maxHeight: 256, placement: 'down' });
     const c = COLORS[color] || COLORS.teal;
 
     useEffect(() => {
@@ -349,10 +354,33 @@ const MultiSelectPicker: React.FC<{
     }, [open]);
 
     useEffect(() => {
-        if (open && btnRef.current) {
-            const r = btnRef.current.getBoundingClientRect();
-            setPos({ top: r.top, left: r.left });
-        }
+        if (!open || !btnRef.current) return;
+        const updatePosition = () => {
+            const r = btnRef.current?.getBoundingClientRect();
+            if (!r) return;
+            const gap = 6;
+            const viewportPadding = 8;
+            const desiredHeight = 256;
+            const availableAbove = Math.max(0, r.top - viewportPadding - gap);
+            const availableBelow = Math.max(0, window.innerHeight - r.bottom - viewportPadding - gap);
+            const placement: 'up' | 'down' =
+                availableBelow >= desiredHeight || availableBelow >= availableAbove ? 'down' : 'up';
+            const availableHeight = placement === 'up' ? availableAbove : availableBelow;
+            const menuWidth = 160;
+            setPos({
+                top: placement === 'up' ? r.top - gap : r.bottom + gap,
+                left: Math.max(viewportPadding, Math.min(r.left, window.innerWidth - menuWidth - viewportPadding)),
+                maxHeight: Math.max(96, Math.min(desiredHeight, availableHeight)),
+                placement
+            });
+        };
+        updatePosition();
+        window.addEventListener('resize', updatePosition);
+        window.addEventListener('scroll', updatePosition, true);
+        return () => {
+            window.removeEventListener('resize', updatePosition);
+            window.removeEventListener('scroll', updatePosition, true);
+        };
     }, [open]);
 
     return (
@@ -371,7 +399,17 @@ const MultiSelectPicker: React.FC<{
                 <div
                     ref={dropRef}
                     className="qi-dropdown-surface qi-date-filter-menu fixed z-[9999] border border-white/15 rounded-xl shadow-2xl max-h-64 overflow-auto"
-                    style={{ position: 'fixed', top: pos.top, bottom: 'auto', left: pos.left, minWidth: 140, backgroundColor: '#0f172a', transform: 'translateY(calc(-100% - 4px))', transformOrigin: 'bottom left' }}
+                    style={{
+                        position: 'fixed',
+                        top: pos.top,
+                        bottom: 'auto',
+                        left: pos.left,
+                        minWidth: 140,
+                        maxHeight: pos.maxHeight,
+                        backgroundColor: '#0f172a',
+                        transform: pos.placement === 'up' ? 'translateY(-100%)' : 'none',
+                        transformOrigin: pos.placement === 'up' ? 'bottom left' : 'top left'
+                    }}
                 >
                     {/* Clear all */}
                     {selected.length > 0 && (
