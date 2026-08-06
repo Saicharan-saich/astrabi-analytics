@@ -277,11 +277,11 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
     }
 
     return (
-        <div className="h-full overflow-y-auto bg-gray-50 dark:bg-slate-900">
+        <div className="qi-workspace-page h-full overflow-y-auto bg-gray-50 dark:bg-slate-900">
             <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
 
                 {/* Header */}
-                <div className="flex items-center gap-4">
+                <div className="qi-workspace-hero flex items-center gap-4">
                     <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg">
                         <Database className="w-6 h-6 text-white" />
                     </div>
@@ -296,7 +296,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                 </div>
 
                 {/* Workspace Sections */}
-                <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-white dark:bg-[#171c26] border border-gray-200 dark:border-white/[0.06] shadow-sm">
+                <div className="qi-workspace-tabs flex flex-wrap items-center gap-1 p-1 rounded-xl bg-white dark:bg-[#171c26] border border-gray-200 dark:border-white/[0.06] shadow-sm">
                     {[
                         { id: 'overview' as const, label: 'Overview', icon: BarChart3, active: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300' },
                         { id: 'explore' as const, label: 'Explore Data', icon: Table2, active: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
