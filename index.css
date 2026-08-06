@@ -2752,3 +2752,35 @@ html.light .qi-theme-analyst .qi-ai-frame {
   color: #94a3b8 !important;
   opacity: 1;
 }
+
+
+/* Global time anchor header lane — this context belongs beside alerts and
+   settings, not inside the Builder command bar. */
+@media (min-width: 1180px) {
+  .qi-time-anchor-bar {
+    position: fixed !important;
+    top: 0.72rem;
+    right: 17rem;
+    z-index: 500 !important;
+    height: 2.45rem;
+    padding: 0.18rem 0.25rem;
+    border: 1px solid rgba(148, 163, 184, 0.24);
+    border-radius: 0.75rem;
+    background: rgba(15, 23, 42, 0.94);
+    box-shadow: 0 12px 30px -20px rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+  }
+
+  .qi-time-anchor-bar .relative.inline-block > button .text-white {
+    color: #1e293b !important;
+  }
+
+  .qi-time-anchor-bar .relative.inline-block > button {
+    background: transparent !important;
+  }
+
+  .qi-time-anchor-bar .qi-query-select-menu {
+    z-index: 510 !important;
+  }
+}
