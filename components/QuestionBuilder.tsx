@@ -588,7 +588,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Aggregation</span>
                         <Tooltip text={isDimensionMetric ? "Counting dimensions: Count tallies rows, Unique Count counts distinct values." : "How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values."} position="bottom">
                             <QuerySelect
-                                menuPlacement="up"
+                                menuPlacement="auto"
                                 value={aggregation}
                                 onChange={setAggregation}
                                 options={isDimensionMetric
@@ -619,7 +619,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Metric</span>
                         <Tooltip text="Choose the measure to analyze. Pick a numeric metric (e.g. revenue) or a dimension to count (e.g. patient count)." position="bottom">
                             <QuerySelect
-                                menuPlacement="up"
+                                menuPlacement="auto"
                                 value={metric}
                                 onChange={val => {
                                     setMetric(val);
@@ -646,7 +646,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             <span>{sm.replace(/_/g, ' ')}</span>
                             <span className="text-teal-400/40 mx-0.5">│</span>
                             <QuerySelect
-                                menuPlacement="up"
+                                menuPlacement="auto"
                                 value={secondaryMetricAggregations[sm] || 'SUM'}
                                 onChange={value => setSecondaryMetricAggregations(prev => ({ ...prev, [sm]: value }))}
                                 options={[
@@ -663,7 +663,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 className="!py-1 !pl-2 !pr-1.5 !bg-teal-500/20 !border-teal-400/30"
                             />
                             <QuerySelect
-                                menuPlacement="up"
+                                menuPlacement="auto"
                                 value={secondaryMetricVisuals[sm] || 'line'}
                                 onChange={value => setSecondaryMetricVisuals(prev => ({ ...prev, [sm]: value }))}
                                 options={[
@@ -706,7 +706,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-blue-400/70 pl-1">Dimension</span>
                         <Tooltip text="Group by a categorical column like product, region, or category." position="bottom">
                             <QuerySelect
-                                menuPlacement="up"
+                                menuPlacement="auto"
                                 value={dimension}
                                 onChange={newDim => {
                                     setDimension(newDim);
@@ -788,7 +788,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400/70 pl-1">Time Grain</span>
                         <Tooltip text="Group by a time grain to see trends over time. Can be combined with a dimension." position="bottom">
                             <QuerySelect
-                                menuPlacement="up"
+                                menuPlacement="auto"
                                 value={timeGrain}
                                 onChange={newGrain => {
                                     setTimeGrain(newGrain);
@@ -822,7 +822,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="flex items-center gap-2">
                             <Tooltip text="Filter data by time range relative to the AS OF date. 'Time is Anything' includes all data. 'Last...' lets you pick a custom window." position="bottom">
                                 <QuerySelect
-                                    menuPlacement="up"
+                                    menuPlacement="auto"
                                     value={timeFilter.startsWith('last_') && !['last_30_days', 'last_90_days', 'last_year'].includes(timeFilter) ? 'custom' : timeFilter}
                                     onChange={val => {
                                         if (val === 'custom') setTimeFilter('last_7_days');
@@ -863,7 +863,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 />
                                 <div className="relative inline-block">
                                     <QuerySelect
-                                        menuPlacement="up"
+                                        menuPlacement="auto"
                                         value={timeFilter.split('_')[2] || 'days'}
                                         onChange={unit => {
                                             const n = timeFilter.split('_')[1] || '7';
@@ -964,7 +964,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-purple-400 uppercase tracking-wider font-bold">Metric</span>
                             <QuerySelect
-                                menuPlacement="up"
+                                menuPlacement="auto"
                                 value=""
                                 onChange={val => { if (val) setSecondaryMetrics(prev => [...prev, val]); }}
                                 options={[
@@ -984,7 +984,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-blue-400 uppercase tracking-wider font-bold">Dimension</span>
                             <QuerySelect
-                                menuPlacement="up"
+                                menuPlacement="auto"
                                 value=""
                                 onChange={val => { if (val) setSecondaryDimensions(prev => [...prev, val]); }}
                                 options={[
@@ -1003,7 +1003,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     <div className="flex items-center gap-2">
                         <span className="text-xs text-yellow-400 uppercase tracking-wider font-bold">Compare</span>
                         <QuerySelect
-                            menuPlacement="up"
+                            menuPlacement="auto"
                             value={comparison}
                             onChange={setComparison}
                             options={[
@@ -1065,7 +1065,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-slate-400 uppercase tracking-wider font-bold">Limit</span>
                             <QuerySelect
-                                menuPlacement="up"
+                                menuPlacement="auto"
                                 value={(() => {
                                     if (limit === 0) return '0';
                                     const isBottom = sort === 'asc';
@@ -1116,7 +1116,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-amber-400 uppercase tracking-wider font-bold">Sort</span>
                             <QuerySelect
-                                menuPlacement="up"
+                                menuPlacement="auto"
                                 value={sort}
                                 onChange={val => setSort(val as 'asc' | 'desc' | 'oldest' | 'newest')}
                                 options={[
