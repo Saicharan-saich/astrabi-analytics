@@ -149,6 +149,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                     {/* Measure Filter */}
                     <div className="relative group inline-block">
                         <QuerySelect
+                            menuPlacement="up"
                             value={filter.column}
                             onChange={value => onUpdate(id, 'column', value)}
                             options={columnOptions.map(m => ({ label: m.replace(/_/g, ' '), value: m }))}
@@ -161,6 +162,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
 
                     <div className="relative group inline-block">
                         <QuerySelect
+                            menuPlacement="up"
                             value={filter.operator}
                             onChange={value => onUpdate(id, 'operator', value)}
                             options={[
