@@ -265,8 +265,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     }
 
     return (
-        <div className="flex flex-col h-full bg-slate-50 dark:bg-[#07111f] p-6 overflow-hidden">
-            <div className="max-w-3xl mx-auto w-full flex flex-col h-full gap-5">
+        <div className="qi-ai-workspace flex flex-col h-full bg-slate-50 dark:bg-[#07111f] p-6 overflow-hidden">
+            <div className="qi-ai-frame max-w-3xl mx-auto w-full flex flex-col h-full gap-5">
 
                 {/* Header */}
                 <div className="flex flex-col gap-1 shrink-0">
