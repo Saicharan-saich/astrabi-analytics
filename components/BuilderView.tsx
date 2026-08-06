@@ -29,9 +29,11 @@ interface BuilderViewProps {
     isLiveRefreshing?: boolean;
     refreshSchedule?: RefreshSchedule;
     onScheduleChange?: (schedule: RefreshSchedule) => void;
+    /** True only while the Question Builder page is visible. Keeps document-level portals scoped to this page. */
+    isActive?: boolean;
 }
 
-export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange }) => {
+export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange, isActive = true }) => {
     // ── Session persistence key (scoped to dataset) ──
     const storageKey = `qi_builder_${dataset.id}`;
     const savedSession = useMemo(() => {
@@ -408,7 +410,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 </button>
 
                 {/* Time anchor stays visible in the top command bar. */}
-                {ReactDOM.createPortal(
+                {isActive && ReactDOM.createPortal(
                     <div className="qi-time-anchor-bar flex items-center gap-2 shrink-0">
                     {dataset.timeContext?.dateColumnMaxDates && Object.keys(dataset.timeContext.dateColumnMaxDates).length > 1 && (
                         <Tooltip text="Choose which date column defines the analysis time anchor." position="bottom">
