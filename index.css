@@ -2141,3 +2141,27 @@ html.dark .qi-visual-stage {
 .qi-visual-stage .recharts-tooltip-wrapper {
   filter: drop-shadow(0 14px 18px rgba(30, 41, 59, 0.18));
 }
+
+
+/* Keep workspace popovers above the chart surface and within sight. */
+.qi-visual-stage > * {
+  z-index: auto;
+}
+
+.qi-analytics-panel {
+  z-index: 80 !important;
+  border-width: 2px !important;
+  border-color: rgba(16, 185, 172, 0.52) !important;
+  background: linear-gradient(145deg, #ffffff, #f3fffc) !important;
+  box-shadow: 0 26px 52px -24px rgba(12, 83, 82, 0.42) !important;
+}
+
+@media (max-width: 768px) {
+  .qi-analytics-panel {
+    top: 0.5rem !important;
+    right: 0.5rem !important;
+    left: 0.5rem !important;
+    width: auto !important;
+    max-height: calc(100% - 1rem) !important;
+  }
+}
