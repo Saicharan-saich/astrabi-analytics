@@ -558,30 +558,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     <img src="/logo.jpg" alt="QuickInsight" className="w-5 h-5 rounded-md opacity-80" />
                     <span className="text-slate-200 text-base font-bold tracking-wide">Show me</span>
 
-                    {/* Metric Selector */}
-                    <div className="flex flex-col gap-0.5">
-                        <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Metric</span>
-                        <Tooltip text="Choose the measure to analyze. Pick a numeric metric (e.g. revenue) or a dimension to count (e.g. patient count)." position="bottom">
-                            <QuerySelect
-                                value={metric}
-                                onChange={val => {
-                                    setMetric(val);
-                                    if (countableColumns.includes(val) && !['COUNT', 'COUNT_DISTINCT'].includes(aggregation)) {
-                                        setAggregation('COUNT');
-                                    }
-                                }}
-                                options={[
-                                    ...metrics.map(m => ({ label: m.replace(/_/g, ' '), value: m, group: 'Measures' })),
-                                    ...countableColumns.map(c => ({ label: c.replace(/_/g, ' '), value: c, group: 'Countable Dimensions' }))
-                                ]}
-                                icon={<TrendingUp className="w-3.5 h-3.5" />}
-                                colorTextClass="text-purple-400"
-                                colorRingClass="focus:ring-purple-500/30"
-                                placeholder="Select Metric"
-                            />
-                        </Tooltip>
-                    </div>
-
+                    {/* Aggregation Selector */}
                     <div className="flex flex-col gap-0.5">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Aggregation</span>
                         <Tooltip text={isDimensionMetric ? "Counting dimensions: Count tallies rows, Unique Count counts distinct values." : "How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values."} position="bottom">
@@ -607,6 +584,30 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 colorTextClass="text-purple-400"
                                 colorRingClass="focus:ring-purple-500/30"
                                 searchable={false}
+                            />
+                        </Tooltip>
+                    </div>
+
+                    {/* Metric Selector */}
+<div className="flex flex-col gap-0.5">
+                        <span className="text-[10px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Metric</span>
+                        <Tooltip text="Choose the measure to analyze. Pick a numeric metric (e.g. revenue) or a dimension to count (e.g. patient count)." position="bottom">
+                            <QuerySelect
+                                value={metric}
+                                onChange={val => {
+                                    setMetric(val);
+                                    if (countableColumns.includes(val) && !['COUNT', 'COUNT_DISTINCT'].includes(aggregation)) {
+                                        setAggregation('COUNT');
+                                    }
+                                }}
+                                options={[
+                                    ...metrics.map(m => ({ label: m.replace(/_/g, ' '), value: m, group: 'Measures' })),
+                                    ...countableColumns.map(c => ({ label: c.replace(/_/g, ' '), value: c, group: 'Countable Dimensions' }))
+                                ]}
+                                icon={<TrendingUp className="w-3.5 h-3.5" />}
+                                colorTextClass="text-purple-400"
+                                colorRingClass="focus:ring-purple-500/30"
+                                placeholder="Select Metric"
                             />
                         </Tooltip>
                     </div>
