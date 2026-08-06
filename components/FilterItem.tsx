@@ -18,7 +18,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
-    const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number }>({ top: 0, left: 0, width: 200 });
+    const [dropdownPos, setDropdownPos] = useState<{ bottom: number; left: number; width: number }>({ bottom: 0, left: 0, width: 200 });
 
     // Close dropdown when clicking outside
     useEffect(() => {
@@ -37,7 +37,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
         if (isOpen && buttonRef.current) {
             const rect = buttonRef.current.getBoundingClientRect();
             setDropdownPos({
-                top: rect.bottom + 4,
+                bottom: Math.max(8, window.innerHeight - rect.top + 4),
                 left: rect.left,
                 width: Math.max(rect.width, 220)
             });
@@ -98,7 +98,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                                 ref={dropdownRef}
                                 className="fixed z-[9999] border border-purple-400/30 rounded-xl shadow-2xl"
                                 style={{
-                                    top: dropdownPos.top,
+                                    bottom: dropdownPos.bottom,
                                     left: dropdownPos.left,
                                     width: dropdownPos.width,
                                     maxWidth: 320,
