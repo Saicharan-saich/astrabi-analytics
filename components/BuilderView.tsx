@@ -338,7 +338,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     }, [formatting, onUpdateFormatting, result]);
 
     return (
-        <div className="qi-builder-workspace flex flex-col h-full bg-slate-50">
+        <div className={`qi-builder-workspace qi-builder-layout ${isBuilderCollapsed ? 'qi-builder-layout--builder-collapsed' : ''} ${isAnalyticsExplorer ? 'qi-builder-layout--explorer' : ''} flex flex-col h-full bg-slate-50`}>
             {isAnalyticsExplorer && (
                 <div className="qi-analytics-explorer-header flex items-center justify-between px-5 py-3 bg-white border-b border-slate-200 shadow-sm shrink-0 z-30">
                     <div>
@@ -355,7 +355,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             )}
 
             {/* â”€â”€â”€ COLLAPSIBLE BUILDER â”€â”€â”€ */}
-            <div className={`qi-builder-panel relative bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isAnalyticsExplorer ? 'hidden' : (isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible')}`}>
+            <div className={`qi-builder-panel qi-builder-dock relative bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isAnalyticsExplorer ? 'hidden' : (isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible')}`}>
                 <QuestionBuilder
                     key={editingItemId || 'default'}
                     dataset={dataset}
@@ -380,7 +380,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             </div>
 
             {/* â”€â”€â”€ TOOLBAR â”€â”€â”€ */}
-            <div className="qi-builder-toolbar relative flex items-center gap-2 bg-white border-b border-slate-200 px-3 py-1.5 shrink-0 shadow-sm z-10">
+            <div className="qi-builder-toolbar qi-builder-commandbar relative flex items-center gap-2 bg-white border-b border-slate-200 px-3 py-1.5 shrink-0 shadow-sm z-10">
                 {/* Builder Toggle */}
                 <button
                     onClick={() => setIsBuilderCollapsed(!isBuilderCollapsed)}
@@ -618,7 +618,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             </div>
 
             {/* â”€â”€â”€ CONTENT AREA â€” Tabbed â”€â”€â”€ */}
-            <div className="flex-1 flex flex-col overflow-auto p-4">
+            <div className="qi-builder-content flex-1 flex flex-col overflow-auto p-4">
 
                 {error && (
                     <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-4 flex items-start">
@@ -664,7 +664,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         {/* â”€â”€â”€ VISUAL TAB â”€â”€â”€ */}
                         {contentTab === 'visual' && (
                           <>
-                            <div className="qi-visual-stage relative bg-white flex-1 min-h-[350px] rounded-xl border border-slate-200 shadow-sm overflow-visible">
+                            <div className={`qi-visual-stage ${isFormatPanelOpen || isAnalyticsPanelOpen ? 'qi-visual-stage--inspector-open' : ''} relative bg-white flex-1 min-h-[350px] rounded-xl border border-slate-200 shadow-sm overflow-visible`}>
                                 {/* Growth toggle */}
                                 {tableData.columns.length > 0 && (
                                     <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex bg-slate-100 rounded-lg p-0.5 border border-slate-200 shadow-sm">
