@@ -96,7 +96,7 @@ export const FilterItem: React.FC<FilterItemProps> = ({
                         {isOpen && ReactDOM.createPortal(
                             <div
                                 ref={dropdownRef}
-                                className="fixed z-[9999] border border-purple-400/30 rounded-xl shadow-2xl"
+                                className="qi-dropdown-surface qi-filter-value-menu fixed z-[9999] border border-purple-400/30 rounded-xl shadow-2xl"
                                 style={{
                                     bottom: dropdownPos.bottom,
                                     left: dropdownPos.left,
