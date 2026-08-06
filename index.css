@@ -2784,3 +2784,58 @@ html.light .qi-theme-analyst .qi-ai-frame {
     z-index: 510 !important;
   }
 }
+
+
+/* Two-column Builder control flow: reduces empty vertical space while keeping
+   the existing natural-language sequence legible. */
+@media (min-width: 1180px) {
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: end !important;
+    column-gap: 0.7rem !important;
+    row-gap: 0.8rem !important;
+  }
+
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap > img[alt="QuickInsight"] {
+    grid-column: 1 / -1;
+  }
+
+  .qi-builder-dock .qi-builder-verb {
+    grid-column: 1;
+    align-self: end;
+    padding-bottom: 0.55rem;
+  }
+
+  .qi-builder-dock .qi-builder-aggregation {
+    grid-column: 2;
+  }
+
+  .qi-builder-dock .qi-builder-metric {
+    grid-column: 1;
+  }
+
+  .qi-builder-dock .qi-builder-by {
+    grid-column: 2;
+    align-self: end;
+    padding-bottom: 0.55rem;
+  }
+
+  .qi-builder-dock .qi-builder-dimension {
+    grid-column: 1;
+  }
+
+  .qi-builder-dock .qi-builder-time-grain {
+    grid-column: 1;
+  }
+
+  .qi-builder-dock .qi-builder-where {
+    grid-column: 2;
+    align-self: end;
+    padding-bottom: 0.55rem;
+  }
+
+  .qi-builder-dock .qi-builder-time-range {
+    grid-column: 1 / -1;
+  }
+}
