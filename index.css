@@ -2108,3 +2108,36 @@ html.dark .qi-analytics-explorer-header {
   .qi-visual-stage { margin-right: 0.4rem; margin-left: 0.4rem; }
   .qi-visual-stage { border-radius: 16px !important; }
 }
+
+
+/* ── Readable chart canvas ─────────────────────────────────
+   The workspace can be dark and expressive; data marks and
+   chart labels need a calm, consistently high-contrast surface. */
+.qi-visual-stage,
+html.dark .qi-visual-stage {
+  color: #162033 !important;
+  border-color: rgba(83, 111, 204, 0.38) !important;
+  background:
+    radial-gradient(34rem 16rem at 4% 0%, rgba(103, 126, 255, 0.09), transparent 61%),
+    radial-gradient(28rem 14rem at 100% 5%, rgba(35, 197, 183, 0.075), transparent 60%),
+    linear-gradient(145deg, #ffffff 0%, #f7f9ff 100%) !important;
+  box-shadow: inset 0 1px 0 #ffffff, 0 24px 44px -30px rgba(48, 65, 143, 0.38) !important;
+}
+
+.qi-visual-stage .recharts-text,
+.qi-visual-stage .recharts-cartesian-axis-tick-value,
+.qi-visual-stage .recharts-label {
+  fill: #1e293b !important;
+}
+
+.qi-visual-stage .recharts-cartesian-grid line {
+  stroke: #d9e2f1 !important;
+}
+
+.qi-visual-stage .recharts-legend-item-text {
+  color: #475569 !important;
+}
+
+.qi-visual-stage .recharts-tooltip-wrapper {
+  filter: drop-shadow(0 14px 18px rgba(30, 41, 59, 0.18));
+}
