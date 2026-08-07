@@ -225,10 +225,19 @@ export function mapPlanToQBConfig(plan: AnalysisPlan, model: SemanticModel): QBM
             if (!col) return { fits: false, reason: `Above/below-average column "${f.field}" not found.` };
             const cmp = op === 'above_avg' ? '>' : '<';
             if (hasGrouping) {
-                // Grouped: compare each group's aggregate to the average of the
-                // group aggregates (nested HAVING). e.g. clients above the average client.
-                groupAvgHaving = { op: cmp, metricIndex: 0 };
-                notes.push(`having ${aggregation}(${metricCol}) ${cmp} the average across groups`);
+                // The finite Question Builder config has one grouped-average
+                // slot. Never silently overwrite the first threshold when the
+                // question asks for two (e.g. high sales AND low profit); route
+                // that shape to the multi-condition aggregate compiler.
+                if (groupAvgHaving) {
+                    return {
+                        fits: false,
+                        reason: 'Multiple grouped relative thresholds require the governed aggregate-filter compiler.',
+                    };
+                }
+                groupAvgHaving = { op: cmp, metricIndex: plan.metrics.findIndex(m => m.field.toLowerCase() === f.field.toLowerCase()) };
+                if (groupAvgHaving.metricIndex < 0) groupAvgHaving.metricIndex = 0;
+                notes.push(`having grouped ${f.field} ${cmp} the average across groups`);
             } else {
                 // Row-level: WHERE col op (SELECT AVG(col) FROM data).
                 aggregateFilters.push({ column: col, op: cmp, compareAgg: 'AVG', compareColumn: col });
