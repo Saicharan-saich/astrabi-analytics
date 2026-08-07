@@ -292,7 +292,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             sanitized, chartType, yKey, (formatting as any)?.maxCategories,
         );
         return { ...result, transformedData: capped, truncatedFrom };
-    }, [data, yKey, primaryCalc, yLabel, formatting?.numberFormat, formatting?.movingAvgWindow, chartType, (formatting as any)?.maxCategories]);
+    }, [data, xKey, yKey, primaryCalc, yLabel, formatting?.numberFormat, formatting?.movingAvgWindow, formatting?.tableCalculationComparison, chartType, (formatting as any)?.maxCategories]);
 
     // Calculation output semantics take precedence over the source metric. For
     // example, "% of Total (Sales)" is a percentage, while rank is ordinal.
@@ -689,7 +689,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // palest steps of the default sequential palette so the smallest bars
         // stay readable on BOTH light and dark surfaces (the default light end,
         // #dbeafe, vanishes on white).
-        if (isMagnitudeBar) {
+        if (isMagnitudeBar && !formatting?.colorMode) {
             palette = ['#9dc0ff', '#7aa2ff', '#5c8bff', '#4f80ff', '#3b6ff0', '#2f5fe0', '#2450c4'];
         }
 
@@ -1197,7 +1197,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 },
                 legend: {
                     // Hide legend on pie/doughnut when data labels are on — labels already show "Category: XX.X%"
-                    display: isPieChart && formatting?.showDataLabels ? false : true,
+                    display: (formatting?.showLabels ?? true) && !(isPieChart && formatting?.showDataLabels),
                     position: 'bottom' as const,
                     align: 'center' as const,
                     labels: {
