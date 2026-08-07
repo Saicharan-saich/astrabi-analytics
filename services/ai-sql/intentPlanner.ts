@@ -561,12 +561,16 @@ function enforcePluralLimit(plan: AnalysisPlan, question: string): void {
 function enforceAggregateFilter(plan: AnalysisPlan, question: string, model: SemanticModel): void {
     const q = question.toLowerCase();
 
-    // Detect "above/below average" patterns
+    // Explicit averages and natural relative language share one governed
+    // default: compare each entity's aggregate with the average aggregate across
+    // all entities. Thresholds are computed locally from the full dataset.
     const aboveAvgPattern = /\b(above|over|exceed(?:ing|s)?|greater\s+than|higher\s+than|more\s+than)\s*(?:the\s+)?(?:average|avg|mean)\b/;
     const belowAvgPattern = /\b(below|under|less\s+than|lower\s+than|beneath)\s*(?:the\s+)?(?:average|avg|mean)\b/;
+    const highRelativePattern = /\b(?:high|strong|large)\s+(?!to\b)(?:\w+\s+){0,3}\w+\b/;
+    const lowRelativePattern = /\b(?:low\s+or\s+negative|low|weak|poor|negative)\s+(?!to\b)(?:\w+\s+){0,3}\w+\b/;
 
-    const hasAbove = aboveAvgPattern.test(q);
-    const hasBelow = belowAvgPattern.test(q);
+    const hasAbove = aboveAvgPattern.test(q) || highRelativePattern.test(q);
+    const hasBelow = belowAvgPattern.test(q) || lowRelativePattern.test(q);
 
     if (!hasAbove && !hasBelow) return;
 
@@ -595,8 +599,8 @@ function enforceAggregateFilter(plan: AnalysisPlan, question: string, model: Sem
     plan.filters = plan.filters.filter(f => !f.isHaving && !['above_avg', 'below_avg'].includes(f.op));
 
     for (const clause of clauses) {
-        const isAbove = aboveAvgPattern.test(clause);
-        const isBelow = belowAvgPattern.test(clause);
+        const isAbove = aboveAvgPattern.test(clause) || highRelativePattern.test(clause);
+        const isBelow = belowAvgPattern.test(clause) || lowRelativePattern.test(clause);
         if (!isAbove && !isBelow) continue;
 
         const op: 'above_avg' | 'below_avg' = isAbove ? 'above_avg' : 'below_avg';
@@ -673,6 +677,22 @@ function enforceAggregateFilter(plan: AnalysisPlan, question: string, model: Sem
         console.warn('[Intent Planner] aggregate_filter detected but no HAVING filters could be built. Falling back.');
         plan.intent = 'breakdown';
     } else {
+        // Prefer the positively requested measure for presentation order:
+        // "high sales but low profit" should lead with the strongest sales.
+        const positiveFilter = havingFilters.find(f => f.op === 'above_avg');
+        if (positiveFilter) {
+            plan.sort = [{ field: positiveFilter.field, dir: 'desc' }];
+        }
+        plan.ambiguous = false;
+        plan.clarificationQuestion = undefined;
+        plan.resultGrain = `${plan.dimensions.map(d => d.field).join(', ') || 'entities'} whose grouped metrics satisfy dataset-relative thresholds`;
+        (plan as any)._relativeThresholdDefaults = havingFilters.map(f => ({
+            field: f.field,
+            rule: f.op === 'above_avg' ? 'above_entity_average' : 'below_entity_average',
+            computedLocally: true,
+        }));
+        (plan as any)._smartDefaultExplanation =
+            'Relative terms such as high and low use the average of entity-level aggregates; thresholds are calculated locally from the full dataset.';
         console.log(`[Intent Planner] aggregate_filter: ${havingFilters.length} HAVING condition(s) set`);
     }
 }
