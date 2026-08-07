@@ -215,7 +215,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const confScore = pipeline?.confidence?.score;
 
   return (
-    <div className={`flex flex-col h-full ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
+    <div className={`relative flex flex-col h-full ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
       {/* ── Result navigation floats over the canvas without consuming chart space ── */}
       {workspaceMode === 'result' && (
         <>
@@ -363,7 +363,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* Chart Tab */}
           {activeTab === 'chart' && (
-            <div className={`relative overflow-hidden border border-slate-200 bg-white shadow-xl ${workspaceMode === 'result' ? 'm-3 h-[calc(100%-1.5rem)] rounded-[24px] p-4 sm:m-5 sm:h-[calc(100%-2.5rem)] sm:p-5' : 'h-full rounded-2xl p-6'}`} ref={chartContainerRef}>
+            <div className={`relative overflow-hidden border border-slate-200 bg-white shadow-xl ${workspaceMode === 'result' ? 'm-3 h-[calc(100%_-_1.5rem)] rounded-[24px] p-4 sm:m-5 sm:h-[calc(100%_-_2.5rem)] sm:p-5' : 'h-full rounded-2xl p-6'}`} ref={chartContainerRef}>
               <ChartVisualization
                 data={activeResult.data} xKey={activeResult.xKey} yKey={activeResult.yKey} yLabel={activeResult.yLabel}
                 chartType={(drillDown ? ((({ kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'horizontalBar' } as Record<string,string>)[drillDown.pipeline.chart.chartType] || 'bar')) : chartType) as any}
