@@ -825,8 +825,15 @@ function buildAggregateFilterSQL(plan: AnalysisPlan, model: SemanticModel, apdme
             `)`,
         ].filter(Boolean).join('\n');
 
-        havingParts.push(`${aggExpr} ${comparison} (${subquery})`);
-        logger.info('[SQL Correction]', `HAVING condition: ${aggExpr} ${comparison} AVG(...)`);
+        const averageCondition = `${aggExpr} ${comparison} (${subquery})`;
+        const condition = hf.includeNonPositive
+            ? `(${averageCondition} OR ${aggExpr} <= 0)`
+            : averageCondition;
+        havingParts.push(condition);
+        logger.info(
+            '[SQL Correction]',
+            `HAVING condition: ${averageCondition}${hf.includeNonPositive ? ' OR non-positive' : ''}`,
+        );
     }
 
     // Assemble the full query
