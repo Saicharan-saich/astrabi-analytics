@@ -461,11 +461,27 @@ export async function runAISQLPipeline(
         }, _directSqlStart);
     }
 
-    // A contract rejection means the candidate SQL demonstrably ignored an
-    // explicit part of the question. Do not quietly run the generic local
-    // fallback: that is exactly how a fiscal-quarter request became total sales.
-    if (directSqlBlocked) {
+    // A contract rejection normally stops execution so an explicit analytical
+    // shape is never silently discarded. Governed relative-threshold plans are
+    // the exception: above_avg/below_avg are fully represented by the local
+    // aggregate-filter compiler, so an unnecessary LLM clarification must not
+    // turn an answerable question into a failure.
+    const governedRelativeFilters = plan.intent === 'aggregate_filter'
+        ? plan.filters.filter(f => ['above_avg', 'below_avg'].includes(normalizeFilterOp(f.op)))
+        : [];
+    const canCompileRelativeThresholdsLocally = governedRelativeFilters.length > 0
+        && plan.dimensions.length > 0
+        && governedRelativeFilters.every(f => plan.metrics.some(m =>
+            m.field.toLowerCase() === f.field.toLowerCase() || m.compositeId === f.compositeRef
+        ));
+
+    if (directSqlBlocked && !canCompileRelativeThresholdsLocally) {
         throw new Error(directSqlError || 'AI SQL stopped before execution because it could not preserve the requested analytical shape.');
+    }
+    if (directSqlBlocked && canCompileRelativeThresholdsLocally) {
+        console.warn('[Pipeline] AI planner requested clarification for governed relative thresholds; continuing with the local aggregate-filter compiler.');
+        directSQL = null;
+        directSqlBlocked = false;
     }
 
     // ─── Step 3: Generate SQL (Step B — deterministic + LLM fallback) ─
