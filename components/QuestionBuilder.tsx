@@ -26,6 +26,8 @@ interface QuestionBuilderProps {
     onDateChange: (date: string) => void;
     anchorColumn?: string;
     onAnchorColumnChange?: (col: string) => void;
+    /** Whether the Question Builder route is currently visible. */
+    isActive?: boolean;
 }
 
 interface DimensionFilter {
@@ -81,7 +83,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     asOfDate,
     onDateChange,
     anchorColumn,
-    onAnchorColumnChange
+    onAnchorColumnChange,
+    isActive = true
 }) => {
     const [metric, setMetric] = useState<string>(initialMetric);
     const [aggregation, setAggregation] = useState<string>(initialAggregation);
@@ -624,6 +627,12 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             return updatedFilters;
         });
     };
+
+    // The builder stays mounted to preserve the user's selections, but none of
+    // its children may render while another route is active. This is essential
+    // because dropdowns use document.body portals and otherwise escape the
+    // hidden Builder container onto every application page.
+    if (!isActive) return null;
 
     return (
         <div className="qi-question-builder max-w-7xl mx-auto px-6 pt-5 pb-4 bg-gradient-to-b from-slate-900 to-slate-800 rounded-2xl overflow-visible relative" style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.2)' }}>
