@@ -37,7 +37,9 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
 }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
-  const [activeTab, setActiveTab] = useState<'chart' | 'table' | 'sql'>('chart');
+  const [activeTab, setActiveTab] = useState<'chart' | 'table' | 'sql'>(() =>
+    initialPipeline?.chart?.chartType === 'table' ? 'table' : 'chart'
+  );
   const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
   const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);
   const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
@@ -46,7 +48,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const [showConfidence, setShowConfidence] = useState(false);
   const [showPipelineReport, setShowPipelineReport] = useState(false);
   const chartContainerRef = useRef<HTMLDivElement>(null);
-  const [chartType, setChartType] = useState<string>((initialResult.vis as string) || 'bar');
+  const [chartType, setChartType] = useState<string>(
+    initialPipeline?.chart?.chartType === 'table'
+      ? 'horizontalBar'
+      : ((initialResult.vis as string) || 'bar')
+  );
   const [localFormatting, setLocalFormatting] = useState<FormattingConfig>(formatting);
   const [result, setResult] = useState<AnalysisResult>(initialResult);
   const [pipeline, setPipeline] = useState<AISQLPipelineResult | null | undefined>(initialPipeline);
@@ -68,9 +74,10 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   // when the parent passes new props from a subsequent AI SQL query.
   useEffect(() => {
     setResult(initialResult);
-    setChartType((initialResult.vis as string) || 'bar');
-    setActiveTab('chart');
-  }, [initialResult]);
+    const recommendedTable = initialPipeline?.chart?.chartType === 'table';
+    setChartType(recommendedTable ? 'horizontalBar' : ((initialResult.vis as string) || 'bar'));
+    setActiveTab(recommendedTable ? 'table' : 'chart');
+  }, [initialResult, initialPipeline]);
 
   useEffect(() => {
     setPipeline(initialPipeline);
@@ -114,7 +121,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
     try {
       const res = await runAISQLPipeline(drillQuery, dataset);
       if (res.rawData.length === 0) { setIsDrilling(false); return; }
-      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'bar' };
+      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'horizontalBar' };
       setDrillDown({
         query: drillQuery,
         pipeline: res,
@@ -128,7 +135,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           secondaryYKeys: res.chart.secondaryYKeys,
         },
       });
-      setActiveTab('chart');
+      setActiveTab(res.chart.chartType === 'table' ? 'table' : 'chart');
     } catch { /* ignore */ } finally { setIsDrilling(false); }
   }, [dataset, isDrilling, pipeline, query]);
 
@@ -143,7 +150,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       // memory of earlier ones.
       const res = await runAISQLPipeline(q, dataset);
       if (res.rawData.length === 0) { setIsFollowUpLoading(false); return; }
-      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'bar' };
+      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'horizontalBar' };
       // Replace current result with follow-up result
       setDrillDown(null);
       setResult({
@@ -157,7 +164,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       });
       setPipeline(res);
       setChartType(chartMap[res.chart.chartType] || 'bar');
-      setActiveTab('chart');
+      setActiveTab(res.chart.chartType === 'table' ? 'table' : 'chart');
     } catch { /* ignore */ } finally { setIsFollowUpLoading(false); }
   }, [dataset, followUpQuery, isFollowUpLoading, activeQuery, activePipeline]);
 
@@ -181,7 +188,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       const res = await runAISQLPipeline(query, dataset, undefined, undefined, timeGrain, true);
       if (res.rawData.length === 0) { setIsReloading(false); return; }
       setPipeline(res);
-      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'donut', heatmap:'heatmap', table:'table' };
+      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'donut', heatmap:'heatmap', table:'horizontalBar' };
       setResult({
         data: res.chartData, xKey: res.chart.xKey, yKey: res.chart.yKey, yLabel: query,
         insight: res.explanation, sql: res.sql,
@@ -192,6 +199,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         secondaryYKeys: res.chart.secondaryYKeys,
       });
       setChartType((chartMap[res.chart.chartType] || 'bar'));
+      setActiveTab(res.chart.chartType === 'table' ? 'table' : 'chart');
     } catch { /* ignore */ } finally { setIsReloading(false); }
   };
 
@@ -313,7 +321,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
             <div className="h-full p-6 overflow-hidden relative" ref={chartContainerRef}>
               <ChartVisualization
                 data={activeResult.data} xKey={activeResult.xKey} yKey={activeResult.yKey} yLabel={activeResult.yLabel}
-                chartType={(drillDown ? ((({ kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'bar' } as Record<string,string>)[drillDown.pipeline.chart.chartType] || 'bar')) : chartType) as any}
+                chartType={(drillDown ? ((({ kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'horizontalBar' } as Record<string,string>)[drillDown.pipeline.chart.chartType] || 'bar')) : chartType) as any}
                 onChartTypeChange={(type) => setChartType(type)}
                 formatting={localFormatting}
                 onToggleFormat={() => setIsFormatPanelOpen(!isFormatPanelOpen)} isFormatOpen={isFormatPanelOpen}
@@ -348,22 +356,31 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           {/* Table Tab */}
           {activeTab === 'table' && (
             <div className="h-full overflow-auto p-4">
-              <div className={`rounded-xl border overflow-hidden ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
+              <div className={`rounded-xl border overflow-hidden shadow-sm ${isDark ? 'border-white/[0.08] bg-slate-900/40' : 'border-gray-200 bg-white'}`}>
                 <table className="w-full text-sm border-collapse">
-                  <thead><tr className={isDark ? 'bg-slate-800/80' : 'bg-gray-50'}>
-                    {result.data.length > 0 && Object.keys(result.data[0]).map(col => (
-                      <th key={col} className={`text-left text-xs uppercase tracking-wider px-3 py-2.5 font-bold sticky top-0 ${isDark ? 'text-slate-400 bg-slate-800/80' : 'text-gray-500 bg-gray-50'}`}>{col}</th>
+                  <thead><tr className={isDark ? 'bg-slate-800/95' : 'bg-slate-50'}>
+                    {activePipeline?.plan?.intent === 'ranking' && (
+                      <th className={`w-14 text-center text-[11px] uppercase tracking-wider px-3 py-3 font-bold sticky top-0 ${isDark ? 'text-slate-400 bg-slate-800/95' : 'text-slate-500 bg-slate-50'}`}>#</th>
+                    )}
+                    {activeResult.data.length > 0 && Object.keys(activeResult.data[0]).map(col => (
+                      <th key={col} className={`text-left text-[11px] uppercase tracking-wider px-4 py-3 font-bold sticky top-0 ${isDark ? 'text-slate-300 bg-slate-800/95' : 'text-slate-600 bg-slate-50'}`}>
+                        {col.replace(/_/g, ' ')}
+                      </th>
                     ))}
                   </tr></thead>
-                  <tbody>{result.data.map((row: any, i: number) => (
-                    <tr key={i} className={`border-t ${isDark ? 'border-white/[0.04] hover:bg-white/[0.02]' : 'border-gray-100 hover:bg-gray-50'}`}>
+                  <tbody>{activeResult.data.map((row: any, i: number) => (
+                    <tr key={i} className={`border-t transition-colors ${isDark ? 'border-white/[0.05] hover:bg-white/[0.04]' : 'border-slate-100 hover:bg-indigo-50/40'}`}>
+                      {activePipeline?.plan?.intent === 'ranking' && (
+                        <td className={`px-3 py-3 text-center text-xs font-bold ${i < 3 ? 'text-indigo-500' : isDark ? 'text-slate-500' : 'text-slate-400'}`}>{i + 1}</td>
+                      )}
                       {Object.entries(row).map(([col, val]: [string, any], j: number) => {
                         // Identifiers and years are numbers but not quantities —
                         // "order 1,154" / "year 2,025" reads as a bug, so show them bare.
                         const isIdLike = /(^|_)(id|no|num|number|code|zip|postcode|year)$/i.test(col);
+                        const isNumeric = typeof val === 'number';
                         return (
-                          <td key={j} className="px-3 py-2 font-mono text-xs">
-                            {typeof val === 'number'
+                          <td key={j} className={`px-4 py-3 text-xs ${isNumeric ? 'text-right font-mono tabular-nums font-semibold' : 'text-left font-medium'} ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
+                            {isNumeric
                               ? (isIdLike ? String(val) : val.toLocaleString(undefined, { maximumFractionDigits: 2 }))
                               : String(val ?? '')}
                           </td>
@@ -373,7 +390,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                   ))}</tbody>
                 </table>
               </div>
-              <div className="text-xs text-gray-400 dark:text-slate-500 mt-3 text-center">{result.data.length} rows</div>
+              <div className="text-xs text-gray-400 dark:text-slate-500 mt-3 text-center">{activeResult.data.length} rows</div>
             </div>
           )}
 
