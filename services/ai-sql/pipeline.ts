@@ -472,7 +472,8 @@ export async function runAISQLPipeline(
     const canCompileRelativeThresholdsLocally = governedRelativeFilters.length > 0
         && plan.dimensions.length > 0
         && governedRelativeFilters.every(f => plan.metrics.some(m =>
-            m.field.toLowerCase() === f.field.toLowerCase() || m.compositeId === f.compositeRef
+            m.field.toLowerCase() === f.field.toLowerCase()
+            || (!!f.compositeRef && m.compositeId === f.compositeRef)
         ));
 
     if (directSqlBlocked && !canCompileRelativeThresholdsLocally) {
