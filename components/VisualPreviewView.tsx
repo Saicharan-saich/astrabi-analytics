@@ -369,8 +369,14 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 chartType={(drillDown ? ((({ kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'horizontalBar' } as Record<string,string>)[drillDown.pipeline.chart.chartType] || 'bar')) : chartType) as any}
                 onChartTypeChange={(type) => setChartType(type)}
                 formatting={localFormatting}
-                onToggleFormat={() => setIsFormatPanelOpen(!isFormatPanelOpen)} isFormatOpen={isFormatPanelOpen}
-                onToggleAnalytics={() => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen)} isAnalyticsOpen={isAnalyticsPanelOpen}
+                onToggleFormat={() => {
+                  setIsAnalyticsPanelOpen(false);
+                  setIsFormatPanelOpen(open => !open);
+                }} isFormatOpen={isFormatPanelOpen}
+                onToggleAnalytics={() => {
+                  setIsFormatPanelOpen(false);
+                  setIsAnalyticsPanelOpen(open => !open);
+                }} isAnalyticsOpen={isAnalyticsPanelOpen}
                 onToggleLabels={() => {
                   const mode = localFormatting.dataLabelMode || 'off';
                   if (!localFormatting.showDataLabels || mode === 'off') {
@@ -507,8 +513,8 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
 
         {/* ── Side Panels ─────────────────────────────── */}
         {(workspaceMode === 'result' || detailsSection === 'workspace') && isFormatPanelOpen && (
-          <div className={`w-[300px] shrink-0 border-l overflow-y-auto ${isDark ? 'border-white/[0.06] bg-[#0f1219]' : 'border-gray-200 bg-white'}`}>
-            <FormatPanel formatting={localFormatting} onUpdateFormatting={updateFormatting} onClose={() => setIsFormatPanelOpen(false)} chartType={chartType} />
+          <div className={`w-[320px] shrink-0 border-l overflow-hidden ${isDark ? 'border-white/[0.06] bg-[#0f1219]' : 'border-gray-200 bg-white'}`}>
+            <FormatPanel embedded formatting={localFormatting} onUpdateFormatting={updateFormatting} onClose={() => setIsFormatPanelOpen(false)} chartType={chartType} />
           </div>
         )}
         {(workspaceMode === 'result' || detailsSection === 'workspace') && isAnalyticsPanelOpen && (
@@ -576,7 +582,25 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 const isSelected = (localFormatting.tableCalculations || []).includes(calc);
                 return (
                   <label key={calc} className={`flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-all ${isSelected ? 'bg-emerald-50 dark:bg-emerald-900/30 border border-emerald-400 ring-1 ring-emerald-400 shadow-sm' : 'hover:bg-gray-50 dark:hover:bg-white/5 border border-transparent hover:border-gray-200 dark:hover:border-white/10'}`}>
-                    <input type="checkbox" checked={isSelected} onChange={() => { const cur = localFormatting.tableCalculations || []; updateFormatting({ ...localFormatting, tableCalculations: isSelected ? cur.filter(c => c !== calc) : [...cur, calc] }); }} className="rounded text-emerald-600 focus:ring-emerald-500" />
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => {
+                        // The chart has one value axis, so one calculation can be
+                        // active at a time. This also prevents a stale percentage
+                        // calculation from formatting Rank/Moving Average/etc.
+                        const tableCalculations = isSelected ? [] : [calc];
+                        const usesComparison = calc === 'pct_diff_from_prev' || calc === 'diff_from_prev';
+                        updateFormatting({
+                          ...localFormatting,
+                          tableCalculations,
+                          tableCalculationComparison: !isSelected && usesComparison
+                            ? localFormatting.tableCalculationComparison
+                            : undefined,
+                        });
+                      }}
+                      className="rounded text-emerald-600 focus:ring-emerald-500"
+                    />
                     <div className="flex-1 min-w-0">
                       <span className="text-xs font-bold leading-tight block">{getCalculationDisplayName(calc)}</span>
                       <span className="text-[10px] text-gray-500 dark:text-slate-500 leading-tight">{desc}</span>
