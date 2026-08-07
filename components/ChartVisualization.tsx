@@ -78,6 +78,8 @@ interface ChartVisualizationProps {
     onAIInsight?: () => void;
     isAIInsightOpen?: boolean;
     chartContainerRef?: React.RefObject<HTMLDivElement | null>;
+    /** Prevent incidental string columns (such as paired IDs) becoming chart series. */
+    disableAutoSeries?: boolean;
 }
 
 // Chart type registry now imported from ./charts/chartRegistry
@@ -178,7 +180,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     onGoBack,
     onAIInsight,
     isAIInsightOpen,
-    chartContainerRef
+    chartContainerRef,
+    disableAutoSeries = false
 }) => {
     // Chart ref for PNG export
     // Chart ref for PNG export
@@ -804,7 +807,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // split into separate datasets — one line/bar per dimension value.
         // This enables multi-line charts for "Sales by Hour, split by Product".
         const seriesCol = (() => {
-            if (transformedData.length === 0 || isPieChart) return null;
+            if (disableAutoSeries || transformedData.length === 0 || isPieChart) return null;
             const candidateCols = Object.keys(transformedData[0]).filter(k =>
                 k !== xKey && k !== yKey &&
                 typeof transformedData[0][k] === 'string' &&
