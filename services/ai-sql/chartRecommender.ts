@@ -29,7 +29,26 @@ function isAnswerListDimension(column: string, model: SemanticModel): boolean {
     const field = model.fields.find(f => f.name.toLowerCase() === column.toLowerCase());
     if (field?.semanticType === 'identifier' || field?.semanticType === 'text') return true;
     const label = [column, field?.displayLabel || ''].join(' ').toLowerCase();
-    return /\b(?:name|customer|client|person|employee|contact|account|member|vendor|supplier)\b/.test(label);
+    return /\b(?:name|product|item|customer|client|person|employee|contact|account|member|vendor|supplier)\b/.test(label);
+}
+
+/**
+ * Identifier columns are useful in a table or tooltip, but they are almost never
+ * an independent visual series. When a readable label is present (for example
+ * product_name beside product_id), keep the identifier in the result while
+ * excluding it from the chart's grouping grain.
+ */
+function isIdentifierDimension(column: string, model: SemanticModel): boolean {
+    const field = model.fields.find(f => f.name.toLowerCase() === column.toLowerCase());
+    if (field?.semanticType === 'identifier') return true;
+    const normalized = column.toLowerCase().replace(/[\s-]+/g, '_');
+    return /(^|_)(id|key|code|number|no)$/.test(normalized)
+        || /_(id|key|code|number|no)$/.test(normalized);
+}
+
+function getPresentationDimensions(columns: string[], model: SemanticModel): string[] {
+    const readable = columns.filter(column => !isIdentifierDimension(column, model));
+    return readable.length > 0 ? readable : columns;
 }
 
 /**
@@ -63,9 +82,14 @@ export function recommendChart(
         isPivoted, isSingleValue
     } = profile;
 
+    // Keep identifiers available in the table, but do not let a paired ID turn
+    // one readable category into a second visual series.
+    const presentationDimensionColumns = getPresentationDimensions(dimensionColumns, model);
+    const presentationDimensionCount = presentationDimensionColumns.length;
+
     // Default configuration
     let chartType: RecommendedChart = 'bar';
-    let xKey = dimensionColumns[0] || metricColumns[0] || '';
+    let xKey = presentationDimensionColumns[0] || metricColumns[0] || '';
     let yKey = metricColumns[0] || '';
     let secondaryYKeys: string[] | undefined;
     let useDualAxis = false;
@@ -223,25 +247,31 @@ export function recommendChart(
         return { chartType, xKey, yKey, secondaryYKeys, useDualAxis, leftAxisFormat, rightAxisFormat, reason };
     }
 
-    // ─── Rule 6: Answer Lists → Table ───────────────────────────
-    // A list of people, customers, accounts, or other named entities is an
-    // answer set, not a visual comparison. Keep its column headings visible.
-    // Ranking is the exception: bars remain useful for deliberate top/bottom
-    // comparisons, and users can still manually switch chart types.
-    const primaryAnswerDimension = dimensionColumns[0];
-    if (primaryAnswerDimension
-        && isAnswerListDimension(primaryAnswerDimension, model)
-        && plan.intent !== 'ranking') {
-        chartType = 'table';
+    // ─── Rule 6: Entity answers and rankings ────────────────────
+    // Entity lists need readable labels. Rankings remain visual, but use a
+    // horizontal orientation so long product/customer names stay legible.
+    const primaryAnswerDimension = presentationDimensionColumns[0];
+    if (primaryAnswerDimension && isAnswerListDimension(primaryAnswerDimension, model)) {
         xKey = primaryAnswerDimension;
         yKey = metricColumns[0] || '';
+
+        if (plan.intent === 'ranking' && metricCount >= 1) {
+            const cardinality = dimensionCardinality[primaryAnswerDimension] || rowCount;
+            chartType = 'horizontalBar';
+            leftAxisFormat = deriveAxisFormat(yKey, metricSemanticTypes);
+            topN = cardinality > HIGH_CARDINALITY_THRESHOLD ? HIGH_CARDINALITY_THRESHOLD : undefined;
+            reason = `Ranked named entities (${primaryAnswerDimension}) → Horizontal Bar with readable labels`;
+            return { chartType, xKey, yKey, useDualAxis, leftAxisFormat, reason, topN };
+        }
+
+        chartType = 'table';
         reason = `Named answer list (${primaryAnswerDimension}) → Answer Table with labelled columns`;
         return { chartType, xKey, yKey, useDualAxis, reason };
     }
 
     // ─── Rule 7: Category Dimension ──────────────────────────────
     if (dimensionCount >= 1 && metricCount >= 1) {
-        const primaryDim = dimensionColumns[0];
+        const primaryDim = presentationDimensionColumns[0];
         const cardinality = dimensionCardinality[primaryDim] || 0;
 
         if (cardinality > HIGH_CARDINALITY_THRESHOLD) {
@@ -268,10 +298,10 @@ export function recommendChart(
             // A second categorical dimension present → stack it as series instead
             // of silently charting only the first dimension. The renderer
             // auto-pivots the second string column into stacked series.
-            chartType = dimensionCount >= 2 ? 'stackedBar' : 'bar';
+            chartType = presentationDimensionCount >= 2 ? 'stackedBar' : 'bar';
             leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
-            reason = dimensionCount >= 2
-                ? `${cardinality} categories × ${dimensionCount} dimensions + 1 metric → Stacked Bar`
+            reason = presentationDimensionCount >= 2
+                ? `${cardinality} categories × ${presentationDimensionCount} visual dimensions + 1 metric → Stacked Bar`
                 : `${cardinality} categories + 1 metric → Bar`;
         } else if (metricCount >= 2) {
             // Multiple metrics by category
