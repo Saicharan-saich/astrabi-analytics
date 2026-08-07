@@ -29,7 +29,7 @@ function isAnswerListDimension(column: string, model: SemanticModel): boolean {
     const field = model.fields.find(f => f.name.toLowerCase() === column.toLowerCase());
     if (field?.semanticType === 'identifier' || field?.semanticType === 'text') return true;
     const label = [column, field?.displayLabel || ''].join(' ').toLowerCase();
-    return /\b(?:name|product|item|customer|client|person|employee|contact|account|member|vendor|supplier)\b/.test(label);
+    return /\b(?:name|customer|client|person|employee|contact|account|member|vendor|supplier)\b/.test(label);
 }
 
 /**
