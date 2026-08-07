@@ -40,7 +40,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const [activeTab, setActiveTab] = useState<'chart' | 'table' | 'sql'>(() =>
     initialPipeline?.chart?.chartType === 'table' ? 'table' : 'chart'
   );
-  const [workspaceMode, setWorkspaceMode] = useState<'result' | 'details'>('result');
+  const [workspaceMode, setWorkspaceMode] = useState<'result' | 'explore' | 'details'>('result');
   const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
   const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);
   const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
@@ -215,7 +215,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   return (
     <div className={`flex flex-col h-full ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
       {/* ── Presentation header: question + deliberate Details entry only ── */}
-      {workspaceMode === 'result' && (
+      {workspaceMode !== 'details' && (
         <div className={`flex items-center justify-between gap-4 px-5 py-3 border-b shrink-0 ${isDark ? 'border-white/[0.06] bg-[#0d1117]' : 'border-gray-200 bg-white'}`}>
           <div className="flex items-center gap-3 min-w-0">
             <button onClick={() => { if (drillDown) { setDrillDown(null); } else { onBack(); } }} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`} aria-label="Back">
@@ -224,8 +224,20 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
             <div className="text-sm font-bold truncate">{activeQuery}</div>
           </div>
           <div className={`flex items-center rounded-xl border p-1 ${isDark ? 'border-white/10 bg-white/[0.04]' : 'border-gray-200 bg-gray-50'}`}>
-            <button className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white shadow-sm">
+            <button
+              onClick={() => {
+                if (activeTab === 'sql') setActiveTab(activePipeline?.chart?.chartType === 'table' ? 'table' : 'chart');
+                setWorkspaceMode('result');
+              }}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${workspaceMode === 'result' ? 'bg-indigo-600 text-white shadow-sm' : isDark ? 'text-slate-300 hover:bg-white/10 hover:text-white' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}
+            >
               <BarChart2 className="w-3.5 h-3.5" /> Result
+            </button>
+            <button
+              onClick={() => setWorkspaceMode('explore')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${workspaceMode === 'explore' ? 'bg-indigo-600 text-white shadow-sm' : isDark ? 'text-slate-300 hover:bg-white/10 hover:text-white' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}
+            >
+              <Palette className="w-3.5 h-3.5" /> Explore
             </button>
             <button onClick={() => setWorkspaceMode('details')} className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-colors ${isDark ? 'text-slate-300 hover:bg-white/10 hover:text-white' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}>
               <Database className="w-3.5 h-3.5" /> Details
@@ -277,12 +289,20 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <button onClick={() => {
-            if (activeTab === 'sql') setActiveTab(activePipeline?.chart?.chartType === 'table' ? 'table' : 'chart');
-            setWorkspaceMode('result');
-          }} className={`flex items-center gap-1.5 text-[12px] font-bold px-3 py-1.5 rounded-lg transition-all border ${isDark ? 'text-indigo-300 bg-indigo-500/10 border-indigo-500/20 hover:bg-indigo-500/20' : 'text-indigo-700 bg-indigo-50 border-indigo-200 hover:bg-indigo-100'}`}>
-            <BarChart2 className="w-3.5 h-3.5" /> Result
-          </button>
+          <div className={`flex items-center rounded-xl border p-1 ${isDark ? 'border-white/10 bg-white/[0.04]' : 'border-gray-200 bg-gray-50'}`}>
+            <button onClick={() => {
+              if (activeTab === 'sql') setActiveTab(activePipeline?.chart?.chartType === 'table' ? 'table' : 'chart');
+              setWorkspaceMode('result');
+            }} className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold ${isDark ? 'text-slate-300 hover:bg-white/10' : 'text-slate-600 hover:bg-white'}`}>
+              <BarChart2 className="w-3.5 h-3.5" /> Result
+            </button>
+            <button onClick={() => setWorkspaceMode('explore')} className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold ${isDark ? 'text-slate-300 hover:bg-white/10' : 'text-slate-600 hover:bg-white'}`}>
+              <Palette className="w-3.5 h-3.5" /> Explore
+            </button>
+            <button className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-sm">
+              <Database className="w-3.5 h-3.5" /> Details
+            </button>
+          </div>
           {/* Answer path makes the local-first privacy boundary visible to the user. */}
           {provenanceLabel && (
             <span
@@ -330,7 +350,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       )}
 
       {/* ── Tab Bar ────────────────────────────────────── */}
-      {workspaceMode === 'details' && (
+      {workspaceMode === 'explore' && (
       <div className={`flex items-center gap-2 px-5 py-2 border-b shrink-0 ${isDark ? 'border-white/[0.06] bg-[#0f1219]/50' : 'bg-gray-50/50 border-gray-100'}`}>
         <button onClick={() => setActiveTab('chart')} className={tabBtnClass('chart')}><BarChart2 className="w-3.5 h-3.5" /> Chart</button>
         <button onClick={() => setActiveTab('table')} className={tabBtnClass('table')}><Table2 className="w-3.5 h-3.5" /> Table</button>
@@ -349,7 +369,8 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
 
       )}
       
-      {/* ── Content Area ──────────────────────────────── */}
+      {/* ── Result / Explore content (one shared result dataset) ── */}
+      {workspaceMode !== 'details' && (
       <div className="flex-1 min-h-0 flex overflow-hidden">
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* Chart Tab */}
@@ -382,12 +403,12 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 disableAutoSeries={Boolean(activePipeline) && !['stackedBar', 'groupedBar', 'multiLine'].includes(activePipeline?.chart?.chartType || '')}
               />
               {/* Drill-down hint */}
-              {workspaceMode === 'details' && !drillDown && !isDrilling && (
+              {workspaceMode === 'explore' && !drillDown && !isDrilling && (
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 text-[10px] text-gray-400 dark:text-slate-500 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm px-3 py-1 rounded-full border border-gray-200/50 dark:border-white/5 opacity-60 hover:opacity-100 transition-opacity pointer-events-none">
                   <MousePointerClick className="w-3 h-3" /> Click any data point to drill down
                 </div>
               )}
-              {workspaceMode === 'details' && <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={activeResult.yLabel} chartContext={{ chartType: activeResult.vis, xKey: activeResult.xKey, yKey: activeResult.yKey, comparisonMode: (activeResult.config as any)?.comparison || undefined }} />}
+              {workspaceMode === 'explore' && <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={activeResult.yLabel} chartContext={{ chartType: activeResult.vis, xKey: activeResult.xKey, yKey: activeResult.yKey, comparisonMode: (activeResult.config as any)?.comparison || undefined }} />}
             </div>
           )}
 
@@ -428,7 +449,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                   ))}</tbody>
                 </table>
               </div>
-              {workspaceMode === 'details' && <div className="text-xs text-gray-400 dark:text-slate-500 mt-3 text-center">{activeResult.data.length} rows</div>}
+              {workspaceMode === 'explore' && <div className="text-xs text-gray-400 dark:text-slate-500 mt-3 text-center">{activeResult.data.length} rows</div>}
             </div>
           )}
 
@@ -498,12 +519,12 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         </div>
 
         {/* ── Side Panels ─────────────────────────────── */}
-        {workspaceMode === 'details' && isFormatPanelOpen && (
+        {workspaceMode === 'explore' && isFormatPanelOpen && (
           <div className={`w-[300px] shrink-0 border-l overflow-y-auto ${isDark ? 'border-white/[0.06] bg-[#0f1219]' : 'border-gray-200 bg-white'}`}>
             <FormatPanel formatting={localFormatting} onUpdateFormatting={updateFormatting} onClose={() => setIsFormatPanelOpen(false)} chartType={chartType} />
           </div>
         )}
-        {workspaceMode === 'details' && isAnalyticsPanelOpen && (
+        {workspaceMode === 'explore' && isAnalyticsPanelOpen && (
           <div className={`w-72 shrink-0 border-l overflow-y-auto ${isDark ? 'border-white/[0.06] bg-[#0f1219]' : 'border-gray-200 bg-white'}`}>
             <div className="p-4 border-b border-gray-100 dark:border-white/5">
               <div className="flex justify-between items-center">
@@ -580,6 +601,79 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           </div>
         )}
       </div>
+
+      )}
+
+      {/* ── Details workspace: provenance, usage, trust and actions ── */}
+      {workspaceMode === 'details' && (
+        <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-7">
+          <div className="mx-auto max-w-5xl space-y-5">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className={`rounded-2xl border p-4 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Rows returned</div>
+                <div className="mt-2 text-2xl font-black">{activeResult.data.length.toLocaleString()}</div>
+              </div>
+              <div className={`rounded-2xl border p-4 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Execution time</div>
+                <div className="mt-2 text-2xl font-black">{Number(activePipeline?.executionTimeMs || 0).toLocaleString()}<span className="ml-1 text-sm font-bold text-slate-400">ms</span></div>
+              </div>
+              <div className={`rounded-2xl border p-4 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">AI tokens</div>
+                <div className="mt-2 text-2xl font-black">{Number((activePipeline as any)?.tokenUsage?.total || 0).toLocaleString()}</div>
+                <div className="mt-1 text-[10px] text-slate-400">
+                  {Number((activePipeline as any)?.tokenUsage?.prompt || 0).toLocaleString()} prompt · {Number((activePipeline as any)?.tokenUsage?.completion || 0).toLocaleString()} completion
+                </div>
+              </div>
+              <div className={`rounded-2xl border p-4 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
+                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Confidence</div>
+                <div className="mt-2 flex items-end gap-2">
+                  <span className="text-2xl font-black">{confScore ?? '—'}</span>
+                  {confScore !== undefined && <span className="pb-1 text-xs font-bold text-slate-400">/ 100</span>}
+                </div>
+                <div className={`mt-1 text-xs font-bold capitalize ${confLevel === 'high' ? 'text-emerald-500' : confLevel === 'medium' ? 'text-amber-500' : 'text-rose-500'}`}>{confLevel || 'Unavailable'}</div>
+              </div>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
+              <div className={`rounded-2xl border p-5 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
+                <div className="mb-4 flex items-center gap-2 text-sm font-black"><Database className="h-4 w-4 text-indigo-500" /> Answer details</div>
+                <dl className="grid gap-4 text-sm sm:grid-cols-2">
+                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Answer path</dt><dd className="mt-1 font-bold">{provenanceLabel || 'Local analytics'}</dd></div>
+                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Model route</dt><dd className="mt-1 break-words font-bold">{provenance?.model?.replace('openai/', '').toUpperCase() || 'No LLM used'}</dd></div>
+                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Intent</dt><dd className="mt-1 font-bold">{activePipeline?.plan?.intent || '—'}</dd></div>
+                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Result grain</dt><dd className="mt-1 font-bold">{activePipeline?.plan?.resultGrain || '—'}</dd></div>
+                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Recommended visual</dt><dd className="mt-1 font-bold">{activePipeline?.chart?.chartType || chartType}</dd></div>
+                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SQL repairs</dt><dd className="mt-1 font-bold">{activePipeline?.repairAttempts || 0}</dd></div>
+                </dl>
+                {explanation && <p className={`mt-5 rounded-xl border p-4 text-sm leading-relaxed ${isDark ? 'border-indigo-500/15 bg-indigo-500/[0.06] text-slate-300' : 'border-indigo-100 bg-indigo-50/60 text-slate-700'}`}>{explanation}</p>}
+              </div>
+
+              <div className={`rounded-2xl border p-5 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
+                <div className="mb-4 text-sm font-black">Actions</div>
+                <div className="grid gap-2">
+                  <button onClick={handleRegenerate} disabled={isReloading} className="flex items-center justify-center gap-2 rounded-xl border border-cyan-500/25 bg-cyan-500/10 px-4 py-3 text-sm font-bold text-cyan-500 transition-colors hover:bg-cyan-500/20 disabled:opacity-50">
+                    {isReloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />} Regenerate answer
+                  </button>
+                  <button onClick={handlePin} className="flex items-center justify-center gap-2 rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm font-bold text-amber-500 transition-colors hover:bg-amber-500/20">
+                    <Pin className="h-4 w-4" /> {isPinned ? 'Pinned to dashboard' : 'Pin to dashboard'}
+                  </button>
+                  {activePipeline?.trace && (
+                    <button onClick={() => setShowPipelineReport(true)} className="flex items-center justify-center gap-2 rounded-xl border border-purple-500/25 bg-purple-500/10 px-4 py-3 text-sm font-bold text-purple-500 transition-colors hover:bg-purple-500/20">
+                      <Microscope className="h-4 w-4" /> Open pipeline report
+                    </button>
+                  )}
+                  <button onClick={() => { setActiveTab('table'); setWorkspaceMode('explore'); }} className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold transition-colors ${isDark ? 'border-white/10 bg-white/[0.04] hover:bg-white/[0.08]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}>
+                    <Table2 className="h-4 w-4" /> Explore result data
+                  </button>
+                  <button onClick={() => { setActiveTab('sql'); setWorkspaceMode('explore'); }} className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold transition-colors ${isDark ? 'border-white/10 bg-white/[0.04] hover:bg-white/[0.08]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}>
+                    <Code className="h-4 w-4" /> Inspect generated SQL
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Follow-Up Question Bar ──────────────────────── */}
       {workspaceMode === 'details' && (
