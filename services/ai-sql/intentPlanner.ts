@@ -604,6 +604,7 @@ function enforceAggregateFilter(plan: AnalysisPlan, question: string, model: Sem
         if (!isAbove && !isBelow) continue;
 
         const op: 'above_avg' | 'below_avg' = isAbove ? 'above_avg' : 'below_avg';
+        const includeNonPositive = isBelow && /\bnegative\b/.test(clause);
 
         // Check if this clause refers to a KPI (composite metric)
         let matched = false;
@@ -618,6 +619,7 @@ function enforceAggregateFilter(plan: AnalysisPlan, question: string, model: Sem
                         value: null,
                         compositeRef: compositeId,
                         isHaving: true,
+                        includeNonPositive,
                     });
 
                     // Ensure the composite metric is in the plan's metrics (for SELECT)
@@ -659,6 +661,7 @@ function enforceAggregateFilter(plan: AnalysisPlan, question: string, model: Sem
                     op,
                     value: null,
                     isHaving: true,
+                    includeNonPositive,
                 });
 
                 // Ensure this metric is in the plan's metrics
@@ -689,6 +692,7 @@ function enforceAggregateFilter(plan: AnalysisPlan, question: string, model: Sem
         (plan as any)._relativeThresholdDefaults = havingFilters.map(f => ({
             field: f.field,
             rule: f.op === 'above_avg' ? 'above_entity_average' : 'below_entity_average',
+            includeNonPositive: !!f.includeNonPositive,
             computedLocally: true,
         }));
         (plan as any)._smartDefaultExplanation =
