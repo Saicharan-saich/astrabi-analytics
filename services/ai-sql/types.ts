@@ -187,6 +187,8 @@ export interface PlanFilter {
     compositeRef?: string;
     /** Whether this filter is a HAVING condition (post-aggregate) */
     isHaving?: boolean;
+    /** Preserve wording such as "low or negative": below-average OR non-positive. */
+    includeNonPositive?: boolean;
 }
 
 export interface PlanSort {
