@@ -393,6 +393,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     onDateChange={handleAsOfDateChange}
                     anchorColumn={anchorColumn}
                     onAnchorColumnChange={handleAnchorColumnChange}
+                    isActive={isActive}
                 />
             </div>
 
