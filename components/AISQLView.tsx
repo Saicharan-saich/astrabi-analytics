@@ -195,10 +195,20 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
             const detectedFormat = result.chart.leftAxisFormat
                 ? (axisFormatMap[result.chart.leftAxisFormat] ?? 'auto') : 'auto';
 
+            // Presentation defaults follow the recommended visual instead of
+            // applying one label threshold to every chart. Ranked horizontal
+            // bars can comfortably show more labels; dense/multi-series charts
+            // remain uncluttered by default.
+            const labelLimit = result.chart.chartType === 'horizontalBar' ? 15 : 8;
+            const showRecommendedLabels = result.chart.chartType !== 'table'
+                && result.chart.chartType !== 'heatmap'
+                && result.chartData.length <= labelLimit;
             const fmt: FormattingConfig = {
                 ...defaultFormatting,
                 numberFormat: detectedFormat,
-                showDataLabels: result.chartData.length <= 8,
+                showDataLabels: showRecommendedLabels,
+                dataLabelMode: showRecommendedLabels ? 'primary' : 'off',
+                axisLabelSize: result.chart.chartType === 'horizontalBar' ? 'sm' : defaultFormatting.axisLabelSize,
             };
 
             // Build the analysis result
