@@ -43,6 +43,14 @@ import { getDates } from '../dateHelpers';
 import { applyTableCalculation } from '../../utils/tableCalculations';
 import { buildValueCatalog, groundFilters, groundSqlLiterals } from './valueGrounding';
 import { verifyPlan } from './planVerification';
+// ─── Ambiguity Intelligence Layer ────────────────────────────────
+import { detectAmbiguities } from './ambiguityDetector';
+import { resolveAmbiguities } from './ambiguityResolver';
+import { resolveLocalStatistics } from './localStatisticsResolver';
+import { generateCandidatePlans } from './candidatePlanGenerator';
+import { rankPlans } from './planRanker';
+import { buildAssumptions } from './assumptionRegistry';
+import { validateAnswerContract } from './answerContractValidator';
 import { detectAntiJoin, buildAntiJoinSQL } from './antiJoin';
 import { generateDirectSQL } from './directSqlEngine';
 import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerializer';
@@ -1313,6 +1321,107 @@ export async function runAISQLPipeline(
     const trust = generateTrustVerification(pipelineResult);
     pipelineResult.trust = trust;
     console.log(`[Pipeline] Trust: ${trust.status} (${trust.checks.filter(c => c.status === 'pass').length}/${trust.checks.length} checks passed)`);
+
+    // ── Step 11: Ambiguity Intelligence Layer ─────────────────────
+    try {
+        const ambiguityStart = performance.now();
+
+        // 1. Detect ambiguities in the original question
+        const domainName = dataset.domainProfile?.name || undefined;
+        const detection = detectAmbiguities(question, semanticModel, domainName);
+
+        if (detection.totalCount > 0) {
+            // 2. Resolve local statistics for evidence
+            const localStats = await resolveLocalStatistics('data', semanticModel);
+
+            // 3. Resolve ambiguities using priority chain
+            const resolution = await resolveAmbiguities(detection, semanticModel, localStats, domainName);
+
+            // 4. Generate & rank candidate plans
+            const candidates = generateCandidatePlans(question, semanticModel, resolution.resolved, localStats);
+            const ranking = rankPlans(candidates, question, semanticModel, localStats, domainName);
+
+            // 5. Build assumption set for UI disclosure
+            const selectedPlan = ranking.rankedPlans.find(p => p.isRecommended) || ranking.rankedPlans[0];
+            const assumptions = buildAssumptions(question, resolution.resolved, selectedPlan);
+
+            // 6. Attach to pipeline result
+            pipelineResult.assumptions = {
+                questionId: assumptions.questionId,
+                summary: assumptions.summary,
+                items: assumptions.assumptions.map(a => ({
+                    id: a.id,
+                    type: a.type,
+                    phrase: a.phrase,
+                    interpretation: a.interpretation,
+                    alternatives: a.alternatives,
+                    confidence: a.confidence,
+                    autoResolved: a.autoResolved,
+                    computedValue: a.computedValue,
+                })),
+                overallConfidence: assumptions.overallConfidence,
+            };
+
+            traceStep({
+                stepNumber: 12, name: 'Ambiguity Intelligence', engine: 'ambiguityResolver', icon: '🔍',
+                status: detection.hasHighMateriality ? 'warn' : 'pass',
+                summary: `${detection.totalCount} ambiguity(ies) detected, ${resolution.autoResolvedCount} auto-resolved. ${assumptions.summary}`,
+                details: {
+                    ambiguities: detection.ambiguities.map(a => ({ type: a.type, phrase: a.phrase })),
+                    recommendation: ranking.recommendation,
+                    confidenceGap: ranking.confidenceGap,
+                },
+            }, ambiguityStart);
+
+            console.log(`[Pipeline] Ambiguity: ${detection.totalCount} detected, ${resolution.autoResolvedCount} auto-resolved (${Math.round(performance.now() - ambiguityStart)}ms)`);
+        }
+    } catch (ambErr: any) {
+        console.warn('[Pipeline] Ambiguity layer skipped:', ambErr?.message);
+    }
+
+    // ── Step 12: Answer Contract Validation ───────────────────────
+    try {
+        const contractStart = performance.now();
+        let localStatsForContract;
+        try { localStatsForContract = await resolveLocalStatistics('data', semanticModel); } catch { /* skip */ }
+
+        const contractResult = validateAnswerContract(
+            plan,
+            currentSQL,
+            reshaped.data,
+            reshaped.chart?.type || 'bar',
+            reshaped.chart?.xKey || '',
+            reshaped.chart?.yKey || '',
+            semanticModel,
+            localStatsForContract
+        );
+
+        pipelineResult.contractValidation = {
+            passed: contractResult.passed,
+            summary: contractResult.summary,
+            checks: contractResult.checks.map(c => ({
+                name: c.name,
+                status: c.status,
+                message: c.message,
+            })),
+        };
+
+        traceStep({
+            stepNumber: 13, name: 'Contract Validation', engine: 'answerContractValidator', icon: '✅',
+            status: contractResult.passed ? 'pass' : 'warn',
+            summary: contractResult.summary,
+            details: {
+                passCount: contractResult.passCount,
+                failCount: contractResult.failCount,
+                warnCount: contractResult.warnCount,
+                repairSuggestions: contractResult.repairSuggestions,
+            },
+        }, contractStart);
+
+        console.log(`[Pipeline] Contract: ${contractResult.summary} (${Math.round(performance.now() - contractStart)}ms)`);
+    } catch (cvErr: any) {
+        console.warn('[Pipeline] Contract validation skipped:', cvErr?.message);
+    }
 
     return pipelineResult;
 }

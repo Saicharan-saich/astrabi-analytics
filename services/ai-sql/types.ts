@@ -462,5 +462,31 @@ export interface AISQLPipelineResult {
     /** Exact LLM token cost for this question. Metadata and user-approved safe
      * values may be sent only when an LLM fallback is needed; rows remain local. */
     tokenUsage?: { prompt: number; completion: number; total: number };
+    /** Ambiguity Intelligence Layer — assumptions made during resolution */
+    assumptions?: {
+        questionId: string;
+        summary: string;
+        items: Array<{
+            id: string;
+            type: string;
+            phrase: string;
+            interpretation: string;
+            alternatives: Array<{ id: string; label: string; description: string }>;
+            confidence: number;
+            autoResolved: boolean;
+            computedValue?: number | string;
+        }>;
+        overallConfidence: number;
+    };
+    /** Answer contract validation result */
+    contractValidation?: {
+        passed: boolean;
+        summary: string;
+        checks: Array<{
+            name: string;
+            status: 'pass' | 'fail' | 'warn' | 'skip';
+            message: string;
+        }>;
+    };
 }
 
