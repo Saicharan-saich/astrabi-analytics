@@ -446,6 +446,25 @@ function applyNonTimeComparison(
         lyEnd.setUTCFullYear(lyEnd.getUTCFullYear() - 1);
         prevStart = lyStart.toISOString().split('T')[0];
         prevEnd = lyEnd.toISOString().split('T')[0];
+    } else if (comparison === 'ytd_vs_prior_ytd') {
+        let maxD = '0000-01-01';
+        for (const r of allRows) {
+            const d = dateExtractor(r);
+            if (d > '1970-01-01' && d < '9999-01-01' && d > maxD) maxD = d;
+        }
+        if (maxD === '0000-01-01') maxD = dates.today;
+        
+        const anchorDate = new Date(`${maxD}T00:00:00Z`);
+        const priorYear = anchorDate.getUTCFullYear() - 1;
+        
+        prevStart = `${priorYear}-01-01`;
+        
+        const isLeapDay = anchorDate.getUTCMonth() === 1 && anchorDate.getUTCDate() === 29;
+        if (isLeapDay) {
+            prevEnd = `${priorYear}-02-28`;
+        } else {
+            prevEnd = `${priorYear}-${String(anchorDate.getUTCMonth() + 1).padStart(2, '0')}-${String(anchorDate.getUTCDate()).padStart(2, '0')}`;
+        }
     } else {
         // same_period_last_n
         const compGrain2 = comparisonGrain || 'month';

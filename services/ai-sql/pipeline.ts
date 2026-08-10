@@ -625,6 +625,8 @@ export async function runAISQLPipeline(
     }
 
     // ─── Step 5b′: Deterministic Safety Net (quiet backup) ──────
+    let usedDeterministicFallback = false;
+
     // If the LLM's SQL still won't execute after repair, fall back to the
     // deterministic engines — the Question Builder backup if one was built,
     // otherwise the correction engine — which always produce runnable SQL from
@@ -639,6 +641,7 @@ export async function runAISQLPipeline(
                 currentSQL = fallbackSQL;
                 execResult = fallbackExec;
                 sqlEngine = usingQbBackup ? 'question-builder' : 'correction-engine';
+                usedDeterministicFallback = true;
                 console.log(`[Pipeline] Deterministic backup succeeded — engine = ${sqlEngine}.`);
             }
         } catch (fbErr: any) {
@@ -1201,7 +1204,7 @@ export async function runAISQLPipeline(
     _s1 = performance.now();
     // The Question Builder path is deterministic — score it as such.
     const confidenceMethod: 'deterministic' | 'llm' = (sqlMethod === 'llm' || sqlMethod === 'llm-sql') ? 'llm' : 'deterministic';
-    const confidence = scoreConfidence(plan, semanticModel, validation, confidenceMethod, repairAttempts, currentSQL);
+    const confidence = scoreConfidence(plan, semanticModel, validation, confidenceMethod, repairAttempts, currentSQL, rawData);
     // Apply APDME guardrail penalties (e.g., -50 for SUM on a date column)
     if (apdmeResult.confidencePenalty > 0) {
         confidence.score = Math.max(0, confidence.score - apdmeResult.confidencePenalty);
@@ -1287,6 +1290,7 @@ export async function runAISQLPipeline(
             model: directSqlModel,
             summary: `${directSqlModel || 'GPT-5.6'} generated SQL from the governed local plan; the query ran only in local DuckDB.`,
             dataAccess: getEffectivePrivacyMode() === 'enhanced' ? 'approved_safe_values' as const : 'metadata_only' as const,
+            downgraded: usedDeterministicFallback,
         }
         : {
             strategy: 'deterministic' as const,

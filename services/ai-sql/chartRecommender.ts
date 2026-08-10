@@ -110,6 +110,36 @@ export function recommendChart(
         return { chartType, xKey, yKey, useDualAxis, leftAxisFormat, reason };
     }
 
+    // ─── Rule 1.5: Specific Intents (Correlation, Distribution, Heatmap) ──
+    if (plan.intent === 'correlation' && metricCount >= 2) {
+        chartType = 'scatter' as RecommendedChart;
+        xKey = metricColumns[0];
+        yKey = metricColumns[1];
+        if (presentationDimensionCount > 0) {
+            secondaryYKeys = [presentationDimensionColumns[0]];
+        }
+        reason = 'Correlation intent with 2+ metrics → Scatter Plot';
+        return { chartType, xKey, yKey, secondaryYKeys, useDualAxis, reason };
+    }
+
+    if (plan.intent === 'distribution' && metricCount === 1) {
+        chartType = 'boxPlot' as RecommendedChart;
+        xKey = presentationDimensionColumns[0] || '';
+        yKey = metricColumns[0];
+        leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
+        reason = 'Distribution intent with 1 continuous metric → Box Plot';
+        return { chartType, xKey, yKey, useDualAxis, leftAxisFormat, reason };
+    }
+
+    if (dimensionCount >= 2 && metricCount === 1) {
+        chartType = 'heatmap' as RecommendedChart;
+        xKey = presentationDimensionColumns[0];
+        yKey = presentationDimensionColumns[1];
+        secondaryYKeys = [metricColumns[0]];
+        reason = '2+ dimensions and 1 metric → Heatmap';
+        return { chartType, xKey, yKey, secondaryYKeys, useDualAxis, reason };
+    }
+
     // ─── Rule 2: Pivoted Comparison → Grouped Bar + Growth ───────
     if (isPivoted && metricCount > 1) {
         chartType = 'groupedBar';

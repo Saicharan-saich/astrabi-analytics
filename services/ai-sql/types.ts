@@ -59,7 +59,7 @@ export interface SemanticField {
     /** Whether this field is a metric or dimension */
     role: FieldRole;
     /** Default aggregation for this field */
-    defaultAgg: 'sum' | 'avg' | 'count' | 'count_distinct' | 'min' | 'max' | 'none';
+    defaultAgg: 'sum' | 'avg' | 'count' | 'count_distinct' | 'min' | 'max' | 'median' | 'none';
     /** Supported time grains (only for date fields) */
     timeGrainSupport: ('day' | 'week' | 'month' | 'quarter' | 'year')[];
     /** Synonyms the user might use to refer to this field */
@@ -118,7 +118,7 @@ export interface DerivedMetricDefinition {
     /** Stage 1: the base aggregation applied per group */
     baseMetric: {
         field: string;
-        agg: 'sum' | 'avg' | 'count' | 'count_distinct' | 'min' | 'max';
+        agg: 'sum' | 'avg' | 'count' | 'count_distinct' | 'min' | 'max' | 'median';
     };
     /** The dimension used to group in Stage 1 */
     groupBy: {
@@ -126,7 +126,7 @@ export interface DerivedMetricDefinition {
         grain: 'day' | 'week' | 'month' | 'quarter' | 'year';
     };
     /** Stage 2: the final aggregation applied to the grouped results */
-    finalAgg: 'avg' | 'sum' | 'min' | 'max' | 'count';
+    finalAgg: 'avg' | 'sum' | 'min' | 'max' | 'count' | 'median';
     /** Semantic type of the result */
     semanticType: SemanticType;
     /** User-facing description */
@@ -170,7 +170,7 @@ export interface PlanDimension {
 
 export interface PlanMetric {
     field: string;
-    agg: 'sum' | 'avg' | 'count' | 'count_distinct' | 'min' | 'max';
+    agg: 'sum' | 'avg' | 'count' | 'count_distinct' | 'min' | 'max' | 'median';
     /** For composite metrics — use the formula instead */
     compositeId?: string;
     /** For derived metrics (two-stage aggregation) — use the definition */
@@ -422,6 +422,8 @@ export interface AIQueryProvenance {
     summary: string;
     /** Explicit privacy statement for this request. */
     dataAccess: 'metadata_only' | 'approved_safe_values';
+    /** Whether the LLM SQL was downgraded to a deterministic fallback */
+    downgraded?: boolean;
 }
 
 export interface AISQLPipelineResult {

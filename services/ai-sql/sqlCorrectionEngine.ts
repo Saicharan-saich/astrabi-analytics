@@ -222,6 +222,40 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     }
 
     // Dispatch by intent
+    if (plan.intent === 'trend') {
+        const lowerQ = (plan.originalQuestion || '').toLowerCase();
+        const isRunningTotal = lowerQ.includes('running total') || lowerQ.includes('cumulative');
+        const isMovingAvg = lowerQ.includes('moving average') || lowerQ.includes('rolling');
+        
+        if (isRunningTotal || isMovingAvg) {
+            const timeDim = plan.dimensions.find(d => (d as any).timeGrain) || plan.dimensions[0];
+            if (timeDim && plan.metrics.length > 0) {
+                const timeDimField = (timeDim as any).timeGrain && (timeDim as any).timeGrain !== 'day' 
+                    ? `${timeDim.field}_${(timeDim as any).timeGrain}` 
+                    : timeDim.field;
+                const met = plan.metrics[0];
+                const metricAlias = getMetricAlias(met, model, apdmeMetrics);
+                
+                if (isRunningTotal) {
+                    return buildRunningTotalSQL(plan, model, {
+                        orderByField: timeDimField,
+                        metricAlias: metricAlias
+                    });
+                } else if (isMovingAvg) {
+                    let N = 7;
+                    const match = lowerQ.match(/(\d+)-?(?:day|month)?\s+(?:moving|rolling)/);
+                    if (match) N = parseInt(match[1]);
+                    
+                    return buildMovingAverageSQL(plan, model, {
+                        orderByField: timeDimField,
+                        metricAlias: metricAlias,
+                        preceding: N - 1
+                    });
+                }
+            }
+        }
+    }
+
     switch (plan.intent) {
         case 'single_metric':
             return buildSingleMetricSQL(plan, model, apdmeMetrics);
@@ -669,27 +703,13 @@ function buildDistributionSQL(plan: AnalysisPlan, model: SemanticModel): string 
     const where = buildWhereClause(plan.filters);
     const whereClause = where ? ` WHERE ${where}` : '';
 
-    // 10 equal-width buckets. Use CTEs so every non-aggregated SELECT term
-    // (bucket index + the bucket width/min used to label the range) is present
-    // in GROUP BY — a bare cross-joined `bucket_width` in SELECT is not grouped
-    // and DuckDB/Postgres reject it ("must appear in the GROUP BY clause").
-    // NULLIF guards the all-equal-values case (width 0 → single bucket).
     return [
-        `WITH stats AS (`,
-        `  SELECT MIN(${field}) AS min_val, (MAX(${field}) - MIN(${field})) / 10.0 AS bucket_width`,
-        `  ${fromTable()}${whereClause}`,
-        `),`,
-        `bucketed AS (`,
-        `  SELECT FLOOR((${field} - min_val) / NULLIF(bucket_width, 0)) AS bucket_idx,`,
-        `         min_val AS mn, bucket_width AS bw`,
-        `  ${fromTable()}, stats${whereClause}`,
-        `)`,
+        `WITH stats AS (SELECT MIN(${field}) as mn, MAX(${field}) as mx, (MAX(${field}) - MIN(${field})) / 10.0 as bucket_width ${fromTable()}${whereClause})`,
         `SELECT`,
-        `  CONCAT(CAST(mn + bucket_idx * bw AS TEXT), ' - ', CAST(mn + (bucket_idx + 1) * bw AS TEXT)) AS "${met.field}_range",`,
-        `  COUNT(*) AS count`,
-        `FROM bucketed`,
-        `GROUP BY bucket_idx, mn, bw`,
-        `ORDER BY bucket_idx ASC`,
+        `  CONCAT(CAST(FLOOR(${field} / NULLIF(bucket_width, 0)) * bucket_width AS INT), '-', CAST(FLOOR(${field} / NULLIF(bucket_width, 0)) * bucket_width + bucket_width AS INT)) as "${met.field}_range",`,
+        `  COUNT(*) as count`,
+        `FROM ${TABLE_REF}, stats${whereClause}`,
+        `GROUP BY 1 ORDER BY 1`
     ].join('\n');
 }
 
@@ -1063,6 +1083,43 @@ function buildRunningTotalSQL(
 
     const partitionClause = partitionBy ? `PARTITION BY ${q(partitionBy)} ` : '';
     const windowExpr = `${windowFn}(${metricAlias}) OVER (${partitionClause}ORDER BY ${q(orderByField)} ROWS UNBOUNDED PRECEDING) AS running_${windowFn.toLowerCase()}`;
+
+    const innerSelects = [...dimExprs, ...metExprs];
+    const innerParts = [
+        `SELECT ${innerSelects.join(', ')}`,
+        fromTable(),
+    ];
+    if (where) innerParts.push(`WHERE ${where}`);
+    if (groupBy) innerParts.push(`GROUP BY ${groupBy}`);
+
+    const innerSQL = innerParts.join('\n');
+
+    return [
+        `SELECT *, ${windowExpr}`,
+        `FROM (${innerSQL}) sub`,
+        `ORDER BY ${q(orderByField)}`,
+    ].join('\n');
+}
+
+function buildMovingAverageSQL(
+    plan: AnalysisPlan,
+    model: SemanticModel,
+    options: {
+        orderByField: string;
+        metricAlias: string;
+        partitionBy?: string;
+        preceding: number;
+    }
+): string {
+    const { orderByField, metricAlias, partitionBy, preceding } = options;
+
+    const dimExprs = buildDimensionExpressions(plan.dimensions);
+    const metExprs = buildMetricExpressions(plan.metrics, model);
+    const groupBy = buildGroupByClause(plan.dimensions);
+    const where = buildWhereClause(plan.filters);
+
+    const partitionClause = partitionBy ? `PARTITION BY ${q(partitionBy)} ` : '';
+    const windowExpr = `AVG(${metricAlias}) OVER (${partitionClause}ORDER BY ${q(orderByField)} ROWS BETWEEN ${preceding} PRECEDING AND CURRENT ROW) AS moving_avg`;
 
     const innerSelects = [...dimExprs, ...metExprs];
     const innerParts = [

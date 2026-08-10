@@ -114,11 +114,69 @@ export function reshapeData(
     // ─── 4. Sort Time Series Chronologically ─────────────────────
     if (profile.hasTimeDimension && profile.timeDimensionColumn) {
         const timeCol = profile.timeDimensionColumn;
+        
+        const months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+        
         reshapedData.sort((a, b) => {
             const aVal = String(a[timeCol] || '');
             const bVal = String(b[timeCol] || '');
+            
+            if (/^\d{4}-/.test(aVal) && /^\d{4}-/.test(bVal)) {
+                return aVal.localeCompare(bVal);
+            }
+            
+            const aMonthIdx = months.findIndex(m => aVal.toLowerCase().startsWith(m));
+            const bMonthIdx = months.findIndex(m => bVal.toLowerCase().startsWith(m));
+            if (aMonthIdx !== -1 && bMonthIdx !== -1) {
+                return aMonthIdx - bMonthIdx;
+            }
+            
+            const aDate = new Date(aVal).getTime();
+            const bDate = new Date(bVal).getTime();
+            if (!isNaN(aDate) && !isNaN(bDate)) {
+                return aDate - bDate;
+            }
+            
             return aVal.localeCompare(bVal);
         });
+
+        // ─── 4.5 Time Spine Filling ──────────────────────────────────
+        if (reshapedData.length >= 2) {
+            const isMonthly = /^\d{4}-\d{2}$/.test(String(reshapedData[0][timeCol] || ''));
+            const isDaily = /^\d{4}-\d{2}-\d{2}$/.test(String(reshapedData[0][timeCol] || ''));
+            
+            if (isMonthly || isDaily) {
+                const filledData = [];
+                for (let i = 0; i < reshapedData.length; i++) {
+                    filledData.push(reshapedData[i]);
+                    if (i < reshapedData.length - 1) {
+                        const currDate = new Date(reshapedData[i][timeCol]);
+                        const nextDate = new Date(reshapedData[i + 1][timeCol]);
+                        
+                        if (isMonthly) {
+                            let curr = new Date(currDate.getFullYear(), currDate.getMonth() + 1, 1);
+                            while (curr < new Date(nextDate.getFullYear(), nextDate.getMonth(), 1)) {
+                                const padMonth = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, '0')}`;
+                                const newRow: any = { [timeCol]: padMonth };
+                                for (const col of profile.metricColumns) newRow[col] = 0;
+                                filledData.push(newRow);
+                                curr.setMonth(curr.getMonth() + 1);
+                            }
+                        } else if (isDaily) {
+                            let curr = new Date(currDate.getTime() + 86400000);
+                            while (curr < nextDate) {
+                                const padDay = curr.toISOString().split('T')[0];
+                                const newRow: any = { [timeCol]: padDay };
+                                for (const col of profile.metricColumns) newRow[col] = 0;
+                                filledData.push(newRow);
+                                curr = new Date(curr.getTime() + 86400000);
+                            }
+                        }
+                    }
+                }
+                reshapedData = filledData;
+            }
+        }
     }
 
     return { data: reshapedData, chart: updatedChart };

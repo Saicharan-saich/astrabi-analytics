@@ -220,6 +220,79 @@ export function analyzePeriodSeries(
         });
     }
 
+    // ── (c) Seasonality Detection ─────────────────────────────────────
+    if (series.length >= 24) {
+        if (/^\d{4}-\d{2}$/.test(series[0].period)) {
+            const yearlyData: Record<string, { sum: number, count: number, avg: number, months: Record<string, number> }> = {};
+            for (const p of series) {
+                const parts = p.period.split('-');
+                const year = parts[0];
+                const month = parts[1];
+                if (!yearlyData[year]) yearlyData[year] = { sum: 0, count: 0, avg: 0, months: {} };
+                yearlyData[year].sum += p.v;
+                yearlyData[year].count++;
+                yearlyData[year].months[month] = p.v;
+            }
+            
+            let completeYears = 0;
+            for (const year in yearlyData) {
+                if (yearlyData[year].count === 12) {
+                    completeYears++;
+                    yearlyData[year].avg = yearlyData[year].sum / 12;
+                }
+            }
+            
+            if (completeYears >= 2) {
+                const monthPatterns: Record<string, number> = {};
+                for (let m = 1; m <= 12; m++) {
+                    const monthStr = String(m).padStart(2, '0');
+                    let allAbove = true;
+                    let allBelow = true;
+                    let numYears = 0;
+                    
+                    for (const year in yearlyData) {
+                        if (yearlyData[year].count === 12) {
+                            numYears++;
+                            const val = yearlyData[year].months[monthStr];
+                            const avg = yearlyData[year].avg;
+                            if (val <= avg) allAbove = false;
+                            if (val >= avg) allBelow = false;
+                        }
+                    }
+                    
+                    if (numYears >= 2) {
+                        if (allAbove) monthPatterns[monthStr] = 1;
+                        if (allBelow) monthPatterns[monthStr] = -1;
+                    }
+                }
+                
+                const highMonths = Object.keys(monthPatterns).filter(m => monthPatterns[m] === 1);
+                const lowMonths = Object.keys(monthPatterns).filter(m => monthPatterns[m] === -1);
+                
+                if (highMonths.length > 0 || lowMonths.length > 0) {
+                    const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                    const highNames = highMonths.map(m => monthNames[parseInt(m)]).join(', ');
+                    const lowNames = lowMonths.map(m => monthNames[parseInt(m)]).join(', ');
+                    const isHigh = highMonths.length > 0;
+                    const severity: FindingSeverity = 'info';
+                    findings.push({
+                        id: `seasonality:${measure.column}`,
+                        type: 'period_change' as any,
+                        severity,
+                        headline: `${label} shows consistent seasonality`,
+                        detail: `Across multiple years, ${label.toLowerCase()} is consistently ${isHigh ? 'higher' : 'lower'} in ${isHigh ? highNames : lowNames} compared to the annual average.`,
+                        metric: measure.column,
+                        dimension: dateCol,
+                        score: SEVERITY_WEIGHT[severity] * 0.8,
+                        evidence: { highMonths, lowMonths },
+                        drill,
+                        suggestedQuestion: `What drives the seasonal trend in ${label.toLowerCase()} during ${isHigh ? highNames : lowNames}?`,
+                    });
+                }
+            }
+        }
+    }
+
     return findings;
 }
 
@@ -405,6 +478,61 @@ export function rankFindings(findings: Finding[], max = THRESHOLDS.maxFindings):
 // ORCHESTRATOR
 // ═══════════════════════════════════════════════════════════════════
 
+export function analyzeCorrelation(
+    cleanRows: any[],
+    measures: SemanticMeasure[]
+): Finding[] {
+    const findings: Finding[] = [];
+    if (measures.length < 2) return findings;
+    
+    for (let i = 0; i < measures.length; i++) {
+        for (let j = i + 1; j < measures.length; j++) {
+            const m1 = measures[i];
+            const m2 = measures[j];
+            
+            let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+            let n = 0;
+            
+            for (const row of cleanRows) {
+                const x = num(row[m1.column]);
+                const y = num(row[m2.column]);
+                if (Number.isFinite(x) && Number.isFinite(y)) {
+                    sumX += x;
+                    sumY += y;
+                    sumXY += x * y;
+                    sumX2 += x * x;
+                    sumY2 += y * y;
+                    n++;
+                }
+            }
+            
+            if (n > 2) {
+                const denom = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+                if (denom !== 0) {
+                    const r = (n * sumXY - sumX * sumY) / denom;
+                    if (Math.abs(r) > 0.7) {
+                        const m1Label = humanize(m1.column);
+                        const m2Label = humanize(m2.column);
+                        const direction = r > 0 ? 'positively' : 'negatively';
+                        findings.push({
+                            id: `correlation:${m1.column}:${m2.column}`,
+                            type: 'period_change' as any, // fallback type
+                            severity: 'info',
+                            headline: `${m1Label} and ${m2Label} are strongly ${direction} correlated`,
+                            detail: `These two metrics move together with a correlation of ${r.toFixed(2)}.`,
+                            metric: m1.column,
+                            score: SEVERITY_WEIGHT.info * (0.5 + 0.5 * Math.abs(r)),
+                            evidence: { r, n },
+                            suggestedQuestion: `Why do ${m1Label.toLowerCase()} and ${m2Label.toLowerCase()} trend together?`,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    return findings;
+}
+
 /** Candidate dimensions: categorical, visible, not ID-like, ranked by value. */
 function candidateDimensions(model: SemanticModel): SemanticDimension[] {
     return rankDimensions(model.dimensions.filter(d => d.dataType === 'string' && !d.isHidden)).slice(0, 4);
@@ -476,6 +604,9 @@ export async function discoverInsights(dataset: Dataset): Promise<Finding[]> {
             }
         } catch (e: any) { console.warn(`[InsightDiscovery] gap(${col}) failed:`, e?.message); }
     }
+
+    // ── Cross-Metric Correlation ──────────────────────────────────────
+    findings.push(...analyzeCorrelation(cleanRows, measures));
 
     const ranked = rankFindings(findings);
     const elapsed = ((performance.now() - t0) / 1000).toFixed(1);

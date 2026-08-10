@@ -96,9 +96,16 @@ export function runConstraintGates(profile: ColumnStatProfile): ConstraintResult
     // ── GATE 1: Boolean Lock ────────────────────────────────────
     // If exactly 2 unique values → force BOOLEAN
     if (profile.distinctCount === 2 && profile.totalRows > 10) {
-        allowedTypes = ['boolean'];
-        reasons.push('Exactly 2 unique values → forced BOOLEAN');
-        return buildResult(profile, allowedTypes, 'boolean', 'dimension', 0.98, reasons, rangeSpan, uniqueRatio);
+        const isNumericFlag = /(?:^|[_\s])(is_|has_|flag|status|active|returned|churned|converted|paid|completed)(?:[_\s]|$)/i.test(name);
+        if (isNumericFlag && profile.isIntegerLike) {
+            allowedTypes = ['boolean', 'quantity'];
+            reasons.push('2 unique values but numeric flag name → allowed BOOLEAN/QUANTITY');
+            return buildResult(profile, allowedTypes, 'boolean', 'dimension', 0.90, reasons, rangeSpan, uniqueRatio);
+        } else {
+            allowedTypes = ['boolean'];
+            reasons.push('Exactly 2 unique values → forced BOOLEAN');
+            return buildResult(profile, allowedTypes, 'boolean', 'dimension', 0.98, reasons, rangeSpan, uniqueRatio);
+        }
     }
 
     // ── GATE 2: Date Lock ───────────────────────────────────────
@@ -142,8 +149,14 @@ export function runConstraintGates(profile: ColumnStatProfile): ConstraintResult
     if (isOrdinalCandidate) {
         // If name also matches ordinal patterns → very high confidence
         if (ORDINAL_NAMES.test(name)) {
-            allowedTypes = allowedTypes.filter(t => t === 'ordinal' || t === 'category');
-            reasons.push(`Integer range 0–${rangeSpan} + ordinal name pattern → locked to ORDINAL/CATEGORY`);
+            const isRating = /(?:^|[_\s])(rating|score|satisfaction|nps|stars?|likert|scale|grade|rank)(?:[_\s]|$)/i.test(name);
+            if (isRating) {
+                allowedTypes = allowedTypes.filter(t => t === 'ordinal' || t === 'category' || t === 'quantity');
+                reasons.push(`Integer range 0–${rangeSpan} + rating name pattern → locked to ORDINAL/CATEGORY/QUANTITY`);
+            } else {
+                allowedTypes = allowedTypes.filter(t => t === 'ordinal' || t === 'category');
+                reasons.push(`Integer range 0–${rangeSpan} + ordinal name pattern → locked to ORDINAL/CATEGORY`);
+            }
         } else if (!STRONG_METRIC_NAMES.test(name)) {
             // Still suspicious but name doesn't confirm — restrict but don't lock
             allowedTypes = allowedTypes.filter(t => t !== 'identifier' && t !== 'currency');
@@ -154,8 +167,14 @@ export function runConstraintGates(profile: ColumnStatProfile): ConstraintResult
     // ── GATE 5: Ordinal-to-Metric Clamp ─────────────────────────
     // If ordinal conditions met, prevent METRIC classification unless very confident
     if (isOrdinalCandidate && ORDINAL_NAMES.test(name)) {
-        allowedTypes = allowedTypes.filter(t => t !== 'quantity' && t !== 'count');
-        reasons.push('Ordinal name confirmed → metric types (quantity/count) disallowed');
+        const isRating = /(?:^|[_\s])(rating|score|satisfaction|nps|stars?|likert|scale|grade|rank)(?:[_\s]|$)/i.test(name);
+        if (!isRating) {
+            allowedTypes = allowedTypes.filter(t => t !== 'quantity' && t !== 'count');
+            reasons.push('Ordinal name confirmed → metric types (quantity/count) disallowed');
+        } else {
+            allowedTypes = allowedTypes.filter(t => t !== 'count');
+            reasons.push('Rating name confirmed → count disallowed but quantity allowed');
+        }
     }
 
     // Now compute the deterministic best guess + confidence

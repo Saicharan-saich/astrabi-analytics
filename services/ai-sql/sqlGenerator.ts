@@ -103,9 +103,24 @@ function tryDeterministicSQL(
                 selectParts.push(`COUNT(DISTINCT ${met.field}) AS ${met.field}_count`);
             } else if (met.agg === 'count') {
                 selectParts.push(`COUNT(${met.field}) AS ${met.field}_count`);
+            } else if (met.agg === 'median') {
+                selectParts.push(`MEDIAN(${met.field}) AS ${met.field}_median`);
             } else {
                 selectParts.push(`${aggFn}(${met.field}) AS ${met.field}_${met.agg}`);
             }
+        }
+
+        if (plan.intent === 'correlation' && plan.metrics.length >= 2) {
+            const getMetricExpr = (met: any) => {
+                if (met.compositeId) {
+                    return model.compositeMetrics.find(m => m.id === met.compositeId)?.formula || met.field;
+                }
+                if (met.agg === 'count_distinct') return `COUNT(DISTINCT ${met.field})`;
+                if (met.agg === 'count') return `COUNT(${met.field})`;
+                if (met.agg === 'median') return `MEDIAN(${met.field})`;
+                return `${met.agg.toUpperCase()}(${met.field})`;
+            };
+            selectParts.push(`CORR(${getMetricExpr(plan.metrics[0])}, ${getMetricExpr(plan.metrics[1])}) OVER() AS correlation`);
         }
 
         if (selectParts.length === 0) return null;

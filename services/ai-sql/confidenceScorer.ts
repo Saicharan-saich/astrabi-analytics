@@ -21,7 +21,8 @@ export function scoreConfidence(
     validation: ValidationResult,
     sqlMethod: 'deterministic' | 'llm',
     repairAttempts: number,
-    sql?: string
+    sql?: string,
+    rawData?: any[]
 ): ConfidenceScore {
     let semanticMatch = 30;     // Start at max, subtract for issues
     let filterClarity = 20;
@@ -173,10 +174,18 @@ export function scoreConfidence(
 
     const totalScore = semanticMatch + filterClarity + aggregationCertainty + planComplexity + repairScore - sqlQualityPenalty;
 
+    let score = Math.min(100, Math.max(0, totalScore));
+
+    // Penalize empty results — 0 rows usually means a filter mismatch, not genuinely empty data
+    if (!rawData || rawData.length === 0) {
+        score = Math.max(0, score - 40);
+        reasons.push('Query returned 0 rows — usually means a filter mismatch');
+    }
+
     // Determine level
     let level: 'high' | 'medium' | 'low';
-    if (totalScore >= 75) level = 'high';
-    else if (totalScore >= 50) level = 'medium';
+    if (score >= 75) level = 'high';
+    else if (score >= 50) level = 'medium';
     else level = 'low';
 
     if (reasons.length === 0) {
@@ -184,7 +193,7 @@ export function scoreConfidence(
     }
 
     return {
-        score: Math.min(100, Math.max(0, totalScore)),
+        score,
         level,
         factors: {
             semanticMatch,

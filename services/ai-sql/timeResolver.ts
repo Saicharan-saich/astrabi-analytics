@@ -19,6 +19,8 @@ export interface ResolvedTimeContext {
     matchedPhrase: string | null;
     /** Human-readable description of the resolved period */
     description: string | null;
+    /** Prior period offset for comparison (e.g., '1 year', '1 month') */
+    comparisonOffset?: string | null;
 }
 
 /**
@@ -26,6 +28,170 @@ export interface ResolvedTimeContext {
  * Ordered by specificity (most specific first).
  */
 const TIME_PATTERNS: { regex: RegExp; resolve: (anchor: Date, match: RegExpMatchArray) => { start: Date; end: Date; desc: string } }[] = [
+    // Fiscal year / QX FYYY
+    {
+        regex: /\b(?:q([1-4])\s+)?(?:fy|fiscal\s+year)\s*(\d{2,4})?\b/i,
+        resolve: (anchor, match) => {
+            const qStr = match[1];
+            const yearStr = match[2];
+            let targetYear = anchor.getFullYear();
+            if (yearStr) {
+                targetYear = parseInt(yearStr);
+                if (targetYear < 100) {
+                    const century = Math.floor(anchor.getFullYear() / 100) * 100;
+                    targetYear += century;
+                    if (targetYear > anchor.getFullYear() + 10) {
+                        targetYear -= 100;
+                    }
+                }
+            } else {
+                targetYear = anchor.getMonth() >= 9 ? anchor.getFullYear() + 1 : anchor.getFullYear();
+            }
+
+            const fyStartYear = targetYear - 1;
+
+            if (qStr) {
+                const q = parseInt(qStr);
+                let startMonth = 0;
+                let startYear = 0;
+                if (q === 1) {
+                    startMonth = 9;
+                    startYear = fyStartYear;
+                } else {
+                    startMonth = (q - 2) * 3;
+                    startYear = targetYear;
+                }
+                const start = new Date(startYear, startMonth, 1);
+                const end = new Date(startYear, startMonth + 3, 0);
+                return { start, end, desc: `Q${q} FY${targetYear}` };
+            } else {
+                const start = new Date(fyStartYear, 9, 1);
+                const end = new Date(targetYear, 8, 30);
+                return { start, end, desc: `FY${targetYear}` };
+            }
+        }
+    },
+    // Rolling/Trailing periods
+    {
+        regex: /\b(?:rolling|trailing|last\s+rolling)\s+(\d+)\s+(months?|quarters?|years?)\b|\b(?:ttm|r12m|trailing\s+12\s+months|last\s+rolling\s+quarter)\b/i,
+        resolve: (anchor, match) => {
+            const isTTM = /ttm|r12m|trailing\s+12\s+months/i.test(match[0]);
+            const isLRQ = /last\s+rolling\s+quarter/i.test(match[0]);
+            const n = isTTM ? 12 : (isLRQ ? 3 : parseInt(match[1]));
+            const unit = isTTM || isLRQ ? 'months' : match[2].toLowerCase();
+            
+            const start = new Date(anchor);
+            if (unit.startsWith('month')) {
+                start.setMonth(start.getMonth() - n);
+            } else if (unit.startsWith('quarter')) {
+                start.setMonth(start.getMonth() - (n * 3));
+            } else if (unit.startsWith('year')) {
+                start.setFullYear(start.getFullYear() - n);
+            }
+            start.setDate(start.getDate() + 1);
+            return { start, end: new Date(anchor), desc: isTTM ? 'trailing 12 months' : (isLRQ ? 'last rolling quarter' : `trailing ${n} ${unit}`) };
+        }
+    },
+    // Multi-Unit Relative Offsets: "N units ago"
+    {
+        regex: /\b(\d+)\s+(years?|quarters?|months?|weeks?|days?)\s+ago\b/i,
+        resolve: (anchor, match) => {
+            const n = parseInt(match[1]);
+            const unit = match[2].toLowerCase();
+            const start = new Date(anchor);
+            const end = new Date(anchor);
+            
+            if (unit.startsWith('year')) {
+                start.setFullYear(start.getFullYear() - n);
+                start.setMonth(0, 1);
+                end.setFullYear(end.getFullYear() - n);
+                end.setMonth(11, 31);
+            } else if (unit.startsWith('quarter')) {
+                const currentQ = Math.floor(anchor.getMonth() / 3);
+                const targetTotalQ = (anchor.getFullYear() * 4 + currentQ) - n;
+                const targetYear = Math.floor(targetTotalQ / 4);
+                const targetQ = targetTotalQ % 4;
+                start.setFullYear(targetYear, targetQ * 3, 1);
+                end.setFullYear(targetYear, targetQ * 3 + 3, 0);
+            } else if (unit.startsWith('month')) {
+                start.setMonth(start.getMonth() - n, 1);
+                end.setMonth(end.getMonth() - n + 1, 0);
+            } else if (unit.startsWith('week')) {
+                start.setDate(start.getDate() - (n * 7) - start.getDay());
+                end.setTime(start.getTime());
+                end.setDate(start.getDate() + 6);
+            } else if (unit.startsWith('day')) {
+                start.setDate(start.getDate() - n);
+                end.setDate(end.getDate() - n);
+            }
+            return { start, end, desc: `${n} ${unit} ago` };
+        }
+    },
+    // Multi-Unit Relative Offsets: "unit before last"
+    {
+        regex: /\b(month|year|quarter|week)\s+before\s+last\b/i,
+        resolve: (anchor, match) => {
+            const unit = match[1].toLowerCase();
+            const start = new Date(anchor);
+            const end = new Date(anchor);
+            if (unit === 'year') {
+                start.setFullYear(start.getFullYear() - 2);
+                start.setMonth(0, 1);
+                end.setFullYear(end.getFullYear() - 2);
+                end.setMonth(11, 31);
+            } else if (unit === 'quarter') {
+                const currentQ = Math.floor(anchor.getMonth() / 3);
+                const targetTotalQ = (anchor.getFullYear() * 4 + currentQ) - 2;
+                const targetYear = Math.floor(targetTotalQ / 4);
+                const targetQ = targetTotalQ % 4;
+                start.setFullYear(targetYear, targetQ * 3, 1);
+                end.setFullYear(targetYear, targetQ * 3 + 3, 0);
+            } else if (unit === 'month') {
+                start.setMonth(start.getMonth() - 2, 1);
+                end.setMonth(end.getMonth() - 2 + 1, 0);
+            } else if (unit === 'week') {
+                start.setDate(start.getDate() - 14 - start.getDay());
+                end.setTime(start.getTime());
+                end.setDate(start.getDate() + 6);
+            }
+            return { start, end, desc: `${unit} before last` };
+        }
+    },
+    // Preposition + Bare month
+    {
+        regex: /\b(in|since|before)\s+(january|february|march|april|may|june|july|august|september|october|november|december)\b/i,
+        resolve: (anchor, match) => {
+            const prep = match[1].toLowerCase();
+            const monthStr = match[2];
+            const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+            const targetMonth = months.indexOf(monthStr.toLowerCase());
+            let year = anchor.getFullYear();
+            if (targetMonth > anchor.getMonth()) {
+                year -= 1;
+            }
+            if (prep === 'since') {
+                return { start: new Date(year, targetMonth, 1), end: new Date(anchor), desc: `since ${monthStr}` };
+            } else if (prep === 'before') {
+                return { start: new Date(1900, 0, 1), end: new Date(year, targetMonth, 0), desc: `before ${monthStr}` };
+            } else {
+                return { start: new Date(year, targetMonth, 1), end: new Date(year, targetMonth + 1, 0), desc: `in ${monthStr}` };
+            }
+        }
+    },
+    // Bare month
+    {
+        regex: /\b(january|february|march|april|may|june|july|august|september|october|november|december)\b/i,
+        resolve: (anchor, match) => {
+            const monthStr = match[1];
+            const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+            const targetMonth = months.indexOf(monthStr.toLowerCase());
+            let year = anchor.getFullYear();
+            if (targetMonth > anchor.getMonth()) {
+                year -= 1;
+            }
+            return { start: new Date(year, targetMonth, 1), end: new Date(year, targetMonth + 1, 0), desc: monthStr };
+        }
+    },
     // "last N days"
     {
         regex: /\b(?:last|past|previous)\s+(\d+)\s+days?\b/i,
@@ -159,6 +325,15 @@ const TIME_PATTERNS: { regex: RegExp; resolve: (anchor: Date, match: RegExpMatch
             return { start: d, end: d, desc: 'yesterday' };
         }
     },
+    // "quarter to date" / "qtd"
+    {
+        regex: /\b(?:quarter\s+to\s+date|qtd)\b/i,
+        resolve: (anchor) => {
+            const q = Math.floor(anchor.getMonth() / 3);
+            const start = new Date(anchor.getFullYear(), q * 3, 1);
+            return { start, end: new Date(anchor), desc: 'quarter to date' };
+        }
+    },
     // "year to date" / "ytd"
     {
         regex: /\b(?:year\s+to\s+date|ytd)\b/i,
@@ -202,6 +377,16 @@ export function resolveTimeContext(question: string, model: SemanticModel): Reso
         || model.timeContext?.primaryDateColumn
         || 'order_date';
 
+    let comparisonOffset = null;
+    const comparisonMatch = question.match(/\b(yoy|mom|qoq|wow|sply)\b/i);
+    if (comparisonMatch) {
+        const comp = comparisonMatch[1].toLowerCase();
+        if (comp === 'yoy' || comp === 'sply') comparisonOffset = '1 year';
+        else if (comp === 'mom') comparisonOffset = '1 month';
+        else if (comp === 'qoq') comparisonOffset = '1 quarter';
+        else if (comp === 'wow') comparisonOffset = '1 week';
+    }
+
     // Try each pattern in order (most specific first)
     for (const pattern of TIME_PATTERNS) {
         const match = question.match(pattern.regex);
@@ -219,9 +404,14 @@ export function resolveTimeContext(question: string, model: SemanticModel): Reso
                     value: [startStr, endStr]
                 },
                 matchedPhrase: match[0],
-                description: `${desc}: ${startStr} to ${endStr}`
+                description: `${desc}: ${startStr} to ${endStr}`,
+                comparisonOffset: comparisonOffset || undefined
             };
         }
+    }
+
+    if (comparisonOffset) {
+        return { filter: null, matchedPhrase: comparisonMatch[0], description: null, comparisonOffset };
     }
 
     return { filter: null, matchedPhrase: null, description: null };

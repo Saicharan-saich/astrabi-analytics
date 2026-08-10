@@ -23,7 +23,7 @@ export interface ValidationResult {
 }
 
 const VALID_TIME_GRAINS = ['year', 'quarter', 'month', 'week', 'day', 'day_of_week', 'month_of_year', 'hour'];
-const VALID_AGGS = ['sum', 'avg', 'count', 'count_distinct', 'min', 'max', 'none'];
+const VALID_AGGS = ['sum', 'avg', 'count', 'count_distinct', 'min', 'max', 'median', 'none'];
 const VALID_INTENTS = [
     'single_metric', 'derived_metric', 'breakdown', 'trend', 'trend_comparison',
     'total_comparison', 'ranking', 'share_of_total', 'correlation', 'distribution',

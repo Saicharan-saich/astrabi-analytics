@@ -44,7 +44,7 @@ const DIMENSION_KEYWORDS = new Set([
 /**
  * Extract meaningful words from a question, ignoring stop words.
  */
-function extractKeywords(question: string): string[] {
+function extractKeywords(question: string, model?: SemanticModel): string[] {
     const stopWords = new Set([
         'the', 'a', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
         'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
@@ -62,11 +62,21 @@ function extractKeywords(question: string): string[] {
         'lowest', 'top', 'bottom', 'best', 'worst', 'most', 'least',
     ]);
 
+    const fieldParts = new Set<string>();
+    if (model) {
+        for (const field of model.fields) {
+            const parts = field.name.toLowerCase().split(/[_\s]+/);
+            for (const p of parts) {
+                if (p.length > 1) fieldParts.add(p);
+            }
+        }
+    }
+
     return question
         .toLowerCase()
         .replace(/[?!.,;:'"()]/g, '')
         .split(/\s+/)
-        .filter(w => w.length > 1 && !stopWords.has(w));
+        .filter(w => w.length > 1 && (!stopWords.has(w) || fieldParts.has(w)));
 }
 
 /**
@@ -87,11 +97,20 @@ function scoreFieldMatch(field: SemanticField, keyword: string): number {
     // Synonym match
     if (field.synonyms.some(s => s.toLowerCase() === kw)) return 0.9;
 
+    const isSafeSub = (sub: string, full: string) => sub.length >= 4 || new RegExp(`\\b${sub}\\b`, 'i').test(full);
+
     // Field name contains keyword
-    if (fieldName.includes(kw) || kw.includes(fieldName)) return 0.7;
+    if ((fieldName.includes(kw) && isSafeSub(kw, fieldName)) || 
+        (kw.includes(fieldName) && isSafeSub(fieldName, kw))) {
+        return 0.7;
+    }
 
     // Synonym contains keyword
-    if (field.synonyms.some(s => s.toLowerCase().includes(kw) || kw.includes(s.toLowerCase()))) return 0.6;
+    if (field.synonyms.some(s => {
+        const syn = s.toLowerCase();
+        return (syn.includes(kw) && isSafeSub(kw, syn)) || 
+               (kw.includes(syn) && isSafeSub(syn, kw));
+    })) return 0.6;
 
     // Partial word match (e.g., "profit" matches "profit_margin")
     const fieldWords = fieldName.split(' ');
@@ -105,7 +124,7 @@ function scoreFieldMatch(field: SemanticField, keyword: string): number {
  * Returns dimensions, metrics, and filter hints.
  */
 export function mapFieldsFromQuestion(question: string, model: SemanticModel): MappedFields {
-    const keywords = extractKeywords(question);
+    const keywords = extractKeywords(question, model);
     const dimensions: SemanticField[] = [];
     const metrics: SemanticField[] = [];
     const filterHints: FilterHint[] = [];

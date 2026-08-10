@@ -69,6 +69,7 @@ const TREND_PATTERNS = [
     /\b(sales|revenue|profit|orders?)\s+(trend|over\s+time)\b/i,
     /\bshow\s+(me\s+)?(the\s+)?(monthly|weekly|daily|quarterly)\b/i,
     /\bhow\s+(has|have|did|does)\s+.+\s+(changed?|grown?|trended?|performed?)\b/i,
+    /\b(running\s+total|cumulative|rolling\s+average|moving\s+average|\d+-month\s+moving|\d+-day\s+rolling|year-to-date\s+cumulative)\b/i,
 ];
 
 const RANKING_PATTERNS = [
@@ -77,6 +78,7 @@ const RANKING_PATTERNS = [
     /\bwhich\s+\w+\s+(has|had|have|is|are|was|were|generated?|produced?|sold)\b/i,
     /\brank(ing|ed)?\b/i,
     /\bleader\s*board\b/i,
+    /\b(80\/20|pareto|80\s*percent|80%|concentrate|account\s+for\s+most|majority\s+of)\b/i,
 ];
 
 const SHARE_PATTERNS = [
@@ -125,6 +127,7 @@ const AGGREGATE_FILTER_PATTERNS = [
     /\b(above|below|over|under|exceed(?:ing|s)?|greater\s+than|higher\s+than|less\s+than|lower\s+than)\s*(?:the\s+)?(?:average|avg|mean)\b/i,
     /\bwith\s+(high|low|above|below).+(margin|aov|rate|ratio|sales|revenue|profit)\b/i,
     /\b(outperform|underperform)(?:ing|s|ed)?\b/i,
+    /\b(unusual|anomaly|anomalies|outlier|outliers|abnormal|unexpected|spike|dip|irregular)\b/i,
 ];
 
 const GROWTH_ANALYSIS_PATTERNS = [
@@ -211,6 +214,10 @@ export function classifyQuestion(question: string): ClassificationResult {
     const sortDir = detectSortDirection(question);
     const limit = detectLimit(question);
 
+    const CORRELATION_PATTERNS = [
+        /\b(correlation|relationship\s+between|affect|impact|associated\s+with|correlated|vs\.?|versus|compared\s+to)\b/i,
+    ];
+
     // Score each intent
     const scores: { intent: ClassifiedIntent; score: number; reason: string }[] = [
         { intent: 'trend', score: matchPatterns(q, TREND_PATTERNS), reason: 'time-series keywords detected' },
@@ -220,6 +227,7 @@ export function classifyQuestion(question: string): ClassificationResult {
         { intent: 'single_metric', score: matchPatterns(q, SINGLE_METRIC_PATTERNS), reason: 'scalar/total keywords detected' },
         { intent: 'breakdown', score: matchPatterns(q, BREAKDOWN_PATTERNS), reason: 'dimension breakdown keywords detected' },
         { intent: 'distribution', score: matchPatterns(q, DISTRIBUTION_PATTERNS), reason: 'distribution/histogram keywords detected' },
+        { intent: 'correlation', score: matchPatterns(q, CORRELATION_PATTERNS), reason: 'correlation/relationship keywords detected' },
     ];
 
     // Sort by score descending
