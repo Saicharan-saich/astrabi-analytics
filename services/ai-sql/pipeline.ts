@@ -45,7 +45,7 @@ import { buildValueCatalog, groundFilters, groundSqlLiterals } from './valueGrou
 import { verifyPlan } from './planVerification';
 // ─── Ambiguity Intelligence Layer ────────────────────────────────
 import { detectAmbiguities } from './ambiguityDetector';
-import { resolveAmbiguities } from './ambiguityResolver';
+import { applyResolvedAmbiguitiesToPlan, resolveAmbiguities } from './ambiguityResolver';
 import { resolveLocalStatistics } from './localStatisticsResolver';
 import { generateCandidatePlans } from './candidatePlanGenerator';
 import { rankPlans } from './planRanker';
@@ -320,6 +320,99 @@ export async function runAISQLPipeline(
             : `${_verification.issues.length} faithfulness issue(s): ${_verification.issues.map(i => i.code).join(', ')}`,
         details: { ok: _verification.ok, issues: _verification.issues },
     }, performance.now());
+
+    // ─── Step 2c: Pre-Execution Ambiguity Gate ───────────────────
+    // Ambiguity evidence must influence the executable plan. The previous
+    // post-execution pass could disclose assumptions, but it was too late to
+    // prevent the wrong SQL from running.
+    let preExecutionAmbiguity: {
+        detection: ReturnType<typeof detectAmbiguities>;
+        resolution: Awaited<ReturnType<typeof resolveAmbiguities>>;
+        ranking: ReturnType<typeof rankPlans>;
+        assumptions: ReturnType<typeof buildAssumptions>;
+        localStats: Awaited<ReturnType<typeof resolveLocalStatistics>>;
+    } | null = null;
+
+    try {
+        const domainName = dataset.domainProfile?.name || undefined;
+        const detection = detectAmbiguities(question, semanticModel, domainName);
+
+        if (detection.totalCount > 0) {
+            const datasetIdentity = dataset.id || dataset.name || semanticModel.datasetName || 'data';
+            const localStats = await resolveLocalStatistics(datasetIdentity, semanticModel);
+            const resolution = await resolveAmbiguities(
+                detection,
+                semanticModel,
+                localStats,
+                domainName,
+                question,
+                plan
+            );
+            const candidates = generateCandidatePlans(
+                question,
+                semanticModel,
+                resolution.resolved,
+                localStats
+            );
+            const ranking = rankPlans(candidates, question, semanticModel, localStats, domainName);
+            const selectedPlan = ranking.rankedPlans.find(candidate => candidate.isRecommended)
+                || ranking.rankedPlans[0];
+            const assumptions = buildAssumptions(question, resolution.resolved, selectedPlan);
+
+            preExecutionAmbiguity = {
+                detection,
+                resolution,
+                ranking,
+                assumptions,
+                localStats,
+            };
+
+            if (resolution.needsUserInput && ranking.recommendation === 'ask_user') {
+                const material = resolution.unresolved[0]
+                    || resolution.resolved.find(item => item.needsUserConfirmation);
+                const options = material?.candidates
+                    .slice(0, 3)
+                    .map(candidate => candidate.label)
+                    .join(', ');
+                plan.ambiguous = true;
+                plan.clarificationQuestion = material
+                    ? `To answer accurately, what should "${material.phrase}" mean${options ? ` — ${options}?` : '?'}`
+                    : plan.clarificationQuestion || 'Please clarify the intended interpretation.';
+                console.log('[Pipeline] Material ambiguity requires user confirmation before SQL execution');
+            } else {
+                plan = applyResolvedAmbiguitiesToPlan(plan, resolution);
+                // Validate the plan that will actually be compiled, not the
+                // pre-resolution draft.
+                _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
+                console.log(`[Pipeline] Applied ${resolution.autoResolvedCount} evidence-backed ambiguity resolution(s) before SQL generation`);
+            }
+
+            traceStep({
+                stepNumber: 4,
+                name: 'Pre-Execution Ambiguity Gate',
+                engine: 'ambiguityResolver',
+                icon: '🔍',
+                status: plan.ambiguous ? 'warn' : 'pass',
+                summary: plan.ambiguous
+                    ? 'A material interpretation needs confirmation before execution'
+                    : `${resolution.autoResolvedCount} ambiguity assumption(s) applied to the executable plan`,
+                details: {
+                    ambiguities: detection.ambiguities.map(item => ({
+                        type: item.type,
+                        phrase: item.phrase,
+                        materiality: item.materiality,
+                    })),
+                    recommendation: ranking.recommendation,
+                    confidenceGap: ranking.confidenceGap,
+                    appliedFilters: plan.filters,
+                },
+            }, performance.now());
+        }
+    } catch (ambiguityError: any) {
+        // Preserve the existing governed planner as a compatibility fallback,
+        // but never claim that ambiguity evidence was applied.
+        console.warn('[Pipeline] Pre-execution ambiguity gate unavailable:', ambiguityError?.message);
+    }
 
     // ─── Step 2c: APDME — Derived Metrics & Guardrails ─────────────
     reportProgress('Analyzing derived metrics...', 3);
