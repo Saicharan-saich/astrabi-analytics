@@ -1419,61 +1419,27 @@ export async function runAISQLPipeline(
     pipelineResult.trust = trust;
     console.log(`[Pipeline] Trust: ${trust.status} (${trust.checks.filter(c => c.status === 'pass').length}/${trust.checks.length} checks passed)`);
 
-    // ── Step 11: Ambiguity Intelligence Layer ─────────────────────
-    try {
-        const ambiguityStart = performance.now();
-
-        // 1. Detect ambiguities in the original question
-        const domainName = dataset.domainProfile?.name || undefined;
-        const detection = detectAmbiguities(question, semanticModel, domainName);
-
-        if (detection.totalCount > 0) {
-            // 2. Resolve local statistics for evidence
-            const localStats = await resolveLocalStatistics('data', semanticModel);
-
-            // 3. Resolve ambiguities using priority chain
-            const resolution = await resolveAmbiguities(detection, semanticModel, localStats, domainName);
-
-            // 4. Generate & rank candidate plans
-            const candidates = generateCandidatePlans(question, semanticModel, resolution.resolved, localStats);
-            const ranking = rankPlans(candidates, question, semanticModel, localStats, domainName);
-
-            // 5. Build assumption set for UI disclosure
-            const selectedPlan = ranking.rankedPlans.find(p => p.isRecommended) || ranking.rankedPlans[0];
-            const assumptions = buildAssumptions(question, resolution.resolved, selectedPlan);
-
-            // 6. Attach to pipeline result
-            pipelineResult.assumptions = {
-                questionId: assumptions.questionId,
-                summary: assumptions.summary,
-                items: assumptions.assumptions.map(a => ({
-                    id: a.id,
-                    type: a.type,
-                    phrase: a.phrase,
-                    interpretation: a.interpretation,
-                    alternatives: a.alternatives,
-                    confidence: a.confidence,
-                    autoResolved: a.autoResolved,
-                    computedValue: a.computedValue,
-                })),
-                overallConfidence: assumptions.overallConfidence,
-            };
-
-            traceStep({
-                stepNumber: 12, name: 'Ambiguity Intelligence', engine: 'ambiguityResolver', icon: '🔍',
-                status: detection.hasHighMateriality ? 'warn' : 'pass',
-                summary: `${detection.totalCount} ambiguity(ies) detected, ${resolution.autoResolvedCount} auto-resolved. ${assumptions.summary}`,
-                details: {
-                    ambiguities: detection.ambiguities.map(a => ({ type: a.type, phrase: a.phrase })),
-                    recommendation: ranking.recommendation,
-                    confidenceGap: ranking.confidenceGap,
-                },
-            }, ambiguityStart);
-
-            console.log(`[Pipeline] Ambiguity: ${detection.totalCount} detected, ${resolution.autoResolvedCount} auto-resolved (${Math.round(performance.now() - ambiguityStart)}ms)`);
-        }
-    } catch (ambErr: any) {
-        console.warn('[Pipeline] Ambiguity layer skipped:', ambErr?.message);
+    // ── Step 11: Ambiguity Disclosure ─────────────────────────────
+    // Reuse the exact evidence and ranking that influenced the executable plan.
+    // Recomputing here used to create a second, potentially contradictory
+    // interpretation after the query had already run.
+    if (preExecutionAmbiguity) {
+        const { assumptions } = preExecutionAmbiguity;
+        pipelineResult.assumptions = {
+            questionId: assumptions.questionId,
+            summary: assumptions.summary,
+            items: assumptions.assumptions.map(assumption => ({
+                id: assumption.id,
+                type: assumption.type,
+                phrase: assumption.phrase,
+                interpretation: assumption.interpretation,
+                alternatives: assumption.alternatives,
+                confidence: assumption.confidence,
+                autoResolved: assumption.autoResolved,
+                computedValue: assumption.computedValue,
+            })),
+            overallConfidence: assumptions.overallConfidence,
+        };
     }
 
     // ── Step 12: Answer Contract Validation ───────────────────────
@@ -1495,6 +1461,7 @@ export async function runAISQLPipeline(
 
         pipelineResult.contractValidation = {
             passed: contractResult.passed,
+            enforced: true,
             summary: contractResult.summary,
             checks: contractResult.checks.map(c => ({
                 name: c.name,
@@ -1502,6 +1469,29 @@ export async function runAISQLPipeline(
                 message: c.message,
             })),
         };
+
+        const blockingChecks = contractResult.checks.filter(check => check.status === 'fail');
+        pipelineResult.displaySafety = {
+            allowed: contractResult.passed,
+            reasons: blockingChecks.map(check => check.message),
+            recoverySuggestions: contractResult.repairSuggestions,
+        };
+
+        if (!contractResult.passed) {
+            // A result that violates its answer contract must never be presented
+            // as verified merely because DuckDB executed the SQL successfully.
+            pipelineResult.confidence.score = Math.min(pipelineResult.confidence.score, 39);
+            pipelineResult.confidence.level = 'low';
+            pipelineResult.confidence.reasons.push(
+                ...blockingChecks.map(check => `Answer contract failed: ${check.message}`)
+            );
+            if (pipelineResult.trust) {
+                pipelineResult.trust.status = 'validation_issue';
+                pipelineResult.trust.confidence = 'low';
+                pipelineResult.trust.summary = 'The calculation ran, but the answer failed verification and has been withheld.';
+            }
+            pipelineResult.explanation = 'This answer was withheld because it could not be verified against the requested metrics, filters, grain, or visual fields.';
+        }
 
         traceStep({
             stepNumber: 13, name: 'Contract Validation', engine: 'answerContractValidator', icon: '✅',
@@ -1517,7 +1507,20 @@ export async function runAISQLPipeline(
 
         console.log(`[Pipeline] Contract: ${contractResult.summary} (${Math.round(performance.now() - contractStart)}ms)`);
     } catch (cvErr: any) {
-        console.warn('[Pipeline] Contract validation skipped:', cvErr?.message);
+        console.warn('[Pipeline] Contract validation failed closed:', cvErr?.message);
+        pipelineResult.displaySafety = {
+            allowed: false,
+            reasons: ['The answer contract validator was unavailable.'],
+            recoverySuggestions: ['Retry the question or review the generated SQL before using the result.'],
+        };
+        pipelineResult.confidence.score = Math.min(pipelineResult.confidence.score, 39);
+        pipelineResult.confidence.level = 'low';
+        pipelineResult.explanation = 'This answer was withheld because its verification step did not complete.';
+        if (pipelineResult.trust) {
+            pipelineResult.trust.status = 'validation_issue';
+            pipelineResult.trust.confidence = 'low';
+            pipelineResult.trust.summary = 'Verification did not complete, so the result has been withheld.';
+        }
     }
 
     return pipelineResult;
