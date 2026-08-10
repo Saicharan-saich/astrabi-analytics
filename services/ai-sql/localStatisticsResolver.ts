@@ -85,7 +85,10 @@ function q(col: string): string {
 
 async function safeQuery(sql: string): Promise<any[]> {
     try {
-        return await executeSQLViaDuckDB(sql);
+        // Pass empty rows — data is already loaded in DuckDB from the pipeline.
+        // executeSQLViaDuckDB will skip re-loading if the table already exists.
+        const result = await executeSQLViaDuckDB([], sql);
+        return result.data || [];
     } catch (err) {
         console.warn('[LocalStats] Query failed:', sql, err);
         return [];

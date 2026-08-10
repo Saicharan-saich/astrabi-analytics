@@ -244,7 +244,7 @@ export function validateAnswerContract(
     {
         // If the plan has a threshold filter, check results satisfy it
         const thresholdFilters = (plan.filters || []).filter(f =>
-            ['gt', 'gte', 'lt', 'lte'].includes(f.op)
+            ['>', '>=', '<', '<='].includes(f.op)
         );
 
         if (thresholdFilters.length > 0 && results.length > 0) {
@@ -257,10 +257,10 @@ export function validateAnswerContract(
                     const threshold = Number(filter.value);
                     if (isNaN(numVal) || isNaN(threshold)) continue;
 
-                    if (filter.op === 'gt' && numVal <= threshold) violations++;
-                    if (filter.op === 'gte' && numVal < threshold) violations++;
-                    if (filter.op === 'lt' && numVal >= threshold) violations++;
-                    if (filter.op === 'lte' && numVal > threshold) violations++;
+                    if (filter.op === '>' && numVal <= threshold) violations++;
+                    if (filter.op === '>=' && numVal < threshold) violations++;
+                    if (filter.op === '<' && numVal >= threshold) violations++;
+                    if (filter.op === '<=' && numVal > threshold) violations++;
                 }
             }
 
