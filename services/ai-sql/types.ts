@@ -483,12 +483,23 @@ export interface AISQLPipelineResult {
     /** Answer contract validation result */
     contractValidation?: {
         passed: boolean;
+        /** True when the contract was used as a display gate, not telemetry only. */
+        enforced?: boolean;
         summary: string;
         checks: Array<{
             name: string;
             status: 'pass' | 'fail' | 'warn' | 'skip';
             message: string;
         }>;
+    };
+    /**
+     * Final fail-closed decision for result presentation. Consumers must not
+     * navigate to the visual answer while allowed is false.
+     */
+    displaySafety?: {
+        allowed: boolean;
+        reasons: string[];
+        recoverySuggestions: string[];
     };
 }
 

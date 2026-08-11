@@ -71,8 +71,45 @@ export interface DatasetStatistics {
 const statsCache = new Map<string, DatasetStatistics>();
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-function getCacheKey(datasetName: string): string {
-    return `stats_${datasetName}`;
+/**
+ * Build a cache identity from the logical dataset and semantic revision.
+ *
+ * The DuckDB table is deliberately named "data" for every upload, so using the
+ * table name alone can leak statistics from the previously opened dataset for
+ * the lifetime of the cache.  The fingerprint keeps cached evidence isolated
+ * without storing row values or PII.
+ */
+function getCacheKey(datasetName: string, semanticModel: SemanticModel): string {
+    const fieldRevision = [...semanticModel.fields]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map(field => [
+            field.name,
+            field.physicalType,
+            field.semanticType,
+            field.role,
+            field.distinctCount,
+            field.hasNulls ? 1 : 0,
+        ].join(':'))
+        .join('|');
+
+    const identity = [
+        datasetName,
+        semanticModel.datasetName,
+        semanticModel.rowCount,
+        semanticModel.timeContext?.minDate || '',
+        semanticModel.timeContext?.maxDate || '',
+        semanticModel.timeContext?.anchorDate || '',
+        fieldRevision,
+    ].join('::');
+
+    // Small deterministic FNV-1a style hash. This is an identity hash, not a
+    // security primitive; no raw dataset values are included.
+    let hash = 2166136261;
+    for (let i = 0; i < identity.length; i++) {
+        hash ^= identity.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return `stats_${(hash >>> 0).toString(16)}`;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -128,7 +165,7 @@ export async function resolveLocalStatistics(
     semanticModel: SemanticModel
 ): Promise<DatasetStatistics> {
     // Check cache
-    const cacheKey = getCacheKey(datasetName);
+    const cacheKey = getCacheKey(datasetName, semanticModel);
     const cached = statsCache.get(cacheKey);
     if (cached && (Date.now() - cached.computedAt) < CACHE_TTL_MS) {
         console.log('[LocalStats] Returning cached statistics');
@@ -339,7 +376,13 @@ export async function matchCategoryValue(
     };
 }
 
-/** Clear the statistics cache */
+/**
+ * Clear all cached statistics.
+ *
+ * Upload replacement, ETL/schema changes and semantic overrides may call this
+ * proactively. Correctness does not depend on that call because the cache key
+ * also includes the semantic dataset revision.
+ */
 export function clearStatsCache(): void {
     statsCache.clear();
 }

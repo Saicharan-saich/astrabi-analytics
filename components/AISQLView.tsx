@@ -180,6 +180,20 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Query timed out after 60 seconds. Please try again.')), timeoutMs))
             ]);
 
+            // Fail closed: a query that executed but failed its answer contract
+            // must not navigate to the visual result as though it were verified.
+            if (result.displaySafety?.allowed === false) {
+                const reasons = result.displaySafety.reasons.length > 0
+                    ? ` ${result.displaySafety.reasons.join(' ')}`
+                    : '';
+                const recovery = result.displaySafety.recoverySuggestions.length > 0
+                    ? ` Try: ${result.displaySafety.recoverySuggestions.join(' ')}`
+                    : ' Please retry or review the SQL before using this answer.';
+                setError(`The calculation was withheld because verification failed.${reasons}${recovery}`);
+                setNoDataSQL(result.sql || null);
+                return;
+            }
+
             // Empty-result handling — show banner, don't navigate
             if (result.rawData.length === 0 && result.explanation) {
                 setNoDataMsg(result.explanation);

@@ -343,7 +343,7 @@ function applyTimeSPLN(
     };
     // Filter dim_date to only cover the comparison period to avoid generating 1464 empty buckets
     const compDimDate = dimDate?.filter(dd => {
-        const d = dd.date || dd.full_date || '';
+        const d = dd.date_key || '';
         return d >= prevStart && d <= prevEnd;
     });
     const compResult = executeQueryPlan(compPlan, prevRows, compDimDate);

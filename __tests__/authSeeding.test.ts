@@ -13,7 +13,7 @@ import { join } from 'path';
  * Strip comments so prose about the fix cannot satisfy or trip a check.
  *
  * Block comments are matched only at the start of a line. server.js contains
- * the literal `postgresql://***:***@` in a redaction helper, and an unanchored
+ * a PostgreSQL URL with redacted credentials in a helper, and an unanchored
  * /\*…\*\/ treats that as a comment opener and eats the next 16k characters —
  * including the code these tests exist to check.
  */

@@ -18,7 +18,14 @@
  *   - Falls through silently when conditions aren't met (no-op)
  */
 
-import type { SourceSchema, QueryConfig } from '../types';
+import type { SourceSchema } from '../types';
+
+export interface PrunableQueryConfig {
+    metric: string;
+    dimension?: string;
+    secondaryMetrics?: string[];
+    secondaryDimensions?: string[];
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // COLUMN → TABLE MAPPING
@@ -122,7 +129,7 @@ export interface PruneResult {
  */
 export function pruneRowsForQuery(
     rows: Record<string, any>[],
-    query: QueryConfig,
+    query: PrunableQueryConfig,
     sourceSchema: SourceSchema | undefined
 ): PruneResult {
     // ── Guard: No sourceSchema → no pruning possible ──

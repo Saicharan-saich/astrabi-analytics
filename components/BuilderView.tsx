@@ -796,7 +796,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                     const shouldUseGrid = !!splitCol && (
                                         forceGridMode === 'grid' ||
                                         (forceGridMode === 'auto' && seriesCount > 4 && seriesCount <= IDEAL_MAX_FACETS)
-                                    ) && forceGridMode !== 'combined';
+                                    );
 
                                     if (shouldUseGrid && splitCol) {
                                         return (

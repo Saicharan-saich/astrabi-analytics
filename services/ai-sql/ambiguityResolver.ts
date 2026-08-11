@@ -15,7 +15,7 @@ import { DetectedAmbiguity, AmbiguityCandidate, AmbiguityDetectionResult } from 
 import { DatasetStatistics, computeThreshold } from './localStatisticsResolver';
 import { getPolicyRegistry } from './semanticPolicyRegistry';
 import { getMetricDictionary } from './metricDictionary';
-import { SemanticModel } from './types';
+import { AnalysisPlan, SemanticField, SemanticModel } from './types';
 
 // ═══════════════════════════════════════════════════════════════════
 // TYPES
@@ -77,7 +77,9 @@ export async function resolveAmbiguities(
     detection: AmbiguityDetectionResult,
     semanticModel: SemanticModel,
     stats: DatasetStatistics,
-    domain?: string
+    domain?: string,
+    question: string = '',
+    plan?: AnalysisPlan
 ): Promise<AmbiguityResolutionResult> {
     const resolved: ResolvedAmbiguity[] = [];
     const unresolved: DetectedAmbiguity[] = [];
@@ -91,7 +93,15 @@ export async function resolveAmbiguities(
 
         // ─── Priority 1: Local Statistics ────────────────────────
         if (ambiguity.type === 'threshold' && stats) {
-            const metricField = semanticModel.fields.find(f => f.role === 'metric');
+            // Bind each threshold phrase to the metric it qualifies. Choosing the
+            // first semantic metric made multi-metric requests such as "high
+            // sales but low profit" apply both thresholds to sales.
+            const metricField = resolveMetricForAmbiguity(
+                ambiguity,
+                question,
+                semanticModel,
+                plan?.metrics.map(metric => metric.field) || []
+            );
             if (metricField && stats.metrics[metricField.name]) {
                 const metricStats = stats.metrics[metricField.name];
 
@@ -103,8 +113,10 @@ export async function resolveAmbiguities(
                         label: `Above average (${formatNumber(metricStats.mean)})`,
                         description: `Values above the dataset average of ${formatNumber(metricStats.mean)}`,
                         confidence: 0.88,
+                        field: metricField.name,
+                        value: metricStats.mean,
                     };
-                    reason = `Resolved using dataset statistics: mean = ${formatNumber(metricStats.mean)}, median = ${formatNumber(metricStats.median)}`;
+                    reason = `Resolved ${metricField.displayLabel || metricField.name} using dataset statistics: mean = ${formatNumber(metricStats.mean)}, median = ${formatNumber(metricStats.median)}`;
                 }
 
                 // Resolve "low" → below average using actual data
@@ -115,8 +127,10 @@ export async function resolveAmbiguities(
                         label: `Below average (${formatNumber(metricStats.mean)})`,
                         description: `Values below the dataset average of ${formatNumber(metricStats.mean)}`,
                         confidence: 0.88,
+                        field: metricField.name,
+                        value: metricStats.mean,
                     };
-                    reason = `Resolved using dataset statistics: mean = ${formatNumber(metricStats.mean)}`;
+                    reason = `Resolved ${metricField.displayLabel || metricField.name} using dataset statistics: mean = ${formatNumber(metricStats.mean)}`;
                 }
 
                 // Resolve "unusual/outlier" → 2σ using actual data
@@ -128,8 +142,10 @@ export async function resolveAmbiguities(
                         label: `Outlier (> ${formatNumber(threshold2sigma)})`,
                         description: `Values more than 2 standard deviations from the mean`,
                         confidence: 0.82,
+                        field: metricField.name,
+                        value: threshold2sigma,
                     };
-                    reason = `Resolved using 2σ: mean=${formatNumber(metricStats.mean)}, σ=${formatNumber(metricStats.stddev)}`;
+                    reason = `Resolved ${metricField.displayLabel || metricField.name} using 2σ: mean=${formatNumber(metricStats.mean)}, σ=${formatNumber(metricStats.stddev)}`;
                 }
             }
         }
@@ -199,8 +215,126 @@ export async function resolveAmbiguities(
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// AUTHORITATIVE PLAN APPLICATION
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Apply evidence-backed resolutions to the executable plan before SQL is
+ * generated. Only transformations with deterministic semantics are applied;
+ * interpretive alternatives still go through the materiality gate.
+ */
+export function applyResolvedAmbiguitiesToPlan(
+    plan: AnalysisPlan,
+    resolution: AmbiguityResolutionResult
+): AnalysisPlan {
+    const nextPlan: AnalysisPlan = {
+        ...plan,
+        metrics: plan.metrics.map(metric => ({ ...metric })),
+        dimensions: plan.dimensions.map(dimension => ({ ...dimension })),
+        filters: plan.filters.map(filter => ({ ...filter })),
+        sort: plan.sort.map(sort => ({ ...sort })),
+    };
+
+    for (const ambiguity of resolution.resolved) {
+        if (
+            ambiguity.type !== 'threshold' ||
+            ambiguity.needsUserConfirmation ||
+            ambiguity.computedThreshold === undefined ||
+            !ambiguity.resolution.field
+        ) continue;
+
+        const field = ambiguity.resolution.field;
+        const isUpper = /high|strong|good|above|outlier|unusual|anomal|spike/i.test(ambiguity.phrase);
+        const isLower = /low|weak|poor|below|under|negative/i.test(ambiguity.phrase);
+        if (!isUpper && !isLower) continue;
+
+        const op: '>' | '<' = isUpper ? '>' : '<';
+        const relativeIndex = nextPlan.filters.findIndex(filter =>
+            filter.field.toLowerCase() === field.toLowerCase() &&
+            (filter.op === 'above_avg' || filter.op === 'below_avg')
+        );
+        const alreadyApplied = nextPlan.filters.some(filter =>
+            filter.field.toLowerCase() === field.toLowerCase() &&
+            filter.op === op &&
+            Number(filter.value) === ambiguity.computedThreshold
+        );
+        if (alreadyApplied) continue;
+
+        const evidenceFilter = {
+            field,
+            op,
+            value: ambiguity.computedThreshold,
+            isHaving: nextPlan.dimensions.length > 0,
+            includeNonPositive: isLower && /negative|non[- ]?positive/i.test(plan.originalQuestion),
+        } as const;
+
+        if (relativeIndex >= 0) nextPlan.filters[relativeIndex] = evidenceFilter;
+        else nextPlan.filters.push(evidenceFilter);
+    }
+
+    if (!resolution.needsUserInput) {
+        nextPlan.ambiguous = false;
+        nextPlan.clarificationQuestion = undefined;
+    }
+    return nextPlan;
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // HELPERS
 // ═══════════════════════════════════════════════════════════════════
+
+function resolveMetricForAmbiguity(
+    ambiguity: DetectedAmbiguity,
+    question: string,
+    semanticModel: SemanticModel,
+    preferredMetricNames: string[]
+): SemanticField | undefined {
+    const metrics = semanticModel.fields.filter(field =>
+        field.role === 'metric' && field.physicalType === 'number'
+    );
+    if (metrics.length === 0) return undefined;
+
+    const explicitCandidateField = ambiguity.candidates
+        .map(candidate => candidate.field)
+        .find((field): field is string => Boolean(field));
+    if (explicitCandidateField) {
+        const explicit = metrics.find(field => field.name === explicitCandidateField);
+        if (explicit) return explicit;
+    }
+
+    const lowerQuestion = question.toLowerCase();
+    const phraseIndex = Math.max(0, lowerQuestion.indexOf(ambiguity.phrase.toLowerCase()));
+    const preferred = new Set(preferredMetricNames.map(name => name.toLowerCase()));
+
+    const scored = metrics.map(field => {
+        const terms = [field.name, field.displayLabel, ...field.synonyms]
+            .filter(Boolean)
+            .map(term => String(term).toLowerCase());
+        let score = preferred.has(field.name.toLowerCase()) ? 20 : 0;
+
+        for (const term of terms) {
+            const positions: number[] = [];
+            let from = 0;
+            while (from < lowerQuestion.length) {
+                const position = lowerQuestion.indexOf(term, from);
+                if (position < 0) break;
+                positions.push(position);
+                from = position + Math.max(1, term.length);
+            }
+            for (const position of positions) {
+                const distance = Math.abs(position - phraseIndex);
+                score = Math.max(score, 100 - Math.min(80, distance));
+            }
+        }
+        return { field, score };
+    }).sort((a, b) => b.score - a.score);
+
+    // If the question names no metric, retain the governed plan's primary
+    // metric, then the semantic model's default. Do not invent a new field.
+    return scored[0].score > 20
+        ? scored[0].field
+        : metrics.find(field => preferred.has(field.name.toLowerCase())) || metrics[0];
+}
 
 function formatNumber(n: number): string {
     if (Math.abs(n) >= 1000000) return `${(n / 1000000).toFixed(1)}M`;

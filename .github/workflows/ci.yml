@@ -33,6 +33,8 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
+      - name: TypeScript check
+        run: npm run typecheck
       - name: Build
         run: npm run build
       - name: Unit tests

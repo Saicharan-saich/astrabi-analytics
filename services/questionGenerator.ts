@@ -249,9 +249,8 @@ function generateFallbackQuestions(dataset: Dataset): SmartQuestion[] {
         // Semantic role is identifier
         const sem = semantics[col.name];
         if (sem?.role === 'ID' || sem?.semanticRole === 'identifier' || sem?.semanticRole === 'primary_key' || sem?.semanticRole === 'foreign_key') return true;
-        // Semantic model marks it
-        const smMeasure = model?.measures?.find(m => m.column === col.name);
-        if (smMeasure?.semanticRole === 'identifier') return true;
+        // The semantic model's measure list contains metrics only; identifier
+        // evidence comes from the canonical column type/profile above.
         // Name-based heuristic
         const name = col.name.toLowerCase();
         if (ID_PATTERNS.test(name)) return true;

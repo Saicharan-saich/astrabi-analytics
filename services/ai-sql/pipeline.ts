@@ -45,7 +45,7 @@ import { buildValueCatalog, groundFilters, groundSqlLiterals } from './valueGrou
 import { verifyPlan } from './planVerification';
 // ─── Ambiguity Intelligence Layer ────────────────────────────────
 import { detectAmbiguities } from './ambiguityDetector';
-import { resolveAmbiguities } from './ambiguityResolver';
+import { applyResolvedAmbiguitiesToPlan, resolveAmbiguities } from './ambiguityResolver';
 import { resolveLocalStatistics } from './localStatisticsResolver';
 import { generateCandidatePlans } from './candidatePlanGenerator';
 import { rankPlans } from './planRanker';
@@ -320,6 +320,99 @@ export async function runAISQLPipeline(
             : `${_verification.issues.length} faithfulness issue(s): ${_verification.issues.map(i => i.code).join(', ')}`,
         details: { ok: _verification.ok, issues: _verification.issues },
     }, performance.now());
+
+    // ─── Step 2c: Pre-Execution Ambiguity Gate ───────────────────
+    // Ambiguity evidence must influence the executable plan. The previous
+    // post-execution pass could disclose assumptions, but it was too late to
+    // prevent the wrong SQL from running.
+    let preExecutionAmbiguity: {
+        detection: ReturnType<typeof detectAmbiguities>;
+        resolution: Awaited<ReturnType<typeof resolveAmbiguities>>;
+        ranking: ReturnType<typeof rankPlans>;
+        assumptions: ReturnType<typeof buildAssumptions>;
+        localStats: Awaited<ReturnType<typeof resolveLocalStatistics>>;
+    } | null = null;
+
+    try {
+        const domainName = dataset.domainProfile?.domain || undefined;
+        const detection = detectAmbiguities(question, semanticModel, domainName);
+
+        if (detection.totalCount > 0) {
+            const datasetIdentity = dataset.id || dataset.name || semanticModel.datasetName || 'data';
+            const localStats = await resolveLocalStatistics(datasetIdentity, semanticModel);
+            const resolution = await resolveAmbiguities(
+                detection,
+                semanticModel,
+                localStats,
+                domainName,
+                question,
+                plan
+            );
+            const candidates = generateCandidatePlans(
+                question,
+                semanticModel,
+                resolution.resolved,
+                localStats
+            );
+            const ranking = rankPlans(candidates, question, semanticModel, localStats, domainName);
+            const selectedPlan = ranking.rankedPlans.find(candidate => candidate.isRecommended)
+                || ranking.rankedPlans[0];
+            const assumptions = buildAssumptions(question, resolution.resolved, selectedPlan);
+
+            preExecutionAmbiguity = {
+                detection,
+                resolution,
+                ranking,
+                assumptions,
+                localStats,
+            };
+
+            if (resolution.needsUserInput && ranking.recommendation === 'ask_user') {
+                const material = resolution.unresolved[0]
+                    || resolution.resolved.find(item => item.needsUserConfirmation);
+                const options = material?.candidates
+                    .slice(0, 3)
+                    .map(candidate => candidate.label)
+                    .join(', ');
+                plan.ambiguous = true;
+                plan.clarificationQuestion = material
+                    ? `To answer accurately, what should "${material.phrase}" mean${options ? ` — ${options}?` : '?'}`
+                    : plan.clarificationQuestion || 'Please clarify the intended interpretation.';
+                console.log('[Pipeline] Material ambiguity requires user confirmation before SQL execution');
+            } else {
+                plan = applyResolvedAmbiguitiesToPlan(plan, resolution);
+                // Validate the plan that will actually be compiled, not the
+                // pre-resolution draft.
+                _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
+                console.log(`[Pipeline] Applied ${resolution.autoResolvedCount} evidence-backed ambiguity resolution(s) before SQL generation`);
+            }
+
+            traceStep({
+                stepNumber: 4,
+                name: 'Pre-Execution Ambiguity Gate',
+                engine: 'ambiguityResolver',
+                icon: '🔍',
+                status: plan.ambiguous ? 'warn' : 'pass',
+                summary: plan.ambiguous
+                    ? 'A material interpretation needs confirmation before execution'
+                    : `${resolution.autoResolvedCount} ambiguity assumption(s) applied to the executable plan`,
+                details: {
+                    ambiguities: detection.ambiguities.map(item => ({
+                        type: item.type,
+                        phrase: item.phrase,
+                        materiality: item.materiality,
+                    })),
+                    recommendation: ranking.recommendation,
+                    confidenceGap: ranking.confidenceGap,
+                    appliedFilters: plan.filters,
+                },
+            }, performance.now());
+        }
+    } catch (ambiguityError: any) {
+        // Preserve the existing governed planner as a compatibility fallback,
+        // but never claim that ambiguity evidence was applied.
+        console.warn('[Pipeline] Pre-execution ambiguity gate unavailable:', ambiguityError?.message);
+    }
 
     // ─── Step 2c: APDME — Derived Metrics & Guardrails ─────────────
     reportProgress('Analyzing derived metrics...', 3);
@@ -1326,61 +1419,27 @@ export async function runAISQLPipeline(
     pipelineResult.trust = trust;
     console.log(`[Pipeline] Trust: ${trust.status} (${trust.checks.filter(c => c.status === 'pass').length}/${trust.checks.length} checks passed)`);
 
-    // ── Step 11: Ambiguity Intelligence Layer ─────────────────────
-    try {
-        const ambiguityStart = performance.now();
-
-        // 1. Detect ambiguities in the original question
-        const domainName = dataset.domainProfile?.name || undefined;
-        const detection = detectAmbiguities(question, semanticModel, domainName);
-
-        if (detection.totalCount > 0) {
-            // 2. Resolve local statistics for evidence
-            const localStats = await resolveLocalStatistics('data', semanticModel);
-
-            // 3. Resolve ambiguities using priority chain
-            const resolution = await resolveAmbiguities(detection, semanticModel, localStats, domainName);
-
-            // 4. Generate & rank candidate plans
-            const candidates = generateCandidatePlans(question, semanticModel, resolution.resolved, localStats);
-            const ranking = rankPlans(candidates, question, semanticModel, localStats, domainName);
-
-            // 5. Build assumption set for UI disclosure
-            const selectedPlan = ranking.rankedPlans.find(p => p.isRecommended) || ranking.rankedPlans[0];
-            const assumptions = buildAssumptions(question, resolution.resolved, selectedPlan);
-
-            // 6. Attach to pipeline result
-            pipelineResult.assumptions = {
-                questionId: assumptions.questionId,
-                summary: assumptions.summary,
-                items: assumptions.assumptions.map(a => ({
-                    id: a.id,
-                    type: a.type,
-                    phrase: a.phrase,
-                    interpretation: a.interpretation,
-                    alternatives: a.alternatives,
-                    confidence: a.confidence,
-                    autoResolved: a.autoResolved,
-                    computedValue: a.computedValue,
-                })),
-                overallConfidence: assumptions.overallConfidence,
-            };
-
-            traceStep({
-                stepNumber: 12, name: 'Ambiguity Intelligence', engine: 'ambiguityResolver', icon: '🔍',
-                status: detection.hasHighMateriality ? 'warn' : 'pass',
-                summary: `${detection.totalCount} ambiguity(ies) detected, ${resolution.autoResolvedCount} auto-resolved. ${assumptions.summary}`,
-                details: {
-                    ambiguities: detection.ambiguities.map(a => ({ type: a.type, phrase: a.phrase })),
-                    recommendation: ranking.recommendation,
-                    confidenceGap: ranking.confidenceGap,
-                },
-            }, ambiguityStart);
-
-            console.log(`[Pipeline] Ambiguity: ${detection.totalCount} detected, ${resolution.autoResolvedCount} auto-resolved (${Math.round(performance.now() - ambiguityStart)}ms)`);
-        }
-    } catch (ambErr: any) {
-        console.warn('[Pipeline] Ambiguity layer skipped:', ambErr?.message);
+    // ── Step 11: Ambiguity Disclosure ─────────────────────────────
+    // Reuse the exact evidence and ranking that influenced the executable plan.
+    // Recomputing here used to create a second, potentially contradictory
+    // interpretation after the query had already run.
+    if (preExecutionAmbiguity) {
+        const { assumptions } = preExecutionAmbiguity;
+        pipelineResult.assumptions = {
+            questionId: assumptions.questionId,
+            summary: assumptions.summary,
+            items: assumptions.assumptions.map(assumption => ({
+                id: assumption.id,
+                type: assumption.type,
+                phrase: assumption.phrase,
+                interpretation: assumption.interpretation,
+                alternatives: assumption.alternatives,
+                confidence: assumption.confidence,
+                autoResolved: assumption.autoResolved,
+                computedValue: assumption.computedValue,
+            })),
+            overallConfidence: assumptions.overallConfidence,
+        };
     }
 
     // ── Step 12: Answer Contract Validation ───────────────────────
@@ -1393,7 +1452,7 @@ export async function runAISQLPipeline(
             plan,
             currentSQL,
             reshaped.data,
-            reshaped.chart?.type || 'bar',
+            reshaped.chart?.chartType || 'bar',
             reshaped.chart?.xKey || '',
             reshaped.chart?.yKey || '',
             semanticModel,
@@ -1402,6 +1461,7 @@ export async function runAISQLPipeline(
 
         pipelineResult.contractValidation = {
             passed: contractResult.passed,
+            enforced: true,
             summary: contractResult.summary,
             checks: contractResult.checks.map(c => ({
                 name: c.name,
@@ -1409,6 +1469,29 @@ export async function runAISQLPipeline(
                 message: c.message,
             })),
         };
+
+        const blockingChecks = contractResult.checks.filter(check => check.status === 'fail');
+        pipelineResult.displaySafety = {
+            allowed: contractResult.passed,
+            reasons: blockingChecks.map(check => check.message),
+            recoverySuggestions: contractResult.repairSuggestions,
+        };
+
+        if (!contractResult.passed) {
+            // A result that violates its answer contract must never be presented
+            // as verified merely because DuckDB executed the SQL successfully.
+            pipelineResult.confidence.score = Math.min(pipelineResult.confidence.score, 39);
+            pipelineResult.confidence.level = 'low';
+            pipelineResult.confidence.reasons.push(
+                ...blockingChecks.map(check => `Answer contract failed: ${check.message}`)
+            );
+            if (pipelineResult.trust) {
+                pipelineResult.trust.status = 'validation_issue';
+                pipelineResult.trust.confidence = 'low';
+                pipelineResult.trust.summary = 'The calculation ran, but the answer failed verification and has been withheld.';
+            }
+            pipelineResult.explanation = 'This answer was withheld because it could not be verified against the requested metrics, filters, grain, or visual fields.';
+        }
 
         traceStep({
             stepNumber: 13, name: 'Contract Validation', engine: 'answerContractValidator', icon: '✅',
@@ -1424,7 +1507,20 @@ export async function runAISQLPipeline(
 
         console.log(`[Pipeline] Contract: ${contractResult.summary} (${Math.round(performance.now() - contractStart)}ms)`);
     } catch (cvErr: any) {
-        console.warn('[Pipeline] Contract validation skipped:', cvErr?.message);
+        console.warn('[Pipeline] Contract validation failed closed:', cvErr?.message);
+        pipelineResult.displaySafety = {
+            allowed: false,
+            reasons: ['The answer contract validator was unavailable.'],
+            recoverySuggestions: ['Retry the question or review the generated SQL before using the result.'],
+        };
+        pipelineResult.confidence.score = Math.min(pipelineResult.confidence.score, 39);
+        pipelineResult.confidence.level = 'low';
+        pipelineResult.explanation = 'This answer was withheld because its verification step did not complete.';
+        if (pipelineResult.trust) {
+            pipelineResult.trust.status = 'validation_issue';
+            pipelineResult.trust.confidence = 'low';
+            pipelineResult.trust.summary = 'Verification did not complete, so the result has been withheld.';
+        }
     }
 
     return pipelineResult;
