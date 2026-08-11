@@ -167,7 +167,7 @@ export async function evaluateAlertRule(
         let activeRows = dataset.rows;
         const pruneResult = pruneRowsForQuery(
             dataset.rows,
-            { metric: rule.metric, aggregation: effectiveAggregation },
+            { metric: rule.metric, aggregation: effectiveAggregation as AggregationType },
             dataset.sourceSchema
         );
         if (pruneResult.pruned) {
