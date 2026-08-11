@@ -35,6 +35,8 @@ interface DimensionFilter {
     type: 'dimension';
     column: string;
     value: string | string[]; // Support both single and multi-select
+    /** Internal marker for the inline dimension-value picker. */
+    _autoDim?: boolean;
 }
 
 interface MeasureFilter {
@@ -789,7 +791,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     {/* Dimension Value Picker — appears when dimension is selected */}
                     {dimension && (() => {
                         // Find or create the auto-filter for this dimension
-                        const autoFilter = filters.find(f => f.type === 'dimension' && f.column === dimension && f._autoDim);
+                        const autoFilter = filters.find(
+                            (f): f is DimensionFilter =>
+                                f.type === 'dimension' && f.column === dimension && Boolean(f._autoDim)
+                        );
                         const selectedValues: string[] = autoFilter ? (Array.isArray(autoFilter.value) ? autoFilter.value : []) : [];
                         const allValues = getColumnValues(dimension);
                         const isFiltered = selectedValues.length > 0 && selectedValues.length < allValues.length;
