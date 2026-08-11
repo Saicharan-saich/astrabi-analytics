@@ -907,8 +907,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 ? generateColors(values).map((c: string) => darkenColor(c, 12))
                 : borderColor,
             borderWidth: isLineVariant ? 2.5 : isBarVariant ? 1 : 2,
-            fill: isFillChart || (isLineVariant && chartType === 'area'),
-            tension: isCurved ? 0.45 : isStepped ? 0 : (chartType === 'line' || chartType === 'area' ? 0.4 : 0),
+            fill: isFillChart,
+            tension: isCurved ? 0.45 : isStepped ? 0 : (chartType === 'line' ? 0.4 : 0),
             stepped: isStepped ? 'middle' as const : false,
             pointRadius: isLineVariant ? 5 : 0,
             pointHoverRadius: isLineVariant ? 8 : 0,
@@ -924,7 +924,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             hoverBorderWidth: isBarVariant ? 2 : undefined,
             yAxisID: 'y',
             // Mixed Chart component (combo, lollipop) requires explicit type on each dataset
-            ...(chartType === 'combo' || chartType === 'lollipop' ? { type: 'bar' as const } : {}),
+            ...(chartType === 'combo' ? { type: 'bar' as const } : {}),
         }];
 
         // When trend comparison is detected from data, override primary dataset for line rendering
@@ -1067,7 +1067,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // Table calc keys have specific prefixes (running_total_, pct_of_total_, etc.) or are exact matches
         const isTableCalcKey = (k: string) => /running_total|cumulative|percent_of_total|pct_of_total|rank|percentile|moving_avg|pct_diff|diff_from_prev/i.test(k);
         // Skip secondary metric detection for pie/doughnut charts — they only use one metric
-        const skipSecondary = chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea' || chartType === 'radar' || chartType === 'gauge';
+        // Arc/gauge charts return before this Cartesian dataset path.
+        const skipSecondary = false;
         // Only overlay secondary metrics that were EXPLICITLY requested via
         // config.secondaryMetrics. Previously this scavenged ANY stray numeric
         // column in the result rows, which spawned phantom lines + an ugly dual
