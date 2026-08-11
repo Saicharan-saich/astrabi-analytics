@@ -69,17 +69,19 @@ export function validateDerivedColumn(
     const idTypes = [ColumnType.ID];
     const idRoles = ['identifier', 'id', 'primary_key', 'foreign_key'];
 
-    if (idTypes.includes(colA.type as any) || idRoles.includes(String(colA.semanticRole || '').toLowerCase())) {
+    const colASemanticRole = dataset.domainProfile?.columnSemantics?.[colA.name]?.semanticRole;
+    const colBSemanticRole = dataset.domainProfile?.columnSemantics?.[colB.name]?.semanticRole;
+
+    if (idTypes.includes(colA.type as any) || idRoles.includes(String(colASemanticRole || '').toLowerCase())) {
         errors.push(`"${colA.name}" is an identifier — math on IDs is semantically invalid`);
     }
-    if (idTypes.includes(colB.type as any) || idRoles.includes(String(colB.semanticRole || '').toLowerCase())) {
+    if (idTypes.includes(colB.type as any) || idRoles.includes(String(colBSemanticRole || '').toLowerCase())) {
         errors.push(`"${colB.name}" is an identifier — math on IDs is semantically invalid`);
     }
 
     // ── Rule 2: Reject non-numeric columns ──
-    const nonNumericTypes = [ColumnType.DIMENSION, ColumnType.DATE, ColumnType.TEXT];
     const isNumericCol = (col: any) => {
-        if ([ColumnType.MEASURE, ColumnType.METRIC].includes(col.type)) return true;
+        if (col.type === ColumnType.METRIC) return true;
         // Check sample data for numeric content
         const samples = (dataset.rows || []).slice(0, 10).map(r => r[col.name]).filter(v => v != null);
         return samples.length > 0 && samples.every(v => !isNaN(Number(String(v).replace(/[$,]/g, ''))));
