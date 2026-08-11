@@ -12,6 +12,16 @@ import { autoJoinDatasets } from './analysisEngine';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.quickinsight.co.uk';
 
+function authenticatedHeaders(): Record<string, string> {
+  const token = localStorage.getItem('qi_token') || '';
+  const apiKey = import.meta.env.VITE_API_KEY || '';
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(apiKey ? { 'x-api-key': apiKey } : {}),
+  };
+}
+
 /**
  * Refresh a live dataset by re-fetching all source tables from the database
  * and re-joining them using the original join strategy.
@@ -27,10 +37,7 @@ export async function refreshLiveDataset(
 
   const response = await fetch(`${API_BASE_URL}/api/refresh-data`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': import.meta.env.VITE_API_KEY || '',
-    },
+    headers: authenticatedHeaders(),
     body: JSON.stringify({ connectionId, tables }),
   });
 
@@ -60,18 +67,14 @@ export async function refreshLiveDataset(
  */
 export async function checkLiveConnection(connectionId: string): Promise<boolean> {
   try {
-    // Use a lightweight query to test the connection
-    const response = await fetch(`${API_BASE_URL}/api/refresh-data`, {
+    const response = await fetch(`${API_BASE_URL}/api/check-connection`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': import.meta.env.VITE_API_KEY || '',
-      },
-      body: JSON.stringify({ connectionId, tables: [], dbType: 'mssql' }),
+      headers: authenticatedHeaders(),
+      body: JSON.stringify({ connectionId }),
     });
+    if (!response.ok) return false;
     const data = await response.json();
-    // If connection is invalid, the backend returns 400
-    return response.ok || data.success;
+    return data.active === true;
   } catch {
     return false;
   }

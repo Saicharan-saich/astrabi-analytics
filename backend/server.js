@@ -12,6 +12,13 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const fs = require('fs');
 const path = require('path');
+const {
+    allowedLlmModels,
+    assertSafeDatabaseHost,
+    createConnectionId,
+    validateLlmRequest,
+    validatePort,
+} = require('./security');
 
 // JWT_SECRET must come from the environment in production. A hard-coded fallback
 // would be published the moment this repository goes public, and anyone holding it
@@ -502,10 +509,64 @@ app.post('/api/auth/logout-all-devices', async (req, res) => {
 // Value: { type: 'mssql'|'raw'|'pg', pool: ConnectionPool|PgPool, rawConn: Connection, config: Object }
 const connections = new Map();
 
-// ── Connection Health Check ──────────────────────────────────────
-app.post('/api/check-connection', (req, res) => {
-    const { connectionId } = req.body;
+async function resolveCurrentUser(req) {
+    const tokenUser = extractUser(req);
+    if (!tokenUser || !authPool || tokenUser.sv === undefined) return null;
+    try {
+        const { rows } = await authPool.query(
+            'SELECT id, email, name, role, is_active, session_version FROM users WHERE id = $1',
+            [tokenUser.userId]
+        );
+        const dbUser = rows[0];
+        if (!dbUser || dbUser.is_active === false) return null;
+        if (Number(dbUser.session_version) !== Number(tokenUser.sv)) return null;
+        return {
+            ...tokenUser,
+            userId: dbUser.id,
+            email: dbUser.email,
+            name: dbUser.name,
+            role: dbUser.role,
+        };
+    } catch (error) {
+        console.error('[Auth] Failed to resolve current user:', error.message);
+        return null;
+    }
+}
+
+async function requireAuthenticatedUser(req, res, next) {
+    if (!authPool) {
+        return res.status(503).json({ success: false, error: 'Authentication service is temporarily unavailable' });
+    }
+    const user = await resolveCurrentUser(req);
+    if (!user) {
+        return res.status(401).json({ success: false, error: 'Authentication required or session expired' });
+    }
+    req.authUser = user;
+    next();
+}
+
+function getOwnedConnection(req, connectionId) {
     const connection = connections.get(connectionId);
+    if (!connection || !req.authUser || connection.ownerUserId !== req.authUser.userId) return null;
+    connection.lastUsedAt = Date.now();
+    return connection;
+}
+
+function safeConnectionConfig(body, defaultPort) {
+    return {
+        host: String(body.host || ''),
+        port: validatePort(body.port, defaultPort),
+        database: String(body.database || ''),
+        username: String(body.username || ''),
+        ssl: Boolean(body.ssl),
+        useWindowsAuth: Boolean(body.useWindowsAuth),
+    };
+}
+
+// ── Connection Health Check ──────────────────────────────────────
+app.post('/api/check-connection', requireAuthenticatedUser, (req, res) => {
+    const { connectionId } = req.body;
+    const connection = getOwnedConnection(req, connectionId);
     res.json({ active: !!connection });
 });
 
@@ -575,15 +636,22 @@ function queryConnection(connection, query) {
 }
 
 // Test connection endpoint
-app.post('/api/connect', async (req, res) => {
+app.post('/api/connect', requireAuthenticatedUser, async (req, res) => {
     try {
         const { host, port, database, username, password, useWindowsAuth } = req.body;
 
         // Ensure database name is present (default to master if not provided, though risky)
         const dbName = database || 'master';
 
-        let connectionId = Date.now().toString();
-        let connectionEntry = { config: req.body };
+        const allowPrivateHosts = !IS_PRODUCTION || process.env.ALLOW_PRIVATE_DB_HOSTS === 'true';
+        await assertSafeDatabaseHost(host, port, { defaultPort: 1433, allowPrivate: allowPrivateHosts });
+        const connectionId = createConnectionId('mssql');
+        const connectionEntry = {
+            config: safeConnectionConfig(req.body, 1433),
+            ownerUserId: req.authUser.userId,
+            createdAt: Date.now(),
+            lastUsedAt: Date.now(),
+        };
 
         if (useWindowsAuth) {
             if (!rawSql) {
@@ -664,10 +732,10 @@ app.post('/api/connect', async (req, res) => {
 });
 
 // Get database schema (list of tables)
-app.post('/api/schema', async (req, res) => {
+app.post('/api/schema', requireAuthenticatedUser, async (req, res) => {
     try {
         const { connectionId } = req.body;
-        const connection = connections.get(connectionId);
+        const connection = getOwnedConnection(req, connectionId);
 
         if (!connection) {
             return res.status(400).json({ error: 'Invalid connection ID' });
@@ -705,10 +773,10 @@ app.post('/api/schema', async (req, res) => {
 });
 
 // Query table data
-app.post('/api/query', async (req, res) => {
+app.post('/api/query', requireAuthenticatedUser, async (req, res) => {
     try {
         const { connectionId, tables } = req.body;
-        const connection = connections.get(connectionId);
+        const connection = getOwnedConnection(req, connectionId);
 
         if (!connection) {
             return res.status(400).json({ error: 'Invalid connection ID' });
@@ -740,10 +808,10 @@ app.post('/api/query', async (req, res) => {
 });
 
 // Get columns for a specific table
-app.post('/api/columns', async (req, res) => {
+app.post('/api/columns', requireAuthenticatedUser, async (req, res) => {
     try {
         const { connectionId, table } = req.body;
-        const connection = connections.get(connectionId);
+        const connection = getOwnedConnection(req, connectionId);
 
         if (!connection) {
             return res.status(400).json({ error: 'Invalid connection ID' });
@@ -787,10 +855,10 @@ app.post('/api/columns', async (req, res) => {
 });
 
 // Get foreign key relationships across all tables
-app.post('/api/foreign-keys', async (req, res) => {
+app.post('/api/foreign-keys', requireAuthenticatedUser, async (req, res) => {
     try {
         const { connectionId } = req.body;
-        const connection = connections.get(connectionId);
+        const connection = getOwnedConnection(req, connectionId);
 
         if (!connection) {
             return res.status(400).json({ error: 'Invalid connection ID' });
@@ -828,10 +896,12 @@ app.post('/api/foreign-keys', async (req, res) => {
 // ═══════════════════════════════════════════
 
 // PostgreSQL Connect
-app.post('/api/pg/connect', async (req, res) => {
+app.post('/api/pg/connect', requireAuthenticatedUser, async (req, res) => {
     try {
         const { host, port, database, username, password, ssl } = req.body;
-        const connectionId = 'pg_' + Date.now().toString();
+        const allowPrivateHosts = !IS_PRODUCTION || process.env.ALLOW_PRIVATE_DB_HOSTS === 'true';
+        await assertSafeDatabaseHost(host, port, { defaultPort: 5432, allowPrivate: allowPrivateHosts });
+        const connectionId = createConnectionId('pg');
 
         const pool = new PgPool({
             host: host || 'localhost',
@@ -849,7 +919,14 @@ app.post('/api/pg/connect', async (req, res) => {
         const client = await pool.connect();
         client.release();
 
-        connections.set(connectionId, { type: 'pg', pool, config: req.body });
+        connections.set(connectionId, {
+            type: 'pg',
+            pool,
+            config: safeConnectionConfig(req.body, 5432),
+            ownerUserId: req.authUser.userId,
+            createdAt: Date.now(),
+            lastUsedAt: Date.now(),
+        });
 
         res.json({
             success: true,
@@ -866,10 +943,10 @@ app.post('/api/pg/connect', async (req, res) => {
 });
 
 // PostgreSQL Schema (list tables)
-app.post('/api/pg/schema', async (req, res) => {
+app.post('/api/pg/schema', requireAuthenticatedUser, async (req, res) => {
     try {
         const { connectionId } = req.body;
-        const connection = connections.get(connectionId);
+        const connection = getOwnedConnection(req, connectionId);
         if (!connection || connection.type !== 'pg') {
             return res.status(400).json({ error: 'Invalid PostgreSQL connection ID' });
         }
@@ -890,10 +967,10 @@ app.post('/api/pg/schema', async (req, res) => {
 });
 
 // PostgreSQL Query (fetch table data)
-app.post('/api/pg/query', async (req, res) => {
+app.post('/api/pg/query', requireAuthenticatedUser, async (req, res) => {
     try {
         const { connectionId, tables } = req.body;
-        const connection = connections.get(connectionId);
+        const connection = getOwnedConnection(req, connectionId);
         if (!connection || connection.type !== 'pg') {
             return res.status(400).json({ error: 'Invalid PostgreSQL connection ID' });
         }
@@ -914,10 +991,10 @@ app.post('/api/pg/query', async (req, res) => {
 });
 
 // PostgreSQL Columns
-app.post('/api/pg/columns', async (req, res) => {
+app.post('/api/pg/columns', requireAuthenticatedUser, async (req, res) => {
     try {
         const { connectionId, table } = req.body;
-        const connection = connections.get(connectionId);
+        const connection = getOwnedConnection(req, connectionId);
         if (!connection || connection.type !== 'pg') {
             return res.status(400).json({ error: 'Invalid PostgreSQL connection ID' });
         }
@@ -964,10 +1041,10 @@ app.post('/api/pg/columns', async (req, res) => {
 });
 
 // PostgreSQL Foreign Keys
-app.post('/api/pg/foreign-keys', async (req, res) => {
+app.post('/api/pg/foreign-keys', requireAuthenticatedUser, async (req, res) => {
     try {
         const { connectionId } = req.body;
-        const connection = connections.get(connectionId);
+        const connection = getOwnedConnection(req, connectionId);
         if (!connection || connection.type !== 'pg') {
             return res.status(400).json({ error: 'Invalid PostgreSQL connection ID' });
         }
@@ -1002,7 +1079,7 @@ app.post('/api/pg/foreign-keys', async (req, res) => {
 // and executes it directly against the connected PostgreSQL database.
 // Safety: Only SELECT statements, 30s timeout, 50K row limit.
 
-app.post('/api/pg/execute-sql', async (req, res) => {
+app.post('/api/pg/execute-sql', requireAuthenticatedUser, async (req, res) => {
     try {
         const { connectionId, sql } = req.body;
 
@@ -1013,7 +1090,7 @@ app.post('/api/pg/execute-sql', async (req, res) => {
             });
         }
 
-        const connection = connections.get(connectionId);
+        const connection = getOwnedConnection(req, connectionId);
         if (!connection || connection.type !== 'pg') {
             return res.status(400).json({
                 success: false,
@@ -1083,7 +1160,7 @@ app.post('/api/pg/execute-sql', async (req, res) => {
 // Mirrors /api/pg/execute-sql for MSSQL connections.
 // Safety: Only SELECT statements, 30s timeout, 50K row limit.
 
-app.post('/api/execute-sql', async (req, res) => {
+app.post('/api/execute-sql', requireAuthenticatedUser, async (req, res) => {
     try {
         const { connectionId, sql } = req.body;
 
@@ -1094,7 +1171,7 @@ app.post('/api/execute-sql', async (req, res) => {
             });
         }
 
-        const connection = connections.get(connectionId);
+        const connection = getOwnedConnection(req, connectionId);
         if (!connection || (connection.type !== 'mssql' && connection.type !== 'raw')) {
             return res.status(400).json({
                 success: false,
@@ -1155,7 +1232,7 @@ app.post('/api/execute-sql', async (req, res) => {
 // Used by the frontend to refresh a live dataset's data from the source DB.
 // Works for both MSSQL and PostgreSQL connections.
 
-app.post('/api/refresh-data', async (req, res) => {
+app.post('/api/refresh-data', requireAuthenticatedUser, async (req, res) => {
     try {
         const { connectionId, tables, dbType } = req.body;
 
@@ -1166,7 +1243,7 @@ app.post('/api/refresh-data', async (req, res) => {
             });
         }
 
-        const connection = connections.get(connectionId);
+        const connection = getOwnedConnection(req, connectionId);
         if (!connection) {
             return res.status(400).json({
                 success: false,
@@ -1410,7 +1487,11 @@ async function extractCurrentAdmin(req) {
 
 /** Check if user is active and within daily AI quota */
 async function checkAIQuota(userId) {
-    if (!authPool) return { allowed: true, remaining: 999, limit: 999 };
+    if (!authPool) {
+        return IS_PRODUCTION
+            ? { allowed: false, reason: 'Usage verification is temporarily unavailable' }
+            : { allowed: true, remaining: 999, limit: 999 };
+    }
     try {
         // Check if user is active
         const userResult = await authPool.query('SELECT is_active, daily_ai_limit FROM users WHERE id = $1', [userId]);
@@ -1429,7 +1510,9 @@ async function checkAIQuota(userId) {
         return { allowed: true, remaining: limit - used, used, limit };
     } catch (err) {
         console.error('[Quota] Check failed:', err.message);
-        return { allowed: true, remaining: 999, limit: 999 }; // Fail open if DB issue
+        return IS_PRODUCTION
+            ? { allowed: false, reason: 'Usage verification is temporarily unavailable' }
+            : { allowed: true, remaining: 999, limit: 999 };
     }
 }
 
@@ -1456,17 +1539,13 @@ const LLM_RATE_LIMIT = rateLimit({
     message: { success: false, error: 'Too many AI requests. Please wait a moment.' }
 });
 
-app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
+app.post('/api/llm/chat', LLM_RATE_LIMIT, requireAuthenticatedUser, async (req, res) => {
     const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
     if (!OPENROUTER_KEY) {
         return res.status(500).json({ success: false, error: 'LLM service not configured' });
     }
 
-    // Require authentication
-    const user = extractUser(req);
-    if (!user) {
-        return res.status(401).json({ success: false, error: 'Authentication required for AI features. Please log in.' });
-    }
+    const user = req.authUser;
 
     // Check quota
     const quota = await checkAIQuota(user.userId);
@@ -1475,10 +1554,14 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
     }
 
     try {
-        const { model, messages, max_tokens, temperature } = req.body;
-        if (!messages || !Array.isArray(messages)) {
-            return res.status(400).json({ success: false, error: 'messages array is required' });
+        const validated = validateLlmRequest(
+            req.body,
+            allowedLlmModels(process.env.ALLOWED_LLM_MODELS)
+        );
+        if (!validated.valid) {
+            return res.status(400).json({ success: false, error: validated.error });
         }
+        const { model, messages, max_tokens, temperature } = validated.value;
 
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
@@ -1489,10 +1572,10 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
                 'X-Title': 'QuickInsight'
             },
             body: JSON.stringify({
-                model: model || 'google/gemini-2.5-flash',
+                model,
                 messages,
-                max_tokens: Math.min(max_tokens || 2000, 4000),
-                temperature: temperature ?? 0.1
+                max_tokens,
+                temperature
             })
         });
 
@@ -1506,7 +1589,7 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, async (req, res) => {
         const tokensUsed = data.usage?.total_tokens || data.usage?.completion_tokens || 0;
 
         // Log usage
-        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, model || 'google/gemini-2.5-flash', `tokens:${tokensUsed}`);
+        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, model, `tokens:${tokensUsed}`);
         console.log(`[LLM] User ${user.email} — ${tokensUsed} tokens (${quota.remaining - 1} remaining today)`);
 
         // Include quota info in response
