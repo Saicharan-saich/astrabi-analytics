@@ -20,20 +20,22 @@ function trackPageErrors(page: Page): string[] {
     return errors;
 }
 
-test('app boots to the login screen without crashing', async ({ page }) => {
+test('app boots through the pre-login tour without crashing', async ({ page }) => {
     const errors = trackPageErrors(page);
     await page.goto('/');
 
     await expect(page).toHaveTitle(/QuickInsight/i);
-    // The login screen's guest entry point should be present.
+    await expect(page.getByRole('button', { name: /skip tour/i })).toBeVisible();
+    await page.getByRole('button', { name: /skip tour/i }).click();
     await expect(page.getByRole('button', { name: /continue as guest/i })).toBeVisible();
 
-    // No uncaught/console errors during initial render.
+    // No uncaught/console errors during initial render or tour transition.
     expect(errors, `page errors on boot:\n${errors.join('\n')}`).toEqual([]);
 });
 
 test('guest login renders the app shell', async ({ page }) => {
     await page.goto('/');
+    await page.getByRole('button', { name: /skip tour/i }).click();
     await page.getByRole('button', { name: /continue as guest/i }).click();
 
     // Past auth, the login form's guest button should be gone and the app
