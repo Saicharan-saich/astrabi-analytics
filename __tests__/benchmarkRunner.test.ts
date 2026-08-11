@@ -88,7 +88,32 @@ describe('benchmark runner', () => {
     expect(run.results).toHaveLength(5);
     expect(run.metrics.executionAccuracy).toBe(1);
     expect(run.metrics.totalTokens).toBe(75);
+    expect(run.metrics.llmBackedRate).toBe(1);
     expect(run.methodologyLabel).toBe('Curated Subset Execution Accuracy');
+  });
+
+  it('halts instead of silently scoring deterministic output after an LLM outage', async () => {
+    const suite = BENCHMARK_SUITES[0];
+    const expectedBySql = new Map(suite.cases.map(testCase => [testCase.goldSql, testCase.expectedRows]));
+    const run = await runBenchmark([suite], dependencies({
+      executeGoldSql: async (_rows, sql) => ({ data: expectedBySql.get(sql) || [] }),
+      runPipeline: async (_question, dataset) => ({
+        sql: 'SELECT 1',
+        rawData: dataset.rows,
+        validation: { valid: true },
+        displaySafety: { allowed: true },
+        provenance: {
+          strategy: 'deterministic',
+          fallbackReason: 'AI model is currently busy (rate limited).',
+        },
+        tokenUsage: { prompt: 0, completion: 0, total: 0 },
+      }),
+    }), { scope: 'smoke', appVersion: 'test' });
+
+    expect(run.results).toHaveLength(1);
+    expect(run.results[0].status).toBe('llm_unavailable');
+    expect(run.metrics.llmBackedRate).toBe(0);
+    expect(run.interruptionReason).toContain('rate limited');
   });
 
   it('calculates p50, p95, safety, validity, and failure taxonomy', () => {

@@ -1389,6 +1389,7 @@ export async function runAISQLPipeline(
             strategy: 'deterministic' as const,
             summary: 'The GPT SQL draft was unavailable or rejected, so the governed local compiler answered this request without sending dataset rows to an AI model.',
             dataAccess: 'metadata_only' as const,
+            fallbackReason: directSqlError || undefined,
         };
 
     const pipelineResult: AISQLPipelineResult = {

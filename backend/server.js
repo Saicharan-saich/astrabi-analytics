@@ -259,8 +259,11 @@ const limiter = rateLimit({
     standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
     legacyHeaders: false, // Disable the `X-RateLimit-*` headers
     message: { success: false, error: 'Too many requests, please try again later.' },
-    // Don't count preflight OPTIONS requests against rate limit
-    skip: (req) => req.method === 'OPTIONS',
+    // Don't count preflight requests or the LLM proxy here. The LLM proxy has
+    // its own tighter limiter below; counting it twice caused legitimate AI SQL
+    // benchmark traffic to exhaust the general API budget and even block
+    // unrelated session verification requests.
+    skip: (req) => req.method === 'OPTIONS' || req.path === '/llm/chat',
 });
 // Apply rate limiting to all requests
 app.use('/api/', limiter);

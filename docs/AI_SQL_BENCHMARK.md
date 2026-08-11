@@ -37,6 +37,8 @@ These are deterministic compatibility packs inspired by public benchmark task fa
 4. Keep the application open until the run completes. A stop request takes effect after the current isolated question.
 5. Export both JSON and CSV evidence.
 
+The runner spaces case starts to respect the production AI proxy. AI retries honour the backend's `Retry-After` window. If the LLM becomes unavailable or rate limited after retries, the run pauses immediately instead of silently scoring deterministic continuity fallbacks as ordinary AI-backed answers.
+
 Before every candidate is scored, its gold SQL is executed locally and must reproduce the embedded frozen output. A corrupt gold fixture is recorded as `fixture_error` and is never counted as an AI SQL failure.
 
 ## Evidence captured
@@ -49,10 +51,11 @@ The outcome taxonomy is:
 - `wrong_result`
 - `withheld`
 - `invalid_sql`
+- `llm_unavailable`
 - `execution_error`
 - `fixture_error`
 
-The lab also reports valid-SQL rate, safe-answer rate, median and p95 latency, model tokens, average confidence, and failure counts by type.
+The lab also reports valid-SQL rate, safe-answer rate, **LLM-backed coverage**, median and p95 latency, model tokens, average confidence, and failure counts by type. A correct deterministic continuity result may still be useful product behaviour, but an infrastructure-triggered deterministic fallback is reported as `llm_unavailable` so it cannot inflate the LLM-backed benchmark.
 
 ## Research reporting checklist
 

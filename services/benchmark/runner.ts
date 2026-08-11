@@ -12,6 +12,11 @@ import type {
 
 const EMPTY_TOKENS = { prompt: 0, completion: 0, total: 0 };
 const EVIDENCE_ROW_LIMIT = 50;
+const LLM_UNAVAILABLE_PATTERN = /rate.?limit|too many (?:ai )?requests|daily ai quota|credits exhausted|service.*(?:down|unavailable)|network|fetch failed|timed?\s*out/i;
+
+function isLlmBacked(result: BenchmarkCaseResult): boolean {
+  return result.strategy !== 'deterministic' && result.tokenUsage.total > 0;
+}
 
 function percentile(values: number[], fraction: number): number {
   if (!values.length) return 0;
@@ -26,6 +31,7 @@ export function summarizeBenchmarkResults(results: BenchmarkCaseResult[], total 
   const validSql = results.filter(result => result.validSql).length;
   const safe = results.filter(result => result.safeToDisplay).length;
   const confidenceValues = results.map(result => result.confidence).filter((value): value is number => typeof value === 'number');
+  const llmBackedCases = results.filter(isLlmBacked).length;
   const latencies = results.map(result => result.pipelineLatencyMs || result.latencyMs).filter(value => value >= 0);
   const failuresByType = results.reduce<Partial<Record<BenchmarkCaseStatus, number>>>((counts, result) => {
     if (result.status !== 'pass') counts[result.status] = (counts[result.status] || 0) + 1;
@@ -42,6 +48,8 @@ export function summarizeBenchmarkResults(results: BenchmarkCaseResult[], total 
     averageConfidence: confidenceValues.length
       ? confidenceValues.reduce((sum, value) => sum + value, 0) / confidenceValues.length
       : 0,
+    llmBackedCases,
+    llmBackedRate: completed ? llmBackedCases / completed : 0,
     totalTokens: results.reduce((sum, result) => sum + result.tokenUsage.total, 0),
     medianLatencyMs: percentile(latencies, 0.5),
     p95LatencyMs: percentile(latencies, 0.95),
@@ -150,10 +158,23 @@ export async function executeBenchmarkCase(
       engine: pipelineResult.engine,
       model: pipelineResult.provenance?.model,
       strategy: pipelineResult.provenance?.strategy,
+      fallbackReason: pipelineResult.provenance?.fallbackReason,
       confidence: pipelineResult.confidence?.score,
       repairAttempts: pipelineResult.repairAttempts || 0,
       tokenUsage: pipelineResult.tokenUsage || { ...EMPTY_TOKENS },
     };
+
+    if (
+      pipelineResult.provenance?.strategy === 'deterministic'
+      && LLM_UNAVAILABLE_PATTERN.test(pipelineResult.provenance?.fallbackReason || '')
+    ) {
+      return {
+        ...base,
+        status: 'llm_unavailable',
+        passed: false,
+        failureReason: `LLM unavailable: ${pipelineResult.provenance?.fallbackReason}`,
+      };
+    }
 
     if (!safeToDisplay) {
       return {
@@ -208,11 +229,24 @@ export async function runBenchmark(
       break;
     }
     const testCase = selectedCases[index];
+    const caseStartedAt = Date.now();
     options.onCaseStart?.(testCase, index, selectedCases.length);
     const result = await executeBenchmarkCase(testCase, dependencies);
     run.results.push(result);
     run.metrics = summarizeBenchmarkResults(run.results, selectedCases.length);
     options.onCaseComplete?.(result, index, selectedCases.length);
+
+    if (result.status === 'llm_unavailable' && options.stopOnLlmUnavailable !== false) {
+      run.interruptionReason = result.failureReason || 'The LLM became unavailable during the benchmark.';
+      break;
+    }
+
+    const minimumInterval = Math.max(0, options.minimumCaseIntervalMs || 0);
+    const remainingDelay = minimumInterval - (Date.now() - caseStartedAt);
+    if (remainingDelay > 0 && index < selectedCases.length - 1) {
+      const wait = options.wait || ((milliseconds: number) => new Promise<void>(resolve => setTimeout(resolve, milliseconds)));
+      await wait(remainingDelay);
+    }
   }
 
   run.completedAt = Date.now();

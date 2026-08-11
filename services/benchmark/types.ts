@@ -9,6 +9,7 @@ export type BenchmarkCaseStatus =
   | 'wrong_result'
   | 'withheld'
   | 'invalid_sql'
+  | 'llm_unavailable'
   | 'execution_error'
   | 'fixture_error';
 
@@ -72,7 +73,7 @@ export interface BenchmarkPipelineResult {
   executionTimeMs?: number;
   engine?: string;
   confidence?: { score: number; level: string };
-  provenance?: { strategy: string; model?: string; summary?: string };
+  provenance?: { strategy: string; model?: string; summary?: string; fallbackReason?: string };
   tokenUsage?: { prompt: number; completion: number; total: number };
   repairAttempts?: number;
 }
@@ -100,6 +101,7 @@ export interface BenchmarkCaseResult {
   engine?: string;
   model?: string;
   strategy?: string;
+  fallbackReason?: string;
   confidence?: number;
   repairAttempts: number;
   tokenUsage: { prompt: number; completion: number; total: number };
@@ -113,6 +115,8 @@ export interface BenchmarkRunMetrics {
   validSqlRate: number;
   safeAnswerRate: number;
   averageConfidence: number;
+  llmBackedCases: number;
+  llmBackedRate: number;
   totalTokens: number;
   medianLatencyMs: number;
   p95LatencyMs: number;
@@ -128,6 +132,7 @@ export interface BenchmarkRun {
   startedAt: number;
   completedAt?: number;
   cancelled: boolean;
+  interruptionReason?: string;
   appVersion: string;
   methodologyLabel: 'Curated Subset Execution Accuracy';
   results: BenchmarkCaseResult[];
@@ -151,4 +156,10 @@ export interface BenchmarkRunOptions {
   shouldCancel?: () => boolean;
   onCaseStart?: (testCase: BenchmarkCase, index: number, total: number) => void;
   onCaseComplete?: (result: BenchmarkCaseResult, index: number, total: number) => void;
+  /** Minimum wall-clock spacing between case starts to respect the AI proxy. */
+  minimumCaseIntervalMs?: number;
+  /** Stop rather than silently benchmarking local fallbacks during an outage. */
+  stopOnLlmUnavailable?: boolean;
+  /** Injectable wait used by tests. */
+  wait?: (milliseconds: number) => Promise<void>;
 }

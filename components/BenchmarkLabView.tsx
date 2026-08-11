@@ -51,6 +51,7 @@ const STATUS_LABELS: Record<BenchmarkCaseStatus, string> = {
   wrong_result: 'Wrong result',
   withheld: 'Withheld',
   invalid_sql: 'Invalid SQL',
+  llm_unavailable: 'LLM unavailable',
   execution_error: 'Execution error',
   fixture_error: 'Fixture error',
 };
@@ -60,6 +61,7 @@ const STATUS_CLASSES: Record<BenchmarkCaseStatus, string> = {
   wrong_result: 'bg-rose-500/15 text-rose-400 border-rose-500/25',
   withheld: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
   invalid_sql: 'bg-orange-500/15 text-orange-400 border-orange-500/25',
+  llm_unavailable: 'bg-sky-500/15 text-sky-400 border-sky-500/25',
   execution_error: 'bg-red-500/15 text-red-400 border-red-500/25',
   fixture_error: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/25',
 };
@@ -233,6 +235,8 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             setLiveResults(current => [...current, result]);
             setProgress({ completed: index + 1, total, question: result.question });
           },
+          minimumCaseIntervalMs: 3250,
+          stopOnLlmUnavailable: true,
         },
       );
       setLatestRun(run);
@@ -401,7 +405,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                   <MetricCard icon={<Gauge className="w-4 h-4" />} label="Execution accuracy" value={percent(metrics.executionAccuracy)} detail={`${metrics.passed}/${metrics.completed} correct outputs`} tone="violet" isDark={isDark} />
                   <MetricCard icon={<ShieldCheck className="w-4 h-4" />} label="Safe answer rate" value={percent(metrics.safeAnswerRate)} detail="Passed the display contract" tone="emerald" isDark={isDark} />
                   <MetricCard icon={<Clock3 className="w-4 h-4" />} label="P95 latency" value={milliseconds(metrics.p95LatencyMs)} detail={`Median ${milliseconds(metrics.medianLatencyMs)}`} tone="cyan" isDark={isDark} />
-                  <MetricCard icon={<Sparkles className="w-4 h-4" />} label="Model tokens" value={metrics.totalTokens.toLocaleString()} detail={`${percent(metrics.validSqlRate)} valid SQL`} tone="amber" isDark={isDark} />
+                  <MetricCard icon={<Sparkles className="w-4 h-4" />} label="Model tokens" value={metrics.totalTokens.toLocaleString()} detail={`${percent(metrics.llmBackedRate || 0)} LLM-backed · ${percent(metrics.validSqlRate)} valid SQL`} tone="amber" isDark={isDark} />
                 </div>
               </section>
             )}
@@ -432,7 +436,14 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                 <MetricCard icon={<Gauge className="w-4 h-4" />} label="Execution accuracy" value={percent(latestRun.metrics.executionAccuracy)} detail={`${latestRun.metrics.passed}/${latestRun.metrics.completed} correct outputs`} tone="violet" isDark={isDark} />
                 <MetricCard icon={<ShieldCheck className="w-4 h-4" />} label="Safe answer rate" value={percent(latestRun.metrics.safeAnswerRate)} detail={`${percent(latestRun.metrics.validSqlRate)} valid SQL`} tone="emerald" isDark={isDark} />
                 <MetricCard icon={<Clock3 className="w-4 h-4" />} label="P95 latency" value={milliseconds(latestRun.metrics.p95LatencyMs)} detail={`Median ${milliseconds(latestRun.metrics.medianLatencyMs)}`} tone="cyan" isDark={isDark} />
-                <MetricCard icon={<Sparkles className="w-4 h-4" />} label="Model tokens" value={latestRun.metrics.totalTokens.toLocaleString()} detail={`Average confidence ${latestRun.metrics.averageConfidence.toFixed(0)}/100`} tone="amber" isDark={isDark} />
+                <MetricCard icon={<Sparkles className="w-4 h-4" />} label="Model tokens" value={latestRun.metrics.totalTokens.toLocaleString()} detail={`${percent(latestRun.metrics.llmBackedRate || 0)} LLM-backed · confidence ${latestRun.metrics.averageConfidence.toFixed(0)}/100`} tone="amber" isDark={isDark} />
+              </div>
+            )}
+
+            {!isRunning && latestRun?.interruptionReason && (
+              <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-300 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <div><strong>Run paused to protect benchmark validity.</strong> {latestRun.interruptionReason} Wait for the AI service window to reset, then start a new run.</div>
               </div>
             )}
 

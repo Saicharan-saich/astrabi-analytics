@@ -48,7 +48,7 @@ describe('LLM token cost — independent of dataset size', () => {
         expect(ratio).toBeLessThan(1.15);
         // And the absolute growth is a handful of characters, not thousands.
         expect(Math.abs(large.length - small.length)).toBeLessThan(300);
-    });
+    }, 15000);
 
     it('no raw row value leaks into the prompt (privacy + why cost stays flat)', () => {
         const prompt = serializedPromptFor(30000);

@@ -570,7 +570,24 @@ export function processPlan(
     const derivedMetrics: DerivedMetric[] = [];
 
     // Step 1: Parse for operations
-    const op = parseOperation(question, model, plan);
+    let op = parseOperation(question, model, plan);
+
+    // A native metric is authoritative. For example, if the dataset already has
+    // a profit column and the plan asks for profit, do not reinterpret it as the
+    // generic sales-minus-cost derived metric.
+    if (op) {
+        const nativeMetric = model.fields.find(field =>
+            field.role === 'metric'
+            && field.name.toLowerCase() === op!.derivedName.toLowerCase()
+        );
+        const planUsesNativeMetric = nativeMetric && plan.metrics.some(metric =>
+            metric.field.toLowerCase() === nativeMetric.name.toLowerCase()
+        );
+        if (planUsesNativeMetric) {
+            console.log(`[APDME] Native metric "${nativeMetric!.name}" exists; derived fallback skipped`);
+            op = null;
+        }
+    }
 
     if (op) {
         console.log(`[APDME] Detected operation: ${op.type} → ${op.derivedName} (${op.left} → ${op.right})`);
