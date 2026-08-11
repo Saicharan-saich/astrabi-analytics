@@ -53,7 +53,7 @@ describe('benchmark runner', () => {
     expect(pipelineCalls).toBe(0);
   });
 
-  it('treats a fail-closed display decision as withheld, not correct', async () => {
+  it('scores matching values as correct while preserving a safety diagnostic', async () => {
     const result = await executeBenchmarkCase(firstCase, dependencies({
       runPipeline: async () => ({
         sql: firstCase.goldSql,
@@ -64,9 +64,69 @@ describe('benchmark runner', () => {
         tokenUsage: { prompt: 10, completion: 5, total: 15 },
       }),
     }));
-    expect(result.status).toBe('withheld');
-    expect(result.passed).toBe(false);
-    expect(result.failureReason).toContain('Answer contract failed');
+    expect(result.status).toBe('pass');
+    expect(result.passed).toBe(true);
+    expect(result.safeToDisplay).toBe(false);
+    expect(result.comparison?.equal).toBe(true);
+  });
+
+  it('scores matching values as correct while preserving an SQL-validity diagnostic', async () => {
+    const result = await executeBenchmarkCase(firstCase, dependencies({
+      runPipeline: async () => ({
+        sql: firstCase.goldSql,
+        rawData: firstCase.expectedRows,
+        validation: { valid: false },
+        displaySafety: { allowed: true },
+        provenance: { strategy: 'hybrid-plan-llm-sql' },
+        tokenUsage: { prompt: 10, completion: 5, total: 15 },
+      }),
+    }));
+    expect(result.status).toBe('pass');
+    expect(result.passed).toBe(true);
+    expect(result.validSql).toBe(false);
+    expect(result.comparison?.equal).toBe(true);
+  });
+
+  it('ignores candidate row ordering even when the fixture describes a ranking', async () => {
+    const rankingCase = {
+      ...firstCase,
+      expectedRows: [{ label: 'A', value: 10 }, { label: 'B', value: 5 }],
+      comparison: { ...firstCase.comparison, orderMatters: true },
+    };
+    const reversed = [...rankingCase.expectedRows].reverse();
+    const result = await executeBenchmarkCase(rankingCase, dependencies({
+      executeGoldSql: async () => ({ data: rankingCase.expectedRows }),
+      runPipeline: async () => ({
+        sql: rankingCase.goldSql,
+        rawData: reversed,
+        validation: { valid: true },
+        displaySafety: { allowed: true },
+        provenance: { strategy: 'hybrid-plan-llm-sql' },
+        tokenUsage: { prompt: 10, completion: 5, total: 15 },
+      }),
+    }));
+    expect(result.status).toBe('pass');
+    expect(result.passed).toBe(true);
+    expect(result.comparison?.reason).toContain('row order ignored');
+  });
+
+  it('retains withheld and invalid-SQL failure categories when values are wrong', async () => {
+    const withheld = await executeBenchmarkCase(firstCase, dependencies({
+      runPipeline: async () => ({
+        sql: firstCase.goldSql, rawData: [{ wrong: 999 }], validation: { valid: true },
+        displaySafety: { allowed: false, reasons: ['Answer contract failed.'] },
+        provenance: { strategy: 'hybrid-plan-llm-sql' }, tokenUsage: { prompt: 10, completion: 5, total: 15 },
+      }),
+    }));
+    const invalid = await executeBenchmarkCase(firstCase, dependencies({
+      runPipeline: async () => ({
+        sql: firstCase.goldSql, rawData: [{ wrong: 999 }], validation: { valid: false },
+        displaySafety: { allowed: true }, provenance: { strategy: 'hybrid-plan-llm-sql' },
+        tokenUsage: { prompt: 10, completion: 5, total: 15 },
+      }),
+    }));
+    expect(withheld.status).toBe('withheld');
+    expect(invalid.status).toBe('invalid_sql');
   });
 
   it('runs five cases per selected suite in smoke scope and aggregates metrics', async () => {

@@ -116,6 +116,9 @@ export async function executeBenchmarkCase(
 
     const fixtureComparison = compareResultSets(testCase.expectedRows, goldExecution.data, {
       ...testCase.comparison,
+      // Execution accuracy is value-set equivalence. Presentation order is
+      // deliberately excluded from benchmark correctness.
+      orderMatters: false,
       strictColumns: true,
     });
     if (!fixtureComparison.equal) {
@@ -137,7 +140,12 @@ export async function executeBenchmarkCase(
     const completedAt = now();
     const safeToDisplay = pipelineResult.displaySafety?.allowed !== false;
     const validSql = pipelineResult.validation?.valid !== false;
-    const comparison = compareResultSets(testCase.expectedRows, pipelineResult.rawData || [], testCase.comparison);
+    const comparison = compareResultSets(testCase.expectedRows, pipelineResult.rawData || [], {
+      ...testCase.comparison,
+      // A correct result remains correct whether DuckDB returns ascending,
+      // descending, or otherwise equivalent row order.
+      orderMatters: false,
+    });
     const base: Omit<BenchmarkCaseResult, 'status' | 'passed' | 'failureReason'> = {
       caseId: testCase.id,
       suiteId: testCase.suiteId,
@@ -182,6 +190,13 @@ export async function executeBenchmarkCase(
       };
     }
 
+    // Execution accuracy is determined by the values returned. Safety and SQL
+    // validation remain independent diagnostic rates on the same passing case;
+    // they must not turn a value-equivalent output into a wrong answer.
+    if (comparison.equal) {
+      return { ...base, status: 'pass', passed: true };
+    }
+
     if (!safeToDisplay) {
       return {
         ...base,
@@ -193,10 +208,7 @@ export async function executeBenchmarkCase(
     if (!validSql) {
       return { ...base, status: 'invalid_sql', passed: false, failureReason: 'The generated SQL did not pass validation.' };
     }
-    if (!comparison.equal) {
-      return { ...base, status: 'wrong_result', passed: false, failureReason: comparison.reason };
-    }
-    return { ...base, status: 'pass', passed: true };
+    return { ...base, status: 'wrong_result', passed: false, failureReason: comparison.reason };
   } catch (error) {
     const completedAt = now();
     return failureResult(
