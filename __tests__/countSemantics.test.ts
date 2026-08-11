@@ -54,9 +54,17 @@ describe('applyCountSemantics — the plan-level fix', () => {
     });
 
     it('count_distinct of a named non-filter dimension → COUNT(DISTINCT dim)', () => {
-        const plan = P({ metrics: [{ field: 'doctor', agg: 'count' }], filters: [] });
+        const plan = P({ dimensions: [{ field: 'doctor' }], metrics: [{ field: 'doctor', agg: 'count' }], filters: [] });
         applyCountSemantics('count_distinct', plan, model);
         expect(plan.metrics).toEqual([{ field: 'doctor', agg: 'count_distinct' }]);
+        expect(plan.dimensions).toEqual([]);
+    });
+
+    it('keeps an unrelated grouping dimension for distinct entities by group', () => {
+        const plan = P({ dimensions: [{ field: 'doctor' }, { field: 'department' }], metrics: [{ field: 'doctor', agg: 'count' }], filters: [] });
+        applyCountSemantics('count_distinct', plan, model);
+        expect(plan.metrics).toEqual([{ field: 'doctor', agg: 'count_distinct' }]);
+        expect(plan.dimensions).toEqual([{ field: 'department' }]);
     });
 
     it('validators ACCEPT the "*" row-count sentinel (no phantom-field error)', () => {
