@@ -153,7 +153,7 @@ export async function evaluateAlertRule(
             const semMeasure = findMeasure(dataset.semanticModel, rule.metric);
             if (semMeasure && semMeasure.behavior === 'non_additive' && effectiveAggregation === 'SUM') {
                 console.warn(`[Alerts] ⚠️ AGGREGATION GUARD: "${rule.metric}" is non-additive. Auto-correcting SUM → ${semMeasure.aggregation}`);
-                effectiveAggregation = semMeasure.aggregation as typeof effectiveAggregation;
+                effectiveAggregation = semMeasure.aggregation as AlertRule['aggregation'];
             }
         }
 
