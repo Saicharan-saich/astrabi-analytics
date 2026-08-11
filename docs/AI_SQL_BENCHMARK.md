@@ -15,7 +15,7 @@ Candidate SQL is not compared as text. The candidate and gold queries are execut
 - aggregate-alias normalization;
 - numeric absolute and relative tolerance;
 - null and scalar normalization;
-- order-insensitive comparison unless ordering is part of the question;
+- order-insensitive value-set comparison for every question (sorting is excluded from execution correctness);
 - exact row-count validation; and
 - semantic projection of expected columns so a harmless extra evidence column does not fail an otherwise correct answer.
 
@@ -57,7 +57,7 @@ The outcome taxonomy is:
 - `execution_error`
 - `fixture_error`
 
-The lab also reports valid-SQL rate, safe-answer rate, **LLM-backed coverage**, median and p95 latency, model tokens, average confidence, and failure counts by type. A correct deterministic continuity result may still be useful product behaviour, but an infrastructure-triggered deterministic fallback is reported as `llm_unavailable` so it cannot inflate the LLM-backed benchmark.
+The lab also reports valid-SQL rate, safe-answer rate, **LLM-backed coverage**, median and p95 latency, model tokens, average confidence, and failure counts by type. Execution accuracy is value-first: when the locally executed candidate values match the gold values, the case is a `pass` even if the safety or SQL-validation diagnostic raises a warning. Those warnings remain visible and continue to lower their independent rates. A correct deterministic continuity result may still be useful product behaviour, but an infrastructure-triggered deterministic fallback is reported as `llm_unavailable` so it cannot inflate the LLM-backed benchmark.
 
 ## Research reporting checklist
 

@@ -535,7 +535,10 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                               <td className="pl-4 py-3"><button onClick={() => setExpandedCase(expanded ? null : result.caseId)} className={`p-1 rounded-lg ${muted}`}>{expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</button></td>
                               <td className="px-3 py-3"><div className={`text-xs font-mono font-bold ${strong}`}>{result.caseId}</div><div className={`text-[10px] mt-1 ${muted}`}>{result.category} · {result.difficulty}</div></td>
                               <td className={`px-3 py-3 text-xs max-w-md ${strong}`}>{result.question}</td>
-                              <td className="px-3 py-3"><span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-black ${STATUS_CLASSES[result.status]}`}>{result.passed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}{STATUS_LABELS[result.status]}</span></td>
+                              <td className="px-3 py-3">
+                                <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-black ${STATUS_CLASSES[result.status]}`}>{result.passed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}{STATUS_LABELS[result.status]}</span>
+                                {result.passed && (!result.safeToDisplay || !result.validSql) && <div className="mt-1 text-[9px] font-bold text-amber-400">{[!result.safeToDisplay && 'Safety warning', !result.validSql && 'SQL warning'].filter(Boolean).join(' · ')}</div>}
+                              </td>
                               <td className="px-3 py-3"><div className={`text-[11px] font-bold ${strong}`}>{result.engine || result.strategy || '—'}</div><div className={`text-[10px] mt-1 ${muted}`}>{result.model || 'Deterministic/local'}</div></td>
                               <td className={`px-3 py-3 text-xs text-right font-mono ${strong}`}>{milliseconds(result.pipelineLatencyMs || result.latencyMs)}</td>
                               <td className={`px-3 py-3 text-xs text-right font-mono ${strong}`}>{result.tokenUsage.total.toLocaleString()}</td>
@@ -563,7 +566,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                                       <pre className={`rounded-xl border p-3 text-[11px] leading-5 overflow-auto max-h-64 ${softSurface} ${strong}`}>{JSON.stringify(result.actualRows, null, 2)}</pre>
                                     </div>
                                   </div>
-                                  {result.comparison && <div className={`mt-3 text-[11px] ${muted}`}>Comparator: {result.comparison.reason} · mapped columns {JSON.stringify(result.comparison.columnMapping)}</div>}
+                                  {result.comparison && <div className={`mt-3 text-[11px] ${muted}`}>Comparator: {result.comparison.reason} · mapped columns {JSON.stringify(result.comparison.columnMapping)} · safety {result.safeToDisplay ? 'passed' : 'warning'} · SQL validation {result.validSql ? 'passed' : 'warning'}</div>}
                                 </td>
                               </tr>
                             )}
@@ -590,8 +593,8 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                   ['1', 'Fixture integrity', 'Gold SQL is executed against the embedded dataset and must reproduce the frozen output before AI SQL is scored.'],
                   ['2', 'Production pipeline', 'The same runAISQLPipeline entry point used by the product receives one isolated question with cache bypass enabled.'],
                   ['3', 'Local execution', 'Candidate SQL and gold SQL run inside DuckDB-WASM. Dataset rows are not submitted to the gold evaluator or model.'],
-                  ['4', 'Semantic equivalence', 'Aliases, harmless column naming differences, row order (when irrelevant), nulls, and numeric tolerance are normalized.'],
-                  ['5', 'Fail-closed evidence', 'Withheld answers, invalid SQL, execution errors, wrong values, and fixture failures are recorded separately—not hidden in one score.'],
+                  ['4', 'Value-set equivalence', 'Aliases, harmless column naming differences, row order, nulls, and numeric tolerance are normalized. Sorting never changes execution correctness.'],
+                  ['5', 'Independent diagnostics', 'Matching values count as correct. Safety and SQL-validation warnings remain visible and continue to affect their own rates without overriding execution accuracy.'],
                 ].map(([number, title, description]) => (
                   <div key={number} className={`rounded-2xl border p-4 flex gap-4 ${softSurface}`}>
                     <div className="w-8 h-8 rounded-xl bg-violet-500/15 text-violet-400 flex items-center justify-center font-black text-sm shrink-0">{number}</div>
