@@ -172,10 +172,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                         <form onSubmit={handleSubmit} className="space-y-3">
                             {mode === 'register' && (
                                 <div>
-                                    <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                                    <label htmlFor="quickinsight-name" className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
                                         Full Name
                                     </label>
                                     <input
+                                        id="quickinsight-name"
+                                        name="name"
+                                        autoComplete="name"
                                         type="text"
                                         value={name}
                                         onChange={e => setName(e.target.value)}
@@ -188,10 +191,13 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                             )}
 
                             <div>
-                                <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                                <label htmlFor="quickinsight-email" className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
                                     Email Address
                                 </label>
                                 <input
+                                    id="quickinsight-email"
+                                    name="email"
+                                    autoComplete="email"
                                     type="email"
                                     value={email}
                                     onChange={e => setEmail(e.target.value)}
@@ -203,11 +209,14 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                             </div>
 
                             <div>
-                                <label className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                                <label htmlFor="quickinsight-password" className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
                                     Password
                                 </label>
                                 <div className="relative">
                                     <input
+                                        id="quickinsight-password"
+                                        name="password"
+                                        autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                                         type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         onChange={e => setPassword(e.target.value)}
@@ -218,6 +227,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                                     <button
                                         type="button"
                                         onClick={() => setShowPassword(!showPassword)}
+                                        aria-label={showPassword ? 'Hide password' : 'Show password'}
+                                        aria-pressed={showPassword}
                                         className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-indigo-400 transition-colors"
                                     >
                                         {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
@@ -226,7 +237,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                             </div>
 
                             {error && (
-                                <div className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400">
+                                <div role="alert" aria-live="assertive" className="flex items-center gap-2 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400">
                                     <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                                     {error}
                                 </div>
