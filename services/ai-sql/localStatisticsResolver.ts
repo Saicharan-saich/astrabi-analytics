@@ -285,14 +285,18 @@ export async function resolveLocalStatistics(
 
     if (dateField) {
         const col = q(dateField.name);
+        // Uploaded CSV/XLSX dates can remain VARCHAR even when the semantic
+        // layer correctly identifies them as dates. Cast once before every
+        // date aggregate so DuckDB never receives DATEDIFF(VARCHAR, VARCHAR).
+        const dateValue = `TRY_CAST(${col} AS DATE)`;
         const timeSql = `
             SELECT
-                MIN(${col})::VARCHAR AS min_date,
-                MAX(${col})::VARCHAR AS max_date,
-                DATEDIFF('day', MIN(${col}), MAX(${col})) AS span_days,
-                COUNT(DISTINCT ${col}::DATE) AS distinct_dates
+                MIN(${dateValue})::VARCHAR AS min_date,
+                MAX(${dateValue})::VARCHAR AS max_date,
+                DATEDIFF('day', MIN(${dateValue}), MAX(${dateValue})) AS span_days,
+                COUNT(DISTINCT ${dateValue}) AS distinct_dates
             FROM data
-            WHERE ${col} IS NOT NULL
+            WHERE ${dateValue} IS NOT NULL
         `;
         const timeRows = await safeQuery(timeSql);
 

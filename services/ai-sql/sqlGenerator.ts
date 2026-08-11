@@ -21,7 +21,8 @@ const TIMEOUT_MS = 20000;
 export async function generateSQLFromPlan(
     plan: AnalysisPlan,
     model: SemanticModel,
-    derivedMetrics?: DerivedMetric[]
+    derivedMetrics?: DerivedMetric[],
+    requestPurpose?: 'benchmark',
 ): Promise<{ sql: string; explanation: string; method: 'deterministic' | 'llm' }> {
 
     // Try deterministic generation first
@@ -33,7 +34,7 @@ export async function generateSQLFromPlan(
 
     // Fall back to LLM-assisted SQL generation
     console.log('[SQL Generator] Falling back to LLM-assisted generation');
-    return await llmGenerateSQL(plan, model);
+    return await llmGenerateSQL(plan, model, requestPurpose);
 }
 
 /**
@@ -438,7 +439,8 @@ function buildExplanation(plan: AnalysisPlan, model: SemanticModel): string {
  */
 async function llmGenerateSQL(
     plan: AnalysisPlan,
-    model: SemanticModel
+    model: SemanticModel,
+    requestPurpose?: 'benchmark',
 ): Promise<{ sql: string; explanation: string; method: 'llm' }> {
 
     const serialized = serializeSemanticModel(model);
@@ -475,7 +477,7 @@ Respond with ONLY a JSON object:
                 { role: 'system', content: prompt },
                 { role: 'user', content: `Generate SQL for: "${plan.originalQuestion}"` }
             ],
-            { temperature: 0.1, max_tokens: 2000, timeout: TIMEOUT_MS }
+            { temperature: 0.1, max_tokens: 2000, timeout: TIMEOUT_MS, requestPurpose }
         );
 
         clearTimeout(timeout);
@@ -504,7 +506,8 @@ export async function repairSQL(
     error: string,
     plan: AnalysisPlan,
     model: SemanticModel,
-    attempt: number = 1
+    attempt: number = 1,
+    requestPurpose?: 'benchmark',
 ): Promise<{ sql: string; explanation: string }> {
     if (attempt > 2) {
         throw new Error(`SQL repair failed after 2 attempts. Last error: ${error}`);
@@ -546,7 +549,7 @@ Respond with ONLY a JSON object:
                 { role: 'system', content: prompt },
                 { role: 'user', content: 'Fix the SQL error' }
             ],
-            { temperature: 0, max_tokens: 2000, timeout: TIMEOUT_MS }
+            { temperature: 0, max_tokens: 2000, timeout: TIMEOUT_MS, requestPurpose }
         );
 
         clearTimeout(timeout);

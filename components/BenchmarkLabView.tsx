@@ -222,6 +222,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             undefined,
             undefined,
             true,
+            { requestPurpose: 'benchmark' },
           ),
         },
         {

@@ -12,7 +12,7 @@ import type {
 
 const EMPTY_TOKENS = { prompt: 0, completion: 0, total: 0 };
 const EVIDENCE_ROW_LIMIT = 50;
-const LLM_UNAVAILABLE_PATTERN = /rate.?limit|too many (?:ai )?requests|daily ai quota|credits exhausted|service.*(?:down|unavailable)|network|fetch failed|timed?\s*out/i;
+const LLM_UNAVAILABLE_PATTERN = /rate.?limit|too many (?:ai )?requests|daily ai (?:quota|limit)|quota exceeded|credits exhausted|service.*(?:down|unavailable)|network|fetch failed|timed?\s*out/i;
 
 function isLlmBacked(result: BenchmarkCaseResult): boolean {
   return result.strategy !== 'deterministic' && result.tokenUsage.total > 0;
@@ -164,15 +164,21 @@ export async function executeBenchmarkCase(
       tokenUsage: pipelineResult.tokenUsage || { ...EMPTY_TOKENS },
     };
 
-    if (
-      pipelineResult.provenance?.strategy === 'deterministic'
-      && LLM_UNAVAILABLE_PATTERN.test(pipelineResult.provenance?.fallbackReason || '')
-    ) {
+    // Accuracy evidence from this lab must be model-backed. Never silently
+    // score a deterministic continuity answer as an AI SQL benchmark result,
+    // even when the provider error text changes or omits a known keyword.
+    const pipelineWasLlmBacked = pipelineResult.provenance?.strategy !== 'deterministic'
+      && (pipelineResult.tokenUsage?.total || 0) > 0;
+    if (!pipelineWasLlmBacked) {
+      const fallbackReason = pipelineResult.provenance?.fallbackReason || '';
+      const unavailable = LLM_UNAVAILABLE_PATTERN.test(fallbackReason);
       return {
         ...base,
         status: 'llm_unavailable',
         passed: false,
-        failureReason: `LLM unavailable: ${pipelineResult.provenance?.fallbackReason}`,
+        failureReason: unavailable
+          ? `LLM unavailable: ${fallbackReason}`
+          : `LLM-backed execution required, but this case returned ${pipelineResult.provenance?.strategy || 'unknown provenance'} with ${pipelineResult.tokenUsage?.total || 0} tokens${fallbackReason ? `: ${fallbackReason}` : '.'}`,
       };
     }
 

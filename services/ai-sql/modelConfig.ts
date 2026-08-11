@@ -134,6 +134,12 @@ export async function fetchWithFallback(
         max_tokens?: number;
         timeout?: number;
         model?: string;
+        /**
+         * Admin Benchmark Lab calls use a separately audited server-side quota.
+         * The backend still verifies the authenticated database role, so this
+         * marker cannot grant benchmark capacity to a normal user.
+         */
+        requestPurpose?: 'benchmark';
     }
 ): Promise<{ data: any; model: string }> {
 
@@ -160,6 +166,9 @@ export async function fetchWithFallback(
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`,
+                    ...(options?.requestPurpose === 'benchmark'
+                        ? { 'X-QuickInsight-AI-Purpose': 'benchmark' }
+                        : {}),
                 },
                 body: JSON.stringify({
                     model,

@@ -39,6 +39,8 @@ These are deterministic compatibility packs inspired by public benchmark task fa
 
 The runner spaces case starts to respect the production AI proxy. AI retries honour the backend's `Retry-After` window. If the LLM becomes unavailable or rate limited after retries, the run pauses immediately instead of silently scoring deterministic continuity fallbacks as ordinary AI-backed answers.
 
+Benchmark model calls carry an explicit purpose marker and are accepted only when the backend resolves the current database user as an administrator. They use a separate audited `ai_benchmark_query` allowance (600 model calls per day by default, configurable with `ADMIN_BENCHMARK_DAILY_LIMIT`) and a benchmark-specific minute window. Ordinary user quotas and normal AI SQL traffic are unchanged. Because the production route uses three model calls per question, a complete 150-question run normally consumes about 450 benchmark calls. Any deterministic or zero-token result stops the run and is labelled `llm_unavailable`; it is never counted as model-backed accuracy evidence.
+
 Before every candidate is scored, its gold SQL is executed locally and must reproduce the embedded frozen output. A corrupt gold fixture is recorded as `fixture_error` and is never counted as an AI SQL failure.
 
 ## Evidence captured
