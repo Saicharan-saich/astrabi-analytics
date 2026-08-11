@@ -117,6 +117,7 @@ export async function generateDirectSQL(
     analysisPlan?: AnalysisPlan,
     plannerVerification?: Array<{ code?: string; severity?: string; message?: string }>,
     semanticModel?: SemanticModel,
+    requestPurpose?: 'benchmark',
 ): Promise<DirectSQLResult> {
     const planContext = analysisPlan
         ? `\n\nLocal semantic draft (helpful context, not a constraint):\n${JSON.stringify(analysisPlan, null, 2)}`
@@ -133,7 +134,7 @@ export async function generateDirectSQL(
     const planner = await fetchWithFallback([
         { role: 'system', content: SPEC_PROMPT },
         { role: 'user', content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}\n\nQuestion: ${question}` },
-    ] as any, { temperature: 0, max_tokens: 2200, model: PLANNER_MODEL });
+    ] as any, { temperature: 0, max_tokens: 2200, model: PLANNER_MODEL, requestPurpose });
     const specContent = planner.data.choices?.[0]?.message?.content || '';
     const spec = extractJSONObject(specContent);
     const plannerUsage = planner.data.usage || {};
@@ -145,7 +146,7 @@ export async function generateDirectSQL(
     const drafted = await fetchWithFallback([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userContext },
-    ] as any, { temperature: 0, max_tokens: 2400, model: LUNA_MODEL });
+    ] as any, { temperature: 0, max_tokens: 2400, model: LUNA_MODEL, requestPurpose });
     let sql = extractSQL(drafted.data.choices?.[0]?.message?.content || '');
     const draftUsage = drafted.data.usage || {};
     tokens += draftUsage.total_tokens || ((draftUsage.prompt_tokens || 0) + (draftUsage.completion_tokens || 0)) || 0;
@@ -155,7 +156,7 @@ export async function generateDirectSQL(
     const reviewed = await fetchWithFallback([
         { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Check that the candidate implements every operation in the Dynamic Query Specification. Correct omissions, invalid fields, joins, aggregations, filters, grouping, sorting, and table calculations. Return only final SQL.` },
         { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${sql}\n\nFinal reviewed SQL:` },
-    ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL });
+    ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
     sql = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');
     const reviewUsage = reviewed.data.usage || {};
     tokens += reviewUsage.total_tokens || ((reviewUsage.prompt_tokens || 0) + (reviewUsage.completion_tokens || 0)) || 0;

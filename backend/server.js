@@ -239,7 +239,7 @@ app.use(cors({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'X-Request-ID'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'X-Request-ID', 'X-QuickInsight-AI-Purpose'],
     exposedHeaders: ['X-Request-ID'],
 }));
 
@@ -1519,8 +1519,10 @@ async function extractCurrentAdmin(req) {
     }
 }
 
-/** Check if user is active and within daily AI quota */
-async function checkAIQuota(userId) {
+/** Check if user is active and within the requested audited AI quota. */
+async function checkAIQuota(userId, options = {}) {
+    const action = options.action || 'ai_query';
+    const limitOverride = Number(options.limitOverride);
     if (!authPool) {
         return IS_PRODUCTION
             ? { allowed: false, reason: 'Usage verification is temporarily unavailable' }
@@ -1535,12 +1537,15 @@ async function checkAIQuota(userId) {
 
         // Count today's AI calls
         const todayResult = await authPool.query(
-            `SELECT COUNT(*) as count FROM usage_logs WHERE user_id = $1 AND action = 'ai_query' AND created_at >= CURRENT_DATE`,
-            [userId]
+            `SELECT COUNT(*) as count FROM usage_logs WHERE user_id = $1 AND action = $2 AND created_at >= CURRENT_DATE`,
+            [userId, action]
         );
         const used = parseInt(todayResult.rows[0].count);
-        const limit = user.daily_ai_limit || 50;
-        if (used >= limit) return { allowed: false, reason: `Daily AI limit reached (${limit}/day). Contact admin.`, used, limit };
+        const limit = Number.isFinite(limitOverride) && limitOverride > 0
+            ? Math.floor(limitOverride)
+            : (user.daily_ai_limit || 50);
+        const quotaLabel = action === 'ai_benchmark_query' ? 'Daily admin benchmark AI limit' : 'Daily AI limit';
+        if (used >= limit) return { allowed: false, reason: `${quotaLabel} reached (${limit}/day). Contact admin.`, used, limit };
         return { allowed: true, remaining: limit - used, used, limit };
     } catch (err) {
         console.error('[Quota] Check failed:', err.message);
@@ -1573,16 +1578,52 @@ const LLM_RATE_LIMIT = rateLimit({
     message: { success: false, error: 'Too many AI requests. Please wait a moment.' }
 });
 
-app.post('/api/llm/chat', LLM_RATE_LIMIT, requireAuthenticatedUser, async (req, res) => {
+// Coarse unauthenticated ingress protection. The authenticated standard and
+// admin-benchmark limiters below apply the tighter role-appropriate windows.
+const LLM_ENTRY_RATE_LIMIT = rateLimit({
+    windowMs: 60 * 1000,
+    max: 120,
+    message: { success: false, error: 'Too many AI requests. Please wait a moment.' }
+});
+
+const ADMIN_BENCHMARK_LLM_RATE_LIMIT = rateLimit({
+    windowMs: 60 * 1000,
+    max: Math.max(30, Math.min(180, Number(process.env.ADMIN_BENCHMARK_LLM_RATE_LIMIT) || 90)),
+    message: { success: false, error: 'Too many benchmark AI requests. Please wait a moment.' }
+});
+const ADMIN_BENCHMARK_DAILY_LIMIT = Math.max(
+    150,
+    Math.min(2000, Number(process.env.ADMIN_BENCHMARK_DAILY_LIMIT) || 600)
+);
+
+function isAdminBenchmarkRequest(req) {
+    return req.authUser?.role === 'admin'
+        && String(req.get('X-QuickInsight-AI-Purpose') || '').toLowerCase() === 'benchmark';
+}
+
+function applyLlmRateLimit(req, res, next) {
+    const limiterForRequest = isAdminBenchmarkRequest(req)
+        ? ADMIN_BENCHMARK_LLM_RATE_LIMIT
+        : LLM_RATE_LIMIT;
+    return limiterForRequest(req, res, next);
+}
+
+app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyLlmRateLimit, async (req, res) => {
     const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
     if (!OPENROUTER_KEY) {
         return res.status(500).json({ success: false, error: 'LLM service not configured' });
     }
 
     const user = req.authUser;
+    const isBenchmark = isAdminBenchmarkRequest(req);
+    const usageAction = isBenchmark ? 'ai_benchmark_query' : 'ai_query';
 
-    // Check quota
-    const quota = await checkAIQuota(user.userId);
+    // Benchmark calls are isolated from the normal per-user allowance. Only a
+    // currently authenticated database admin can request this audited budget.
+    const quota = await checkAIQuota(user.userId, {
+        action: usageAction,
+        limitOverride: isBenchmark ? ADMIN_BENCHMARK_DAILY_LIMIT : undefined,
+    });
     if (!quota.allowed) {
         return res.status(429).json({ success: false, error: quota.reason, quotaExceeded: true });
     }
@@ -1623,11 +1664,23 @@ app.post('/api/llm/chat', LLM_RATE_LIMIT, requireAuthenticatedUser, async (req, 
         const tokensUsed = data.usage?.total_tokens || data.usage?.completion_tokens || 0;
 
         // Log usage
-        await logAIUsage(user.userId, user.email, 'ai_query', tokensUsed, model, `tokens:${tokensUsed}`);
+        await logAIUsage(
+            user.userId,
+            user.email,
+            usageAction,
+            tokensUsed,
+            model,
+            `${isBenchmark ? 'purpose:benchmark;' : ''}tokens:${tokensUsed}`
+        );
         console.log(`[LLM] User ${user.email} — ${tokensUsed} tokens (${quota.remaining - 1} remaining today)`);
 
         // Include quota info in response
-        data._quota = { remaining: quota.remaining - 1, limit: quota.limit, used: (quota.used || 0) + 1 };
+        data._quota = {
+            remaining: quota.remaining - 1,
+            limit: quota.limit,
+            used: (quota.used || 0) + 1,
+            scope: isBenchmark ? 'admin_benchmark' : 'standard',
+        };
         res.json(data);
     } catch (error) {
         console.error('[LLM Proxy] Request failed:', error);

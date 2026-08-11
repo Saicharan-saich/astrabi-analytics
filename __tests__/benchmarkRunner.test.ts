@@ -19,10 +19,10 @@ function dependencies(overrides: Partial<BenchmarkRunnerDependencies> = {}): Ben
       validation: { valid: true },
       displaySafety: { allowed: true },
       executionTimeMs: 12,
-      engine: 'question-builder',
+      engine: 'llm-sql',
       confidence: { score: 95, level: 'high' },
-      provenance: { strategy: 'deterministic' },
-      tokenUsage: { prompt: 0, completion: 0, total: 0 },
+      provenance: { strategy: 'hybrid-plan-llm-sql', model: 'test-terra → test-luna → test-sol' },
+      tokenUsage: { prompt: 10, completion: 5, total: 15 },
       repairAttempts: 0,
     }),
     ...overrides,
@@ -60,6 +60,8 @@ describe('benchmark runner', () => {
         rawData: firstCase.expectedRows,
         validation: { valid: true },
         displaySafety: { allowed: false, reasons: ['Answer contract failed.'] },
+        provenance: { strategy: 'hybrid-plan-llm-sql' },
+        tokenUsage: { prompt: 10, completion: 5, total: 15 },
       }),
     }));
     expect(result.status).toBe('withheld');
@@ -114,6 +116,26 @@ describe('benchmark runner', () => {
     expect(run.results[0].status).toBe('llm_unavailable');
     expect(run.metrics.llmBackedRate).toBe(0);
     expect(run.interruptionReason).toContain('rate limited');
+  });
+
+  it('halts on any zero-token deterministic continuity result even without a known provider message', async () => {
+    const suite = BENCHMARK_SUITES[0];
+    const expectedBySql = new Map(suite.cases.map(testCase => [testCase.goldSql, testCase.expectedRows]));
+    const run = await runBenchmark([suite], dependencies({
+      executeGoldSql: async (_rows, sql) => ({ data: expectedBySql.get(sql) || [] }),
+      runPipeline: async () => ({
+        sql: 'SELECT 1',
+        rawData: [],
+        validation: { valid: true },
+        displaySafety: { allowed: true },
+        provenance: { strategy: 'deterministic' },
+        tokenUsage: { prompt: 0, completion: 0, total: 0 },
+      }),
+    }), { scope: 'smoke', appVersion: 'test' });
+
+    expect(run.results).toHaveLength(1);
+    expect(run.results[0].status).toBe('llm_unavailable');
+    expect(run.interruptionReason).toContain('LLM-backed execution required');
   });
 
   it('calculates p50, p95, safety, validity, and failure taxonomy', () => {

@@ -69,6 +69,11 @@ export interface PipelineProgress {
     percent: number;
 }
 
+export interface PipelineExecutionOptions {
+    /** Enables the separately audited, admin-only Benchmark Lab LLM budget. */
+    requestPurpose?: 'benchmark';
+}
+
 /**
  * Run the complete AI SQL pipeline from question to chart-ready data.
  *
@@ -84,7 +89,8 @@ export async function runAISQLPipeline(
     externalFilters?: PlanFilter[],
     onProgress?: (progress: PipelineProgress) => void,
     grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year',
-    forceRefresh?: boolean
+    forceRefresh?: boolean,
+    executionOptions?: PipelineExecutionOptions,
 ): Promise<AISQLPipelineResult> {
     const startTime = performance.now();
     let repairAttempts = 0;
@@ -202,7 +208,14 @@ export async function runAISQLPipeline(
                 : question;
             // Hybrid SQL: pass the locally governed plan to the selected GPT-5.6
             // model. It receives no dataset rows; DuckDB still executes locally.
-            const ds = await generateDirectSQL(anchoredQuestion, richSchema, plan, plannerIssues, semanticModel);
+            const ds = await generateDirectSQL(
+                anchoredQuestion,
+                richSchema,
+                plan,
+                plannerIssues,
+                semanticModel,
+                executionOptions?.requestPurpose,
+            );
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
                 // Safety net: correct any literal whose casing/plural drifted from
@@ -602,7 +615,12 @@ export async function runAISQLPipeline(
         // Normal governed path: locally compiled SQL.
         sqlResult = { sql: qbSQL, method: 'question-builder', explanation: '' };
     } else {
-        sqlResult = await generateSQLFromPlan(plan, semanticModel, apdmeResult.derivedMetrics);
+        sqlResult = await generateSQLFromPlan(
+            plan,
+            semanticModel,
+            apdmeResult.derivedMetrics,
+            executionOptions?.requestPurpose,
+        );
     }
     const aiGeneratedSQL = sqlResult.sql; // Keep AI's SQL for reference
     const sqlMethod = sqlResult.method;
@@ -707,7 +725,14 @@ export async function runAISQLPipeline(
         repairAttempts++;
         console.log(`[Pipeline] Step 5b: Repair attempt ${repairAttempts}...`);
         try {
-            const repaired = await repairSQL(currentSQL, execResult.error, plan, semanticModel, repairAttempts);
+            const repaired = await repairSQL(
+                currentSQL,
+                execResult.error,
+                plan,
+                semanticModel,
+                repairAttempts,
+                executionOptions?.requestPurpose,
+            );
             currentSQL = repaired.sql;
             sqlResult.explanation = repaired.explanation;
             execResult = await executeSQLViaDuckDB(dataset.rows, currentSQL, semanticModel.timeContext, dataset.relatedTables);
