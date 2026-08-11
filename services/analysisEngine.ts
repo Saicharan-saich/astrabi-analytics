@@ -1772,6 +1772,16 @@ export interface TableInfo {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5002/api';
 
+function getAuthenticatedJsonHeaders(): Record<string, string> {
+    const token = localStorage.getItem('qi_token') || '';
+    const apiKey = import.meta.env.VITE_API_KEY || '';
+    return {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(apiKey ? { 'x-api-key': apiKey } : {}),
+    };
+}
+
 export const connectToDatabase = async (config: {
     host: string;
     port: string;
@@ -1786,7 +1796,7 @@ export const connectToDatabase = async (config: {
         const endpoint = config.dbType === 'postgres' ? `${API_BASE_URL}/pg/connect` : `${API_BASE_URL}/connect`;
         const response = await fetch(endpoint, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthenticatedJsonHeaders(),
             body: JSON.stringify(config)
         });
 
@@ -1822,7 +1832,7 @@ export const getMockDatabaseSchema = async (connectionId: string): Promise<Table
         const prefix = getApiPrefix(connectionId);
         const response = await fetch(`${API_BASE_URL}${prefix}/schema`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthenticatedJsonHeaders(),
             body: JSON.stringify({ connectionId })
         });
         const data = await response.json();
@@ -1838,7 +1848,7 @@ export const fetchTableColumns = async (connectionId: string, table: string): Pr
         const prefix = getApiPrefix(connectionId);
         const response = await fetch(`${API_BASE_URL}${prefix}/columns`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthenticatedJsonHeaders(),
             body: JSON.stringify({ connectionId, table })
         });
         const data = await response.json();
@@ -1854,7 +1864,7 @@ export const fetchForeignKeys = async (connectionId: string): Promise<ForeignKey
         const prefix = getApiPrefix(connectionId);
         const response = await fetch(`${API_BASE_URL}${prefix}/foreign-keys`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthenticatedJsonHeaders(),
             body: JSON.stringify({ connectionId })
         });
         const data = await response.json();
@@ -1880,7 +1890,7 @@ export const getMockConnectorData = async (connectionId?: string, tables?: strin
     try {
         const response = await fetch(`${API_BASE_URL}/query`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: getAuthenticatedJsonHeaders(),
             body: JSON.stringify({ connectionId, tables: tables || [] })
         });
         const data = await response.json();
