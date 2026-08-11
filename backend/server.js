@@ -206,6 +206,13 @@ async function initAuthDatabase() {
 
 const app = express();
 const PORT = process.env.PORT || 5002;
+const operationalState = {
+    startedAt: Date.now(),
+    shuttingDown: false,
+    requests: 0,
+    errors: 0,
+};
+let httpServer = null;
 
 // CORS Config — MUST be first, before helmet/rate-limiter
 const allowedOrigins = [
@@ -232,7 +239,8 @@ app.use(cors({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-api-key', 'X-Request-ID'],
+    exposedHeaders: ['X-Request-ID'],
 }));
 
 // Explicitly handle preflight for all routes
@@ -261,6 +269,33 @@ app.use('/api/', limiter);
 // chart image (Smart Visual Insight) and dataset profile samples, which exceed
 // the default and were rejected with 413 Payload Too Large.
 app.use(express.json({ limit: '15mb' }));
+
+// Correlate frontend, backend, Railway, and OpenRouter incidents without logging
+// request bodies, credentials, SQL, or dataset samples.
+app.use((req, res, next) => {
+    const supplied = String(req.headers['x-request-id'] || '');
+    const requestId = /^[a-zA-Z0-9_-]{8,80}$/.test(supplied)
+        ? supplied
+        : createConnectionId('req');
+    const startedAt = Date.now();
+    req.requestId = requestId;
+    res.setHeader('X-Request-ID', requestId);
+    operationalState.requests += 1;
+    res.on('finish', () => {
+        if (res.statusCode >= 500) operationalState.errors += 1;
+        if (req.path !== '/api/health' && req.path !== '/api/ready') {
+            console.log(JSON.stringify({
+                event: 'http_request',
+                requestId,
+                method: req.method,
+                path: req.path,
+                status: res.statusCode,
+                durationMs: Date.now() - startedAt,
+            }));
+        }
+    });
+    next();
+});
 
 // API Key Middleware
 const apiKeyMiddleware = (req, res, next) => {
@@ -1299,20 +1334,28 @@ app.post('/api/refresh-data', requireAuthenticatedUser, async (req, res) => {
 // USER ACTIVITY TRACKING (Global — PostgreSQL)
 // ═══════════════════════════════════════════
 
+const VALID_ACTIVITY_ACTIONS = new Set([
+    'login', 'logout', 'upload_dataset', 'ai_sql_query', 'builder_query',
+    'smart_question', 'pin_to_dashboard', 'create_alert', 'tab_visit',
+    'export_data', 'register'
+]);
+
 // POST /api/activities — Log a user activity (any authenticated user)
-app.post('/api/activities', async (req, res) => {
+app.post('/api/activities', requireAuthenticatedUser, async (req, res) => {
     if (!authPool) return res.status(503).json({ success: false, error: 'Database not available' });
 
-    const { userId, userName, userEmail, userRole, action, details } = req.body;
-    if (!userId || !action) {
-        return res.status(400).json({ success: false, error: 'userId and action are required' });
+    const { action, details } = req.body || {};
+    const user = req.authUser;
+    if (!VALID_ACTIVITY_ACTIONS.has(action)) {
+        return res.status(400).json({ success: false, error: 'Invalid activity action' });
     }
+    const safeDetails = typeof details === 'string' ? details.slice(0, 2000) : null;
 
     try {
         await authPool.query(
             `INSERT INTO user_activities (user_id, user_name, user_email, user_role, action, details)
              VALUES ($1, $2, $3, $4, $5, $6)`,
-            [userId, userName || '', userEmail || '', userRole || '', action, details || null]
+            [user.userId, user.name || '', user.email || '', user.role || '', action, safeDetails]
         );
         res.json({ success: true });
     } catch (err) {
@@ -1325,18 +1368,8 @@ app.post('/api/activities', async (req, res) => {
 app.get('/api/activities', async (req, res) => {
     if (!authPool) return res.status(503).json({ success: false, error: 'Database not available' });
 
-    // Verify admin JWT
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ success: false, error: 'Authentication required' });
-    }
-    let decoded;
-    try {
-        decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
-    } catch {
-        return res.status(401).json({ success: false, error: 'Invalid token' });
-    }
-    if (decoded.role !== 'admin') {
+    const admin = await extractCurrentAdmin(req);
+    if (!admin) {
         return res.status(403).json({ success: false, error: 'Admin access required' });
     }
 
@@ -1377,17 +1410,8 @@ app.get('/api/activities', async (req, res) => {
 app.get('/api/activities/summary', async (req, res) => {
     if (!authPool) return res.status(503).json({ success: false, error: 'Database not available' });
 
-    const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-        return res.status(401).json({ success: false, error: 'Authentication required' });
-    }
-    let decoded;
-    try {
-        decoded = jwt.verify(authHeader.split(' ')[1], JWT_SECRET);
-    } catch {
-        return res.status(401).json({ success: false, error: 'Invalid token' });
-    }
-    if (decoded.role !== 'admin') {
+    const admin = await extractCurrentAdmin(req);
+    if (!admin) {
         return res.status(403).json({ success: false, error: 'Admin access required' });
     }
 
@@ -1640,8 +1664,8 @@ app.get('/api/admin/users', async (req, res) => {
 
 // Get usage logs (admin only, with optional user filter)
 app.get('/api/admin/usage', async (req, res) => {
-    const user = extractUser(req);
-    if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const user = await extractCurrentAdmin(req);
+    if (!user) return res.status(403).json({ error: 'Admin access required' });
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
 
     try {
@@ -1727,8 +1751,8 @@ app.patch('/api/admin/users/:id/role', async (req, res) => {
 
 // Suspend/activate user (admin only)
 app.post('/api/admin/toggle-user', async (req, res) => {
-    const user = extractUser(req);
-    if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const user = await extractCurrentAdmin(req);
+    if (!user) return res.status(403).json({ error: 'Admin access required' });
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
 
     try {
@@ -1748,8 +1772,8 @@ app.post('/api/admin/toggle-user', async (req, res) => {
 
 // Update user's daily AI limit (admin only)
 app.post('/api/admin/set-quota', async (req, res) => {
-    const user = extractUser(req);
-    if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const user = await extractCurrentAdmin(req);
+    if (!user) return res.status(403).json({ error: 'Admin access required' });
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
 
     try {
@@ -1766,9 +1790,8 @@ app.post('/api/admin/set-quota', async (req, res) => {
 
 // ── Global tab visibility ────────────────────────────────
 // Read: any authenticated user gets the admin-defined hidden tabs.
-app.get('/api/settings/tab-visibility', async (req, res) => {
-    const user = extractUser(req);
-    if (!user) return res.status(401).json({ error: 'Authentication required' });
+app.get('/api/settings/tab-visibility', requireAuthenticatedUser, async (req, res) => {
+    const user = req.authUser;
     if (!authPool) return res.json({ hiddenTabs: [] });
     try {
         const { rows } = await authPool.query(`SELECT value FROM app_settings WHERE key = 'tab_visibility'`);
@@ -1781,8 +1804,8 @@ app.get('/api/settings/tab-visibility', async (req, res) => {
 
 // Write: admin sets the globally-hidden tabs for everyone.
 app.post('/api/admin/tab-visibility', async (req, res) => {
-    const user = extractUser(req);
-    if (!user || user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+    const user = await extractCurrentAdmin(req);
+    if (!user) return res.status(403).json({ error: 'Admin access required' });
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
     try {
         const hiddenTabs = Array.isArray(req.body?.hiddenTabs)
@@ -1810,9 +1833,8 @@ app.post('/api/admin/tab-visibility', async (req, res) => {
 const VALID_ROLES = new Set(['METRIC', 'DIMENSION', 'DATE', 'BOOLEAN', 'ID', 'UNKNOWN']);
 const SIGNATURE_RE = /^[a-z0-9]{1,64}$/; // hashed signature — lowercase alnum only
 
-app.get('/api/settings/column-corrections', async (req, res) => {
-    const user = extractUser(req);
-    if (!user) return res.status(401).json({ error: 'Authentication required' });
+app.get('/api/settings/column-corrections', requireAuthenticatedUser, async (req, res) => {
+    const user = req.authUser;
     if (!authPool) return res.json({ corrections: {} });
     try {
         const { rows } = await authPool.query(`SELECT value FROM app_settings WHERE key = 'column_corrections'`);
@@ -1829,9 +1851,8 @@ app.get('/api/settings/column-corrections', async (req, res) => {
     }
 });
 
-app.post('/api/column-corrections', async (req, res) => {
-    const user = extractUser(req);
-    if (!user) return res.status(401).json({ error: 'Authentication required' });
+app.post('/api/column-corrections', requireAuthenticatedUser, async (req, res) => {
+    const user = req.authUser;
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
     try {
         const signature = req.body?.signature;
@@ -1872,37 +1893,56 @@ app.post('/api/column-corrections', async (req, res) => {
 // ═══════════════════════════════════════════
 // CLEANUP: Stale connection reaper (Fix #17)
 // ═══════════════════════════════════════════
-setInterval(() => {
-    const MAX_AGE_MS = 30 * 60 * 1000; // 30 minutes
+async function closeConnection(conn) {
+    if (conn.type === 'mssql' && conn.pool) await conn.pool.close();
+    if (conn.type === 'raw' && conn.rawConn) conn.rawConn.close();
+    if (conn.type === 'pg' && conn.pool) await conn.pool.end();
+}
+
+const connectionReaper = setInterval(() => {
+    const MAX_IDLE_MS = 30 * 60 * 1000;
     const now = Date.now();
     for (const [id, conn] of connections) {
-        const age = now - parseInt(id.replace('pg_', ''));
-        if (age > MAX_AGE_MS) {
+        const lastActive = Number(conn.lastUsedAt || conn.createdAt || now);
+        if (now - lastActive > MAX_IDLE_MS) {
             console.log(`[Cleanup] Closing stale connection ${id}`);
-            if (conn.type === 'mssql' && conn.pool) conn.pool.close().catch(() => { });
-            if (conn.type === 'raw' && conn.rawConn) try { conn.rawConn.close(); } catch { }
-            if (conn.type === 'pg' && conn.pool) conn.pool.end().catch(() => { });
+            closeConnection(conn).catch(error => {
+                console.error('[Cleanup] Connection close failed:', error.message);
+            });
             connections.delete(id);
         }
     }
-}, 5 * 60 * 1000); // Run every 5 minutes
+}, 5 * 60 * 1000);
+connectionReaper.unref?.()
 
-// Health check
+// Liveness: the process can accept HTTP. No dependency details are exposed.
 app.get('/api/health', (req, res) => {
-    // Fix #15: Warn about missing FRONTEND_URL
-    const warnings = [];
-    if (!process.env.FRONTEND_URL) {
-        warnings.push('FRONTEND_URL not set — CORS will only allow localhost origins');
-    }
-    if (!process.env.OPENROUTER_API_KEY) {
-        warnings.push('OPENROUTER_API_KEY not set — LLM proxy will not work');
-    }
-    res.json({
-        status: 'ok',
+    const live = !operationalState.shuttingDown;
+    res.status(live ? 200 : 503).json({
+        status: live ? 'ok' : 'shutting_down',
         timestamp: new Date().toISOString(),
-        activeConnections: connections.size,
-        warnings: warnings.length > 0 ? warnings : undefined
+        uptimeSeconds: Math.floor((Date.now() - operationalState.startedAt) / 1000),
     });
+});
+
+// Readiness: traffic is safe only after the canonical auth database is usable.
+app.get('/api/ready', async (req, res) => {
+    if (operationalState.shuttingDown || !authPool || authDbStatus !== 'ready') {
+        return res.status(503).json({ status: 'not_ready' });
+    }
+    try {
+        await Promise.race([
+            authPool.query('SELECT 1'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('readiness timeout')), 2000)),
+        ]);
+        return res.json({
+            status: 'ready',
+            ai: process.env.OPENROUTER_API_KEY ? 'configured' : 'unavailable',
+        });
+    } catch (error) {
+        console.error('[Readiness] Dependency check failed:', error.message);
+        return res.status(503).json({ status: 'not_ready' });
+    }
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -1916,7 +1956,7 @@ const aiProfileLimiter = rateLimit({
     message: { error: 'AI profiling rate limit exceeded. Please wait.' }
 });
 
-app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
+app.post('/api/ai/profile-dataset', aiProfileLimiter, requireAuthenticatedUser, async (req, res) => {
     try {
         const apiKey = process.env.OPENROUTER_API_KEY;
         if (!apiKey) {
@@ -1924,11 +1964,7 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
             return res.status(500).json({ error: 'LLM API key not configured. Set OPENROUTER_API_KEY in backend/.env' });
         }
 
-        // Require authentication
-        const user = extractUser(req);
-        if (!user) {
-            return res.status(401).json({ error: 'Authentication required for AI features. Please log in.' });
-        }
+        const user = req.authUser;
 
         // Check quota
         const quota = await checkAIQuota(user.userId);
@@ -1939,6 +1975,9 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
         const { prompt } = req.body;
         if (!prompt || typeof prompt !== 'string') {
             return res.status(400).json({ error: 'Missing or invalid prompt' });
+        }
+        if (prompt.length > 200_000) {
+            return res.status(413).json({ error: 'Dataset profile request is too large' });
         }
 
         console.log(`[AI Profile] User ${user.email} — sending prompt (${prompt.length} chars)`);
@@ -1974,7 +2013,7 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
         if (!response.ok) {
             const errorText = await response.text();
             console.error(`[AI Profile] OpenRouter error ${response.status}:`, errorText);
-            return res.status(502).json({ error: `LLM API returned ${response.status}`, details: errorText });
+            return res.status(502).json({ error: `LLM API returned ${response.status}` });
         }
 
         const data = await response.json();
@@ -2007,7 +2046,7 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
 
     } catch (error) {
         console.error('[AI Profile] Unexpected error:', error.message);
-        res.status(500).json({ error: 'Internal profiling error', details: error.message });
+        res.status(500).json({ error: 'Internal profiling error' });
     }
 });
 
@@ -2016,9 +2055,8 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, async (req, res) => {
 // ═══════════════════════════════════════════
 
 /** GET /api/dashboards — List all dashboards for the authenticated user */
-app.get('/api/dashboards', async (req, res) => {
-    const user = extractUser(req);
-    if (!user) return res.status(401).json({ error: 'Authentication required' });
+app.get('/api/dashboards', requireAuthenticatedUser, async (req, res) => {
+    const user = req.authUser;
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
 
     try {
@@ -2034,9 +2072,8 @@ app.get('/api/dashboards', async (req, res) => {
 });
 
 /** GET /api/dashboards/:id — Get a single dashboard by ID */
-app.get('/api/dashboards/:id', async (req, res) => {
-    const user = extractUser(req);
-    if (!user) return res.status(401).json({ error: 'Authentication required' });
+app.get('/api/dashboards/:id', requireAuthenticatedUser, async (req, res) => {
+    const user = req.authUser;
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
 
     try {
@@ -2053,9 +2090,8 @@ app.get('/api/dashboards/:id', async (req, res) => {
 });
 
 /** POST /api/dashboards — Create or full-save a dashboard */
-app.post('/api/dashboards', async (req, res) => {
-    const user = extractUser(req);
-    if (!user) return res.status(401).json({ error: 'Authentication required' });
+app.post('/api/dashboards', requireAuthenticatedUser, async (req, res) => {
+    const user = req.authUser;
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
 
     const { id, name, dataset_id, items, layout, filters, formatting } = req.body;
@@ -2093,9 +2129,8 @@ app.post('/api/dashboards', async (req, res) => {
 });
 
 /** DELETE /api/dashboards/:id — Delete a dashboard */
-app.delete('/api/dashboards/:id', async (req, res) => {
-    const user = extractUser(req);
-    if (!user) return res.status(401).json({ error: 'Authentication required' });
+app.delete('/api/dashboards/:id', requireAuthenticatedUser, async (req, res) => {
+    const user = req.authUser;
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
 
     try {
@@ -2112,19 +2147,49 @@ app.delete('/api/dashboards/:id', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
+httpServer = app.listen(PORT, () => {
     console.log(`🚀 QuickInsight Backend API running on http://localhost:${PORT}`);
     console.log(`📊 SQL Server connector ready (Hybrid Mode: mssql + raw msnodesqlv8)`);
     console.log(`🐘 PostgreSQL connector ready`);
 });
 
-// Cleanup on shutdown
-process.on('SIGINT', async () => {
-    console.log('\n🛑 Shutting down...');
-    for (const [id, conn] of connections) {
-        if (conn.type === 'mssql' && conn.pool) await conn.pool.close();
-        if (conn.type === 'raw' && conn.rawConn) conn.rawConn.close();
-        if (conn.type === 'pg' && conn.pool) await conn.pool.end();
-    }
-    process.exit(0);
+let shutdownPromise = null;
+async function gracefulShutdown(signal, exitCode = 0) {
+    if (shutdownPromise) return shutdownPromise;
+    operationalState.shuttingDown = true;
+    shutdownPromise = (async () => {
+        console.log(`[Shutdown] ${signal} received; draining requests and closing resources`);
+        clearInterval(connectionReaper);
+        const forceExit = setTimeout(() => {
+            console.error('[Shutdown] Forced exit after 15 seconds');
+            process.exit(1);
+        }, 15000);
+        forceExit.unref?.();
+
+        if (httpServer) {
+            await new Promise(resolve => httpServer.close(resolve));
+        }
+        const closes = [...connections.values()].map(conn => closeConnection(conn));
+        await Promise.allSettled(closes);
+        connections.clear();
+        if (authPool) {
+            await authPool.end().catch(error => {
+                console.error('[Shutdown] Auth database close failed:', error.message);
+            });
+        }
+        clearTimeout(forceExit);
+        process.exit(exitCode);
+    })();
+    return shutdownPromise;
+}
+
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('uncaughtException', error => {
+    console.error('[Fatal] Uncaught exception:', error);
+    gracefulShutdown('uncaughtException', 1);
+});
+process.on('unhandledRejection', error => {
+    console.error('[Fatal] Unhandled rejection:', error);
+    gracefulShutdown('unhandledRejection', 1);
 });
