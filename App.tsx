@@ -59,6 +59,12 @@ import { GameView } from './components/GameView';
 import { TabVisibilityManager } from './components/TabVisibilityManager';
 import { useMobile } from './hooks/useMobile';
 
+// The 150-case benchmark fixtures are admin-only and intentionally loaded only
+// when Benchmark Lab is opened, keeping the normal application bundle lean.
+const BenchmarkLabView = React.lazy(() =>
+  import('./components/BenchmarkLabView').then(module => ({ default: module.BenchmarkLabView }))
+);
+
 // ── SESSION CREDENTIAL CACHE (auto-reconnect without re-entering password) ──
 // Stored in sessionStorage: survives page refresh but cleared on tab close or logout.
 // Never persisted to localStorage/IndexedDB — password stays ephemeral.
@@ -1759,6 +1765,14 @@ function App() {
 
                 <div className={`h-full w-full ${activeTab === Tab.USER_INSIGHTS ? '' : 'hidden'}`}>
                   <UserInsightsView />
+                </div>
+
+                <div className={`h-full w-full ${activeTab === Tab.BENCHMARK ? '' : 'hidden'}`}>
+                  {activeTab === Tab.BENCHMARK && (
+                    <React.Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-slate-400">Loading Benchmark Lab…</div>}>
+                      <BenchmarkLabView activeDataset={dataset} />
+                    </React.Suspense>
+                  )}
                 </div>
 
                 <div className={`h-full w-full ${activeTab === Tab.QUICK_INSIGHTS ? '' : 'hidden'}`}>

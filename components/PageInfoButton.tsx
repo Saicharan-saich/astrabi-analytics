@@ -12,7 +12,7 @@ export type PageKey =
     | 'UPLOAD' | 'COLUMN_MAPPING' | 'DASHBOARD' | 'BUILDER' | 'WORKBENCH'
     | 'DATA' | 'ETL' | 'SCHEMA' | 'CONNECTORS' | 'NLQ' | 'AI_SQL'
     | 'CUSTOM_QUESTIONS' | 'DATASET_SUMMARY' | 'SMART_QUESTIONS' | 'ALERTS'
-    | 'VISUAL_PREVIEW' | 'DERIVED_COLUMNS' | 'USER_INSIGHTS' | 'GAME';
+    | 'VISUAL_PREVIEW' | 'DERIVED_COLUMNS' | 'USER_INSIGHTS' | 'BENCHMARK' | 'GAME';
 
 interface PageInfo {
     title: string;
@@ -268,6 +268,21 @@ const PAGE_INFO: Record<PageKey, PageInfo> = {
             'Feature usage breakdown',
             'User activity timeline',
             'Adoption metrics',
+        ],
+    },
+    BENCHMARK: {
+        title: 'AI SQL Benchmark Lab',
+        description: 'Run versioned, execution-based AI SQL evaluations against frozen local datasets and gold outputs. This page is available only to administrators.',
+        features: [
+            'Three curated compatibility suites with 50 questions each',
+            'Gold SQL and frozen outputs verified locally in DuckDB-WASM',
+            'Result-equivalence scoring rather than brittle SQL text matching',
+            'Accuracy, valid SQL, safety, latency, token, model, and repair evidence',
+            'JSON and CSV evidence exports for reproducible reporting',
+        ],
+        tips: [
+            'Run the 5-question-per-suite smoke test before spending tokens on all 150 questions',
+            'Use the exported suite version and methodology label whenever reporting a score',
         ],
     },
     GAME: {
