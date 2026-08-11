@@ -30,6 +30,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const [query, setQuery] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [errorTitle, setErrorTitle] = useState('Query could not be completed');
+    const inputRef = React.useRef<HTMLTextAreaElement>(null);
+    const errorRef = React.useRef<HTMLDivElement>(null);
     const [noDataMsg, setNoDataMsg] = useState<string | null>(null);
     const [noDataSQL, setNoDataSQL] = useState<string | null>(null);
 
@@ -46,6 +49,10 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
     // Better answers is only genuinely on when it has been agreed to.
     const enhancedActive = privacyMode === 'enhanced' && consented;
+
+    React.useEffect(() => {
+        if (error) errorRef.current?.focus();
+    }, [error]);
 
     // Built only while the dialog is open — profiling the dataset is not free,
     // and this is exactly the data the user is being asked to consent to.
@@ -160,6 +167,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         // ── Rate limit check ──
         const currentStatus = checkAiSqlLimit(currentUser);
         if (!currentStatus.allowed) {
+            setErrorTitle('AI SQL unavailable');
             if (currentStatus.blocked) {
                 setError('Your account role does not have access to AI SQL.');
             } else {
@@ -170,6 +178,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
         setIsLoading(true);
         setError(null);
+        setErrorTitle('Query could not be completed');
         setNoDataMsg(null);
         setNoDataSQL(null);
 
@@ -189,6 +198,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 const recovery = result.displaySafety.recoverySuggestions.length > 0
                     ? ` Try: ${result.displaySafety.recoverySuggestions.join(' ')}`
                     : ' Please retry or review the SQL before using this answer.';
+                setErrorTitle('Answer withheld for your protection');
                 setError(`The calculation was withheld because verification failed.${reasons}${recovery}`);
                 setNoDataSQL(result.sql || null);
                 return;
@@ -264,7 +274,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
         } catch (err: any) {
             console.error('[AI SQL Pipeline] Error:', err);
-            setError(err.message || 'An unexpected error occurred.');
+            const message = err.message || 'An unexpected error occurred.';
+            if (/timed out|timeout/i.test(message)) setErrorTitle('Query timed out');
+            else if (/network|failed to fetch|connect|offline/i.test(message)) setErrorTitle('Connection problem');
+            else setErrorTitle('Query could not be completed');
+            setError(message);
         } finally {
             setIsLoading(false);
         }
@@ -408,6 +422,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/30 to-blue-500/30 rounded-2xl blur-lg opacity-0 group-hover:opacity-40 transition-opacity pointer-events-none" />
                     <div className={`relative bg-white dark:bg-slate-800 border-2 rounded-2xl shadow-lg dark:shadow-2xl transition-all duration-300 ${query.trim() ? 'border-cyan-400/50 dark:border-cyan-500/40' : 'border-gray-200 dark:border-white/10 hover:border-cyan-400/30 dark:hover:border-cyan-500/30'}`}>
                         <textarea
+                            ref={inputRef}
+                            aria-label="Ask a question about your data"
+                            aria-describedby="ai-sql-input-help"
                             className="w-full bg-transparent border-none outline-none text-gray-900 dark:text-white px-5 pt-4 pb-2 placeholder:text-gray-400 dark:placeholder:text-slate-500 font-medium resize-none min-h-[56px] max-h-[160px]"
                             placeholder='Ask a question about your data... e.g. "Show top 10 products by total revenue"'
                             value={query}
@@ -422,7 +439,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                             disabled={isLoading}
                         />
                         <div className="flex items-center justify-between px-4 pb-3">
-                            <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
+                            <div id="ai-sql-input-help" className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
                                 <img src="/ai-sql-logo.png" alt="" className="w-3.5 h-3.5 rounded-sm" />
                                 <span>Local plan → validate → visualise &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[10px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
                             </div>
@@ -440,7 +457,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
                 {/* Loading State */}
                 {isLoading && (
-                    <div className="flex-1 flex flex-col items-center justify-center">
+                    <div className="flex-1 flex flex-col items-center justify-center" role="status" aria-live="polite" aria-label="Building and validating your analysis">
                         <div className="relative mb-6">
                             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center">
                                 <Sparkles className="w-8 h-8 text-cyan-400 animate-pulse" />
@@ -461,7 +478,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
                 {/* No-data explanation banner */}
                 {noDataMsg && !isLoading && (
-                    <div className="bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-300 dark:border-cyan-500/40 rounded-xl p-5 flex items-start gap-4">
+                    <div role="status" aria-live="polite" className="bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-300 dark:border-cyan-500/40 rounded-xl p-5 flex items-start gap-4">
                         <div className="w-9 h-9 rounded-xl bg-cyan-100 dark:bg-cyan-500/20 flex items-center justify-center shrink-0">
                             <AlertTriangle className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
                         </div>
@@ -472,7 +489,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                 <pre className="mt-3 text-[11px] text-emerald-700 dark:text-emerald-300 font-mono bg-white/60 dark:bg-slate-900/60 rounded-lg p-3 border border-cyan-200 dark:border-white/5 overflow-x-auto">{noDataSQL}</pre>
                             )}
                         </div>
-                        <button onClick={() => { setNoDataMsg(null); setNoDataSQL(null); }} className="text-cyan-600 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-200 shrink-0"><X className="w-4 h-4" /></button>
+                        <button aria-label="Dismiss no-data message" onClick={() => { setNoDataMsg(null); setNoDataSQL(null); inputRef.current?.focus(); }} className="text-cyan-600 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-200 shrink-0"><X className="w-4 h-4" /></button>
                     </div>
                 )}
 
@@ -500,13 +517,37 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
                 {/* Error */}
                 {error && !isLoading && (
-                    <div className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl p-5 flex items-start gap-3 text-red-700 dark:text-red-200 text-sm">
-                        <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+                    <div
+                        ref={errorRef}
+                        role="alert"
+                        aria-live="assertive"
+                        tabIndex={-1}
+                        className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl p-5 flex items-start gap-3 text-red-700 dark:text-red-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                    >
+                        <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
                         <div className="flex-1">
-                            <div className="font-bold mb-1">Query Failed</div>
-                            {error}
+                            <div className="font-bold mb-1">{errorTitle}</div>
+                            <p className="leading-relaxed">{error}</p>
+                            <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => { setError(null); inputRef.current?.focus(); }}
+                                    className="px-3 py-1.5 rounded-lg border border-red-300 dark:border-red-500/40 font-semibold hover:bg-red-100 dark:hover:bg-red-500/15"
+                                >
+                                    Edit question
+                                </button>
+                                {errorTitle !== 'AI SQL unavailable' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => { setError(null); handleSubmit(); }}
+                                        className="px-3 py-1.5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-500"
+                                    >
+                                        Try again
+                                    </button>
+                                )}
+                            </div>
                         </div>
-                        <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 dark:hover:text-red-200 shrink-0"><X className="w-4 h-4" /></button>
+                        <button aria-label="Dismiss error" onClick={() => { setError(null); inputRef.current?.focus(); }} className="text-red-400 hover:text-red-600 dark:hover:text-red-200 shrink-0"><X className="w-4 h-4" /></button>
                     </div>
                 )}
 
