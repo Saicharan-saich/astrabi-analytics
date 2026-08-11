@@ -35,6 +35,8 @@ jobs:
       - run: npm ci
       - name: TypeScript check
         run: npm run typecheck
+      - name: Backend syntax check
+        run: npm run check:backend
       - name: Build
         run: npm run build
       - name: Unit tests
