@@ -233,6 +233,7 @@ export async function runBenchmark(
     suiteVersions: Object.fromEntries(suites.map(suite => [suite.id, suite.version])),
     selectedSuiteIds: suites.map(suite => suite.id),
     scope: options.scope,
+    privacyMode: options.privacyMode || 'strict',
     startedAt: Date.now(),
     cancelled: false,
     appVersion: options.appVersion,
@@ -241,7 +242,7 @@ export async function runBenchmark(
     metrics: summarizeBenchmarkResults([], selectedCases.length),
   };
 
-  console.info(`[Benchmark Runner] Manifest locked: scope=${options.scope}, suites=${suites.length}, cases=${selectedCases.length}`);
+  console.info(`[Benchmark Runner] Manifest locked: scope=${options.scope}, privacy=${run.privacyMode}, suites=${suites.length}, cases=${selectedCases.length}`);
 
   for (let index = 0; index < selectedCases.length; index += 1) {
     if (options.shouldCancel?.()) {

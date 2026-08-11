@@ -1,4 +1,5 @@
 import type { Dataset } from '../../types';
+import type { PrivacyMode } from '../ai-sql/privacyMode';
 
 export type BenchmarkSuiteId = 'spider-compatible' | 'bird-compatible' | 'spider2-compatible';
 
@@ -129,6 +130,8 @@ export interface BenchmarkRun {
   suiteVersions: Record<string, string>;
   selectedSuiteIds: BenchmarkSuiteId[];
   scope: 'smoke' | 'full';
+  /** Privacy mode frozen for every case in this run. */
+  privacyMode?: PrivacyMode;
   startedAt: number;
   completedAt?: number;
   cancelled: boolean;
@@ -152,6 +155,8 @@ export interface BenchmarkRunnerDependencies {
 
 export interface BenchmarkRunOptions {
   scope: 'smoke' | 'full';
+  /** Run-scoped privacy mode used by the production AI SQL pipeline. */
+  privacyMode?: PrivacyMode;
   appVersion: string;
   shouldCancel?: () => boolean;
   onCaseStart?: (testCase: BenchmarkCase, index: number, total: number) => void;

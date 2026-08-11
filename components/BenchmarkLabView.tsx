@@ -15,6 +15,7 @@ import {
   Loader2,
   PauseCircle,
   Play,
+  Shield,
   ShieldCheck,
   Sparkles,
   Trash2,
@@ -27,6 +28,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useAppStore } from '../store/useAppStore';
 import { useTheme } from './ThemeProvider';
 import { runAISQLPipeline } from '../services/ai-sql';
+import type { PrivacyMode } from '../services/ai-sql/privacyMode';
 import { executeSQLViaDuckDB, reloadDataTable, resetDuckDB } from '../services/duckdbEngine';
 import {
   BENCHMARK_SUITES,
@@ -108,12 +110,12 @@ function runToCsv(run: BenchmarkRun): string {
   const headers = [
     'run_id', 'case_id', 'suite', 'question', 'category', 'difficulty', 'status', 'passed',
     'valid_sql', 'safe_to_display', 'latency_ms', 'tokens', 'engine', 'strategy', 'model',
-    'confidence', 'repairs', 'failure_reason', 'gold_sql', 'candidate_sql',
+    'privacy_mode', 'confidence', 'repairs', 'failure_reason', 'gold_sql', 'candidate_sql',
   ];
   const rows = run.results.map(result => [
     run.id, result.caseId, result.suiteId, result.question, result.category, result.difficulty,
     result.status, result.passed, result.validSql, result.safeToDisplay, result.pipelineLatencyMs,
-    result.tokenUsage.total, result.engine, result.strategy, result.model, result.confidence,
+    result.tokenUsage.total, result.engine, result.strategy, result.model, run.privacyMode || 'strict', result.confidence,
     result.repairAttempts, result.failureReason, result.goldSql, result.candidateSql,
   ]);
   return [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
@@ -155,6 +157,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     () => new Set(BENCHMARK_SUITES.map(suite => suite.id))
   );
   const [scope, setScope] = useState<'smoke' | 'full'>('smoke');
+  const [benchmarkPrivacyMode, setBenchmarkPrivacyMode] = useState<PrivacyMode>('strict');
   const [confirmed, setConfirmed] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState({ completed: 0, total: 0, question: '' });
@@ -209,6 +212,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     // re-render during a long run, but the benchmark manifest must never drift.
     const runSuites = [...selectedSuiteObjects];
     const runScope = scope;
+    const runPrivacyMode = benchmarkPrivacyMode;
     const plannedQuestions = runSuites.reduce(
       (total, suite) => total + (runScope === 'full' ? suite.cases.length : Math.min(5, suite.cases.length)),
       0,
@@ -234,11 +238,12 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             undefined,
             undefined,
             true,
-            { requestPurpose: 'benchmark' },
+            { requestPurpose: 'benchmark', privacyModeOverride: runPrivacyMode },
           ),
         },
         {
           scope: runScope,
+          privacyMode: runPrivacyMode,
           appVersion: (import.meta as any).env?.VITE_APP_VERSION || '3.0',
           shouldCancel: () => cancelRef.current,
           onCaseStart: (testCase, index, total) => {
@@ -387,11 +392,38 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                       <Gauge className="w-3.5 h-3.5 inline mr-1.5" />Full · 50 per suite
                     </button>
                   </div>
+                  <div>
+                    <div className={`text-[11px] font-black uppercase tracking-[0.14em] ${muted}`}>AI data access</div>
+                    <div className="mt-2 grid sm:grid-cols-2 gap-2 max-w-2xl">
+                      <button
+                        type="button"
+                        disabled={isRunning}
+                        onClick={() => { setBenchmarkPrivacyMode('strict'); setConfirmed(false); }}
+                        className={`text-left rounded-xl border p-3 transition-all disabled:cursor-not-allowed ${benchmarkPrivacyMode === 'strict' ? 'bg-emerald-500/12 border-emerald-500/35 ring-1 ring-emerald-500/15' : softSurface}`}
+                      >
+                        <span className={`flex items-center gap-2 text-xs font-black ${benchmarkPrivacyMode === 'strict' ? 'text-emerald-400' : strong}`}>
+                          <ShieldCheck className="w-4 h-4" />Private
+                        </span>
+                        <span className={`block mt-1 text-[11px] leading-5 ${muted}`}>Metadata and governed analysis plan only. No fixture category values are sent.</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isRunning}
+                        onClick={() => { setBenchmarkPrivacyMode('enhanced'); setConfirmed(false); }}
+                        className={`text-left rounded-xl border p-3 transition-all disabled:cursor-not-allowed ${benchmarkPrivacyMode === 'enhanced' ? 'bg-cyan-500/12 border-cyan-500/35 ring-1 ring-cyan-500/15' : softSurface}`}
+                      >
+                        <span className={`flex items-center gap-2 text-xs font-black ${benchmarkPrivacyMode === 'enhanced' ? 'text-cyan-400' : strong}`}>
+                          <Shield className="w-4 h-4" />Better answers
+                        </span>
+                        <span className={`block mt-1 text-[11px] leading-5 ${muted}`}>Also sends bounded, non-sensitive category values from the embedded synthetic fixtures. Never rows, IDs or personal data.</span>
+                      </button>
+                    </div>
+                  </div>
                   <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer ${softSurface}`}>
                     <input type="checkbox" checked={confirmed} disabled={isRunning || selectedQuestionCount === 0} onChange={event => setConfirmed(event.target.checked)} className="mt-0.5 accent-violet-600" />
                     <span>
                       <span className={`block text-xs font-bold ${strong}`}>I understand this run will submit {selectedQuestionCount} isolated AI SQL questions.</span>
-                      <span className={`block text-[11px] mt-1 ${muted}`}>The LLM receives governed metadata/safe values according to the existing privacy mode. Gold outputs are never sent to the model.</span>
+                      <span className={`block text-[11px] mt-1 ${muted}`}>This run uses <strong className={strong}>{benchmarkPrivacyMode === 'enhanced' ? 'Better answers' : 'Private'}</strong> mode for every case. Gold outputs and raw fixture rows are never sent to the model.</span>
                     </span>
                   </label>
                 </div>
@@ -416,7 +448,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             {latestRun && metrics && (
               <section>
                 <div className="flex items-center justify-between mb-3">
-                  <div><h2 className={`text-base font-black ${strong}`}>Latest evidence</h2><p className={`text-xs ${muted}`}>{new Date(latestRun.startedAt).toLocaleString()} · {latestRun.methodologyLabel}</p></div>
+                  <div><h2 className={`text-base font-black ${strong}`}>Latest evidence</h2><p className={`text-xs ${muted}`}>{new Date(latestRun.startedAt).toLocaleString()} · {latestRun.methodologyLabel} · {latestRun.privacyMode === 'enhanced' ? 'Better answers' : 'Private'}</p></div>
                 </div>
                 <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
                   <MetricCard icon={<Gauge className="w-4 h-4" />} label="Execution accuracy" value={percent(metrics.executionAccuracy)} detail={`${metrics.passed}/${metrics.completed} correct outputs`} tone="violet" isDark={isDark} />
@@ -452,7 +484,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               <>
               <div className={`rounded-2xl border px-4 py-3 flex flex-wrap items-center justify-between gap-2 ${latestRun.metrics.completed === latestRun.metrics.total ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
                 <div className={`text-sm font-black ${latestRun.metrics.completed === latestRun.metrics.total ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {latestRun.scope === 'full' ? 'Full run' : 'Smoke run'} · {latestRun.metrics.total} planned · {latestRun.metrics.completed} completed
+                  {latestRun.scope === 'full' ? 'Full run' : 'Smoke run'} · {latestRun.privacyMode === 'enhanced' ? 'Better answers' : 'Private'} · {latestRun.metrics.total} planned · {latestRun.metrics.completed} completed
                 </div>
                 <div className={`text-xs ${muted}`}>{latestRun.selectedSuiteIds.length} suite{latestRun.selectedSuiteIds.length === 1 ? '' : 's'} · {latestRun.cancelled ? 'Stopped by user' : latestRun.metrics.completed === latestRun.metrics.total ? 'Run complete' : 'Run incomplete'}</div>
               </div>
@@ -591,7 +623,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               <div className="mt-6 space-y-3">
                 {[
                   ['1', 'Fixture integrity', 'Gold SQL is executed against the embedded dataset and must reproduce the frozen output before AI SQL is scored.'],
-                  ['2', 'Production pipeline', 'The same runAISQLPipeline entry point used by the product receives one isolated question with cache bypass enabled.'],
+                  ['2', 'Production pipeline', 'The same runAISQLPipeline entry point used by the product receives one isolated question with cache bypass enabled and the run-scoped privacy mode selected by the administrator.'],
                   ['3', 'Local execution', 'Candidate SQL and gold SQL run inside DuckDB-WASM. Dataset rows are not submitted to the gold evaluator or model.'],
                   ['4', 'Value-set equivalence', 'Aliases, harmless column naming differences, row order, nulls, and numeric tolerance are normalized. Sorting never changes execution correctness.'],
                   ['5', 'Independent diagnostics', 'Matching values count as correct. Safety and SQL-validation warnings remain visible and continue to affect their own rates without overriding execution accuracy.'],
@@ -619,7 +651,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               <div className={`rounded-2xl border p-5 ${panel}`}>
                 <h3 className={`text-sm font-black ${strong}`}>Exported evidence includes</h3>
                 <ul className={`mt-3 space-y-2 text-xs ${muted}`}>
-                  {['Suite and fixture versions', 'Question, gold SQL, and candidate SQL', 'Frozen and candidate result previews', 'Outcome taxonomy and mismatch reason', 'Latency, tokens, model route, confidence, repairs', 'Run timestamp, scope, and cancellation state'].map(item => <li key={item} className="flex items-start gap-2"><Check className="w-3.5 h-3.5 mt-0.5 text-emerald-400 shrink-0" />{item}</li>)}
+                  {['Suite and fixture versions', 'Question, gold SQL, and candidate SQL', 'Frozen and candidate result previews', 'Outcome taxonomy and mismatch reason', 'Latency, tokens, model route, confidence, repairs', 'Run timestamp, scope, privacy mode, and cancellation state'].map(item => <li key={item} className="flex items-start gap-2"><Check className="w-3.5 h-3.5 mt-0.5 text-emerald-400 shrink-0" />{item}</li>)}
                 </ul>
               </div>
             </div>

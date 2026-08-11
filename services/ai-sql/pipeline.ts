@@ -55,7 +55,7 @@ import { detectAntiJoin, buildAntiJoinSQL } from './antiJoin';
 import { generateDirectSQL } from './directSqlEngine';
 import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerializer';
 import { describeSchemaForLLM, discoverJoinContext } from './joinEngine';
-import { getEffectivePrivacyMode } from './privacyMode';
+import { getEffectivePrivacyMode, type PrivacyMode } from './privacyMode';
 import { getSelection, applySelection } from './privacySelection';
 
 /**
@@ -72,6 +72,12 @@ export interface PipelineProgress {
 export interface PipelineExecutionOptions {
     /** Enables the separately audited, admin-only Benchmark Lab LLM budget. */
     requestPurpose?: 'benchmark';
+    /**
+     * Run-scoped privacy choice for the embedded, synthetic benchmark fixtures.
+     * Ignored outside Benchmark Lab so ordinary callers can never bypass the
+     * user's consent-governed effective privacy mode.
+     */
+    privacyModeOverride?: PrivacyMode;
 }
 
 /**
@@ -93,6 +99,10 @@ export async function runAISQLPipeline(
     executionOptions?: PipelineExecutionOptions,
 ): Promise<AISQLPipelineResult> {
     const startTime = performance.now();
+    const effectivePrivacyMode: PrivacyMode = executionOptions?.requestPurpose === 'benchmark'
+        && executionOptions.privacyModeOverride
+        ? executionOptions.privacyModeOverride
+        : getEffectivePrivacyMode();
     let repairAttempts = 0;
     const TOTAL_STEPS = 12;
     const reportProgress = (step: string, stepNumber: number) => {
@@ -173,7 +183,7 @@ export async function runAISQLPipeline(
             // data values leave the browser. Enhanced = also send bounded category
             // domains (non-sensitive, low-cardinality; PII, identifiers and
             // sensitive categoricals excluded). Rows are never sent in either.
-            const privacyMode = getEffectivePrivacyMode();
+            const privacyMode = effectivePrivacyMode;
             // The automatic filter decides what is eligible; the user's own
             // per-column and per-value choices then subtract from that.
             let domains = privacyMode === 'enhanced'
@@ -569,7 +579,7 @@ export async function runAISQLPipeline(
             stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
             status: directSQL ? 'pass' : 'skip',
             summary: directSQL
-                ? `Hybrid SQL: ${directSqlModel || 'GPT-5.6'} wrote plan-constrained SQL from metadata only`
+                ? `Hybrid SQL: ${directSqlModel || 'GPT-5.6'} wrote plan-constrained SQL using ${effectivePrivacyMode === 'enhanced' ? 'metadata plus approved safe values' : 'metadata only'}`
                 : 'Hybrid SQL unavailable or rejected — continuing with the local deterministic compiler',
             details: { sql: directSQL, error: directSqlError, tokens: directSqlTokens, model: directSqlModel || null },
         }, _directSqlStart);
@@ -628,7 +638,7 @@ export async function runAISQLPipeline(
         stepNumber: 6, name: 'SQL Generator', engine: 'sqlGenerator', icon: '⚡',
         status: 'pass',
         summary: directSQL
-            ? `Hybrid SQL: ${directSqlModel || 'GPT-5.6'} generated SQL from the governed plan and metadata-only schema`
+            ? `Hybrid SQL: ${directSqlModel || 'GPT-5.6'} generated SQL from the governed plan using ${effectivePrivacyMode === 'enhanced' ? 'metadata plus approved safe values' : 'metadata only'}`
             : qbSQL
                 ? 'Local continuity fallback: deterministic Question Builder SQL'
                 : `Local continuity fallback: generated via ${sqlMethod === 'deterministic' ? 'deterministic rules' : 'AI/LLM fallback'}`,
@@ -1122,7 +1132,7 @@ export async function runAISQLPipeline(
             : '';
 
         const valueNote = unmatchedLiterals.length > 0
-            ? ` These value(s) weren't found in your data: ${unmatchedLiterals.map(v => `"${v}"`).join(', ')}. Check the spelling, or they may be stored in a different column${getEffectivePrivacyMode() === 'strict' ? ' — or switch to "Better answers" mode so the AI can see your real values' : ''}.`
+            ? ` These value(s) weren't found in your data: ${unmatchedLiterals.map(v => `"${v}"`).join(', ')}. Check the spelling, or they may be stored in a different column${effectivePrivacyMode === 'strict' ? ' — or switch to "Better answers" mode so the AI can see your real values' : ''}.`
             : '';
 
         const noDataExplanation = unmatchedLiterals.length > 0
@@ -1407,7 +1417,7 @@ export async function runAISQLPipeline(
             strategy: 'hybrid-plan-llm-sql' as const,
             model: directSqlModel,
             summary: `${directSqlModel || 'GPT-5.6'} generated SQL from the governed local plan; the query ran only in local DuckDB.`,
-            dataAccess: getEffectivePrivacyMode() === 'enhanced' ? 'approved_safe_values' as const : 'metadata_only' as const,
+            dataAccess: effectivePrivacyMode === 'enhanced' ? 'approved_safe_values' as const : 'metadata_only' as const,
             downgraded: usedDeterministicFallback,
         }
         : {

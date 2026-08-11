@@ -145,13 +145,14 @@ describe('benchmark runner', () => {
           tokenUsage: { prompt: 10, completion: 5, total: 15 },
         };
       },
-    }), { scope: 'smoke', appVersion: 'test' });
+    }), { scope: 'smoke', appVersion: 'test', privacyMode: 'enhanced' });
 
     expect(run.results).toHaveLength(5);
     expect(run.metrics.executionAccuracy).toBe(1);
     expect(run.metrics.totalTokens).toBe(75);
     expect(run.metrics.llmBackedRate).toBe(1);
     expect(run.methodologyLabel).toBe('Curated Subset Execution Accuracy');
+    expect(run.privacyMode).toBe('enhanced');
   });
 
   it('locks all 50 cases from a selected suite in full scope', async () => {
