@@ -29,6 +29,12 @@ test('app boots through the pre-login tour without crashing', async ({ page }) =
     await page.getByRole('button', { name: /skip tour/i }).click();
     await expect(page.getByRole('button', { name: /continue as guest/i })).toBeVisible();
 
+    // The primary authentication controls must remain discoverable to keyboard,
+    // screen-reader and browser password-manager users.
+    await expect(page.getByLabel('Email Address')).toBeVisible();
+    await expect(page.getByLabel('Password', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Show password' })).toBeVisible();
+
     // No uncaught/console errors during initial render or tour transition.
     expect(errors, `page errors on boot:\n${errors.join('\n')}`).toEqual([]);
 });
