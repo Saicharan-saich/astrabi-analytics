@@ -6,7 +6,7 @@ import {
     CategoryScale, LinearScale, BarElement, LineElement,
     PointElement, ArcElement, Filler, Tooltip as ChartTooltip,
 } from 'chart.js';
-import { Dataset, AnalysisResult } from '../types';
+import { Dataset, AnalysisResult, AggregationType, AnalysisType, TimeGrain } from '../types';
 import { generateAutoInsights, AutoInsight } from '../services/autoInsightsEngine';
 import { discoverInsights, Finding } from '../services/insightDiscoveryEngine';
 import { FindingsFeed } from './FindingsFeed';
@@ -158,7 +158,15 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
             yLabel: insight.title,
             insight: insight.subtitle,
             sql: insight.sql,
-            config: { questionId: insight.id, questionLabel: insight.title },
+            config: {
+                metric: insight.yKey,
+                dimension: insight.xKey,
+                aggregation: AggregationType.SUM,
+                timeGrain: TimeGrain.RAW,
+                analysisType: AnalysisType.STANDARD,
+                questionId: insight.id,
+                questionLabel: insight.title,
+            },
             vis: insight.chartType as any,
             kpi: insight.kpiValue,
         };
