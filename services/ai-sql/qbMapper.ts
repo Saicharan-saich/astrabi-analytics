@@ -57,7 +57,7 @@ const FIT_INTENTS = new Set<AnalysisPlan['intent']>([
 ]);
 
 const AGG_MAP: Record<PlanMetric['agg'], string> = {
-    sum: 'SUM', avg: 'AVG', count: 'COUNT', count_distinct: 'COUNT_DISTINCT', min: 'MIN', max: 'MAX',
+    sum: 'SUM', avg: 'AVG', count: 'COUNT', count_distinct: 'COUNT_DISTINCT', min: 'MIN', max: 'MAX', median: 'MEDIAN',
 };
 
 /** Case-insensitive resolution of a plan field to a real dataset column. */
