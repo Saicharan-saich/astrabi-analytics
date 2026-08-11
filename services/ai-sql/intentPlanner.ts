@@ -826,16 +826,26 @@ export function applyCountSemantics(
     const primary = plan.metrics.find(m => !(m as any).compositeId);
     const pf = primary ? model.fields.find(f => f.name.toLowerCase() === String(primary.field).toLowerCase()) : undefined;
 
+    const setDistinctTarget = (field: string) => {
+        plan.metrics = [{ field, agg: 'count_distinct' } as any];
+        // A distinct-count target is a metric, not also a grouping dimension.
+        // Keep unrelated dimensions so "distinct customers by region" still
+        // groups by region, while "how many distinct customers" stays scalar.
+        plan.dimensions = plan.dimensions.filter(
+            dimension => String(dimension.field).toLowerCase() !== field.toLowerCase(),
+        );
+    };
+
     if (explicitAgg === 'count_distinct') {
         // 1) The plan already targets a categorical entity that isn't a filter.
         if (pf && pf.role !== 'metric' && !filterFields.has(String(primary!.field).toLowerCase())) {
-            plan.metrics = [{ field: primary!.field, agg: 'count_distinct' } as any];
+            setDistinctTarget(String(primary!.field));
             return true;
         }
         // 2) Resolve the entity from the question ("distinct customers" → customer_id).
         const entity = resolveDistinctEntityField(question, model);
         if (entity) {
-            plan.metrics = [{ field: entity, agg: 'count_distinct' } as any];
+            setDistinctTarget(entity);
             return true;
         }
         // else fall through to COUNT(*) — nothing sensible to distinct-count.
@@ -918,7 +928,7 @@ function enforceAggregation(plan: AnalysisPlan, question: string, model: Semanti
     // COUNT questions count rows/entities — handle before the generic override so
     // "count of patients whose age > 50" becomes COUNT(*), never SUM(age).
     if (applyCountSemantics(explicitAgg, plan, model, question)) {
-        console.log('[Intent Planner] COUNT question → COUNT(*) of rows (a filter/attribute is never the count target)');
+        console.log(`[Intent Planner] COUNT semantics applied: ${plan.metrics[0]?.agg || 'count'}(${plan.metrics[0]?.field || '*'})`);
         return;
     }
 

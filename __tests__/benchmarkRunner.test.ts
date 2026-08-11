@@ -94,6 +94,65 @@ describe('benchmark runner', () => {
     expect(run.methodologyLabel).toBe('Curated Subset Execution Accuracy');
   });
 
+  it('locks all 50 cases from a selected suite in full scope', async () => {
+    const suite = BENCHMARK_SUITES[0];
+    const expectedBySql = new Map(suite.cases.map(testCase => [testCase.goldSql, testCase.expectedRows]));
+    const expectedByQuestion = new Map(suite.cases.map(testCase => [testCase.question, testCase]));
+    const run = await runBenchmark([suite], dependencies({
+      executeGoldSql: async (_rows, sql) => ({ data: expectedBySql.get(sql) || [] }),
+      runPipeline: async question => {
+        const testCase = expectedByQuestion.get(question)!;
+        return {
+          sql: testCase.goldSql,
+          rawData: testCase.expectedRows,
+          validation: { valid: true },
+          displaySafety: { allowed: true },
+          provenance: { strategy: 'hybrid-plan-llm-sql', model: 'test-model' },
+          tokenUsage: { prompt: 10, completion: 5, total: 15 },
+        };
+      },
+    }), { scope: 'full', appVersion: 'test' });
+
+    expect(run.scope).toBe('full');
+    expect(run.metrics.total).toBe(50);
+    expect(run.metrics.completed).toBe(50);
+    expect(run.results).toHaveLength(50);
+  });
+
+  it('continues after an isolated model outage when resilient mode is enabled', async () => {
+    const suite = BENCHMARK_SUITES[0];
+    const expectedBySql = new Map(suite.cases.map(testCase => [testCase.goldSql, testCase.expectedRows]));
+    const expectedByQuestion = new Map(suite.cases.map(testCase => [testCase.question, testCase]));
+    let calls = 0;
+    const run = await runBenchmark([suite], dependencies({
+      executeGoldSql: async (_rows, sql) => ({ data: expectedBySql.get(sql) || [] }),
+      runPipeline: async question => {
+        calls += 1;
+        const testCase = expectedByQuestion.get(question)!;
+        if (calls === 2) {
+          return {
+            sql: '', rawData: [], validation: { valid: false }, displaySafety: { allowed: false },
+            provenance: { strategy: 'deterministic', fallbackReason: 'AI model is temporarily rate limited.' },
+            tokenUsage: { prompt: 0, completion: 0, total: 0 },
+          };
+        }
+        return {
+          sql: testCase.goldSql,
+          rawData: testCase.expectedRows,
+          validation: { valid: true },
+          displaySafety: { allowed: true },
+          provenance: { strategy: 'hybrid-plan-llm-sql', model: 'test-model' },
+          tokenUsage: { prompt: 10, completion: 5, total: 15 },
+        };
+      },
+    }), { scope: 'smoke', appVersion: 'test', stopOnLlmUnavailable: false });
+
+    expect(run.results).toHaveLength(5);
+    expect(run.metrics.completed).toBe(5);
+    expect(run.metrics.failuresByType.llm_unavailable).toBe(1);
+    expect(run.interruptionReason).toBeUndefined();
+  });
+
   it('halts instead of silently scoring deterministic output after an LLM outage', async () => {
     const suite = BENCHMARK_SUITES[0];
     const expectedBySql = new Map(suite.cases.map(testCase => [testCase.goldSql, testCase.expectedRows]));

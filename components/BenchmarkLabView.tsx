@@ -177,7 +177,10 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     () => BENCHMARK_SUITES.filter(suite => selectedSuites.has(suite.id)),
     [selectedSuites],
   );
-  const selectedQuestionCount = selectedSuiteObjects.length * (scope === 'full' ? 50 : 5);
+  const selectedQuestionCount = selectedSuiteObjects.reduce(
+    (total, suite) => total + (scope === 'full' ? suite.cases.length : Math.min(5, suite.cases.length)),
+    0,
+  );
   const displayedRun = latestRun;
   const displayedResults = isRunning ? liveResults : (displayedRun?.results || []);
   const filteredResults = useMemo(() => displayedResults.filter(result =>
@@ -202,16 +205,25 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
 
   const handleRun = async () => {
     if (!accessible || isRunning || !confirmed || selectedSuiteObjects.length === 0) return;
+    // Freeze the configuration at the instant Start is pressed. React state may
+    // re-render during a long run, but the benchmark manifest must never drift.
+    const runSuites = [...selectedSuiteObjects];
+    const runScope = scope;
+    const plannedQuestions = runSuites.reduce(
+      (total, suite) => total + (runScope === 'full' ? suite.cases.length : Math.min(5, suite.cases.length)),
+      0,
+    );
     cancelRef.current = false;
     setIsRunning(true);
     setRunError(null);
     setLiveResults([]);
-    setProgress({ completed: 0, total: selectedQuestionCount, question: '' });
+    setProgress({ completed: 0, total: plannedQuestions, question: '' });
     setActiveView('results');
+    console.info(`[Benchmark] Starting ${runScope} run: ${runSuites.length} suite(s), ${plannedQuestions} planned question(s)`);
 
     try {
       const run = await runBenchmark(
-        selectedSuiteObjects,
+        runSuites,
         {
           reloadDataset: reloadDataTable,
           executeGoldSql: async (rows, sql, timeContext) => executeSQLViaDuckDB(rows, sql, timeContext),
@@ -226,7 +238,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
           ),
         },
         {
-          scope,
+          scope: runScope,
           appVersion: (import.meta as any).env?.VITE_APP_VERSION || '3.0',
           shouldCancel: () => cancelRef.current,
           onCaseStart: (testCase, index, total) => {
@@ -237,9 +249,13 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             setProgress({ completed: index + 1, total, question: result.question });
           },
           minimumCaseIntervalMs: 3250,
-          stopOnLlmUnavailable: true,
+          // One transient provider failure must not throw away the remaining
+          // evidence in a 150-question run. The failed case remains explicitly
+          // labelled llm_unavailable and outside LLM-backed coverage.
+          stopOnLlmUnavailable: false,
         },
       );
+      console.info(`[Benchmark] Finished ${run.scope} run: ${run.metrics.completed}/${run.metrics.total} completed${run.cancelled ? ' (cancelled)' : ''}`);
       setLatestRun(run);
       saveBenchmarkRun(run);
     } catch (error) {
@@ -433,11 +449,26 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             )}
 
             {!isRunning && latestRun && (
+              <>
+              <div className={`rounded-2xl border px-4 py-3 flex flex-wrap items-center justify-between gap-2 ${latestRun.metrics.completed === latestRun.metrics.total ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
+                <div className={`text-sm font-black ${latestRun.metrics.completed === latestRun.metrics.total ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {latestRun.scope === 'full' ? 'Full run' : 'Smoke run'} · {latestRun.metrics.total} planned · {latestRun.metrics.completed} completed
+                </div>
+                <div className={`text-xs ${muted}`}>{latestRun.selectedSuiteIds.length} suite{latestRun.selectedSuiteIds.length === 1 ? '' : 's'} · {latestRun.cancelled ? 'Stopped by user' : latestRun.metrics.completed === latestRun.metrics.total ? 'Run complete' : 'Run incomplete'}</div>
+              </div>
               <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
                 <MetricCard icon={<Gauge className="w-4 h-4" />} label="Execution accuracy" value={percent(latestRun.metrics.executionAccuracy)} detail={`${latestRun.metrics.passed}/${latestRun.metrics.completed} correct outputs`} tone="violet" isDark={isDark} />
                 <MetricCard icon={<ShieldCheck className="w-4 h-4" />} label="Safe answer rate" value={percent(latestRun.metrics.safeAnswerRate)} detail={`${percent(latestRun.metrics.validSqlRate)} valid SQL`} tone="emerald" isDark={isDark} />
                 <MetricCard icon={<Clock3 className="w-4 h-4" />} label="P95 latency" value={milliseconds(latestRun.metrics.p95LatencyMs)} detail={`Median ${milliseconds(latestRun.metrics.medianLatencyMs)}`} tone="cyan" isDark={isDark} />
                 <MetricCard icon={<Sparkles className="w-4 h-4" />} label="Model tokens" value={latestRun.metrics.totalTokens.toLocaleString()} detail={`${percent(latestRun.metrics.llmBackedRate || 0)} LLM-backed · confidence ${latestRun.metrics.averageConfidence.toFixed(0)}/100`} tone="amber" isDark={isDark} />
+              </div>
+              </>
+            )}
+
+            {!isRunning && latestRun && (latestRun.metrics.failuresByType.llm_unavailable || 0) > 0 && (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <div><strong>{latestRun.metrics.failuresByType.llm_unavailable} model-unavailable case(s) recorded.</strong> The run continued, and these cases remain visible as failures rather than being counted as LLM-backed evidence.</div>
               </div>
             )}
 

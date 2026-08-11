@@ -229,9 +229,12 @@ export async function runBenchmark(
     metrics: summarizeBenchmarkResults([], selectedCases.length),
   };
 
+  console.info(`[Benchmark Runner] Manifest locked: scope=${options.scope}, suites=${suites.length}, cases=${selectedCases.length}`);
+
   for (let index = 0; index < selectedCases.length; index += 1) {
     if (options.shouldCancel?.()) {
       run.cancelled = true;
+      console.info(`[Benchmark Runner] Cancelled after ${run.results.length}/${selectedCases.length} cases`);
       break;
     }
     const testCase = selectedCases[index];
@@ -244,6 +247,7 @@ export async function runBenchmark(
 
     if (result.status === 'llm_unavailable' && options.stopOnLlmUnavailable !== false) {
       run.interruptionReason = result.failureReason || 'The LLM became unavailable during the benchmark.';
+      console.warn(`[Benchmark Runner] Interrupted after ${run.results.length}/${selectedCases.length} cases: ${run.interruptionReason}`);
       break;
     }
 
@@ -257,5 +261,6 @@ export async function runBenchmark(
 
   run.completedAt = Date.now();
   run.metrics = summarizeBenchmarkResults(run.results, selectedCases.length);
+  console.info(`[Benchmark Runner] Completed ${run.metrics.completed}/${run.metrics.total} cases`);
   return run;
 }
