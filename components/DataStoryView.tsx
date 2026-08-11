@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { X, Loader2, ChevronLeft, ChevronRight, Play, Pause } from 'lucide-react';
-import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain } from '../types';
+import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { ChartVisualization } from './ChartVisualization';
 
@@ -24,6 +24,17 @@ const CHART_MAP: Record<string, string> = {
   kpiCard: 'kpiCard', line: 'line', bar: 'bar', horizontalBar: 'horizontalBar',
   groupedBar: 'groupedBar', stackedBar: 'stackedBar', area: 'area',
   dualAxisCombo: 'combo', multiLine: 'line', donut: 'doughnut', heatmap: 'bar', table: 'bar',
+};
+
+const STORY_FORMATTING: FormattingConfig = {
+  colorMode: 'vibrant',
+  numberFormat: 'auto',
+  fontSize: 'md',
+  headerSize: 'lg',
+  headerBold: true,
+  showLabels: true,
+  showDataLabels: true,
+  tableCalculations: [],
 };
 
 const SLIDE_DEFS = [
@@ -249,7 +260,11 @@ export const DataStoryView: React.FC<DataStoryViewProps> = ({ dataset, onClose }
                   yKey={activeSlide.result.yKey} yLabel={activeSlide.result.yLabel}
                   chartType={(activeSlide.chartType || 'bar') as any}
                   onChartTypeChange={() => {}}
-                  formatting={{ showDataLabels: true }}
+                  formatting={{
+                    ...STORY_FORMATTING,
+                    ...activeSlide.result.formatting,
+                    showDataLabels: true,
+                  }}
                 />
               )}
             </div>
