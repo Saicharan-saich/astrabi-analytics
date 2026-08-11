@@ -546,7 +546,7 @@ async function requireAuthenticatedUser(req, res, next) {
 }
 
 function getOwnedConnection(req, connectionId) {
-    const connection = getOwnedConnection(req, connectionId);
+    const connection = connections.get(connectionId);
     if (!connection || !req.authUser || connection.ownerUserId !== req.authUser.userId) return null;
     connection.lastUsedAt = Date.now();
     return connection;
