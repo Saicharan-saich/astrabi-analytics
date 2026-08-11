@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Eye, EyeOff, Search, BarChart2, Lightbulb, Sparkles, Wrench, Layout, Bell, Activity, Upload, GitMerge, Database, Gamepad2, Check, CloudOff, Loader2 } from 'lucide-react';
+import { X, Eye, EyeOff, Search, BarChart2, Lightbulb, Sparkles, Wrench, Layout, Bell, Activity, Upload, GitMerge, Database, Gamepad2, Check, CloudOff, Loader2, Beaker } from 'lucide-react';
 import { Tab } from '../types';
 import { useAppStore } from '../store/useAppStore';
 import { useTheme } from './ThemeProvider';
@@ -37,6 +37,7 @@ const ALL_TABS: TabInfo[] = [
   { id: Tab.DASHBOARD, label: 'Dashboard', icon: Layout, section: 'Views', description: 'Pinned charts and analyses', canHide: false },
   { id: Tab.ALERTS, label: 'Monitoring', icon: Bell, section: 'Views', description: 'Business rules and alerts', canHide: true },
   { id: Tab.USER_INSIGHTS, label: 'User Insights', icon: Activity, section: 'Views', description: 'Usage analytics per user', canHide: true },
+  { id: Tab.BENCHMARK, label: 'Benchmark Lab', icon: Beaker, section: 'Views', description: 'Admin-only AI SQL accuracy evaluation', canHide: true },
 ];
 
 interface TabVisibilityManagerProps {

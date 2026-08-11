@@ -500,7 +500,7 @@ function buildRankingSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetrics?
     const limit = plan.limit || 10;
 
     // Sort by the first metric alias
-    const firstMetAlias = getMetricAlias(plan.metrics[0], model);
+    const firstMetAlias = getMetricAlias(plan.metrics[0], model, apdmeMetrics);
 
     const selects = [...dimExprs, ...metExprs];
 
@@ -796,7 +796,10 @@ function buildAggregateFilterSQL(plan: AnalysisPlan, model: SemanticModel, apdme
             || ['currency', 'quantity', 'count', 'ratio', 'percentage'].includes(f.semanticType);
     };
     const havingFilters = plan.filters.filter(f => {
-        if (!['above_avg', 'below_avg'].includes(normalizeFilterOp(f.op))) return false;
+        const op = normalizeFilterOp(f.op);
+        const relativeThreshold = ['above_avg', 'below_avg'].includes(op);
+        const explicitAggregateThreshold = !!f.isHaving && ['>', '<', '>=', '<=', '='].includes(op);
+        if (!relativeThreshold && !explicitAggregateThreshold) return false;
         // Never aggregate a non-numeric column (unless it's a governed composite).
         return f.compositeRef ? true : isNumericField(f.field);
     });
@@ -831,10 +834,18 @@ function buildAggregateFilterSQL(plan: AnalysisPlan, model: SemanticModel, apdme
             aggExpr = `${agg.toUpperCase()}(${q(hf.field)})`;
         }
 
+        const normalizedOp = normalizeFilterOp(hf.op);
+        if (!['above_avg', 'below_avg'].includes(normalizedOp)) {
+            const literal = typeof hf.value === 'number' ? String(hf.value) : `'${esc(String(hf.value))}'`;
+            havingParts.push(`${aggExpr} ${normalizedOp} ${literal}`);
+            logger.info('[SQL Correction]', `Literal HAVING condition: ${aggExpr} ${normalizedOp} ${literal}`);
+            continue;
+        }
+
         // Build the scoped AVG subquery
         // Uses the same WHERE filters and GROUP BY as the outer query
         const subqueryWhere = where ? `WHERE ${where}` : '';
-        const comparison = hf.op === 'above_avg' ? '>' : '<';
+        const comparison = normalizedOp === 'above_avg' ? '>' : '<';
 
         const subquery = [
             `SELECT AVG(grp_metric) FROM (`,
@@ -872,7 +883,7 @@ function buildAggregateFilterSQL(plan: AnalysisPlan, model: SemanticModel, apdme
         if (orderBy) parts.push(orderBy);
     } else {
         // Default: order by first metric DESC
-        const firstAlias = getMetricAlias(plan.metrics[0], model);
+        const firstAlias = getMetricAlias(plan.metrics[0], model, apdmeMetrics);
         parts.push(`ORDER BY ${firstAlias} DESC`);
     }
 

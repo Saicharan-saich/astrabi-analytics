@@ -83,40 +83,58 @@ function extractKeywords(question: string, model?: SemanticModel): string[] {
  * Score how well a field matches a keyword.
  * Returns 0-1 score. Higher = better match.
  */
+function singularizeKeyword(keyword: string): string {
+    const word = keyword.toLowerCase();
+    if (word.endsWith('ies') && word.length > 4) return `${word.slice(0, -3)}y`;
+    if (word.endsWith('sses')) return word.slice(0, -2);
+    if (word.endsWith('uses') || word.endsWith('xes') || word.endsWith('zes') || word.endsWith('ches') || word.endsWith('shes')) {
+        return word.slice(0, -2);
+    }
+    if (word.endsWith('s') && !word.endsWith('ss') && word.length > 3) return word.slice(0, -1);
+    return word;
+}
+
 function scoreFieldMatch(field: SemanticField, keyword: string): number {
-    const kw = keyword.toLowerCase();
+    const original = keyword.toLowerCase();
+    const candidates = original === singularizeKeyword(original)
+        ? [original]
+        : [original, singularizeKeyword(original)];
     const fieldName = field.name.toLowerCase().replace(/_/g, ' ');
     const fieldNameNoSpace = field.name.toLowerCase().replace(/_/g, '');
 
-    // Exact match on name
-    if (fieldName === kw || fieldNameNoSpace === kw) return 1.0;
+    let best = 0;
+    for (const kw of candidates) {
 
-    // Exact match on display label
-    if (field.displayLabel.toLowerCase() === kw) return 0.95;
+        // Exact match on name
+        if (fieldName === kw || fieldNameNoSpace === kw) best = Math.max(best, 1.0);
 
-    // Synonym match
-    if (field.synonyms.some(s => s.toLowerCase() === kw)) return 0.9;
+        // Exact match on display label
+        if (field.displayLabel.toLowerCase() === kw) best = Math.max(best, 0.95);
 
-    const isSafeSub = (sub: string, full: string) => sub.length >= 4 || new RegExp(`\\b${sub}\\b`, 'i').test(full);
+        // Synonym match
+        if (field.synonyms.some(s => s.toLowerCase() === kw)) best = Math.max(best, 0.9);
 
-    // Field name contains keyword
-    if ((fieldName.includes(kw) && isSafeSub(kw, fieldName)) || 
-        (kw.includes(fieldName) && isSafeSub(fieldName, kw))) {
-        return 0.7;
+        const isSafeSub = (sub: string, full: string) => sub.length >= 4 || new RegExp(`\\b${sub}\\b`, 'i').test(full);
+
+        // Field name contains keyword
+        if ((fieldName.includes(kw) && isSafeSub(kw, fieldName)) ||
+            (kw.includes(fieldName) && isSafeSub(fieldName, kw))) {
+            best = Math.max(best, 0.7);
+        }
+
+        // Synonym contains keyword
+        if (field.synonyms.some(s => {
+            const syn = s.toLowerCase();
+            return (syn.includes(kw) && isSafeSub(kw, syn)) ||
+                (kw.includes(syn) && isSafeSub(syn, kw));
+        })) best = Math.max(best, 0.6);
+
+        // Partial word match (e.g., "profit" matches "profit_margin")
+        const fieldWords = fieldName.split(' ');
+        if (fieldWords.some(w => w === kw)) best = Math.max(best, 0.8);
     }
 
-    // Synonym contains keyword
-    if (field.synonyms.some(s => {
-        const syn = s.toLowerCase();
-        return (syn.includes(kw) && isSafeSub(kw, syn)) || 
-               (kw.includes(syn) && isSafeSub(syn, kw));
-    })) return 0.6;
-
-    // Partial word match (e.g., "profit" matches "profit_margin")
-    const fieldWords = fieldName.split(' ');
-    if (fieldWords.some(w => w === kw)) return 0.8;
-
-    return 0;
+    return best;
 }
 
 /**

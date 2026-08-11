@@ -424,6 +424,8 @@ export interface AIQueryProvenance {
     dataAccess: 'metadata_only' | 'approved_safe_values';
     /** Whether the LLM SQL was downgraded to a deterministic fallback */
     downgraded?: boolean;
+    /** Machine-readable evidence when the LLM draft was unavailable/rejected. */
+    fallbackReason?: string;
 }
 
 export interface AISQLPipelineResult {

@@ -34,4 +34,13 @@ describe('field mapper default metric', () => {
         const res = mapFieldsFromQuestion('what were total sales', model);
         expect(res.metrics[0]?.name).toBe('total_price');
     });
+
+    it('maps plural dimension words to singular schema fields', () => {
+        const categoryModel = {
+            ...model,
+            fields: [...model.fields, f('category', 'dimension', 'category', 'none')],
+        };
+        const res = mapFieldsFromQuestion('Which categories have total profit below 2000?', categoryModel);
+        expect(res.dimensions.map((dimension: any) => dimension.name)).toContain('category');
+    });
 });

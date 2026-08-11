@@ -702,6 +702,84 @@ function enforceAggregateFilter(plan: AnalysisPlan, question: string, model: Sem
 }
 
 /**
+ * Preserve numeric thresholds stated by the user. "Total profit below 2000"
+ * is an aggregate HAVING condition, not an ambiguous request for "below
+ * average", and its literal must never be replaced by a statistical default.
+ */
+function enforceExplicitNumericThreshold(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    const q = question.toLowerCase();
+    const pattern = /\b(at\s+least|no\s+less\s+than|at\s+most|no\s+more\s+than|greater\s+than|more\s+than|higher\s+than|above|over|exceed(?:ing|s)?|less\s+than|lower\s+than|below|under|equal\s+to|exactly)\s*(?:[$£€]\s*)?(-?\d[\d,]*(?:\.\d+)?)\b/gi;
+    const matches = [...q.matchAll(pattern)];
+    if (matches.length === 0) return;
+
+    const metricFields = model.fields.filter(field => field.role === 'metric');
+    const aliasesFor = (field: SemanticField): string[] => [
+        field.name,
+        field.name.replace(/_/g, ' '),
+        field.displayLabel || '',
+        ...(field.synonyms || []),
+    ].map(value => value.toLowerCase()).filter(Boolean);
+
+    for (const match of matches) {
+        const comparator = match[1].toLowerCase();
+        const numericValue = Number(match[2].replace(/,/g, ''));
+        if (!Number.isFinite(numericValue)) continue;
+
+        const before = q.slice(0, match.index ?? 0);
+        let metricField: SemanticField | undefined;
+        let closestIndex = -1;
+        for (const field of metricFields) {
+            for (const alias of aliasesFor(field)) {
+                const index = before.lastIndexOf(alias);
+                if (index > closestIndex) {
+                    closestIndex = index;
+                    metricField = field;
+                }
+            }
+        }
+        metricField ||= plan.metrics.length === 1
+            ? model.fields.find(field => field.name.toLowerCase() === plan.metrics[0].field.toLowerCase())
+            : undefined;
+        if (!metricField) continue;
+
+        const op = /^(?:at\s+least|no\s+less\s+than)$/.test(comparator) ? '>='
+            : /^(?:at\s+most|no\s+more\s+than)$/.test(comparator) ? '<='
+                : /^(?:greater\s+than|more\s+than|higher\s+than|above|over|exceed)/.test(comparator) ? '>'
+                    : /^(?:less\s+than|lower\s+than|below|under)/.test(comparator) ? '<'
+                        : '=';
+        const nearbyPrefix = before.slice(Math.max(0, before.length - 100));
+        const aggregateThreshold = plan.dimensions.length > 0
+            && /\b(total|sum|average|avg|mean|count|minimum|maximum|min|max)\b/.test(nearbyPrefix);
+
+        plan.filters = plan.filters.filter(filter => !(
+            filter.field.toLowerCase() === metricField!.name.toLowerCase()
+            && (filter.isHaving === aggregateThreshold || ['above_avg', 'below_avg'].includes(filter.op))
+        ));
+        plan.filters.push({
+            field: metricField.name,
+            op: op as any,
+            value: numericValue,
+            isHaving: aggregateThreshold,
+        });
+
+        if (!plan.metrics.some(metric => metric.field.toLowerCase() === metricField!.name.toLowerCase())) {
+            const aggregation = metricField.defaultAgg && metricField.defaultAgg !== 'none'
+                ? metricField.defaultAgg
+                : 'sum';
+            plan.metrics.push({ field: metricField.name, agg: aggregation });
+        }
+        if (aggregateThreshold) {
+            plan.intent = 'aggregate_filter';
+            plan.limit = null;
+            plan.ambiguous = false;
+            plan.clarificationQuestion = undefined;
+            plan.resultGrain = `${plan.dimensions.map(dimension => dimension.field).join(', ') || 'entities'} whose grouped metric satisfies the explicit threshold ${op} ${numericValue}`;
+        }
+        console.log(`[Intent Planner] Explicit threshold preserved: ${metricField.name} ${op} ${numericValue}${aggregateThreshold ? ' (HAVING)' : ' (WHERE)'}`);
+    }
+}
+
+/**
  * Post-process the plan to enforce aggregation correctness.
  * This is the CODE-LEVEL OVERRIDE that runs AFTER the LLM.
  * Even if the LLM returns "sum" when the user said "average",
@@ -1415,6 +1493,7 @@ function finalizePlan(
     enforceNativeCyclicDimension(plan, question, model);
     enforceAggregationGrain(plan, model);
     enforceAggregateFilter(plan, question, model);
+    enforceExplicitNumericThreshold(plan, question, model);
     enforceGrowthAnalysis(plan, question, model);
     enforcePluralLimit(plan, question);
     enforceComparison(plan, question, model);

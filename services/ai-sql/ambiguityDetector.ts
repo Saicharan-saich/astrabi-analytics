@@ -96,7 +96,10 @@ export function detectAmbiguities(
 
     // ─── 1. Threshold Ambiguity ──────────────────────────────────
     const thresholdMatch = lower.match(THRESHOLD_PATTERNS);
-    if (thresholdMatch) {
+    // "below 2000" is explicit, not ambiguous. Only semantic adjectives and
+    // relative thresholds without a supplied literal should enter resolution.
+    const hasExplicitThreshold = /\b(?:above|below|over|under|exceeding|greater\s+than|less\s+than|higher\s+than|lower\s+than|at\s+least|at\s+most)\s*(?:[$£€]\s*)?-?\d[\d,]*(?:\.\d+)?\b/i.test(lower);
+    if (thresholdMatch && !hasExplicitThreshold) {
         const phrase = thresholdMatch[0];
         const policyMatch = registry.matchPhrase(phrase);
 

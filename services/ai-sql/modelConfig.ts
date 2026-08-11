@@ -73,8 +73,43 @@ export function selectAISQLModel(question: string, workload: AISQLWorkload): str
 /** Default timeout for AI requests */
 export const DEFAULT_TIMEOUT_MS = 60000;
 
-/** Delay before retrying a rate-limited request */
-const RATE_LIMIT_RETRY_DELAY_MS = 2000;
+/** Fallback delay when a rate-limited response omits server timing headers. */
+const RATE_LIMIT_RETRY_DELAY_MS = 3000;
+
+/**
+ * Respect the backend's actual rate-limit window instead of retrying every two
+ * seconds. express-rate-limit returns Retry-After in seconds; OpenRouter and
+ * proxies may return an HTTP date or a RateLimit reset value.
+ */
+export function getRateLimitRetryDelayMs(response: Pick<Response, 'headers'>, now = Date.now()): number {
+    const retryAfter = response.headers.get('Retry-After');
+    if (retryAfter) {
+        const seconds = Number(retryAfter);
+        if (Number.isFinite(seconds) && seconds >= 0) {
+            return Math.max(1000, Math.ceil(seconds * 1000) + 250);
+        }
+        const retryDate = Date.parse(retryAfter);
+        if (Number.isFinite(retryDate)) {
+            return Math.max(1000, retryDate - now + 250);
+        }
+    }
+
+    const standardRateLimit = response.headers.get('RateLimit');
+    const resetMatch = standardRateLimit?.match(/reset\s*=\s*"?(\d+)"?/i);
+    if (resetMatch) {
+        return Math.max(1000, Number(resetMatch[1]) * 1000 + 250);
+    }
+
+    const legacyReset = Number(response.headers.get('RateLimit-Reset') || response.headers.get('X-RateLimit-Reset'));
+    if (Number.isFinite(legacyReset) && legacyReset > 0) {
+        const delay = legacyReset > 1_000_000_000
+            ? legacyReset * 1000 - now
+            : legacyReset * 1000;
+        return Math.max(1000, delay + 250);
+    }
+
+    return RATE_LIMIT_RETRY_DELAY_MS;
+}
 
 /** Max retries for 429 errors */
 const MAX_429_RETRIES = 3;
@@ -163,8 +198,9 @@ export async function fetchWithFallback(
                     throw new Error(errData.error || 'Daily AI quota exceeded. Contact your admin.');
                 }
                 if (attempt < MAX_429_RETRIES) {
-                    console.warn(`[AI] Rate limited — waiting ${RATE_LIMIT_RETRY_DELAY_MS}ms before retry ${attempt + 1}/${MAX_429_RETRIES}`);
-                    await new Promise(resolve => setTimeout(resolve, RATE_LIMIT_RETRY_DELAY_MS));
+                    const retryDelayMs = getRateLimitRetryDelayMs(response);
+                    console.warn(`[AI] Rate limited — waiting ${retryDelayMs}ms before retry ${attempt + 1}/${MAX_429_RETRIES}`);
+                    await new Promise(resolve => setTimeout(resolve, retryDelayMs));
                     continue;
                 }
                 throw new Error(
