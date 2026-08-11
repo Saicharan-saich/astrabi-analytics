@@ -229,6 +229,8 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           </button>
           <button
             onClick={() => { setDetailsSection('overview'); setWorkspaceMode('details'); }}
+            aria-label="Open answer details"
+            aria-controls="ai-sql-details-workspace"
             className={`absolute bottom-5 right-5 z-[90] flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold shadow-lg backdrop-blur-md transition-transform hover:scale-[1.03] ${isDark ? 'border-indigo-400/25 bg-slate-900/90 text-indigo-200' : 'border-indigo-200 bg-white/95 text-indigo-700'}`}
           >
             <Database className="h-3.5 w-3.5" /> Details
@@ -238,9 +240,9 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
 
       {/* ── Details workspace header: diagnostics and actions stay separate ── */}
       {workspaceMode === 'details' && (
-      <div className={`flex items-center justify-between px-5 py-3 border-b shrink-0 ${isDark ? 'border-white/[0.06] bg-[#0d1117]' : 'border-gray-200 bg-white'}`}>
+      <div id="ai-sql-details-workspace" role="region" aria-label="Answer details" className={`flex items-center justify-between px-5 py-3 border-b shrink-0 ${isDark ? 'border-white/[0.06] bg-[#0d1117]' : 'border-gray-200 bg-white'}`}>
         <div className="flex items-center gap-3 min-w-0">
-          <button onClick={() => { if (drillDown) { setDrillDown(null); } else { onBack(); } }} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}><ArrowLeft className="w-4 h-4" /></button>
+          <button aria-label={drillDown ? 'Return to original answer' : 'Back to AI SQL'} onClick={() => { if (drillDown) { setDrillDown(null); } else { onBack(); } }} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}><ArrowLeft className="w-4 h-4" /></button>
           <div className="min-w-0">
             {drillDown && (
               <div className="text-[10px] text-indigo-400 dark:text-indigo-300 font-medium flex items-center gap-1 mb-0.5">
@@ -279,14 +281,14 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <div className={`flex items-center rounded-xl border p-1 ${isDark ? 'border-white/10 bg-white/[0.04]' : 'border-gray-200 bg-gray-50'}`}>
-            <button onClick={() => {
+          <div role="tablist" aria-label="Answer workspace" className={`flex items-center rounded-xl border p-1 ${isDark ? 'border-white/10 bg-white/[0.04]' : 'border-gray-200 bg-gray-50'}`}>
+            <button role="tab" aria-selected={false} aria-controls="ai-sql-result-workspace" onClick={() => {
               setActiveTab('chart');
               setWorkspaceMode('result');
             }} className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[11px] font-bold ${isDark ? 'text-slate-300 hover:bg-white/10' : 'text-slate-600 hover:bg-white'}`}>
               <BarChart2 className="w-3.5 h-3.5" /> Result
             </button>
-            <button onClick={() => setDetailsSection('overview')} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-sm">
+            <button role="tab" aria-selected={true} aria-controls="ai-sql-details-overview" onClick={() => setDetailsSection('overview')} className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-2.5 py-1.5 text-[11px] font-bold text-white shadow-sm">
               <Database className="w-3.5 h-3.5" /> Details
             </button>
           </div>
@@ -338,11 +340,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
 
       {/* ── Result tools: the complete workspace requested by the user ── */}
       {workspaceMode === 'details' && (
-      <div className={`flex items-center gap-2 px-5 py-2 border-b shrink-0 ${isDark ? 'border-white/[0.06] bg-[#0f1219]/50' : 'bg-gray-50/50 border-gray-100'}`}>
-        <button onClick={() => setDetailsSection('overview')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${detailsSection === 'overview' ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 ring-1 ring-indigo-400/30' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}><Database className="w-3.5 h-3.5" /> Overview</button>
-        <button onClick={() => { setActiveTab('chart'); setDetailsSection('workspace'); }} className={tabBtnClass('chart')}><BarChart2 className="w-3.5 h-3.5" /> Chart</button>
-        <button onClick={() => { setActiveTab('table'); setDetailsSection('workspace'); }} className={tabBtnClass('table')}><Table2 className="w-3.5 h-3.5" /> Table</button>
-        <button onClick={() => { setActiveTab('sql'); setDetailsSection('workspace'); }} className={tabBtnClass('sql')}><Code className="w-3.5 h-3.5" /> SQL</button>
+      <div role="tablist" aria-label="Answer detail sections" className={`flex items-center gap-2 px-5 py-2 border-b shrink-0 ${isDark ? 'border-white/[0.06] bg-[#0f1219]/50' : 'bg-gray-50/50 border-gray-100'}`}>
+        <button role="tab" aria-selected={detailsSection === 'overview'} aria-controls="ai-sql-details-overview" onClick={() => setDetailsSection('overview')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${detailsSection === 'overview' ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 ring-1 ring-indigo-400/30' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}><Database className="w-3.5 h-3.5" /> Overview</button>
+        <button role="tab" aria-selected={detailsSection === 'workspace' && activeTab === 'chart'} aria-controls="ai-sql-result-workspace" onClick={() => { setActiveTab('chart'); setDetailsSection('workspace'); }} className={tabBtnClass('chart')}><BarChart2 className="w-3.5 h-3.5" /> Chart</button>
+        <button role="tab" aria-selected={detailsSection === 'workspace' && activeTab === 'table'} aria-controls="ai-sql-result-workspace" onClick={() => { setActiveTab('table'); setDetailsSection('workspace'); }} className={tabBtnClass('table')}><Table2 className="w-3.5 h-3.5" /> Table</button>
+        <button role="tab" aria-selected={detailsSection === 'workspace' && activeTab === 'sql'} aria-controls="ai-sql-result-workspace" onClick={() => { setActiveTab('sql'); setDetailsSection('workspace'); }} className={tabBtnClass('sql')}><Code className="w-3.5 h-3.5" /> SQL</button>
         <div className="w-px h-5 bg-gray-200 dark:bg-white/10 mx-1" />
         <button onClick={() => { setActiveTab('chart'); setDetailsSection('workspace'); setIsFormatPanelOpen(!isFormatPanelOpen); }} className={`px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${isFormatPanelOpen ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 ring-1 ring-indigo-400/30' : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}><Palette className="w-3.5 h-3.5 inline mr-1" />Format</button>
         <button onClick={() => { setActiveTab('chart'); setDetailsSection('workspace'); setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen); }} className={`px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${isAnalyticsPanelOpen ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 ring-1 ring-emerald-400/30' : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}><Activity className="w-3.5 h-3.5 inline mr-1" />Analytics</button>
@@ -359,7 +361,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       
       {/* ── Result workspace: complete Chart/Table/SQL/Format/Analytics experience ── */}
       {(workspaceMode === 'result' || detailsSection === 'workspace') && (
-      <div className="flex-1 min-h-0 flex overflow-hidden">
+      <div id="ai-sql-result-workspace" role="tabpanel" aria-label={activeTab === 'chart' ? 'Chart result' : activeTab === 'table' ? 'Table result' : 'SQL result'} tabIndex={0} className="flex-1 min-h-0 flex overflow-hidden">
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* Chart Tab */}
           {activeTab === 'chart' && (
@@ -522,7 +524,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
             <div className="p-4 border-b border-gray-100 dark:border-white/5">
               <div className="flex justify-between items-center">
                 <h3 className="font-bold text-sm flex items-center gap-2"><Activity className="w-4 h-4 text-emerald-500" /> Analytics</h3>
-                <button onClick={() => setIsAnalyticsPanelOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded hover:bg-gray-100 dark:hover:bg-white/10"><X className="w-4 h-4" /></button>
+                <button aria-label="Close analytics panel" onClick={() => setIsAnalyticsPanelOpen(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-white p-1 rounded hover:bg-gray-100 dark:hover:bg-white/10"><X className="w-4 h-4" /></button>
               </div>
             </div>
             <div className="p-4 space-y-1">
@@ -617,7 +619,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
 
       {/* ── Details workspace: provenance, usage, trust and actions ── */}
       {workspaceMode === 'details' && detailsSection === 'overview' && (
-        <div className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-7">
+        <div id="ai-sql-details-overview" role="tabpanel" aria-label="Answer overview" tabIndex={0} className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-7">
           <div className="mx-auto max-w-5xl space-y-5">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className={`rounded-2xl border p-4 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
