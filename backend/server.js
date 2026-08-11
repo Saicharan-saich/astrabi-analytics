@@ -299,8 +299,15 @@ app.use((req, res, next) => {
 
 // API Key Middleware
 const apiKeyMiddleware = (req, res, next) => {
-    // Skip if no key configured (Dev mode), health check, or auth endpoints
-    if (!process.env.QuickInsight_API_KEY || req.path === '/api/health' || req.path.startsWith('/api/auth')) return next();
+    // Express strips the /api mount path inside this middleware. Keep liveness,
+    // readiness, and authentication reachable by deployment probes and login.
+    const publicPath = req.path === '/health'
+        || req.path === '/ready'
+        || req.path.startsWith('/auth/')
+        || req.path === '/api/health'
+        || req.path === '/api/ready'
+        || req.path.startsWith('/api/auth/');
+    if (!process.env.QuickInsight_API_KEY || publicPath) return next();
 
     const apiKey = req.headers['x-api-key'];
     if (apiKey && apiKey === process.env.QuickInsight_API_KEY) {
@@ -1913,7 +1920,7 @@ const connectionReaper = setInterval(() => {
         }
     }
 }, 5 * 60 * 1000);
-connectionReaper.unref?.()
+connectionReaper.unref?.();
 
 // Liveness: the process can accept HTTP. No dependency details are exposed.
 app.get('/api/health', (req, res) => {
