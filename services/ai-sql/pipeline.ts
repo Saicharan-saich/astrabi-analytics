@@ -334,7 +334,7 @@ export async function runAISQLPipeline(
     } | null = null;
 
     try {
-        const domainName = dataset.domainProfile?.name || undefined;
+        const domainName = dataset.domainProfile?.domain || undefined;
         const detection = detectAmbiguities(question, semanticModel, domainName);
 
         if (detection.totalCount > 0) {
@@ -1452,7 +1452,7 @@ export async function runAISQLPipeline(
             plan,
             currentSQL,
             reshaped.data,
-            reshaped.chart?.type || 'bar',
+            reshaped.chart?.chartType || 'bar',
             reshaped.chart?.xKey || '',
             reshaped.chart?.yKey || '',
             semanticModel,
