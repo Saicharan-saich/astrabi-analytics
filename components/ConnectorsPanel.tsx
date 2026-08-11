@@ -176,7 +176,11 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
         const data = await getMockConnectorData(connectionId, selectedTables);
 
         // Always build connection info so user can switch modes later
-        const liveInfo: LiveConnectionInfo & { connectionMode: 'import' | 'live' } = {
+        const liveInfo: LiveConnectionInfo & {
+            connectionMode: 'import' | 'live';
+            /** Memory-only credential used for this browser session; never persisted. */
+            _sessionPassword?: string;
+        } = {
             connectionId,
             dbType,
             tables: [...selectedTables],
