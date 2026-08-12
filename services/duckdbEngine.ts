@@ -518,6 +518,10 @@ export function normalizeSQLForDuckDB(sql: string): string {
     // 2. Remove square brackets around column names (SQL Server style) → double quotes
     normalized = normalized.replace(/\[(\w+)\]/g, '"$1"');
 
+    // Public SQLite benchmarks and some connectors use MySQL-style
+    // backticks. DuckDB expects standard double-quoted identifiers.
+    normalized = normalized.replace(/`([^`]+)`/g, (_match, identifier: string) => `"${identifier.replace(/"/g, '""')}"`);
+
     // 3. Handle SQLite's STRFTIME → DuckDB's strftime (case matters in DuckDB)
     // DuckDB supports strftime natively, just ensure correct case
     normalized = normalized.replace(/\bSTRFTIME\b/gi, 'strftime');
@@ -752,5 +756,22 @@ export async function preloadDuckDB(tableName: string, rows: any[]): Promise<voi
 export async function reloadDataTable(rows: any[]): Promise<void> {
     loadedTables.delete('data');
     loadedTables.delete('dim_date');
+    await loadDataIntoTable('data', rows);
+}
+
+/**
+ * Replace every table used by an isolated benchmark case without tearing down
+ * the WASM engine. Research cases can reuse generic table names across
+ * different source databases, so retaining any related table would contaminate
+ * the next gold or candidate result.
+ */
+export async function reloadIsolatedBenchmarkData(rows: any[]): Promise<void> {
+    await initDuckDB();
+    if (!conn) throw new Error('DuckDB connection not available');
+    const tables = Array.from(loadedTables.keys());
+    for (const table of tables) {
+        await conn.query(`DROP TABLE IF EXISTS "${table.replace(/"/g, '""')}"`);
+    }
+    loadedTables.clear();
     await loadDataIntoTable('data', rows);
 }

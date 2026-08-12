@@ -1,7 +1,12 @@
 import type { Dataset } from '../../types';
 import type { PrivacyMode } from '../ai-sql/privacyMode';
 
-export type BenchmarkSuiteId = 'spider-compatible' | 'bird-compatible' | 'spider2-compatible';
+export type BenchmarkSuiteId =
+  | 'spider-compatible'
+  | 'bird-compatible'
+  | 'spider2-compatible'
+  | 'spider-dev-research'
+  | 'bird-dev-research';
 
 export type BenchmarkDifficulty = 'easy' | 'medium' | 'hard';
 
@@ -33,9 +38,13 @@ export interface BenchmarkCase {
   suiteId: BenchmarkSuiteId;
   sourceId: string;
   question: string;
+  /** Official benchmark evidence or external knowledge supplied with a question. */
+  context?: string | null;
   category: string;
   difficulty: BenchmarkDifficulty;
-  dataset: Dataset;
+  /** Embedded fixtures use `dataset`; research packs are fetched lazily via `datasetRef`. */
+  dataset?: Dataset;
+  datasetRef?: string;
   goldSql: string;
   expectedRows: Record<string, unknown>[];
   comparison: BenchmarkComparisonOptions;
@@ -50,6 +59,7 @@ export interface BenchmarkSuite {
   description: string;
   methodology: string;
   accent: 'violet' | 'cyan' | 'amber';
+  evaluationClass?: 'curated-compatibility' | 'official-public-subset';
   attribution: BenchmarkAttribution;
   cases: BenchmarkCase[];
 }
@@ -82,7 +92,9 @@ export interface BenchmarkPipelineResult {
 export interface BenchmarkCaseResult {
   caseId: string;
   suiteId: BenchmarkSuiteId;
+  sourceId: string;
   question: string;
+  context?: string | null;
   category: string;
   difficulty: BenchmarkDifficulty;
   status: BenchmarkCaseStatus;
@@ -137,17 +149,22 @@ export interface BenchmarkRun {
   cancelled: boolean;
   interruptionReason?: string;
   appVersion: string;
-  methodologyLabel: 'Curated Subset Execution Accuracy';
+  methodologyLabel:
+    | 'Curated Subset Execution Accuracy'
+    | 'Official Public Subset Execution Accuracy'
+    | 'Mixed-Suite Execution Accuracy';
   results: BenchmarkCaseResult[];
   metrics: BenchmarkRunMetrics;
 }
 
 export interface BenchmarkRunnerDependencies {
+  loadDataset?: (testCase: BenchmarkCase) => Promise<Dataset>;
   reloadDataset: (rows: Record<string, unknown>[]) => Promise<void>;
   executeGoldSql: (
     rows: Record<string, unknown>[],
     sql: string,
-    timeContext?: { minDate: string; maxDate: string; primaryDateColumn?: string }
+    timeContext?: { minDate: string; maxDate: string; primaryDateColumn?: string },
+    relatedTables?: { name: string; rows: Record<string, unknown>[] }[],
   ) => Promise<{ data: Record<string, unknown>[]; error?: string }>;
   runPipeline: (question: string, dataset: Dataset) => Promise<BenchmarkPipelineResult>;
   now?: () => number;

@@ -68,7 +68,9 @@ function failureResult(
   return {
     caseId: testCase.id,
     suiteId: testCase.suiteId,
+    sourceId: testCase.sourceId,
     question: testCase.question,
+    context: testCase.context,
     category: testCase.category,
     difficulty: testCase.difficulty,
     status,
@@ -98,15 +100,32 @@ export async function executeBenchmarkCase(
   const startedAt = now();
 
   try {
-    await dependencies.reloadDataset(testCase.dataset.rows);
+    const dataset = testCase.dataset || (testCase.datasetRef && dependencies.loadDataset
+      ? await dependencies.loadDataset(testCase)
+      : undefined);
+    if (!dataset) {
+      const completedAt = now();
+      return failureResult(
+        testCase,
+        'fixture_error',
+        testCase.datasetRef
+          ? `Research fixture loader is unavailable for ${testCase.datasetRef}.`
+          : 'Benchmark case has no dataset fixture.',
+        startedAt,
+        completedAt,
+      );
+    }
+
+    await dependencies.reloadDataset(dataset.rows);
     const goldExecution = await dependencies.executeGoldSql(
-      testCase.dataset.rows,
+      dataset.rows,
       testCase.goldSql,
-      testCase.dataset.timeContext ? {
-        minDate: testCase.dataset.timeContext.minDate,
-        maxDate: testCase.dataset.timeContext.maxDate,
-        primaryDateColumn: testCase.dataset.timeContext.anchorDateColumn,
+      dataset.timeContext ? {
+        minDate: dataset.timeContext.minDate,
+        maxDate: dataset.timeContext.maxDate,
+        primaryDateColumn: dataset.timeContext.anchorDateColumn,
       } : undefined,
+      dataset.relatedTables,
     );
 
     if (goldExecution.error) {
@@ -135,8 +154,11 @@ export async function executeBenchmarkCase(
 
     // The AI pipeline shares one in-browser DuckDB connection. Reloading here
     // prevents a previous benchmark case from contaminating the next case.
-    await dependencies.reloadDataset(testCase.dataset.rows);
-    const pipelineResult = await dependencies.runPipeline(testCase.question, testCase.dataset);
+    await dependencies.reloadDataset(dataset.rows);
+    const pipelineQuestion = testCase.context
+      ? `${testCase.question}\n\nEvidence: ${testCase.context}`
+      : testCase.question;
+    const pipelineResult = await dependencies.runPipeline(pipelineQuestion, dataset);
     const completedAt = now();
     const safeToDisplay = pipelineResult.displaySafety?.allowed !== false;
     const validSql = pipelineResult.validation?.valid !== false;
@@ -149,7 +171,9 @@ export async function executeBenchmarkCase(
     const base: Omit<BenchmarkCaseResult, 'status' | 'passed' | 'failureReason'> = {
       caseId: testCase.id,
       suiteId: testCase.suiteId,
+      sourceId: testCase.sourceId,
       question: testCase.question,
+      context: testCase.context,
       category: testCase.category,
       difficulty: testCase.difficulty,
       safeToDisplay,
@@ -227,6 +251,12 @@ export async function runBenchmark(
   options: BenchmarkRunOptions,
 ): Promise<BenchmarkRun> {
   const selectedCases = suites.flatMap(suite => options.scope === 'smoke' ? suite.cases.slice(0, 5) : suite.cases);
+  const evaluationClasses = new Set(suites.map(suite => suite.evaluationClass || 'curated-compatibility'));
+  const methodologyLabel: BenchmarkRun['methodologyLabel'] = evaluationClasses.size > 1
+    ? 'Mixed-Suite Execution Accuracy'
+    : evaluationClasses.has('official-public-subset')
+      ? 'Official Public Subset Execution Accuracy'
+      : 'Curated Subset Execution Accuracy';
   const run: BenchmarkRun = {
     id: `benchmark-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     schemaVersion: 1,
@@ -237,7 +267,7 @@ export async function runBenchmark(
     startedAt: Date.now(),
     cancelled: false,
     appVersion: options.appVersion,
-    methodologyLabel: 'Curated Subset Execution Accuracy',
+    methodologyLabel,
     results: [],
     metrics: summarizeBenchmarkResults([], selectedCases.length),
   };

@@ -29,11 +29,13 @@ import { useAppStore } from '../store/useAppStore';
 import { useTheme } from './ThemeProvider';
 import { runAISQLPipeline } from '../services/ai-sql';
 import type { PrivacyMode } from '../services/ai-sql/privacyMode';
-import { executeSQLViaDuckDB, reloadDataTable, resetDuckDB } from '../services/duckdbEngine';
+import { executeSQLViaDuckDB, reloadIsolatedBenchmarkData, resetDuckDB } from '../services/duckdbEngine';
 import {
+  ALL_BENCHMARK_SUITES,
   BENCHMARK_SUITES,
   clearBenchmarkRun,
   loadBenchmarkRun,
+  loadResearchBenchmarkDataset,
   runBenchmark,
   saveBenchmarkRun,
   type BenchmarkCaseResult,
@@ -108,12 +110,12 @@ function csvCell(value: unknown): string {
 
 function runToCsv(run: BenchmarkRun): string {
   const headers = [
-    'run_id', 'case_id', 'suite', 'question', 'category', 'difficulty', 'status', 'passed',
+    'run_id', 'case_id', 'source_id', 'suite', 'question', 'benchmark_context', 'category', 'difficulty', 'status', 'passed',
     'valid_sql', 'safe_to_display', 'latency_ms', 'tokens', 'engine', 'strategy', 'model',
     'privacy_mode', 'confidence', 'repairs', 'failure_reason', 'gold_sql', 'candidate_sql',
   ];
   const rows = run.results.map(result => [
-    run.id, result.caseId, result.suiteId, result.question, result.category, result.difficulty,
+    run.id, result.caseId, result.sourceId, result.suiteId, result.question, result.context, result.category, result.difficulty,
     result.status, result.passed, result.validSql, result.safeToDisplay, result.pipelineLatencyMs,
     result.tokenUsage.total, result.engine, result.strategy, result.model, run.privacyMode || 'strict', result.confidence,
     result.repairAttempts, result.failureReason, result.goldSql, result.candidateSql,
@@ -177,7 +179,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
 
   const accessible = canAccessBenchmark(currentUser?.role);
   const selectedSuiteObjects = useMemo(
-    () => BENCHMARK_SUITES.filter(suite => selectedSuites.has(suite.id)),
+    () => ALL_BENCHMARK_SUITES.filter(suite => selectedSuites.has(suite.id)),
     [selectedSuites],
   );
   const selectedQuestionCount = selectedSuiteObjects.reduce(
@@ -229,8 +231,9 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
       const run = await runBenchmark(
         runSuites,
         {
-          reloadDataset: reloadDataTable,
-          executeGoldSql: async (rows, sql, timeContext) => executeSQLViaDuckDB(rows, sql, timeContext),
+          loadDataset: loadResearchBenchmarkDataset,
+          reloadDataset: reloadIsolatedBenchmarkData,
+          executeGoldSql: async (rows, sql, timeContext, relatedTables) => executeSQLViaDuckDB(rows, sql, timeContext, relatedTables),
           runPipeline: async (question, dataset) => runAISQLPipeline(
             question,
             dataset,
@@ -270,7 +273,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
       // alter the next answer they ask in Question Builder or AI SQL.
       try {
         const currentDataset = useAppStore.getState().dataset || activeDataset;
-        if (currentDataset?.rows?.length) await reloadDataTable(currentDataset.rows);
+        if (currentDataset?.rows?.length) await reloadIsolatedBenchmarkData(currentDataset.rows);
         else resetDuckDB();
       } catch (restoreError) {
         console.warn('[Benchmark] Active dataset restore failed:', restoreError);
@@ -322,7 +325,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                   <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Data runs locally</span>
                 </div>
                 <p className={`mt-2 max-w-3xl text-sm leading-6 ${muted}`}>
-                  Run repeatable, execution-based evaluation against 150 frozen questions. Every candidate answer uses the production AI SQL pipeline; gold SQL and result verification run in the same in-browser DuckDB engine.
+                  Run repeatable, execution-based evaluation against 150 product-regression questions or 400 official public development questions. Every candidate answer uses the production AI SQL pipeline; gold SQL and verification run in the same in-browser DuckDB engine.
                 </p>
               </div>
             </div>
@@ -345,7 +348,12 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
 
         {activeView === 'overview' && (
           <>
-            <section className="grid md:grid-cols-3 gap-4">
+            <section>
+              <div className="flex items-end justify-between gap-4 mb-3">
+                <div><h2 className={`text-sm font-black ${strong}`}>Product regression suites</h2><p className={`text-[11px] mt-1 ${muted}`}>The existing 150-case synthetic compatibility baseline. Selected by default.</p></div>
+                <span className={`text-[10px] font-black uppercase tracking-wider ${muted}`}>150 questions</span>
+              </div>
+              <div className="grid md:grid-cols-3 gap-4">
               {BENCHMARK_SUITES.map(suite => {
                 const selected = selectedSuites.has(suite.id);
                 const accent = SUITE_ACCENTS[suite.accent];
@@ -368,13 +376,48 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                     <h2 className={`mt-4 text-base font-black ${strong}`}>{suite.name}</h2>
                     <p className={`mt-2 text-xs leading-5 ${muted}`}>{suite.description}</p>
                     <div className="mt-4 flex items-center gap-2 flex-wrap">
-                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-black ${accent.badge}`}>50 questions</span>
+                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-black ${accent.badge}`}>{suite.cases.length} questions</span>
                       <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>v{suite.version}</span>
                       <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>Frozen outputs</span>
                     </div>
                   </button>
                 );
               })}
+              </div>
+            </section>
+
+            <section>
+              <div className="flex items-end justify-between gap-4 mb-3">
+                <div><h2 className={`text-sm font-black ${strong}`}>Research evaluation</h2><p className={`text-[11px] mt-1 ${muted}`}>Original public development questions, official gold SQL, frozen outputs, and lazy-loaded source tables. Opt in deliberately.</p></div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400">400 questions</span>
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+              {ALL_BENCHMARK_SUITES.filter(suite => suite.evaluationClass === 'official-public-subset').map(suite => {
+                const selected = selectedSuites.has(suite.id);
+                const accent = SUITE_ACCENTS[suite.accent];
+                return (
+                  <button
+                    type="button"
+                    key={suite.id}
+                    disabled={isRunning}
+                    onClick={() => toggleSuite(suite.id)}
+                    className={`text-left rounded-2xl border p-5 transition-all ${panel} ${selected ? `${accent.ring} ring-1 ring-inset ring-current/10` : 'opacity-70 hover:opacity-100'} disabled:cursor-not-allowed`}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${accent.icon}`}><Database className="w-5 h-5" /></div>
+                      <div className={`w-5 h-5 rounded-md border flex items-center justify-center ${selected ? 'bg-violet-600 border-violet-500 text-white' : isDark ? 'border-white/20' : 'border-slate-300'}`}>{selected && <Check className="w-3.5 h-3.5" />}</div>
+                    </div>
+                    <div className="mt-4 flex items-center gap-2 flex-wrap"><h2 className={`text-base font-black ${strong}`}>{suite.name}</h2><span className="px-2 py-0.5 rounded-md border border-cyan-500/25 bg-cyan-500/10 text-[9px] font-black uppercase tracking-wider text-cyan-400">Official-source subset</span></div>
+                    <p className={`mt-2 text-xs leading-5 ${muted}`}>{suite.description}</p>
+                    <div className="mt-4 flex items-center gap-2 flex-wrap">
+                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-black ${accent.badge}`}>{suite.cases.length} questions</span>
+                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>v{suite.version}</span>
+                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>Public dev split</span>
+                    </div>
+                  </button>
+                );
+              })}
+              </div>
             </section>
 
             <section className={`rounded-3xl border p-5 md:p-6 ${panel}`}>
@@ -389,7 +432,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                       <Zap className="w-3.5 h-3.5 inline mr-1.5" />Smoke · 5 per suite
                     </button>
                     <button disabled={isRunning} onClick={() => { setScope('full'); setConfirmed(false); }} className={`px-4 py-2.5 rounded-xl border text-xs font-bold transition-all ${scope === 'full' ? 'bg-violet-500/15 border-violet-500/30 text-violet-400' : `${softSurface} ${muted}`}`}>
-                      <Gauge className="w-3.5 h-3.5 inline mr-1.5" />Full · 50 per suite
+                      <Gauge className="w-3.5 h-3.5 inline mr-1.5" />Full · all selected questions
                     </button>
                   </div>
                   <div>
@@ -415,7 +458,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                         <span className={`flex items-center gap-2 text-xs font-black ${benchmarkPrivacyMode === 'enhanced' ? 'text-cyan-400' : strong}`}>
                           <Shield className="w-4 h-4" />Better answers
                         </span>
-                        <span className={`block mt-1 text-[11px] leading-5 ${muted}`}>Also sends bounded, non-sensitive category values from the embedded synthetic fixtures. Never rows, IDs or personal data.</span>
+                        <span className={`block mt-1 text-[11px] leading-5 ${muted}`}>Also sends bounded, policy-screened category values from the selected benchmark fixtures. Never complete rows, IDs, or personal data.</span>
                       </button>
                     </div>
                   </div>
@@ -484,7 +527,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               <>
               <div className={`rounded-2xl border px-4 py-3 flex flex-wrap items-center justify-between gap-2 ${latestRun.metrics.completed === latestRun.metrics.total ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
                 <div className={`text-sm font-black ${latestRun.metrics.completed === latestRun.metrics.total ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {latestRun.scope === 'full' ? 'Full run' : 'Smoke run'} · {latestRun.privacyMode === 'enhanced' ? 'Better answers' : 'Private'} · {latestRun.metrics.total} planned · {latestRun.metrics.completed} completed
+                  {latestRun.methodologyLabel} · {latestRun.scope === 'full' ? 'Full run' : 'Smoke run'} · {latestRun.privacyMode === 'enhanced' ? 'Better answers' : 'Private'} · {latestRun.metrics.total} planned · {latestRun.metrics.completed} completed
                 </div>
                 <div className={`text-xs ${muted}`}>{latestRun.selectedSuiteIds.length} suite{latestRun.selectedSuiteIds.length === 1 ? '' : 's'} · {latestRun.cancelled ? 'Stopped by user' : latestRun.metrics.completed === latestRun.metrics.total ? 'Run complete' : 'Run incomplete'}</div>
               </div>
@@ -520,7 +563,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                 <div className="flex items-center gap-2 flex-wrap">
                   <select value={suiteFilter} onChange={event => setSuiteFilter(event.target.value as 'all' | BenchmarkSuiteId)} className={`px-3 py-2 rounded-xl border text-xs font-bold outline-none ${softSurface} ${strong}`}>
                     <option value="all">All suites</option>
-                    {BENCHMARK_SUITES.map(suite => <option key={suite.id} value={suite.id}>{suite.shortName}</option>)}
+                    {ALL_BENCHMARK_SUITES.map(suite => <option key={suite.id} value={suite.id}>{suite.shortName}</option>)}
                   </select>
                   <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as 'all' | BenchmarkCaseStatus)} className={`px-3 py-2 rounded-xl border text-xs font-bold outline-none ${softSurface} ${strong}`}>
                     <option value="all">All outcomes</option>
@@ -565,7 +608,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                           <React.Fragment key={result.caseId}>
                             <tr className={`border-t ${isDark ? 'border-white/[0.06] hover:bg-white/[0.025]' : 'border-slate-100 hover:bg-slate-50'}`}>
                               <td className="pl-4 py-3"><button onClick={() => setExpandedCase(expanded ? null : result.caseId)} className={`p-1 rounded-lg ${muted}`}>{expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</button></td>
-                              <td className="px-3 py-3"><div className={`text-xs font-mono font-bold ${strong}`}>{result.caseId}</div><div className={`text-[10px] mt-1 ${muted}`}>{result.category} · {result.difficulty}</div></td>
+                              <td className="px-3 py-3"><div className={`text-xs font-mono font-bold ${strong}`}>{result.caseId}</div><div className={`text-[10px] mt-1 ${muted}`}>{result.category} · {result.difficulty}</div><div className={`text-[9px] mt-1 font-mono ${muted}`}>{result.sourceId}</div></td>
                               <td className={`px-3 py-3 text-xs max-w-md ${strong}`}>{result.question}</td>
                               <td className="px-3 py-3">
                                 <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-black ${STATUS_CLASSES[result.status]}`}>{result.passed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}{STATUS_LABELS[result.status]}</span>
@@ -580,6 +623,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                               <tr className={`border-t ${isDark ? 'border-white/[0.05] bg-black/20' : 'border-slate-100 bg-slate-50/80'}`}>
                                 <td colSpan={8} className="p-4 md:p-5">
                                   {result.failureReason && <div className="mb-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-400"><AlertTriangle className="w-4 h-4 inline mr-1.5" />{result.failureReason}</div>}
+                                  {result.context && <div className={`mb-4 rounded-xl border p-3 text-xs leading-5 ${softSurface} ${strong}`}><span className={`block text-[10px] uppercase tracking-wider font-black mb-1 ${muted}`}>Official benchmark evidence</span>{result.context}</div>}
                                   <div className="grid xl:grid-cols-2 gap-4">
                                     <div>
                                       <div className={`text-[10px] uppercase tracking-wider font-black mb-2 ${muted}`}>Gold SQL</div>
@@ -636,15 +680,15 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               </div>
               <div className="mt-6 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-amber-400">
                 <div className="text-sm font-black flex items-center gap-2"><AlertTriangle className="w-4 h-4" />Research reporting rule</div>
-                <p className="text-xs leading-5 mt-1">Report this as a QuickInsight curated compatibility score with the suite version, app version, model route, date, question count, and exported evidence. Do not describe it as an official Spider, BIRD, or Spider 2.0 leaderboard score.</p>
+                <p className="text-xs leading-5 mt-1">Use the run's exact methodology label and report every suite separately with its version, app version, model route, date, privacy mode, completed count, and exported evidence. Public-development subsets are not full-set or official leaderboard scores.</p>
               </div>
             </div>
             <div className="space-y-4">
-              {BENCHMARK_SUITES.map(suite => (
+              {ALL_BENCHMARK_SUITES.map(suite => (
                 <div key={suite.id} className={`rounded-2xl border p-5 ${panel}`}>
                   <div className="flex items-center justify-between gap-3"><h3 className={`text-sm font-black ${strong}`}>{suite.name}</h3><span className={`text-[10px] font-bold ${muted}`}>v{suite.version}</span></div>
                   <p className={`mt-2 text-xs leading-5 ${muted}`}>{suite.methodology}</p>
-                  <a href={suite.attribution.homepage} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 mt-3 text-xs font-bold text-violet-400 hover:text-violet-300">Source inspiration: {suite.attribution.benchmark}<ChevronRight className="w-3.5 h-3.5" /></a>
+                  <a href={suite.attribution.homepage} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 mt-3 text-xs font-bold text-violet-400 hover:text-violet-300">{suite.evaluationClass === 'official-public-subset' ? 'Public source' : 'Source inspiration'}: {suite.attribution.benchmark}<ChevronRight className="w-3.5 h-3.5" /></a>
                   <div className={`mt-3 pt-3 border-t text-[10px] leading-4 ${isDark ? 'border-white/[0.06] text-slate-500' : 'border-slate-100 text-slate-400'}`}>{suite.attribution.notice}</div>
                 </div>
               ))}

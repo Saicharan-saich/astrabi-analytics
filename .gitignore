@@ -46,3 +46,8 @@ test-results/
 playwright-report/
 /blob-report/
 .playwright/
+
+# Downloaded public benchmark source archives/databases used only by the
+# reproducible research-pack generator. Generated browser fixtures live under
+# public/benchmarks and are intentionally versioned.
+.benchmark-source/
