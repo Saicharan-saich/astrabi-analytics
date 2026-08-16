@@ -19,6 +19,7 @@ const {
     validateLlmRequest,
     validatePort,
 } = require('./security');
+const { parseProviderError } = require('./llmProviderError');
 
 // JWT_SECRET must come from the environment in production. A hard-coded fallback
 // would be published the moment this repository goes public, and anyone holding it
@@ -1657,7 +1658,16 @@ app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyL
         if (!response.ok) {
             const errorText = await response.text().catch(() => 'Unknown error');
             console.error('[LLM Proxy] API error:', response.status, errorText);
-            return res.status(response.status).json({ success: false, error: `LLM service error (${response.status})` });
+            const providerError = parseProviderError(response.status, errorText);
+            return res.status(response.status).json({
+                success: false,
+                error: providerError.message,
+                providerStatus: response.status,
+                providerErrorType: providerError.providerErrorType,
+                providerErrorCategory: providerError.category,
+                retryable: providerError.retryable,
+                requestId: req.requestId,
+            });
         }
 
         const data = await response.json();

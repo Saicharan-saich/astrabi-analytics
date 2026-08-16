@@ -228,8 +228,13 @@ export async function fetchWithFallback(
                 );
             }
 
-            const errorBody = await response.text().catch(() => 'Unknown error');
-            throw new Error(`AI service error (${response.status}): ${errorBody}`);
+            const errData = await response.json().catch(() => ({} as Record<string, unknown>));
+            const providerType = typeof errData.providerErrorType === 'string' ? ` [${errData.providerErrorType}]` : '';
+            const requestId = typeof errData.requestId === 'string' ? ` (request ${errData.requestId})` : '';
+            const providerMessage = typeof errData.error === 'string'
+                ? errData.error
+                : `AI provider returned HTTP ${response.status}.`;
+            throw new Error(`${providerMessage}${providerType}${requestId}`);
 
         } catch (err: any) {
             clearTimeout(timer);

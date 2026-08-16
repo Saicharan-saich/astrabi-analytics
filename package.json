@@ -12,7 +12,7 @@
     "test:e2e": "playwright test",
     "scan:secrets": "node scripts/scan-secrets.mjs",
     "scan:secrets:history": "node scripts/scan-secrets.mjs --history",
-    "check:backend": "node --check backend/server.js && node --check backend/security.js"
+    "check:backend": "node --check backend/server.js && node --check backend/security.js && node --check backend/llmProviderError.js"
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.33.1-dev45.0",

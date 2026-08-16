@@ -34,6 +34,7 @@ import {
   ALL_BENCHMARK_SUITES,
   BENCHMARK_SUITES,
   clearBenchmarkRun,
+  getBenchmarkResumeIndex,
   loadBenchmarkRun,
   loadResearchBenchmarkDataset,
   runBenchmark,
@@ -187,6 +188,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     0,
   );
   const displayedRun = latestRun;
+  const latestResumeIndex = latestRun ? getBenchmarkResumeIndex(latestRun) : 0;
   const displayedResults = isRunning ? liveResults : (displayedRun?.results || []);
   const filteredResults = useMemo(() => displayedResults.filter(result =>
     (statusFilter === 'all' || result.status === statusFilter)
@@ -208,13 +210,18 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     setConfirmed(false);
   };
 
-  const handleRun = async () => {
-    if (!accessible || isRunning || !confirmed || selectedSuiteObjects.length === 0) return;
+  const handleRun = async (resumeRun?: BenchmarkRun) => {
+    const isResume = Boolean(resumeRun);
+    if (!accessible || isRunning || (!isResume && (!confirmed || selectedSuiteObjects.length === 0))) return;
     // Freeze the configuration at the instant Start is pressed. React state may
     // re-render during a long run, but the benchmark manifest must never drift.
-    const runSuites = [...selectedSuiteObjects];
-    const runScope = scope;
-    const runPrivacyMode = benchmarkPrivacyMode;
+    const runSuites = resumeRun
+      ? resumeRun.selectedSuiteIds
+        .map(id => ALL_BENCHMARK_SUITES.find(suite => suite.id === id))
+        .filter((suite): suite is (typeof ALL_BENCHMARK_SUITES)[number] => Boolean(suite))
+      : [...selectedSuiteObjects];
+    const runScope = resumeRun?.scope || scope;
+    const runPrivacyMode = resumeRun?.privacyMode || benchmarkPrivacyMode;
     const plannedQuestions = runSuites.reduce(
       (total, suite) => total + (runScope === 'full' ? suite.cases.length : Math.min(5, suite.cases.length)),
       0,
@@ -222,8 +229,9 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     cancelRef.current = false;
     setIsRunning(true);
     setRunError(null);
-    setLiveResults([]);
-    setProgress({ completed: 0, total: plannedQuestions, question: '' });
+    const resumeIndex = resumeRun ? getBenchmarkResumeIndex(resumeRun) : 0;
+    setLiveResults(resumeRun ? resumeRun.results.slice(0, resumeIndex) : []);
+    setProgress({ completed: resumeIndex, total: plannedQuestions, question: '' });
     setActiveView('results');
     console.info(`[Benchmark] Starting ${runScope} run: ${runSuites.length} suite(s), ${plannedQuestions} planned question(s)`);
 
@@ -257,10 +265,11 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             setProgress({ completed: index + 1, total, question: result.question });
           },
           minimumCaseIntervalMs: 3250,
-          // One transient provider failure must not throw away the remaining
-          // evidence in a 150-question run. The failed case remains explicitly
-          // labelled llm_unavailable and outside LLM-backed coverage.
+          // Tolerate one-off provider errors, then pause a sustained outage so
+          // the rest of a long run is not mislabelled as local-only evidence.
           stopOnLlmUnavailable: false,
+          maxConsecutiveLlmUnavailable: 3,
+          resumeRun,
         },
       );
       console.info(`[Benchmark] Finished ${run.scope} run: ${run.metrics.completed}/${run.metrics.total} completed${run.cancelled ? ' (cancelled)' : ''}`);
@@ -472,7 +481,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                 </div>
                 <div className="flex flex-col sm:flex-row gap-2 xl:justify-end">
                   <button
-                    onClick={handleRun}
+                    onClick={() => void handleRun()}
                     disabled={!confirmed || !selectedQuestionCount || isRunning}
                     className="px-5 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 text-white text-sm font-black shadow-lg shadow-violet-500/20 disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 transition-all"
                   >
@@ -543,14 +552,21 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             {!isRunning && latestRun && (latestRun.metrics.failuresByType.llm_unavailable || 0) > 0 && (
               <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300 flex items-start gap-2">
                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                <div><strong>{latestRun.metrics.failuresByType.llm_unavailable} model-unavailable case(s) recorded.</strong> The run continued, and these cases remain visible as failures rather than being counted as LLM-backed evidence.</div>
+                <div><strong>{latestRun.metrics.failuresByType.llm_unavailable} model-unavailable case(s) recorded.</strong> They remain visible as failures and are excluded from LLM-backed evidence.</div>
               </div>
             )}
 
-            {!isRunning && latestRun?.interruptionReason && (
-              <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-300 flex items-start gap-2">
+            {!isRunning && latestRun && latestResumeIndex < latestRun.metrics.total && (
+              <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-300 flex flex-wrap items-start gap-3">
                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                <div><strong>Run paused to protect benchmark validity.</strong> {latestRun.interruptionReason} Wait for the AI service window to reset, then start a new run.</div>
+                <div className="flex-1 min-w-[260px]"><strong>Run paused to protect benchmark validity.</strong> {latestRun.interruptionReason || 'The previous run ended before every planned case received an LLM response.'} Resolve the provider issue, then resume without rerunning successful cases.</div>
+                <button
+                  type="button"
+                  onClick={() => void handleRun(latestRun)}
+                  className="px-3 py-2 rounded-xl border border-sky-400/30 bg-sky-400/10 text-sky-200 text-xs font-black hover:bg-sky-400/20"
+                >
+                  <Play className="w-3.5 h-3.5 inline mr-1.5" />Resume failed cases
+                </button>
               </div>
             )}
 
@@ -614,7 +630,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                                 <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-black ${STATUS_CLASSES[result.status]}`}>{result.passed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}{STATUS_LABELS[result.status]}</span>
                                 {result.passed && (!result.safeToDisplay || !result.validSql) && <div className="mt-1 text-[9px] font-bold text-amber-400">{[!result.safeToDisplay && 'Safety warning', !result.validSql && 'SQL warning'].filter(Boolean).join(' · ')}</div>}
                               </td>
-                              <td className="px-3 py-3"><div className={`text-[11px] font-bold ${strong}`}>{result.engine || result.strategy || '—'}</div><div className={`text-[10px] mt-1 ${muted}`}>{result.model || 'Deterministic/local'}</div></td>
+                              <td className="px-3 py-3"><div className={`text-[11px] font-bold ${strong}`}>{result.engine || result.strategy || '—'}</div><div className={`text-[10px] mt-1 ${muted}`}>{result.status === 'llm_unavailable' ? 'No LLM response' : (result.model || 'Deterministic/local')}</div></td>
                               <td className={`px-3 py-3 text-xs text-right font-mono ${strong}`}>{milliseconds(result.pipelineLatencyMs || result.latencyMs)}</td>
                               <td className={`px-3 py-3 text-xs text-right font-mono ${strong}`}>{result.tokenUsage.total.toLocaleString()}</td>
                               <td className={`px-3 py-3 text-xs text-right font-mono ${strong}`}>{typeof result.confidence === 'number' ? `${result.confidence}/100` : '—'}</td>

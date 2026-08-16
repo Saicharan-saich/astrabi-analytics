@@ -148,6 +148,8 @@ export interface BenchmarkRun {
   completedAt?: number;
   cancelled: boolean;
   interruptionReason?: string;
+  /** Number of times an interrupted run has been continued in place. */
+  resumeCount?: number;
   appVersion: string;
   methodologyLabel:
     | 'Curated Subset Execution Accuracy'
@@ -182,6 +184,14 @@ export interface BenchmarkRunOptions {
   minimumCaseIntervalMs?: number;
   /** Stop rather than silently benchmarking local fallbacks during an outage. */
   stopOnLlmUnavailable?: boolean;
+  /**
+   * Circuit breaker used by long runs. When resilient mode is enabled, pause
+   * after this many consecutive provider failures instead of spending the rest
+   * of the run on deterministic fallbacks.
+   */
+  maxConsecutiveLlmUnavailable?: number;
+  /** Continue an existing compatible run, retrying its trailing unavailable cases. */
+  resumeRun?: BenchmarkRun;
   /** Injectable wait used by tests. */
   wait?: (milliseconds: number) => Promise<void>;
 }
