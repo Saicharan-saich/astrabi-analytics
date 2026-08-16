@@ -29,7 +29,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useTheme } from './ThemeProvider';
 import { runAISQLPipeline } from '../services/ai-sql';
 import type { PrivacyMode } from '../services/ai-sql/privacyMode';
-import { executeSQLViaDuckDB, reloadIsolatedBenchmarkData, resetDuckDB } from '../services/duckdbEngine';
+import { ensureDuckDBReady, executeSQLViaDuckDB, reloadIsolatedBenchmarkData, resetDuckDB } from '../services/duckdbEngine';
 import {
   ALL_BENCHMARK_SUITES,
   BENCHMARK_SUITES,
@@ -91,6 +91,33 @@ const SUITE_ACCENTS = {
 
 const percent = (value: number): string => `${(value * 100).toFixed(1)}%`;
 const milliseconds = (value: number): string => value >= 1000 ? `${(value / 1000).toFixed(1)}s` : `${Math.round(value)}ms`;
+const API_BASE = (import.meta as any).env?.VITE_API_URL || 'http://localhost:5002/api';
+
+async function verifyBenchmarkInfrastructure(): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new Error('You are offline. Reconnect before starting the benchmark because model calls require the QuickInsight API.');
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+  try {
+    const response = await fetch(`${API_BASE}/ready`, {
+      method: 'GET',
+      cache: 'no-store',
+      signal: controller.signal,
+    });
+    if (!response.ok) throw new Error(`QuickInsight API readiness check returned ${response.status}.`);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('QuickInsight API readiness check timed out. Check the connection and try again.');
+    }
+    throw new Error(`QuickInsight API is currently unreachable. ${error instanceof Error ? error.message : String(error)}`);
+  } finally {
+    clearTimeout(timer);
+  }
+
+  await ensureDuckDBReady();
+}
 
 function downloadFile(filename: string, content: string, type: string): void {
   const blob = new Blob([content], { type });
@@ -235,7 +262,11 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     setActiveView('results');
     console.info(`[Benchmark] Starting ${runScope} run: ${runSuites.length} suite(s), ${plannedQuestions} planned question(s)`);
 
+    let benchmarkTouchedDuckDB = false;
     try {
+      setProgress({ completed: resumeIndex, total: plannedQuestions, question: 'Checking API and local DuckDB engine…' });
+      await verifyBenchmarkInfrastructure();
+      benchmarkTouchedDuckDB = true;
       const run = await runBenchmark(
         runSuites,
         {
@@ -280,12 +311,17 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     } finally {
       // Restore the user's active data table so running a benchmark can never
       // alter the next answer they ask in Question Builder or AI SQL.
-      try {
-        const currentDataset = useAppStore.getState().dataset || activeDataset;
-        if (currentDataset?.rows?.length) await reloadIsolatedBenchmarkData(currentDataset.rows);
-        else resetDuckDB();
-      } catch (restoreError) {
-        console.warn('[Benchmark] Active dataset restore failed:', restoreError);
+      if (benchmarkTouchedDuckDB) {
+        try {
+          const currentDataset = useAppStore.getState().dataset || activeDataset;
+          if (currentDataset?.rows?.length) await reloadIsolatedBenchmarkData(currentDataset.rows);
+          else resetDuckDB();
+        } catch (restoreError) {
+          resetDuckDB();
+          console.warn('[Benchmark] Active dataset restore failed:', restoreError);
+        }
+      } else {
+        resetDuckDB();
       }
       setIsRunning(false);
       setConfirmed(false);

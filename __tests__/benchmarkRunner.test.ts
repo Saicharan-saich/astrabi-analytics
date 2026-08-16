@@ -261,6 +261,30 @@ describe('benchmark runner', () => {
     expect(run.results[0].engine).toBe('provider-unavailable');
   });
 
+  it('times out a stalled local engine and pauses the run at the retryable case', async () => {
+    const suite = BENCHMARK_SUITES[0];
+    const run = await runBenchmark([suite], dependencies({
+      reloadDataset: async () => new Promise<void>(() => undefined),
+      localStageTimeoutMs: 5,
+    }), { scope: 'smoke', appVersion: 'test' });
+
+    expect(run.results).toHaveLength(1);
+    expect(run.results[0].status).toBe('execution_error');
+    expect(run.results[0].failureReason).toContain('DuckDB reload timed out');
+    expect(run.interruptionReason).toContain('local benchmark engine became unavailable');
+    expect(getBenchmarkResumeIndex(run)).toBe(0);
+  });
+
+  it('classifies a stalled AI SQL pipeline as an unavailable model call', async () => {
+    const result = await executeBenchmarkCase(firstCase, dependencies({
+      runPipeline: async () => new Promise(() => undefined),
+      pipelineTimeoutMs: 5,
+    }));
+
+    expect(result.status).toBe('llm_unavailable');
+    expect(result.failureReason).toContain('AI SQL pipeline timed out');
+  });
+
   it('opens the circuit breaker after three consecutive provider failures', async () => {
     const suite = BENCHMARK_SUITES[0];
     const expectedBySql = new Map(suite.cases.map(testCase => [testCase.goldSql, testCase.expectedRows]));

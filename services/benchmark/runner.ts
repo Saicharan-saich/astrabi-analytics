@@ -12,7 +12,40 @@ import type {
 
 const EMPTY_TOKENS = { prompt: 0, completion: 0, total: 0 };
 const EVIDENCE_ROW_LIMIT = 50;
+const DEFAULT_LOCAL_STAGE_TIMEOUT_MS = 60_000;
+const DEFAULT_PIPELINE_TIMEOUT_MS = 240_000;
 const LLM_UNAVAILABLE_PATTERN = /rate.?limit|too many (?:ai )?requests|daily ai (?:quota|limit)|quota exceeded|credits exhausted|permission.?denied|forbidden|guardrail|provider denied|model.*not available|service.*(?:down|unavailable)|network|fetch failed|timed?\s*out/i;
+const LOCAL_INFRASTRUCTURE_PATTERN = /benchmark (?:dataset load|duckdb reload|gold sql execution) timed out|duckdb-wasm|webassembly|failed to read from a readablestream|wasm engine|worker is not supported/i;
+
+function withStageTimeout<T>(operation: () => Promise<T>, timeoutMs: number, stage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error(`Benchmark ${stage} timed out after ${Math.max(1, Math.ceil(timeoutMs / 1000))} seconds.`));
+    }, Math.max(1, timeoutMs));
+
+    Promise.resolve()
+      .then(operation)
+      .then(value => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      }, error => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(error);
+      });
+  });
+}
+
+function isLocalInfrastructureFailure(result: BenchmarkCaseResult): boolean {
+  return result.status === 'execution_error'
+    && LOCAL_INFRASTRUCTURE_PATTERN.test(result.failureReason || '');
+}
 
 function isLlmBacked(result: BenchmarkCaseResult): boolean {
   return result.strategy !== 'deterministic' && result.tokenUsage.total > 0;
@@ -98,10 +131,16 @@ export async function executeBenchmarkCase(
 ): Promise<BenchmarkCaseResult> {
   const now = dependencies.now || Date.now;
   const startedAt = now();
+  const localStageTimeoutMs = dependencies.localStageTimeoutMs || DEFAULT_LOCAL_STAGE_TIMEOUT_MS;
+  const pipelineTimeoutMs = dependencies.pipelineTimeoutMs || DEFAULT_PIPELINE_TIMEOUT_MS;
 
   try {
     const dataset = testCase.dataset || (testCase.datasetRef && dependencies.loadDataset
-      ? await dependencies.loadDataset(testCase)
+      ? await withStageTimeout(
+        () => dependencies.loadDataset!(testCase),
+        localStageTimeoutMs,
+        'dataset load',
+      )
       : undefined);
     if (!dataset) {
       const completedAt = now();
@@ -116,16 +155,24 @@ export async function executeBenchmarkCase(
       );
     }
 
-    await dependencies.reloadDataset(dataset.rows);
-    const goldExecution = await dependencies.executeGoldSql(
-      dataset.rows,
-      testCase.goldSql,
-      dataset.timeContext ? {
-        minDate: dataset.timeContext.minDate,
-        maxDate: dataset.timeContext.maxDate,
-        primaryDateColumn: dataset.timeContext.anchorDateColumn,
-      } : undefined,
-      dataset.relatedTables,
+    await withStageTimeout(
+      () => dependencies.reloadDataset(dataset.rows),
+      localStageTimeoutMs,
+      'DuckDB reload',
+    );
+    const goldExecution = await withStageTimeout(
+      () => dependencies.executeGoldSql(
+        dataset.rows,
+        testCase.goldSql,
+        dataset.timeContext ? {
+          minDate: dataset.timeContext.minDate,
+          maxDate: dataset.timeContext.maxDate,
+          primaryDateColumn: dataset.timeContext.anchorDateColumn,
+        } : undefined,
+        dataset.relatedTables,
+      ),
+      localStageTimeoutMs,
+      'gold SQL execution',
     );
 
     if (goldExecution.error) {
@@ -154,11 +201,19 @@ export async function executeBenchmarkCase(
 
     // The AI pipeline shares one in-browser DuckDB connection. Reloading here
     // prevents a previous benchmark case from contaminating the next case.
-    await dependencies.reloadDataset(dataset.rows);
+    await withStageTimeout(
+      () => dependencies.reloadDataset(dataset.rows),
+      localStageTimeoutMs,
+      'DuckDB reload',
+    );
     const pipelineQuestion = testCase.context
       ? `${testCase.question}\n\nEvidence: ${testCase.context}`
       : testCase.question;
-    const pipelineResult = await dependencies.runPipeline(pipelineQuestion, dataset);
+    const pipelineResult = await withStageTimeout(
+      () => dependencies.runPipeline(pipelineQuestion, dataset),
+      pipelineTimeoutMs,
+      'AI SQL pipeline',
+    );
     const completedAt = now();
     const safeToDisplay = pipelineResult.displaySafety?.allowed !== false;
     const validSql = pipelineResult.validation?.valid !== false;
@@ -240,10 +295,11 @@ export async function executeBenchmarkCase(
     return { ...base, status: 'wrong_result', passed: false, failureReason: comparison.reason };
   } catch (error) {
     const completedAt = now();
+    const reason = error instanceof Error ? error.message : String(error);
     return failureResult(
       testCase,
-      'execution_error',
-      error instanceof Error ? error.message : String(error),
+      /Benchmark AI SQL pipeline timed out/i.test(reason) ? 'llm_unavailable' : 'execution_error',
+      reason,
       startedAt,
       completedAt,
     );
@@ -256,7 +312,10 @@ export async function executeBenchmarkCase(
  */
 export function getBenchmarkResumeIndex(run: BenchmarkRun): number {
   let index = run.results.length;
-  while (index > 0 && run.results[index - 1].status === 'llm_unavailable') index -= 1;
+  while (index > 0 && (
+    run.results[index - 1].status === 'llm_unavailable'
+    || isLocalInfrastructureFailure(run.results[index - 1])
+  )) index -= 1;
   return index;
 }
 
@@ -325,6 +384,12 @@ export async function runBenchmark(
     run.results.push(result);
     run.metrics = summarizeBenchmarkResults(run.results, selectedCases.length);
     options.onCaseComplete?.(result, index, selectedCases.length);
+
+    if (isLocalInfrastructureFailure(result)) {
+      run.interruptionReason = `${result.failureReason} The local benchmark engine became unavailable, so the run was paused instead of mis-scoring the remaining questions. Reconnect, then resume from this case.`;
+      console.warn(`[Benchmark Runner] Infrastructure pause after ${run.results.length}/${selectedCases.length} cases: ${run.interruptionReason}`);
+      break;
+    }
 
     if (result.status === 'llm_unavailable') {
       consecutiveLlmUnavailable += 1;

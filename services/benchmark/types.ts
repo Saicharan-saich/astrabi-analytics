@@ -169,6 +169,10 @@ export interface BenchmarkRunnerDependencies {
     relatedTables?: { name: string; rows: Record<string, unknown>[] }[],
   ) => Promise<{ data: Record<string, unknown>[]; error?: string }>;
   runPipeline: (question: string, dataset: Dataset) => Promise<BenchmarkPipelineResult>;
+  /** Maximum wait for fixture loading, DuckDB reloads, and gold execution. */
+  localStageTimeoutMs?: number;
+  /** Maximum wait for the complete production AI SQL pipeline. */
+  pipelineTimeoutMs?: number;
   now?: () => number;
 }
 

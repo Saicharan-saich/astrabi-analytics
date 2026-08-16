@@ -61,7 +61,30 @@ let initPromise: Promise<void> | null = null;
 let initError: Error | null = null;
 let initAttempts = 0;
 const MAX_INIT_RETRIES = 3;
+const INIT_ATTEMPT_TIMEOUT_MS = 45_000;
 const loadedTables = new Map<string, Promise<void>>();
+
+function withInitializationTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+        let settled = false;
+        const timer = setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            reject(new Error(`DuckDB-WASM initialization timed out after ${Math.round(timeoutMs / 1000)} seconds`));
+        }, timeoutMs);
+        promise.then(value => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(value);
+        }, error => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            reject(error);
+        });
+    });
+}
 
 // ── Initialization ───────────────────────────────────────────────
 
@@ -100,6 +123,8 @@ async function initDuckDB(): Promise<void> {
         let lastError: Error | null = null;
 
         for (let attempt = initAttempts; attempt < MAX_INIT_RETRIES; attempt++) {
+            let workerUrl: string | null = null;
+            let worker: Worker | null = null;
             try {
                 initAttempts = attempt + 1;
                 logger.info('[DuckDB]', `Initializing WASM engine (attempt ${attempt + 1}/${MAX_INIT_RETRIES})...`);
@@ -111,21 +136,25 @@ async function initDuckDB(): Promise<void> {
                 // Select a bundle based on browser capabilities
                 const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
 
-                const worker_url = URL.createObjectURL(
+                workerUrl = URL.createObjectURL(
                     new Blob([`importScripts("${bundle.mainWorker!}");`], { type: 'text/javascript' })
                 );
 
-                const worker = new Worker(worker_url);
+                worker = new Worker(workerUrl);
                 const duckdbLogger = new duckdb.ConsoleLogger();
                 db = new duckdb.AsyncDuckDB(duckdbLogger, worker);
-                await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+                await withInitializationTimeout(
+                    db.instantiate(bundle.mainModule, bundle.pthreadWorker),
+                    INIT_ATTEMPT_TIMEOUT_MS,
+                );
 
                 conn = await db.connect();
 
                 const elapsed = Math.round(performance.now() - startTime);
                 logger.info('[DuckDB]', `WASM engine ready in ${elapsed}ms`);
 
-                URL.revokeObjectURL(worker_url);
+                URL.revokeObjectURL(workerUrl);
+                workerUrl = null;
 
                 // Success — reset error state
                 initError = null;
@@ -133,6 +162,8 @@ async function initDuckDB(): Promise<void> {
             } catch (err) {
                 lastError = err as Error;
                 // Clean up partial state from failed attempt
+                worker?.terminate();
+                if (workerUrl) URL.revokeObjectURL(workerUrl);
                 db = null;
                 conn = null;
 
@@ -148,9 +179,10 @@ async function initDuckDB(): Promise<void> {
         }
 
         // All retries exhausted
-        initError = lastError;
+        initError = lastError || new Error('DuckDB-WASM initialization failed');
         initPromise = null;  // Reset so future calls can retry after resetDuckDB()
-        throw lastError;
+        initAttempts = 0;    // A later resume may run after the network recovers.
+        throw initError;
     })();
 
     return initPromise;
@@ -757,6 +789,11 @@ export async function reloadDataTable(rows: any[]): Promise<void> {
     loadedTables.delete('data');
     loadedTables.delete('dim_date');
     await loadDataIntoTable('data', rows);
+}
+
+/** Preflight used by long-running tools so initialization failures are shown before work starts. */
+export async function ensureDuckDBReady(): Promise<void> {
+    await initDuckDB();
 }
 
 /**
