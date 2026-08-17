@@ -29,9 +29,9 @@
     "react-grid-layout": "^1.4.4",
     "react-simple-maps": "3.0.0",
     "sql.js": "^1.14.1",
-    "tailwind-merge": "^3.4.0",
+    "tailwind-merge": "^3.6.0",
     "xlsx": "^0.18.5",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
