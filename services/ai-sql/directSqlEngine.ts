@@ -23,6 +23,8 @@ Rules:
 - When money/revenue/total is asked for, use the additive currency measure, not a per-unit price.
 - DATE COLUMNS ARE STORED AS TEXT (VARCHAR). You MUST wrap them in CAST(col AS DATE) before ANY date function or comparison — DATE_TRUNC, EXTRACT, strftime, date_diff, ordering by month, or BETWEEN. Example: DATE_TRUNC('month', CAST(order_date AS DATE)), and CAST(order_date AS DATE) BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'. Writing DATE_TRUNC('month', order_date) directly WILL fail.
 - JOIN across tables when needed, following the listed foreign keys.
+- Treat absence and exclusion as set logic. Questions such as "entities with no related records" require NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT against the related table; never simulate absence by grouping only the primary table and writing HAVING COUNT(...) = 0.
+- Preserve the requested output entity and grain. Do not return a continent when country names were requested, or collapse several requested rows into one group.
 - The user's explicit question and the verified schema are the source of truth. The local Analysis Plan is a governed draft: preserve valid resolved metrics, filters, comparison semantics, sorting, and limits, but repair any omission or misclassification called out by Planner Verification.
 - Preserve governed relative thresholds. A plan filter with op "above_avg" or "below_avg" means: aggregate the metric at the requested entity grain first, calculate the average of those entity aggregates in a CTE/subquery, then retain entities above or below that threshold. Never replace it with an invented literal threshold. If includeNonPositive is true, combine the below-average condition with OR aggregate <= 0 so wording such as "low or negative" is preserved exactly.
 - Never return a generic scalar total merely because the draft plan has no dimension. If the user asks "by", "over time", a fiscal calendar, a comparison, ranking, or another explicit analytical shape, implement that shape using the available schema.
@@ -30,7 +32,7 @@ Rules:
 - If the question includes a "Dataset reporting anchor", that anchor is the reporting clock. Resolve relative periods using explicit DATE literals from it; NEVER use CURRENT_DATE, CURRENT_TIMESTAMP, NOW(), or other wall-clock functions.
 - Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
 
-interface DynamicQuerySpec {
+export interface DynamicQuerySpec {
     goal: string;
     operations: {
         measures?: Array<{ field: string; aggregation?: string; expression?: string }>;
@@ -51,6 +53,7 @@ const SPEC_PROMPT = `You are the planning stage of a privacy-first analytics sys
 Translate the question into a JSON Query Specification. You receive only a database schema and metadata, never data rows.
 Capture all requested analytical operations dynamically: measures/aggregations, filters, GROUP BY, HAVING, sorting, limits, joins, date logic, and window or table calculations. Use only exact physical schema fields and table names. When an entity is the answer, choose its human-readable descriptive field for expectedResult (not an opaque ID) whenever the schema provides one; IDs can be an optional secondary reference.
 Relative analytical language is answerable without a user-supplied literal threshold. When the governed plan resolves "high/strong" to above_avg or "low/weak/negative" to below_avg, preserve that decision: compare each entity-level aggregate with the average across entity aggregates, record the rule in assumptions, and do NOT request clarification. Ask only when the required field or entity grain is genuinely unavailable.
+Represent negative existence explicitly as an anti-join/set operation (NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT). Preserve the requested entity as expectedResult grain and columns; never substitute a related table or a higher-level grouping.
 Return valid JSON only with: goal, operations, expectedResult, assumptions, clarification.
 If the schema cannot answer the question, set clarification instead of inventing a field.`;
 
@@ -96,6 +99,16 @@ export interface DirectSQLResult {
     error?: string;
     /** True when the SQL failed an explicit question-to-SQL contract and must not fall back to a generic answer. */
     blocked?: boolean;
+    /** Final semantic contract produced before SQL generation. */
+    querySpec?: DynamicQuerySpec;
+}
+
+export interface SemanticSQLRepairResult {
+    sql: string;
+    tokens: number;
+    model?: string;
+    explanation: string;
+    error?: string;
 }
 
 /** Pull the SQL out of the model's reply (strip code fences / trailing prose). */
@@ -104,6 +117,41 @@ export function extractSQL(content: string): string {
     const fence = s.match(/```(?:sql)?\s*([\s\S]*?)```/i);
     if (fence) s = fence[1].trim();
     return s.replace(/;+\s*$/, '').trim();
+}
+
+/** Focused semantic retry after valid SQL returns an implausible empty result. */
+export async function repairSemanticSQL(
+    question: string,
+    schemaText: string,
+    spec: DynamicQuerySpec | undefined,
+    originalSQL: string,
+    diagnostic: string,
+    requestPurpose?: 'benchmark',
+): Promise<SemanticSQLRepairResult> {
+    const repaired = await fetchWithFallback([
+        {
+            role: 'system',
+            content: `${SYSTEM_PROMPT}\n\nYou are performing a result-aware semantic repair. The SQL was syntactically valid, but local execution violated the expected result shape. Re-check table selection, relationship path, entity grain, filter placement, case-sensitive literals, anti-join logic, grouping, and output columns. Do not remove a requested condition merely to manufacture rows. Return only corrected SQL.`,
+        },
+        {
+            role: 'user',
+            content: `Schema:\n${schemaText}\n\nQuestion:\n${question}\n\nQuery specification:\n${JSON.stringify(spec || {}, null, 2)}\n\nExecuted SQL:\n${originalSQL}\n\nLocal diagnostic (no row values are shared):\n${diagnostic}\n\nCorrected SQL:`,
+        },
+    ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
+
+    const sql = extractSQL(repaired.data.choices?.[0]?.message?.content || '');
+    const usage = repaired.data.usage || {};
+    const tokens = usage.total_tokens || ((usage.prompt_tokens || 0) + (usage.completion_tokens || 0)) || 0;
+    const safe = validateReadOnlySQL(sql);
+    if (!safe.ok) {
+        return { sql: originalSQL, tokens, model: repaired.model, explanation: 'Semantic repair was rejected by the read-only SQL gate.', error: safe.reason };
+    }
+    return {
+        sql: safe.sql,
+        tokens,
+        model: repaired.model,
+        explanation: 'Replanned table selection, filters, and result grain after an empty local result.',
+    };
 }
 
 /**
@@ -140,7 +188,7 @@ export async function generateDirectSQL(
     const plannerUsage = planner.data.usage || {};
     let tokens = plannerUsage.total_tokens || ((plannerUsage.prompt_tokens || 0) + (plannerUsage.completion_tokens || 0)) || 0;
     if (!spec) return { sql: '', tokens, model: planner.model, error: 'AI planner returned an invalid query specification', blocked: true };
-    if (spec.clarification) return { sql: '', tokens, model: planner.model, error: spec.clarification, blocked: true };
+    if (spec.clarification) return { sql: '', tokens, model: planner.model, error: spec.clarification, blocked: true, querySpec: spec };
 
     const userContext = `Schema:\n${schemaText}${presentationContext}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
     const drafted = await fetchWithFallback([
@@ -174,10 +222,11 @@ export async function generateDirectSQL(
             tokens,
             model: modelUsedForSQL,
             error: 'Wall-clock SQL rejected: use the dataset reporting anchor with explicit DATE literals',
+            querySpec: spec,
         };
     }
 
     const safe = validateReadOnlySQL(sql);
-    if (!safe.ok) return { sql, tokens, model: modelUsedForSQL, error: `Unsafe SQL rejected: ${safe.reason}` };
-    return { sql: safe.sql, tokens, model: modelUsedForSQL };
+    if (!safe.ok) return { sql, tokens, model: modelUsedForSQL, error: `Unsafe SQL rejected: ${safe.reason}`, querySpec: spec };
+    return { sql: safe.sql, tokens, model: modelUsedForSQL, querySpec: spec };
 }

@@ -288,6 +288,43 @@ def asset_id(prefix: str, db_id: str, tables: list[str]) -> str:
     return f"{prefix}--{safe_slug(db_id)}--{digest}"
 
 
+def read_source_schema(connection: sqlite3.Connection, tables: list[str]) -> dict[str, Any]:
+    """Preserve declared SQLite keys so AI SQL never has to guess joins."""
+    table_lookup = {table.lower(): table for table in tables}
+    schema_tables: list[dict[str, Any]] = []
+    join_edges: list[dict[str, str]] = []
+    for table in tables:
+        quoted = table.replace('"', '""')
+        info = connection.execute(f'PRAGMA table_info("{quoted}")').fetchall()
+        row_count = int(connection.execute(f'SELECT COUNT(*) FROM "{quoted}"').fetchone()[0])
+        schema_tables.append({
+            "name": table,
+            "rows": row_count,
+            "columns": [{
+                "name": str(column[1]),
+                "dataType": str(column[2] or "TEXT"),
+                "isPK": bool(column[5]),
+                "isNullable": not bool(column[3]) and not bool(column[5]),
+            } for column in info],
+        })
+        for foreign_key in connection.execute(f'PRAGMA foreign_key_list("{quoted}")').fetchall():
+            target = table_lookup.get(str(foreign_key[2]).lower())
+            if not target:
+                continue
+            join_edges.append({
+                "leftTable": table,
+                "rightTable": target,
+                "leftColumn": str(foreign_key[3]),
+                "rightColumn": str(foreign_key[4]),
+                "type": "fk",
+            })
+    return {
+        "tables": schema_tables,
+        "joinEdges": join_edges,
+        "joinLogs": [f"Loaded {len(join_edges)} declared SQLite foreign-key relationship(s)."],
+    }
+
+
 def build_dataset_asset(prefix: str, case: SourceCase, tables: list[str], connection: sqlite3.Connection) -> dict[str, Any] | None:
     loaded: list[tuple[str, list[dict[str, Any]], list[dict[str, str]]]] = []
     for table in tables:
@@ -311,6 +348,7 @@ def build_dataset_asset(prefix: str, case: SourceCase, tables: list[str], connec
             "timestamp": 0,
         }],
         "relatedTables": [{"name": name, "rows": rows} for name, rows, _ in loaded],
+        "sourceSchema": read_source_schema(connection, tables),
         "version": 1,
         "createdAt": 0,
     }
@@ -513,11 +551,6 @@ def main() -> None:
     args = parse_args()
     args.output_root.mkdir(parents=True, exist_ok=True)
     datasets_root = args.output_root / "datasets"
-    if datasets_root.exists():
-        # The directory is generator-owned. Removing stale generated assets
-        # keeps source control and deployment size deterministic across rebuilds.
-        for stale_asset in datasets_root.glob("*.json"):
-            stale_asset.unlink()
     spider_source = load_spider_cases(args.spider_root)
     bird_source = load_bird_cases(args.bird_manifest)
     validator = DuckDBValidator(args.node)
@@ -532,6 +565,12 @@ def main() -> None:
         validator.close()
     spider_selected = select_cases("spider-dev", spider_eligible, args.count)
     bird_selected = select_cases("bird-dev", bird_eligible, args.count)
+    if datasets_root.exists():
+        # Clear the generator-owned directory only after source scanning and
+        # DuckDB validation succeed. An interrupted rebuild must never erase the
+        # last known-good deployed fixture set.
+        for stale_asset in datasets_root.glob("*.json"):
+            stale_asset.unlink()
     spider_asset_ids = write_assets(args.output_root, spider_selected, spider_assets)
     bird_asset_ids = write_assets(args.output_root, bird_selected, bird_assets)
 

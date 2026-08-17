@@ -124,9 +124,19 @@ export interface BenchmarkRunMetrics {
   total: number;
   completed: number;
   passed: number;
+  /** Completed cases divided by the locked run manifest. */
+  coverageRate: number;
   executionAccuracy: number;
+  /** Accuracy only across cases that received a complete LLM-backed response. */
+  llmBackedExecutionAccuracy: number;
   validSqlRate: number;
   safeAnswerRate: number;
+  /** Provider-backed cases divided by completed cases. */
+  providerAvailabilityRate: number;
+  /** Successfully executed candidate queries divided by provider-backed cases. */
+  executableSqlRate: number;
+  /** Answer-contract acceptance divided by provider-backed cases. */
+  contractAcceptanceRate: number;
   averageConfidence: number;
   llmBackedCases: number;
   llmBackedRate: number;

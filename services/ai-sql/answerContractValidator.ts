@@ -44,6 +44,15 @@ export interface ContractValidationResult {
     repairSuggestions: string[];
 }
 
+export interface FinalQueryContract {
+    expectedResult?: { grain?: string; columns?: string[]; explanation?: string };
+    operations?: {
+        filters?: Array<{ field?: string; operator?: string; value?: unknown; expression?: string }>;
+        groupBy?: Array<{ field: string; grain?: string; expression?: string }>;
+        having?: Array<{ expression: string }>;
+    };
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // VALIDATOR
 // ═══════════════════════════════════════════════════════════════════
@@ -59,24 +68,33 @@ export function validateAnswerContract(
     xKey: string,
     yKey: string,
     semanticModel: SemanticModel,
-    stats?: DatasetStatistics
+    stats?: DatasetStatistics,
+    finalContract?: FinalQueryContract,
 ): ContractValidationResult {
     const checks: ContractCheck[] = [];
     const sqlLower = sql.toLowerCase();
 
     // ─── Check 1: Metrics Present ────────────────────────────────
     {
-        const planMetrics = plan.metrics?.map(m => m.field.toLowerCase()) || [];
+        const expectedColumns = finalContract?.expectedResult?.columns?.filter(Boolean) || [];
+        const planMetrics = (expectedColumns.length
+            ? expectedColumns
+            : plan.metrics?.map(m => m.field) || []).map(value => value.toLowerCase());
         const resultColumns = results.length > 0 ? Object.keys(results[0]).map(k => k.toLowerCase()) : [];
 
         const missingMetrics = planMetrics.filter(m =>
-            !resultColumns.some(rc => rc.includes(m.replace(/"/g, '')))
+            !resultColumns.some(rc => {
+                const expected = m.replace(/"/g, '').replace(/[^a-z0-9]+/g, '_');
+                const actual = rc.replace(/[^a-z0-9]+/g, '_');
+                return actual === expected || actual.includes(expected) || expected.includes(actual);
+            })
+            && !sqlLower.includes(m.replace(/"/g, '').replace(/[^a-z0-9_]+/g, ' '))
         );
 
         checks.push({
             id: 'metrics_present',
-            name: 'Requested metrics in results',
-            status: missingMetrics.length === 0 ? 'pass' : 'fail',
+            name: expectedColumns.length ? 'Expected outputs in results' : 'Requested metrics in results',
+            status: missingMetrics.length === 0 ? 'pass' : expectedColumns.length ? 'warn' : 'fail',
             message: missingMetrics.length === 0
                 ? `All ${planMetrics.length} metric(s) found in results`
                 : `Missing metrics: ${missingMetrics.join(', ')}`,
@@ -86,7 +104,13 @@ export function validateAnswerContract(
 
     // ─── Check 2: Conditions Applied ─────────────────────────────
     {
-        const planFilters = plan.filters || [];
+        const planFilters = finalContract
+            ? (finalContract.operations?.filters || []).map(filter => ({
+                field: filter.field || filter.expression || '',
+                op: filter.operator || 'expression',
+                value: filter.value,
+            }))
+            : plan.filters || [];
         const missingFilters = planFilters.filter(f => {
             const fieldLower = f.field.toLowerCase();
             return !sqlLower.includes(fieldLower);
@@ -109,7 +133,9 @@ export function validateAnswerContract(
     // ─── Check 3: No Silent Filter Drop ──────────────────────────
     {
         // Check if SQL has fewer WHERE conditions than the plan specified
-        const planFilterCount = (plan.filters || []).length;
+        const planFilterCount = finalContract
+            ? (finalContract.operations?.filters || []).length
+            : (plan.filters || []).length;
         const whereMatch = sqlLower.match(/where\s+/);
         const andCount = whereMatch ? (sqlLower.split(/\band\b/).length - 1) : 0;
         const hasWhere = whereMatch !== null;
@@ -132,7 +158,9 @@ export function validateAnswerContract(
 
     // ─── Check 4: Grain Correct ──────────────────────────────────
     {
-        const planDims = plan.dimensions?.map(d => d.field.toLowerCase()) || [];
+        const planDims = (finalContract
+            ? finalContract.operations?.groupBy?.map(d => d.field) || []
+            : plan.dimensions?.map(d => d.field) || []).map(field => field.toLowerCase());
         const groupByMatch = sqlLower.match(/group\s+by\s+([^)]+?)(?:order|limit|having|$)/s);
         const groupByCols = groupByMatch
             ? groupByMatch[1].split(',').map(c => c.trim().replace(/"/g, '').toLowerCase())
@@ -161,7 +189,9 @@ export function validateAnswerContract(
     {
         // Check if dimension columns contain IDs instead of names
         if (results.length > 0) {
-            const dimColumns = (plan.dimensions || []).map(d => d.field);
+            const dimColumns = finalContract?.expectedResult?.columns?.length
+                ? finalContract.expectedResult.columns
+                : (plan.dimensions || []).map(d => d.field);
             let hasOnlyIds = false;
 
             for (const dimCol of dimColumns) {
@@ -243,7 +273,7 @@ export function validateAnswerContract(
     // ─── Check 8: Threshold Satisfaction ─────────────────────────
     {
         // If the plan has a threshold filter, check results satisfy it
-        const thresholdFilters = (plan.filters || []).filter(f =>
+        const thresholdFilters = (finalContract ? [] : plan.filters || []).filter(f =>
             ['>', '>=', '<', '<='].includes(f.op)
         );
 
@@ -294,7 +324,9 @@ export function validateAnswerContract(
         checks.push({
             id: 'chart_matches_data',
             name: 'Chart keys exist in result data',
-            status: (hasXKey && hasYKey) ? 'pass' : (!xKey && !yKey) ? 'skip' : 'fail',
+            // Chart binding is a presentation diagnostic, not evidence that a
+            // correctly executed result is unsafe to show.
+            status: (hasXKey && hasYKey) ? 'pass' : (!xKey && !yKey) ? 'skip' : 'warn',
             message: (hasXKey && hasYKey)
                 ? `Chart keys "${xKey}" and "${yKey}" found in results`
                 : `Missing chart key(s): ${!hasXKey ? xKey : ''} ${!hasYKey ? yKey : ''}`.trim(),

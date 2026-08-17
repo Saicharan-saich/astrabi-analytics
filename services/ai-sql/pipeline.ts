@@ -52,7 +52,7 @@ import { rankPlans } from './planRanker';
 import { buildAssumptions } from './assumptionRegistry';
 import { validateAnswerContract } from './answerContractValidator';
 import { detectAntiJoin, buildAntiJoinSQL } from './antiJoin';
-import { generateDirectSQL } from './directSqlEngine';
+import { generateDirectSQL, repairSemanticSQL, type DynamicQuerySpec } from './directSqlEngine';
 import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerializer';
 import { describeSchemaForLLM, discoverJoinContext } from './joinEngine';
 import { getEffectivePrivacyMode, type PrivacyMode } from './privacyMode';
@@ -166,18 +166,19 @@ export async function runAISQLPipeline(
     // ─── Step 1c: Value Catalog + governed fallback preparation ───
     let _valueCatalog: ReturnType<typeof buildValueCatalog> | null = null;
     try {
-        _valueCatalog = buildValueCatalog(dataset.rows, semanticModel);
+        _valueCatalog = buildValueCatalog(dataset.rows, semanticModel, 60, dataset.relatedTables);
     } catch (cErr: any) {
         console.warn('[Pipeline] Value catalog build skipped:', cErr?.message);
     }
 
     const _directSqlStart = performance.now();
+    let directSchemaText = '';
     // The hybrid path deliberately starts with the local semantic engines, then
     // asks a selected GPT-5.6 model to write plan-constrained SQL. The LLM never
     // receives dataset rows; local DuckDB remains the only execution engine.
     const runHybridSql = async (
         plannerIssues: Array<{ code?: string; severity?: string; message?: string }> = [],
-    ): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null; blocked?: boolean }> => {
+    ): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null; blocked?: boolean; querySpec?: DynamicQuerySpec }> => {
         try {
             // Privacy mode gates what the LLM may see. Strict = metadata only, no
             // data values leave the browser. Enhanced = also send bounded category
@@ -208,7 +209,13 @@ export async function runAISQLPipeline(
             if (joinCtx) {
                 richSchema += `\n\nThis dataset came from several tables. "data" is a pre-joined, flattened copy — convenient, but a one-to-many join means totals over it can be double-counted. The original tables are also available and are the safer choice when a question spans more than one of them:\n\n${joinCtx.description}`;
                 console.log(`[Pipeline] Multi-table schema shared: ${joinCtx.tableNames.join(', ')}`);
+                const primaryTable = dataset.relatedTables?.[0]?.name || joinCtx.tableNames[0];
+                // Rebuild from the base schema so the authoritative physical
+                // table contract cannot coexist with an obsolete flattened-
+                // table hint from older upload flows.
+                richSchema = `${serializeSemanticModelSchema(semanticModel, 'data', domains)}\n\nMULTI-TABLE CONTRACT:\n- The DuckDB table "data" contains ONLY the rows and columns of primary table "${primaryTable}"; it is not a pre-joined copy.\n- All physical tables are independently queryable. If a requested field, filter, entity, or existence test belongs to another table, use the physical table names and the listed relationship path.\n- Never use "data" as a substitute for a related table. Never infer that a missing related record can be found by grouping "data" alone.\n- For "no", "without", "never", or "not a single" related record, preserve the complete entity population and use NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT.\n\n${joinCtx.description}`;
             }
+            directSchemaText = richSchema;
             // Preserve the dataset-relative reporting clock even on the
             // approved direct-SQL fallback. Relative terms must never resolve
             // against the browser/server wall clock for historical datasets.
@@ -238,10 +245,10 @@ export async function runAISQLPipeline(
                     }
                 }
                 console.log('[Pipeline] Direct-SQL engine SQL:', sql);
-                return { sql, tokens: ds.tokens || 0, model: ds.model, error: null };
+                return { sql, tokens: ds.tokens || 0, model: ds.model, error: null, querySpec: ds.querySpec };
             }
             console.warn('[Pipeline] Direct-SQL not usable:', ds.error || 'empty SQL');
-            return { sql: null, tokens: ds.tokens || 0, model: ds.model, error: ds.error || 'empty SQL', blocked: ds.blocked };
+            return { sql: null, tokens: ds.tokens || 0, model: ds.model, error: ds.error || 'empty SQL', blocked: ds.blocked, querySpec: ds.querySpec };
         } catch (dErr: any) {
             const msg = dErr?.message || String(dErr);
             console.warn('[Pipeline] Direct-SQL fallback failed:', msg);
@@ -564,6 +571,7 @@ export async function runAISQLPipeline(
     let directSqlModel: string | undefined;
     let directSqlError: string | null = null;
     let directSqlBlocked = false;
+    let directQuerySpec: DynamicQuerySpec | undefined;
     {
         // Hybrid path: the local engines build and verify the plan first; the
         // selected GPT-5.6 model then drafts SQL constrained by that plan. If the
@@ -575,6 +583,7 @@ export async function runAISQLPipeline(
         directSqlModel = _ds.model;
         directSqlError = _ds.error;
         directSqlBlocked = !!_ds.blocked;
+        directQuerySpec = _ds.querySpec;
         traceStep({
             stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
             status: directSQL ? 'pass' : 'skip',
@@ -710,7 +719,7 @@ export async function runAISQLPipeline(
     reportProgress('Validating SQL...', 6);
     console.log('[Pipeline] Step 4: Validating SQL...');
     _s1 = performance.now();
-    const validation = validateSQL(currentSQL, plan, semanticModel);
+    let validation = validateSQL(currentSQL, plan, semanticModel);
     const _failedChecks = validation.checks.filter(c => c.status === 'fail');
     const _warnChecks = validation.checks.filter(c => c.status === 'warn');
     traceStep({
@@ -779,6 +788,44 @@ export async function runAISQLPipeline(
 
     if (execResult.error) {
         throw new Error(`SQL execution failed: ${execResult.error}`);
+    }
+
+    // A syntactically valid query can still be semantically wrong (wrong table,
+    // join path, literal casing, or entity grain). Give the reviewer one
+    // metadata-only retry when such a query unexpectedly returns no rows.
+    const shouldRepairEmptyResult = !!directSQL
+        && !usedDeterministicFallback
+        && (execResult.data || []).length === 0
+        && !/\b(?:count|how many|are there|is there|zero rows|no results)\b/i.test(question);
+    if (shouldRepairEmptyResult && directSchemaText) {
+        try {
+            console.log('[Pipeline] Step 5c: Result-aware semantic repair after empty output...');
+            const semanticRepair = await repairSemanticSQL(
+                question,
+                directSchemaText,
+                directQuerySpec,
+                currentSQL,
+                'The query executed successfully but returned 0 rows although the requested result shape expects entity or detail rows.',
+                executionOptions?.requestPurpose,
+            );
+            directSqlTokens += semanticRepair.tokens;
+            if (!semanticRepair.error && semanticRepair.sql !== currentSQL) {
+                let repairedSQL = semanticRepair.sql;
+                if (_valueCatalog) repairedSQL = groundSqlLiterals(repairedSQL, _valueCatalog).sql;
+                const repairedExecution = await executeSQLViaDuckDB(dataset.rows, repairedSQL, semanticModel.timeContext, dataset.relatedTables);
+                if (!repairedExecution.error && (repairedExecution.data || []).length > 0) {
+                    currentSQL = repairedSQL;
+                    directSQL = repairedSQL;
+                    execResult = repairedExecution;
+                    validation = validateSQL(currentSQL, plan, semanticModel);
+                    repairAttempts++;
+                    sqlResult.explanation = semanticRepair.explanation;
+                    console.log(`[Pipeline] Result-aware repair recovered ${(execResult.data || []).length} row(s).`);
+                }
+            }
+        } catch (semanticRepairError: any) {
+            console.warn('[Pipeline] Result-aware semantic repair skipped:', semanticRepairError?.message || semanticRepairError);
+        }
     }
 
     traceStep({
@@ -1487,12 +1534,13 @@ export async function runAISQLPipeline(
         const contractResult = validateAnswerContract(
             plan,
             currentSQL,
-            reshaped.data,
+            rawData,
             reshaped.chart?.chartType || 'bar',
             reshaped.chart?.xKey || '',
             reshaped.chart?.yKey || '',
             semanticModel,
-            localStatsForContract
+            localStatsForContract,
+            directQuerySpec,
         );
 
         pipelineResult.contractValidation = {

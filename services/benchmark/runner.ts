@@ -61,10 +61,15 @@ function percentile(values: number[], fraction: number): number {
 export function summarizeBenchmarkResults(results: BenchmarkCaseResult[], total = results.length): BenchmarkRunMetrics {
   const completed = results.length;
   const passed = results.filter(result => result.passed).length;
-  const validSql = results.filter(result => result.validSql).length;
-  const safe = results.filter(result => result.safeToDisplay).length;
+  const llmBackedResults = results.filter(isLlmBacked);
+  const llmBackedCases = llmBackedResults.length;
+  const llmBackedPassed = llmBackedResults.filter(result => result.passed).length;
+  const validSql = llmBackedResults.filter(result => result.validSql).length;
+  const safe = llmBackedResults.filter(result => result.safeToDisplay).length;
+  const executable = llmBackedResults.filter(result =>
+    result.status !== 'execution_error' && result.status !== 'fixture_error'
+  ).length;
   const confidenceValues = results.map(result => result.confidence).filter((value): value is number => typeof value === 'number');
-  const llmBackedCases = results.filter(isLlmBacked).length;
   const latencies = results.map(result => result.pipelineLatencyMs || result.latencyMs).filter(value => value >= 0);
   const failuresByType = results.reduce<Partial<Record<BenchmarkCaseStatus, number>>>((counts, result) => {
     if (result.status !== 'pass') counts[result.status] = (counts[result.status] || 0) + 1;
@@ -75,9 +80,14 @@ export function summarizeBenchmarkResults(results: BenchmarkCaseResult[], total 
     total,
     completed,
     passed,
+    coverageRate: total ? completed / total : 0,
     executionAccuracy: completed ? passed / completed : 0,
-    validSqlRate: completed ? validSql / completed : 0,
-    safeAnswerRate: completed ? safe / completed : 0,
+    llmBackedExecutionAccuracy: llmBackedCases ? llmBackedPassed / llmBackedCases : 0,
+    validSqlRate: llmBackedCases ? validSql / llmBackedCases : 0,
+    safeAnswerRate: llmBackedCases ? safe / llmBackedCases : 0,
+    providerAvailabilityRate: completed ? llmBackedCases / completed : 0,
+    executableSqlRate: llmBackedCases ? executable / llmBackedCases : 0,
+    contractAcceptanceRate: llmBackedCases ? safe / llmBackedCases : 0,
     averageConfidence: confidenceValues.length
       ? confidenceValues.reduce((sum, value) => sum + value, 0) / confidenceValues.length
       : 0,

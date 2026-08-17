@@ -381,8 +381,28 @@ describe('benchmark runner', () => {
     expect(metrics.executionAccuracy).toBeCloseTo(1 / 3);
     expect(metrics.validSqlRate).toBeCloseTo(2 / 3);
     expect(metrics.safeAnswerRate).toBeCloseTo(2 / 3);
+    expect(metrics.llmBackedExecutionAccuracy).toBeCloseTo(1 / 3);
+    expect(metrics.providerAvailabilityRate).toBe(1);
+    expect(metrics.coverageRate).toBe(1);
     expect(metrics.medianLatencyMs).toBe(100);
     expect(metrics.p95LatencyMs).toBe(1000);
     expect(metrics.failuresByType.wrong_result).toBe(1);
+  });
+
+  it('separates provider availability and coverage from model-backed accuracy', () => {
+    const backed = {
+      ...({} as any), strategy: 'hybrid-plan-llm-sql', status: 'pass', passed: true,
+      validSql: true, safeToDisplay: true, pipelineLatencyMs: 10, latencyMs: 10,
+      tokenUsage: { prompt: 1, completion: 1, total: 2 },
+    };
+    const metrics = summarizeBenchmarkResults([
+      backed,
+      { ...backed, status: 'wrong_result', passed: false, safeToDisplay: false },
+      { ...backed, strategy: 'deterministic', status: 'llm_unavailable', passed: false, tokenUsage: { prompt: 0, completion: 0, total: 0 } },
+    ], 4);
+    expect(metrics.llmBackedExecutionAccuracy).toBe(0.5);
+    expect(metrics.providerAvailabilityRate).toBeCloseTo(2 / 3);
+    expect(metrics.coverageRate).toBe(0.75);
+    expect(metrics.safeAnswerRate).toBe(0.5);
   });
 });

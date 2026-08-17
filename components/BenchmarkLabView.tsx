@@ -539,10 +539,10 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                   <div><h2 className={`text-base font-black ${strong}`}>Latest evidence</h2><p className={`text-xs ${muted}`}>{new Date(latestRun.startedAt).toLocaleString()} · {latestRun.methodologyLabel} · {latestRun.privacyMode === 'enhanced' ? 'Better answers' : 'Private'}</p></div>
                 </div>
                 <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                  <MetricCard icon={<Gauge className="w-4 h-4" />} label="Execution accuracy" value={percent(metrics.executionAccuracy)} detail={`${metrics.passed}/${metrics.completed} correct outputs`} tone="violet" isDark={isDark} />
-                  <MetricCard icon={<ShieldCheck className="w-4 h-4" />} label="Safe answer rate" value={percent(metrics.safeAnswerRate)} detail="Passed the display contract" tone="emerald" isDark={isDark} />
+                  <MetricCard icon={<Gauge className="w-4 h-4" />} label="LLM-backed accuracy" value={percent(metrics.llmBackedExecutionAccuracy ?? metrics.executionAccuracy)} detail={`${metrics.passed}/${metrics.llmBackedCases || metrics.completed} correct model-backed outputs`} tone="violet" isDark={isDark} />
+                  <MetricCard icon={<ShieldCheck className="w-4 h-4" />} label="Provider availability" value={percent(metrics.providerAvailabilityRate ?? metrics.llmBackedRate)} detail={`${percent(metrics.coverageRate ?? (metrics.completed / Math.max(1, metrics.total)))} run coverage`} tone="emerald" isDark={isDark} />
                   <MetricCard icon={<Clock3 className="w-4 h-4" />} label="P95 latency" value={milliseconds(metrics.p95LatencyMs)} detail={`Median ${milliseconds(metrics.medianLatencyMs)}`} tone="cyan" isDark={isDark} />
-                  <MetricCard icon={<Sparkles className="w-4 h-4" />} label="Model tokens" value={metrics.totalTokens.toLocaleString()} detail={`${percent(metrics.llmBackedRate || 0)} LLM-backed · ${percent(metrics.validSqlRate)} valid SQL`} tone="amber" isDark={isDark} />
+                  <MetricCard icon={<Sparkles className="w-4 h-4" />} label="Model tokens" value={metrics.totalTokens.toLocaleString()} detail={`${percent(metrics.contractAcceptanceRate ?? metrics.safeAnswerRate)} contract accepted · ${percent(metrics.validSqlRate)} static validation`} tone="amber" isDark={isDark} />
                 </div>
               </section>
             )}
@@ -577,10 +577,10 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                 <div className={`text-xs ${muted}`}>{latestRun.selectedSuiteIds.length} suite{latestRun.selectedSuiteIds.length === 1 ? '' : 's'} · {latestRun.cancelled ? 'Stopped by user' : latestRun.metrics.completed === latestRun.metrics.total ? 'Run complete' : 'Run incomplete'}</div>
               </div>
               <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                <MetricCard icon={<Gauge className="w-4 h-4" />} label="Execution accuracy" value={percent(latestRun.metrics.executionAccuracy)} detail={`${latestRun.metrics.passed}/${latestRun.metrics.completed} correct outputs`} tone="violet" isDark={isDark} />
-                <MetricCard icon={<ShieldCheck className="w-4 h-4" />} label="Safe answer rate" value={percent(latestRun.metrics.safeAnswerRate)} detail={`${percent(latestRun.metrics.validSqlRate)} valid SQL`} tone="emerald" isDark={isDark} />
+                <MetricCard icon={<Gauge className="w-4 h-4" />} label="LLM-backed accuracy" value={percent(latestRun.metrics.llmBackedExecutionAccuracy ?? latestRun.metrics.executionAccuracy)} detail={`${latestRun.metrics.passed}/${latestRun.metrics.llmBackedCases || latestRun.metrics.completed} correct model-backed outputs`} tone="violet" isDark={isDark} />
+                <MetricCard icon={<ShieldCheck className="w-4 h-4" />} label="Provider availability" value={percent(latestRun.metrics.providerAvailabilityRate ?? latestRun.metrics.llmBackedRate)} detail={`${percent(latestRun.metrics.coverageRate ?? (latestRun.metrics.completed / Math.max(1, latestRun.metrics.total)))} run coverage · ${percent(latestRun.metrics.executableSqlRate ?? latestRun.metrics.validSqlRate)} executable`} tone="emerald" isDark={isDark} />
                 <MetricCard icon={<Clock3 className="w-4 h-4" />} label="P95 latency" value={milliseconds(latestRun.metrics.p95LatencyMs)} detail={`Median ${milliseconds(latestRun.metrics.medianLatencyMs)}`} tone="cyan" isDark={isDark} />
-                <MetricCard icon={<Sparkles className="w-4 h-4" />} label="Model tokens" value={latestRun.metrics.totalTokens.toLocaleString()} detail={`${percent(latestRun.metrics.llmBackedRate || 0)} LLM-backed · confidence ${latestRun.metrics.averageConfidence.toFixed(0)}/100`} tone="amber" isDark={isDark} />
+                <MetricCard icon={<Sparkles className="w-4 h-4" />} label="Model tokens" value={latestRun.metrics.totalTokens.toLocaleString()} detail={`${percent(latestRun.metrics.contractAcceptanceRate ?? latestRun.metrics.safeAnswerRate)} contract accepted · confidence ${latestRun.metrics.averageConfidence.toFixed(0)}/100`} tone="amber" isDark={isDark} />
               </div>
               </>
             )}

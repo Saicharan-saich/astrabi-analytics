@@ -1594,7 +1594,10 @@ const ADMIN_BENCHMARK_LLM_RATE_LIMIT = rateLimit({
 });
 const ADMIN_BENCHMARK_DAILY_LIMIT = Math.max(
     150,
-    Math.min(2000, Number(process.env.ADMIN_BENCHMARK_DAILY_LIMIT) || 600)
+    // A benchmark question uses the full three-model route and semantic repair
+    // may use one additional call. The default therefore supports a complete
+    // 550-question evidence run without stopping midway.
+    Math.min(5000, Number(process.env.ADMIN_BENCHMARK_DAILY_LIMIT) || 2500)
 );
 
 function isAdminBenchmarkRequest(req) {

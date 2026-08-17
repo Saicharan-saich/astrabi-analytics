@@ -36,4 +36,41 @@ describe('research benchmark fixture manifest', () => {
     expect(manifest.cases.bird).toHaveLength(200);
     expect(manifest.manifestSha256).toMatch(/^[a-f0-9]{64}$/);
   });
+
+  it('preserves declared keys and joins for known multi-table failures', () => {
+    const carAsset = JSON.parse(readFileSync(resolve('public/benchmarks/research-v1/datasets/spider--car-1--924b50f2d3.json'), 'utf8'));
+    expect(carAsset.sourceSchema.joinEdges).toEqual(expect.arrayContaining([
+      expect.objectContaining({ leftTable: 'countries', rightTable: 'continents', leftColumn: 'Continent', rightColumn: 'ContId', type: 'fk' }),
+      expect.objectContaining({ leftTable: 'car_makers', rightTable: 'countries', leftColumn: 'Country', rightColumn: 'CountryId', type: 'fk' }),
+    ]));
+
+    const superheroAsset = JSON.parse(readFileSync(resolve('public/benchmarks/research-v1/datasets/bird--superhero--0b1941fbcb.json'), 'utf8'));
+    expect(superheroAsset.sourceSchema.joinEdges).toContainEqual(
+      expect.objectContaining({ leftTable: 'superhero', rightTable: 'alignment', leftColumn: 'alignment_id', rightColumn: 'id', type: 'fk' }),
+    );
+  });
+
+  it('ships internally valid source-schema metadata for every fixture asset', () => {
+    const datasetRefs = new Set(
+      RESEARCH_BENCHMARK_SUITES.flatMap(suite => suite.cases.map(testCase => testCase.datasetRef!)),
+    );
+
+    for (const datasetRef of datasetRefs) {
+      const assetPath = resolve('public', datasetRef.replace(/^\/benchmarks\//, 'benchmarks/'));
+      const asset = JSON.parse(readFileSync(assetPath, 'utf8'));
+      const schemaTables = new Map<string, Set<string>>(
+        asset.sourceSchema.tables.map((table: any) => [
+          table.name,
+          new Set<string>(table.columns.map((column: any) => column.name)),
+        ]),
+      );
+      expect([...schemaTables.keys()].sort()).toEqual(
+        asset.relatedTables.map((table: any) => table.name).sort(),
+      );
+      for (const edge of asset.sourceSchema.joinEdges) {
+        expect(schemaTables.get(edge.leftTable)?.has(edge.leftColumn), `${datasetRef}: ${edge.leftTable}.${edge.leftColumn}`).toBe(true);
+        expect(schemaTables.get(edge.rightTable)?.has(edge.rightColumn), `${datasetRef}: ${edge.rightTable}.${edge.rightColumn}`).toBe(true);
+      }
+    }
+  });
 });

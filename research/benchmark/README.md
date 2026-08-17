@@ -4,6 +4,12 @@ The **Benchmark Lab** (admin sidebar → *Benchmark Lab*) runs text-to-SQL
 benchmarks against QuickInsight's live AI-SQL engine and produces an exportable
 report (Markdown / CSV / JSON) for research write-ups.
 
+> **Current implementation note:** Research fixtures now preserve their
+> original physical tables plus declared SQLite primary/foreign keys. The
+> three-model AI route receives metadata and authoritative join paths; SQL and
+> result comparison run locally. Older single-table/one-call notes later in
+> this historical guide no longer describe the production benchmark path.
+
 ## What ships built in
 
 Small, **self-contained representative** case packs so the Lab runs out of the

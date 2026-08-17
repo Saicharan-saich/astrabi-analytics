@@ -3,7 +3,7 @@
  * against the dataset's real dimension values. Deterministic, no LLM.
  */
 import { describe, it, expect } from 'vitest';
-import { buildValueCatalog, groundFilters } from '../services/ai-sql/valueGrounding';
+import { buildValueCatalog, groundFilters, groundSqlLiterals } from '../services/ai-sql/valueGrounding';
 import type { AnalysisPlan } from '../services/ai-sql/types';
 
 const f = (name: string, role: 'metric' | 'dimension', semanticType: string, distinctCount = 5): any => ({
@@ -76,5 +76,15 @@ describe('value grounding', () => {
         expect(g.added[0].field).toBe('product');
         expect(g.added[0].op).toBe('in');
         expect((g.added[0].value as string[]).sort()).toEqual(['Coffee', 'Tea']);
+    });
+
+    it('grounds literal casing from a related table without sharing its rows', () => {
+        const federated = buildValueCatalog(ROWS, model, 60, [{
+            name: 'alignment',
+            rows: [{ id: 1, alignment: 'Good' }, { id: 2, alignment: 'Neutral' }, { id: 3, alignment: 'Bad' }],
+        }]);
+        expect(groundSqlLiterals("SELECT * FROM alignment WHERE alignment = 'neutral'", federated).sql)
+            .toContain("alignment = 'Neutral'");
+        expect(groundFilters('neutral superheroes', federated, P({}), model).added).toEqual([]);
     });
 });
