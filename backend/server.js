@@ -1524,6 +1524,7 @@ async function extractCurrentAdmin(req) {
 async function checkAIQuota(userId, options = {}) {
     const action = options.action || 'ai_query';
     const limitOverride = Number(options.limitOverride);
+    const unlimited = options.unlimited === true;
     if (!authPool) {
         return IS_PRODUCTION
             ? { allowed: false, reason: 'Usage verification is temporarily unavailable' }
@@ -1542,6 +1543,9 @@ async function checkAIQuota(userId, options = {}) {
             [userId, action]
         );
         const used = parseInt(todayResult.rows[0].count);
+        if (unlimited) {
+            return { allowed: true, remaining: null, used, limit: null, unlimited: true };
+        }
         const limit = Number.isFinite(limitOverride) && limitOverride > 0
             ? Math.floor(limitOverride)
             : (user.daily_ai_limit || 50);
@@ -1592,14 +1596,6 @@ const ADMIN_BENCHMARK_LLM_RATE_LIMIT = rateLimit({
     max: Math.max(30, Math.min(180, Number(process.env.ADMIN_BENCHMARK_LLM_RATE_LIMIT) || 90)),
     message: { success: false, error: 'Too many benchmark AI requests. Please wait a moment.' }
 });
-const ADMIN_BENCHMARK_DAILY_LIMIT = Math.max(
-    150,
-    // A benchmark question uses the full three-model route and semantic repair
-    // may use one additional call. The default therefore supports a complete
-    // 550-question evidence run without stopping midway.
-    Math.min(5000, Number(process.env.ADMIN_BENCHMARK_DAILY_LIMIT) || 2500)
-);
-
 function isAdminBenchmarkRequest(req) {
     return req.authUser?.role === 'admin'
         && String(req.get('X-QuickInsight-AI-Purpose') || '').toLowerCase() === 'benchmark';
@@ -1626,7 +1622,9 @@ app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyL
     // currently authenticated database admin can request this audited budget.
     const quota = await checkAIQuota(user.userId, {
         action: usageAction,
-        limitOverride: isBenchmark ? ADMIN_BENCHMARK_DAILY_LIMIT : undefined,
+        // Admin benchmark runs are audited research workloads and may use
+        // several model calls per case. Do not interrupt them with a daily cap.
+        unlimited: isBenchmark,
     });
     if (!quota.allowed) {
         return res.status(429).json({ success: false, error: quota.reason, quotaExceeded: true });
@@ -1685,14 +1683,16 @@ app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyL
             model,
             `${isBenchmark ? 'purpose:benchmark;' : ''}tokens:${tokensUsed}`
         );
-        console.log(`[LLM] User ${user.email} — ${tokensUsed} tokens (${quota.remaining - 1} remaining today)`);
+        const remainingToday = quota.unlimited ? 'unlimited' : quota.remaining - 1;
+        console.log(`[LLM] User ${user.email} — ${tokensUsed} tokens (${remainingToday} remaining today)`);
 
         // Include quota info in response
         data._quota = {
-            remaining: quota.remaining - 1,
+            remaining: quota.unlimited ? null : quota.remaining - 1,
             limit: quota.limit,
             used: (quota.used || 0) + 1,
             scope: isBenchmark ? 'admin_benchmark' : 'standard',
+            unlimited: quota.unlimited === true,
         };
         res.json(data);
     } catch (error) {
