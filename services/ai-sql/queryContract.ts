@@ -37,6 +37,10 @@ export interface QueryContract {
     /** Physical fields the outer SELECT must expose, resolved independently
      * from the draft plan so a bad plan cannot replace names with a count. */
     requiredOutputFields: QueryEntityContract[];
+    /** Single-answer questions expose only explicitly requested physical fields;
+     * helper dimensions may still be used in joins, grouping and ordering. */
+    strictOutputProjection: boolean;
+    forbiddenOutputFields: string[];
     /** The outer SELECT returns source entities/attributes. Aggregates may still
      * appear in a subquery or HAVING predicate when the filter requires them. */
     requiresRowProjection: boolean;
@@ -215,7 +219,12 @@ function requestedAnswerClause(question: string): string {
     const source = explicit?.index !== undefined
         ? question.slice(explicit.index + explicit[0].length)
         : question.replace(/^\s*(?:please\s+)?(?:what\s+(?:are|is)|which|who|find|tell\s+me)\s+(?:the\s+)?/i, '');
-    return source.split(/\b(?:whose|where|who|that|having|named|ordered|sorted|ranked|for\s+all|for\s+each|for\s+every|and\s+how\s+many)\b/i)[0].trim();
+    const structural = source.split(/\b(?:whose|where|who|that|with|have|has|had|having|named|ordered|sorted|ranked|in\s+(?:ascending|descending)\s+order|for\s+all|for\s+each|for\s+every|and\s+how\s+many)\b/i)[0].trim();
+    // In "Which <entity> ... the most/least <measure>?", everything after the
+    // superlative describes ranking, not extra output columns.
+    return /^\s*(?:which|what)\b/i.test(question)
+        ? structural.split(/\b(?:the\s+)?(?:most|fewest|least|highest|lowest|largest|smallest|maximum|minimum|best|worst)\b/i)[0].trim()
+        : structural;
 }
 
 /** Resolve outer result fields directly from question wording and schema. */
@@ -239,6 +248,9 @@ function resolveRequestedOutputFields(
             duplicateFieldCounts.set(key, (duplicateFieldCounts.get(key) || 0) + 1);
         }
     }
+    const answerTables = new Set(schema.tables
+        .filter(table => words(table.name).some(token => conceptMatches(token, clauseTokens)))
+        .map(table => table.name));
 
     const candidates: Array<QueryEntityContract & { score: number }> = [];
     for (const table of schema.tables) {
@@ -248,6 +260,7 @@ function resolveRequestedOutputFields(
         // duplicated column such as Name from being required from every joined
         // table merely because those tables participate in the query.
         const tableMentioned = tableTokens.some(token => conceptMatches(token, clauseTokens));
+        if (answerTables.size > 0 && !answerTables.has(table.name)) continue;
         for (const column of table.columns) {
             const semanticField = model?.fields.find(field => field.name.toLowerCase() === column.name.toLowerCase());
             const aliases = [column.name, semanticField?.displayLabel, ...(semanticField?.synonyms || [])]
@@ -554,7 +567,7 @@ export function buildQueryContract(
     const answerClause = requestedAnswerClause(question);
     const answerAggregation = resolveExpectedAggregation(answerClause, plan);
     const asksCountAlongsideEntity = /\band\s+how\s+many\b/i.test(question);
-    const requiresRowProjection = requestedOutputFields.length > 0
+    const requiresRowProjection = requestedOutputFields.some(field => field.confidence === 'high')
         && !answerAggregation
         && !asksCountAlongsideEntity
         && queryShape.operation !== 'ranking';
@@ -603,6 +616,22 @@ export function buildQueryContract(
         expectedAggregation = 'count';
         threshold.requiresHaving = true;
     }
+    // A superlative over a related table is a count-of-related-records ranking
+    // unless the question names another explicit aggregation. This is derived
+    // from the relationship graph, not from a benchmark/domain vocabulary.
+    if (!expectedAggregation && requiresRanking && outputEntity
+        && requiredTables.some(table => table !== outputEntity.table)
+        && /\b(?:most|fewest|least)\b/i.test(question)) {
+        expectedAggregation = 'count';
+    }
+    const strictOutputProjection = queryShape.selection === 'single'
+        && requestedOutputFields.some(field => field.confidence === 'high');
+    const requestedPhysicalFields = new Set(requestedOutputFields.map(field => field.field.toLowerCase()));
+    const forbiddenOutputFields = strictOutputProjection && schema
+        ? [...new Set(schema.tables
+            .flatMap(table => table.columns.map(column => column.name))
+            .filter(field => !requestedPhysicalFields.has(field.toLowerCase())))]
+        : [];
     const ratio = resolveRatio(question, model);
     const relativeComparison = resolveRelativeComparison(question);
     const joinPlan = schema && requiredTables.length > 1
@@ -655,6 +684,7 @@ export function buildQueryContract(
     if (outputEntity?.confidence === 'high') requirements.push(`Return ${outputEntity.table}.${outputEntity.field} as the visible answer entity.`);
     if (requestedOutputFields.length) requirements.push(`The outer SELECT must expose the requested answer field(s): ${requestedOutputFields.map(field => `${field.table}.${field.field}`).join(', ')}.`);
     if (requiresRowProjection) requirements.push('Preserve row/entity projection in the outer SELECT. Do not replace requested fields with COUNT, SUM, AVG, LIST, ARRAY_AGG, STRING_AGG, or ANY_VALUE; aggregates may appear only inside a predicate/subquery when required by the filter.');
+    if (strictOutputProjection) requirements.push('Return only the explicitly requested answer fields in the outer SELECT. Helper fields may be used in joins, grouping, predicates, and ORDER BY but must not leak into the displayed result.');
     if (orderedProjection) requirements.push(`Return row-level fields ${orderedProjection.fields.join(', ')} ordered by ${orderedProjection.orderBy} ${orderedProjection.direction.toUpperCase()}; do not aggregate, group, or truncate the result.`);
     if (expectedCardinality === 'scalar') requirements.push('Return one aggregate result row; filters do not become grouping dimensions unless the question explicitly says by/per/for each.');
     if (requiresGrouping) requirements.push('Return the requested entity/breakdown grain, not a scalar or higher-level grouping.');
@@ -688,6 +718,8 @@ export function buildQueryContract(
         prohibitsImplicitLimit: queryShape.prohibitsImplicitLimit,
         requiresDistinctProjection,
         requiredOutputFields: requestedOutputFields,
+        strictOutputProjection,
+        forbiddenOutputFields,
         requiresRowProjection,
         resultRowExpectation,
         orderedProjection,
@@ -772,6 +804,7 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
         prohibitsImplicitLimit: contract.prohibitsImplicitLimit,
         requiresDistinctProjection: contract.requiresDistinctProjection,
         requiredOutputFields: contract.requiredOutputFields,
+        strictOutputProjection: contract.strictOutputProjection,
         requiresRowProjection: contract.requiresRowProjection,
         resultRowExpectation: contract.resultRowExpectation,
         resultGrain: contract.requiredDimension,
@@ -847,6 +880,17 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
                 severity: 'error',
                 message: `The outer result must expose the requested field ${field.table}.${field.field}.`,
             });
+        }
+    }
+    if (contract.strictOutputProjection) {
+        for (const field of contract.forbiddenOutputFields) {
+            if (outerSelects.some(clause => identifierPattern(field).test(clause))) {
+                issues.push({
+                    code: 'missing_requested_output',
+                    severity: 'error',
+                    message: `The outer result includes unrequested detail field "${field}"; keep it only in joins, predicates, grouping, or ordering.`,
+                });
+            }
         }
     }
     if (contract.requiresRowProjection) {

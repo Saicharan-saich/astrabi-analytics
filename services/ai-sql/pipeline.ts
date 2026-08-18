@@ -1676,6 +1676,29 @@ export async function runAISQLPipeline(
         let localStatsForContract;
         try { localStatsForContract = await resolveLocalStatistics('data', semanticModel); } catch { /* skip */ }
 
+        // The model-produced spec is useful execution evidence, but its output
+        // columns must not overrule fields independently grounded from the
+        // user's wording and physical schema. This prevents a bad draft metric
+        // from withholding a correct answer (for example, validating an
+        // unrelated measure after the final SQL correctly answers a ranking).
+        const groundedOutputColumns = activeQueryContract?.requiredOutputFields
+            .filter(field => field.confidence === 'high')
+            .map(field => field.field) || [];
+        const finalAnswerContract = directQuerySpec
+            ? {
+                ...directQuerySpec,
+                expectedResult: groundedOutputColumns.length
+                    ? {
+                        ...directQuerySpec.expectedResult,
+                        grain: activeQueryContract?.requiredDimension
+                            || activeQueryContract?.outputEntity?.field
+                            || directQuerySpec.expectedResult?.grain,
+                        columns: groundedOutputColumns,
+                    }
+                    : directQuerySpec.expectedResult,
+            }
+            : undefined;
+
         const contractResult = validateAnswerContract(
             plan,
             currentSQL,
@@ -1685,7 +1708,7 @@ export async function runAISQLPipeline(
             reshaped.chart?.yKey || '',
             semanticModel,
             localStatsForContract,
-            directQuerySpec,
+            finalAnswerContract,
         );
 
         pipelineResult.contractValidation = {

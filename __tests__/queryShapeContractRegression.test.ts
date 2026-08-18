@@ -200,4 +200,60 @@ describe('dynamic query-shape and cardinality contract', () => {
             contract,
         ).map(issue => issue.code)).toContain('unexpected_aggregation');
     });
+
+    it('contracts a related-record superlative to one entity-only result', () => {
+        const question = 'Which continent speaks the most languages?';
+        const worldModel: SemanticModel = {
+            ...model,
+            fields: [
+                { name: 'Continent', displayLabel: 'Continent', physicalType: 'string', semanticType: 'category', role: 'dimension', defaultAgg: 'none', timeGrainSupport: [], synonyms: [], valueDescriptors: [], distinctCount: 7, hasNulls: false },
+                { name: 'SurfaceArea', displayLabel: 'Surface area', physicalType: 'number', semanticType: 'quantity', role: 'metric', defaultAgg: 'sum', timeGrainSupport: [], synonyms: [], valueDescriptors: [], distinctCount: 10, hasNulls: false },
+            ],
+        };
+        const contract = buildQueryContract(
+            question,
+            plan({
+                intent: 'ranking',
+                dimensions: [{ field: 'Continent' }],
+                metrics: [{ field: 'SurfaceArea', agg: 'sum' }],
+                sort: [{ field: 'SurfaceArea', dir: 'desc' }],
+                limit: 1,
+            }),
+            [],
+            worldModel,
+            {
+                tables: [
+                    { name: 'country', rowCount: 239, columns: [{ name: 'Code', isPK: true }, { name: 'Continent' }, { name: 'SurfaceArea' }] },
+                    { name: 'countrylanguage', rowCount: 984, columns: [{ name: 'CountryCode' }, { name: 'Language' }] },
+                ],
+                links: [{ leftTable: 'country', leftColumn: 'Code', rightTable: 'countrylanguage', rightColumn: 'CountryCode', type: 'fk' }],
+            },
+        );
+
+        expect(inferQueryShape(question)).toMatchObject({ operation: 'ranking', selection: 'single' });
+        expect(contract).toMatchObject({
+            rankingLimit: 1,
+            rankingDirection: 'desc',
+            expectedAggregation: 'count',
+            strictOutputProjection: true,
+            resultRowExpectation: { exact: 1 },
+        });
+        expect(contract.requiredOutputFields).toEqual([
+            expect.objectContaining({ table: 'country', field: 'Continent', confidence: 'high' }),
+        ]);
+
+        const leakedDetailSql = `WITH ranked AS (
+            SELECT c.Continent, cl.Language, COUNT(*) OVER (PARTITION BY c.Continent) language_count
+            FROM country c JOIN countrylanguage cl ON cl.CountryCode = c.Code
+        ) SELECT Continent, Language FROM ranked ORDER BY language_count DESC`;
+        expect(validateSQLAgainstContract(leakedDetailSql, contract).map(issue => issue.code))
+            .toEqual(expect.arrayContaining(['missing_ranking', 'missing_requested_output']));
+
+        const faithfulSql = `SELECT c.Continent
+            FROM country c JOIN countrylanguage cl ON cl.CountryCode = c.Code
+            GROUP BY c.Continent
+            ORDER BY COUNT(*) DESC
+            LIMIT 1`;
+        expect(validateSQLAgainstContract(faithfulSql, contract)).toEqual([]);
+    });
 });

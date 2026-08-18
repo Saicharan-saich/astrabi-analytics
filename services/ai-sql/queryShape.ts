@@ -71,6 +71,10 @@ function ordering(question: string): Pick<QueryShape, 'orderDirection' | 'orderF
 function hasExplicitSingleWinner(question: string): boolean {
     if (/\b(?:the\s+)?(?:youngest|oldest|highest|lowest|largest|smallest|best|worst|latest|earliest|newest)\s+[a-z]/i.test(question)) return true;
     if (/\b(?:which|what)\s+.+?\b(?:has|have|had|is|was|generated|produced|sold)\b.+?\b(?:most|least|highest|lowest|largest|smallest|maximum|minimum|best|worst)\b/i.test(question)) return true;
+    // General predicate form: "Which continent speaks the most languages?",
+    // "Which team completed the fewest tasks?". The superlative determines
+    // cardinality; the intervening verb is domain-specific and must stay open.
+    if (/\b(?:which|what)\s+.+?\s+[a-z][a-z0-9_-]*\s+(?:the\s+)?(?:most|fewest|least)\s+[a-z][a-z0-9_-]*\b/i.test(question)) return true;
     // Grammatical rule rather than a vocabulary list: a singular noun phrase
     // followed by "with the <superlative>" requests one winner. Plural/group
     // wording is handled by the grouping and all-result rules below.

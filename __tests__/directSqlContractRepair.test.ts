@@ -23,6 +23,8 @@ const contract: QueryContract = {
   prohibitsImplicitLimit: false,
   requiresDistinctProjection: false,
   requiredOutputFields: [],
+  strictOutputProjection: false,
+  forbiddenOutputFields: [],
   requiresRowProjection: false,
   requiresComparison: false,
   requiredTables: [],
