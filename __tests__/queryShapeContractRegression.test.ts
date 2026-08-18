@@ -45,6 +45,25 @@ describe('dynamic query-shape and cardinality contract', () => {
     });
 
     it.each([
+        'Return the type code of the template type that the most templates belong to.',
+        'Please show the most common citizenship of singers.',
+        'Which city is the most frequent source airport?',
+        'Give me the nationality that is most commonly found across people.',
+    ])('recognises frequency winners without dataset-specific vocabulary: %s', question => {
+        expect(inferQueryShape(question)).toMatchObject({
+            operation: 'ranking',
+            selection: 'single',
+            explicitAggregation: 'count',
+            implicitFrequencyRanking: true,
+        });
+    });
+
+    it('does not collapse an explicit all-entity ranking because its description mentions common', () => {
+        expect(inferQueryShape('Rank every superhero by eye-color popularity, starting with the most common color.'))
+            .not.toMatchObject({ selection: 'single', implicitFrequencyRanking: true });
+    });
+
+    it.each([
         ['List names ordered by age from the oldest to the youngest', 'desc'],
         ['Show name and category sorted by age from youngest to oldest', 'asc'],
         ['List names in ascending order of age', 'asc'],
@@ -291,5 +310,67 @@ describe('dynamic query-shape and cardinality contract', () => {
             ORDER BY COUNT(*) DESC
             LIMIT 1`;
         expect(validateSQLAgainstContract(faithfulSql, contract)).toEqual([]);
+    });
+
+    it('treats inverse most-frequent wording as a grouped count ranking', () => {
+        const question = 'Return the type code of the template type that the most templates belong to.';
+        const templateModel: SemanticModel = {
+            ...model,
+            rowCount: 20,
+            fields: [
+                { name: 'Template_ID', displayLabel: 'Template ID', physicalType: 'number', semanticType: 'identifier', role: 'dimension', defaultAgg: 'count_distinct', timeGrainSupport: [], synonyms: [], valueDescriptors: [], distinctCount: 20, hasNulls: false },
+                { name: 'Template_Type_Code', displayLabel: 'Template type code', physicalType: 'string', semanticType: 'category', role: 'dimension', defaultAgg: 'none', timeGrainSupport: [], synonyms: ['type code'], valueDescriptors: [], distinctCount: 5, hasNulls: false },
+            ],
+        };
+        const contract = buildQueryContract(
+            question,
+            plan({
+                intent: 'projection',
+                dimensions: [{ field: 'Template_Type_Code' }],
+                metrics: [],
+                projectionFields: ['Template_Type_Code'],
+            }),
+            [],
+            templateModel,
+            {
+                tables: [{
+                    name: 'Templates',
+                    rowCount: 20,
+                    columns: [{ name: 'Template_ID', isPK: true }, { name: 'Template_Type_Code' }],
+                }],
+                links: [],
+            },
+        );
+
+        expect(inferQueryShape(question)).toMatchObject({
+            operation: 'ranking',
+            selection: 'single',
+            explicitAggregation: 'count',
+            implicitFrequencyRanking: true,
+        });
+        expect(contract).toMatchObject({
+            expectedCardinality: 'grouped',
+            requiresGrouping: true,
+            requiresRanking: true,
+            requiresRowProjection: false,
+            requiredDimension: 'Template_Type_Code',
+            expectedAggregation: 'count',
+            rankingDirection: 'desc',
+            rankingLimit: 1,
+            strictOutputProjection: true,
+            resultRowExpectation: { exact: 1 },
+        });
+        expect(validateSQLAgainstContract(
+            'SELECT Template_Type_Code FROM Templates GROUP BY Template_Type_Code ORDER BY COUNT(*) DESC LIMIT 1',
+            contract,
+        )).toEqual([]);
+        expect(validateSQLAgainstContract(
+            'SELECT Template_Type_Code FROM Templates',
+            contract,
+        ).map(issue => issue.code)).toEqual(expect.arrayContaining([
+            'missing_grouping',
+            'missing_aggregation',
+            'missing_ranking',
+        ]));
     });
 });

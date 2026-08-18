@@ -582,12 +582,14 @@ export function buildQueryContract(
         && plan.metrics.some(metric => ['sum', 'avg', 'count', 'count_distinct'].includes(metric.agg))
         && !['single_metric', 'distribution'].includes(plan.intent);
     const explicitGroupingCue = queryShape.operation === 'grouped_aggregate'
+        || queryShape.implicitFrequencyRanking
         || BREAKDOWN_CUE.test(breakdownQuestion)
         || /\b(?:in|for)\s+each\b/i.test(question)
         || (asksCountAlongsideEntity && !!outputEntity);
     const explicitScalarAggregationCue = /\b(?:how many|number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
     const requiresGrouping = !requiresRowProjection && !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
-        && (requiresFiscalCalendar
+        && (queryShape.implicitFrequencyRanking
+            || requiresFiscalCalendar
             || BREAKDOWN_CUE.test(breakdownQuestion)
             || verification.some(issue => issue.code === 'missing_dimension')
             || (existenceMode === 'none' && planRequiresEntityAggregation));

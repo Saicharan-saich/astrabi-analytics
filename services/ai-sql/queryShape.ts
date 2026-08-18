@@ -26,6 +26,9 @@ export interface QueryShape {
     /** Count-of-related-members threshold inferred from grammar such as
      * "grades with 4 or more students". */
     implicitGroupedCount: boolean;
+    /** Frequency ranking inferred from wording such as "most common value" or
+     * "the type that the most records belong to". */
+    implicitFrequencyRanking: boolean;
 }
 
 function explicitAggregation(question: string): QueryShape['explicitAggregation'] {
@@ -107,9 +110,16 @@ export function inferQueryShape(question: string): QueryShape {
     // phrasings such as "teams with at least 5 players" without naming any
     // domain, table, field, or benchmark case.
     const thresholdedGroupCount = /\b(?:which|what|show|list|find)\b[\s\S]*?\b(?:have|has|with)\s+(?:(?:at\s+least|at\s+most|more\s+than|fewer\s+than|less\s+than)\s+-?\d+(?:\.\d+)?|-?\d+(?:\.\d+)?\s+or\s+(?:more|fewer|less))\s+[a-z]/i.test(question);
-    const aggregation = explicitAggregation(shapeText) || (thresholdedGroupCount ? 'count' : undefined);
+    // Frequency winners are count rankings even when the count is implicit.
+    // Cover both direct wording ("most common citizenship") and inverse
+    // relative clauses ("the type that the most records belong to"). The
+    // action-prefix guard keeps an all-row ranking such as "Rank every ..."
+    // from being collapsed to one winner merely because it mentions common.
+    const frequencyWinner = /^\s*(?:please\s+)?(?:which|what|find|return|give(?:\s+me)?|show)\b[\s\S]*?(?:\b(?:most|least)\s+(?:common(?:ly)?|frequent(?:ly)?|popular)\b|\b(?:that|which|who)\s+(?:[a-z][a-z0-9_-]*\s+){0,4}?(?:the\s+)?(?:most|fewest|least)\s+[a-z])/i.test(question);
+    const aggregation = explicitAggregation(shapeText)
+        || (thresholdedGroupCount || frequencyWinner ? 'count' : undefined);
     const groupingText = question.replace(/\b(?:ordered|sorted|ranked)\s+by\b/gi, '');
-    const groupingCue = thresholdedGroupCount
+    const groupingCue = thresholdedGroupCount || frequencyWinner
         || /\b(?:by|per|for\s+each|for\s+every|each|every)\b/i.test(groupingText)
         || /\bof\s+(?:singers?|records?|items?|entities?)\s+of\s+each\b/i.test(question);
     const order = ordering(question);
@@ -117,7 +127,7 @@ export function inferQueryShape(question: string): QueryShape {
     const explicitLimit = topN ? Number(topN[2]) : undefined;
     const directionalRange = /\bfrom\s+(?:the\s+)?(?:youngest|oldest|lowest|highest|least|most|smallest|largest|earliest|latest|newest)\s+to\s+(?:the\s+)?(?:youngest|oldest|lowest|highest|least|most|smallest|largest|earliest|latest|newest)\b/i.test(question);
     const rankingText = shapeText.replace(/\b(?:at|no)\s+(?:least|most)\b/gi, '');
-    const singleWinner = !directionalRange && hasExplicitSingleWinner(rankingText);
+    const singleWinner = !directionalRange && (frequencyWinner || hasExplicitSingleWinner(rankingText));
     const allCue = /\b(?:all|every|each|different|distinct)\b|\bwhich\s+ones\b/i.test(question);
     const distinctRequested = /\b(?:different|distinct|unique)\b/i.test(question);
     const orderedProjection = !!order.orderFieldPhrase && !aggregation && !explicitLimit && !singleWinner;
@@ -146,5 +156,6 @@ export function inferQueryShape(question: string): QueryShape {
         orderedProjection,
         distinctRequested,
         implicitGroupedCount: thresholdedGroupCount,
+        implicitFrequencyRanking: frequencyWinner,
     };
 }
