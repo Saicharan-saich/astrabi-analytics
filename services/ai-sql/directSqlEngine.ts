@@ -30,6 +30,10 @@ Rules:
 - JOIN across tables when needed, following the listed foreign keys.
 - Treat absence and exclusion as set logic. Questions such as "entities with no related records" require NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT against the related table; never simulate absence by grouping only the primary table and writing HAVING COUNT(...) = 0.
 - Preserve the requested output entity and grain. Do not return a continent when country names were requested, or collapse several requested rows into one group.
+- Lock the OUTER SELECT to the fields and calculations the user explicitly asks to see. An aggregate used only to define a filter (for example, products above average sales) belongs in a subquery/CTE predicate and does not turn the outer result into COUNT, SUM, or AVG.
+- Never replace requested names, labels, dates, or other row attributes with COUNT, SUM, LIST, ARRAY_AGG, STRING_AGG, or ANY_VALUE. Use collection aggregates only when the user explicitly requests a single packed list.
+- Do not infer an aggregation from a physical column name containing words such as number, count, total, or amount. Aggregation comes from the question's requested operation.
+- Prefer the simplest faithful SQL. Do not add CTEs, windows, grouping, extra output columns, or LIMIT unless they are necessary for the question.
 - The user's explicit question and the verified schema are the source of truth. The local Analysis Plan is a governed draft: preserve valid resolved metrics, filters, comparison semantics, sorting, and limits, but repair any omission or misclassification called out by Planner Verification.
 - Preserve governed relative thresholds. A plan filter with op "above_avg" or "below_avg" means: aggregate the metric at the requested entity grain first, calculate the average of those entity aggregates in a CTE/subquery, then retain entities above or below that threshold. Never replace it with an invented literal threshold. If includeNonPositive is true, combine the below-average condition with OR aggregate <= 0 so wording such as "low or negative" is preserved exactly.
 - Never return a generic scalar total merely because the draft plan has no dimension. If the user asks "by", "over time", a fiscal calendar, a comparison, ranking, or another explicit analytical shape, implement that shape using the available schema.
@@ -57,6 +61,7 @@ export interface DynamicQuerySpec {
 const SPEC_PROMPT = `You are the planning stage of a privacy-first analytics system.
 Translate the question into a JSON Query Specification. You receive only a database schema and metadata, never data rows.
 Capture all requested analytical operations dynamically: measures/aggregations, filters, GROUP BY, HAVING, sorting, limits, joins, date logic, and window or table calculations. Use only exact physical schema fields and table names. When an entity is the answer, choose its human-readable descriptive field for expectedResult (not an opaque ID) whenever the schema provides one; IDs can be an optional secondary reference.
+Define expectedResult from the words that describe what the user wants returned, before planning filters. Aggregates used only as comparison thresholds belong in filters/subqueries and must not replace those requested result fields. Never invent COUNT, collection aggregates, GROUP BY, or LIMIT from a column name or from a filter's aggregate.
 Relative analytical language is answerable without a user-supplied literal threshold. When the governed plan resolves "high/strong" to above_avg or "low/weak/negative" to below_avg, preserve that decision: compare each entity-level aggregate with the average across entity aggregates, record the rule in assumptions, and do NOT request clarification. Ask only when the required field or entity grain is genuinely unavailable.
 Represent negative existence explicitly as an anti-join/set operation (NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT). Preserve the requested entity as expectedResult grain and columns; never substitute a related table or a higher-level grouping.
 Return valid JSON only with: goal, operations, expectedResult, assumptions, clarification.
@@ -225,7 +230,7 @@ export async function generateDirectSQL(
     // Sol independently checks every request against the question, schema and
     // structured plan, then returns the final executable SQL.
     const reviewed = await fetchWithFallback([
-        { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Check that the candidate implements every operation in the Dynamic Query Specification. Correct omissions, invalid fields, joins, aggregations, filters, grouping, sorting, and table calculations. Return only final SQL.` },
+        { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the question, schema, and deterministic contract. Correct only concrete violations. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and contract do not require. Return only final SQL.` },
         { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${sql}\n\nFinal reviewed SQL:` },
     ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
     sql = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');

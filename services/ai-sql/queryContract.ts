@@ -34,6 +34,12 @@ export interface QueryContract {
     selectionMode: SelectionMode;
     prohibitsImplicitLimit: boolean;
     requiresDistinctProjection: boolean;
+    /** Physical fields the outer SELECT must expose, resolved independently
+     * from the draft plan so a bad plan cannot replace names with a count. */
+    requiredOutputFields: QueryEntityContract[];
+    /** The outer SELECT returns source entities/attributes. Aggregates may still
+     * appear in a subquery or HAVING predicate when the filter requires them. */
+    requiresRowProjection: boolean;
     /** Conservative, locally-computable row expectation. It is emitted only
      * when metadata can establish the answer population without seeing values. */
     resultRowExpectation?: {
@@ -94,6 +100,7 @@ export interface SQLFaithfulnessIssue {
         | 'missing_grouping'
         | 'unexpected_grouping'
         | 'unexpected_aggregation'
+        | 'missing_requested_output'
         | 'missing_distinct_projection'
         | 'unexpected_limit'
         | 'missing_ordering_field'
@@ -199,6 +206,88 @@ function schemaContextFromModel(model?: SemanticModel): QuerySchemaContext | und
         }],
         links: [],
     };
+}
+
+function requestedAnswerClause(question: string): string {
+    // If the user finishes with an explicit "list/show/return ..." instruction,
+    // that final clause is the clearest statement of the requested output.
+    const explicit = [...question.matchAll(/\b(?:list|show|return|display|give(?:\s+me)?)\s+(?:the\s+)?/gi)].pop();
+    const source = explicit?.index !== undefined
+        ? question.slice(explicit.index + explicit[0].length)
+        : question.replace(/^\s*(?:please\s+)?(?:what\s+(?:are|is)|which|who|find|tell\s+me)\s+(?:the\s+)?/i, '');
+    return source.split(/\b(?:whose|where|who|that|having|named|ordered|sorted|ranked|for\s+all|for\s+each|for\s+every|and\s+how\s+many)\b/i)[0].trim();
+}
+
+/** Resolve outer result fields directly from question wording and schema. */
+function resolveRequestedOutputFields(
+    question: string,
+    plan: AnalysisPlan,
+    schema: QuerySchemaContext | undefined,
+    model?: SemanticModel,
+): QueryEntityContract[] {
+    if (!schema?.tables.length) return [];
+    const clause = requestedAnswerClause(question);
+    const clauseTokens = new Set(words(clause));
+    const planFields = new Set([
+        ...(plan.projectionFields || []),
+        ...plan.dimensions.map(dimension => dimension.field),
+    ].map(field => field.toLowerCase()));
+    const duplicateFieldCounts = new Map<string, number>();
+    for (const table of schema.tables) {
+        for (const column of table.columns) {
+            const key = column.name.toLowerCase();
+            duplicateFieldCounts.set(key, (duplicateFieldCounts.get(key) || 0) + 1);
+        }
+    }
+
+    const candidates: Array<QueryEntityContract & { score: number }> = [];
+    for (const table of schema.tables) {
+        const tableTokens = words(table.name);
+        // Output ownership is resolved from the answer clause, not from filter
+        // or relationship nouns elsewhere in the question. This prevents a
+        // duplicated column such as Name from being required from every joined
+        // table merely because those tables participate in the query.
+        const tableMentioned = tableTokens.some(token => conceptMatches(token, clauseTokens));
+        for (const column of table.columns) {
+            const semanticField = model?.fields.find(field => field.name.toLowerCase() === column.name.toLowerCase());
+            const aliases = [column.name, semanticField?.displayLabel, ...(semanticField?.synonyms || [])]
+                .filter((value): value is string => !!value);
+            let bestCoverage = 0;
+            for (const alias of aliases) {
+                const aliasTokens = words(alias);
+                if (!aliasTokens.length) continue;
+                const overlap = aliasTokens.filter(token => conceptMatches(token, clauseTokens)).length;
+                bestCoverage = Math.max(bestCoverage, overlap / aliasTokens.length);
+            }
+            if (bestCoverage === 0) continue;
+            let score = bestCoverage * 75;
+            if (tableMentioned) score += 20;
+            const duplicateCount = duplicateFieldCounts.get(column.name.toLowerCase()) || 0;
+            if (duplicateCount === 1) score += 15;
+            else if (!tableMentioned) score -= 25;
+            if (planFields.has(column.name.toLowerCase())) score += 5;
+            if (score < 65) continue;
+            candidates.push({
+                table: table.name,
+                field: column.name,
+                confidence: score >= 80 ? 'high' : 'medium',
+                score,
+            });
+        }
+    }
+
+    candidates.sort((a, b) => b.score - a.score || a.table.localeCompare(b.table) || a.field.localeCompare(b.field));
+    const selected: QueryEntityContract[] = [];
+    const seenConcepts = new Set<string>();
+    for (const candidate of candidates) {
+        const concept = words(candidate.field).join('_');
+        if (seenConcepts.has(concept)) continue;
+        seenConcepts.add(concept);
+        const { score: _score, ...field } = candidate;
+        selected.push(field);
+        if (selected.length >= 6) break;
+    }
+    return selected;
 }
 
 /** Resolve the human-readable entity named in the result request. */
@@ -324,6 +413,8 @@ function resolveExpectedAggregation(question: string, plan: AnalysisPlan): Query
     if (/\b(total|sum(?: of)?)\b/i.test(question)) return 'sum';
     if (/\b(minimum|min value)\b/i.test(question)) return 'min';
     if (/\b(maximum|max value)\b/i.test(question)) return 'max';
+    if (/\b(?:last|latest|most recent)\s+(?:date|time|timestamp)\b/i.test(question)) return 'max';
+    if (/\b(?:first|earliest)\s+(?:date|time|timestamp)\b/i.test(question)) return 'min';
     // Do not turn the local plan's guess into a hard requirement. The contract
     // exists to constrain explicit user intent, not to amplify planner errors.
     return undefined;
@@ -342,6 +433,16 @@ function resolveThreshold(question: string): Omit<NonNullable<QueryContract['thr
         if (match) return { operator, value: Number(match[1]) };
     }
     return undefined;
+}
+
+function thresholdUsesAggregate(question: string): boolean {
+    const comparator = /\b(?:at\s+least|more\s+than|greater\s+than|over|at\s+most|fewer\s+than|less\s+than|under|exactly|equal\s+to)\b/i.exec(question);
+    if (!comparator) return false;
+    // Only the phrase immediately governing the comparison decides WHERE vs
+    // HAVING. An aggregate elsewhere must not move a raw-field predicate into
+    // HAVING (for example "count pets whose age is over 20").
+    const nearby = question.slice(Math.max(0, comparator.index - 80), comparator.index);
+    return /\b(?:total|sum|average|avg|mean|count|number\s+of|minimum|maximum|min|max)\b[^?.,;]{0,60}$/i.test(nearby);
 }
 
 function resolveRatio(
@@ -402,6 +503,7 @@ function resolveRequiredTables(
     plan: AnalysisPlan,
     schema: QuerySchemaContext | undefined,
     outputEntity: QueryEntityContract | undefined,
+    requiredOutputFields: QueryEntityContract[] = [],
 ): string[] {
     if (!schema || schema.tables.length <= 1) return [];
     const qTokens = new Set(words(question));
@@ -412,6 +514,7 @@ function resolveRequiredTables(
     ]);
     const required = new Set<string>();
     if (outputEntity) required.add(outputEntity.table);
+    for (const field of requiredOutputFields) required.add(field.table);
 
     for (const table of schema.tables) {
         const tableMentioned = words(table.name).some(token => conceptMatches(token, qTokens));
@@ -435,7 +538,11 @@ export function buildQueryContract(
 ): QueryContract {
     const requirements: string[] = [];
     const schema = schemaContext || schemaContextFromModel(model);
-    const outputEntity = resolveOutputEntity(question, plan, schema);
+    const requestedOutputFields = resolveRequestedOutputFields(question, plan, schema, model);
+    const inferredOutputEntity = resolveOutputEntity(question, plan, schema);
+    const outputEntity = inferredOutputEntity
+        || requestedOutputFields.find(field => descriptiveColumn(field.field))
+        || requestedOutputFields[0];
     const queryShape = inferQueryShape(question);
     const orderedProjection = resolveOrderedProjection(question, plan, model, outputEntity);
     const existenceMode = ANTI_EXISTENCE_CUE.test(question) ? 'anti' : 'none';
@@ -444,14 +551,22 @@ export function buildQueryContract(
         /\bby\s+(?:the\s+)?(?:youngest|oldest|earliest|latest|newest|highest|lowest|best|worst)\s+\w+/gi,
         '',
     );
-    const planRequiresEntityAggregation = !!outputEntity
+    const answerClause = requestedAnswerClause(question);
+    const answerAggregation = resolveExpectedAggregation(answerClause, plan);
+    const asksCountAlongsideEntity = /\band\s+how\s+many\b/i.test(question);
+    const requiresRowProjection = requestedOutputFields.length > 0
+        && !answerAggregation
+        && !asksCountAlongsideEntity
+        && queryShape.operation !== 'ranking';
+    const planRequiresEntityAggregation = !requiresRowProjection && !!outputEntity
         && plan.metrics.some(metric => ['sum', 'avg', 'count', 'count_distinct'].includes(metric.agg))
         && !['single_metric', 'distribution'].includes(plan.intent);
     const explicitGroupingCue = queryShape.operation === 'grouped_aggregate'
         || BREAKDOWN_CUE.test(breakdownQuestion)
-        || /\b(?:in|for)\s+each\b/i.test(question);
+        || /\b(?:in|for)\s+each\b/i.test(question)
+        || (asksCountAlongsideEntity && !!outputEntity);
     const explicitScalarAggregationCue = /\b(?:how many|number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
-    const requiresGrouping = !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
+    const requiresGrouping = !requiresRowProjection && !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
         && (requiresFiscalCalendar
             || BREAKDOWN_CUE.test(breakdownQuestion)
             || verification.some(issue => issue.code === 'missing_dimension')
@@ -468,17 +583,17 @@ export function buildQueryContract(
     const requiredDimension = requiresGrouping
         ? resolveRequestedDimension(question, model) || (outputEntity?.confidence === 'high' ? outputEntity.field : undefined)
         : undefined;
-    let expectedAggregation = orderedProjection ? undefined : resolveExpectedAggregation(question, plan);
-    const expectedCardinality: QueryContract['expectedCardinality'] = orderedProjection ? 'detail'
-        : expectedAggregation && explicitScalarAggregationCue && !explicitGroupingCue
-        ? 'scalar'
-        : requiresGrouping ? 'grouped' : 'detail';
-    const requiredTables = resolveRequiredTables(question, plan, schema, outputEntity);
+    let expectedAggregation = orderedProjection || requiresRowProjection ? undefined : resolveExpectedAggregation(question, plan);
+    const expectedCardinality: QueryContract['expectedCardinality'] = orderedProjection || requiresRowProjection ? 'detail'
+        : requiresGrouping ? 'grouped'
+        : expectedAggregation && explicitScalarAggregationCue ? 'scalar'
+        : 'detail';
+    const requiredTables = resolveRequiredTables(question, plan, schema, outputEntity, requestedOutputFields);
     const resolvedThreshold = resolveThreshold(question);
     const threshold = resolvedThreshold
         ? {
             ...resolvedThreshold,
-            requiresHaving: requiresGrouping && !!outputEntity,
+            requiresHaving: thresholdUsesAggregate(question),
         }
         : undefined;
     // "countries with at least 3 manufacturers" is a related-entity count even
@@ -486,6 +601,7 @@ export function buildQueryContract(
     // entity and a distinct related table have both been schema-grounded.
     if (!expectedAggregation && threshold && outputEntity && requiredTables.some(table => table !== outputEntity.table)) {
         expectedAggregation = 'count';
+        threshold.requiresHaving = true;
     }
     const ratio = resolveRatio(question, model);
     const relativeComparison = resolveRelativeComparison(question);
@@ -537,6 +653,8 @@ export function buildQueryContract(
     }
 
     if (outputEntity?.confidence === 'high') requirements.push(`Return ${outputEntity.table}.${outputEntity.field} as the visible answer entity.`);
+    if (requestedOutputFields.length) requirements.push(`The outer SELECT must expose the requested answer field(s): ${requestedOutputFields.map(field => `${field.table}.${field.field}`).join(', ')}.`);
+    if (requiresRowProjection) requirements.push('Preserve row/entity projection in the outer SELECT. Do not replace requested fields with COUNT, SUM, AVG, LIST, ARRAY_AGG, STRING_AGG, or ANY_VALUE; aggregates may appear only inside a predicate/subquery when required by the filter.');
     if (orderedProjection) requirements.push(`Return row-level fields ${orderedProjection.fields.join(', ')} ordered by ${orderedProjection.orderBy} ${orderedProjection.direction.toUpperCase()}; do not aggregate, group, or truncate the result.`);
     if (expectedCardinality === 'scalar') requirements.push('Return one aggregate result row; filters do not become grouping dimensions unless the question explicitly says by/per/for each.');
     if (requiresGrouping) requirements.push('Return the requested entity/breakdown grain, not a scalar or higher-level grouping.');
@@ -569,6 +687,8 @@ export function buildQueryContract(
         selectionMode: queryShape.selection,
         prohibitsImplicitLimit: queryShape.prohibitsImplicitLimit,
         requiresDistinctProjection,
+        requiredOutputFields: requestedOutputFields,
+        requiresRowProjection,
         resultRowExpectation,
         orderedProjection,
         rankingLimit,
@@ -592,6 +712,57 @@ function identifierPattern(identifier: string): RegExp {
     return new RegExp(`(?:["\`]${escaped}["\`]|\\b${escaped}\\b)`, 'i');
 }
 
+/** Extract outermost SELECT lists without treating CTE/subquery aggregates as
+ * outer result calculations. This is a lexical scanner, not a SQL rewriter. */
+function topLevelSelectClauses(sql: string): string[] {
+    const clauses: string[] = [];
+    let depth = 0;
+    let quote: "'" | '"' | '`' | null = null;
+    let selectStart = -1;
+    const keywordAt = (index: number, keyword: string): boolean => {
+        if (sql.slice(index, index + keyword.length).toLowerCase() !== keyword) return false;
+        const before = index > 0 ? sql[index - 1] : '';
+        const after = sql[index + keyword.length] || '';
+        return !/[a-z0-9_]/i.test(before) && !/[a-z0-9_]/i.test(after);
+    };
+
+    for (let index = 0; index < sql.length; index += 1) {
+        const char = sql[index];
+        if (quote) {
+            if (char === quote) {
+                if (sql[index + 1] === quote) index += 1;
+                else quote = null;
+            }
+            continue;
+        }
+        if (char === "'" || char === '"' || char === '`') {
+            quote = char;
+            continue;
+        }
+        if (char === '(') {
+            depth += 1;
+            continue;
+        }
+        if (char === ')') {
+            depth = Math.max(0, depth - 1);
+            continue;
+        }
+        if (depth !== 0) continue;
+        if (selectStart < 0 && keywordAt(index, 'select')) {
+            selectStart = index + 'select'.length;
+            index += 'select'.length - 1;
+            continue;
+        }
+        if (selectStart >= 0 && keywordAt(index, 'from')) {
+            clauses.push(sql.slice(selectStart, index).trim());
+            selectStart = -1;
+            index += 'from'.length - 1;
+        }
+    }
+    if (selectStart >= 0) clauses.push(sql.slice(selectStart).trim());
+    return clauses;
+}
+
 /** Compact form used in model prompts; contains metadata/intent only. */
 export function formatQueryContractForPrompt(contract: QueryContract): string {
     return JSON.stringify({
@@ -600,6 +771,8 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
         selectionMode: contract.selectionMode,
         prohibitsImplicitLimit: contract.prohibitsImplicitLimit,
         requiresDistinctProjection: contract.requiresDistinctProjection,
+        requiredOutputFields: contract.requiredOutputFields,
+        requiresRowProjection: contract.requiresRowProjection,
         resultRowExpectation: contract.resultRowExpectation,
         resultGrain: contract.requiredDimension,
         requiredTables: contract.requiredTables,
@@ -621,6 +794,9 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
 export function validateSQLAgainstContract(sql: string, contract: QueryContract): SQLFaithfulnessIssue[] {
     const issues: SQLFaithfulnessIssue[] = [];
     const normalized = sql.toLowerCase();
+    const outerSelects = topLevelSelectClauses(sql);
+    const outerProjection = outerSelects.join('\n');
+    const outerAggregatePattern = /\b(?:sum|avg|count|min|max|median|list|array_agg|string_agg|any_value)\s*\(/i;
     const groupByClauses = [...sql.matchAll(/\bgroup\s+by\s+([\s\S]*?)(?=\bhaving\b|\border\s+by\b|\blimit\b|\bunion\b|$)/gi)]
         .map(match => match[1]);
 
@@ -641,10 +817,10 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
     }
 
     if (contract.orderedProjection) {
-        if (/\b(?:sum|avg|count|min|max|median)\s*\(/i.test(sql)) {
+        if (outerAggregatePattern.test(outerProjection)) {
             issues.push({ code: 'unexpected_aggregation', severity: 'error', message: 'This is a row-level listing, but the SQL introduces an aggregate calculation.' });
         }
-        if (/\bgroup\s+by\b/i.test(sql)) {
+        if (/\bgroup\s+by\b/i.test(sql) && !/\bhaving\b/i.test(sql)) {
             issues.push({ code: 'unexpected_grouping', severity: 'error', message: 'This is a row-level listing, but the SQL groups and collapses records.' });
         }
         const orderField = identifierPattern(contract.orderedProjection.orderBy);
@@ -661,6 +837,32 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
             if (!identifierPattern(field).test(sql)) {
                 issues.push({ code: 'missing_output_entity', severity: 'error', message: `The row-level result must include "${field}".` });
             }
+        }
+    }
+
+    for (const field of contract.requiredOutputFields.filter(item => item.confidence === 'high')) {
+        if (!outerSelects.some(clause => identifierPattern(field.field).test(clause))) {
+            issues.push({
+                code: 'missing_requested_output',
+                severity: 'error',
+                message: `The outer result must expose the requested field ${field.table}.${field.field}.`,
+            });
+        }
+    }
+    if (contract.requiresRowProjection) {
+        if (outerAggregatePattern.test(outerProjection)) {
+            issues.push({
+                code: 'unexpected_aggregation',
+                severity: 'error',
+                message: 'The requested answer is a row/entity projection, but the outer SELECT replaces it with an aggregate or collection.',
+            });
+        }
+        if (/\bgroup\s+by\b/i.test(sql) && !/\bhaving\b/i.test(sql)) {
+            issues.push({
+                code: 'unexpected_grouping',
+                severity: 'error',
+                message: 'The requested answer is a row/entity projection, but GROUP BY collapses the result without an aggregate predicate.',
+            });
         }
     }
 

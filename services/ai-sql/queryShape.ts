@@ -78,8 +78,22 @@ function hasExplicitSingleWinner(question: string): boolean {
     return false;
 }
 
+/** Comparative reference aggregates constrain a filter; they do not describe
+ * the outer result shape ("rows above the average", "more than the minimum"). */
+function withoutComparativeReferences(question: string): string {
+    return question
+        .replace(/\b(?:more|greater|higher|less|lower|fewer)\s+than\s+(?:the\s+)?(?:average|mean|minimum|maximum|lowest|highest)\b[^?.,;]*/gi, '')
+        .replace(/\b(?:above|below)\s+(?:the\s+)?(?:average|mean|minimum|maximum)\b[^?.,;]*/gi, '');
+}
+
+function hasComparativeReference(question: string): boolean {
+    return /\b(?:more|greater|higher|less|lower|fewer)\s+than\s+(?:the\s+)?(?:average|mean|minimum|maximum|lowest|highest)\b|\b(?:above|below)\s+(?:the\s+)?(?:average|mean|minimum|maximum)\b/i.test(question);
+}
+
 export function inferQueryShape(question: string): QueryShape {
-    const aggregation = explicitAggregation(question);
+    const shapeText = withoutComparativeReferences(question);
+    const comparativeReference = hasComparativeReference(question);
+    const aggregation = explicitAggregation(shapeText);
     const groupingText = question.replace(/\b(?:ordered|sorted|ranked)\s+by\b/gi, '');
     const groupingCue = /\b(?:by|per|for\s+each|for\s+every|each|every)\b/i.test(groupingText)
         || /\bof\s+(?:singers?|records?|items?|entities?)\s+of\s+each\b/i.test(question);
@@ -87,9 +101,9 @@ export function inferQueryShape(question: string): QueryShape {
     const topN = question.match(/\b(top|bottom|first|last)\s+(\d+)\b/i);
     const explicitLimit = topN ? Number(topN[2]) : undefined;
     const directionalRange = /\bfrom\s+(?:the\s+)?(?:youngest|oldest|lowest|highest|least|most|smallest|largest|earliest|latest|newest)\s+to\s+(?:the\s+)?(?:youngest|oldest|lowest|highest|least|most|smallest|largest|earliest|latest|newest)\b/i.test(question);
-    const rankingText = question.replace(/\b(?:at|no)\s+(?:least|most)\b/gi, '');
+    const rankingText = shapeText.replace(/\b(?:at|no)\s+(?:least|most)\b/gi, '');
     const singleWinner = !directionalRange && hasExplicitSingleWinner(rankingText);
-    const allCue = /\b(?:all|every|each|different|distinct)\b/i.test(question);
+    const allCue = /\b(?:all|every|each|different|distinct)\b|\bwhich\s+ones\b/i.test(question);
     const distinctRequested = /\b(?:different|distinct|unique)\b/i.test(question);
     const orderedProjection = !!order.orderFieldPhrase && !aggregation && !explicitLimit && !singleWinner;
 
@@ -97,10 +111,10 @@ export function inferQueryShape(question: string): QueryShape {
     if (explicitLimit) selection = 'top_n';
     else if (singleWinner) selection = 'single';
     else if (aggregation && groupingCue) selection = 'all_groups';
-    else if (orderedProjection || allCue) selection = groupingCue && aggregation ? 'all_groups' : 'all_rows';
+    else if (orderedProjection || allCue || comparativeReference) selection = groupingCue && aggregation ? 'all_groups' : 'all_rows';
 
     let operation: QueryOperation = 'unknown';
-    if (orderedProjection) operation = 'projection';
+    if (orderedProjection || (comparativeReference && !aggregation)) operation = 'projection';
     else if (explicitLimit || singleWinner) operation = 'ranking';
     else if (aggregation && groupingCue) operation = 'grouped_aggregate';
     else if (aggregation) operation = 'scalar_aggregate';
