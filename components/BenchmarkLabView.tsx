@@ -29,6 +29,7 @@ import { useAppStore } from '../store/useAppStore';
 import { useTheme } from './ThemeProvider';
 import { runAISQLPipeline } from '../services/ai-sql';
 import type { PrivacyMode } from '../services/ai-sql/privacyMode';
+import { benchmarkRunToCsv, benchmarkRunToJson } from '../services/benchmark/export';
 import { ensureDuckDBReady, executeSQLViaDuckDB, reloadIsolatedBenchmarkData, resetDuckDB } from '../services/duckdbEngine';
 import {
   ALL_BENCHMARK_SUITES,
@@ -129,26 +130,6 @@ function downloadFile(filename: string, content: string, type: string): void {
   anchor.click();
   anchor.remove();
   URL.revokeObjectURL(url);
-}
-
-function csvCell(value: unknown): string {
-  const text = value === null || value === undefined ? '' : String(value);
-  return `"${text.replace(/"/g, '""')}"`;
-}
-
-function runToCsv(run: BenchmarkRun): string {
-  const headers = [
-    'run_id', 'case_id', 'source_id', 'suite', 'question', 'benchmark_context', 'category', 'difficulty', 'status', 'passed',
-    'valid_sql', 'safe_to_display', 'latency_ms', 'tokens', 'engine', 'strategy', 'model',
-    'privacy_mode', 'confidence', 'repairs', 'failure_reason', 'gold_sql', 'candidate_sql',
-  ];
-  const rows = run.results.map(result => [
-    run.id, result.caseId, result.sourceId, result.suiteId, result.question, result.context, result.category, result.difficulty,
-    result.status, result.passed, result.validSql, result.safeToDisplay, result.pipelineLatencyMs,
-    result.tokenUsage.total, result.engine, result.strategy, result.model, run.privacyMode || 'strict', result.confidence,
-    result.repairAttempts, result.failureReason, result.goldSql, result.candidateSql,
-  ]);
-  return [headers, ...rows].map(row => row.map(csvCell).join(',')).join('\n');
 }
 
 export function canAccessBenchmark(role?: UserRole): boolean {
@@ -623,8 +604,8 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                   </select>
                   {latestRun && !isRunning && (
                     <>
-                      <button onClick={() => downloadFile(`${latestRun.id}.json`, JSON.stringify(latestRun, null, 2), 'application/json')} className={`px-3 py-2 rounded-xl border text-xs font-bold ${softSurface} ${strong}`} title="Export reproducible JSON evidence"><FileJson className="w-4 h-4 inline mr-1.5" />JSON</button>
-                      <button onClick={() => downloadFile(`${latestRun.id}.csv`, runToCsv(latestRun), 'text/csv')} className={`px-3 py-2 rounded-xl border text-xs font-bold ${softSurface} ${strong}`} title="Export case-level CSV"><Download className="w-4 h-4 inline mr-1.5" />CSV</button>
+                      <button onClick={() => downloadFile(`${latestRun.id}.json`, benchmarkRunToJson(latestRun), 'application/json')} className={`px-3 py-2 rounded-xl border text-xs font-bold ${softSurface} ${strong}`} title="Export complete reproducible JSON evidence"><FileJson className="w-4 h-4 inline mr-1.5" />JSON</button>
+                      <button onClick={() => downloadFile(`${latestRun.id}.csv`, benchmarkRunToCsv(latestRun), 'text/csv')} className={`px-3 py-2 rounded-xl border text-xs font-bold ${softSurface} ${strong}`} title="Export complete case-level evidence, including result sets"><Download className="w-4 h-4 inline mr-1.5" />CSV</button>
                       <button onClick={handleClear} className="px-3 py-2 rounded-xl border border-rose-500/20 bg-rose-500/10 text-rose-400 text-xs font-bold"><Trash2 className="w-4 h-4 inline mr-1.5" />Clear</button>
                     </>
                   )}
