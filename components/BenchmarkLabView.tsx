@@ -12,6 +12,7 @@ import {
   Download,
   FileJson,
   Gauge,
+  History,
   Loader2,
   PauseCircle,
   Play,
@@ -35,13 +36,17 @@ import {
   ALL_BENCHMARK_SUITES,
   BENCHMARK_SUITES,
   clearBenchmarkRun,
+  deleteBenchmarkRunFromHistory,
   getBenchmarkResumeIndex,
   loadBenchmarkRun,
+  loadBenchmarkRunHistory,
   loadResearchBenchmarkDataset,
   runBenchmark,
   saveBenchmarkRun,
+  saveBenchmarkRunToHistory,
   type BenchmarkCaseResult,
   type BenchmarkCaseStatus,
+  type BenchmarkAdjudicationVerdict,
   type BenchmarkRun,
   type BenchmarkSuiteId,
 } from '../services/benchmark';
@@ -50,7 +55,7 @@ interface BenchmarkLabViewProps {
   activeDataset?: Dataset | null;
 }
 
-type LabView = 'overview' | 'results' | 'methodology';
+type LabView = 'overview' | 'results' | 'history' | 'methodology';
 
 const STATUS_LABELS: Record<BenchmarkCaseStatus, string> = {
   pass: 'Pass',
@@ -71,6 +76,27 @@ const STATUS_CLASSES: Record<BenchmarkCaseStatus, string> = {
   execution_error: 'bg-red-500/15 text-red-400 border-red-500/25',
   fixture_error: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/25',
 };
+
+const ADJUDICATION_LABELS: Record<BenchmarkAdjudicationVerdict, string> = {
+  exact_pass: 'Exact pass',
+  semantically_acceptable: 'Semantically acceptable',
+  partial_answer: 'Partial answer',
+  gold_fixture_issue: 'Gold / fixture issue',
+  incorrect: 'Incorrect',
+  verification_unavailable: 'Verification unavailable',
+};
+
+const ADJUDICATION_CLASSES: Record<BenchmarkAdjudicationVerdict, string> = {
+  exact_pass: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
+  semantically_acceptable: 'bg-teal-500/15 text-teal-400 border-teal-500/25',
+  partial_answer: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
+  gold_fixture_issue: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/25',
+  incorrect: 'bg-rose-500/15 text-rose-400 border-rose-500/25',
+  verification_unavailable: 'bg-sky-500/15 text-sky-400 border-sky-500/25',
+};
+
+const ALL_STATUSES = Object.keys(STATUS_LABELS) as BenchmarkCaseStatus[];
+const ALL_ADJUDICATION_VERDICTS = Object.keys(ADJUDICATION_LABELS) as BenchmarkAdjudicationVerdict[];
 
 const SUITE_ACCENTS = {
   violet: {
@@ -173,6 +199,9 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState({ completed: 0, total: 0, question: '' });
   const [latestRun, setLatestRun] = useState<BenchmarkRun | null>(() => loadBenchmarkRun());
+  const [selectedHistoryRun, setSelectedHistoryRun] = useState<BenchmarkRun | null>(null);
+  const [runHistory, setRunHistory] = useState<BenchmarkRun[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [liveResults, setLiveResults] = useState<BenchmarkCaseResult[]>([]);
   const [statusFilter, setStatusFilter] = useState<'all' | BenchmarkCaseStatus>('all');
   const [suiteFilter, setSuiteFilter] = useState<'all' | BenchmarkSuiteId>('all');
@@ -186,6 +215,17 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     cancelRef.current = true;
   }, []);
 
+  React.useEffect(() => {
+    let mounted = true;
+    setHistoryLoading(true);
+    void loadBenchmarkRunHistory().then(runs => {
+      if (!mounted) return;
+      setRunHistory(runs);
+      setHistoryLoading(false);
+    });
+    return () => { mounted = false; };
+  }, []);
+
   const accessible = canAccessBenchmark(currentUser?.role);
   const selectedSuiteObjects = useMemo(
     () => ALL_BENCHMARK_SUITES.filter(suite => selectedSuites.has(suite.id)),
@@ -195,13 +235,26 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     (total, suite) => total + (scope === 'full' ? suite.cases.length : Math.min(5, suite.cases.length)),
     0,
   );
-  const displayedRun = latestRun;
-  const latestResumeIndex = latestRun ? getBenchmarkResumeIndex(latestRun) : 0;
+  const displayedRun = selectedHistoryRun || latestRun;
+  const displayedResumeIndex = displayedRun ? getBenchmarkResumeIndex(displayedRun) : 0;
   const displayedResults = isRunning ? liveResults : (displayedRun?.results || []);
   const filteredResults = useMemo(() => displayedResults.filter(result =>
     (statusFilter === 'all' || result.status === statusFilter)
     && (suiteFilter === 'all' || result.suiteId === suiteFilter)
   ), [displayedResults, statusFilter, suiteFilter]);
+  const outcomeCounts = useMemo(() => {
+    const counts = Object.fromEntries(ALL_STATUSES.map(status => [status, 0])) as Record<BenchmarkCaseStatus, number>;
+    displayedResults.forEach(result => { counts[result.status] += 1; });
+    return counts;
+  }, [displayedResults]);
+  const adjudicationCounts = useMemo(() => {
+    const counts = Object.fromEntries(ALL_ADJUDICATION_VERDICTS.map(verdict => [verdict, 0])) as Record<BenchmarkAdjudicationVerdict, number>;
+    displayedResults.forEach(result => {
+      if (result.adjudication) counts[result.adjudication.verdict] += 1;
+    });
+    return counts;
+  }, [displayedResults]);
+  const adjudicatedTotal = ALL_ADJUDICATION_VERDICTS.reduce((total, verdict) => total + adjudicationCounts[verdict], 0);
 
   const panel = isDark ? 'bg-[#111722] border-white/[0.08]' : 'bg-white border-slate-200 shadow-sm';
   const muted = isDark ? 'text-slate-400' : 'text-slate-500';
@@ -216,6 +269,40 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
       return next;
     });
     setConfirmed(false);
+  };
+
+  const updateAdjudication = (
+    caseId: string,
+    verdict: BenchmarkAdjudicationVerdict | null,
+    note?: string,
+  ) => {
+    if (isRunning || !displayedRun) return;
+    const next: BenchmarkRun = {
+      ...displayedRun,
+      results: displayedRun.results.map(result => {
+          if (result.caseId !== caseId) return result;
+          if (!verdict) {
+            const { adjudication: _removed, ...withoutAdjudication } = result;
+            return withoutAdjudication;
+          }
+          return {
+            ...result,
+            adjudication: {
+              verdict,
+              note: note ?? result.adjudication?.note ?? '',
+              adjudicatedAt: Date.now(),
+            },
+          };
+      }),
+    };
+    if (latestRun?.id === next.id) {
+      setLatestRun(next);
+      saveBenchmarkRun(next);
+    } else {
+      setSelectedHistoryRun(next);
+      void saveBenchmarkRunToHistory(next);
+    }
+    setRunHistory(current => current.map(run => run.id === next.id ? next : run));
   };
 
   const handleRun = async (resumeRun?: BenchmarkRun) => {
@@ -235,6 +322,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
       0,
     );
     cancelRef.current = false;
+    setSelectedHistoryRun(null);
     setIsRunning(true);
     setRunError(null);
     const resumeIndex = resumeRun ? getBenchmarkResumeIndex(resumeRun) : 0;
@@ -287,6 +375,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
       console.info(`[Benchmark] Finished ${run.scope} run: ${run.metrics.completed}/${run.metrics.total} completed${run.cancelled ? ' (cancelled)' : ''}`);
       setLatestRun(run);
       saveBenchmarkRun(run);
+      setRunHistory(current => [run, ...current.filter(saved => saved.id !== run.id)].slice(0, 20));
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -309,12 +398,34 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     }
   };
 
-  const handleClear = () => {
+  const handleClear = async () => {
     if (isRunning) return;
+    if (selectedHistoryRun) {
+      await deleteBenchmarkRunFromHistory(selectedHistoryRun.id);
+      setRunHistory(current => current.filter(run => run.id !== selectedHistoryRun.id));
+      setSelectedHistoryRun(null);
+      setExpandedCase(null);
+      return;
+    }
+    if (latestRun) {
+      await deleteBenchmarkRunFromHistory(latestRun.id);
+      setRunHistory(current => current.filter(run => run.id !== latestRun.id));
+    }
     clearBenchmarkRun();
     setLatestRun(null);
     setLiveResults([]);
     setExpandedCase(null);
+  };
+
+  const handleDeleteHistoryRun = async (run: BenchmarkRun) => {
+    if (isRunning) return;
+    await deleteBenchmarkRunFromHistory(run.id);
+    setRunHistory(current => current.filter(saved => saved.id !== run.id));
+    if (selectedHistoryRun?.id === run.id) setSelectedHistoryRun(null);
+    if (latestRun?.id === run.id) {
+      clearBenchmarkRun();
+      setLatestRun(null);
+    }
   };
 
   if (!accessible) {
@@ -331,7 +442,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     );
   }
 
-  const metrics = displayedRun?.metrics;
+  const metrics = latestRun?.metrics;
 
   return (
     <div className={`h-full overflow-auto ${isDark ? 'bg-[#090d14]' : 'bg-[#f4f7fb]'}`}>
@@ -356,7 +467,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap">
-              {(['overview', 'results', 'methodology'] as LabView[]).map(view => (
+              {(['overview', 'results', 'history', 'methodology'] as LabView[]).map(view => (
                 <button key={view} onClick={() => setActiveView(view)} className={`px-3.5 py-2 rounded-xl text-xs font-bold capitalize border transition-all ${activeView === view ? 'bg-violet-600 text-white border-violet-500 shadow-md shadow-violet-500/20' : `${softSurface} ${muted} hover:text-violet-400`}`}>
                   {view}
                 </button>
@@ -549,37 +660,87 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               </div>
             )}
 
-            {!isRunning && latestRun && (
+            {!isRunning && displayedRun && (
               <>
-              <div className={`rounded-2xl border px-4 py-3 flex flex-wrap items-center justify-between gap-2 ${latestRun.metrics.completed === latestRun.metrics.total ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
-                <div className={`text-sm font-black ${latestRun.metrics.completed === latestRun.metrics.total ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {latestRun.methodologyLabel} · {latestRun.scope === 'full' ? 'Full run' : 'Smoke run'} · {latestRun.privacyMode === 'enhanced' ? 'Better answers' : 'Private'} · {latestRun.metrics.total} planned · {latestRun.metrics.completed} completed
+              <div className={`rounded-2xl border px-4 py-3 flex flex-wrap items-center justify-between gap-2 ${displayedRun.metrics.completed === displayedRun.metrics.total ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
+                <div className={`text-sm font-black ${displayedRun.metrics.completed === displayedRun.metrics.total ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  {displayedRun.methodologyLabel} · {displayedRun.scope === 'full' ? 'Full run' : 'Smoke run'} · {displayedRun.privacyMode === 'enhanced' ? 'Better answers' : 'Private'} · {displayedRun.metrics.total} planned · {displayedRun.metrics.completed} completed
                 </div>
-                <div className={`text-xs ${muted}`}>{latestRun.selectedSuiteIds.length} suite{latestRun.selectedSuiteIds.length === 1 ? '' : 's'} · {latestRun.cancelled ? 'Stopped by user' : latestRun.metrics.completed === latestRun.metrics.total ? 'Run complete' : 'Run incomplete'}</div>
+                <div className={`text-xs ${muted}`}>{displayedRun.selectedSuiteIds.length} suite{displayedRun.selectedSuiteIds.length === 1 ? '' : 's'} · {displayedRun.cancelled ? 'Stopped by user' : displayedRun.metrics.completed === displayedRun.metrics.total ? 'Run complete' : 'Run incomplete'}</div>
               </div>
               <div className="grid sm:grid-cols-2 xl:grid-cols-4 gap-3">
-                <MetricCard icon={<Gauge className="w-4 h-4" />} label="LLM-backed accuracy" value={percent(latestRun.metrics.llmBackedExecutionAccuracy ?? latestRun.metrics.executionAccuracy)} detail={`${latestRun.metrics.passed}/${latestRun.metrics.llmBackedCases || latestRun.metrics.completed} correct model-backed outputs`} tone="violet" isDark={isDark} />
-                <MetricCard icon={<ShieldCheck className="w-4 h-4" />} label="Provider availability" value={percent(latestRun.metrics.providerAvailabilityRate ?? latestRun.metrics.llmBackedRate)} detail={`${percent(latestRun.metrics.coverageRate ?? (latestRun.metrics.completed / Math.max(1, latestRun.metrics.total)))} run coverage · ${percent(latestRun.metrics.executableSqlRate ?? latestRun.metrics.validSqlRate)} executable`} tone="emerald" isDark={isDark} />
-                <MetricCard icon={<Clock3 className="w-4 h-4" />} label="P95 latency" value={milliseconds(latestRun.metrics.p95LatencyMs)} detail={`Median ${milliseconds(latestRun.metrics.medianLatencyMs)}`} tone="cyan" isDark={isDark} />
-                <MetricCard icon={<Sparkles className="w-4 h-4" />} label="Model tokens" value={latestRun.metrics.totalTokens.toLocaleString()} detail={`${percent(latestRun.metrics.contractAcceptanceRate ?? latestRun.metrics.safeAnswerRate)} contract accepted · confidence ${latestRun.metrics.averageConfidence.toFixed(0)}/100`} tone="amber" isDark={isDark} />
+                <MetricCard icon={<Gauge className="w-4 h-4" />} label="LLM-backed accuracy" value={percent(displayedRun.metrics.llmBackedExecutionAccuracy ?? displayedRun.metrics.executionAccuracy)} detail={`${displayedRun.metrics.passed}/${displayedRun.metrics.llmBackedCases || displayedRun.metrics.completed} correct model-backed outputs`} tone="violet" isDark={isDark} />
+                <MetricCard icon={<ShieldCheck className="w-4 h-4" />} label="Provider availability" value={percent(displayedRun.metrics.providerAvailabilityRate ?? displayedRun.metrics.llmBackedRate)} detail={`${percent(displayedRun.metrics.coverageRate ?? (displayedRun.metrics.completed / Math.max(1, displayedRun.metrics.total)))} run coverage · ${percent(displayedRun.metrics.executableSqlRate ?? displayedRun.metrics.validSqlRate)} executable`} tone="emerald" isDark={isDark} />
+                <MetricCard icon={<Clock3 className="w-4 h-4" />} label="P95 latency" value={milliseconds(displayedRun.metrics.p95LatencyMs)} detail={`Median ${milliseconds(displayedRun.metrics.medianLatencyMs)}`} tone="cyan" isDark={isDark} />
+                <MetricCard icon={<Sparkles className="w-4 h-4" />} label="Model tokens" value={displayedRun.metrics.totalTokens.toLocaleString()} detail={`${percent(displayedRun.metrics.contractAcceptanceRate ?? displayedRun.metrics.safeAnswerRate)} contract accepted · confidence ${displayedRun.metrics.averageConfidence.toFixed(0)}/100`} tone="amber" isDark={isDark} />
               </div>
               </>
             )}
 
-            {!isRunning && latestRun && (latestRun.metrics.failuresByType.llm_unavailable || 0) > 0 && (
-              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300 flex items-start gap-2">
-                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                <div><strong>{latestRun.metrics.failuresByType.llm_unavailable} model-unavailable case(s) recorded.</strong> They remain visible as failures and are excluded from LLM-backed evidence.</div>
+            {displayedResults.length > 0 && (
+              <div className={`rounded-2xl border p-4 ${panel}`}>
+                <div className="flex flex-wrap items-end justify-between gap-3">
+                  <div>
+                    <h2 className={`text-sm font-black ${strong}`}>Outcome totals</h2>
+                    <p className={`mt-1 text-[11px] ${muted}`}>Every completed case is counted once. Select a tile to filter the evidence table.</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('all')}
+                    className={`rounded-xl border px-3 py-2 text-xs font-black ${statusFilter === 'all' ? 'border-violet-500/35 bg-violet-500/15 text-violet-400' : `${softSurface} ${strong}`}`}
+                  >
+                    All {displayedResults.length}
+                  </button>
+                </div>
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2">
+                  {ALL_STATUSES.map(status => (
+                    <button
+                      type="button"
+                      key={status}
+                      onClick={() => setStatusFilter(status)}
+                      className={`rounded-xl border p-3 text-left transition-all ${STATUS_CLASSES[status]} ${statusFilter === status ? 'ring-2 ring-current/30' : 'hover:brightness-110'}`}
+                    >
+                      <span className="block text-xl font-black">{outcomeCounts[status]}</span>
+                      <span className="mt-1 block text-[10px] font-black leading-4">{STATUS_LABELS[status]}</span>
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
-            {!isRunning && latestRun && latestResumeIndex < latestRun.metrics.total && (
+            {!isRunning && displayedRun && adjudicatedTotal > 0 && (
+              <div className={`rounded-2xl border p-4 ${panel}`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <h2 className={`text-sm font-black ${strong}`}>Manual adjudication</h2>
+                    <p className={`mt-1 text-[11px] ${muted}`}>A separate human-review record. These decisions never overwrite the strict automatic benchmark score.</p>
+                  </div>
+                  <span className={`rounded-lg border px-2.5 py-1 text-[10px] font-black ${softSurface} ${strong}`}>{adjudicatedTotal} reviewed</span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {ALL_ADJUDICATION_VERDICTS.filter(verdict => adjudicationCounts[verdict] > 0).map(verdict => (
+                    <span key={verdict} className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-black ${ADJUDICATION_CLASSES[verdict]}`}>
+                      {ADJUDICATION_LABELS[verdict]} · {adjudicationCounts[verdict]}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {!isRunning && displayedRun && (displayedRun.metrics.failuresByType.llm_unavailable || 0) > 0 && (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300 flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                <div><strong>{displayedRun.metrics.failuresByType.llm_unavailable} model-unavailable case(s) recorded.</strong> They remain visible as failures and are excluded from LLM-backed evidence.</div>
+              </div>
+            )}
+
+            {!isRunning && displayedRun && displayedResumeIndex < displayedRun.metrics.total && (
               <div className="rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm text-sky-300 flex flex-wrap items-start gap-3">
                 <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
-                <div className="flex-1 min-w-[260px]"><strong>Run paused to protect benchmark validity.</strong> {latestRun.interruptionReason || 'The previous run ended before every planned case received an LLM response.'} Resolve the provider issue, then resume without rerunning successful cases.</div>
+                <div className="flex-1 min-w-[260px]"><strong>Run paused to protect benchmark validity.</strong> {displayedRun.interruptionReason || 'The previous run ended before every planned case received an LLM response.'} Resolve the provider issue, then resume without rerunning successful cases.</div>
                 <button
                   type="button"
-                  onClick={() => void handleRun(latestRun)}
+                  onClick={() => void handleRun(displayedRun)}
                   className="px-3 py-2 rounded-xl border border-sky-400/30 bg-sky-400/10 text-sky-200 text-xs font-black hover:bg-sky-400/20"
                 >
                   <Play className="w-3.5 h-3.5 inline mr-1.5" />Resume failed cases
@@ -602,11 +763,11 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                     <option value="all">All outcomes</option>
                     {Object.entries(STATUS_LABELS).map(([status, label]) => <option key={status} value={status}>{label}</option>)}
                   </select>
-                  {latestRun && !isRunning && (
+                  {displayedRun && !isRunning && (
                     <>
-                      <button onClick={() => downloadFile(`${latestRun.id}.json`, benchmarkRunToJson(latestRun), 'application/json')} className={`px-3 py-2 rounded-xl border text-xs font-bold ${softSurface} ${strong}`} title="Export complete reproducible JSON evidence"><FileJson className="w-4 h-4 inline mr-1.5" />JSON</button>
-                      <button onClick={() => downloadFile(`${latestRun.id}.csv`, benchmarkRunToCsv(latestRun), 'text/csv')} className={`px-3 py-2 rounded-xl border text-xs font-bold ${softSurface} ${strong}`} title="Export complete case-level evidence, including result sets"><Download className="w-4 h-4 inline mr-1.5" />CSV</button>
-                      <button onClick={handleClear} className="px-3 py-2 rounded-xl border border-rose-500/20 bg-rose-500/10 text-rose-400 text-xs font-bold"><Trash2 className="w-4 h-4 inline mr-1.5" />Clear</button>
+                      <button onClick={() => downloadFile(`${displayedRun.id}.json`, benchmarkRunToJson(displayedRun), 'application/json')} className={`px-3 py-2 rounded-xl border text-xs font-bold ${softSurface} ${strong}`} title="Export complete reproducible JSON evidence"><FileJson className="w-4 h-4 inline mr-1.5" />JSON</button>
+                      <button onClick={() => downloadFile(`${displayedRun.id}.csv`, benchmarkRunToCsv(displayedRun), 'text/csv')} className={`px-3 py-2 rounded-xl border text-xs font-bold ${softSurface} ${strong}`} title="Export complete case-level evidence, including result sets"><Download className="w-4 h-4 inline mr-1.5" />CSV</button>
+                      <button onClick={() => void handleClear()} className="px-3 py-2 rounded-xl border border-rose-500/20 bg-rose-500/10 text-rose-400 text-xs font-bold"><Trash2 className="w-4 h-4 inline mr-1.5" />Remove run</button>
                     </>
                   )}
                 </div>
@@ -645,6 +806,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                               <td className={`px-3 py-3 text-xs max-w-md ${strong}`}>{result.question}</td>
                               <td className="px-3 py-3">
                                 <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-black ${STATUS_CLASSES[result.status]}`}>{result.passed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}{STATUS_LABELS[result.status]}</span>
+                                {result.adjudication && <div className={`mt-1.5 w-fit rounded-lg border px-2 py-1 text-[9px] font-black ${ADJUDICATION_CLASSES[result.adjudication.verdict]}`}>Review: {ADJUDICATION_LABELS[result.adjudication.verdict]}</div>}
                                 {result.passed && (!result.safeToDisplay || !result.validSql) && <div className="mt-1 text-[9px] font-bold text-amber-400">{[!result.safeToDisplay && 'Safety warning', !result.validSql && 'SQL warning'].filter(Boolean).join(' · ')}</div>}
                               </td>
                               <td className="px-3 py-3"><div className={`text-[11px] font-bold ${strong}`}>{result.engine || result.strategy || '—'}</div><div className={`text-[10px] mt-1 ${muted}`}>{result.status === 'llm_unavailable' ? 'No LLM response' : (result.model || 'Deterministic/local')}</div></td>
@@ -657,6 +819,32 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                                 <td colSpan={8} className="p-4 md:p-5">
                                   {result.failureReason && <div className="mb-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-400"><AlertTriangle className="w-4 h-4 inline mr-1.5" />{result.failureReason}</div>}
                                   {result.context && <div className={`mb-4 rounded-xl border p-3 text-xs leading-5 ${softSurface} ${strong}`}><span className={`block text-[10px] uppercase tracking-wider font-black mb-1 ${muted}`}>Official benchmark evidence</span>{result.context}</div>}
+                                  {!isRunning && displayedRun && (
+                                    <div className={`mb-4 rounded-2xl border p-4 ${softSurface}`}>
+                                      <div className="flex flex-col lg:flex-row lg:items-start gap-3 justify-between">
+                                        <div>
+                                          <div className={`text-xs font-black ${strong}`}>Manual adjudication</div>
+                                          <p className={`mt-1 text-[11px] leading-5 ${muted}`}>Record a human interpretation for research review. The automatic outcome remains <strong>{STATUS_LABELS[result.status]}</strong> and its strict score is not changed.</p>
+                                        </div>
+                                        <select
+                                          value={result.adjudication?.verdict || ''}
+                                          onChange={event => updateAdjudication(result.caseId, (event.target.value || null) as BenchmarkAdjudicationVerdict | null)}
+                                          className={`min-w-[230px] rounded-xl border px-3 py-2 text-xs font-bold outline-none ${softSurface} ${strong}`}
+                                        >
+                                          <option value="">Not reviewed</option>
+                                          {ALL_ADJUDICATION_VERDICTS.map(verdict => <option key={verdict} value={verdict}>{ADJUDICATION_LABELS[verdict]}</option>)}
+                                        </select>
+                                      </div>
+                                      <textarea
+                                        value={result.adjudication?.note || ''}
+                                        disabled={!result.adjudication}
+                                        onChange={event => updateAdjudication(result.caseId, result.adjudication?.verdict || null, event.target.value)}
+                                        placeholder="Optional evidence note: explain why this is acceptable, partial, incorrect, or affected by the gold fixture."
+                                        className={`mt-3 min-h-20 w-full resize-y rounded-xl border px-3 py-2 text-xs leading-5 outline-none disabled:opacity-45 ${softSurface} ${strong}`}
+                                      />
+                                      {result.adjudication && <div className={`mt-2 text-[10px] ${muted}`}>Saved locally · {new Date(result.adjudication.adjudicatedAt).toLocaleString()} · included in JSON and CSV exports</div>}
+                                    </div>
+                                  )}
                                   <div className="grid xl:grid-cols-2 gap-4">
                                     <div>
                                       <div className={`text-[10px] uppercase tracking-wider font-black mb-2 ${muted}`}>Gold SQL</div>
@@ -687,6 +875,65 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                 </div>
               )}
             </div>
+          </section>
+        )}
+
+        {activeView === 'history' && (
+          <section className="space-y-4">
+            <div className={`rounded-3xl border p-5 md:p-6 ${panel}`}>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-cyan-500/12 text-cyan-400 flex items-center justify-center"><History className="w-5 h-5" /></div>
+                  <div>
+                    <h2 className={`text-base font-black ${strong}`}>Benchmark history</h2>
+                    <p className={`mt-1 text-xs ${muted}`}>The 20 most recent reports are stored privately in this browser using IndexedDB.</p>
+                  </div>
+                </div>
+                <span className={`rounded-xl border px-3 py-2 text-xs font-black ${softSurface} ${strong}`}>{runHistory.length} saved run{runHistory.length === 1 ? '' : 's'}</span>
+              </div>
+            </div>
+
+            {historyLoading ? (
+              <div className={`rounded-2xl border p-10 text-center ${panel}`}><Loader2 className="w-6 h-6 mx-auto animate-spin text-violet-400" /><div className={`mt-3 text-xs ${muted}`}>Loading local benchmark history…</div></div>
+            ) : runHistory.length === 0 ? (
+              <div className={`rounded-2xl border p-10 text-center ${panel}`}>
+                <History className={`w-8 h-8 mx-auto ${muted}`} />
+                <div className={`mt-3 text-sm font-black ${strong}`}>No saved benchmark runs yet</div>
+                <div className={`mt-1 text-xs ${muted}`}>Your next completed or paused benchmark will appear here automatically.</div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {runHistory.map(run => {
+                  const counts = Object.fromEntries(ALL_STATUSES.map(status => [status, 0])) as Record<BenchmarkCaseStatus, number>;
+                  run.results.forEach(result => { counts[result.status] += 1; });
+                  return (
+                    <div key={run.id} className={`rounded-2xl border p-4 md:p-5 ${panel}`}>
+                      <div className="flex flex-col xl:flex-row xl:items-center gap-4 justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`text-sm font-black ${strong}`}>{new Date(run.startedAt).toLocaleString()}</span>
+                            <span className={`rounded-lg border px-2 py-1 text-[10px] font-black ${softSurface} ${strong}`}>{run.scope === 'full' ? 'Full run' : 'Smoke run'}</span>
+                            <span className={`rounded-lg border px-2 py-1 text-[10px] font-black ${run.privacyMode === 'enhanced' ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-400' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400'}`}>{run.privacyMode === 'enhanced' ? 'Better answers' : 'Private'}</span>
+                          </div>
+                          <div className={`mt-1 text-[11px] ${muted}`}>{run.methodologyLabel} · {run.metrics.completed}/{run.metrics.total} completed · {run.selectedSuiteIds.length} suites · {run.metrics.totalTokens.toLocaleString()} tokens</div>
+                          <div className="mt-3 flex flex-wrap gap-1.5">
+                            {ALL_STATUSES.filter(status => counts[status] > 0).map(status => (
+                              <span key={status} className={`rounded-lg border px-2 py-1 text-[10px] font-black ${STATUS_CLASSES[status]}`}>{STATUS_LABELS[status]} {counts[status]}</span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2 shrink-0">
+                          <button onClick={() => { setSelectedHistoryRun(latestRun?.id === run.id ? null : run); setStatusFilter('all'); setSuiteFilter('all'); setExpandedCase(null); setActiveView('results'); }} className="rounded-xl bg-violet-600 px-3 py-2 text-xs font-black text-white hover:brightness-110"><BarChart3 className="w-4 h-4 inline mr-1.5" />View results</button>
+                          <button onClick={() => downloadFile(`${run.id}.json`, benchmarkRunToJson(run), 'application/json')} className={`rounded-xl border px-3 py-2 text-xs font-black ${softSurface} ${strong}`}><FileJson className="w-4 h-4 inline mr-1.5" />JSON</button>
+                          <button onClick={() => downloadFile(`${run.id}.csv`, benchmarkRunToCsv(run), 'text/csv')} className={`rounded-xl border px-3 py-2 text-xs font-black ${softSurface} ${strong}`}><Download className="w-4 h-4 inline mr-1.5" />CSV</button>
+                          <button onClick={() => void handleDeleteHistoryRun(run)} className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs font-black text-rose-400" title="Delete this local history record"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </section>
         )}
 

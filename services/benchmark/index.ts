@@ -4,5 +4,12 @@ export { RESEARCH_BENCHMARK_SUITES } from './researchFixtures.generated';
 export { clearResearchBenchmarkDatasetCache, loadResearchBenchmarkDataset } from './researchDatasetLoader';
 export { compareResultSets, canonicalColumnName } from './comparator';
 export { executeBenchmarkCase, getBenchmarkResumeIndex, runBenchmark, summarizeBenchmarkResults } from './runner';
-export { clearBenchmarkRun, loadBenchmarkRun, saveBenchmarkRun } from './storage';
+export {
+  clearBenchmarkRun,
+  deleteBenchmarkRunFromHistory,
+  loadBenchmarkRun,
+  loadBenchmarkRunHistory,
+  saveBenchmarkRun,
+  saveBenchmarkRunToHistory,
+} from './storage';
 export type * from './types';

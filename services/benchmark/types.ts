@@ -19,6 +19,25 @@ export type BenchmarkCaseStatus =
   | 'execution_error'
   | 'fixture_error';
 
+/**
+ * A human assessment kept alongside, but never substituted for, the frozen
+ * gold-result comparison. This makes judgment calls auditable without
+ * inflating the automatic execution-accuracy score.
+ */
+export type BenchmarkAdjudicationVerdict =
+  | 'exact_pass'
+  | 'semantically_acceptable'
+  | 'partial_answer'
+  | 'gold_fixture_issue'
+  | 'incorrect'
+  | 'verification_unavailable';
+
+export interface BenchmarkAdjudication {
+  verdict: BenchmarkAdjudicationVerdict;
+  note?: string;
+  adjudicatedAt: number;
+}
+
 export interface BenchmarkAttribution {
   benchmark: string;
   homepage: string;
@@ -118,6 +137,8 @@ export interface BenchmarkCaseResult {
   confidence?: number;
   repairAttempts: number;
   tokenUsage: { prompt: number; completion: number; total: number };
+  /** Optional admin review. Automatic status and `passed` remain unchanged. */
+  adjudication?: BenchmarkAdjudication;
 }
 
 export interface BenchmarkRunMetrics {
