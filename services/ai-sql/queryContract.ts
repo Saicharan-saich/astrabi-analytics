@@ -30,6 +30,13 @@ export interface QueryContract {
     requiresGrouping: boolean;
     requiresFiscalCalendar: boolean;
     requiresRanking: boolean;
+    /** Row-level listing ordered by a raw field; aggregation/grouping is forbidden. */
+    orderedProjection?: {
+        fields: string[];
+        orderBy: string;
+        direction: 'asc' | 'desc';
+        unbounded: boolean;
+    };
     /** Numeric limit explicitly requested by a top/bottom ranking question. */
     rankingLimit?: number;
     rankingDirection?: 'asc' | 'desc';
@@ -74,6 +81,9 @@ export interface SQLFaithfulnessIssue {
     code:
         | 'missing_grouping'
         | 'unexpected_grouping'
+        | 'unexpected_aggregation'
+        | 'unexpected_limit'
+        | 'missing_ordering_field'
         | 'missing_requested_dimension'
         | 'missing_output_entity'
         | 'missing_required_table'
@@ -239,19 +249,65 @@ function resolveRequestedDimension(question: string, model?: SemanticModel): str
             || model.timeContext?.primaryDateColumn;
     }
 
+    const phrase = question.match(/\b(?:for\s+each|for\s+every|per|by)\s+([^?.,;]+)/i)?.[1] || question;
+    const phraseTokens = new Set(words(phrase));
+    const questionTokens = new Set(words(question));
     let best: { field: string; score: number } | undefined;
     for (const field of model.fields.filter(f => f.role === 'dimension')) {
-        const names = [field.name, field.displayLabel, ...(field.synonyms || [])]
-            .map(v => v.toLowerCase().replace(/_/g, ' ').trim())
-            .filter(v => v.length >= 3);
+        const names = [field.name, field.displayLabel, ...(field.synonyms || [])];
         for (const name of names) {
-            if (!normalized.includes(name)) continue;
-            const score = name === field.name.toLowerCase().replace(/_/g, ' ') ? 3
-                : name === field.displayLabel.toLowerCase() ? 2 : 1;
+            const nameTokens = words(name);
+            if (!nameTokens.length) continue;
+            const phraseOverlap = nameTokens.filter(token => conceptMatches(token, phraseTokens)).length;
+            const questionOverlap = nameTokens.filter(token => conceptMatches(token, questionTokens)).length;
+            const exactPhrase = phraseOverlap === nameTokens.length && phraseTokens.size === nameTokens.length;
+            const score = exactPhrase ? 100
+                : (phraseOverlap / nameTokens.length) * 60 + (questionOverlap / nameTokens.length) * 30;
+            if (score < 45) continue;
             if (!best || score > best.score) best = { field: field.name, score };
         }
     }
     return best?.field;
+}
+
+function resolveOrderedProjection(
+    question: string,
+    plan: AnalysisPlan,
+    model: SemanticModel | undefined,
+    outputEntity: QueryEntityContract | undefined,
+): QueryContract['orderedProjection'] {
+    const directional = question.match(/\b(ascending|descending)\s+order\s+(?:of|by)\s+([a-z0-9_ -]+)/i);
+    const orderedBy = question.match(/\border(?:ed)?\s+by\s+([a-z0-9_ -]+?)(?:\s+(ascending|descending|asc|desc)\b|[?.!,]|$)/i);
+    if (!directional && !orderedBy && plan.intent !== 'projection') return undefined;
+    if (/\b(?:top|bottom|highest|lowest|most|least|best|worst|youngest|oldest|earliest|latest|newest|first\s+\d+|last\s+\d+)\b/i.test(question)) return undefined;
+    if (/\b(?:average|avg|mean|total|sum|count|number of|how many|minimum|maximum)\b/i.test(question)) return undefined;
+
+    const phrase = directional ? directional[2] : orderedBy?.[1];
+    const phraseTokens = new Set(words(phrase || ''));
+    let orderBy = plan.sort[0]?.field;
+    if (model && phraseTokens.size) {
+        let best: { field: string; score: number } | undefined;
+        for (const field of model.fields) {
+            const fieldTokens = words(field.name);
+            const overlap = fieldTokens.filter(token => conceptMatches(token, phraseTokens)).length;
+            const score = fieldTokens.length ? overlap / fieldTokens.length : 0;
+            if (score > 0.6 && (!best || score > best.score)) best = { field: field.name, score };
+        }
+        orderBy = best?.field || orderBy;
+    }
+    if (!orderBy) return undefined;
+    const directionWord = directional?.[1] || orderedBy?.[2] || plan.sort[0]?.dir || 'asc';
+    const fields = [...new Set([
+        ...(plan.projectionFields || []),
+        ...(outputEntity?.confidence === 'high' ? [outputEntity.field] : []),
+    ])].filter(field => field.toLowerCase() !== orderBy!.toLowerCase());
+    if (!fields.length) return undefined;
+    return {
+        fields,
+        orderBy,
+        direction: /desc/i.test(directionWord) ? 'desc' : 'asc',
+        unbounded: !/\b(?:limit|top|bottom|first\s+\d+|last\s+\d+)\b/i.test(question),
+    };
 }
 
 function resolveExpectedAggregation(question: string, plan: AnalysisPlan): QueryContract['expectedAggregation'] {
@@ -372,6 +428,7 @@ export function buildQueryContract(
     const requirements: string[] = [];
     const schema = schemaContext || schemaContextFromModel(model);
     const outputEntity = resolveOutputEntity(question, plan, schema);
+    const orderedProjection = resolveOrderedProjection(question, plan, model, outputEntity);
     const existenceMode = ANTI_EXISTENCE_CUE.test(question) ? 'anti' : 'none';
     const requiresFiscalCalendar = FISCAL_CUE.test(question);
     const breakdownQuestion = question.replace(
@@ -384,16 +441,16 @@ export function buildQueryContract(
     const explicitGroupingCue = BREAKDOWN_CUE.test(breakdownQuestion)
         || /\b(?:in|for)\s+each\b/i.test(question);
     const explicitScalarAggregationCue = /\b(?:how many|number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
-    const requiresGrouping = (!explicitScalarAggregationCue || explicitGroupingCue)
+    const requiresGrouping = !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
         && (requiresFiscalCalendar
             || BREAKDOWN_CUE.test(breakdownQuestion)
             || verification.some(issue => issue.code === 'missing_dimension')
             || (existenceMode === 'none' && planRequiresEntityAggregation));
     // "at least / at most" are threshold comparators, not ranking requests.
     const rankingQuestion = question.replace(/\b(?:at|no)\s+(?:least|most)\b/gi, '');
-    const requiresRanking = RANKING_CUE.test(rankingQuestion)
+    const requiresRanking = !orderedProjection && (RANKING_CUE.test(rankingQuestion)
         || verification.some(issue => issue.code === 'missing_ranking')
-        || plan.intent === 'ranking';
+        || plan.intent === 'ranking');
     const rankingLimitMatch = question.match(/\b(?:top|bottom)\s+(\d+)\b/i);
     const rankingLimit = rankingLimitMatch ? Number(rankingLimitMatch[1])
         : requiresRanking && outputEntity ? (plan.limit || 1) : undefined;
@@ -404,8 +461,9 @@ export function buildQueryContract(
     const requiredDimension = requiresGrouping
         ? resolveRequestedDimension(question, model) || (outputEntity?.confidence === 'high' ? outputEntity.field : undefined)
         : undefined;
-    let expectedAggregation = resolveExpectedAggregation(question, plan);
-    const expectedCardinality: QueryContract['expectedCardinality'] = expectedAggregation && explicitScalarAggregationCue && !explicitGroupingCue
+    let expectedAggregation = orderedProjection ? undefined : resolveExpectedAggregation(question, plan);
+    const expectedCardinality: QueryContract['expectedCardinality'] = orderedProjection ? 'detail'
+        : expectedAggregation && explicitScalarAggregationCue && !explicitGroupingCue
         ? 'scalar'
         : requiresGrouping ? 'grouped' : 'detail';
     const requiredTables = resolveRequiredTables(question, plan, schema, outputEntity);
@@ -441,6 +499,7 @@ export function buildQueryContract(
         : 'none';
 
     if (outputEntity?.confidence === 'high') requirements.push(`Return ${outputEntity.table}.${outputEntity.field} as the visible answer entity.`);
+    if (orderedProjection) requirements.push(`Return row-level fields ${orderedProjection.fields.join(', ')} ordered by ${orderedProjection.orderBy} ${orderedProjection.direction.toUpperCase()}; do not aggregate, group, or truncate the result.`);
     if (expectedCardinality === 'scalar') requirements.push('Return one aggregate result row; filters do not become grouping dimensions unless the question explicitly says by/per/for each.');
     if (requiresGrouping) requirements.push('Return the requested entity/breakdown grain, not a scalar or higher-level grouping.');
     if (requiredDimension) requirements.push(`Group at the requested grain "${requiredDimension}".`);
@@ -465,6 +524,7 @@ export function buildQueryContract(
         requiresGrouping,
         requiresFiscalCalendar,
         requiresRanking,
+        orderedProjection,
         rankingLimit,
         rankingDirection,
         requiresComparison,
@@ -500,6 +560,7 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
         threshold: contract.threshold,
         ratio: contract.ratio,
         relativeComparison: contract.relativeComparison,
+        orderedProjection: contract.orderedProjection,
         ranking: contract.requiresRanking ? { direction: contract.rankingDirection, limit: contract.rankingLimit } : undefined,
         comparison: contract.requiresComparison,
         requirements: contract.requirements,
@@ -512,6 +573,33 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
     const normalized = sql.toLowerCase();
     const groupByClauses = [...sql.matchAll(/\bgroup\s+by\s+([\s\S]*?)(?=\bhaving\b|\border\s+by\b|\blimit\b|\bunion\b|$)/gi)]
         .map(match => match[1]);
+
+    if (contract.orderedProjection) {
+        if (/\b(?:sum|avg|count|min|max|median)\s*\(/i.test(sql)) {
+            issues.push({ code: 'unexpected_aggregation', severity: 'error', message: 'This is a row-level listing, but the SQL introduces an aggregate calculation.' });
+        }
+        if (/\bgroup\s+by\b/i.test(sql)) {
+            issues.push({ code: 'unexpected_grouping', severity: 'error', message: 'This is a row-level listing, but the SQL groups and collapses records.' });
+        }
+        if (contract.orderedProjection.unbounded && /\blimit\s+\d+\b/i.test(sql)) {
+            issues.push({ code: 'unexpected_limit', severity: 'error', message: 'The question asks for the full ordered list, but the SQL truncates it with LIMIT.' });
+        }
+        const orderField = identifierPattern(contract.orderedProjection.orderBy);
+        const orderClause = sql.match(/\border\s+by\s+([\s\S]*?)(?=\blimit\b|$)/i)?.[1] || '';
+        if (!orderField.test(orderClause)
+            || !new RegExp(`\\b${contract.orderedProjection.direction}\\b`, 'i').test(orderClause)) {
+            issues.push({
+                code: 'missing_ordering_field',
+                severity: 'error',
+                message: `The result must be ordered by ${contract.orderedProjection.orderBy} ${contract.orderedProjection.direction.toUpperCase()}.`,
+            });
+        }
+        for (const field of contract.orderedProjection.fields) {
+            if (!identifierPattern(field).test(sql)) {
+                issues.push({ code: 'missing_output_entity', severity: 'error', message: `The row-level result must include "${field}".` });
+            }
+        }
+    }
 
     if (contract.requiresGrouping && !/\bgroup\s+by\b/.test(normalized)) {
         issues.push({ code: 'missing_grouping', severity: 'error', message: 'The question requires an entity/breakdown grain, but the generated SQL has no GROUP BY.' });

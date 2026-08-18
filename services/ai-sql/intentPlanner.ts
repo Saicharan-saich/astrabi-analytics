@@ -173,6 +173,115 @@ export function detectRankingDirection(question: string): 'asc' | 'desc' | null 
     return null;
 }
 
+function normalizedFieldWords(value: string): string[] {
+    return value
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .toLowerCase()
+        .match(/[a-z0-9]+/g)
+        ?.map(word => word.endsWith('s') && word.length > 3 ? word.slice(0, -1) : word)
+        || [];
+}
+
+function resolveFieldPhrase(phrase: string, model: SemanticModel, role?: 'dimension' | 'metric'): SemanticField | undefined {
+    const target = new Set(normalizedFieldWords(phrase));
+    if (!target.size) return undefined;
+    let best: { field: SemanticField; score: number } | undefined;
+    for (const field of model.fields.filter(candidate => !role || candidate.role === role)) {
+        let fieldScore = 0;
+        for (const alias of [field.name, field.displayLabel, ...(field.synonyms || [])]) {
+            const aliasWords = normalizedFieldWords(alias);
+            if (!aliasWords.length) continue;
+            const overlap = aliasWords.filter(word => target.has(word)).length;
+            if (!overlap) continue;
+            const exact = aliasWords.length === target.size && aliasWords.every(word => target.has(word));
+            fieldScore = Math.max(fieldScore, exact ? 100 : (overlap / aliasWords.length) * 55 + (overlap / target.size) * 35);
+        }
+        if (field.semanticType === 'identifier') fieldScore -= 8;
+        if (fieldScore >= 45 && (!best || fieldScore > best.score)) best = { field, score: fieldScore };
+    }
+    return best?.field;
+}
+
+/** Keep an unbounded row listing separate from analytical top/bottom ranking. */
+export function enforceOrderedProjection(plan: AnalysisPlan, question: string, model: SemanticModel): boolean {
+    const q = question.toLowerCase();
+    const directional = q.match(/\b(ascending|descending)\s+order\s+(?:of|by)\s+([a-z0-9_ -]+)/i);
+    const orderedBy = q.match(/\border(?:ed)?\s+by\s+([a-z0-9_ -]+?)(?:\s+(ascending|descending|asc|desc)\b|[?.!,]|$)/i);
+    if (!directional && !orderedBy) return false;
+
+    const hasBoundedRanking = /\b(?:top|bottom|highest|lowest|most|least|best|worst|youngest|oldest|earliest|latest|newest|first\s+\d+|last\s+\d+)\b/i.test(q);
+    const hasExplicitAggregation = /\b(?:average|avg|mean|total|sum|count|number of|how many|minimum|maximum)\b/i.test(q);
+    if (hasBoundedRanking || hasExplicitAggregation) return false;
+
+    const rawOrderPhrase = directional ? directional[2] : orderedBy![1];
+    const directionWord = directional ? directional[1] : (orderedBy![2] || 'ascending');
+    const direction: 'asc' | 'desc' = /desc/i.test(directionWord) ? 'desc' : 'asc';
+    const orderField = resolveFieldPhrase(rawOrderPhrase, model);
+    if (!orderField) return false;
+
+    const questionWords = new Set(normalizedFieldWords(question));
+    const projectionFields = model.fields
+        .filter(field => field.role === 'dimension' && field.name !== orderField.name)
+        .filter(field => [field.name, field.displayLabel, ...(field.synonyms || [])].some(alias => {
+            const aliasWords = normalizedFieldWords(alias);
+            return aliasWords.length > 0 && aliasWords.every(word => questionWords.has(word));
+        }))
+        .map(field => field.name);
+    if (!projectionFields.length) return false;
+
+    plan.intent = 'projection';
+    plan.projectionFields = [...new Set(projectionFields)];
+    plan.dimensions = plan.projectionFields.map(field => ({ field }));
+    plan.metrics = [];
+    plan.sort = [{ field: orderField.name, dir: direction }];
+    plan.limit = null;
+    plan.ambiguous = false;
+    plan.clarificationQuestion = undefined;
+    plan.resultGrain = 'one row per matching record';
+    console.log(`[Intent Planner] Ordered projection: ${plan.projectionFields.join(', ')} ordered by ${orderField.name} ${direction}`);
+    return true;
+}
+
+/** Lock explicit grouped-aggregation wording to the schema-grounded dimension. */
+export function enforceRequestedBreakdownDimension(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    if (!detectExplicitAggregation(question)) return;
+    if (/\b(?:top|bottom|highest|lowest|most|least|best|worst|youngest|oldest)\b/i.test(question)) return;
+    const match = question.match(/\b(?:for\s+each|for\s+every|per|by)\s+([^?.,;]+)/i);
+    if (!match) return;
+    const requested = resolveFieldPhrase(match[1], model, 'dimension');
+    if (!requested) return;
+    if (plan.dimensions.some(dimension => dimension.field.toLowerCase() === requested.name.toLowerCase())) {
+        if (plan.intent === 'single_metric') plan.intent = 'breakdown';
+        return;
+    }
+
+    const timeDimensions = plan.dimensions.filter(dimension => {
+        const field = model.fields.find(candidate => candidate.name.toLowerCase() === dimension.field.toLowerCase());
+        return field?.semanticType === 'date' && dimension.timeGrain;
+    });
+    plan.dimensions = [...timeDimensions, { field: requested.name }];
+    if (plan.intent === 'single_metric') plan.intent = 'breakdown';
+    console.log(`[Intent Planner] Requested breakdown grain locked to ${requested.name}`);
+}
+
+/** Explicit measure wording outranks incidental token overlap in other columns. */
+export function enforceExplicitMeasure(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    const aggregation = detectExplicitAggregation(question);
+    if (!aggregation) return;
+    const match = question.match(/\b(?:average|avg|mean|total|sum|count|minimum|maximum)\s+(?:of\s+)?(.+?)(?=\s+(?:for\s+each|for\s+every|per|by|where|when|during|in)\b|[?.,;]|$)/i);
+    if (!match) return;
+    const requested = resolveFieldPhrase(match[1], model, 'metric');
+    if (!requested) return;
+    const existing = plan.metrics.find(metric => metric.field.toLowerCase() === requested.name.toLowerCase());
+    plan.metrics = [{
+        ...(existing || { field: requested.name }),
+        field: requested.name,
+        agg: aggregation,
+    }];
+    console.log(`[Intent Planner] Explicit measure locked to ${aggregation}(${requested.name})`);
+}
+
 /**
  * When a question asks for a cyclic calendar dimension (day of the week) and the
  * dataset already HAS that column (e.g. "DayOfWeek"), group by that column
@@ -888,6 +997,7 @@ export function enforceAggregationGrain(plan: AnalysisPlan, model: SemanticModel
 }
 
 function enforceAggregation(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    if (plan.intent === 'projection') return;
     const explicitAgg = detectExplicitAggregation(question);
     const compoundGrain = detectCompoundAverage(question);
     const rankDir = detectRankingDirection(question);
@@ -1487,6 +1597,7 @@ function finalizePlan(
         filters: Array.isArray(parsed.filters) ? parsed.filters : [],
         comparison: parsed.comparison || undefined,
         sort: Array.isArray(parsed.sort) ? parsed.sort : [],
+        projectionFields: Array.isArray(parsed.projectionFields) ? parsed.projectionFields : undefined,
         limit: typeof parsed.limit === 'number' ? parsed.limit : null,
         ambiguous: !!parsed.ambiguous,
         clarificationQuestion: parsed.clarificationQuestion || undefined,
@@ -1495,6 +1606,9 @@ function finalizePlan(
     };
 
     validateFieldReferences(plan, model);
+    enforceOrderedProjection(plan, question, model);
+    enforceRequestedBreakdownDimension(plan, question, model);
+    enforceExplicitMeasure(plan, question, model);
     enforceAggregation(plan, question, model);
     enforceTimeContext(plan, question, model);
     enforceCyclicGrain(plan, question, model);
@@ -1537,7 +1651,7 @@ function finalizePlan(
  */
 function validateIntent(intent: string): AnalysisIntent {
     const validIntents: AnalysisIntent[] = [
-        'single_metric', 'derived_metric', 'breakdown', 'trend', 'trend_comparison',
+        'projection', 'single_metric', 'derived_metric', 'breakdown', 'trend', 'trend_comparison',
         'total_comparison', 'ranking', 'share_of_total', 'correlation', 'distribution',
         'aggregate_filter', 'growth_analysis'
     ];
@@ -1697,7 +1811,7 @@ function validateSemantics(plan: AnalysisPlan, model: SemanticModel): void {
  */
 function applySmartDefaults(plan: AnalysisPlan, question: string, model: SemanticModel): void {
     // Skip growth_analysis — it has its own metric/dimension inference
-    if (plan.intent === 'growth_analysis') return;
+    if (plan.intent === 'projection' || plan.intent === 'growth_analysis') return;
 
     // Only apply if the plan is ambiguous OR has no metrics
     if (!plan.ambiguous && plan.metrics.length > 0) return;

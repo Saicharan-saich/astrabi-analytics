@@ -50,6 +50,24 @@ function tryDeterministicSQL(
 
     // We can handle most standard queries deterministically
     try {
+        if (plan.intent === 'projection') {
+            const fields = plan.projectionFields?.length
+                ? plan.projectionFields
+                : plan.dimensions.map(dimension => dimension.field);
+            if (!fields.length) return null;
+            const parts = [`SELECT ${fields.join(', ')}`, 'FROM data'];
+            const whereParts = buildWhereClause(plan, model);
+            if (whereParts.length) parts.push(`WHERE ${whereParts.join(' AND ')}`);
+            if (plan.sort.length) {
+                parts.push(`ORDER BY ${plan.sort.map(sort => `${sort.field} ${sort.dir.toUpperCase()}`).join(', ')}`);
+            }
+            if (plan.limit) parts.push(`LIMIT ${plan.limit}`);
+            return {
+                sql: parts.join('\n'),
+                explanation: `Listing ${fields.join(', ')}${plan.sort.length ? ` ordered by ${plan.sort[0].field}` : ''}`,
+            };
+        }
+
         // ─── Handle compound averages (e.g., "average daily sales") ───
         // These need a subquery: SELECT AVG(daily_total) FROM (SELECT date, SUM(X) ... GROUP BY date)
         const hasCompoundAgg = plan.metrics.some((m: any) => m.compoundAgg);

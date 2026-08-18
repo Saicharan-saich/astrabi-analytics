@@ -257,6 +257,8 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     }
 
     switch (plan.intent) {
+        case 'projection':
+            return buildProjectionSQL(plan);
         case 'single_metric':
             return buildSingleMetricSQL(plan, model, apdmeMetrics);
         case 'derived_metric':
@@ -286,6 +288,24 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
             // Fallback: treat as breakdown
             return buildBreakdownSQL(plan, model, apdmeMetrics);
     }
+}
+
+/** Row-level listing: no aggregation, GROUP BY, or implicit LIMIT. */
+function buildProjectionSQL(plan: AnalysisPlan): string {
+    const fields = plan.projectionFields?.length
+        ? plan.projectionFields
+        : plan.dimensions.map(dimension => dimension.field);
+    const parts = [
+        `SELECT ${fields.map(q).join(', ')}`,
+        fromTable(),
+    ];
+    const where = buildWhereClause(plan.filters);
+    if (where) parts.push(`WHERE ${where}`);
+    if (plan.sort.length) {
+        parts.push(`ORDER BY ${plan.sort.map(sort => `${q(sort.field)} ${sort.dir.toUpperCase()}`).join(', ')}`);
+    }
+    if (plan.limit) parts.push(`LIMIT ${plan.limit}`);
+    return parts.join('\n');
 }
 
 /**

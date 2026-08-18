@@ -25,7 +25,7 @@ export interface ValidationResult {
 const VALID_TIME_GRAINS = ['year', 'quarter', 'month', 'week', 'day', 'day_of_week', 'month_of_year', 'hour'];
 const VALID_AGGS = ['sum', 'avg', 'count', 'count_distinct', 'min', 'max', 'median', 'none'];
 const VALID_INTENTS = [
-    'single_metric', 'derived_metric', 'breakdown', 'trend', 'trend_comparison',
+    'projection', 'single_metric', 'derived_metric', 'breakdown', 'trend', 'trend_comparison',
     'total_comparison', 'ranking', 'share_of_total', 'correlation', 'distribution',
     'aggregate_filter', 'growth_analysis',
 ];
@@ -155,7 +155,7 @@ export function validatePlan(plan: AnalysisPlan, model: SemanticModel): Validati
     }
 
     // ── Rule 7: Must have at least one metric (except distribution) ──
-    if (plan.metrics.length === 0 && plan.intent !== 'distribution') {
+    if (plan.metrics.length === 0 && !['distribution', 'projection'].includes(plan.intent)) {
         // Auto-fix: use the first measure field with its default aggregation
         const defaultMeasure = model.fields.find(f => f.role === 'metric');
         if (defaultMeasure) {

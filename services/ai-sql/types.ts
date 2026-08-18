@@ -197,6 +197,7 @@ export interface PlanSort {
 }
 
 export type AnalysisIntent =
+    | 'projection'         // "List names ordered by age" (row-level, no aggregation)
     | 'single_metric'      // "What is total sales?"
     | 'derived_metric'     // "Average daily sales" (two-stage aggregation)
     | 'breakdown'          // "Sales by category"
@@ -228,6 +229,8 @@ export interface AnalysisPlan {
     };
     /** Sorting */
     sort: PlanSort[];
+    /** Row-level fields to return for projection/listing questions. */
+    projectionFields?: string[];
     /** Row limit */
     limit: number | null;
     /** Whether the plan is ambiguous and needs clarification */

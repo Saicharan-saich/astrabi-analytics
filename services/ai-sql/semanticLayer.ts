@@ -185,7 +185,12 @@ function buildColumnStatProfile(
  * Generate synonyms from column name
  */
 function generateSynonyms(colName: string): string[] {
-    const baseName = colName.toLowerCase().replace(/_/g, ' ').trim();
+    const baseName = colName
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
+        .toLowerCase()
+        .replace(/\s+/g, ' ')
+        .trim();
     const synonyms = new Set<string>();
 
     // Look up in synonym dictionary
@@ -195,8 +200,8 @@ function generateSynonyms(colName: string): string[] {
         }
     }
 
-    // Add the name without underscores as a synonym
-    if (colName.includes('_')) {
+    // Add a normalized compound name for snake_case, kebab-case and CamelCase.
+    if (baseName !== colName.toLowerCase()) {
         synonyms.add(baseName);
     }
 
@@ -208,7 +213,8 @@ function generateSynonyms(colName: string): string[] {
  */
 function generateDisplayLabel(colName: string): string {
     return colName
-        .replace(/_/g, ' ')
+        .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+        .replace(/[_-]+/g, ' ')
         .replace(/\b\w/g, l => l.toUpperCase())
         .trim();
 }
