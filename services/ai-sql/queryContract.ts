@@ -52,6 +52,10 @@ export interface QueryContract {
         maximum?: number;
         basis: 'scalar' | 'source_rows' | 'distinct_groups' | 'explicit_limit';
     };
+    /** Result fields that must identify one row per requested group. This is
+     * checked after local execution so a grouped filter cannot accidentally
+     * project the matching source rows and repeat each qualifying group. */
+    uniqueResultFields: string[];
     /** Row-level listing ordered by a raw field; aggregation/grouping is forbidden. */
     orderedProjection?: {
         fields: string[];
@@ -435,6 +439,8 @@ function resolveExpectedAggregation(question: string, plan: AnalysisPlan): Query
 
 function resolveThreshold(question: string): Omit<NonNullable<QueryContract['threshold']>, 'requiresHaving'> | undefined {
     const patterns: Array<{ re: RegExp; operator: '>=' | '>' | '<=' | '<' | '=' }> = [
+        { re: /\b(-?\d+(?:\.\d+)?)\s+or\s+more\b/i, operator: '>=' },
+        { re: /\b(-?\d+(?:\.\d+)?)\s+or\s+(?:fewer|less)\b/i, operator: '<=' },
         { re: /\b(?:at\s+least|no\s+fewer\s+than|minimum\s+of)\s+(-?\d+(?:\.\d+)?)/i, operator: '>=' },
         { re: /\b(?:more\s+than|greater\s+than|over)\s+(-?\d+(?:\.\d+)?)/i, operator: '>' },
         { re: /\b(?:at\s+most|no\s+more\s+than|maximum\s+of)\s+(-?\d+(?:\.\d+)?)/i, operator: '<=' },
@@ -570,7 +576,8 @@ export function buildQueryContract(
     const requiresRowProjection = requestedOutputFields.some(field => field.confidence === 'high')
         && !answerAggregation
         && !asksCountAlongsideEntity
-        && queryShape.operation !== 'ranking';
+        && queryShape.operation !== 'ranking'
+        && queryShape.operation !== 'grouped_aggregate';
     const planRequiresEntityAggregation = !requiresRowProjection && !!outputEntity
         && plan.metrics.some(metric => ['sum', 'avg', 'count', 'count_distinct'].includes(metric.agg))
         && !['single_metric', 'distribution'].includes(plan.intent);
@@ -596,7 +603,9 @@ export function buildQueryContract(
     const requiredDimension = requiresGrouping
         ? resolveRequestedDimension(question, model) || (outputEntity?.confidence === 'high' ? outputEntity.field : undefined)
         : undefined;
-    let expectedAggregation = orderedProjection || requiresRowProjection ? undefined : resolveExpectedAggregation(question, plan);
+    let expectedAggregation = orderedProjection || requiresRowProjection
+        ? undefined
+        : resolveExpectedAggregation(question, plan) || queryShape.explicitAggregation;
     const expectedCardinality: QueryContract['expectedCardinality'] = orderedProjection || requiresRowProjection ? 'detail'
         : requiresGrouping ? 'grouped'
         : expectedAggregation && explicitScalarAggregationCue ? 'scalar'
@@ -606,7 +615,7 @@ export function buildQueryContract(
     const threshold = resolvedThreshold
         ? {
             ...resolvedThreshold,
-            requiresHaving: thresholdUsesAggregate(question),
+            requiresHaving: queryShape.implicitGroupedCount || thresholdUsesAggregate(question),
         }
         : undefined;
     // "countries with at least 3 manufacturers" is a related-entity count even
@@ -652,6 +661,9 @@ export function buildQueryContract(
     const requiresDistinctProjection = queryShape.distinctRequested
         && !expectedAggregation
         && !requiresGrouping;
+    const uniqueResultFields = requiresGrouping && threshold && requiredDimension
+        ? [requiredDimension]
+        : [];
     const canUsePrimaryTableStatistics = !!model
         && (schema?.tables.length || 0) === 1
         && relationshipMode === 'none'
@@ -704,6 +716,7 @@ export function buildQueryContract(
     if (requiresRanking) requirements.push(`Rank ${rankingDirection === 'asc' ? 'ascending' : 'descending'}${rankingLimit ? ` and return ${rankingLimit}` : ''}.`);
     if (requiresComparison) requirements.push('Return both requested comparison periods with clearly labelled result columns or rows.');
     if (requiresDistinctProjection) requirements.push('Return every distinct requested value using SELECT DISTINCT; do not arbitrarily truncate the unique result set.');
+    if (uniqueResultFields.length) requirements.push(`Return one row per qualifying group (${uniqueResultFields.join(', ')}); never filter the original detail rows in a way that repeats a qualifying group.`);
     if (resultRowExpectation?.exact !== undefined) requirements.push(`Return exactly ${resultRowExpectation.exact} result row(s); this cardinality is established from the requested shape and local metadata.`);
     else if (resultRowExpectation?.minimum !== undefined) requirements.push(`Return at least ${resultRowExpectation.minimum} result row(s); the local schema reports that many requested groups.`);
     else if (resultRowExpectation?.maximum !== undefined) requirements.push(`Return no more than ${resultRowExpectation.maximum} result row(s), matching the explicit requested limit.`);
@@ -722,6 +735,7 @@ export function buildQueryContract(
         forbiddenOutputFields,
         requiresRowProjection,
         resultRowExpectation,
+        uniqueResultFields,
         orderedProjection,
         rankingLimit,
         rankingDirection,
@@ -807,6 +821,7 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
         strictOutputProjection: contract.strictOutputProjection,
         requiresRowProjection: contract.requiresRowProjection,
         resultRowExpectation: contract.resultRowExpectation,
+        uniqueResultFields: contract.uniqueResultFields,
         resultGrain: contract.requiredDimension,
         requiredTables: contract.requiredTables,
         relationshipPath: contract.relationshipPath,
@@ -1058,6 +1073,27 @@ export function validateResultAgainstContract(
     rows: Array<Record<string, unknown>>,
     contract: QueryContract,
 ): SQLFaithfulnessIssue[] {
+    if (rows.length > 1 && contract.uniqueResultFields.length) {
+        const normalizedKeys = new Map<string, string>();
+        for (const key of Object.keys(rows[0] || {})) normalizedKeys.set(key.toLowerCase(), key);
+        const physicalKeys = contract.uniqueResultFields
+            .map(field => normalizedKeys.get(field.toLowerCase()))
+            .filter((field): field is string => Boolean(field));
+        if (physicalKeys.length === contract.uniqueResultFields.length) {
+            const seen = new Set<string>();
+            for (const row of rows) {
+                const tuple = JSON.stringify(physicalKeys.map(field => row[field]));
+                if (seen.has(tuple)) {
+                    return [{
+                        code: 'unexpected_result_cardinality',
+                        severity: 'error',
+                        message: `The executed query repeats the requested group grain (${contract.uniqueResultFields.join(', ')}). Return exactly one row per qualifying group instead of the matching detail rows.`,
+                    }];
+                }
+                seen.add(tuple);
+            }
+        }
+    }
     const expectation = contract.resultRowExpectation;
     if (!expectation) return [];
     const count = rows.length;

@@ -23,6 +23,9 @@ export interface QueryShape {
     orderedProjection: boolean;
     /** Explicit request to de-duplicate a projection. */
     distinctRequested: boolean;
+    /** Count-of-related-members threshold inferred from grammar such as
+     * "grades with 4 or more students". */
+    implicitGroupedCount: boolean;
 }
 
 function explicitAggregation(question: string): QueryShape['explicitAggregation'] {
@@ -97,9 +100,17 @@ function hasComparativeReference(question: string): boolean {
 export function inferQueryShape(question: string): QueryShape {
     const shapeText = withoutComparativeReferences(question);
     const comparativeReference = hasComparativeReference(question);
-    const aggregation = explicitAggregation(shapeText);
+    // "Which grades have 4 or more students?" is a grouped count even though
+    // the user never says the word "count". Keep this grammar-based: a
+    // result-entity phrase followed by have/has/with, an explicit numeric
+    // threshold, and a related-member noun. This also covers equivalent
+    // phrasings such as "teams with at least 5 players" without naming any
+    // domain, table, field, or benchmark case.
+    const thresholdedGroupCount = /\b(?:which|what|show|list|find)\b[\s\S]*?\b(?:have|has|with)\s+(?:(?:at\s+least|at\s+most|more\s+than|fewer\s+than|less\s+than)\s+-?\d+(?:\.\d+)?|-?\d+(?:\.\d+)?\s+or\s+(?:more|fewer|less))\s+[a-z]/i.test(question);
+    const aggregation = explicitAggregation(shapeText) || (thresholdedGroupCount ? 'count' : undefined);
     const groupingText = question.replace(/\b(?:ordered|sorted|ranked)\s+by\b/gi, '');
-    const groupingCue = /\b(?:by|per|for\s+each|for\s+every|each|every)\b/i.test(groupingText)
+    const groupingCue = thresholdedGroupCount
+        || /\b(?:by|per|for\s+each|for\s+every|each|every)\b/i.test(groupingText)
         || /\bof\s+(?:singers?|records?|items?|entities?)\s+of\s+each\b/i.test(question);
     const order = ordering(question);
     const topN = question.match(/\b(top|bottom|first|last)\s+(\d+)\b/i);
@@ -134,5 +145,6 @@ export function inferQueryShape(question: string): QueryShape {
         prohibitsImplicitLimit: selection === 'all_rows' || selection === 'all_groups',
         orderedProjection,
         distinctRequested,
+        implicitGroupedCount: thresholdedGroupCount,
     };
 }

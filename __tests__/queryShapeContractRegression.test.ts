@@ -21,6 +21,8 @@ const model: SemanticModel = {
         { name: 'Number_products', displayLabel: 'Number products', physicalType: 'number', semanticType: 'count', role: 'metric', defaultAgg: 'sum', timeGrainSupport: [], synonyms: ['product count'], valueDescriptors: [], distinctCount: 8, hasNulls: false },
         { name: 'PetType', displayLabel: 'Pet type', physicalType: 'string', semanticType: 'category', role: 'dimension', defaultAgg: 'none', timeGrainSupport: [], synonyms: ['type of pet'], valueDescriptors: [], distinctCount: 2, hasNulls: false },
         { name: 'Weight', displayLabel: 'Weight', physicalType: 'number', semanticType: 'quantity', role: 'metric', defaultAgg: 'avg', timeGrainSupport: [], synonyms: [], valueDescriptors: [], distinctCount: 8, hasNulls: false },
+        { name: 'Grade', displayLabel: 'Grade', physicalType: 'number', semanticType: 'ordinal', role: 'dimension', defaultAgg: 'none', timeGrainSupport: [], synonyms: [], valueDescriptors: [], distinctCount: 4, hasNulls: false },
+        { name: 'Student_ID', displayLabel: 'Student ID', physicalType: 'number', semanticType: 'identifier', role: 'dimension', defaultAgg: 'count_distinct', timeGrainSupport: [], synonyms: ['student', 'high schooler'], valueDescriptors: [], distinctCount: 12, hasNulls: false },
     ],
 };
 
@@ -91,6 +93,40 @@ describe('dynamic query-shape and cardinality contract', () => {
         'Show categories with at most 5 records',
     ])('does not mistake a threshold for ranking: %s', question => {
         expect(inferQueryShape(question).operation).not.toBe('ranking');
+    });
+
+    it('enforces one result row per group for postposed count thresholds', () => {
+        const question = 'Which grades have 4 or more high schoolers?';
+        expect(inferQueryShape(question)).toMatchObject({
+            operation: 'grouped_aggregate',
+            selection: 'all_groups',
+            explicitAggregation: 'count',
+        });
+
+        const contract = buildQueryContract(question, plan({
+            intent: 'breakdown',
+            dimensions: [{ field: 'Grade' }],
+            metrics: [{ field: 'Student_ID', agg: 'count' }],
+        }), [], model);
+
+        expect(contract).toMatchObject({
+            expectedCardinality: 'grouped',
+            requiresGrouping: true,
+            requiresRowProjection: false,
+            requiredDimension: 'Grade',
+            expectedAggregation: 'count',
+            threshold: { operator: '>=', value: 4, requiresHaving: true },
+            uniqueResultFields: ['Grade'],
+        });
+        expect(validateSQLAgainstContract(
+            'SELECT Grade FROM data GROUP BY Grade HAVING COUNT(*) >= 4',
+            contract,
+        )).toEqual([]);
+
+        const repeatedDetailRows = [9, 9, 9, 9, 10, 10, 10, 10].map(Grade => ({ Grade }));
+        expect(validateResultAgainstContract(repeatedDetailRows, contract).map(issue => issue.code))
+            .toContain('unexpected_result_cardinality');
+        expect(validateResultAgainstContract([{ Grade: 9 }, { Grade: 10 }], contract)).toEqual([]);
     });
 
     it('requires explicit de-duplication for a unique-value projection', () => {

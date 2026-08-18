@@ -30,6 +30,7 @@ Rules:
 - JOIN across tables when needed, following the listed foreign keys.
 - Treat absence and exclusion as set logic. Questions such as "entities with no related records" require NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT against the related table; never simulate absence by grouping only the primary table and writing HAVING COUNT(...) = 0.
 - Preserve the requested output entity and grain. Do not return a continent when country names were requested, or collapse several requested rows into one group.
+- For grouped membership thresholds such as "grades with 4 or more students", return exactly one row per qualifying group. Use GROUP BY ... HAVING (or select once from an already-grouped CTE); never use the grouped result merely to filter and re-project the original detail rows.
 - Lock the OUTER SELECT to the fields and calculations the user explicitly asks to see. An aggregate used only to define a filter (for example, products above average sales) belongs in a subquery/CTE predicate and does not turn the outer result into COUNT, SUM, or AVG.
 - For a single-winner question, return one row at the requested entity grain. Do not return the winning entity's underlying detail rows, and do not expose helper fields used only to calculate the winner.
 - Never replace requested names, labels, dates, or other row attributes with COUNT, SUM, LIST, ARRAY_AGG, STRING_AGG, or ANY_VALUE. Use collection aggregates only when the user explicitly requests a single packed list.
