@@ -17,6 +17,7 @@ import { SemanticModel, SemanticField, AnalysisPlan, AnalysisIntent } from './ty
 import { serializeSemanticModel } from './semanticLayer';
 import { fetchWithFallback, PRIMARY_MODEL, selectAISQLModel, API_KEY } from './modelConfig';
 import { classifyQuestion, ClassificationResult, isTimePeriodComparison } from './questionClassifier';
+import { inferQueryShape } from './queryShape';
 
 // Re-exported: the classifier owns this so both it and the enforcement below
 // judge "vs" the same way.
@@ -160,6 +161,8 @@ export function detectExplicitAggregation(question: string): 'avg' | 'sum' | 'co
  * Returns null if no ranking direction detected.
  */
 export function detectRankingDirection(question: string): 'asc' | 'desc' | null {
+    const shapedDirection = inferQueryShape(question).orderDirection;
+    if (shapedDirection) return shapedDirection;
     const q = question.toLowerCase();
     // Compound phrases FIRST — "highest to lowest" contains both words, and the
     // ORDER (high→low = desc) is what matters, not which word appears.
@@ -205,24 +208,17 @@ function resolveFieldPhrase(phrase: string, model: SemanticModel, role?: 'dimens
 
 /** Keep an unbounded row listing separate from analytical top/bottom ranking. */
 export function enforceOrderedProjection(plan: AnalysisPlan, question: string, model: SemanticModel): boolean {
-    const q = question.toLowerCase();
-    const directional = q.match(/\b(ascending|descending)\s+order\s+(?:of|by)\s+([a-z0-9_ -]+)/i);
-    const orderedBy = q.match(/\border(?:ed)?\s+by\s+([a-z0-9_ -]+?)(?:\s+(ascending|descending|asc|desc)\b|[?.!,]|$)/i);
-    if (!directional && !orderedBy) return false;
-
-    const hasBoundedRanking = /\b(?:top|bottom|highest|lowest|most|least|best|worst|youngest|oldest|earliest|latest|newest|first\s+\d+|last\s+\d+)\b/i.test(q);
-    const hasExplicitAggregation = /\b(?:average|avg|mean|total|sum|count|number of|how many|minimum|maximum)\b/i.test(q);
-    if (hasBoundedRanking || hasExplicitAggregation) return false;
-
-    const rawOrderPhrase = directional ? directional[2] : orderedBy![1];
-    const directionWord = directional ? directional[1] : (orderedBy![2] || 'ascending');
-    const direction: 'asc' | 'desc' = /desc/i.test(directionWord) ? 'desc' : 'asc';
-    const orderField = resolveFieldPhrase(rawOrderPhrase, model);
+    const shape = inferQueryShape(question);
+    if (!shape.orderedProjection || !shape.orderFieldPhrase) return false;
+    const orderField = resolveFieldPhrase(shape.orderFieldPhrase, model);
     if (!orderField) return false;
 
-    const questionWords = new Set(normalizedFieldWords(question));
+    const projectionClause = question
+        .split(/\b(?:for\s+all|for\s+every|ordered|sorted|in\s+ascending|in\s+descending)\b/i)[0]
+        .replace(/^\s*(?:show|list|return|give me|display)\s+/i, '');
+    const questionWords = new Set(normalizedFieldWords(projectionClause));
     const projectionFields = model.fields
-        .filter(field => field.role === 'dimension' && field.name !== orderField.name)
+        .filter(field => field.semanticType !== 'identifier')
         .filter(field => [field.name, field.displayLabel, ...(field.synonyms || [])].some(alias => {
             const aliasWords = normalizedFieldWords(alias);
             return aliasWords.length > 0 && aliasWords.every(word => questionWords.has(word));
@@ -234,25 +230,28 @@ export function enforceOrderedProjection(plan: AnalysisPlan, question: string, m
     plan.projectionFields = [...new Set(projectionFields)];
     plan.dimensions = plan.projectionFields.map(field => ({ field }));
     plan.metrics = [];
-    plan.sort = [{ field: orderField.name, dir: direction }];
+    plan.sort = [{ field: orderField.name, dir: shape.orderDirection || 'asc' }];
     plan.limit = null;
     plan.ambiguous = false;
     plan.clarificationQuestion = undefined;
     plan.resultGrain = 'one row per matching record';
-    console.log(`[Intent Planner] Ordered projection: ${plan.projectionFields.join(', ')} ordered by ${orderField.name} ${direction}`);
+    console.log(`[Intent Planner] Ordered projection: ${plan.projectionFields.join(', ')} ordered by ${orderField.name} ${shape.orderDirection || 'asc'}`);
     return true;
 }
 
 /** Lock explicit grouped-aggregation wording to the schema-grounded dimension. */
 export function enforceRequestedBreakdownDimension(plan: AnalysisPlan, question: string, model: SemanticModel): void {
-    if (!detectExplicitAggregation(question)) return;
+    const shape = inferQueryShape(question);
+    if (shape.operation !== 'grouped_aggregate' || !detectExplicitAggregation(question)) return;
     if (/\b(?:top|bottom|highest|lowest|most|least|best|worst|youngest|oldest)\b/i.test(question)) return;
-    const match = question.match(/\b(?:for\s+each|for\s+every|per|by)\s+([^?.,;]+)/i);
+    const match = question.match(/\b(?:for\s+each|for\s+every|per|by|each|every)\s+([^?.,;]+)/i);
     if (!match) return;
     const requested = resolveFieldPhrase(match[1], model, 'dimension');
     if (!requested) return;
+    plan.intent = 'breakdown';
+    plan.limit = null;
+    if (!shape.orderDirection) plan.sort = [];
     if (plan.dimensions.some(dimension => dimension.field.toLowerCase() === requested.name.toLowerCase())) {
-        if (plan.intent === 'single_metric') plan.intent = 'breakdown';
         return;
     }
 
@@ -261,7 +260,6 @@ export function enforceRequestedBreakdownDimension(plan: AnalysisPlan, question:
         return field?.semanticType === 'date' && dimension.timeGrain;
     });
     plan.dimensions = [...timeDimensions, { field: requested.name }];
-    if (plan.intent === 'single_metric') plan.intent = 'breakdown';
     console.log(`[Intent Planner] Requested breakdown grain locked to ${requested.name}`);
 }
 
@@ -1001,9 +999,10 @@ function enforceAggregation(plan: AnalysisPlan, question: string, model: Semanti
     const explicitAgg = detectExplicitAggregation(question);
     const compoundGrain = detectCompoundAverage(question);
     const rankDir = detectRankingDirection(question);
+    const queryShape = inferQueryShape(question);
 
     // Handle ranking direction: enforce sort + limit for ranking queries
-    if (rankDir && (plan.intent === 'ranking' || plan.intent === 'breakdown')) {
+    if (rankDir && queryShape.operation === 'ranking' && (plan.intent === 'ranking' || plan.intent === 'breakdown')) {
         console.log(`[Intent Planner] Detected ranking direction: ${rankDir}`);
 
         // Ensure the plan has ranking intent
@@ -1012,17 +1011,13 @@ function enforceAggregation(plan: AnalysisPlan, question: string, model: Semanti
         // Ensure sort by first metric in the correct direction
         if (plan.metrics.length > 0) {
             const metField = plan.metrics[0].field;
-            const metAlias = plan.metrics[0].compositeId || `${metField}_${plan.metrics[0].agg}`;
             // Replace sort with the correct direction
             plan.sort = [{ field: metField, dir: rankDir }];
         }
 
         // Ensure limit is set (default to 1 for "which day" style questions)
         if (!plan.limit) {
-            const q = question.toLowerCase();
-            // "top 5", "bottom 3", etc.
-            const topNMatch = q.match(/\b(top|bottom)\s+(\d+)\b/);
-            plan.limit = topNMatch ? parseInt(topNMatch[2]) : 1;
+            plan.limit = queryShape.explicitLimit || 1;
         }
 
         // Do NOT override aggregation for rankings — use the field's default

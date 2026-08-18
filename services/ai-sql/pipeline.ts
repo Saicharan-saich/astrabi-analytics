@@ -57,7 +57,12 @@ import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerial
 import { describeSchemaForLLM, discoverJoinContext } from './joinEngine';
 import { getEffectivePrivacyMode, type PrivacyMode } from './privacyMode';
 import { getSelection, applySelection } from './privacySelection';
-import { buildQueryContract, validateSQLAgainstContract, type QueryContract } from './queryContract';
+import {
+    buildQueryContract,
+    validateResultAgainstContract,
+    validateSQLAgainstContract,
+    type QueryContract,
+} from './queryContract';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -878,6 +883,94 @@ export async function runAISQLPipeline(
         } catch (semanticRepairError: any) {
             console.warn('[Pipeline] Result-aware semantic repair skipped:', semanticRepairError?.message || semanticRepairError);
         }
+    }
+
+    // Step 5d: executable answer-shape gate. SQL can be syntactically valid and
+    // still answer a different question (for example, LIMIT 1 for "each group"
+    // or a scalar aggregate for "all rows"). Compare only locally computed row
+    // counts against the pre-SQL contract; no result values leave the browser.
+    let resultContractIssues = activeQueryContract
+        ? validateResultAgainstContract(execResult.data || [], activeQueryContract)
+            .filter(issue => issue.severity === 'error')
+        : [];
+    if (resultContractIssues.length
+        && directSQL
+        && directSchemaText
+        && !usedDeterministicFallback
+        && !shouldRepairEmptyResult) {
+        try {
+            console.log('[Pipeline] Step 5d: Result-cardinality repair...');
+            const semanticRepair = await repairSemanticSQL(
+                question,
+                directSchemaText,
+                directQuerySpec,
+                currentSQL,
+                resultContractIssues.map(issue => issue.message).join(' '),
+                executionOptions?.requestPurpose,
+                activeQueryContract,
+            );
+            directSqlTokens += semanticRepair.tokens;
+            if (!semanticRepair.error && semanticRepair.sql !== currentSQL) {
+                let repairedSQL = semanticRepair.sql;
+                if (_valueCatalog) repairedSQL = groundSqlLiterals(repairedSQL, _valueCatalog).sql;
+                const repairedExecution = await executeSQLViaDuckDB(
+                    dataset.rows,
+                    repairedSQL,
+                    semanticModel.timeContext,
+                    dataset.relatedTables,
+                );
+                const repairedContractIssues = repairedExecution.error || !activeQueryContract
+                    ? resultContractIssues
+                    : validateResultAgainstContract(repairedExecution.data || [], activeQueryContract)
+                        .filter(issue => issue.severity === 'error');
+                if (!repairedExecution.error && repairedContractIssues.length === 0) {
+                    currentSQL = repairedSQL;
+                    directSQL = repairedSQL;
+                    execResult = repairedExecution;
+                    validation = validateSQL(currentSQL, plan, semanticModel);
+                    resultContractIssues = [];
+                    repairAttempts++;
+                    sqlResult.explanation = semanticRepair.explanation;
+                    console.log(`[Pipeline] Result-cardinality repair recovered ${(execResult.data || []).length} row(s).`);
+                }
+            }
+        } catch (shapeRepairError: any) {
+            console.warn('[Pipeline] Result-cardinality repair skipped:', shapeRepairError?.message || shapeRepairError);
+        }
+    }
+
+    // A locally compiled query is the final continuity option, but it is held to
+    // the exact same SQL and result contract as the LLM draft. This is a fallback,
+    // never a licence to return a plausible-looking answer at the wrong grain.
+    if (resultContractIssues.length && deterministicSQL && deterministicSQL.trim() !== currentSQL.trim()) {
+        const deterministicSqlIssues = activeQueryContract
+            ? validateSQLAgainstContract(deterministicSQL, activeQueryContract).filter(issue => issue.severity === 'error')
+            : [];
+        if (deterministicSqlIssues.length === 0) {
+            const deterministicExecution = await executeSQLViaDuckDB(
+                dataset.rows,
+                deterministicSQL,
+                semanticModel.timeContext,
+                dataset.relatedTables,
+            );
+            const deterministicResultIssues = !deterministicExecution.error && activeQueryContract
+                ? validateResultAgainstContract(deterministicExecution.data || [], activeQueryContract)
+                    .filter(issue => issue.severity === 'error')
+                : resultContractIssues;
+            if (!deterministicExecution.error && deterministicResultIssues.length === 0) {
+                currentSQL = deterministicSQL;
+                execResult = deterministicExecution;
+                resultContractIssues = [];
+                sqlEngine = qbSQL ? 'question-builder' : 'correction-engine';
+                usedDeterministicFallback = true;
+                validation = validateSQL(currentSQL, plan, semanticModel);
+                console.log(`[Pipeline] Contract-safe deterministic fallback recovered ${(execResult.data || []).length} row(s).`);
+            }
+        }
+    }
+
+    if (resultContractIssues.length) {
+        throw new Error(`AI SQL stopped before presenting an answer because the executed result violated the requested answer shape: ${resultContractIssues.map(issue => issue.message).join(' ')}`);
     }
 
     traceStep({

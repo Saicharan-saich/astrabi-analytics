@@ -85,4 +85,60 @@ describe('basic semantic intent regressions', () => {
       .map(issue => issue.code)).toContain('missing_requested_dimension');
     expect(validateSQLAgainstContract('SELECT PetType, AVG(weight) FROM data GROUP BY PetType', contract)).toEqual([]);
   });
+
+  it('keeps MAX per group as all groups instead of a top-one ranking', () => {
+    const model = baseModel([
+      field('Singer_ID', 'dimension', 'identifier'),
+      field('Name', 'dimension', 'category'),
+      field('Net_Worth_Millions', 'metric', 'currency', ['net worth']),
+      field('Citizenship', 'dimension', 'category'),
+    ]);
+    const question = 'Show different citizenships and the maximum net worth of singers of each citizenship.';
+    const plan = generateLocalPlan(question, model);
+
+    expect(plan.intent).toBe('breakdown');
+    expect(plan.dimensions).toEqual([{ field: 'Citizenship' }]);
+    expect(plan.metrics).toEqual([{ field: 'Net_Worth_Millions', agg: 'max' }]);
+    expect(plan.limit).toBeNull();
+    const sql = correctSQL(plan, model);
+    expect(sql).toContain('MAX(');
+    expect(sql).toContain('GROUP BY "Citizenship"');
+    expect(sql).not.toContain('LIMIT');
+
+    const contract = buildQueryContract(question, plan, [], model);
+    expect(contract.selectionMode).toBe('all_groups');
+    expect(contract.requiresRanking).toBe(false);
+    expect(validateSQLAgainstContract(
+      'SELECT Citizenship, MAX(Net_Worth_Millions) FROM data GROUP BY Citizenship ORDER BY 2 DESC LIMIT 1',
+      contract,
+    ).map(issue => issue.code)).toContain('unexpected_limit');
+  });
+
+  it('projects every requested field for natural-language directional ordering', () => {
+    const model = baseModel([
+      field('Singer_ID', 'dimension', 'identifier'),
+      field('Name', 'dimension', 'category'),
+      field('Country', 'dimension', 'geography'),
+      field('Age', 'metric', 'quantity'),
+      field('Song_Name', 'dimension', 'category'),
+    ]);
+    const question = 'Show name, country, age for all singers ordered by age from the oldest to the youngest.';
+    const plan = generateLocalPlan(question, model);
+
+    expect(plan.intent).toBe('projection');
+    expect(plan.projectionFields).toEqual(['Name', 'Country', 'Age']);
+    expect(plan.sort).toEqual([{ field: 'Age', dir: 'desc' }]);
+    expect(plan.limit).toBeNull();
+    const sql = correctSQL(plan, model);
+    expect(sql).toBe('SELECT "Name", "Country", "Age"\nFROM "data"\nORDER BY "Age" DESC');
+
+    const contract = buildQueryContract(question, plan, [], model);
+    expect(contract.selectionMode).toBe('all_rows');
+    expect(validateSQLAgainstContract(
+      'SELECT Country, SUM(Age) FROM data GROUP BY Country ORDER BY 2 ASC LIMIT 1',
+      contract,
+    ).map(issue => issue.code)).toEqual(expect.arrayContaining([
+      'unexpected_limit', 'unexpected_aggregation', 'unexpected_grouping', 'missing_ordering_field', 'missing_output_entity',
+    ]));
+  });
 });

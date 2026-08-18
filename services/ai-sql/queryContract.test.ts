@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildQueryContract, validateSQLAgainstContract } from './queryContract';
+import { buildQueryContract, validateResultAgainstContract, validateSQLAgainstContract } from './queryContract';
 import type { AnalysisPlan, SemanticModel } from './types';
 
 const model: SemanticModel = {
@@ -212,5 +212,48 @@ describe('AI SQL query contract regression suite', () => {
             'SELECT product_name, SUM(sales) total_sales FROM data GROUP BY product_name ORDER BY total_sales DESC LIMIT 1',
             rankContract,
         ).map(issue => issue.code)).toContain('wrong_ranking_direction');
+    });
+
+    it('rejects truncated grouped results using only local schema cardinality', () => {
+        const contract = buildQueryContract(
+            'Show each category and the maximum sales for each category',
+            plan({
+                intent: 'breakdown',
+                dimensions: [{ field: 'category' }],
+                metrics: [{ field: 'sales', agg: 'max' }],
+            }),
+            [],
+            model,
+        );
+
+        expect(contract.resultRowExpectation).toEqual({ minimum: 10, basis: 'distinct_groups' });
+        expect(validateResultAgainstContract([{ category: 'A', maximum_sales: 100 }], contract)
+            .map(issue => issue.code)).toContain('unexpected_result_cardinality');
+        expect(validateResultAgainstContract(
+            Array.from({ length: 10 }, (_, index) => ({ category: index, maximum_sales: index })),
+            contract,
+        )).toEqual([]);
+    });
+
+    it('rejects a collapsed ordered projection and accepts the full local population', () => {
+        const contract = buildQueryContract(
+            'Show product name, category and sales for all records ordered by sales descending',
+            plan({
+                intent: 'projection',
+                metrics: [],
+                dimensions: [],
+                projectionFields: ['product_name', 'category', 'sales'],
+                sort: [{ field: 'sales', dir: 'desc' }],
+            }),
+            [],
+            model,
+        );
+
+        expect(contract.resultRowExpectation).toEqual({ exact: 10_000, basis: 'source_rows' });
+        expect(validateResultAgainstContract([{ product_name: 'one' }], contract)).toHaveLength(1);
+        expect(validateResultAgainstContract(
+            Array.from({ length: 10_000 }, (_, index) => ({ product_name: String(index) })),
+            contract,
+        )).toEqual([]);
     });
 });

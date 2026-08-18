@@ -9,6 +9,7 @@
  */
 import type { AnalysisPlan, SemanticModel } from './types';
 import { planJoins, type JoinLink, type JoinTable } from './joinEngine';
+import { inferQueryShape, type SelectionMode } from './queryShape';
 
 export interface QuerySchemaContext {
     tables: JoinTable[];
@@ -30,6 +31,17 @@ export interface QueryContract {
     requiresGrouping: boolean;
     requiresFiscalCalendar: boolean;
     requiresRanking: boolean;
+    selectionMode: SelectionMode;
+    prohibitsImplicitLimit: boolean;
+    requiresDistinctProjection: boolean;
+    /** Conservative, locally-computable row expectation. It is emitted only
+     * when metadata can establish the answer population without seeing values. */
+    resultRowExpectation?: {
+        exact?: number;
+        minimum?: number;
+        maximum?: number;
+        basis: 'scalar' | 'source_rows' | 'distinct_groups' | 'explicit_limit';
+    };
     /** Row-level listing ordered by a raw field; aggregation/grouping is forbidden. */
     orderedProjection?: {
         fields: string[];
@@ -82,6 +94,7 @@ export interface SQLFaithfulnessIssue {
         | 'missing_grouping'
         | 'unexpected_grouping'
         | 'unexpected_aggregation'
+        | 'missing_distinct_projection'
         | 'unexpected_limit'
         | 'missing_ordering_field'
         | 'missing_requested_dimension'
@@ -97,13 +110,13 @@ export interface SQLFaithfulnessIssue {
         | 'missing_fiscal_calendar'
         | 'missing_ranking'
         | 'wrong_ranking_direction'
-        | 'missing_comparison';
+        | 'missing_comparison'
+        | 'unexpected_result_cardinality';
     severity: 'error' | 'warn';
     message: string;
 }
 
 const BREAKDOWN_CUE = /\b(by|per|for each|for every|breakdown by|split by|grouped by)\s+[a-z]/i;
-const RANKING_CUE = /\b(top|bottom|highest|lowest|most|least|best|worst|rank|youngest|oldest|earliest|latest|newest)\b/i;
 const COMPARISON_CUE = /\b(vs\.?|versus|compared to|comparison|month[- ]over[- ]month|year[- ]over[- ]year|mom|yoy|qoq|wow)\b/i;
 const FISCAL_CUE = /\bfiscal\s+(?:year|quarter|calendar)\b/i;
 const ANTI_EXISTENCE_CUE = /\b(?:without|never|not\s+a\s+single|with\s+no|(?:do|does|did)\s+not\s+have|(?:has|have|had)\s+no|zero\s+(?:related\s+)?\w+)\b/i;
@@ -249,7 +262,7 @@ function resolveRequestedDimension(question: string, model?: SemanticModel): str
             || model.timeContext?.primaryDateColumn;
     }
 
-    const phrase = question.match(/\b(?:for\s+each|for\s+every|per|by)\s+([^?.,;]+)/i)?.[1] || question;
+    const phrase = question.match(/\b(?:for\s+each|for\s+every|per|by|each|every)\s+([^?.,;]+)/i)?.[1] || question;
     const phraseTokens = new Set(words(phrase));
     const questionTokens = new Set(words(question));
     let best: { field: string; score: number } | undefined;
@@ -276,13 +289,9 @@ function resolveOrderedProjection(
     model: SemanticModel | undefined,
     outputEntity: QueryEntityContract | undefined,
 ): QueryContract['orderedProjection'] {
-    const directional = question.match(/\b(ascending|descending)\s+order\s+(?:of|by)\s+([a-z0-9_ -]+)/i);
-    const orderedBy = question.match(/\border(?:ed)?\s+by\s+([a-z0-9_ -]+?)(?:\s+(ascending|descending|asc|desc)\b|[?.!,]|$)/i);
-    if (!directional && !orderedBy && plan.intent !== 'projection') return undefined;
-    if (/\b(?:top|bottom|highest|lowest|most|least|best|worst|youngest|oldest|earliest|latest|newest|first\s+\d+|last\s+\d+)\b/i.test(question)) return undefined;
-    if (/\b(?:average|avg|mean|total|sum|count|number of|how many|minimum|maximum)\b/i.test(question)) return undefined;
-
-    const phrase = directional ? directional[2] : orderedBy?.[1];
+    const shape = inferQueryShape(question);
+    if (!shape.orderedProjection && plan.intent !== 'projection') return undefined;
+    const phrase = shape.orderFieldPhrase;
     const phraseTokens = new Set(words(phrase || ''));
     let orderBy = plan.sort[0]?.field;
     if (model && phraseTokens.size) {
@@ -296,17 +305,16 @@ function resolveOrderedProjection(
         orderBy = best?.field || orderBy;
     }
     if (!orderBy) return undefined;
-    const directionWord = directional?.[1] || orderedBy?.[2] || plan.sort[0]?.dir || 'asc';
     const fields = [...new Set([
         ...(plan.projectionFields || []),
         ...(outputEntity?.confidence === 'high' ? [outputEntity.field] : []),
-    ])].filter(field => field.toLowerCase() !== orderBy!.toLowerCase());
+    ])];
     if (!fields.length) return undefined;
     return {
         fields,
         orderBy,
-        direction: /desc/i.test(directionWord) ? 'desc' : 'asc',
-        unbounded: !/\b(?:limit|top|bottom|first\s+\d+|last\s+\d+)\b/i.test(question),
+        direction: shape.orderDirection || plan.sort[0]?.dir || 'asc',
+        unbounded: shape.prohibitsImplicitLimit,
     };
 }
 
@@ -428,6 +436,7 @@ export function buildQueryContract(
     const requirements: string[] = [];
     const schema = schemaContext || schemaContextFromModel(model);
     const outputEntity = resolveOutputEntity(question, plan, schema);
+    const queryShape = inferQueryShape(question);
     const orderedProjection = resolveOrderedProjection(question, plan, model, outputEntity);
     const existenceMode = ANTI_EXISTENCE_CUE.test(question) ? 'anti' : 'none';
     const requiresFiscalCalendar = FISCAL_CUE.test(question);
@@ -438,7 +447,8 @@ export function buildQueryContract(
     const planRequiresEntityAggregation = !!outputEntity
         && plan.metrics.some(metric => ['sum', 'avg', 'count', 'count_distinct'].includes(metric.agg))
         && !['single_metric', 'distribution'].includes(plan.intent);
-    const explicitGroupingCue = BREAKDOWN_CUE.test(breakdownQuestion)
+    const explicitGroupingCue = queryShape.operation === 'grouped_aggregate'
+        || BREAKDOWN_CUE.test(breakdownQuestion)
         || /\b(?:in|for)\s+each\b/i.test(question);
     const explicitScalarAggregationCue = /\b(?:how many|number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
     const requiresGrouping = !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
@@ -446,16 +456,13 @@ export function buildQueryContract(
             || BREAKDOWN_CUE.test(breakdownQuestion)
             || verification.some(issue => issue.code === 'missing_dimension')
             || (existenceMode === 'none' && planRequiresEntityAggregation));
-    // "at least / at most" are threshold comparators, not ranking requests.
-    const rankingQuestion = question.replace(/\b(?:at|no)\s+(?:least|most)\b/gi, '');
-    const requiresRanking = !orderedProjection && (RANKING_CUE.test(rankingQuestion)
-        || verification.some(issue => issue.code === 'missing_ranking')
-        || plan.intent === 'ranking');
-    const rankingLimitMatch = question.match(/\b(?:top|bottom)\s+(\d+)\b/i);
-    const rankingLimit = rankingLimitMatch ? Number(rankingLimitMatch[1])
-        : requiresRanking && outputEntity ? (plan.limit || 1) : undefined;
+    const requiresRanking = !orderedProjection && queryShape.operation === 'ranking';
+    const rankingLimit = requiresRanking
+        ? queryShape.explicitLimit || (queryShape.selection === 'single' ? 1 : undefined)
+        : undefined;
     const rankingDirection = requiresRanking
-        ? /\b(bottom|lowest|least|worst|smallest|fewest|minimum|youngest|earliest)\b/i.test(question) ? 'asc' : 'desc'
+        ? queryShape.orderDirection
+            || (/\b(bottom|lowest|least|worst|smallest|fewest|minimum|youngest|earliest)\b/i.test(question) ? 'asc' : 'desc')
         : undefined;
     const requiresComparison = COMPARISON_CUE.test(question) || Boolean(plan.comparison);
     const requiredDimension = requiresGrouping
@@ -497,6 +504,37 @@ export function buildQueryContract(
         ? 'anti'
         : relationshipPath.length ? (explicitlyInclusive ? 'left' : 'inner')
         : 'none';
+    const requiresDistinctProjection = queryShape.distinctRequested
+        && !expectedAggregation
+        && !requiresGrouping;
+    const canUsePrimaryTableStatistics = !!model
+        && (schema?.tables.length || 0) === 1
+        && relationshipMode === 'none'
+        && plan.filters.length === 0
+        && !requiresComparison
+        && !threshold;
+    let resultRowExpectation: QueryContract['resultRowExpectation'];
+    if (expectedCardinality === 'scalar') {
+        resultRowExpectation = { exact: 1, basis: 'scalar' };
+    } else if (queryShape.selection === 'single') {
+        resultRowExpectation = { exact: 1, basis: 'explicit_limit' };
+    } else if (queryShape.selection === 'top_n' && queryShape.explicitLimit) {
+        const dimension = requiredDimension
+            ? model?.fields.find(field => field.name.toLowerCase() === requiredDimension.toLowerCase())
+            : undefined;
+        resultRowExpectation = canUsePrimaryTableStatistics && dimension
+            ? { exact: Math.min(queryShape.explicitLimit, dimension.distinctCount), basis: 'explicit_limit' }
+            : { maximum: queryShape.explicitLimit, basis: 'explicit_limit' };
+    } else if (canUsePrimaryTableStatistics && orderedProjection && !queryShape.distinctRequested && model!.rowCount > 0) {
+        resultRowExpectation = { exact: model!.rowCount, basis: 'source_rows' };
+    } else if (canUsePrimaryTableStatistics && queryShape.selection === 'all_groups' && requiredDimension) {
+        const dimension = model!.fields.find(field => field.name.toLowerCase() === requiredDimension.toLowerCase());
+        if (dimension && dimension.distinctCount > 0) {
+            // distinctCount is derived locally and may be sampled for very large
+            // files, so it is a lower bound rather than an exact assertion.
+            resultRowExpectation = { minimum: dimension.distinctCount, basis: 'distinct_groups' };
+        }
+    }
 
     if (outputEntity?.confidence === 'high') requirements.push(`Return ${outputEntity.table}.${outputEntity.field} as the visible answer entity.`);
     if (orderedProjection) requirements.push(`Return row-level fields ${orderedProjection.fields.join(', ')} ordered by ${orderedProjection.orderBy} ${orderedProjection.direction.toUpperCase()}; do not aggregate, group, or truncate the result.`);
@@ -517,6 +555,10 @@ export function buildQueryContract(
     if (requiresFiscalCalendar) requirements.push('Use the requested fiscal calendar definition, including its stated start month.');
     if (requiresRanking) requirements.push(`Rank ${rankingDirection === 'asc' ? 'ascending' : 'descending'}${rankingLimit ? ` and return ${rankingLimit}` : ''}.`);
     if (requiresComparison) requirements.push('Return both requested comparison periods with clearly labelled result columns or rows.');
+    if (requiresDistinctProjection) requirements.push('Return every distinct requested value using SELECT DISTINCT; do not arbitrarily truncate the unique result set.');
+    if (resultRowExpectation?.exact !== undefined) requirements.push(`Return exactly ${resultRowExpectation.exact} result row(s); this cardinality is established from the requested shape and local metadata.`);
+    else if (resultRowExpectation?.minimum !== undefined) requirements.push(`Return at least ${resultRowExpectation.minimum} result row(s); the local schema reports that many requested groups.`);
+    else if (resultRowExpectation?.maximum !== undefined) requirements.push(`Return no more than ${resultRowExpectation.maximum} result row(s), matching the explicit requested limit.`);
 
     return {
         requirements,
@@ -524,6 +566,10 @@ export function buildQueryContract(
         requiresGrouping,
         requiresFiscalCalendar,
         requiresRanking,
+        selectionMode: queryShape.selection,
+        prohibitsImplicitLimit: queryShape.prohibitsImplicitLimit,
+        requiresDistinctProjection,
+        resultRowExpectation,
         orderedProjection,
         rankingLimit,
         rankingDirection,
@@ -551,6 +597,10 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
     return JSON.stringify({
         outputEntity: contract.outputEntity,
         expectedCardinality: contract.expectedCardinality,
+        selectionMode: contract.selectionMode,
+        prohibitsImplicitLimit: contract.prohibitsImplicitLimit,
+        requiresDistinctProjection: contract.requiresDistinctProjection,
+        resultRowExpectation: contract.resultRowExpectation,
         resultGrain: contract.requiredDimension,
         requiredTables: contract.requiredTables,
         relationshipPath: contract.relationshipPath,
@@ -574,15 +624,28 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
     const groupByClauses = [...sql.matchAll(/\bgroup\s+by\s+([\s\S]*?)(?=\bhaving\b|\border\s+by\b|\blimit\b|\bunion\b|$)/gi)]
         .map(match => match[1]);
 
+    if (contract.prohibitsImplicitLimit && /\blimit\s+\d+\b/i.test(sql)) {
+        issues.push({
+            code: 'unexpected_limit',
+            severity: 'error',
+            message: `The question requests ${contract.selectionMode === 'all_groups' ? 'all groups' : 'all matching rows'}, but the SQL truncates the answer with LIMIT.`,
+        });
+    }
+
+    if (contract.requiresDistinctProjection && !/\bselect\s+distinct\b/i.test(sql)) {
+        issues.push({
+            code: 'missing_distinct_projection',
+            severity: 'error',
+            message: 'The question requests unique values, but the SQL projection does not use SELECT DISTINCT.',
+        });
+    }
+
     if (contract.orderedProjection) {
         if (/\b(?:sum|avg|count|min|max|median)\s*\(/i.test(sql)) {
             issues.push({ code: 'unexpected_aggregation', severity: 'error', message: 'This is a row-level listing, but the SQL introduces an aggregate calculation.' });
         }
         if (/\bgroup\s+by\b/i.test(sql)) {
             issues.push({ code: 'unexpected_grouping', severity: 'error', message: 'This is a row-level listing, but the SQL groups and collapses records.' });
-        }
-        if (contract.orderedProjection.unbounded && /\blimit\s+\d+\b/i.test(sql)) {
-            issues.push({ code: 'unexpected_limit', severity: 'error', message: 'The question asks for the full ordered list, but the SQL truncates it with LIMIT.' });
         }
         const orderField = identifierPattern(contract.orderedProjection.orderBy);
         const orderClause = sql.match(/\border\s+by\s+([\s\S]*?)(?=\blimit\b|$)/i)?.[1] || '';
@@ -739,4 +802,32 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
     }
 
     return issues;
+}
+
+/**
+ * Validate the shape of locally executed rows against facts established before
+ * SQL generation. This never compares values and never sends rows to a model.
+ */
+export function validateResultAgainstContract(
+    rows: Array<Record<string, unknown>>,
+    contract: QueryContract,
+): SQLFaithfulnessIssue[] {
+    const expectation = contract.resultRowExpectation;
+    if (!expectation) return [];
+    const count = rows.length;
+    const violatesExact = expectation.exact !== undefined && count !== expectation.exact;
+    const violatesMinimum = expectation.minimum !== undefined && count < expectation.minimum;
+    const violatesMaximum = expectation.maximum !== undefined && count > expectation.maximum;
+    if (!violatesExact && !violatesMinimum && !violatesMaximum) return [];
+
+    const expected = expectation.exact !== undefined
+        ? `exactly ${expectation.exact}`
+        : expectation.minimum !== undefined
+            ? `at least ${expectation.minimum}`
+            : `no more than ${expectation.maximum}`;
+    return [{
+        code: 'unexpected_result_cardinality',
+        severity: 'error',
+        message: `The executed query returned ${count} row(s), but the requested answer shape requires ${expected} (${expectation.basis}).`,
+    }];
 }
