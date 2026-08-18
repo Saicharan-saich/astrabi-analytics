@@ -21,6 +21,26 @@ describe('benchmark result comparator', () => {
     expect(result.equal).toBe(true);
   });
 
+  it('maps expected identifiers to matching evidence instead of the first string column', () => {
+    const result = compareResultSets(
+      [
+        { link_to_member: 'member-1', link_to_event: 'event-a' },
+        { link_to_member: 'member-2', link_to_event: 'event-b' },
+      ],
+      [
+        { member_first_name: 'Ada', member_last_name: 'Lovelace', event_link: 'event-a', member_id: 'member-1' },
+        { member_first_name: 'Grace', member_last_name: 'Hopper', event_link: 'event-b', member_id: 'member-2' },
+      ],
+      { orderMatters: false, strictColumns: false },
+    );
+
+    expect(result.equal).toBe(true);
+    expect(result.columnMapping).toEqual({
+      link_to_member: 'member_id',
+      link_to_event: 'event_link',
+    });
+  });
+
   it('honours order only when the gold case declares it significant', () => {
     const expected = [{ category: 'A', total: 10 }, { category: 'B', total: 5 }];
     const reversed = [...expected].reverse();
@@ -42,5 +62,14 @@ describe('benchmark result comparator', () => {
     expect(canonicalColumnName('SUM Sales')).toBe('sales');
     expect(canonicalColumnName('total_sales')).toBe('sales');
     expect(canonicalColumnName('AverageResolutionHours')).toBe('resolution_hours');
+  });
+
+  it('unwraps one accidentally JSON-encoded scalar layer in imported fixtures', () => {
+    const result = compareResultSets(
+      [{ score: '"163"', delta: '"-12.5"' }],
+      [{ score: 163, delta: -12.5 }],
+      { orderMatters: false },
+    );
+    expect(result.equal).toBe(true);
   });
 });

@@ -109,12 +109,18 @@ export function buildQueryPlan(
 ): QueryPlan {
     // ── METRICS ──────────────────────────────────────────────────
     const metrics: Metric[] = [];
-    const primaryAgg = normalizeAgg(query.aggregation);
+    const requestedPrimaryAgg = normalizeAgg(query.aggregation);
+    // In the Question Builder, “Count (#)” means number of rows (as its
+    // tooltip states), not number of non-empty cells in whichever field was
+    // selected. Keep the familiar `count_<field>` alias but execute COUNT(*)
+    // so blank failure reasons, optional notes, and nullable attributes do not
+    // silently remove records from the answer.
+    const primaryAgg: AggregationType = requestedPrimaryAgg === 'COUNT' ? 'COUNT_ALL' : requestedPrimaryAgg;
     const primaryExpr: Expression = { type: 'column', column: query.metric };
 
     metrics.push({
         id: 'primary',
-        alias: metricAlias(query.metric, primaryAgg),
+        alias: metricAlias(query.metric, requestedPrimaryAgg),
         expression: primaryExpr,
         aggregation: primaryAgg,
     });
@@ -122,10 +128,11 @@ export function buildQueryPlan(
     // Secondary metrics
     if (query.secondaryMetrics) {
         for (const sm of query.secondaryMetrics) {
-            const secAgg = normalizeAgg(query.secondaryMetricAggregations?.[sm]);
+            const requestedSecAgg = normalizeAgg(query.secondaryMetricAggregations?.[sm]);
+            const secAgg: AggregationType = requestedSecAgg === 'COUNT' ? 'COUNT_ALL' : requestedSecAgg;
             metrics.push({
                 id: `sec_${sm}`,
-                alias: metricAlias(sm, secAgg),
+                alias: metricAlias(sm, requestedSecAgg),
                 expression: { type: 'column', column: sm },
                 aggregation: secAgg,
             });

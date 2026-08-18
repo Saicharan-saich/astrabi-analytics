@@ -10,6 +10,7 @@ import { SemanticModel, AnalysisPlan, ValidationResult } from './types';
 import { serializeSemanticModel } from './semanticLayer';
 import { fetchWithFallback } from './modelConfig';
 import type { DerivedMetric } from './derivedMetricEngine';
+import { formatQueryContractForPrompt, type QueryContract } from './queryContract';
 
 const TIMEOUT_MS = 20000;
 
@@ -508,6 +509,7 @@ export async function repairSQL(
     model: SemanticModel,
     attempt: number = 1,
     requestPurpose?: 'benchmark',
+    repairContext?: { schemaText?: string; queryContract?: QueryContract },
 ): Promise<{ sql: string; explanation: string }> {
     if (attempt > 2) {
         throw new Error(`SQL repair failed after 2 attempts. Last error: ${error}`);
@@ -515,7 +517,10 @@ export async function repairSQL(
 
     console.log(`[SQL Repair] Attempt ${attempt} for error: ${error}`);
 
-    const serialized = serializeSemanticModel(model);
+    const serialized = repairContext?.schemaText || serializeSemanticModel(model);
+    const contractText = repairContext?.queryContract
+        ? `\nDETERMINISTIC QUERY CONTRACT (must remain satisfied):\n${formatQueryContractForPrompt(repairContext.queryContract)}\n`
+        : '';
 
     const prompt = `The following SQL query failed with an error. Fix it.
 
@@ -524,6 +529,7 @@ ${serialized}
 
 ORIGINAL PLAN:
 ${JSON.stringify(plan, null, 2)}
+${contractText}
 
 FAILED SQL:
 ${originalSQL}
@@ -532,8 +538,8 @@ ERROR:
 ${error}
 
 RULES:
-- Use table name "data".
-- Use ONLY column names from the semantic model.
+- Use only physical tables and columns present in the supplied schema. When the schema contains several tables, preserve the original relationship path and do not collapse the query into "data".
+- Preserve the requested output entity, grain, aggregation, filters, comparison, ranking, anti-join/existence semantics, and every deterministic query-contract requirement.
 - Do not use STRFTIME or EXTRACT. Use YEAR(), MONTH(), QUARTER(). Always wrap date columns with CAST(column AS DATE) e.g. MONTH(CAST(order_date AS DATE)).
 - Fix ONLY the error. Do not change other parts of the query.
 

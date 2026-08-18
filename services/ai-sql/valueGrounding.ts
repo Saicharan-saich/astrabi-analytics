@@ -19,6 +19,14 @@ import type { AnalysisPlan, PlanFilter, SemanticModel } from './types';
 export interface ValueCatalog {
     /** Lowercased value → the columns/canonical-values it appears in. */
     index: Map<string, Array<{ field: string; value: string; filterEligible?: boolean }>>;
+    /** Columns for which the catalog contains the complete bounded domain. */
+    coveredFields: Set<string>;
+}
+
+export interface SqlLiteralAuditIssue {
+    field: string;
+    literal: string;
+    operator: '=' | 'LIKE' | 'ILIKE';
 }
 
 const NEGATION_CUES = [
@@ -44,7 +52,8 @@ export function buildValueCatalog(
     relatedTables?: Array<{ name: string; rows: Record<string, any>[] }>,
 ): ValueCatalog {
     const index = new Map<string, Array<{ field: string; value: string; filterEligible?: boolean }>>();
-    if (!rows || rows.length === 0) return { index };
+    const coveredFields = new Set<string>();
+    if (!rows || rows.length === 0) return { index, coveredFields };
 
     const dimFields = model.fields.filter(f =>
         f.role === 'dimension'
@@ -69,6 +78,7 @@ export function buildValueCatalog(
             if (!arr.some(a => a.field === f.name)) arr.push({ field: f.name, value: val, filterEligible: true });
             index.set(key, arr);
         }
+        if (seen.size <= maxCardinality) coveredFields.add(f.name.toLowerCase());
     }
 
     // Cover every physical table for post-generation literal correction. This
@@ -88,6 +98,7 @@ export function buildValueCatalog(
                 if (distinct.size > maxCardinality) break;
             }
             if (distinct.size === 0 || distinct.size > maxCardinality) continue;
+            coveredFields.add(`${table.name}.${column}`.toLowerCase());
             for (const [key, value] of distinct) {
                 const field = `${table.name}.${column}`;
                 const entries = index.get(key) || [];
@@ -98,7 +109,58 @@ export function buildValueCatalog(
             }
         }
     }
-    return { index };
+    return { index, coveredFields };
+}
+
+function unquoteIdentifier(value: string): string {
+    return value.trim().replace(/^["`]([^"`]+)["`]$/, '$1');
+}
+
+/**
+ * Check model-authored equality and LIKE literals against complete local
+ * categorical domains. No catalog values are returned or sent to a model: an
+ * issue says only that the literal is absent from the referenced field.
+ * High-cardinality and otherwise uncovered fields are deliberately ignored.
+ */
+export function auditSqlLiterals(sql: string, catalog: ValueCatalog): SqlLiteralAuditIssue[] {
+    const aliases = new Map<string, string>();
+    const tablePattern = /\b(?:from|join)\s+(["`]?[a-z_][\w$]*["`]?)\s+(?:as\s+)?(["`]?[a-z_][\w$]*["`]?)/gi;
+    let tableMatch: RegExpExecArray | null;
+    while ((tableMatch = tablePattern.exec(sql)) !== null) {
+        const table = unquoteIdentifier(tableMatch[1]);
+        const alias = unquoteIdentifier(tableMatch[2]);
+        if (!/^(?:where|join|on|group|order|having|limit)$/i.test(alias)) {
+            aliases.set(alias.toLowerCase(), table);
+        }
+    }
+
+    const issues: SqlLiteralAuditIssue[] = [];
+    const predicatePattern = /(?:(\b["`]?[a-z_][\w$]*["`]?)\s*\.\s*)?(["`]?[a-z_][\w$]*["`]?)\s*(=|like|ilike)\s*'((?:[^']|'')*)'/gi;
+    let match: RegExpExecArray | null;
+    while ((match = predicatePattern.exec(sql)) !== null) {
+        const qualifier = match[1] ? unquoteIdentifier(match[1]) : '';
+        const column = unquoteIdentifier(match[2]);
+        const operator = match[3].toUpperCase() as '=' | 'LIKE' | 'ILIKE';
+        const literal = match[4].replace(/''/g, "'");
+        if (!literal || /^\d{4}-\d{2}-\d{2}/.test(literal)) continue;
+
+        const resolvedQualifier = aliases.get(qualifier.toLowerCase()) || qualifier;
+        const qualifiedField = resolvedQualifier ? `${resolvedQualifier}.${column}`.toLowerCase() : '';
+        const suffix = `.${column.toLowerCase()}`;
+        const candidates = qualifiedField && catalog.coveredFields.has(qualifiedField)
+            ? [qualifiedField]
+            : [...catalog.coveredFields].filter(field => field === column.toLowerCase() || field.endsWith(suffix));
+        if (candidates.length !== 1) continue;
+
+        const field = candidates[0];
+        const sought = literal.replace(/^%|%$/g, '').toLowerCase();
+        const found = [...catalog.index.entries()].some(([value, entries]) =>
+            entries.some(entry => entry.field.toLowerCase() === field)
+            && (operator === '=' ? value === sought : value.includes(sought))
+        );
+        if (!found) issues.push({ field, literal, operator });
+    }
+    return issues;
 }
 
 /**

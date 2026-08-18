@@ -127,4 +127,90 @@ describe('AI SQL query contract regression suite', () => {
             contract,
         )).toEqual([]);
     });
+
+    it('locks the requested entity grain and relationship path for multi-table questions', () => {
+        const schema = {
+            tables: [
+                { name: 'COUNTRIES', rowCount: 20, columns: [{ name: 'CountryId', isPK: true }, { name: 'CountryName' }, { name: 'Continent' }] },
+                { name: 'CONTINENTS', rowCount: 5, columns: [{ name: 'ContId', isPK: true }, { name: 'Continent' }] },
+                { name: 'CAR_MAKERS', rowCount: 50, columns: [{ name: 'Id', isPK: true }, { name: 'Maker' }, { name: 'Country' }] },
+            ],
+            links: [
+                { leftTable: 'COUNTRIES', leftColumn: 'Continent', rightTable: 'CONTINENTS', rightColumn: 'ContId', type: 'fk' as const },
+                { leftTable: 'CAR_MAKERS', leftColumn: 'Country', rightTable: 'COUNTRIES', rightColumn: 'CountryId', type: 'fk' as const },
+            ],
+        };
+        const question = 'Which European countries have at least 3 manufacturers?';
+        const contract = buildQueryContract(question, plan({ intent: 'breakdown' }), [], model, schema);
+
+        expect(contract.outputEntity).toMatchObject({ table: 'COUNTRIES', field: 'CountryName', confidence: 'high' });
+        expect(contract.requiredTables).toEqual(expect.arrayContaining(['COUNTRIES', 'CAR_MAKERS']));
+        expect(contract.requiresRanking).toBe(false); // "at least" is a comparator, not a ranking cue
+
+        const wrong = `SELECT data.Continent, COUNT(data.ContId)
+            FROM data
+            WHERE data.Continent = 'europe'
+            GROUP BY data.Continent
+            HAVING COUNT(data.ContId) >= 3`;
+        expect(validateSQLAgainstContract(wrong, contract).map(issue => issue.code))
+            .toEqual(expect.arrayContaining(['missing_requested_dimension', 'missing_output_entity', 'missing_required_table']));
+
+        const correct = `SELECT c.CountryName
+            FROM COUNTRIES c
+            JOIN CAR_MAKERS m ON c.CountryId = m.Country
+            GROUP BY c.CountryName
+            HAVING COUNT(*) >= 3`;
+        expect(validateSQLAgainstContract(correct, contract)).toEqual([]);
+    });
+
+    it('requires explicit anti-join semantics for absence questions', () => {
+        const schema = {
+            tables: [
+                { name: 'countries', rowCount: 20, columns: [{ name: 'country_id', isPK: true }, { name: 'country_name' }] },
+                { name: 'manufacturers', rowCount: 50, columns: [{ name: 'manufacturer_id', isPK: true }, { name: 'country_id' }] },
+            ],
+            links: [
+                { leftTable: 'manufacturers', leftColumn: 'country_id', rightTable: 'countries', rightColumn: 'country_id', type: 'fk' as const },
+            ],
+        };
+        const question = 'List countries without any manufacturers';
+        const contract = buildQueryContract(question, plan({ intent: 'breakdown' }), [], model, schema);
+        expect(contract.existenceMode).toBe('anti');
+
+        const wrong = `SELECT country_name FROM countries GROUP BY country_name HAVING COUNT(country_id) = 0`;
+        expect(validateSQLAgainstContract(wrong, contract).map(issue => issue.code))
+            .toEqual(expect.arrayContaining(['missing_required_table', 'missing_existence_logic']));
+
+        const correct = `SELECT c.country_name
+            FROM countries c
+            WHERE NOT EXISTS (
+                SELECT 1 FROM manufacturers m WHERE m.country_id = c.country_id
+            )`;
+        expect(validateSQLAgainstContract(correct, contract)).toEqual([]);
+    });
+
+    it('enforces explicit aggregation and ranking direction without inheriting a bad plan guess', () => {
+        const averageContract = buildQueryContract(
+            'What is the average sales?',
+            plan({ metrics: [{ field: 'sales', agg: 'sum' }] }),
+            [],
+            model,
+        );
+        expect(averageContract.expectedAggregation).toBe('avg');
+        expect(validateSQLAgainstContract('SELECT SUM(sales) FROM data', averageContract).map(issue => issue.code))
+            .toContain('missing_aggregation');
+        expect(validateSQLAgainstContract('SELECT AVG(sales) FROM data', averageContract)).toEqual([]);
+
+        const rankContract = buildQueryContract(
+            'Which product has the lowest total sales?',
+            plan({ intent: 'ranking', dimensions: [{ field: 'product_name' }], limit: 1 }),
+            [],
+            model,
+        );
+        expect(rankContract.rankingDirection).toBe('asc');
+        expect(validateSQLAgainstContract(
+            'SELECT product_name, SUM(sales) total_sales FROM data GROUP BY product_name ORDER BY total_sales DESC LIMIT 1',
+            rankContract,
+        ).map(issue => issue.code)).toContain('wrong_ranking_direction');
+    });
 });

@@ -53,6 +53,14 @@ export interface FinalQueryContract {
     };
 }
 
+function contractField(value: unknown): string {
+    if (typeof value === 'string') return value.trim();
+    if (!value || typeof value !== 'object') return '';
+    const record = value as Record<string, unknown>;
+    const candidate = record.field ?? record.column ?? record.name ?? record.expression;
+    return typeof candidate === 'string' ? candidate.trim() : '';
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // VALIDATOR
 // ═══════════════════════════════════════════════════════════════════
@@ -73,10 +81,23 @@ export function validateAnswerContract(
 ): ContractValidationResult {
     const checks: ContractCheck[] = [];
     const sqlLower = sql.toLowerCase();
+    // LLM-produced final contracts are runtime data. Normalize their fields so
+    // a harmless shorthand such as `groupBy: ["state"]` cannot crash result
+    // verification and turn an otherwise inspectable answer into "validator
+    // unavailable".
+    const contractColumns = Array.isArray(finalContract?.expectedResult?.columns)
+        ? finalContract!.expectedResult!.columns!.map(contractField).filter(Boolean)
+        : [];
+    const contractFilters = Array.isArray(finalContract?.operations?.filters)
+        ? finalContract!.operations!.filters!
+        : [];
+    const contractGroupBy = Array.isArray(finalContract?.operations?.groupBy)
+        ? finalContract!.operations!.groupBy!
+        : [];
 
     // ─── Check 1: Metrics Present ────────────────────────────────
     {
-        const expectedColumns = finalContract?.expectedResult?.columns?.filter(Boolean) || [];
+        const expectedColumns = contractColumns;
         const planMetrics = (expectedColumns.length
             ? expectedColumns
             : plan.metrics?.map(m => m.field) || []).map(value => value.toLowerCase());
@@ -105,10 +126,10 @@ export function validateAnswerContract(
     // ─── Check 2: Conditions Applied ─────────────────────────────
     {
         const planFilters = finalContract
-            ? (finalContract.operations?.filters || []).map(filter => ({
-                field: filter.field || filter.expression || '',
-                op: filter.operator || 'expression',
-                value: filter.value,
+            ? contractFilters.map(filter => ({
+                field: contractField(filter),
+                op: typeof filter === 'object' && filter && typeof filter.operator === 'string' ? filter.operator : 'expression',
+                value: typeof filter === 'object' && filter ? filter.value : undefined,
             }))
             : plan.filters || [];
         const missingFilters = planFilters.filter(f => {
@@ -134,7 +155,7 @@ export function validateAnswerContract(
     {
         // Check if SQL has fewer WHERE conditions than the plan specified
         const planFilterCount = finalContract
-            ? (finalContract.operations?.filters || []).length
+            ? contractFilters.length
             : (plan.filters || []).length;
         const whereMatch = sqlLower.match(/where\s+/);
         const andCount = whereMatch ? (sqlLower.split(/\band\b/).length - 1) : 0;
@@ -159,7 +180,7 @@ export function validateAnswerContract(
     // ─── Check 4: Grain Correct ──────────────────────────────────
     {
         const planDims = (finalContract
-            ? finalContract.operations?.groupBy?.map(d => d.field) || []
+            ? contractGroupBy.map(contractField).filter(Boolean)
             : plan.dimensions?.map(d => d.field) || []).map(field => field.toLowerCase());
         const groupByMatch = sqlLower.match(/group\s+by\s+([^)]+?)(?:order|limit|having|$)/s);
         const groupByCols = groupByMatch
@@ -189,8 +210,8 @@ export function validateAnswerContract(
     {
         // Check if dimension columns contain IDs instead of names
         if (results.length > 0) {
-            const dimColumns = finalContract?.expectedResult?.columns?.length
-                ? finalContract.expectedResult.columns
+            const dimColumns = contractColumns.length
+                ? contractColumns
                 : (plan.dimensions || []).map(d => d.field);
             let hasOnlyIds = false;
 

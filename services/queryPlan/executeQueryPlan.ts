@@ -145,7 +145,8 @@ function evaluateExpression(expr: Expression, row: Record<string, any>): any {
 
 interface MetricStats {
     sum: number;
-    count: number;       // Non-null count
+    nonNullCount: number; // SQL COUNT(expression), including text values
+    numericCount: number; // Numeric values used as the AVG denominator
     countAll: number;     // Total count including nulls
     min: number;
     max: number;
@@ -154,13 +155,19 @@ interface MetricStats {
 }
 
 function emptyStats(): MetricStats {
-    return { sum: 0, count: 0, countAll: 0, min: Infinity, max: -Infinity, first: null, distinct: new Set() };
+    return { sum: 0, nonNullCount: 0, numericCount: 0, countAll: 0, min: Infinity, max: -Infinity, first: null, distinct: new Set() };
 }
 
 function accumulateStats(stats: MetricStats, rawValue: any): void {
     stats.countAll += 1;
     const isNull = rawValue === null || rawValue === undefined || rawValue === '';
     if (isNull) return; // COUNT skips nulls (SQL semantics)
+
+    // COUNT(expression) counts every non-null value, including strings. The
+    // previous implementation only incremented after numeric parsing, so
+    // `COUNT(failure_reason) BY status` returned eight zeroes and rendered an
+    // empty pie chart for an imported benchmark CSV.
+    stats.nonNullCount += 1;
 
     // Always track distinct values (for COUNT_DISTINCT, which counts strings too)
     stats.distinct.add(String(rawValue));
@@ -170,7 +177,7 @@ function accumulateStats(stats: MetricStats, rawValue: any): void {
     // Previously NaN was converted to 0, inflating AVG denominators and corrupting MIN
     if (isNaN(v)) return;
 
-    stats.count += 1;
+    stats.numericCount += 1;
     stats.sum += v;
     stats.min = Math.min(stats.min, v);
     stats.max = Math.max(stats.max, v);
@@ -180,8 +187,8 @@ function accumulateStats(stats: MetricStats, rawValue: any): void {
 function resolveAggregation(stats: MetricStats, agg: AggregationType): number {
     switch (agg) {
         case 'SUM': return stats.sum;
-        case 'AVG': return stats.count > 0 ? stats.sum / stats.count : 0;
-        case 'COUNT': return stats.count;
+        case 'AVG': return stats.numericCount > 0 ? stats.sum / stats.numericCount : 0;
+        case 'COUNT': return stats.nonNullCount;
         case 'COUNT_ALL': return stats.countAll;
         case 'COUNT_DISTINCT': return stats.distinct.size;
         case 'MIN': return stats.min === Infinity ? 0 : stats.min;

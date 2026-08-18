@@ -32,4 +32,26 @@ describe('answer contract validation', () => {
     expect(result.checks.find(check => check.id === 'metrics_present')?.status).toBe('pass');
     expect(result.checks.find(check => check.id === 'chart_matches_data')?.status).toBe('warn');
   });
+
+  it('normalizes shorthand contract fields instead of making validation unavailable', () => {
+    const shorthandContract = {
+      expectedResult: { columns: [{ field: 'CountryName' }] },
+      operations: {
+        groupBy: ['CountryName'],
+        filters: ['Continent = europe'],
+      },
+    } as any;
+
+    expect(() => validateAnswerContract(
+      plan,
+      "SELECT CountryName FROM countries WHERE Continent = 'europe' GROUP BY CountryName",
+      [{ CountryName: 'germany' }],
+      'table',
+      'CountryName',
+      'CountryName',
+      model,
+      undefined,
+      shorthandContract,
+    )).not.toThrow();
+  });
 });

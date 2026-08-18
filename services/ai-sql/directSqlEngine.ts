@@ -12,6 +12,11 @@
 import { fetchWithFallback, LUNA_MODEL, PLANNER_MODEL, SOL_MODEL } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
 import type { AnalysisPlan, SemanticModel } from './types';
+import {
+    formatQueryContractForPrompt,
+    validateSQLAgainstContract,
+    type QueryContract,
+} from './queryContract';
 
 const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
 Given a database schema and a question, output a SINGLE read-only SQL SELECT that answers it.
@@ -127,6 +132,7 @@ export async function repairSemanticSQL(
     originalSQL: string,
     diagnostic: string,
     requestPurpose?: 'benchmark',
+    queryContract?: QueryContract,
 ): Promise<SemanticSQLRepairResult> {
     const repaired = await fetchWithFallback([
         {
@@ -145,6 +151,19 @@ export async function repairSemanticSQL(
     const safe = validateReadOnlySQL(sql);
     if (!safe.ok) {
         return { sql: originalSQL, tokens, model: repaired.model, explanation: 'Semantic repair was rejected by the read-only SQL gate.', error: safe.reason };
+    }
+    if (queryContract) {
+        const contractIssues = validateSQLAgainstContract(safe.sql, queryContract)
+            .filter(issue => issue.severity === 'error');
+        if (contractIssues.length) {
+            return {
+                sql: originalSQL,
+                tokens,
+                model: repaired.model,
+                explanation: 'Semantic repair was rejected because it changed the required answer contract.',
+                error: contractIssues.map(issue => issue.message).join(' '),
+            };
+        }
     }
     return {
         sql: safe.sql,
@@ -166,6 +185,7 @@ export async function generateDirectSQL(
     plannerVerification?: Array<{ code?: string; severity?: string; message?: string }>,
     semanticModel?: SemanticModel,
     requestPurpose?: 'benchmark',
+    queryContract?: QueryContract,
 ): Promise<DirectSQLResult> {
     const planContext = analysisPlan
         ? `\n\nLocal semantic draft (helpful context, not a constraint):\n${JSON.stringify(analysisPlan, null, 2)}`
@@ -174,6 +194,9 @@ export async function generateDirectSQL(
         ? `\n\nLocal diagnostics to consider:\n${JSON.stringify(plannerVerification, null, 2)}`
         : '';
     const presentationContext = buildEntityPresentationContext(semanticModel);
+    const contractContext = queryContract
+        ? `\n\nDeterministic Query Contract (mandatory; do not weaken or replace it):\n${formatQueryContractForPrompt(queryContract)}`
+        : '';
 
     // Terra interprets the question into a typed, open-ended analytical plan.
     // This is deliberately not a collection of keyword rules: the specification
@@ -181,7 +204,7 @@ export async function generateDirectSQL(
     // and any schema-grounded analytical shape.
     const planner = await fetchWithFallback([
         { role: 'system', content: SPEC_PROMPT },
-        { role: 'user', content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}\n\nQuestion: ${question}` },
+        { role: 'user', content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}${contractContext}\n\nQuestion: ${question}` },
     ] as any, { temperature: 0, max_tokens: 2200, model: PLANNER_MODEL, requestPurpose });
     const specContent = planner.data.choices?.[0]?.message?.content || '';
     const spec = extractJSONObject(specContent);
@@ -190,7 +213,7 @@ export async function generateDirectSQL(
     if (!spec) return { sql: '', tokens, model: planner.model, error: 'AI planner returned an invalid query specification', blocked: true };
     if (spec.clarification) return { sql: '', tokens, model: planner.model, error: spec.clarification, blocked: true, querySpec: spec };
 
-    const userContext = `Schema:\n${schemaText}${presentationContext}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
+    const userContext = `Schema:\n${schemaText}${presentationContext}${contractContext}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
     const drafted = await fetchWithFallback([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userContext },
@@ -208,7 +231,7 @@ export async function generateDirectSQL(
     sql = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');
     const reviewUsage = reviewed.data.usage || {};
     tokens += reviewUsage.total_tokens || ((reviewUsage.prompt_tokens || 0) + (reviewUsage.completion_tokens || 0)) || 0;
-    const modelUsedForSQL = `${planner.model} → ${drafted.model} → ${reviewed.model}`;
+    let modelUsedForSQL = `${planner.model} → ${drafted.model} → ${reviewed.model}`;
     console.log(`[AI SQL] Dynamic three-model route: ${modelUsedForSQL}`);
 
     // A fallback must never silently swap the dataset-relative reporting clock
@@ -226,7 +249,56 @@ export async function generateDirectSQL(
         };
     }
 
-    const safe = validateReadOnlySQL(sql);
+    let safe = validateReadOnlySQL(sql);
     if (!safe.ok) return { sql, tokens, model: modelUsedForSQL, error: `Unsafe SQL rejected: ${safe.reason}`, querySpec: spec };
+    if (queryContract) {
+        let contractIssues = validateSQLAgainstContract(safe.sql, queryContract)
+            .filter(issue => issue.severity === 'error');
+        if (contractIssues.length) {
+            // A contract should help the system recover, not merely turn a
+            // detectable omission into a user-facing failure. Give the reviewer
+            // one focused, metadata-only correction before failing closed.
+            const contractRepair = await fetchWithFallback([
+                {
+                    role: 'system',
+                    content: `${SYSTEM_PROMPT}\n\nThe previous SQL failed a deterministic query contract. Repair every listed violation while preserving the question, exact schema identifiers, read-only safety, and DuckDB dialect. Do not remove requested filters or change the result grain merely to make the SQL pass. Return only corrected SQL.`,
+                },
+                {
+                    role: 'user',
+                    content: `Schema:\n${schemaText}${presentationContext}\n\nQuestion:\n${question}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nDeterministic Query Contract:\n${formatQueryContractForPrompt(queryContract)}\n\nRejected SQL:\n${safe.sql}\n\nContract violations:\n${contractIssues.map(issue => `- ${issue.message}`).join('\n')}\n\nCorrected SQL:`,
+                },
+            ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
+            const repairUsage = contractRepair.data.usage || {};
+            tokens += repairUsage.total_tokens
+                || ((repairUsage.prompt_tokens || 0) + (repairUsage.completion_tokens || 0))
+                || 0;
+            const repairedSQL = extractSQL(contractRepair.data.choices?.[0]?.message?.content || '');
+            const repairedSafe = validateReadOnlySQL(repairedSQL);
+            if (repairedSafe.ok) {
+                const remainingIssues = validateSQLAgainstContract(repairedSafe.sql, queryContract)
+                    .filter(issue => issue.severity === 'error');
+                if (!remainingIssues.length) {
+                    sql = repairedSafe.sql;
+                    safe = repairedSafe;
+                    contractIssues = [];
+                    modelUsedForSQL = `${modelUsedForSQL} → ${contractRepair.model}`;
+                    console.log('[AI SQL] Query contract repair accepted corrected SQL.');
+                } else {
+                    contractIssues = remainingIssues;
+                }
+            }
+
+            if (contractIssues.length) {
+                return {
+                    sql: safe.sql,
+                    tokens,
+                    model: modelUsedForSQL,
+                    error: `Query contract rejected the SQL after repair: ${contractIssues.map(issue => issue.message).join(' ')}`,
+                    blocked: true,
+                    querySpec: spec,
+                };
+            }
+        }
+    }
     return { sql: safe.sql, tokens, model: modelUsedForSQL, querySpec: spec };
 }

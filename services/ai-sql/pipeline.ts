@@ -41,7 +41,7 @@ import { buildQueryPlan } from '../queryPlan/buildQueryPlan';
 import { compileSQL } from '../queryPlan/sqlCompiler';
 import { getDates } from '../dateHelpers';
 import { applyTableCalculation } from '../../utils/tableCalculations';
-import { buildValueCatalog, groundFilters, groundSqlLiterals } from './valueGrounding';
+import { auditSqlLiterals, buildValueCatalog, groundFilters, groundSqlLiterals } from './valueGrounding';
 import { verifyPlan } from './planVerification';
 // ─── Ambiguity Intelligence Layer ────────────────────────────────
 import { detectAmbiguities } from './ambiguityDetector';
@@ -57,6 +57,7 @@ import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerial
 import { describeSchemaForLLM, discoverJoinContext } from './joinEngine';
 import { getEffectivePrivacyMode, type PrivacyMode } from './privacyMode';
 import { getSelection, applySelection } from './privacySelection';
+import { buildQueryContract, validateSQLAgainstContract, type QueryContract } from './queryContract';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -173,6 +174,7 @@ export async function runAISQLPipeline(
 
     const _directSqlStart = performance.now();
     let directSchemaText = '';
+    let activeQueryContract: QueryContract | undefined;
     // The hybrid path deliberately starts with the local semantic engines, then
     // asks a selected GPT-5.6 model to write plan-constrained SQL. The LLM never
     // receives dataset rows; local DuckDB remains the only execution engine.
@@ -216,6 +218,17 @@ export async function runAISQLPipeline(
                 richSchema = `${serializeSemanticModelSchema(semanticModel, 'data', domains)}\n\nMULTI-TABLE CONTRACT:\n- The DuckDB table "data" contains ONLY the rows and columns of primary table "${primaryTable}"; it is not a pre-joined copy.\n- All physical tables are independently queryable. If a requested field, filter, entity, or existence test belongs to another table, use the physical table names and the listed relationship path.\n- Never use "data" as a substitute for a related table. Never infer that a missing related record can be found by grouping "data" alone.\n- For "no", "without", "never", or "not a single" related record, preserve the complete entity population and use NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT.\n\n${joinCtx.description}`;
             }
             directSchemaText = richSchema;
+            // Build one shared, deterministic contract before any model writes
+            // SQL. This unifies entity intent, query grain, relationship paths,
+            // aggregation, ranking and negative-existence semantics instead of
+            // allowing each model/engine to reinterpret them independently.
+            activeQueryContract = buildQueryContract(
+                question,
+                plan,
+                plannerIssues,
+                semanticModel,
+                joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
+            );
             // Preserve the dataset-relative reporting clock even on the
             // approved direct-SQL fallback. Relative terms must never resolve
             // against the browser/server wall clock for historical datasets.
@@ -232,6 +245,7 @@ export async function runAISQLPipeline(
                 plannerIssues,
                 semanticModel,
                 executionOptions?.requestPurpose,
+                activeQueryContract,
             );
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
@@ -590,7 +604,25 @@ export async function runAISQLPipeline(
             summary: directSQL
                 ? `Hybrid SQL: ${directSqlModel || 'GPT-5.6'} wrote plan-constrained SQL using ${effectivePrivacyMode === 'enhanced' ? 'metadata plus approved safe values' : 'metadata only'}`
                 : 'Hybrid SQL unavailable or rejected — continuing with the local deterministic compiler',
-            details: { sql: directSQL, error: directSqlError, tokens: directSqlTokens, model: directSqlModel || null },
+            details: {
+                sql: directSQL,
+                error: directSqlError,
+                tokens: directSqlTokens,
+                model: directSqlModel || null,
+                queryContract: activeQueryContract ? {
+                    outputEntity: activeQueryContract.outputEntity,
+                    expectedCardinality: activeQueryContract.expectedCardinality,
+                    resultGrain: activeQueryContract.requiredDimension,
+                    requiredTables: activeQueryContract.requiredTables,
+                    existenceMode: activeQueryContract.existenceMode,
+                    relationshipMode: activeQueryContract.relationshipMode,
+                    aggregation: activeQueryContract.expectedAggregation,
+                    ratio: activeQueryContract.ratio,
+                    relativeComparison: activeQueryContract.relativeComparison,
+                    rankingDirection: activeQueryContract.rankingDirection,
+                    rankingLimit: activeQueryContract.rankingLimit,
+                } : null,
+            },
         }, _directSqlStart);
     }
 
@@ -751,7 +783,14 @@ export async function runAISQLPipeline(
                 semanticModel,
                 repairAttempts,
                 executionOptions?.requestPurpose,
+                { schemaText: directSchemaText || undefined, queryContract: activeQueryContract },
             );
+            const repairContractIssues = activeQueryContract
+                ? validateSQLAgainstContract(repaired.sql, activeQueryContract).filter(issue => issue.severity === 'error')
+                : [];
+            if (repairContractIssues.length) {
+                throw new Error(`Execution repair changed the answer contract: ${repairContractIssues.map(issue => issue.message).join(' ')}`);
+            }
             currentSQL = repaired.sql;
             sqlResult.explanation = repaired.explanation;
             execResult = await executeSQLViaDuckDB(dataset.rows, currentSQL, semanticModel.timeContext, dataset.relatedTables);
@@ -793,27 +832,40 @@ export async function runAISQLPipeline(
     // A syntactically valid query can still be semantically wrong (wrong table,
     // join path, literal casing, or entity grain). Give the reviewer one
     // metadata-only retry when such a query unexpectedly returns no rows.
+    const preRepairLiteralIssues = _valueCatalog ? auditSqlLiterals(currentSQL, _valueCatalog) : [];
+    const resultRows = execResult.data || [];
+    const isSuspiciousZeroAggregate = resultRows.length === 1
+        && preRepairLiteralIssues.length > 0
+        && Object.values(resultRows[0] || {}).some(value => value !== null && value !== undefined)
+        && Object.values(resultRows[0] || {}).every(value => value === null || value === undefined || Number(value) === 0);
     const shouldRepairEmptyResult = !!directSQL
         && !usedDeterministicFallback
-        && (execResult.data || []).length === 0
-        && !/\b(?:count|how many|are there|is there|zero rows|no results)\b/i.test(question);
+        && (resultRows.length === 0 || isSuspiciousZeroAggregate)
+        && (isSuspiciousZeroAggregate || !/\b(?:count|how many|are there|is there|zero rows|no results)\b/i.test(question));
     if (shouldRepairEmptyResult && directSchemaText) {
         try {
             console.log('[Pipeline] Step 5c: Result-aware semantic repair after empty output...');
+            const literalDiagnostic = preRepairLiteralIssues.length
+                ? ` Local categorical audit: the SQL-authored literal(s) ${preRepairLiteralIssues.map(issue => `"${issue.literal}" for ${issue.field}`).join(', ')} do not exist in their referenced local fields. Re-read the question and schema; do not invent a replacement value.`
+                : '';
             const semanticRepair = await repairSemanticSQL(
                 question,
                 directSchemaText,
                 directQuerySpec,
                 currentSQL,
-                'The query executed successfully but returned 0 rows although the requested result shape expects entity or detail rows.',
+                `The query executed successfully but returned ${isSuspiciousZeroAggregate ? 'a suspicious all-zero aggregate' : '0 rows'} although the requested result shape expects a meaningful answer.${literalDiagnostic}`,
                 executionOptions?.requestPurpose,
+                activeQueryContract,
             );
             directSqlTokens += semanticRepair.tokens;
             if (!semanticRepair.error && semanticRepair.sql !== currentSQL) {
                 let repairedSQL = semanticRepair.sql;
                 if (_valueCatalog) repairedSQL = groundSqlLiterals(repairedSQL, _valueCatalog).sql;
                 const repairedExecution = await executeSQLViaDuckDB(dataset.rows, repairedSQL, semanticModel.timeContext, dataset.relatedTables);
-                if (!repairedExecution.error && (repairedExecution.data || []).length > 0) {
+                const repairedRows = repairedExecution.data || [];
+                const repairedMeaningfully = repairedRows.length > 0
+                    && (!isSuspiciousZeroAggregate || Object.values(repairedRows[0] || {}).some(value => value !== null && value !== undefined && Number(value) !== 0));
+                if (!repairedExecution.error && repairedMeaningfully) {
                     currentSQL = repairedSQL;
                     directSQL = repairedSQL;
                     execResult = repairedExecution;

@@ -33,12 +33,81 @@ function firstDefinedValue(rows: Record<string, unknown>[], column: string): unk
   return undefined;
 }
 
+/** Some imported benchmark fixtures contain a scalar serialized one extra
+ * time (for example `"163"` represented as the string `\"163\"`). Unwrap
+ * exactly one JSON scalar layer so fixture transport formatting cannot turn a
+ * correct execution into a fixture error. Objects and arrays stay untouched. */
+function normalizeScalar(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  const trimmed = value.trim();
+  if (!(trimmed.startsWith('"') && trimmed.endsWith('"'))) return value;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return parsed === null || ['string', 'number', 'boolean'].includes(typeof parsed) ? parsed : value;
+  } catch {
+    return value;
+  }
+}
+
 function typeFamily(value: unknown): 'number' | 'boolean' | 'string' | 'null' {
+  value = normalizeScalar(value);
   if (value === null || value === undefined) return 'null';
   if (typeof value === 'number' || typeof value === 'bigint') return 'number';
   if (typeof value === 'boolean') return 'boolean';
   if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value))) return 'number';
   return 'string';
+}
+
+function comparableValue(value: unknown): string {
+  value = normalizeScalar(value);
+  if (value === null || value === undefined) return 'null:';
+  const family = typeFamily(value);
+  if (family === 'number') return `number:${Number(value).toPrecision(12)}`;
+  if (family === 'boolean') return `boolean:${Boolean(value) ? '1' : '0'}`;
+  return `string:${String(value).trim().toLocaleLowerCase()}`;
+}
+
+/**
+ * Estimate whether two result columns contain the same evidence without
+ * depending on row order. This is used only to choose an alias mapping; the
+ * final comparison below still checks every row and value with the configured
+ * numeric tolerances.
+ */
+function columnValueOverlap(
+  expectedRows: Record<string, unknown>[],
+  actualRows: Record<string, unknown>[],
+  expectedColumn: string,
+  actualColumn: string,
+): number {
+  const expectedValues = expectedRows
+    .map(row => comparableValue(row[expectedColumn]))
+    .filter(value => value !== 'null:');
+  const actualCounts = new Map<string, number>();
+  for (const row of actualRows) {
+    const value = comparableValue(row[actualColumn]);
+    if (value === 'null:') continue;
+    actualCounts.set(value, (actualCounts.get(value) || 0) + 1);
+  }
+  if (!expectedValues.length) return 0;
+  let matched = 0;
+  for (const value of expectedValues) {
+    const available = actualCounts.get(value) || 0;
+    if (!available) continue;
+    matched += 1;
+    actualCounts.set(value, available - 1);
+  }
+  return matched / expectedValues.length;
+}
+
+function columnNameSimilarity(expected: string, actual: string): number {
+  if (expected.toLowerCase() === actual.toLowerCase()) return 1;
+  if (canonicalColumnName(expected) === canonicalColumnName(actual)) return 0.95;
+  const expectedTokens = new Set(tokenizeColumn(expected).filter(token => !AGGREGATION_WORDS.has(token)));
+  const actualTokens = new Set(tokenizeColumn(actual).filter(token => !AGGREGATION_WORDS.has(token)));
+  if (!expectedTokens.size || !actualTokens.size) return 0;
+  const intersection = [...expectedTokens].filter(token => actualTokens.has(token)).length;
+  const union = new Set([...expectedTokens, ...actualTokens]).size;
+  return union ? intersection / union : 0;
 }
 
 function buildColumnMapping(
@@ -59,35 +128,41 @@ function buildColumnMapping(
   const mapping: Record<string, string> = {};
   const unused = new Set(actualColumns);
 
+  // Build all compatible edges first, then assign the strongest evidence
+  // globally. The previous first-compatible strategy could map an expected
+  // member ID to `first_name` merely because both were strings, even when a
+  // later `member_id` column contained every expected value.
+  const edges: Array<{ expected: string; actual: string; score: number }> = [];
   for (const expectedColumn of expectedColumns) {
-    const expectedCanonical = canonicalColumnName(expectedColumn);
-    const exact = actualColumns.find(column => unused.has(column) && column.toLowerCase() === expectedColumn.toLowerCase());
-    if (exact) {
-      mapping[expectedColumn] = exact;
-      unused.delete(exact);
-      continue;
-    }
-
-    const canonical = actualColumns.find(column => unused.has(column) && canonicalColumnName(column) === expectedCanonical);
-    if (canonical) {
-      mapping[expectedColumn] = canonical;
-      unused.delete(canonical);
-      continue;
-    }
-
     const expectedType = typeFamily(firstDefinedValue(expectedRows, expectedColumn));
-    const compatible = actualColumns.find(column => {
-      if (!unused.has(column)) return false;
-      const actualType = typeFamily(firstDefinedValue(actualRows, column));
-      return expectedType === 'null' || actualType === 'null' || expectedType === actualType;
-    });
+    for (let actualIndex = 0; actualIndex < actualColumns.length; actualIndex += 1) {
+      const actualColumn = actualColumns[actualIndex];
+      const actualType = typeFamily(firstDefinedValue(actualRows, actualColumn));
+      if (expectedType !== 'null' && actualType !== 'null' && expectedType !== actualType) continue;
 
-    if (!compatible) {
-      return { mapping, error: `No compatible result column was found for "${expectedColumn}".` };
+      const nameScore = columnNameSimilarity(expectedColumn, actualColumn);
+      const valueScore = columnValueOverlap(expectedRows, actualRows, expectedColumn, actualColumn);
+      // Exact/canonical names lead; matching result evidence resolves aliases
+      // such as link_to_member -> member_id and link_to_event -> event_link.
+      const score = (nameScore * 1_000) + (valueScore * 700) + 20 - (actualIndex / 1_000);
+      edges.push({ expected: expectedColumn, actual: actualColumn, score });
     }
+  }
 
-    mapping[expectedColumn] = compatible;
-    unused.delete(compatible);
+  edges.sort((left, right) => right.score - left.score
+    || left.expected.localeCompare(right.expected)
+    || left.actual.localeCompare(right.actual));
+  const assignedExpected = new Set<string>();
+  for (const edge of edges) {
+    if (assignedExpected.has(edge.expected) || !unused.has(edge.actual)) continue;
+    mapping[edge.expected] = edge.actual;
+    assignedExpected.add(edge.expected);
+    unused.delete(edge.actual);
+  }
+
+  const missing = expectedColumns.find(column => !mapping[column]);
+  if (missing) {
+    return { mapping, error: `No compatible result column was found for "${missing}".` };
   }
 
   return { mapping };
@@ -106,6 +181,8 @@ function valuesEqual(
   absoluteTolerance: number,
   relativeTolerance: number,
 ): boolean {
+  expected = normalizeScalar(expected);
+  actual = normalizeScalar(actual);
   if ((expected === null || expected === undefined) && (actual === null || actual === undefined)) return true;
 
   const expectedType = typeFamily(expected);
