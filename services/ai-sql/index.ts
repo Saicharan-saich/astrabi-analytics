@@ -20,6 +20,12 @@ export { resolveTimeContext, augmentQuestionWithTime } from './timeResolver';
 export { storeUserOverride } from './classificationFeedback';
 export { getClassificationTelemetry } from './arbitrationEngine';
 export { generateTrustVerification } from './trustEngine';
+export {
+    buildCanonicalQueryIntent,
+    reconcilePlanWithCanonicalIntent,
+    canonicalIntentToAnalysisIntent,
+} from './canonicalIntent';
+export type { CanonicalQueryIntent, CanonicalAnswerKind } from './canonicalIntent';
 
 export type {
     SemanticField, SemanticModel, MetricDefinition, DerivedMetricDefinition,

@@ -85,6 +85,19 @@ export interface QueryContract {
     /** Positive relationships default to matched records; LEFT JOIN is used
      * only when the wording explicitly asks to retain unmatched entities. */
     relationshipMode: 'none' | 'inner' | 'left' | 'anti';
+    /** All aggregate operations explicitly required by the question. Keeping
+     * this as a list prevents a multi-measure request (for example AVG and MAX)
+     * from being collapsed into whichever keyword was matched first. */
+    expectedAggregations?: Array<'sum' | 'avg' | 'count' | 'min' | 'max'>;
+    /** Schema-grounded measure fields paired with their requested operations.
+     * A missing field intentionally means COUNT(*)/relationship count rather
+     * than a guessed physical column. */
+    expectedMeasures?: Array<{
+        field?: string;
+        aggregation: 'sum' | 'avg' | 'count' | 'min' | 'max';
+        confidence: 'high' | 'medium';
+    }>;
+    /** Backwards-compatible primary aggregation used by older consumers. */
     expectedAggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max';
     threshold?: {
         operator: '>=' | '>' | '<=' | '<' | '=';
@@ -437,6 +450,89 @@ function resolveExpectedAggregation(question: string, plan: AnalysisPlan): Query
     return undefined;
 }
 
+function resolveExpectedAggregations(question: string, model?: SemanticModel): QueryContract['expectedAggregations'] {
+    // Physical field names are nouns, not operations. Mask schema-grounded
+    // metric phrases before parsing operations so a column such as
+    // "Ticket_Count" does not invent COUNT when the user asks for its AVG/MAX.
+    const aliases = (model?.fields || [])
+        .filter(field => field.role === 'metric')
+        .flatMap(field => [field.name, field.displayLabel, ...(field.synonyms || [])])
+        .map(alias => alias.replace(/[_-]+/g, ' ').trim())
+        .filter(alias => alias.length > 1)
+        .sort((a, b) => b.length - a.length);
+    let operationText = question.replace(/[_-]+/g, ' ');
+    for (const alias of aliases) {
+        const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        operationText = operationText.replace(new RegExp(`\\b${escaped}\\b`, 'gi'), ' measure ');
+    }
+    const shape = inferQueryShape(operationText);
+    return shape.explicitAggregations;
+}
+
+function resolveExpectedMeasures(
+    question: string,
+    aggregations: NonNullable<QueryContract['expectedAggregations']>,
+    model?: SemanticModel,
+): NonNullable<QueryContract['expectedMeasures']> {
+    const normalized = question.toLowerCase().replace(/[_-]+/g, ' ');
+    let candidates = (model?.fields || [])
+        .filter(field => field.role === 'metric')
+        .flatMap(field => [field.name, field.displayLabel, ...(field.synonyms || [])]
+            .map(alias => ({
+                field: field.name,
+                alias: alias.toLowerCase().replace(/[_-]+/g, ' ').trim(),
+            })))
+        .map(candidate => {
+            const escaped = candidate.alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return { ...candidate, index: new RegExp(`\\b${escaped}\\b`, 'i').exec(normalized)?.index ?? -1 };
+        })
+        .filter(candidate => candidate.alias.length > 1 && candidate.index >= 0)
+        .sort((a, b) => a.index - b.index || b.alias.length - a.alias.length)
+        .filter((candidate, index, all) => all.findIndex(other => other.field.toLowerCase() === candidate.field.toLowerCase()) === index);
+
+    if (candidates.length === 0) {
+        const questionTokens = new Set(words(question));
+        candidates = (model?.fields || [])
+            .filter(field => field.role === 'metric')
+            .map(field => {
+                const aliases = [field.name, field.displayLabel, ...(field.synonyms || [])];
+                const best = aliases.map(alias => {
+                    const aliasTokens = words(alias);
+                    const overlap = aliasTokens.filter(token => questionTokens.has(token)).length;
+                    return {
+                        alias,
+                        score: aliasTokens.length ? overlap / aliasTokens.length : 0,
+                        overlap,
+                        index: Math.min(...aliasTokens
+                            .map(token => normalized.indexOf(token))
+                            .filter(index => index >= 0)),
+                    };
+                }).sort((a, b) => b.score - a.score || b.overlap - a.overlap)[0];
+                return {
+                    field: field.name,
+                    alias: best?.alias || field.name,
+                    index: Number.isFinite(best?.index) ? best.index : Number.MAX_SAFE_INTEGER,
+                    score: best?.score || 0,
+                    overlap: best?.overlap || 0,
+                };
+            })
+            .filter(candidate => candidate.overlap > 0 && candidate.score >= 0.6)
+            .sort((a, b) => a.index - b.index || b.score - a.score);
+    }
+
+    return aggregations.map((aggregation, index) => {
+        // Plain COUNT describes entity cardinality unless distinct/counting a
+        // specific measure is explicit. Avoid converting "how many products"
+        // into COUNT(number_products) merely because a similarly named column
+        // exists.
+        if (aggregation === 'count') return { aggregation, confidence: 'high' as const };
+        const candidate = candidates.length === 1 ? candidates[0] : candidates[index];
+        return candidate
+            ? { field: candidate.field, aggregation, confidence: 'high' as const }
+            : { aggregation, confidence: 'medium' as const };
+    });
+}
+
 function resolveThreshold(question: string): Omit<NonNullable<QueryContract['threshold']>, 'requiresHaving'> | undefined {
     const patterns: Array<{ re: RegExp; operator: '>=' | '>' | '<=' | '<' | '=' }> = [
         { re: /\b(-?\d+(?:\.\d+)?)\s+or\s+more\b/i, operator: '>=' },
@@ -579,20 +675,29 @@ export function buildQueryContract(
         && queryShape.operation !== 'ranking'
         && queryShape.operation !== 'grouped_aggregate';
     const planRequiresEntityAggregation = !requiresRowProjection && !!outputEntity
-        && plan.metrics.some(metric => ['sum', 'avg', 'count', 'count_distinct'].includes(metric.agg))
+        && plan.metrics.some(metric => ['sum', 'avg', 'count', 'count_distinct', 'min', 'max', 'median'].includes(metric.agg))
         && !['single_metric', 'distribution'].includes(plan.intent);
     const explicitGroupingCue = queryShape.operation === 'grouped_aggregate'
         || queryShape.implicitFrequencyRanking
         || BREAKDOWN_CUE.test(breakdownQuestion)
         || /\b(?:in|for)\s+each\b/i.test(question)
         || (asksCountAlongsideEntity && !!outputEntity);
+    // A local planner may represent a row-level superlative as MIN/MAX plus
+    // LIMIT 1 (for example, "the song by the youngest singer"). That aggregate
+    // is only an ordering aid; it must not turn the requested row projection
+    // into GROUP BY. Explicit aggregate wording ("highest total sales") and
+    // genuine frequency/group cues still retain grouped semantics.
+    const rowLevelSuperlative = queryShape.operation === 'ranking'
+        && queryShape.selection === 'single'
+        && !answerAggregation
+        && !explicitGroupingCue;
     const explicitScalarAggregationCue = /\b(?:how many|number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
     const requiresGrouping = !requiresRowProjection && !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
         && (queryShape.implicitFrequencyRanking
             || requiresFiscalCalendar
             || BREAKDOWN_CUE.test(breakdownQuestion)
             || verification.some(issue => issue.code === 'missing_dimension')
-            || (existenceMode === 'none' && planRequiresEntityAggregation));
+            || (existenceMode === 'none' && planRequiresEntityAggregation && !rowLevelSuperlative));
     const requiresRanking = !orderedProjection && queryShape.operation === 'ranking';
     const rankingLimit = requiresRanking
         ? queryShape.explicitLimit || (queryShape.selection === 'single' ? 1 : undefined)
@@ -605,9 +710,13 @@ export function buildQueryContract(
     const requiredDimension = requiresGrouping
         ? resolveRequestedDimension(question, model) || (outputEntity?.confidence === 'high' ? outputEntity.field : undefined)
         : undefined;
-    let expectedAggregation = orderedProjection || requiresRowProjection
-        ? undefined
-        : resolveExpectedAggregation(question, plan) || queryShape.explicitAggregation;
+    let expectedAggregations = orderedProjection || requiresRowProjection
+        ? []
+        : resolveExpectedAggregations(question, model);
+    let expectedAggregation = expectedAggregations[0]
+        || (orderedProjection || requiresRowProjection
+            ? undefined
+            : resolveExpectedAggregation(question, plan) || queryShape.explicitAggregation);
     const expectedCardinality: QueryContract['expectedCardinality'] = orderedProjection || requiresRowProjection ? 'detail'
         : requiresGrouping ? 'grouped'
         : expectedAggregation && explicitScalarAggregationCue ? 'scalar'
@@ -625,6 +734,7 @@ export function buildQueryContract(
     // entity and a distinct related table have both been schema-grounded.
     if (!expectedAggregation && threshold && outputEntity && requiredTables.some(table => table !== outputEntity.table)) {
         expectedAggregation = 'count';
+        expectedAggregations = ['count'];
         threshold.requiresHaving = true;
     }
     // A superlative over a related table is a count-of-related-records ranking
@@ -634,7 +744,10 @@ export function buildQueryContract(
         && requiredTables.some(table => table !== outputEntity.table)
         && /\b(?:most|fewest|least)\b/i.test(question)) {
         expectedAggregation = 'count';
+        expectedAggregations = ['count'];
     }
+    if (expectedAggregation && expectedAggregations.length === 0) expectedAggregations = [expectedAggregation];
+    const expectedMeasures = resolveExpectedMeasures(question, expectedAggregations, model);
     const strictOutputProjection = queryShape.selection === 'single'
         && requestedOutputFields.some(field => field.confidence === 'high');
     const requestedPhysicalFields = new Set(requestedOutputFields.map(field => field.field.toLowerCase()));
@@ -708,7 +821,9 @@ export function buildQueryContract(
     if (relationshipMode === 'inner') requirements.push('Use matched-record (INNER JOIN) semantics; do not add unmatched zero-count entities with LEFT JOIN.');
     if (relationshipMode === 'left') requirements.push('Preserve unmatched output entities with LEFT JOIN semantics because the question explicitly asks for them.');
     if (existenceMode === 'anti') requirements.push('Preserve the full output-entity population and express absence with NOT EXISTS, LEFT JOIN ... IS NULL, NOT IN, or EXCEPT.');
-    if (expectedAggregation) requirements.push(`Use ${expectedAggregation.toUpperCase()} semantics for the requested measure.`);
+    if (expectedAggregations.length) {
+        requirements.push(`Use every explicitly requested aggregate operation: ${expectedAggregations.map(aggregation => aggregation.toUpperCase()).join(' and ')}. Do not silently drop one measure.`);
+    }
     if (threshold) requirements.push(`${threshold.requiresHaving ? 'Apply the aggregate threshold in HAVING' : 'Apply the threshold'}: ${threshold.operator} ${threshold.value}.`);
     if (ratio?.basis === 'row_count') requirements.push('Calculate the requested ratio from row/entity counts, not from summed monetary or quantity values.');
     if (ratio?.basis === 'measure') requirements.push('Calculate the requested ratio from the additive measure named in the question, not from row counts.');
@@ -748,6 +863,8 @@ export function buildQueryContract(
         relationshipPath,
         existenceMode,
         relationshipMode,
+        expectedAggregations,
+        expectedMeasures,
         expectedAggregation,
         threshold,
         ratio,
@@ -829,6 +946,8 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
         relationshipPath: contract.relationshipPath,
         existenceMode: contract.existenceMode,
         relationshipMode: contract.relationshipMode,
+        aggregations: contract.expectedAggregations || (contract.expectedAggregation ? [contract.expectedAggregation] : []),
+        measures: contract.expectedMeasures || [],
         aggregation: contract.expectedAggregation,
         threshold: contract.threshold,
         ratio: contract.ratio,
@@ -985,10 +1104,22 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
         && !/(?:\bnot\s+exists\b|\bnot\s+in\s*\(|\bexcept\b|\bleft\s+(?:outer\s+)?join\b[\s\S]*\bis\s+null\b)/i.test(sql)) {
         issues.push({ code: 'missing_existence_logic', severity: 'error', message: 'The question asks for absent related records, but the SQL has no anti-join/set-difference operation.' });
     }
-    if (contract.expectedAggregation) {
-        const aggregate = contract.expectedAggregation === 'count' ? 'count' : contract.expectedAggregation;
+    for (const expected of (contract.expectedAggregations?.length || 0) > 0
+        ? contract.expectedAggregations!
+        : contract.expectedAggregation ? [contract.expectedAggregation] : []) {
+        const aggregate = expected === 'count' ? 'count' : expected;
         if (!new RegExp(`\\b${aggregate}\\s*\\(`, 'i').test(sql)) {
             issues.push({ code: 'missing_aggregation', severity: 'error', message: `The question requires ${aggregate.toUpperCase()} semantics, but the SQL does not use it.` });
+        }
+    }
+    for (const measure of (contract.expectedMeasures || []).filter(item => item.confidence === 'high' && item.field)) {
+        const aggregateCalls = sql.match(new RegExp(`\\b${measure.aggregation}\\s*\\((?:[^()]|\\([^()]*\\))*\\)`, 'gi')) || [];
+        if (!aggregateCalls.some(call => identifierPattern(measure.field!).test(call))) {
+            issues.push({
+                code: 'missing_aggregation',
+                severity: 'error',
+                message: `The question requires ${measure.aggregation.toUpperCase()} over "${measure.field}", but that measure-operation pair is absent.`,
+            });
         }
     }
     if (contract.threshold) {

@@ -63,6 +63,11 @@ import {
     validateSQLAgainstContract,
     type QueryContract,
 } from './queryContract';
+import {
+    buildCanonicalQueryIntent,
+    reconcilePlanWithCanonicalIntent,
+    type CanonicalQueryIntent,
+} from './canonicalIntent';
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -180,6 +185,8 @@ export async function runAISQLPipeline(
     const _directSqlStart = performance.now();
     let directSchemaText = '';
     let activeQueryContract: QueryContract | undefined;
+    let activeCanonicalIntent: CanonicalQueryIntent | undefined;
+    const joinCtx = discoverJoinContext(dataset.relatedTables, dataset.sourceSchema);
     // The hybrid path deliberately starts with the local semantic engines, then
     // asks a selected GPT-5.6 model to write plan-constrained SQL. The LLM never
     // receives dataset rows; local DuckDB remains the only execution engine.
@@ -212,7 +219,6 @@ export async function runAISQLPipeline(
             // flattened "data" table can double-count after a one-to-many join,
             // so the model is told it may query the real tables and join them
             // itself, at the correct grain.
-            const joinCtx = discoverJoinContext(dataset.relatedTables, dataset.sourceSchema);
             if (joinCtx) {
                 richSchema += `\n\nThis dataset came from several tables. "data" is a pre-joined, flattened copy — convenient, but a one-to-many join means totals over it can be double-counted. The original tables are also available and are the safer choice when a question spans more than one of them:\n\n${joinCtx.description}`;
                 console.log(`[Pipeline] Multi-table schema shared: ${joinCtx.tableNames.join(', ')}`);
@@ -227,13 +233,16 @@ export async function runAISQLPipeline(
             // SQL. This unifies entity intent, query grain, relationship paths,
             // aggregation, ranking and negative-existence semantics instead of
             // allowing each model/engine to reinterpret them independently.
-            activeQueryContract = buildQueryContract(
-                question,
-                plan,
-                plannerIssues,
-                semanticModel,
-                joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
-            );
+            if (!activeQueryContract) {
+                activeQueryContract = buildQueryContract(
+                    question,
+                    plan,
+                    plannerIssues,
+                    semanticModel,
+                    joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
+                );
+                activeCanonicalIntent = buildCanonicalQueryIntent(activeQueryContract);
+            }
             // Preserve the dataset-relative reporting clock even on the
             // approved direct-SQL fallback. Relative terms must never resolve
             // against the browser/server wall clock for historical datasets.
@@ -463,6 +472,38 @@ export async function runAISQLPipeline(
         console.warn('[Pipeline] Pre-execution ambiguity gate unavailable:', ambiguityError?.message);
     }
 
+    // Build the answer contract once, then make it the source of truth for the
+    // deterministic compiler and all three models. Only high-confidence shape
+    // facts are reconciled; filters, time logic and schema-grounded fields are
+    // retained from the existing plan.
+    activeQueryContract = buildQueryContract(
+        question,
+        plan,
+        _verification.issues,
+        semanticModel,
+        joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
+    );
+    activeCanonicalIntent = buildCanonicalQueryIntent(activeQueryContract);
+    const canonicalReconciliation = reconcilePlanWithCanonicalIntent(plan, activeCanonicalIntent);
+    plan = canonicalReconciliation.plan;
+    _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
+    if (canonicalReconciliation.changes.length) {
+        console.log(`[Pipeline] Canonical intent reconciled ${canonicalReconciliation.changes.length} structural conflict(s): ${canonicalReconciliation.changes.join('; ')}`);
+    }
+    traceStep({
+        stepNumber: 4,
+        name: 'Canonical Query Intent',
+        engine: 'canonicalIntent',
+        icon: '🧭',
+        status: _verification.ok ? 'pass' : 'warn',
+        summary: `${activeCanonicalIntent.answerKind} · ${activeCanonicalIntent.cardinality} · ${activeCanonicalIntent.grainFields.length ? activeCanonicalIntent.grainFields.join(', ') : 'no grouping grain'}`,
+        details: {
+            canonicalIntent: activeCanonicalIntent,
+            reconciliationChanges: canonicalReconciliation.changes,
+            postReconciliationVerification: _verification.issues,
+        },
+    }, performance.now());
+
     // ─── Step 2c: APDME — Derived Metrics & Guardrails ─────────────
     reportProgress('Analyzing derived metrics...', 3);
     console.log('[Pipeline] Step 2c: Running APDME (Derived Metric Engine)...');
@@ -545,6 +586,16 @@ export async function runAISQLPipeline(
         // the spurious dropped-filter verification issues.
         const cleaned = _verification.issues.filter(i => i.code !== 'dropped_filter');
         _verification = { ok: !cleaned.some(i => i.severity === 'error'), issues: cleaned };
+    } else if ((activeCanonicalIntent?.relationship.tables.length || 0) > 1) {
+        // The single-table Question Builder compiler cannot safely emulate a
+        // schema-graph query. Fail over to the governed three-model route
+        // instead of producing a plausible but wrong flattened-table answer.
+        qbReason = `Canonical intent requires physical tables: ${activeCanonicalIntent!.relationship.tables.join(', ')}`;
+        qbTraceDetails = {
+            fits: false,
+            reason: qbReason,
+            canonicalIntent: activeCanonicalIntent,
+        };
     } else {
         const qbResult = mapPlanToQBConfig(plan, semanticModel);
         if (qbResult.fits) {
@@ -621,6 +672,7 @@ export async function runAISQLPipeline(
                     requiredTables: activeQueryContract.requiredTables,
                     existenceMode: activeQueryContract.existenceMode,
                     relationshipMode: activeQueryContract.relationshipMode,
+                    aggregations: activeQueryContract.expectedAggregations,
                     aggregation: activeQueryContract.expectedAggregation,
                     ratio: activeQueryContract.ratio,
                     relativeComparison: activeQueryContract.relativeComparison,

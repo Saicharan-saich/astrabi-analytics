@@ -17,6 +17,7 @@ import {
     validateSQLAgainstContract,
     type QueryContract,
 } from './queryContract';
+import { buildCanonicalQueryIntent, type CanonicalQueryIntent } from './canonicalIntent';
 
 const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
 Given a database schema and a question, output a SINGLE read-only SQL SELECT that answers it.
@@ -47,7 +48,7 @@ Rules:
 export interface DynamicQuerySpec {
     goal: string;
     operations: {
-        measures?: Array<{ field: string; aggregation?: string; expression?: string }>;
+        measures?: Array<{ field?: string; aggregation?: string; expression?: string }>;
         groupBy?: Array<{ field: string; grain?: string; expression?: string }>;
         filters?: Array<{ field?: string; operator?: string; value?: unknown; expression?: string }>;
         having?: Array<{ expression: string }>;
@@ -75,6 +76,86 @@ function extractJSONObject(content: string): DynamicQuerySpec | null {
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return null;
     try { return JSON.parse(match[0]) as DynamicQuerySpec; } catch { return null; }
+}
+
+/** Freeze model planning to the locally established answer shape. */
+export function reconcileQuerySpecWithCanonicalIntent(
+    draft: DynamicQuerySpec,
+    canonical: CanonicalQueryIntent,
+): DynamicQuerySpec {
+    const spec: DynamicQuerySpec = JSON.parse(JSON.stringify(draft));
+    spec.operations ||= {};
+    spec.expectedResult ||= { grain: '', columns: [] };
+    spec.expectedResult.columns ||= [];
+    spec.assumptions ||= [];
+
+    if (canonical.answerKind === 'detail_projection') {
+        spec.operations.measures = [];
+        spec.operations.groupBy = [];
+    } else {
+        const existingMeasures = spec.operations.measures || [];
+        spec.operations.measures = canonical.measures.map(measure => {
+            const aggregation = measure.aggregation;
+            const existing = existingMeasures.find(measure => measure.aggregation?.toLowerCase() === aggregation)
+                || existingMeasures[0];
+            if (existing) return { ...existing, field: measure.field || existing.field, aggregation };
+            if (measure.field) return { field: measure.field, aggregation };
+            return aggregation === 'count'
+                ? { aggregation, expression: 'COUNT(*)' }
+                : { aggregation };
+        });
+
+        if (canonical.grainFields.length) {
+            const existingGroups = spec.operations.groupBy || [];
+            spec.operations.groupBy = canonical.grainFields.map(field =>
+                existingGroups.find(group => group.field?.toLowerCase() === field.toLowerCase()) || { field }
+            );
+        } else if (canonical.cardinality === 'scalar') {
+            spec.operations.groupBy = [];
+        }
+    }
+
+    if (canonical.constraints.prohibitImplicitLimit) delete spec.operations.limit;
+    if (canonical.order?.limit !== undefined) spec.operations.limit = canonical.order.limit;
+    if (canonical.order) {
+        const current = spec.operations.orderBy?.[0];
+        const rankedMeasure = canonical.measures[0];
+        const canonicalExpression = rankedMeasure
+            ? rankedMeasure.aggregation === 'count' && !rankedMeasure.field
+                ? 'COUNT(*)'
+                : `${rankedMeasure.aggregation.toUpperCase()}(${rankedMeasure.field || 'requested measure'})`
+            : undefined;
+        spec.operations.orderBy = [{
+            expression: canonical.order.field || canonicalExpression || current?.expression
+                || (canonical.aggregations[0]
+                    ? `${canonical.aggregations[0].toUpperCase()}(...)`
+                    : canonical.grainFields[0] || 'requested ranking measure'),
+            direction: canonical.order.direction,
+        }];
+    }
+
+    if (canonical.visibleFields.length) {
+        spec.expectedResult.columns = canonical.constraints.strictOutputProjection
+            ? [...canonical.visibleFields]
+            : [...new Set([...canonical.visibleFields, ...spec.expectedResult.columns])];
+    }
+    spec.expectedResult.grain = canonical.cardinality === 'scalar'
+        ? 'one scalar result row'
+        : canonical.grainFields.length
+            ? `one row per ${canonical.grainFields.join(' + ')}`
+            : 'one row per matching source record';
+
+    // A schema-grounded intent supersedes a model clarification about shape.
+    const groundedMeasure = canonical.measures.some(measure => measure.confidence === 'high' && measure.field);
+    if (canonical.visibleFields.length || canonical.grainFields.length || groundedMeasure || canonical.relationship.tables.length) {
+        spec.clarification = undefined;
+    }
+    spec.assumptions = [
+        ...spec.assumptions,
+        `Canonical answer kind: ${canonical.answerKind}`,
+        `Canonical cardinality: ${canonical.cardinality}`,
+    ];
+    return spec;
 }
 
 /**
@@ -114,6 +195,7 @@ export interface DirectSQLResult {
     blocked?: boolean;
     /** Final semantic contract produced before SQL generation. */
     querySpec?: DynamicQuerySpec;
+    canonicalIntent?: CanonicalQueryIntent;
 }
 
 export interface SemanticSQLRepairResult {
@@ -215,11 +297,17 @@ export async function generateDirectSQL(
         { role: 'user', content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}${contractContext}\n\nQuestion: ${question}` },
     ] as any, { temperature: 0, max_tokens: 2200, model: PLANNER_MODEL, requestPurpose });
     const specContent = planner.data.choices?.[0]?.message?.content || '';
-    const spec = extractJSONObject(specContent);
+    const draftSpec = extractJSONObject(specContent);
     const plannerUsage = planner.data.usage || {};
     let tokens = plannerUsage.total_tokens || ((plannerUsage.prompt_tokens || 0) + (plannerUsage.completion_tokens || 0)) || 0;
-    if (!spec) return { sql: '', tokens, model: planner.model, error: 'AI planner returned an invalid query specification', blocked: true };
-    if (spec.clarification) return { sql: '', tokens, model: planner.model, error: spec.clarification, blocked: true, querySpec: spec };
+    if (!draftSpec) return { sql: '', tokens, model: planner.model, error: 'AI planner returned an invalid query specification', blocked: true };
+    const canonicalIntent = queryContract ? buildCanonicalQueryIntent(queryContract) : undefined;
+    const spec = canonicalIntent
+        ? reconcileQuerySpecWithCanonicalIntent(draftSpec, canonicalIntent)
+        : draftSpec;
+    if (spec.clarification) {
+        return { sql: '', tokens, model: planner.model, error: spec.clarification, blocked: true, querySpec: spec, canonicalIntent };
+    }
 
     const userContext = `Schema:\n${schemaText}${presentationContext}${contractContext}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
     const drafted = await fetchWithFallback([
@@ -254,11 +342,12 @@ export async function generateDirectSQL(
             model: modelUsedForSQL,
             error: 'Wall-clock SQL rejected: use the dataset reporting anchor with explicit DATE literals',
             querySpec: spec,
+            canonicalIntent,
         };
     }
 
     let safe = validateReadOnlySQL(sql);
-    if (!safe.ok) return { sql, tokens, model: modelUsedForSQL, error: `Unsafe SQL rejected: ${safe.reason}`, querySpec: spec };
+    if (!safe.ok) return { sql, tokens, model: modelUsedForSQL, error: `Unsafe SQL rejected: ${safe.reason}`, querySpec: spec, canonicalIntent };
     if (queryContract) {
         let contractIssues = validateSQLAgainstContract(safe.sql, queryContract)
             .filter(issue => issue.severity === 'error');
@@ -304,9 +393,10 @@ export async function generateDirectSQL(
                     error: `Query contract rejected the SQL after repair: ${contractIssues.map(issue => issue.message).join(' ')}`,
                     blocked: true,
                     querySpec: spec,
+                    canonicalIntent,
                 };
             }
         }
     }
-    return { sql: safe.sql, tokens, model: modelUsedForSQL, querySpec: spec };
+    return { sql: safe.sql, tokens, model: modelUsedForSQL, querySpec: spec, canonicalIntent };
 }

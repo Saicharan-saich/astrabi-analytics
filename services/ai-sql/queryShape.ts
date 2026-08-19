@@ -13,6 +13,9 @@ export interface QueryShape {
     operation: QueryOperation;
     selection: SelectionMode;
     explicitAggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max';
+    /** Every aggregate operation explicitly requested by the user. The
+     * singular field above remains as a backwards-compatible primary value. */
+    explicitAggregations: Array<'sum' | 'avg' | 'count' | 'min' | 'max'>;
     groupingCue: boolean;
     orderDirection?: 'asc' | 'desc';
     orderFieldPhrase?: string;
@@ -31,13 +34,21 @@ export interface QueryShape {
     implicitFrequencyRanking: boolean;
 }
 
-function explicitAggregation(question: string): QueryShape['explicitAggregation'] {
-    if (/\b(?:how many|number of|count(?: of)?|count the)\b/i.test(question)) return 'count';
-    if (/\b(?:average|avg|mean)\b/i.test(question)) return 'avg';
-    if (/\b(?:total|sum(?: of)?)\b/i.test(question)) return 'sum';
-    if (/\b(?:minimum|min(?:imum)?\s+(?:value|amount|number|measure))\b/i.test(question)) return 'min';
-    if (/\b(?:maximum|max(?:imum)?\s+(?:value|amount|number|measure))\b/i.test(question)) return 'max';
-    return undefined;
+function explicitAggregations(question: string): QueryShape['explicitAggregations'] {
+    const matches: Array<{ index: number; aggregation: QueryShape['explicitAggregations'][number] }> = [];
+    const patterns: Array<[RegExp, QueryShape['explicitAggregations'][number]]> = [
+        [/\b(?:how many|number of|count(?: of)?|count the)\b/gi, 'count'],
+        [/\b(?:average|avg|mean)\b/gi, 'avg'],
+        [/\b(?:total|sum(?: of)?)\b/gi, 'sum'],
+        [/\b(?:minimum|min(?:imum)?(?:\s+(?:value|amount|number|measure|count|date|time|age|price|cost|sales|revenue|profit|weight|height|length|duration|tickets?))?)\b/gi, 'min'],
+        [/\b(?:maximum|max(?:imum)?(?:\s+(?:value|amount|number|measure|count|date|time|age|price|cost|sales|revenue|profit|weight|height|length|duration|tickets?))?)\b/gi, 'max'],
+    ];
+    for (const [pattern, aggregation] of patterns) {
+        for (const match of question.matchAll(pattern)) matches.push({ index: match.index || 0, aggregation });
+    }
+    matches.sort((a, b) => a.index - b.index);
+    return matches.map(match => match.aggregation)
+        .filter((aggregation, index, all) => all.indexOf(aggregation) === index);
 }
 
 function directionFromRange(start: string, end: string): 'asc' | 'desc' | undefined {
@@ -116,8 +127,11 @@ export function inferQueryShape(question: string): QueryShape {
     // action-prefix guard keeps an all-row ranking such as "Rank every ..."
     // from being collapsed to one winner merely because it mentions common.
     const frequencyWinner = /^\s*(?:please\s+)?(?:which|what|find|return|give(?:\s+me)?|show)\b[\s\S]*?(?:\b(?:most|least)\s+(?:common(?:ly)?|frequent(?:ly)?|popular)\b|\b(?:that|which|who)\s+(?:[a-z][a-z0-9_-]*\s+){0,4}?(?:the\s+)?(?:most|fewest|least)\s+[a-z])/i.test(question);
-    const aggregation = explicitAggregation(shapeText)
-        || (thresholdedGroupCount || frequencyWinner ? 'count' : undefined);
+    const requestedAggregations = explicitAggregations(shapeText);
+    if ((thresholdedGroupCount || frequencyWinner) && !requestedAggregations.includes('count')) {
+        requestedAggregations.push('count');
+    }
+    const aggregation = requestedAggregations[0];
     const groupingText = question.replace(/\b(?:ordered|sorted|ranked)\s+by\b/gi, '');
     const groupingCue = thresholdedGroupCount || frequencyWinner
         || /\b(?:by|per|for\s+each|for\s+every|each|every)\b/i.test(groupingText)
@@ -148,6 +162,7 @@ export function inferQueryShape(question: string): QueryShape {
         operation,
         selection,
         explicitAggregation: aggregation,
+        explicitAggregations: requestedAggregations,
         groupingCue,
         orderDirection: order.orderDirection,
         orderFieldPhrase: order.orderFieldPhrase,
