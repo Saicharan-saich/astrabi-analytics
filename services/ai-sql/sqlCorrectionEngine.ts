@@ -284,6 +284,8 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
             return buildAggregateFilterSQL(plan, model, apdmeMetrics);
         case 'growth_analysis':
             return buildGrowthAnalysisSQL(plan, model);
+        case 'distinct_values':
+            return buildDistinctValuesSQL(plan, model);
         default:
             // Fallback: treat as breakdown
             return buildBreakdownSQL(plan, model, apdmeMetrics);
@@ -371,7 +373,7 @@ function buildDerivedMetricSQL(
 
     // Build the grain expression for GROUP BY
     let grainExpr: string;
-    const d = `CAST(${dateField} AS DATE)`;
+    const d = `CAST(${dateField} AS TIMESTAMP)`;
     switch (grain) {
         case 'day':
             grainExpr = dateField;
@@ -642,7 +644,7 @@ function buildDayOfWeekSQL(
     // SELECT both the raw date and the day name
     const selects = [
         dateField,
-        `DAYNAME(CAST(${dateField} AS DATE)) AS day_name`,
+        `DAYNAME(CAST(${dateField} AS TIMESTAMP)) AS day_name`,
         ...metExprs,
     ];
 
@@ -709,6 +711,22 @@ function buildShareOfTotalSQL(plan: AnalysisPlan, model: SemanticModel): string 
 function buildCorrelationSQL(plan: AnalysisPlan, model: SemanticModel): string {
     // Same as breakdown but with multiple metrics
     return buildBreakdownSQL(plan, model);
+}
+
+function buildDistinctValuesSQL(plan: AnalysisPlan, model: SemanticModel): string {
+    const dims = plan.dimensions.map(d => q(d.field));
+    if (dims.length === 0) return buildBreakdownSQL(plan, model);
+    const where = buildWhereClause(plan.filters);
+    const parts = [`SELECT DISTINCT ${dims.join(', ')}`, fromTable()];
+    if (where) parts.push(`WHERE ${where}`);
+    if (plan.sort?.length) {
+        const orderParts = plan.sort.map(s => `${q(s.field)} ${s.dir === 'desc' ? 'DESC' : 'ASC'}`);
+        parts.push(`ORDER BY ${orderParts.join(', ')}`);
+    } else {
+        parts.push(`ORDER BY ${dims[0]}`);
+    }
+    if (plan.limit) parts.push(`LIMIT ${plan.limit}`);
+    return parts.join('\n');
 }
 
 /**
@@ -779,10 +797,11 @@ function tryRowLevelAvgFilterSQL(plan: AnalysisPlan, model: SemanticModel): stri
     const dims = buildDimensionExpressions(plan.dimensions).join(', ');
     const cmp = aa.op === 'above_avg' ? '>' : '<';
     const otherWhere = buildWhereClause(plan.filters); // excludes the above/below_avg filter
-    const scalar = `${q(aa.field)} ${cmp} (SELECT AVG(${q(aa.field)}) ${fromTable()})`;
+    const subWhere = otherWhere ? ` WHERE ${otherWhere}` : '';
+    const scalar = `${q(aa.field)} ${cmp} (SELECT AVG(${q(aa.field)}) ${fromTable()}${subWhere})`;
     const whereClause = [otherWhere, scalar].filter(Boolean).join(' AND ');
 
-    const parts = [`SELECT ${dims}`, fromTable(), `WHERE ${whereClause}`];
+    const parts = [`SELECT DISTINCT ${dims}`, fromTable(), `WHERE ${whereClause}`];
     if (plan.sort.length > 0) {
         // Order by the RAW attribute (a real column), never the aggregate alias the
         // planner may have attached — there is no GROUP BY / metric column here.
@@ -998,8 +1017,8 @@ function buildGrowthAnalysisSQL(plan: AnalysisPlan, model: SemanticModel): strin
 
     // TRY_CAST so a metric loaded as text (CSV) doesn't break the aggregate.
     const qMetricNum = `TRY_CAST(${qMetricField} AS DOUBLE)`;
-    const currentExpr = `${aggFn}(CASE WHEN CAST(${qDateField} AS DATE) >= DATE '${currentStart}' THEN ${qMetricNum} ELSE 0 END)`;
-    const previousExpr = `${aggFn}(CASE WHEN CAST(${qDateField} AS DATE) < DATE '${previousEnd}' THEN ${qMetricNum} ELSE 0 END)`;
+    const currentExpr = `${aggFn}(CASE WHEN CAST(${qDateField} AS TIMESTAMP) >= TIMESTAMP '${currentStart} 00:00:00' THEN ${qMetricNum} ELSE 0 END)`;
+    const previousExpr = `${aggFn}(CASE WHEN CAST(${qDateField} AS TIMESTAMP) < TIMESTAMP '${previousEnd} 00:00:00' THEN ${qMetricNum} ELSE 0 END)`;
 
     const growthExpr = `ROUND(CASE WHEN ${previousExpr} > 0 THEN (${currentExpr} - ${previousExpr}) / ${previousExpr} * 100 ELSE NULL END, 2)`;
 
@@ -1663,7 +1682,7 @@ function getMetricAlias(met: PlanMetric, model: SemanticModel, apdmeMetrics?: De
  */
 function timeGrainExpr(field: string, grain: string): string {
     // Wrap with CAST to handle VARCHAR date columns in DuckDB
-    const d = `CAST(${q(field)} AS DATE)`;
+    const d = `CAST(${q(field)} AS TIMESTAMP)`;
     switch (grain) {
         case 'year':
             return `YEAR(${d})`;

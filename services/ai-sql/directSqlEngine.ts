@@ -25,8 +25,12 @@ Rules:
 - DuckDB dialect. Double-quote identifiers that contain spaces or special characters (e.g. "Free Meal Count (K-12)").
 - Use the EXACT PHYSICAL table and column names from the schema in SQL. A display label such as "Customer ID" is not a SQL identifier when the schema names the physical column customer_id. Do not invent columns or transform display labels into identifiers.
 - When the result identifies people, customers, products, companies, or other entities, select and group by the most human-readable descriptive field available (for example customer_name or product_name). Treat opaque identifiers (such as customer_id) as an optional secondary reference, never as the sole user-facing answer when a name/label field exists.
+- When the question asks for a list or categories of an entity (e.g. "what are the budget categories"), use SELECT DISTINCT on only the requested column(s). Do not include unrelated columns.
+- Match the output grain to the question. If the question asks for unique values, use SELECT DISTINCT. If it asks for "how many", use COUNT.
 - Read the "Column notes": respect additivity (SUM only additive measures; a column marked "per-unit/rate" must use AVG, never SUM), and never GROUP BY or aggregate a column marked "row identifier".
 - When money/revenue/total is asked for, use the additive currency measure, not a per-unit price.
+- When computing "X% higher/lower than average", apply the percentage as a multiplier: e.g. "20% higher than average" → column > 1.2 * (SELECT AVG(...))
+- When the AVG subquery is used with additional WHERE filters, those same filters must appear inside the subquery.
 - DATE COLUMNS ARE STORED AS TEXT (VARCHAR). You MUST wrap them in CAST(col AS DATE) before ANY date function or comparison — DATE_TRUNC, EXTRACT, strftime, date_diff, ordering by month, or BETWEEN. Example: DATE_TRUNC('month', CAST(order_date AS DATE)), and CAST(order_date AS DATE) BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'. Writing DATE_TRUNC('month', order_date) directly WILL fail.
 - JOIN across tables when needed, following the listed foreign keys.
 - Treat absence and exclusion as set logic. Questions such as "entities with no related records" require NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT against the related table; never simulate absence by grouping only the primary table and writing HAVING COUNT(...) = 0.
@@ -68,8 +72,16 @@ Capture all requested analytical operations dynamically: measures/aggregations, 
 Define expectedResult from the words that describe what the user wants returned, before planning filters. Aggregates used only as comparison thresholds belong in filters/subqueries and must not replace those requested result fields. Never invent COUNT, collection aggregates, GROUP BY, or LIMIT from a column name or from a filter's aggregate.
 Relative analytical language is answerable without a user-supplied literal threshold. When the governed plan resolves "high/strong" to above_avg or "low/weak/negative" to below_avg, preserve that decision: compare each entity-level aggregate with the average across entity aggregates, record the rule in assumptions, and do NOT request clarification. Ask only when the required field or entity grain is genuinely unavailable.
 Represent negative existence explicitly as an anti-join/set operation (NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT). Preserve the requested entity as expectedResult grain and columns; never substitute a related table or a higher-level grouping.
+
+CRITICAL — do NOT return a clarification for any of these answerable patterns:
+- Grouped queries: questions like "for each", "for different", "per", "by", "and the corresponding number" request GROUP BY results with multiple rows. Never say the question requests a scalar when grouping signals are present.
+- Aggregate queries on the whole table: COUNT(*), AVG(*), SUM(*) on the table itself are always valid. If the table is named "Highschooler", then COUNT(*) FROM Highschooler counts highschoolers — no extra identifying field is needed.
+- Field visibility: the result does NOT need to include every descriptive or identifier field. If the question asks for "average weight per pet type", only PetType and AVG(weight) are needed — do not demand pet_age, pet_id, or any other field.
+- Superlative + grouping: "which X has the most Y" can be answered with GROUP BY + ORDER BY + LIMIT 1.
+- Column existence: if the question mentions a concept that maps to an existing column (even loosely), use that column. Do not return clarification saying the schema lacks a field when a reasonable mapping exists.
+
 Return valid JSON only with: goal, operations, expectedResult, assumptions, clarification.
-If the schema cannot answer the question, set clarification instead of inventing a field.`;
+If the schema genuinely cannot answer the question (no relevant table or column exists), set clarification instead of inventing a field.`;
 
 function extractJSONObject(content: string): DynamicQuerySpec | null {
     const raw = (content || '').replace(/\`\`\`json|\`\`\`/gi, '').trim();

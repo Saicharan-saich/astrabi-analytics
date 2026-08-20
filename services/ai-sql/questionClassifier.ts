@@ -49,7 +49,7 @@ export function isTimePeriodComparison(question: string): boolean {
 export type ClassifiedIntent =
     | 'trend' | 'ranking' | 'breakdown' | 'share_of_total'
     | 'single_metric' | 'comparison' | 'distribution' | 'correlation'
-    | 'derived_metric' | 'aggregate_filter' | 'growth_analysis' | 'ambiguous';
+    | 'derived_metric' | 'aggregate_filter' | 'growth_analysis' | 'ambiguous' | 'distinct_values';
 
 export interface ClassificationResult {
     intent: ClassifiedIntent;
@@ -142,6 +142,12 @@ const GROWTH_ANALYSIS_PATTERNS = [
     /\bwhich\s+\w+\s+(?:are|is)\s+(?:\w+\s+)*grow/i,
 ];
 
+const LISTING_PATTERNS = [
+    /\b(?:what\s+are|list|show|get)\s+(?:the\s+)?(?:all\s+)?(?:different|distinct|unique|various)?\s*(?:types?|kinds?|categories|values?)\s+(?:of|for|in)\b/i,
+    /\b(?:list|show|display|enumerate)\s+(?:all\s+)?(?:the\s+)?(?:distinct|unique)\s/i,
+    /\b(?:distinct|unique)\s+(?:values?\s+)?(?:of|for|in)\b/i,
+];
+
 const DAY_OF_WEEK_PATTERNS = [
     /\bday(s)?\s+(of\s+)?(the\s+)?week\b/i,
     /\bweekday(s)?\b/i,
@@ -228,6 +234,7 @@ export function classifyQuestion(question: string): ClassificationResult {
         { intent: 'breakdown', score: matchPatterns(q, BREAKDOWN_PATTERNS), reason: 'dimension breakdown keywords detected' },
         { intent: 'distribution', score: matchPatterns(q, DISTRIBUTION_PATTERNS), reason: 'distribution/histogram keywords detected' },
         { intent: 'correlation', score: matchPatterns(q, CORRELATION_PATTERNS), reason: 'correlation/relationship keywords detected' },
+        { intent: 'distinct_values', score: matchPatterns(q, LISTING_PATTERNS), reason: 'listing/distinct values keywords detected' },
     ];
 
     // Sort by score descending

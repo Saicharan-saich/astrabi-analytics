@@ -154,8 +154,8 @@ export function validatePlan(plan: AnalysisPlan, model: SemanticModel): Validati
         }
     }
 
-    // ── Rule 7: Must have at least one metric (except distribution) ──
-    if (plan.metrics.length === 0 && !['distribution', 'projection'].includes(plan.intent)) {
+    // ── Rule 7: Must have at least one metric (except distribution, projection, or distinct_values) ──
+    if (plan.metrics.length === 0 && !['distribution', 'projection', 'distinct_values'].includes(plan.intent)) {
         // Auto-fix: use the first measure field with its default aggregation
         const defaultMeasure = model.fields.find(f => f.role === 'metric');
         if (defaultMeasure) {

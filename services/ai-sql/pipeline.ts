@@ -698,14 +698,21 @@ export async function runAISQLPipeline(
             || (!!f.compositeRef && m.compositeId === f.compositeRef)
         ));
 
-    if (directSqlBlocked && !canCompileRelativeThresholdsLocally) {
-        throw new Error(directSqlError || 'AI SQL stopped before execution because it could not preserve the requested analytical shape.');
-    }
-    if (directSqlBlocked && canCompileRelativeThresholdsLocally) {
-        console.warn('[Pipeline] AI planner requested clarification for governed relative thresholds; continuing with the local aggregate-filter compiler.');
+    // Detect false LLM clarifications about answer shape / field visibility.
+    // These are answerable by the local compiler — the planner is being overly
+    // cautious about grouping vs scalar, field visibility, or table identity.
+    const isShapeClarification = directSqlBlocked && directSqlError && /(?:aggregate.*row|scalar|grouped.*row|splits.*group|must.*identify|field.*visible|no field.*identif|requires.*visible)/i.test(directSqlError);
+
+    if (directSqlBlocked && (canCompileRelativeThresholdsLocally || isShapeClarification)) {
+        console.warn(`[Pipeline] AI planner clarification bypassed — falling through to local compiler. Reason: ${directSqlError}`);
         directSQL = null;
         directSqlBlocked = false;
     }
+
+    if (directSqlBlocked && !canCompileRelativeThresholdsLocally) {
+        throw new Error(directSqlError || 'AI SQL stopped before execution because it could not preserve the requested analytical shape.');
+    }
+
 
     // ─── Step 3: Generate SQL (Step B — deterministic + LLM fallback) ─
     reportProgress('Generating SQL...', 4);

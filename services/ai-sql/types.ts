@@ -189,6 +189,8 @@ export interface PlanFilter {
     isHaving?: boolean;
     /** Preserve wording such as "low or negative": below-average OR non-positive. */
     includeNonPositive?: boolean;
+    /** Multiplier for relative thresholds, e.g. 1.2 for "20% higher than average". */
+    multiplier?: number;
 }
 
 export interface PlanSort {
@@ -209,7 +211,8 @@ export type AnalysisIntent =
     | 'correlation'        // "Sales vs profit by category"
     | 'distribution'       // "Distribution of order values"
     | 'aggregate_filter'   // "Products with above-average sales"
-    | 'growth_analysis';   // "Which products are driving revenue growth?"
+    | 'growth_analysis'    // "Which products are driving revenue growth?"
+    | 'distinct_values';   // "What are the different budget categories?"
 
 export interface AnalysisPlan {
     /** Detected intent */

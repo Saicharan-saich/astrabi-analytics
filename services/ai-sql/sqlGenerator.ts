@@ -75,6 +75,16 @@ function tryDeterministicSQL(
             return generateCompoundAverageSQL(plan, model);
         }
 
+        if (plan.intent === 'distinct_values') {
+            const dims = plan.dimensions.map(d => d.timeGrain && d.timeGrain !== 'day' ? `${applyTimeGrain(d.field, d.timeGrain)} AS ${d.field}_${d.timeGrain}` : `"${d.field}"`);
+            const parts = [`SELECT DISTINCT ${dims.join(', ')}`, 'FROM data'];
+            const whereParts = buildWhereClause(plan, model);
+            if (whereParts.length) parts.push(`WHERE ${whereParts.join(' AND ')}`);
+            parts.push(`ORDER BY ${dims[0]}`);
+            if (plan.limit) parts.push(`LIMIT ${plan.limit}`);
+            return { sql: parts.join('\n'), explanation: `Listed distinct values.` };
+        }
+
         const parts: string[] = [];
 
         // --- SELECT clause ---
