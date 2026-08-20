@@ -9,6 +9,7 @@ function sampleRun(): BenchmarkRun {
     suiteVersions: { 'spider-dev-research': '1.0' },
     selectedSuiteIds: ['spider-dev-research'],
     scope: 'full',
+    questionLimit: 200,
     privacyMode: 'enhanced',
     startedAt: Date.UTC(2026, 7, 18, 10, 0, 0),
     completedAt: Date.UTC(2026, 7, 18, 10, 1, 0),
@@ -55,6 +56,7 @@ describe('benchmark evidence export', () => {
     expect(csv).toContain('candidate_output_json');
     expect(csv).toContain('comparison_json');
     expect(csv).toContain('run_metadata_json');
+    expect(csv).toContain('question_limit');
     expect(csv).toContain('case_result_json');
     expect(csv).toContain('Anne Walker');
     expect(csv).toContain('course_count');

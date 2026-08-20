@@ -35,6 +35,7 @@ export function benchmarkRunToCsv(run: BenchmarkRun): string {
     suiteVersions: run.suiteVersions,
     selectedSuiteIds: run.selectedSuiteIds,
     scope: run.scope,
+    questionLimit: run.questionLimit,
     privacyMode: run.privacyMode || 'strict',
     startedAt: run.startedAt,
     completedAt: run.completedAt,
@@ -47,7 +48,7 @@ export function benchmarkRunToCsv(run: BenchmarkRun): string {
   };
 
   const headers = [
-    'run_id', 'run_schema_version', 'app_version', 'methodology', 'scope', 'privacy_mode',
+    'run_id', 'run_schema_version', 'app_version', 'methodology', 'scope', 'question_limit', 'privacy_mode',
     'selected_suites_json', 'suite_versions_json', 'run_started_at', 'run_completed_at',
     'run_cancelled', 'run_interruption_reason', 'run_resume_count', 'run_metrics_json',
     'case_id', 'source_id', 'suite', 'question', 'benchmark_context', 'category', 'difficulty',
@@ -73,6 +74,7 @@ export function benchmarkRunToCsv(run: BenchmarkRun): string {
     run.appVersion,
     run.methodologyLabel,
     run.scope,
+    run.questionLimit,
     run.privacyMode || 'strict',
     jsonCell(run.selectedSuiteIds),
     jsonCell(run.suiteVersions),

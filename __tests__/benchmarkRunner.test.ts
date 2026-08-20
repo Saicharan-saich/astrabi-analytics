@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ALL_BENCHMARK_SUITES,
   BENCHMARK_SUITES,
   executeBenchmarkCase,
   getBenchmarkResumeIndex,
   runBenchmark,
+  selectBenchmarkCases,
   summarizeBenchmarkResults,
   type BenchmarkRunnerDependencies,
 } from '../services/benchmark';
@@ -31,6 +33,21 @@ function dependencies(overrides: Partial<BenchmarkRunnerDependencies> = {}): Ben
 }
 
 describe('benchmark runner', () => {
+  it('selects a deterministic, balanced 200-question custom research run', () => {
+    const researchSuites = ALL_BENCHMARK_SUITES.filter(suite => suite.evaluationClass === 'official-public-subset');
+    const selected = selectBenchmarkCases(researchSuites, 'full', 200);
+    const repeated = selectBenchmarkCases(researchSuites, 'full', 200);
+    const counts = selected.reduce<Record<string, number>>((totals, testCase) => {
+      totals[testCase.suiteId] = (totals[testCase.suiteId] || 0) + 1;
+      return totals;
+    }, {});
+
+    expect(selected).toHaveLength(200);
+    expect(Object.values(counts)).toEqual([100, 100]);
+    expect(repeated.map(testCase => testCase.id)).toEqual(selected.map(testCase => testCase.id));
+    expect(selectBenchmarkCases(researchSuites, 'full', 37)).toHaveLength(37);
+  });
+
   it('verifies gold integrity before scoring a passing candidate', async () => {
     let reloads = 0;
     const result = await executeBenchmarkCase(firstCase, dependencies({

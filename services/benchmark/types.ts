@@ -173,6 +173,9 @@ export interface BenchmarkRun {
   suiteVersions: Record<string, string>;
   selectedSuiteIds: BenchmarkSuiteId[];
   scope: 'smoke' | 'full';
+  /** Optional deterministic cap used by an administrator-selected custom run.
+   * Omitted for legacy smoke/full runs. */
+  questionLimit?: number;
   /** Privacy mode frozen for every case in this run. */
   privacyMode?: PrivacyMode;
   startedAt: number;
@@ -209,6 +212,9 @@ export interface BenchmarkRunnerDependencies {
 
 export interface BenchmarkRunOptions {
   scope: 'smoke' | 'full';
+  /** Run at most this many cases, distributed deterministically across the
+   * selected suites. Only applies to full-scope/custom runs. */
+  questionLimit?: number;
   /** Run-scoped privacy mode used by the production AI SQL pipeline. */
   privacyMode?: PrivacyMode;
   appVersion: string;

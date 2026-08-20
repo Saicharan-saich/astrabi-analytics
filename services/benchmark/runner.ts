@@ -340,10 +340,46 @@ function assertCompatibleResume(
     && suiteIds.every((id, index) => id === previous.selectedSuiteIds[index]);
   const versionsMatch = suites.every(suite => previous.suiteVersions[suite.id] === suite.version);
   const privacyMode = options.privacyMode || 'strict';
+  const questionLimit = options.scope === 'full' && options.questionLimit
+    ? Math.max(1, Math.floor(options.questionLimit))
+    : undefined;
   if (!sameSuites || !versionsMatch || previous.scope !== options.scope
+    || previous.questionLimit !== questionLimit
     || (previous.privacyMode || 'strict') !== privacyMode || previous.metrics.total !== total) {
     throw new Error('This benchmark cannot be resumed because its suite manifest, scope, privacy mode, or version has changed. Start a new run instead.');
   }
+}
+
+/** Select a reproducible, suite-balanced case set for smoke, custom, and full
+ * runs. A custom limit round-robins suites so 200 questions cannot
+ * accidentally mean "only the first selected source". */
+export function selectBenchmarkCases(
+  suites: BenchmarkSuite[],
+  scope: BenchmarkRunOptions['scope'],
+  questionLimit?: number,
+): BenchmarkCase[] {
+  if (scope === 'smoke') return suites.flatMap(suite => suite.cases.slice(0, 5));
+  const available = suites.reduce((total, suite) => total + suite.cases.length, 0);
+  const limit = questionLimit === undefined
+    ? available
+    : Math.min(available, Math.max(1, Math.floor(questionLimit)));
+  if (limit >= available) return suites.flatMap(suite => suite.cases);
+
+  const selected: BenchmarkCase[] = [];
+  let caseIndex = 0;
+  while (selected.length < limit) {
+    let added = false;
+    for (const suite of suites) {
+      const testCase = suite.cases[caseIndex];
+      if (!testCase) continue;
+      selected.push(testCase);
+      added = true;
+      if (selected.length === limit) break;
+    }
+    if (!added) break;
+    caseIndex += 1;
+  }
+  return selected;
 }
 
 export async function runBenchmark(
@@ -351,7 +387,10 @@ export async function runBenchmark(
   dependencies: BenchmarkRunnerDependencies,
   options: BenchmarkRunOptions,
 ): Promise<BenchmarkRun> {
-  const selectedCases = suites.flatMap(suite => options.scope === 'smoke' ? suite.cases.slice(0, 5) : suite.cases);
+  const questionLimit = options.scope === 'full' && options.questionLimit
+    ? Math.max(1, Math.floor(options.questionLimit))
+    : undefined;
+  const selectedCases = selectBenchmarkCases(suites, options.scope, questionLimit);
   const evaluationClasses = new Set(suites.map(suite => suite.evaluationClass || 'curated-compatibility'));
   const methodologyLabel: BenchmarkRun['methodologyLabel'] = evaluationClasses.size > 1
     ? 'Mixed-Suite Execution Accuracy'
@@ -368,6 +407,7 @@ export async function runBenchmark(
     suiteVersions: Object.fromEntries(suites.map(suite => [suite.id, suite.version])),
     selectedSuiteIds: suites.map(suite => suite.id),
     scope: options.scope,
+    questionLimit,
     privacyMode: options.privacyMode || 'strict',
     startedAt: previousRun?.startedAt || Date.now(),
     cancelled: false,

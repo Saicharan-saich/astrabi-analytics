@@ -42,6 +42,7 @@ import {
   loadBenchmarkRunHistory,
   loadResearchBenchmarkDataset,
   runBenchmark,
+  selectBenchmarkCases,
   saveBenchmarkRun,
   saveBenchmarkRunToHistory,
   type BenchmarkCaseResult,
@@ -56,6 +57,7 @@ interface BenchmarkLabViewProps {
 }
 
 type LabView = 'overview' | 'results' | 'history' | 'methodology';
+type RunSizeMode = 'smoke' | 'custom' | 'full';
 
 const STATUS_LABELS: Record<BenchmarkCaseStatus, string> = {
   pass: 'Pass',
@@ -193,7 +195,8 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
   const [selectedSuites, setSelectedSuites] = useState<Set<BenchmarkSuiteId>>(
     () => new Set(BENCHMARK_SUITES.map(suite => suite.id))
   );
-  const [scope, setScope] = useState<'smoke' | 'full'>('smoke');
+  const [scope, setScope] = useState<RunSizeMode>('smoke');
+  const [customQuestionCount, setCustomQuestionCount] = useState(200);
   const [benchmarkPrivacyMode, setBenchmarkPrivacyMode] = useState<PrivacyMode>('strict');
   const [confirmed, setConfirmed] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
@@ -231,10 +234,15 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     () => ALL_BENCHMARK_SUITES.filter(suite => selectedSuites.has(suite.id)),
     [selectedSuites],
   );
-  const selectedQuestionCount = selectedSuiteObjects.reduce(
-    (total, suite) => total + (scope === 'full' ? suite.cases.length : Math.min(5, suite.cases.length)),
-    0,
-  );
+  const availableQuestionCount = selectedSuiteObjects.reduce((total, suite) => total + suite.cases.length, 0);
+  const customCountValid = Number.isInteger(customQuestionCount)
+    && customQuestionCount >= 1
+    && customQuestionCount <= availableQuestionCount;
+  const selectedQuestionCount = scope === 'smoke'
+    ? selectBenchmarkCases(selectedSuiteObjects, 'smoke').length
+    : scope === 'custom'
+      ? (customCountValid ? customQuestionCount : 0)
+      : availableQuestionCount;
   const displayedRun = selectedHistoryRun || latestRun;
   const displayedResumeIndex = displayedRun ? getBenchmarkResumeIndex(displayedRun) : 0;
   const displayedResults = isRunning ? liveResults : (displayedRun?.results || []);
@@ -315,12 +323,11 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
         .map(id => ALL_BENCHMARK_SUITES.find(suite => suite.id === id))
         .filter((suite): suite is (typeof ALL_BENCHMARK_SUITES)[number] => Boolean(suite))
       : [...selectedSuiteObjects];
-    const runScope = resumeRun?.scope || scope;
+    const runScope = resumeRun?.scope || (scope === 'smoke' ? 'smoke' : 'full');
+    const runQuestionLimit = resumeRun?.questionLimit
+      ?? (!resumeRun && scope === 'custom' ? customQuestionCount : undefined);
     const runPrivacyMode = resumeRun?.privacyMode || benchmarkPrivacyMode;
-    const plannedQuestions = runSuites.reduce(
-      (total, suite) => total + (runScope === 'full' ? suite.cases.length : Math.min(5, suite.cases.length)),
-      0,
-    );
+    const plannedQuestions = selectBenchmarkCases(runSuites, runScope, runQuestionLimit).length;
     cancelRef.current = false;
     setSelectedHistoryRun(null);
     setIsRunning(true);
@@ -354,6 +361,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
         },
         {
           scope: runScope,
+          questionLimit: runQuestionLimit,
           privacyMode: runPrivacyMode,
           appVersion: (import.meta as any).env?.VITE_APP_VERSION || '3.0',
           shouldCancel: () => cancelRef.current,
@@ -568,10 +576,54 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                     <button disabled={isRunning} onClick={() => { setScope('smoke'); setConfirmed(false); }} className={`px-4 py-2.5 rounded-xl border text-xs font-bold transition-all ${scope === 'smoke' ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400' : `${softSurface} ${muted}`}`}>
                       <Zap className="w-3.5 h-3.5 inline mr-1.5" />Smoke · 5 per suite
                     </button>
+                    <button disabled={isRunning} onClick={() => { setScope('custom'); setCustomQuestionCount(current => Math.min(Math.max(1, current), Math.max(1, availableQuestionCount))); setConfirmed(false); }} className={`px-4 py-2.5 rounded-xl border text-xs font-bold transition-all ${scope === 'custom' ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' : `${softSurface} ${muted}`}`}>
+                      <BarChart3 className="w-3.5 h-3.5 inline mr-1.5" />Custom · choose count
+                    </button>
                     <button disabled={isRunning} onClick={() => { setScope('full'); setConfirmed(false); }} className={`px-4 py-2.5 rounded-xl border text-xs font-bold transition-all ${scope === 'full' ? 'bg-violet-500/15 border-violet-500/30 text-violet-400' : `${softSurface} ${muted}`}`}>
                       <Gauge className="w-3.5 h-3.5 inline mr-1.5" />Full · all selected questions
                     </button>
                   </div>
+                  {scope === 'custom' && (
+                    <div className={`max-w-2xl rounded-2xl border p-4 ${softSurface}`}>
+                      <div className="flex flex-col sm:flex-row sm:items-end gap-3">
+                        <label className="flex-1">
+                          <span className={`block text-[11px] font-black uppercase tracking-[0.14em] ${muted}`}>Questions to run</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={Math.max(1, availableQuestionCount)}
+                            step={1}
+                            value={customQuestionCount}
+                            disabled={isRunning}
+                            onChange={event => { setCustomQuestionCount(Number(event.target.value)); setConfirmed(false); }}
+                            className={`mt-2 w-full rounded-xl border px-4 py-2.5 text-sm font-black outline-none focus:ring-2 focus:ring-amber-500/30 ${isDark ? 'bg-[#0b1019] border-white/10 text-white' : 'bg-white border-slate-300 text-slate-900'}`}
+                          />
+                        </label>
+                        <div className="flex flex-wrap gap-2">
+                          {[25, 50, 100, 200, 400].filter(value => value <= availableQuestionCount).map(value => (
+                            <button
+                              type="button"
+                              key={value}
+                              disabled={isRunning}
+                              onClick={() => { setCustomQuestionCount(value); setConfirmed(false); }}
+                              className={`rounded-xl border px-3 py-2.5 text-xs font-black ${customQuestionCount === value ? 'border-amber-500/40 bg-amber-500/15 text-amber-400' : `${softSurface} ${strong}`}`}
+                            >
+                              {value}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <p className={`mt-2 text-[11px] ${customCountValid ? muted : 'text-rose-400'}`}>
+                        {availableQuestionCount === 0
+                          ? 'Select at least one benchmark suite.'
+                          : customQuestionCount < 1
+                            ? 'Enter at least 1 question.'
+                            : customQuestionCount > availableQuestionCount
+                              ? `The selected suites contain ${availableQuestionCount} questions.`
+                              : `${customQuestionCount} cases will be selected deterministically across ${selectedSuiteObjects.length} selected suite${selectedSuiteObjects.length === 1 ? '' : 's'}.`}
+                      </p>
+                    </div>
+                  )}
                   <div>
                     <div className={`text-[11px] font-black uppercase tracking-[0.14em] ${muted}`}>AI data access</div>
                     <div className="mt-2 grid sm:grid-cols-2 gap-2 max-w-2xl">
@@ -664,7 +716,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               <>
               <div className={`rounded-2xl border px-4 py-3 flex flex-wrap items-center justify-between gap-2 ${displayedRun.metrics.completed === displayedRun.metrics.total ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
                 <div className={`text-sm font-black ${displayedRun.metrics.completed === displayedRun.metrics.total ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {displayedRun.methodologyLabel} · {displayedRun.scope === 'full' ? 'Full run' : 'Smoke run'} · {displayedRun.privacyMode === 'enhanced' ? 'Better answers' : 'Private'} · {displayedRun.metrics.total} planned · {displayedRun.metrics.completed} completed
+                  {displayedRun.methodologyLabel} · {displayedRun.questionLimit ? `Custom ${displayedRun.questionLimit}` : displayedRun.scope === 'full' ? 'Full run' : 'Smoke run'} · {displayedRun.privacyMode === 'enhanced' ? 'Better answers' : 'Private'} · {displayedRun.metrics.total} planned · {displayedRun.metrics.completed} completed
                 </div>
                 <div className={`text-xs ${muted}`}>{displayedRun.selectedSuiteIds.length} suite{displayedRun.selectedSuiteIds.length === 1 ? '' : 's'} · {displayedRun.cancelled ? 'Stopped by user' : displayedRun.metrics.completed === displayedRun.metrics.total ? 'Run complete' : 'Run incomplete'}</div>
               </div>
@@ -912,7 +964,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className={`text-sm font-black ${strong}`}>{new Date(run.startedAt).toLocaleString()}</span>
-                            <span className={`rounded-lg border px-2 py-1 text-[10px] font-black ${softSurface} ${strong}`}>{run.scope === 'full' ? 'Full run' : 'Smoke run'}</span>
+                            <span className={`rounded-lg border px-2 py-1 text-[10px] font-black ${softSurface} ${strong}`}>{run.questionLimit ? `Custom ${run.questionLimit}` : run.scope === 'full' ? 'Full run' : 'Smoke run'}</span>
                             <span className={`rounded-lg border px-2 py-1 text-[10px] font-black ${run.privacyMode === 'enhanced' ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-400' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400'}`}>{run.privacyMode === 'enhanced' ? 'Better answers' : 'Private'}</span>
                           </div>
                           <div className={`mt-1 text-[11px] ${muted}`}>{run.methodologyLabel} · {run.metrics.completed}/{run.metrics.total} completed · {run.selectedSuiteIds.length} suites · {run.metrics.totalTokens.toLocaleString()} tokens</div>
