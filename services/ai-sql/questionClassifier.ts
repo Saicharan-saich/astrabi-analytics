@@ -146,6 +146,8 @@ const LISTING_PATTERNS = [
     /\b(?:what\s+are|list|show|get)\s+(?:the\s+)?(?:all\s+)?(?:different|distinct|unique|various)?\s*(?:types?|kinds?|categories|values?)\s+(?:of|for|in)\b/i,
     /\b(?:list|show|display|enumerate)\s+(?:all\s+)?(?:the\s+)?(?:distinct|unique)\s/i,
     /\b(?:distinct|unique)\s+(?:values?\s+)?(?:of|for|in)\b/i,
+    /\b(?:list\s+out|list|enumerate|give\s+me)\s+(?:the\s+)?(?:all\s+)?(?:id|ids|names?|numbers?)\b/i,
+    /\b(?:what\s+are)\s+(?:the\s+)?(?:all\s+)?(?:different|distinct|unique|various)\s/i,
 ];
 
 const DAY_OF_WEEK_PATTERNS = [

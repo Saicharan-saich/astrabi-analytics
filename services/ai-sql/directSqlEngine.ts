@@ -47,6 +47,9 @@ Rules:
 - Never return a generic scalar total merely because the draft plan has no dimension. If the user asks "by", "over time", a fiscal calendar, a comparison, ranking, or another explicit analytical shape, implement that shape using the available schema.
 - For a total period comparison, return two labelled aggregate rows, 'Current' and 'Previous'. For a trend comparison, retain the period label and the requested time grain.
 - If the question includes a "Dataset reporting anchor", that anchor is the reporting clock. Resolve relative periods using explicit DATE literals from it; NEVER use CURRENT_DATE, CURRENT_TIMESTAMP, NOW(), or other wall-clock functions.
+- "List out", "list", "enumerate", "show me the X" means return individual rows — never COUNT. "List out the Id number of races" → SELECT raceId FROM races, NOT SELECT COUNT(*). Only use COUNT when the question explicitly says "how many", "count", "total number of", or "number of".
+- "What is the percentage of X that Y" or "what percentage of accounts are Z" → use conditional aggregation: CAST(SUM(condition) AS REAL) * 100.0 / COUNT(*). Do not GROUP BY individual rows. The result is a single scalar percentage.
+- Only SELECT the columns the question explicitly asks about. If the question says "what are the budget categories", select only category (and any grouping key). Do not add event_name, budget_id, event_status, or other unrequested columns.
 - Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
 
 export interface DynamicQuerySpec {
@@ -79,6 +82,11 @@ CRITICAL — do NOT return a clarification for any of these answerable patterns:
 - Field visibility: the result does NOT need to include every descriptive or identifier field. If the question asks for "average weight per pet type", only PetType and AVG(weight) are needed — do not demand pet_age, pet_id, or any other field.
 - Superlative + grouping: "which X has the most Y" can be answered with GROUP BY + ORDER BY + LIMIT 1.
 - Column existence: if the question mentions a concept that maps to an existing column (even loosely), use that column. Do not return clarification saying the schema lacks a field when a reasonable mapping exists.
+
+SEMANTIC RULES:
+- "List out", "list", "enumerate" means return individual rows in expectedResult. The goal is projection, NOT counting. Do not plan a COUNT measure when the user says "list".
+- "What is the percentage of X that Y" → plan a conditional aggregation: SUM(condition) * 100 / COUNT(*), returning one scalar row. Do not GROUP BY individual entity rows.
+- Only include in expectedResult.columns the fields the question explicitly requests. Do not add extra columns (event_name, budget_id, etc.) unless asked.
 
 Return valid JSON only with: goal, operations, expectedResult, assumptions, clarification.
 If the schema genuinely cannot answer the question (no relevant table or column exists), set clarification instead of inventing a field.`;
