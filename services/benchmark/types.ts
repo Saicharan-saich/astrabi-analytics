@@ -178,6 +178,8 @@ export interface BenchmarkRun {
   questionLimit?: number;
   /** Privacy mode frozen for every case in this run. */
   privacyMode?: PrivacyMode;
+  /** Seed used to shuffle the question order. Omitted when shuffle is off. */
+  shuffleSeed?: number;
   startedAt: number;
   completedAt?: number;
   cancelled: boolean;
@@ -217,6 +219,10 @@ export interface BenchmarkRunOptions {
   questionLimit?: number;
   /** Run-scoped privacy mode used by the production AI SQL pipeline. */
   privacyMode?: PrivacyMode;
+  /** Shuffle the question order so each run uses a different random sequence.
+   * A numeric seed is generated automatically and stored on the run for
+   * reproducibility. */
+  shuffle?: boolean;
   appVersion: string;
   shouldCancel?: () => boolean;
   onCaseStart?: (testCase: BenchmarkCase, index: number, total: number) => void;

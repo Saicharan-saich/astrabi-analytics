@@ -198,6 +198,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
   const [scope, setScope] = useState<RunSizeMode>('smoke');
   const [customQuestionCount, setCustomQuestionCount] = useState(200);
   const [benchmarkPrivacyMode, setBenchmarkPrivacyMode] = useState<PrivacyMode>('strict');
+  const [shuffleEnabled, setShuffleEnabled] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState({ completed: 0, total: 0, question: '' });
@@ -363,6 +364,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
           scope: runScope,
           questionLimit: runQuestionLimit,
           privacyMode: runPrivacyMode,
+          shuffle: shuffleEnabled,
           appVersion: (import.meta as any).env?.VITE_APP_VERSION || '3.0',
           shouldCancel: () => cancelRef.current,
           onCaseStart: (testCase, index, total) => {
@@ -652,6 +654,13 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                     </div>
                   </div>
                   <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer ${softSurface}`}>
+                    <input type="checkbox" checked={shuffleEnabled} disabled={isRunning} onChange={event => { setShuffleEnabled(event.target.checked); setConfirmed(false); }} className="mt-0.5 accent-amber-600" />
+                    <span>
+                      <span className={`block text-xs font-bold ${strong}`}>Shuffle question order</span>
+                      <span className={`block text-[11px] mt-1 ${muted}`}>Randomly reorder questions each run so different sets are tested first. The seed is saved for reproducibility.</span>
+                    </span>
+                  </label>
+                  <label className={`flex items-start gap-3 rounded-xl border p-3 cursor-pointer ${softSurface}`}>
                     <input type="checkbox" checked={confirmed} disabled={isRunning || selectedQuestionCount === 0} onChange={event => setConfirmed(event.target.checked)} className="mt-0.5 accent-violet-600" />
                     <span>
                       <span className={`block text-xs font-bold ${strong}`}>I understand this run will submit {selectedQuestionCount} isolated AI SQL questions.</span>
@@ -716,7 +725,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               <>
               <div className={`rounded-2xl border px-4 py-3 flex flex-wrap items-center justify-between gap-2 ${displayedRun.metrics.completed === displayedRun.metrics.total ? 'border-emerald-500/25 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
                 <div className={`text-sm font-black ${displayedRun.metrics.completed === displayedRun.metrics.total ? 'text-emerald-400' : 'text-amber-400'}`}>
-                  {displayedRun.methodologyLabel} · {displayedRun.questionLimit ? `Custom ${displayedRun.questionLimit}` : displayedRun.scope === 'full' ? 'Full run' : 'Smoke run'} · {displayedRun.privacyMode === 'enhanced' ? 'Better answers' : 'Private'} · {displayedRun.metrics.total} planned · {displayedRun.metrics.completed} completed
+                  {displayedRun.methodologyLabel} · {displayedRun.questionLimit ? `Custom ${displayedRun.questionLimit}` : displayedRun.scope === 'full' ? 'Full run' : 'Smoke run'} · {displayedRun.privacyMode === 'enhanced' ? 'Better answers' : 'Private'}{displayedRun.shuffleSeed !== undefined ? ' · Shuffled' : ''} · {displayedRun.metrics.total} planned · {displayedRun.metrics.completed} completed
                 </div>
                 <div className={`text-xs ${muted}`}>{displayedRun.selectedSuiteIds.length} suite{displayedRun.selectedSuiteIds.length === 1 ? '' : 's'} · {displayedRun.cancelled ? 'Stopped by user' : displayedRun.metrics.completed === displayedRun.metrics.total ? 'Run complete' : 'Run incomplete'}</div>
               </div>

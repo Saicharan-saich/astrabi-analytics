@@ -357,29 +357,57 @@ export function selectBenchmarkCases(
   suites: BenchmarkSuite[],
   scope: BenchmarkRunOptions['scope'],
   questionLimit?: number,
+  shuffleSeed?: number,
 ): BenchmarkCase[] {
   if (scope === 'smoke') return suites.flatMap(suite => suite.cases.slice(0, 5));
   const available = suites.reduce((total, suite) => total + suite.cases.length, 0);
   const limit = questionLimit === undefined
     ? available
     : Math.min(available, Math.max(1, Math.floor(questionLimit)));
-  if (limit >= available) return suites.flatMap(suite => suite.cases);
-
-  const selected: BenchmarkCase[] = [];
-  let caseIndex = 0;
-  while (selected.length < limit) {
-    let added = false;
-    for (const suite of suites) {
-      const testCase = suite.cases[caseIndex];
-      if (!testCase) continue;
-      selected.push(testCase);
-      added = true;
-      if (selected.length === limit) break;
+  let cases: BenchmarkCase[];
+  if (limit >= available) {
+    cases = suites.flatMap(suite => suite.cases);
+  } else {
+    cases = [];
+    let caseIndex = 0;
+    while (cases.length < limit) {
+      let added = false;
+      for (const suite of suites) {
+        const testCase = suite.cases[caseIndex];
+        if (!testCase) continue;
+        cases.push(testCase);
+        added = true;
+        if (cases.length === limit) break;
+      }
+      if (!added) break;
+      caseIndex += 1;
     }
-    if (!added) break;
-    caseIndex += 1;
   }
-  return selected;
+
+  // Shuffle using a seeded PRNG (xorshift32) so the order is random but
+  // reproducible from the stored seed.
+  if (shuffleSeed !== undefined) {
+    cases = seededShuffle(cases, shuffleSeed);
+  }
+
+  return cases;
+}
+
+/** Seeded Fisher-Yates shuffle using xorshift32 for reproducibility. */
+function seededShuffle<T>(array: T[], seed: number): T[] {
+  const result = [...array];
+  let s = seed | 0 || 1; // ensure non-zero
+  function xorshift32(): number {
+    s ^= s << 13;
+    s ^= s >> 17;
+    s ^= s << 5;
+    return (s >>> 0) / 0x100000000; // [0, 1)
+  }
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(xorshift32() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
 }
 
 export async function runBenchmark(
@@ -390,7 +418,10 @@ export async function runBenchmark(
   const questionLimit = options.scope === 'full' && options.questionLimit
     ? Math.max(1, Math.floor(options.questionLimit))
     : undefined;
-  const selectedCases = selectBenchmarkCases(suites, options.scope, questionLimit);
+  const shuffleSeed = options.shuffle
+    ? (options.resumeRun?.shuffleSeed ?? (Date.now() ^ (Math.random() * 0x7fffffff | 0)))
+    : undefined;
+  const selectedCases = selectBenchmarkCases(suites, options.scope, questionLimit, shuffleSeed);
   const evaluationClasses = new Set(suites.map(suite => suite.evaluationClass || 'curated-compatibility'));
   const methodologyLabel: BenchmarkRun['methodologyLabel'] = evaluationClasses.size > 1
     ? 'Mixed-Suite Execution Accuracy'
@@ -409,6 +440,7 @@ export async function runBenchmark(
     scope: options.scope,
     questionLimit,
     privacyMode: options.privacyMode || 'strict',
+    ...(shuffleSeed !== undefined ? { shuffleSeed } : {}),
     startedAt: previousRun?.startedAt || Date.now(),
     cancelled: false,
     appVersion: options.appVersion,
@@ -418,7 +450,7 @@ export async function runBenchmark(
     resumeCount: previousRun ? (previousRun.resumeCount || 0) + 1 : 0,
   };
 
-  console.info(`[Benchmark Runner] Manifest locked: scope=${options.scope}, privacy=${run.privacyMode}, suites=${suites.length}, cases=${selectedCases.length}, start=${resumeIndex + 1}`);
+  console.info(`[Benchmark Runner] Manifest locked: scope=${options.scope}, privacy=${run.privacyMode}, suites=${suites.length}, cases=${selectedCases.length}${shuffleSeed !== undefined ? `, shuffleSeed=${shuffleSeed}` : ''}, start=${resumeIndex + 1}`);
 
   let consecutiveLlmUnavailable = 0;
   for (let index = resumeIndex; index < selectedCases.length; index += 1) {
