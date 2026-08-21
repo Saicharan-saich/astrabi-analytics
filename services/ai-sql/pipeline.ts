@@ -78,42 +78,41 @@ function sanitizeLLMSQL(sql: string, question: string): string {
     let result = sql;
 
     // 1. Column-trim + DISTINCT for listing questions.
-    //    "What are the budget category of..." → SELECT DISTINCT category
-    //    The LLM over-projects 7 columns. DISTINCT on 7 columns is still 16 rows.
-    //    We must trim to only columns mentioned in the question.
+    //    "What are the budget category of..." → SELECT DISTINCT category, type
+    //    Keep ALL columns whose base name appears anywhere in the question text.
     const listingMatch = /\b(?:what\s+are|what\s+is)\s+(?:the\s+)?(?:\w+\s+)?(?:types?|kinds?|categor(?:y|ies))\s+(?:of|for|in)\b/i.test(question);
     if (listingMatch) {
-        // Extract the requested concept: "budget category" → "category"
-        const conceptMatch = question.match(/(?:what\s+are|what\s+is)\s+(?:the\s+)?(?:(\w+)\s+)?(types?|kinds?|categor(?:y|ies))\s+(?:of|for|in)/i);
-        if (conceptMatch) {
-            const targetWord = conceptMatch[2].toLowerCase().replace(/ies$/, 'y'); // categories → category
-            // Find the column in the SELECT that matches this word
-            const selectMatch = result.match(/\bSELECT\s+(?:DISTINCT\s+)?([\s\S]*?)\bFROM\b/i);
-            if (selectMatch) {
-                const columns = selectMatch[1].split(',').map(c => c.trim());
-                const matchingCol = columns.find(col => {
+        const selectMatch = result.match(/\bSELECT\s+(?:DISTINCT\s+)?([\s\S]*?)\bFROM\b/i);
+        if (selectMatch) {
+            const columns = selectMatch[1].split(',').map(c => c.trim()).filter(c => c.length > 0);
+            if (columns.length > 2) {
+                const qLower = question.toLowerCase();
+                // Keep columns whose base name appears in the question
+                const kept = columns.filter(col => {
                     const colName = col.replace(/^[\w.]*\./, '').replace(/["` ]/g, '').toLowerCase();
-                    return colName === targetWord || colName === targetWord + 's'
-                        || colName === targetWord.replace(/y$/, 'ies');
+                    return qLower.includes(colName);
                 });
-                if (matchingCol && columns.length > 2) {
-                    // Rebuild SELECT with only the matching column
-                    const newSelect = `SELECT DISTINCT\n    ${matchingCol}`;
+                if (kept.length > 0 && kept.length < columns.length) {
+                    const newSelect = `SELECT DISTINCT\n    ${kept.join(',\n    ')}`;
                     result = result.replace(/\bSELECT\s+(?:DISTINCT\s+)?[\s\S]*?\bFROM\b/i, `${newSelect}\nFROM`);
-                    console.log(`[Pipeline] Sanitizer: Trimmed SELECT to DISTINCT ${matchingCol}`);
+                    console.log(`[Pipeline] Sanitizer: Trimmed SELECT to DISTINCT [${kept.join(', ')}]`);
                 }
             }
         }
     }
 
     // 2. Percentage conditional aggregation rewrite.
-    //    "what is the percentage of X that Y" → SUM(cond)*100/COUNT(*)
+    //    ONLY for simple SQL without nested subqueries (NOT EXISTS, correlated, etc.)
+    //    to avoid regex corruption of complex SQL structures.
     const percentageMatch = /\bpercentage\s+of\b/i.test(question)
         || /\bcalculate\s+(?:the\s+)?percentage\b/i.test(question);
-    if (percentageMatch && /\bGROUP\s+BY\b/i.test(result)) {
+    const hasSubquery = /\bNOT\s+EXISTS\b/i.test(result) || /\bEXISTS\s*\(/i.test(result)
+        || (result.match(/\bSELECT\b/gi) || []).length > 1;
+    if (percentageMatch && /\bGROUP\s+BY\b/i.test(result) && !hasSubquery) {
         const whereMatch = result.match(/\bWHERE\s+([\s\S]*?)(?:\bGROUP\s+BY\b|\bORDER\s+BY\b|$)/i);
-        const caseMatch = result.match(/\bWHEN\s+[\w.]*\.?(\w+)\s*=\s*'([^']+)'/i);
-        const fromMatch = result.match(/\bFROM\s+([\w."` ]+(?:\s+(?:AS\s+)?\w+)?)/i);
+        // Match "WHEN field = 'value'" but use a non-greedy capture for the field qualifier
+        const caseMatch = result.match(/\bWHEN\s+(?:[\w."]+\.)?["']?(\w+)["']?\s*=\s*'([^']+)'/i);
+        const fromMatch = result.match(/\bFROM\s+(["'\w. `]+(?:\s+(?:AS\s+)?\w+)?)/i);
         if (caseMatch && fromMatch) {
             const condField = caseMatch[1];
             const condValue = caseMatch[2];
@@ -126,16 +125,17 @@ function sanitizeLLMSQL(sql: string, question: string): string {
     }
 
     // 3. AVG subquery scope propagation.
-    //    The LLM writes "col > 1.20 * (SELECT AVG(col) FROM table)" without WHERE.
-    //    Must propagate the outer WHERE filters into the subquery.
-    const avgSubPattern = /(\d+(?:\.\d+)?\s*\*\s*)?\(SELECT\s+AVG\(([^)]+)\)\s*(?:\*\s*\d+(?:\.\d+)?)?\s+FROM\s+([\w."` ]+)\s*\)/i;
+    //    The LLM writes "col > 1.20 * (\n  SELECT AVG(col) FROM table\n)" without WHERE.
+    //    Must allow whitespace between ( and SELECT, and extract all outer WHERE filters.
+    const avgSubPattern = /(\d+(?:\.\d+)?\s*\*\s*)?\(\s*SELECT\s+AVG\(([^)]+)\)\s*(?:\*\s*\d+(?:\.\d+)?)?\s+FROM\s+([\w."` ]+)\s*\)/i;
     const avgSubMatch = result.match(avgSubPattern);
     if (avgSubMatch) {
         const subqueryFull = avgSubMatch[0];
-        // Only fix if the subquery has no WHERE
         if (!/\bWHERE\b/i.test(subqueryFull)) {
-            // Extract all outer WHERE conditions before the AVG comparison
-            const outerWhereMatch = result.match(/\bWHERE\s+([\s\S]*?)\s+AND\s+[\s\S]*?(?:\(SELECT\s+AVG)/i);
+            // Collect ALL outer WHERE conditions BEFORE the AVG comparison column.
+            // Pattern: WHERE cond1 AND cond2 AND comparison_col > ... (SELECT AVG
+            // We want cond1 AND cond2 (everything before the last AND that leads to the AVG comparison).
+            const outerWhereMatch = result.match(/\bWHERE\s+([\s\S]+?)\s+AND\s+\S+\s*[><=!]+\s*(?:\d+(?:\.\d+)?\s*\*\s*)?\(\s*SELECT\s+AVG/i);
             if (outerWhereMatch) {
                 const outerFilters = outerWhereMatch[1].trim();
                 const newSubquery = subqueryFull.replace(

@@ -267,7 +267,7 @@ export function enforceRequestedBreakdownDimension(plan: AnalysisPlan, question:
 export function enforceExplicitMeasure(plan: AnalysisPlan, question: string, model: SemanticModel): void {
     const aggregation = detectExplicitAggregation(question);
     if (!aggregation) return;
-    const match = question.match(/\b(?:average|avg|mean|total|sum|count|minimum|maximum)\s+(?:of\s+)?(.+?)(?=\s+(?:for\s+each|for\s+every|per|by|where|when|during|in)\b|[?.,;]|$)/i);
+    const match = question.match(/\b(?:average|avg|mean|total|sum|count|minimum|maximum)\s+(?:of\s+)?(.+?)(?=\s+(?:of\s+\w+|with\s+|having\s+|whose\s+|for\s+each|for\s+every|per|by|where|when|during|in)\b|[?.,;]|$)/i);
     if (!match) return;
     const requested = resolveFieldPhrase(match[1], model, 'metric');
     if (!requested) return;
@@ -437,9 +437,10 @@ function enforceIntentFromKeywords(plan: AnalysisPlan, question: string): void {
     }
 
     // ── "share" / "percentage" / "proportion" → force share_of_total ──
+    // But never downgrade an already-detected conditional_percentage intent.
     if (/\b(share|percentage|proportion|percent|what\s+%|contribut)\b/.test(q) &&
         !/\b(growth|change|trend)\b/.test(q)) {
-        if (plan.intent !== 'share_of_total') {
+        if (plan.intent !== 'share_of_total' && plan.intent !== 'conditional_percentage') {
             console.log(`[Intent Planner] Intent override: "${plan.intent}" → "share_of_total" (keyword: share/percentage)`);
             plan.intent = 'share_of_total';
         }
