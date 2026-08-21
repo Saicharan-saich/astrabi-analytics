@@ -241,6 +241,7 @@ export function enforceOrderedProjection(plan: AnalysisPlan, question: string, m
 
 /** Lock explicit grouped-aggregation wording to the schema-grounded dimension. */
 export function enforceRequestedBreakdownDimension(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    if (plan.intent === 'conditional_percentage') return; // Never downgrade a detected conditional_percentage
     const shape = inferQueryShape(question);
     if (shape.operation !== 'grouped_aggregate' || !detectExplicitAggregation(question)) return;
     if (/\b(?:top|bottom|highest|lowest|most|least|best|worst|youngest|oldest)\b/i.test(question)) return;

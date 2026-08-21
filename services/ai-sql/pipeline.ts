@@ -132,18 +132,22 @@ function sanitizeLLMSQL(sql: string, question: string): string {
     if (avgSubMatch) {
         const subqueryFull = avgSubMatch[0];
         if (!/\bWHERE\b/i.test(subqueryFull)) {
-            // Collect ALL outer WHERE conditions BEFORE the AVG comparison column.
-            // Pattern: WHERE cond1 AND cond2 AND comparison_col > ... (SELECT AVG
-            // We want cond1 AND cond2 (everything before the last AND that leads to the AVG comparison).
-            const outerWhereMatch = result.match(/\bWHERE\s+([\s\S]+?)\s+AND\s+\S+\s*[><=!]+\s*(?:\d+(?:\.\d+)?\s*\*\s*)?\(\s*SELECT\s+AVG/i);
-            if (outerWhereMatch) {
-                const outerFilters = outerWhereMatch[1].trim();
-                const newSubquery = subqueryFull.replace(
-                    /(\)\s*)$/,
-                    ` WHERE ${outerFilters}$1`
-                );
-                result = result.replace(subqueryFull, newSubquery);
-                console.log('[Pipeline] Sanitizer: Propagated outer WHERE into AVG subquery');
+            // Find WHERE clause, then collect all conditions before the AVG subquery line.
+            // Split by AND, drop the last one (it contains the AVG comparison).
+            const whereBlock = result.match(/\bWHERE\s+([\s\S]+?)(?=\s*$)/i);
+            if (whereBlock) {
+                const allConds = whereBlock[1].split(/\s+AND\s+/i);
+                // The last condition is the one with the AVG subquery — drop it
+                const filterConds = allConds.filter(c => !/SELECT\s+AVG/i.test(c));
+                if (filterConds.length > 0 && filterConds.length < allConds.length) {
+                    const outerFilters = filterConds.join(' AND ');
+                    const newSubquery = subqueryFull.replace(
+                        /(\)\s*)$/,
+                        ` WHERE ${outerFilters}$1`
+                    );
+                    result = result.replace(subqueryFull, newSubquery);
+                    console.log('[Pipeline] Sanitizer: Propagated outer WHERE into AVG subquery');
+                }
             }
         }
     }
