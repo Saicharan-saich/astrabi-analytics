@@ -492,6 +492,12 @@ function resolveExpectedMeasures(
             return { ...candidate, index: new RegExp(`\\b${escaped}\\b`, 'i').exec(normalized)?.index ?? -1 };
         })
         .filter(candidate => candidate.alias.length > 1 && candidate.index >= 0)
+        // Exclude fields appearing in comparison/filter contexts — e.g. "height higher than 200"
+        // means Height is a WHERE filter, not an aggregation target.
+        .filter(candidate => {
+            const afterField = normalized.slice(candidate.index + candidate.alias.length, candidate.index + candidate.alias.length + 40);
+            return !/^\s*(?:higher|greater|larger|bigger|more|less|lower|smaller|fewer|above|below|over|under|equal|(?:>|<|=))\b/i.test(afterField);
+        })
         .sort((a, b) => a.index - b.index || b.alias.length - a.alias.length)
         .filter((candidate, index, all) => all.findIndex(other => other.field.toLowerCase() === candidate.field.toLowerCase()) === index);
 
