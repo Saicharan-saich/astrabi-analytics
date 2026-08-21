@@ -77,47 +77,70 @@ import {
 function sanitizeLLMSQL(sql: string, question: string): string {
     let result = sql;
 
-    // 1. DISTINCT + projection trim for "what are the X" listing questions.
-    //    The LLM over-projects (7 columns) and omits DISTINCT.
+    // 1. Column-trim + DISTINCT for listing questions.
+    //    "What are the budget category of..." → SELECT DISTINCT category
+    //    The LLM over-projects 7 columns. DISTINCT on 7 columns is still 16 rows.
+    //    We must trim to only columns mentioned in the question.
     const listingMatch = /\b(?:what\s+are|what\s+is)\s+(?:the\s+)?(?:\w+\s+)?(?:types?|kinds?|categor(?:y|ies))\s+(?:of|for|in)\b/i.test(question);
-    if (listingMatch && !/\bDISTINCT\b/i.test(result) && /\bGROUP\s+BY\b/i.test(result) === false) {
-        // Add DISTINCT after SELECT if not already present
-        result = result.replace(/\bSELECT\b/i, 'SELECT DISTINCT');
+    if (listingMatch) {
+        // Extract the requested concept: "budget category" → "category"
+        const conceptMatch = question.match(/(?:what\s+are|what\s+is)\s+(?:the\s+)?(?:(\w+)\s+)?(types?|kinds?|categor(?:y|ies))\s+(?:of|for|in)/i);
+        if (conceptMatch) {
+            const targetWord = conceptMatch[2].toLowerCase().replace(/ies$/, 'y'); // categories → category
+            // Find the column in the SELECT that matches this word
+            const selectMatch = result.match(/\bSELECT\s+(?:DISTINCT\s+)?([\s\S]*?)\bFROM\b/i);
+            if (selectMatch) {
+                const columns = selectMatch[1].split(',').map(c => c.trim());
+                const matchingCol = columns.find(col => {
+                    const colName = col.replace(/^[\w.]*\./, '').replace(/["` ]/g, '').toLowerCase();
+                    return colName === targetWord || colName === targetWord + 's'
+                        || colName === targetWord.replace(/y$/, 'ies');
+                });
+                if (matchingCol && columns.length > 2) {
+                    // Rebuild SELECT with only the matching column
+                    const newSelect = `SELECT DISTINCT\n    ${matchingCol}`;
+                    result = result.replace(/\bSELECT\s+(?:DISTINCT\s+)?[\s\S]*?\bFROM\b/i, `${newSelect}\nFROM`);
+                    console.log(`[Pipeline] Sanitizer: Trimmed SELECT to DISTINCT ${matchingCol}`);
+                }
+            }
+        }
     }
 
     // 2. Percentage conditional aggregation rewrite.
-    //    The LLM GROUP BY per-row instead of using SUM(condition)*100/COUNT(*).
-    const percentageMatch = /\b(?:what\s+(?:is|are)\s+)?(?:the\s+)?percentage\s+of\b/i.test(question)
-        || /\bwhat\s+percentage\s+of\b/i.test(question);
+    //    "what is the percentage of X that Y" → SUM(cond)*100/COUNT(*)
+    const percentageMatch = /\bpercentage\s+of\b/i.test(question)
+        || /\bcalculate\s+(?:the\s+)?percentage\b/i.test(question);
     if (percentageMatch && /\bGROUP\s+BY\b/i.test(result)) {
-        // Detect GROUP BY with per-row amounts — the LLM's typical mistake.
-        // Extract the WHERE clause and the condition from the CASE/SUM.
         const whereMatch = result.match(/\bWHERE\s+([\s\S]*?)(?:\bGROUP\s+BY\b|\bORDER\s+BY\b|$)/i);
         const caseMatch = result.match(/\bWHEN\s+[\w.]*\.?(\w+)\s*=\s*'([^']+)'/i);
         const fromMatch = result.match(/\bFROM\s+([\w."` ]+(?:\s+(?:AS\s+)?\w+)?)/i);
-        if (whereMatch && caseMatch && fromMatch) {
-            const whereClause = whereMatch[1].trim().replace(/\s+$/, '');
+        if (caseMatch && fromMatch) {
             const condField = caseMatch[1];
             const condValue = caseMatch[2];
             const fromClause = fromMatch[1];
-            result = `SELECT CAST(SUM(${condField} = '${condValue}') AS REAL) * 100.0 / COUNT(*) AS percentage\nFROM ${fromClause}\nWHERE ${whereClause}`;
+            const whereClause = whereMatch ? whereMatch[1].trim().replace(/\s+$/, '') : '';
+            const wherePart = whereClause ? `\nWHERE ${whereClause}` : '';
+            result = `SELECT CAST(SUM(${condField} = '${condValue}') AS REAL) * 100.0 / COUNT(*) AS percentage\nFROM ${fromClause}${wherePart}`;
             console.log('[Pipeline] Sanitizer: Rewrote percentage GROUP BY → conditional aggregation');
         }
     }
 
     // 3. AVG subquery scope propagation.
-    //    The LLM writes SELECT AVG(col) FROM table without the outer WHERE filters.
-    const avgSubMatch = result.match(/\(SELECT\s+AVG\(([^)]+)\)\s+FROM\s+([\w."` ]+)\s*\)/i);
+    //    The LLM writes "col > 1.20 * (SELECT AVG(col) FROM table)" without WHERE.
+    //    Must propagate the outer WHERE filters into the subquery.
+    const avgSubPattern = /(\d+(?:\.\d+)?\s*\*\s*)?\(SELECT\s+AVG\(([^)]+)\)\s*(?:\*\s*\d+(?:\.\d+)?)?\s+FROM\s+([\w."` ]+)\s*\)/i;
+    const avgSubMatch = result.match(avgSubPattern);
     if (avgSubMatch) {
-        const outerWhereMatch = result.match(/\bWHERE\s+([\s\S]*?)(?:\bAND\s+\S+\s*(?:>|<|>=|<=)\s*\(SELECT\s+AVG)/i);
-        if (outerWhereMatch) {
-            const outerFilters = outerWhereMatch[1].trim();
-            const subqueryFull = avgSubMatch[0];
-            // Check if the subquery already has WHERE
-            if (!/\bWHERE\b/i.test(subqueryFull)) {
+        const subqueryFull = avgSubMatch[0];
+        // Only fix if the subquery has no WHERE
+        if (!/\bWHERE\b/i.test(subqueryFull)) {
+            // Extract all outer WHERE conditions before the AVG comparison
+            const outerWhereMatch = result.match(/\bWHERE\s+([\s\S]*?)\s+AND\s+[\s\S]*?(?:\(SELECT\s+AVG)/i);
+            if (outerWhereMatch) {
+                const outerFilters = outerWhereMatch[1].trim();
                 const newSubquery = subqueryFull.replace(
-                    /\)\s*$/,
-                    ` WHERE ${outerFilters})`
+                    /(\)\s*)$/,
+                    ` WHERE ${outerFilters}$1`
                 );
                 result = result.replace(subqueryFull, newSubquery);
                 console.log('[Pipeline] Sanitizer: Propagated outer WHERE into AVG subquery');
@@ -876,6 +899,8 @@ export async function runAISQLPipeline(
     // ─── Step 4: Validate SQL ────────────────────────────────────
     reportProgress('Validating SQL...', 6);
     console.log('[Pipeline] Step 4: Validating SQL...');
+    // Apply post-generation deterministic sanitizer to ALL engine paths.
+    currentSQL = sanitizeLLMSQL(currentSQL, question);
     _s1 = performance.now();
     let validation = validateSQL(currentSQL, plan, semanticModel);
     const _failedChecks = validation.checks.filter(c => c.status === 'fail');
