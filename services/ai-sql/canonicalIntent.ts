@@ -151,6 +151,13 @@ export function reconcilePlanWithCanonicalIntent(
     };
     const changes: string[] = [];
 
+    // conditional_percentage is always a scalar answer — never downgrade it.
+    if (plan.intent === 'conditional_percentage') {
+        plan.dimensions = [];
+        plan.resultGrain = 'one scalar result row';
+        return { plan, changes };
+    }
+
     if (canonical.answerKind === 'detail_projection') {
         if (plan.intent !== 'projection') changes.push(`intent ${plan.intent} -> projection`);
         plan.intent = 'projection';
