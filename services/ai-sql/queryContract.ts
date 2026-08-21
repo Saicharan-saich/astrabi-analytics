@@ -390,9 +390,14 @@ function resolveRequestedDimension(question: string, model?: SemanticModel): str
         for (const name of names) {
             const nameTokens = words(name);
             if (!nameTokens.length) continue;
+            // Single-token generic identifiers like "id", "key", "code" match
+            // too many questions. Only accept them on an exact phrase match.
+            const isGenericSingleToken = nameTokens.length === 1
+                && ['id', 'key', 'code', 'type', 'status', 'name', 'date'].includes(nameTokens[0]);
             const phraseOverlap = nameTokens.filter(token => conceptMatches(token, phraseTokens)).length;
             const questionOverlap = nameTokens.filter(token => conceptMatches(token, questionTokens)).length;
             const exactPhrase = phraseOverlap === nameTokens.length && phraseTokens.size === nameTokens.length;
+            if (isGenericSingleToken && !exactPhrase) continue;
             const score = exactPhrase ? 100
                 : (phraseOverlap / nameTokens.length) * 60 + (questionOverlap / nameTokens.length) * 30;
             if (score < 45) continue;
@@ -438,7 +443,7 @@ function resolveOrderedProjection(
 }
 
 function resolveExpectedAggregation(question: string, plan: AnalysisPlan): QueryContract['expectedAggregation'] {
-    if (/\b(how many|number of|count(?: of)?|count the)\b/i.test(question)) return 'count';
+    if (/\b(how many|(?<!\bid )(?<!\bserial )(?<!\bphone )(?<!\baccount )(?<!\border )(?<!\brace )(?<!\bflight )(?<!\bticket )(?<!\bcard )(?<!\bmodel )(?<!\bpart )number of|count(?: of)?|count the)\b/i.test(question)) return 'count';
     if (/\b(average|avg|mean)\b/i.test(question)) return 'avg';
     if (/\b(total|sum(?: of)?)\b/i.test(question)) return 'sum';
     if (/\b(minimum|min value)\b/i.test(question)) return 'min';
@@ -691,7 +696,7 @@ export function buildQueryContract(
         && queryShape.selection === 'single'
         && !answerAggregation
         && !explicitGroupingCue;
-    const explicitScalarAggregationCue = /\b(?:how many|number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
+    const explicitScalarAggregationCue = /\b(?:how many|(?<!\bid )(?<!\bserial )(?<!\bphone )(?<!\baccount )(?<!\border )(?<!\brace )(?<!\bflight )(?<!\bticket )(?<!\bcard )(?<!\bmodel )(?<!\bpart )number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
     const requiresGrouping = !requiresRowProjection && !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
         && (queryShape.implicitFrequencyRanking
             || requiresFiscalCalendar
@@ -1067,7 +1072,14 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
             issues.push({ code: 'missing_requested_dimension', severity: 'error', message: `The SQL does not group at the requested grain "${contract.requiredDimension}".` });
         }
     }
-    if (contract.outputEntity?.confidence === 'high' && !identifierPattern(contract.outputEntity.field).test(sql)) {
+    if (contract.outputEntity?.confidence === 'high'
+        && !identifierPattern(contract.outputEntity.field).test(sql)
+        // When the question is a grouped aggregate or scalar aggregate,
+        // the outputEntity may be a false positive from partial name matching
+        // (e.g. "pet" in "pet_age" when asking about average weight per pet type).
+        // Only enforce outputEntity for detail/row-projection queries.
+        && contract.expectedCardinality === 'detail'
+        && !contract.expectedAggregation) {
         issues.push({ code: 'missing_output_entity', severity: 'error', message: `The result must identify ${contract.outputEntity.table}.${contract.outputEntity.field}, but that field is absent.` });
     }
     for (const table of contract.requiredTables) {
