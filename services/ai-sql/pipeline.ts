@@ -360,6 +360,33 @@ export async function runAISQLPipeline(
                 }
                 // Post-LLM deterministic corrections for patterns the LLM
                 // consistently gets wrong despite prompt rules.
+
+                // HARD OVERRIDE: For conditional_percentage intent, the LLM
+                // invariably generates GROUP BY + NOT EXISTS instead of a
+                // simple scalar SUM(cond)*100/COUNT(*). Extract the LLM's
+                // correct condition & filters, then rebuild deterministically.
+                if (plan.intent === 'conditional_percentage' && /\bGROUP\s+BY\b/i.test(sql)) {
+                    const caseMatch = sql.match(/WHEN\s+(?:[\w."]+\.)?["']?(\w+)["']?\s*=\s*'([^']+)'/i);
+                    // Extract simple WHERE conditions (skip NOT EXISTS blocks)
+                    const whereBlock = sql.match(/\bWHERE\s+([\s\S]+?)(?:\s+(?:GROUP\s+BY|ORDER\s+BY)\b)/i);
+                    if (caseMatch) {
+                        const condField = caseMatch[1];
+                        const condValue = caseMatch[2];
+                        // Filter out NOT EXISTS and subquery lines from WHERE
+                        const rawWhere = whereBlock ? whereBlock[1] : '';
+                        const cleanFilters = rawWhere
+                            .split(/\s+AND\s+/i)
+                            .filter(c => !/NOT\s+EXISTS|SELECT\s+/i.test(c))
+                            .map(c => c.trim())
+                            .filter(c => c.length > 0);
+                        const wherePart = cleanFilters.length > 0
+                            ? `\nWHERE ${cleanFilters.join('\n  AND ')}`
+                            : '';
+                        sql = `SELECT CAST(SUM(${condField} = '${condValue}') AS REAL) * 100.0 / COUNT(*) AS percentage\nFROM "data"${wherePart}`;
+                        console.log('[Pipeline] Forced deterministic conditional_percentage SQL');
+                    }
+                }
+
                 sql = sanitizeLLMSQL(sql, question);
                 console.log('[Pipeline] Direct-SQL engine SQL:', sql);
                 return { sql, tokens: ds.tokens || 0, model: ds.model, error: null, querySpec: ds.querySpec };
