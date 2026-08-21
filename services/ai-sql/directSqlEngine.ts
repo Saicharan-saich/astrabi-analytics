@@ -47,9 +47,10 @@ Rules:
 - Never return a generic scalar total merely because the draft plan has no dimension. If the user asks "by", "over time", a fiscal calendar, a comparison, ranking, or another explicit analytical shape, implement that shape using the available schema.
 - For a total period comparison, return two labelled aggregate rows, 'Current' and 'Previous'. For a trend comparison, retain the period label and the requested time grain.
 - If the question includes a "Dataset reporting anchor", that anchor is the reporting clock. Resolve relative periods using explicit DATE literals from it; NEVER use CURRENT_DATE, CURRENT_TIMESTAMP, NOW(), or other wall-clock functions.
-- "List out", "list", "enumerate", "show me the X" means return individual rows — never COUNT. "List out the Id number of races" → SELECT raceId FROM races, NOT SELECT COUNT(*). Only use COUNT when the question explicitly says "how many", "count", "total number of", or "number of".
-- "What is the percentage of X that Y" or "what percentage of accounts are Z" → use conditional aggregation: CAST(SUM(condition) AS REAL) * 100.0 / COUNT(*). Do not GROUP BY individual rows. The result is a single scalar percentage.
-- Only SELECT the columns the question explicitly asks about. If the question says "what are the budget categories", select only category (and any grouping key). Do not add event_name, budget_id, event_status, or other unrequested columns.
+- "List out", "list", "enumerate", "show me the X" means return individual rows — never COUNT. Example: "List out the Id number of races held in 2009" → SELECT raceId FROM races WHERE year = 2009. NOT SELECT COUNT(*).
+- "What is the percentage of X that Y" → ALWAYS use conditional aggregation as a single scalar with NO GROUP BY. Example: "what percentage of accounts with amount < 100000 are running?" → SELECT CAST(SUM(status = 'C') AS REAL) * 100.0 / COUNT(*) FROM loan WHERE amount < 100000. NEVER GROUP BY amount or any per-row field.
+- Only SELECT the columns the question explicitly asks about. If the question says "what are the budget categories", select ONLY category with SELECT DISTINCT. Do NOT add event_name, budget_id, event_status, or other unrequested columns. Do NOT omit DISTINCT when the question asks for unique values/categories.
+- When a subquery computes AVG/SUM and the outer query has WHERE filters, the SAME WHERE filters MUST appear inside the subquery. Example: "patients with thrombosis=2 and ANA='S' having aCL IgM 20% above average" → ... > 1.2 * (SELECT AVG("aCL IgM") FROM Examination WHERE Thrombosis = 2 AND "ANA Pattern" = 'S'). NEVER use the unfiltered table average.
 - Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
 
 export interface DynamicQuerySpec {
