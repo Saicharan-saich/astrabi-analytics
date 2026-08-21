@@ -49,7 +49,7 @@ export function isTimePeriodComparison(question: string): boolean {
 export type ClassifiedIntent =
     | 'trend' | 'ranking' | 'breakdown' | 'share_of_total'
     | 'single_metric' | 'comparison' | 'distribution' | 'correlation'
-    | 'derived_metric' | 'aggregate_filter' | 'growth_analysis' | 'ambiguous' | 'distinct_values';
+    | 'derived_metric' | 'aggregate_filter' | 'growth_analysis' | 'ambiguous' | 'distinct_values' | 'conditional_percentage';
 
 export interface ClassificationResult {
     intent: ClassifiedIntent;
@@ -148,6 +148,15 @@ const LISTING_PATTERNS = [
     /\b(?:distinct|unique)\s+(?:values?\s+)?(?:of|for|in)\b/i,
     /\b(?:list\s+out|list|enumerate|give\s+me)\s+(?:the\s+)?(?:all\s+)?(?:id|ids|names?|numbers?)\b/i,
     /\b(?:what\s+are)\s+(?:the\s+)?(?:all\s+)?(?:different|distinct|unique|various)\s/i,
+    // "What are the budget category of..." — allows adjective/noun words before the category keyword
+    /\b(?:what\s+are|what\s+is)\s+(?:the\s+)?(?:\w+\s+)?(?:types?|kinds?|categor(?:y|ies))\s+(?:of|for|in)\b/i,
+];
+
+const PERCENTAGE_PATTERNS = [
+    /\b(?:what\s+(?:is|are)\s+)?(?:the\s+)?percentage\s+of\b/i,
+    /\bwhat\s+percentage\s+of\b/i,
+    /\b(?:what\s+is\s+)?(?:the\s+)?(?:proportion|ratio)\s+of\b/i,
+    /\bpercentage\s+of\s+\w+\s+(?:that|which|who|where|with|are|is)\b/i,
 ];
 
 const DAY_OF_WEEK_PATTERNS = [
@@ -237,6 +246,7 @@ export function classifyQuestion(question: string): ClassificationResult {
         { intent: 'distribution', score: matchPatterns(q, DISTRIBUTION_PATTERNS), reason: 'distribution/histogram keywords detected' },
         { intent: 'correlation', score: matchPatterns(q, CORRELATION_PATTERNS), reason: 'correlation/relationship keywords detected' },
         { intent: 'distinct_values', score: matchPatterns(q, LISTING_PATTERNS), reason: 'listing/distinct values keywords detected' },
+        { intent: 'conditional_percentage', score: matchPatterns(q, PERCENTAGE_PATTERNS), reason: 'percentage/proportion with condition detected' },
     ];
 
     // Sort by score descending

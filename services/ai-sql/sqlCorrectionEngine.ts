@@ -286,6 +286,8 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
             return buildGrowthAnalysisSQL(plan, model);
         case 'distinct_values':
             return buildDistinctValuesSQL(plan, model);
+        case 'conditional_percentage':
+            return buildConditionalPercentageSQL(plan, model);
         default:
             // Fallback: treat as breakdown
             return buildBreakdownSQL(plan, model, apdmeMetrics);
@@ -730,9 +732,26 @@ function buildDistinctValuesSQL(plan: AnalysisPlan, model: SemanticModel): strin
 }
 
 /**
- * distribution: "Distribution of order values"
- * â†’ Histogram with fixed-width buckets
+ * conditional_percentage: "What percentage of accounts are running?"
+ * Produces: CAST(SUM(condition) AS REAL) * 100.0 / COUNT(*) — single scalar row.
  */
+function buildConditionalPercentageSQL(plan: AnalysisPlan, model: SemanticModel): string {
+    const equalityFilters = plan.filters.filter(f =>
+        (f.op === '=' || f.op === '==' || f.op === 'is') && typeof f.value === 'string');
+    const baseFilters = plan.filters.filter(f => !equalityFilters.includes(f));
+    const where = buildWhereClause(baseFilters);
+    const condFilter = equalityFilters[0];
+    if (!condFilter) return buildBreakdownSQL(plan, model);
+    const condExpr = `${q(condFilter.field)} = '${String(condFilter.value).replace(/'/g, "''")}'`;
+    const parts = [
+        `SELECT CAST(SUM(${condExpr}) AS REAL) * 100.0 / COUNT(*) AS percentage`,
+        fromTable(),
+    ];
+    if (where) parts.push(`WHERE ${where}`);
+    return parts.join('\n');
+}
+
+/** Histogram with fixed-width buckets. */
 function buildDistributionSQL(plan: AnalysisPlan, model: SemanticModel): string {
     const met = plan.metrics[0];
     if (!met) return buildBreakdownSQL(plan, model);

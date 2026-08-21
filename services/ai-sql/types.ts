@@ -212,7 +212,8 @@ export type AnalysisIntent =
     | 'distribution'       // "Distribution of order values"
     | 'aggregate_filter'   // "Products with above-average sales"
     | 'growth_analysis'    // "Which products are driving revenue growth?"
-    | 'distinct_values';   // "What are the different budget categories?"
+    | 'distinct_values'           // "What are the different budget categories?"
+    | 'conditional_percentage';   // "What percentage of accounts are running?"
 
 export interface AnalysisPlan {
     /** Detected intent */
