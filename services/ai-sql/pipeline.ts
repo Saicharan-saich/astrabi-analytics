@@ -70,6 +70,65 @@ import {
 } from './canonicalIntent';
 
 /**
+ * Post-LLM deterministic SQL sanitizer.
+ * Applies corrections for patterns the LLM consistently gets wrong
+ * despite explicit prompt rules.
+ */
+function sanitizeLLMSQL(sql: string, question: string): string {
+    let result = sql;
+
+    // 1. DISTINCT + projection trim for "what are the X" listing questions.
+    //    The LLM over-projects (7 columns) and omits DISTINCT.
+    const listingMatch = /\b(?:what\s+are|what\s+is)\s+(?:the\s+)?(?:\w+\s+)?(?:types?|kinds?|categor(?:y|ies))\s+(?:of|for|in)\b/i.test(question);
+    if (listingMatch && !/\bDISTINCT\b/i.test(result) && /\bGROUP\s+BY\b/i.test(result) === false) {
+        // Add DISTINCT after SELECT if not already present
+        result = result.replace(/\bSELECT\b/i, 'SELECT DISTINCT');
+    }
+
+    // 2. Percentage conditional aggregation rewrite.
+    //    The LLM GROUP BY per-row instead of using SUM(condition)*100/COUNT(*).
+    const percentageMatch = /\b(?:what\s+(?:is|are)\s+)?(?:the\s+)?percentage\s+of\b/i.test(question)
+        || /\bwhat\s+percentage\s+of\b/i.test(question);
+    if (percentageMatch && /\bGROUP\s+BY\b/i.test(result)) {
+        // Detect GROUP BY with per-row amounts — the LLM's typical mistake.
+        // Extract the WHERE clause and the condition from the CASE/SUM.
+        const whereMatch = result.match(/\bWHERE\s+([\s\S]*?)(?:\bGROUP\s+BY\b|\bORDER\s+BY\b|$)/i);
+        const caseMatch = result.match(/\bWHEN\s+[\w.]*\.?(\w+)\s*=\s*'([^']+)'/i);
+        const fromMatch = result.match(/\bFROM\s+([\w."` ]+(?:\s+(?:AS\s+)?\w+)?)/i);
+        if (whereMatch && caseMatch && fromMatch) {
+            const whereClause = whereMatch[1].trim().replace(/\s+$/, '');
+            const condField = caseMatch[1];
+            const condValue = caseMatch[2];
+            const fromClause = fromMatch[1];
+            result = `SELECT CAST(SUM(${condField} = '${condValue}') AS REAL) * 100.0 / COUNT(*) AS percentage\nFROM ${fromClause}\nWHERE ${whereClause}`;
+            console.log('[Pipeline] Sanitizer: Rewrote percentage GROUP BY → conditional aggregation');
+        }
+    }
+
+    // 3. AVG subquery scope propagation.
+    //    The LLM writes SELECT AVG(col) FROM table without the outer WHERE filters.
+    const avgSubMatch = result.match(/\(SELECT\s+AVG\(([^)]+)\)\s+FROM\s+([\w."` ]+)\s*\)/i);
+    if (avgSubMatch) {
+        const outerWhereMatch = result.match(/\bWHERE\s+([\s\S]*?)(?:\bAND\s+\S+\s*(?:>|<|>=|<=)\s*\(SELECT\s+AVG)/i);
+        if (outerWhereMatch) {
+            const outerFilters = outerWhereMatch[1].trim();
+            const subqueryFull = avgSubMatch[0];
+            // Check if the subquery already has WHERE
+            if (!/\bWHERE\b/i.test(subqueryFull)) {
+                const newSubquery = subqueryFull.replace(
+                    /\)\s*$/,
+                    ` WHERE ${outerFilters})`
+                );
+                result = result.replace(subqueryFull, newSubquery);
+                console.log('[Pipeline] Sanitizer: Propagated outer WHERE into AVG subquery');
+            }
+        }
+    }
+
+    return result;
+}
+
+/**
  * Progress callback for tracking pipeline execution steps.
  * Fix #12: Enables loading state progress indicators in the UI.
  */
@@ -272,6 +331,9 @@ export async function runAISQLPipeline(
                         console.log('[Pipeline] Grounded SQL literals:', g.changed.join(', '));
                     }
                 }
+                // Post-LLM deterministic corrections for patterns the LLM
+                // consistently gets wrong despite prompt rules.
+                sql = sanitizeLLMSQL(sql, question);
                 console.log('[Pipeline] Direct-SQL engine SQL:', sql);
                 return { sql, tokens: ds.tokens || 0, model: ds.model, error: null, querySpec: ds.querySpec };
             }
