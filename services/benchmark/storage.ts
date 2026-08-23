@@ -6,6 +6,26 @@ const HISTORY_DB_VERSION = 1;
 const HISTORY_STORE = 'runs';
 const HISTORY_LIMIT = 20;
 
+/**
+ * Recursively convert any BigInt values to Number so the object is safe
+ * for both JSON.stringify and IndexedDB structured cloning.
+ * DuckDB-WASM returns BigInt for large integers; neither serialiser
+ * supports them natively.
+ */
+function sanitizeBigInts<T>(value: T): T {
+  if (value === null || value === undefined) return value;
+  if (typeof value === 'bigint') return Number(value) as unknown as T;
+  if (Array.isArray(value)) return value.map(sanitizeBigInts) as unknown as T;
+  if (typeof value === 'object') {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      result[k] = sanitizeBigInts(v);
+    }
+    return result as T;
+  }
+  return value;
+}
+
 function isValidRun(value: unknown): value is BenchmarkRun {
   const run = value as BenchmarkRun | null;
   return run?.schemaVersion === 1 && Array.isArray(run.results);
@@ -61,7 +81,7 @@ export async function saveBenchmarkRunToHistory(run: BenchmarkRun): Promise<bool
     const database = await openHistoryDatabase();
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(HISTORY_STORE, 'readwrite');
-      transaction.objectStore(HISTORY_STORE).put(run);
+      transaction.objectStore(HISTORY_STORE).put(sanitizeBigInts(run));
       transaction.oncomplete = () => { database.close(); resolve(); };
       transaction.onerror = () => { database.close(); reject(transaction.error || new Error('Could not save benchmark history')); };
     });
@@ -106,7 +126,7 @@ export function saveBenchmarkRun(run: BenchmarkRun): boolean {
   // latest-run localStorage record exceeds the browser's quota.
   void saveBenchmarkRunToHistory(run);
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(run));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeBigInts(run)));
     return true;
   } catch (error) {
     console.warn('[Benchmark] Could not persist the latest run:', error);
