@@ -63,12 +63,16 @@ export function buildCanonicalQueryIntent(contract: QueryContract): CanonicalQue
             ? 'set_result'
             : contract.requiresRanking
                 ? 'ranked_result'
-                : contract.requiresRowProjection || contract.orderedProjection
-                    ? 'detail_projection'
-                    : contract.expectedCardinality === 'scalar'
-                        ? 'scalar_aggregate'
-                        : contract.requiresGrouping
-                            ? 'grouped_aggregate'
+                // Scalar and grouped aggregates MUST be checked before projection.
+                // The old ordering let requiresRowProjection override legitimate
+                // aggregate intents (aggregate_filter, single_metric, breakdown),
+                // stripping GROUP BY, HAVING, and SUM/AVG from the plan.
+                : contract.expectedCardinality === 'scalar' && !contract.requiresRowProjection
+                    ? 'scalar_aggregate'
+                    : contract.requiresGrouping
+                        ? 'grouped_aggregate'
+                        : contract.requiresRowProjection || contract.orderedProjection
+                            ? 'detail_projection'
                             : 'detail_projection';
 
     return {
