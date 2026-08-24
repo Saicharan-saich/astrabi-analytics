@@ -311,7 +311,7 @@ function resolveRequestedOutputFields(
         .filter(table => words(table.name).some(token => conceptMatches(token, clauseTokens)))
         .map(table => table.name));
 
-    const candidates: Array<QueryEntityContract & { score: number }> = [];
+    const candidates: Array<QueryEntityContract & { score: number; directMatch: boolean }> = [];
     for (const table of schema.tables) {
         const tableTokens = words(table.name);
         // Output ownership is resolved from the answer clause, not from filter
@@ -322,17 +322,26 @@ function resolveRequestedOutputFields(
         if (answerTables.size > 0 && !answerTables.has(table.name)) continue;
         for (const column of table.columns) {
             const semanticField = model?.fields.find(field => field.name.toLowerCase() === column.name.toLowerCase());
-            const aliases = [column.name, semanticField?.displayLabel, ...(semanticField?.synonyms || [])]
+            const directAliases = [column.name, semanticField?.displayLabel]
                 .filter((value): value is string => !!value);
-            let bestCoverage = 0;
-            for (const alias of aliases) {
-                const aliasTokens = words(alias);
-                if (!aliasTokens.length) continue;
-                const overlap = aliasTokens.filter(token => conceptMatches(token, clauseTokens)).length;
-                bestCoverage = Math.max(bestCoverage, overlap / aliasTokens.length);
-            }
+            const synonymAliases = (semanticField?.synonyms || [])
+                .filter((value): value is string => !!value);
+            const coverage = (aliases: string[]) => {
+                let best = 0;
+                for (const alias of aliases) {
+                    const aliasTokens = words(alias);
+                    if (!aliasTokens.length) continue;
+                    const overlap = aliasTokens.filter(token => conceptMatches(token, clauseTokens)).length;
+                    best = Math.max(best, overlap / aliasTokens.length);
+                }
+                return best;
+            };
+            const directCoverage = coverage(directAliases);
+            const synonymCoverage = coverage(synonymAliases);
+            const bestCoverage = Math.max(directCoverage, synonymCoverage);
             if (bestCoverage === 0) continue;
             let score = bestCoverage * 75;
+            if (directCoverage > 0) score += 10;
             if (tableMentioned) score += 20;
             const duplicateCount = duplicateFieldCounts.get(column.name.toLowerCase()) || 0;
             if (duplicateCount === 1) score += 15;
@@ -342,8 +351,12 @@ function resolveRequestedOutputFields(
             candidates.push({
                 table: table.name,
                 field: column.name,
-                confidence: score >= 80 ? 'high' : 'medium',
+                // A synonym-only overlap is useful grounding evidence but is
+                // not authoritative output evidence when another physical
+                // field may literally match the same word (sales vs sales_rep).
+                confidence: score >= 80 && (directCoverage >= 0.75 || planFields.has(column.name.toLowerCase())) ? 'high' : 'medium',
                 score,
+                directMatch: directCoverage > 0,
             });
         }
     }
@@ -355,7 +368,7 @@ function resolveRequestedOutputFields(
         const concept = words(candidate.field).join('_');
         if (seenConcepts.has(concept)) continue;
         seenConcepts.add(concept);
-        const { score: _score, ...field } = candidate;
+        const { score: _score, directMatch: _directMatch, ...field } = candidate;
         selected.push(field);
         if (selected.length >= 6) break;
     }
@@ -886,7 +899,7 @@ export function buildQueryContract(
 ): QueryContract {
     const requirements: string[] = [];
     const schema = schemaContext || schemaContextFromModel(model);
-    const requestedOutputFields = resolveRequestedOutputFields(question, plan, schema, model);
+    let requestedOutputFields = resolveRequestedOutputFields(question, plan, schema, model);
     const inferredOutputEntity = resolveOutputEntity(question, plan, schema);
     let outputEntity = inferredOutputEntity
         || requestedOutputFields.find(field => descriptiveColumn(field.field))
@@ -903,6 +916,24 @@ export function buildQueryContract(
     const answerAggregation = resolveExpectedAggregation(answerClause, plan);
     const asksCountAlongsideEntity = /\band\s+how\s+many\b/i.test(question);
     const aggregatePredicateCue = thresholdUsesAggregate(question) || hasAggregatePredicateEvidence(question);
+    const requestsEntityRows = /^\s*(?:please\s+)?(?:list|show|which|find|return|give(?:\s+me)?)\b/i.test(question);
+    // Aggregate inputs are not automatically visible answer fields. This is
+    // especially important for scalar questions: a synonym match such as
+    // "sales" -> sales_rep must never force extra dimensions into SELECT.
+    if (queryShape.operation === 'scalar_aggregate'
+        && !asksCountAlongsideEntity
+        && !(requestsEntityRows && aggregatePredicateCue)) {
+        requestedOutputFields = [];
+        outputEntity = undefined;
+    } else if (['grouped_aggregate', 'ranking'].includes(queryShape.operation)) {
+        requestedOutputFields = requestedOutputFields.filter(candidate => {
+            const semantic = model?.fields.find(field => field.name.toLowerCase() === candidate.field.toLowerCase());
+            return semantic?.role !== 'metric';
+        });
+        if (outputEntity && model?.fields.find(field =>
+            field.name.toLowerCase() === outputEntity!.field.toLowerCase() && field.role === 'metric'
+        )) outputEntity = requestedOutputFields[0];
+    }
     const requiresRowProjection = requestedOutputFields.some(field => field.confidence === 'high')
         && !answerAggregation
         && !asksCountAlongsideEntity
@@ -931,6 +962,7 @@ export function buildQueryContract(
     const explicitScalarAggregationCue = /\b(?:how many|(?<!\bid )(?<!\bserial )(?<!\bphone )(?<!\baccount )(?<!\border )(?<!\brace )(?<!\bflight )(?<!\bticket )(?<!\bcard )(?<!\bmodel )(?<!\bpart )number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
     const requiresGrouping = !requiresRowProjection && !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
         && (queryShape.implicitFrequencyRanking
+            || (queryShape.groupingCue && queryShape.explicitAggregations.length > 0)
             || requiresFiscalCalendar
             || BREAKDOWN_CUE.test(breakdownQuestion)
             || verification.some(issue => issue.code === 'missing_dimension')
@@ -944,8 +976,11 @@ export function buildQueryContract(
             || (/\b(bottom|lowest|least|worst|smallest|fewest|minimum|youngest|earliest)\b/i.test(question) ? 'asc' : 'desc')
         : undefined;
     const requiresComparison = COMPARISON_CUE.test(question) || Boolean(plan.comparison);
+    const outputEntityIsDimension = !!outputEntity && model?.fields.some(field =>
+        field.name.toLowerCase() === outputEntity!.field.toLowerCase() && field.role === 'dimension'
+    );
     const resolvedRequestedDimension = requiresGrouping
-        ? requiresRanking && outputEntity?.confidence === 'high' && !explicitGroupingCue
+        ? requiresRanking && outputEntity?.confidence === 'high' && outputEntityIsDimension
             // In "which product has the highest total sales", product is the
             // answer grain and sales is the ranking measure. A whole-question
             // field scan must not accidentally group by the measure.

@@ -109,6 +109,12 @@ export interface DictionaryData {
     concepts: ConceptDefinition[];
 }
 
+function runtimeStrings(value: unknown): string[] {
+    return Array.isArray(value)
+        ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        : [];
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // DICTIONARY ENGINE
 // ═══════════════════════════════════════════════════════════════════
@@ -134,16 +140,24 @@ export class MetricDictionary {
 
         // Index metrics
         for (const metric of data.metrics) {
-            this.metrics.set(metric.id, metric);
+            // Treat imported/persisted dictionary content as untrusted runtime
+            // data. Normalize a copy so the imported source object stays
+            // immutable across tests, hot reloads, and singleton resets.
+            const normalizedMetric: MetricDictionaryEntry = {
+                ...metric,
+                columnPatterns: runtimeStrings(metric.columnPatterns),
+                synonyms: runtimeStrings(metric.synonyms),
+            };
+            this.metrics.set(normalizedMetric.id, normalizedMetric);
 
             // Build pattern index
-            for (const pattern of metric.columnPatterns) {
-                this.patternIndex.set(pattern.toLowerCase(), metric.id);
+            for (const pattern of normalizedMetric.columnPatterns) {
+                this.patternIndex.set(pattern.toLowerCase(), normalizedMetric.id);
             }
 
             // Build synonym index
-            for (const synonym of metric.synonyms) {
-                this.synonymIndex.set(synonym.toLowerCase(), metric.id);
+            for (const synonym of normalizedMetric.synonyms) {
+                this.synonymIndex.set(synonym.toLowerCase(), normalizedMetric.id);
             }
         }
 
@@ -225,8 +239,8 @@ export class MetricDictionary {
             const matches =
                 metric.displayName.toLowerCase().includes(lower) ||
                 lower.includes(metric.id) ||
-                metric.synonyms.some(s => lower.includes(s.toLowerCase())) ||
-                metric.columnPatterns.some(p => lower.includes(p.toLowerCase()));
+                runtimeStrings(metric.synonyms).some(s => lower.includes(s.toLowerCase())) ||
+                runtimeStrings(metric.columnPatterns).some(p => lower.includes(p.toLowerCase()));
 
             if (matches) candidates.push(metric);
         }

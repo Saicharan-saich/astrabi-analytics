@@ -132,6 +132,30 @@ describe('canonical query intent', () => {
         expect(spec.operations.measures).toEqual([{ field: 'Net_Worth_Millions', aggregation: 'max' }]);
         expect(spec.operations.limit).toBeUndefined();
         expect(spec.expectedResult.grain).toBe('one row per Citizenship');
+        expect(spec.expectedResult.columns).toEqual(['Citizenship', 'MAX(Net_Worth_Millions)']);
+        expect(spec.expectedResult.columns).not.toEqual(expect.arrayContaining(['Name', 'total_age']));
         expect(spec.clarification).toBeUndefined();
+    });
+
+    it('removes raw metric and unrelated draft columns from grouped output', () => {
+        const question = 'Which pet types have average weight at least 10?';
+        const draftPlan = plan({
+            intent: 'aggregate_filter',
+            dimensions: [{ field: 'PetType' }],
+            metrics: [{ field: 'Weight', agg: 'avg' }],
+        });
+        const canonical = buildCanonicalQueryIntent(buildQueryContract(question, draftPlan, [], model));
+        const spec = reconcileQuerySpecWithCanonicalIntent({
+            goal: 'pets',
+            operations: {
+                measures: [{ field: 'Weight', aggregation: 'avg' }],
+                groupBy: [{ field: 'PetType' }, { field: 'Weight' }],
+            },
+            expectedResult: { grain: 'raw rows', columns: ['PetType', 'Weight', 'pet_age'] },
+            assumptions: [],
+        }, canonical);
+
+        expect(spec.operations.groupBy).toEqual([{ field: 'PetType' }]);
+        expect(spec.expectedResult.columns).toEqual(['PetType', 'AVG(Weight)']);
     });
 });

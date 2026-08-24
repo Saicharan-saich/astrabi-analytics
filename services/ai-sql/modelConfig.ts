@@ -113,6 +113,14 @@ export function getRateLimitRetryDelayMs(response: Pick<Response, 'headers'>, no
 
 /** Max retries for 429 errors */
 const MAX_429_RETRIES = 3;
+const BENCHMARK_TRANSIENT_RETRY_DELAY_MS = 10_000;
+const INTERACTIVE_TRANSIENT_RETRY_DELAY_MS = 2_000;
+
+function transientRetryDelay(requestPurpose?: 'benchmark'): number {
+    return requestPurpose === 'benchmark'
+        ? BENCHMARK_TRANSIENT_RETRY_DELAY_MS
+        : INTERACTIVE_TRANSIENT_RETRY_DELAY_MS;
+}
 
 /** Get JWT token for authenticated AI requests */
 function getAuthToken(): string {
@@ -222,7 +230,16 @@ export async function fetchWithFallback(
                 throw new Error('AI credits exhausted. Please contact admin.');
             }
 
-            if (response.status === 502 || response.status === 503) {
+            if ([408, 502, 503, 504].includes(response.status)) {
+                if (attempt < MAX_429_RETRIES) {
+                    const retryDelayMs = Math.max(
+                        transientRetryDelay(options?.requestPurpose),
+                        getRateLimitRetryDelayMs(response),
+                    );
+                    console.warn(`[AI] Transient provider HTTP ${response.status} — waiting ${retryDelayMs}ms before retry ${attempt + 1}/${MAX_429_RETRIES}`);
+                    await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                    continue;
+                }
                 throw new Error(
                     'AI service is experiencing downtime. Please try again in a few minutes.'
                 );
@@ -238,6 +255,16 @@ export async function fetchWithFallback(
 
         } catch (err: any) {
             clearTimeout(timer);
+
+            const transientNetworkFailure = err?.name === 'AbortError'
+                || err instanceof TypeError
+                || /(?:network|fetch failed|failed to fetch|connection|timed?\s*out)/i.test(String(err?.message || err));
+            if (transientNetworkFailure && attempt < MAX_429_RETRIES) {
+                const retryDelayMs = transientRetryDelay(options?.requestPurpose);
+                console.warn(`[AI] Transient network failure — waiting ${retryDelayMs}ms before retry ${attempt + 1}/${MAX_429_RETRIES}`);
+                await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+                continue;
+            }
 
             if (err.name === 'AbortError') {
                 throw new Error(

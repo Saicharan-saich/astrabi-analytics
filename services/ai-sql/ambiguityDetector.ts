@@ -197,8 +197,14 @@ export function detectAmbiguities(
                     const dictEntry = dictionary.getMetric(mId);
                     if (!dictEntry) return null;
                     // Check if this metric exists in the dataset
+                    // Dictionary content is persisted/runtime data. A malformed
+                    // non-string pattern must never abort the whole AI-SQL run.
+                    const patterns = Array.isArray(dictEntry.columnPatterns)
+                        ? dictEntry.columnPatterns.filter((pattern): pattern is string =>
+                            typeof pattern === 'string' && pattern.trim().length > 0)
+                        : [];
                     const found = metricFields.find(f =>
-                        dictEntry.columnPatterns.some(p =>
+                        patterns.some(p =>
                             f.name.toLowerCase().includes(p.toLowerCase())
                         )
                     );

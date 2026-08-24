@@ -61,6 +61,54 @@ function contractField(value: unknown): string {
     return typeof candidate === 'string' ? candidate.trim() : '';
 }
 
+const SQL_WORDS = new Set([
+    'and', 'or', 'not', 'null', 'true', 'false', 'date', 'timestamp', 'interval',
+    'cast', 'as', 'coalesce', 'lower', 'upper', 'trim', 'extract', 'year', 'month',
+    'day', 'avg', 'sum', 'count', 'min', 'max', 'distinct', 'in', 'between', 'like',
+]);
+
+function normalizedIdentifier(value: string): string {
+    return value
+        .replace(/["`\[\]]/g, '')
+        .split('.')
+        .pop()!
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+}
+
+/** Extract physical identifier candidates from either `field` or a contract
+ * expression. This makes aliases, quoting, CAST and BETWEEN equivalent for the
+ * purpose of confirming that a governed predicate survived SQL generation. */
+function predicateIdentifiers(value: string): string[] {
+    const atom = '(?:"[^"]+"|`[^`]+`|\\[[^\\]]+\\]|[A-Za-z_][\\w$]*)';
+    const tokens = value.match(new RegExp(`${atom}(?:\\.${atom})?`, 'g')) || [];
+    return [...new Set(tokens
+        .map(normalizedIdentifier)
+        .filter(token => token.length > 1 && !SQL_WORDS.has(token) && !/^\d+$/.test(token)))];
+}
+
+function predicateRegion(sql: string): string {
+    // Keep every predicate-bearing clause, including predicates nested inside
+    // EXISTS/scalar subqueries. ON is included because relationship predicates
+    // can legitimately implement an existence filter.
+    const clauses = sql.match(/\b(?:where|having|on)\b[\s\S]*?(?=\b(?:group\s+by|order\s+by|limit|union|except|intersect)\b|$)/gi);
+    return (clauses || []).join(' ');
+}
+
+function contractPredicatePresent(sql: string, rawField: string): boolean {
+    const region = predicateRegion(sql);
+    if (!region) return false;
+    const regionIdentifiers = new Set(predicateIdentifiers(region));
+    const expected = predicateIdentifiers(rawField);
+    if (!expected.length) return false;
+    // Expressions may mention functions/types as well as a field. At least one
+    // physical identifier is sufficient here; operator/value fidelity is
+    // checked by the typed query-contract layer rather than brittle text match.
+    return expected.some(identifier => regionIdentifiers.has(identifier));
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // VALIDATOR
 // ═══════════════════════════════════════════════════════════════════
@@ -133,8 +181,7 @@ export function validateAnswerContract(
             }))
             : plan.filters || [];
         const missingFilters = planFilters.filter(f => {
-            const fieldLower = f.field.toLowerCase();
-            return !sqlLower.includes(fieldLower);
+            return !contractPredicatePresent(sql, f.field);
         });
 
         checks.push({

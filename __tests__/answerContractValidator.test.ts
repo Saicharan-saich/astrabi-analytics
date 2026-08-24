@@ -54,4 +54,43 @@ describe('answer contract validation', () => {
       shorthandContract,
     )).not.toThrow();
   });
+
+  it('recognises equivalent predicates across aliases, casts, and BETWEEN syntax', () => {
+    const result = validateAnswerContract(
+      plan,
+      `SELECT SUM(d.sales) AS total_sales
+       FROM data d
+       WHERE CAST(d.order_date AS DATE) BETWEEN DATE '2017-01-01' AND DATE '2017-12-31'`,
+      [{ total_sales: 100 }],
+      'kpiCard',
+      'total_sales',
+      'total_sales',
+      model,
+      undefined,
+      {
+        expectedResult: { columns: ['total_sales'] },
+        operations: {
+          filters: [{ expression: 'CAST(data.order_date AS DATE) >= DATE 2017-01-01' }],
+        },
+      },
+    );
+
+    expect(result.checks.find(check => check.id === 'conditions_applied')).toMatchObject({ status: 'pass' });
+  });
+
+  it('still fails a genuinely missing governed predicate', () => {
+    const result = validateAnswerContract(
+      plan,
+      'SELECT SUM(sales) AS total_sales FROM data',
+      [{ total_sales: 100 }],
+      'kpiCard',
+      'total_sales',
+      'total_sales',
+      model,
+      undefined,
+      { operations: { filters: [{ field: 'region', operator: '=', value: 'North' }] } },
+    );
+
+    expect(result.checks.find(check => check.id === 'conditions_applied')).toMatchObject({ status: 'fail' });
+  });
 });

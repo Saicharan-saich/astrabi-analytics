@@ -136,8 +136,14 @@ export function inferQueryShape(question: string): QueryShape {
         requestedAggregations.push('count');
     }
     const aggregation = requestedAggregations[0];
+    // "Rank industries by record count" and "citizenships ranked by maximum
+    // net worth" request every group in ranked order. Ranking is independent
+    // from truncation: LIMIT is legal only when the user asks for a winner/N.
+    const explicitAllGroupRanking = !!aggregation
+        && /\b(?:rank|ranked|ranking|order|ordered|sort|sorted)\b[\s\S]{0,100}\bby\b/i.test(question)
+        && !/\b(?:top|bottom|first|last)\s+\d+\b/i.test(question);
     const groupingText = question.replace(/\b(?:ordered|sorted|ranked)\s+by\b/gi, '');
-    const groupingCue = thresholdedGroupCount || aggregateQualifiedGroups || frequencyWinner
+    const groupingCue = thresholdedGroupCount || aggregateQualifiedGroups || frequencyWinner || explicitAllGroupRanking
         || /\b(?:by|per|for\s+each|for\s+every|each|every)\b/i.test(groupingText)
         || /\bof\s+(?:singers?|records?|items?|entities?)\s+of\s+each\b/i.test(question);
     const order = ordering(question);
@@ -150,7 +156,11 @@ export function inferQueryShape(question: string): QueryShape {
         && /\b(?:most|fewest|least|highest|lowest|largest|smallest|maximum|minimum|best|worst|top|bottom)\b/i.test(question);
     const explicitLimit = topN ? Number(topN[2]) : leadingNIsRanking ? Number(leadingN![1]) : undefined;
     const directionalRange = /\bfrom\s+(?:the\s+)?(?:youngest|oldest|lowest|highest|least|most|smallest|largest|earliest|latest|newest)\s+to\s+(?:the\s+)?(?:youngest|oldest|lowest|highest|least|most|smallest|largest|earliest|latest|newest)\b/i.test(question);
-    const rankingText = shapeText.replace(/\b(?:at|no)\s+(?:least|most)\b/gi, '');
+    const rankingText = shapeText
+        .replace(/\b(?:at|no)\s+(?:least|most)\b/gi, '')
+        // "highest first" describes sort direction for a full ranking; it is
+        // not the noun phrase "the highest <entity>" and must not imply LIMIT 1.
+        .replace(/\b(?:highest|lowest|largest|smallest|oldest|youngest|latest|earliest)\s+first\b/gi, '');
     const singleWinner = !directionalRange && (frequencyWinner || hasExplicitSingleWinner(rankingText));
     const allCue = /\b(?:all|every|each|different|distinct)\b|\bwhich\s+ones\b/i.test(question);
     const distinctRequested = /\b(?:different|distinct|unique)\b/i.test(question);
@@ -165,6 +175,7 @@ export function inferQueryShape(question: string): QueryShape {
     let operation: QueryOperation = 'unknown';
     if (orderedProjection || (comparativeReference && !aggregation)) operation = 'projection';
     else if (explicitLimit || singleWinner) operation = 'ranking';
+    else if (explicitAllGroupRanking) operation = 'ranking';
     else if (aggregation && groupingCue) operation = 'grouped_aggregate';
     else if (aggregation) operation = 'scalar_aggregate';
 

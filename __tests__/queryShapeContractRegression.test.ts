@@ -113,6 +113,58 @@ describe('dynamic query-shape and cardinality contract', () => {
     });
 
     it.each([
+        'Rank industries by record count.',
+        'Show citizenships ranked by maximum net worth.',
+        'Order every category by average value.',
+    ])('treats an unbounded aggregate ranking as all groups: %s', question => {
+        expect(inferQueryShape(question)).toMatchObject({
+            operation: 'ranking', selection: 'all_groups', groupingCue: true, prohibitsImplicitLimit: true,
+        });
+    });
+
+    it('does not let a local LIMIT 1 collapse an unbounded group ranking', () => {
+        const question = 'Rank categories by maximum value.';
+        const contract = buildQueryContract(question, plan({
+            intent: 'ranking',
+            dimensions: [{ field: 'Category' }],
+            metrics: [{ field: 'Value', agg: 'max' }],
+            sort: [{ field: 'Value', dir: 'desc' }],
+            limit: 1,
+        }), [], model);
+        expect(contract).toMatchObject({
+            requiresGrouping: true,
+            requiresRanking: true,
+            selectionMode: 'all_groups',
+            rankingLimit: undefined,
+            prohibitsImplicitLimit: true,
+        });
+        expect(validateSQLAgainstContract(
+            'SELECT Category, MAX(Value) maximum_value FROM data GROUP BY Category ORDER BY maximum_value DESC LIMIT 1',
+            contract,
+        ).map(issue => issue.code)).toContain('unexpected_limit');
+    });
+
+    it('does not expose synonym-colliding dimensions in a scalar aggregate contract', () => {
+        const scalarModel: SemanticModel = {
+            ...model,
+            fields: [
+                { ...model.fields[3], name: 'sales', displayLabel: 'Sales', synonyms: ['revenue'] },
+                { ...model.fields[0], name: 'sales_rep', displayLabel: 'Sales representative', synonyms: ['sales'] },
+            ],
+        };
+        const contract = buildQueryContract(
+            'What is the total sales?',
+            plan({ metrics: [{ field: 'sales', agg: 'sum' }] }),
+            [],
+            scalarModel,
+        );
+        expect(contract.expectedCardinality).toBe('scalar');
+        expect(contract.requiresGrouping).toBe(false);
+        expect(contract.requiredOutputFields).toEqual([]);
+        expect(validateSQLAgainstContract('SELECT SUM(sales) AS total_sales FROM data', contract)).toEqual([]);
+    });
+
+    it.each([
         ['List names ordered by age from the oldest to the youngest', 'desc'],
         ['Show name and category sorted by age from youngest to oldest', 'asc'],
         ['List names in ascending order of age', 'asc'],

@@ -5,7 +5,8 @@
 import { describe, it, expect } from 'vitest';
 import { serializeSchema, serializeSemanticModelSchema, collectSafeDomains, isSensitiveColumn, looksLikePersonalData } from '../services/ai-sql/schemaSerializer';
 import { validateReadOnlySQL } from '../services/ai-sql/sqlSafety';
-import { extractSQL } from '../services/ai-sql/directSqlEngine';
+import { extractSQL, normalizeSimpleSQLToContract } from '../services/ai-sql/directSqlEngine';
+import { buildQueryContract, validateSQLAgainstContract } from '../services/ai-sql/queryContract';
 import { buildValueCatalog, groundSqlLiterals } from '../services/ai-sql/valueGrounding';
 
 describe('serializeSchema — metadata only, never rows', () => {
@@ -31,6 +32,48 @@ describe('serializeSchema — metadata only, never rows', () => {
         expect(s).not.toContain('Alpha');
         expect(s).not.toContain('450');
         expect(s).not.toMatch(/\bA\b/); // the 'A' code value never appears
+    });
+});
+
+describe('simple SQL contract normalization', () => {
+    const model: any = {
+        fields: [
+            { name: 'category', displayLabel: 'Category', physicalType: 'string', semanticType: 'category', role: 'dimension', defaultAgg: 'none', timeGrainSupport: [], synonyms: [], valueDescriptors: [], distinctCount: 4, hasNulls: false },
+            { name: 'profit', displayLabel: 'Profit', physicalType: 'number', semanticType: 'currency', role: 'metric', defaultAgg: 'sum', timeGrainSupport: [], synonyms: [], valueDescriptors: [], distinctCount: 20, hasNulls: false },
+        ],
+        compositeMetrics: [], derivedMetrics: [], datasetName: 'data', rowCount: 20, grain: 'record',
+    };
+    const plan: any = {
+        intent: 'ranking', dimensions: [{ field: 'category' }], metrics: [{ field: 'profit', agg: 'sum' }],
+        filters: [], sort: [{ field: 'profit', dir: 'desc' }], limit: 1, ambiguous: false,
+        resultGrain: 'category', originalQuestion: '',
+    };
+
+    it('removes a raw aggregate input from SELECT/GROUP BY and an invented all-groups limit', () => {
+        const contract = buildQueryContract('Rank categories by total profit, highest first.', plan, [], model);
+        const sql = normalizeSimpleSQLToContract(
+            'SELECT category, profit, SUM(profit) AS total_profit FROM data GROUP BY category, profit ORDER BY total_profit DESC LIMIT 1',
+            contract,
+        );
+        expect(sql).toBe('SELECT category, SUM(profit) AS total_profit FROM data GROUP BY category ORDER BY total_profit DESC');
+        expect(validateSQLAgainstContract(sql, contract)).toEqual([]);
+    });
+
+    it('preserves an explicitly requested top-N limit while correcting grain', () => {
+        const topContract = buildQueryContract('Show the top 4 categories by total profit.', { ...plan, limit: 4 }, [], model);
+        const sql = normalizeSimpleSQLToContract(
+            'SELECT category, profit, SUM(profit) AS total_profit FROM data GROUP BY category, profit ORDER BY total_profit DESC LIMIT 4',
+            topContract,
+        );
+        expect(sql).toContain('GROUP BY category ORDER BY');
+        expect(sql).toMatch(/LIMIT 4$/);
+        expect(validateSQLAgainstContract(sql, topContract)).toEqual([]);
+    });
+
+    it('does not rewrite complex nested SQL', () => {
+        const contract = buildQueryContract('Rank categories by total profit, highest first.', plan, [], model);
+        const sql = 'WITH totals AS (SELECT category, SUM(profit) total FROM data GROUP BY category) SELECT category FROM totals ORDER BY total DESC';
+        expect(normalizeSimpleSQLToContract(sql, contract)).toBe(sql);
     });
 });
 
@@ -80,6 +123,17 @@ describe('serializeSemanticModelSchema — rich metadata, never rows', () => {
         expect(s).not.toMatch(/order_date DATE\b/);
         // And the notes must instruct casting.
         expect(s).toMatch(/order_date:.*CAST\(col AS DATE\)/i);
+    });
+    it('keeps numeric calendar columns numeric and explicitly forbids DATE casts', () => {
+        const numericCalendarModel = {
+            ...model,
+            fields: [fld('Year', 'dimension', 'date', 'number', 20)],
+            timeContext: undefined,
+        };
+        const s = serializeSemanticModelSchema(numericCalendarModel as any);
+        expect(s).toMatch(/Year BIGINT/);
+        expect(s).toMatch(/Year:.*compare as a number.*do NOT CAST to DATE/i);
+        expect(s).not.toMatch(/Year VARCHAR/);
     });
     it('reports low-cardinality dimension distinct counts', () => {
         const s = serializeSemanticModelSchema(model);

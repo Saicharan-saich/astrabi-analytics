@@ -61,14 +61,20 @@ function isDateField(f: SemanticField): boolean {
 }
 
 /**
- * The ACTUAL DuckDB column type in this app. Dates are loaded from CSV as text
- * (VARCHAR), NOT as DATE — so we report VARCHAR for them, otherwise the model
- * writes DATE_TRUNC(order_date) and DuckDB rejects it ("date_trunc(…, VARCHAR)").
+ * The ACTUAL DuckDB-facing column type in this app. Uploaded full dates are
+ * represented as text, while numeric calendar columns remain numeric. Physical
+ * storage must win over a semantic date label to avoid invalid DOUBLE -> DATE
+ * casts and invalid date functions over VARCHAR values.
  */
 function duckType(f: SemanticField): string {
-    if (isDateField(f)) return 'VARCHAR';
     switch (f.physicalType) {
-        case 'number': return f.semanticType === 'count' || f.semanticType === 'identifier' ? 'BIGINT' : 'DOUBLE';
+        // Physical storage wins over semantic meaning. A numeric Year column
+        // may correctly have semanticType=date, but CAST(year AS DATE) is an
+        // invalid DOUBLE -> DATE conversion in DuckDB.
+        case 'number': return f.semanticType === 'count' || f.semanticType === 'identifier' || f.semanticType === 'date' ? 'BIGINT' : 'DOUBLE';
+        // Uploaded CSV/XLSX date columns are represented as date-like text by
+        // the browser loader and therefore still need an explicit cast.
+        case 'date': return 'VARCHAR';
         case 'boolean': return 'BOOLEAN';
         default: return 'VARCHAR';
     }
@@ -243,7 +249,13 @@ export function serializeSemanticModelSchema(
                 notes.push('identifier');
             }
             if (isDateField(f)) {
-                notes.push("date stored as TEXT in YYYY-MM-DD form — you MUST wrap it in CAST(col AS DATE) before DATE_TRUNC / EXTRACT / strftime or any date comparison");
+                if (f.physicalType === 'number') {
+                    notes.push('numeric calendar field — compare as a number; do NOT CAST to DATE');
+                } else if (f.physicalType === 'date') {
+                    notes.push("date stored as TEXT in YYYY-MM-DD form — wrap it in CAST(col AS DATE) before DATE_TRUNC / EXTRACT / strftime or a DATE-literal comparison");
+                } else {
+                    notes.push('date-like VARCHAR — cast to DATE only when the values use a parseable full-date format; numeric year comparisons stay numeric');
+                }
                 // The dataset's real min/max dates are actual data values, so they
                 // are only disclosed alongside the other value domains. In strict
                 // mode (no domains) the model is told the range exists but not

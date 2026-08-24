@@ -31,7 +31,7 @@ Rules:
 - When money/revenue/total is asked for, use the additive currency measure, not a per-unit price.
 - When computing "X% higher/lower than average", apply the percentage as a multiplier: e.g. "20% higher than average" → column > 1.2 * (SELECT AVG(...))
 - When the AVG subquery is used with additional WHERE filters, those same filters must appear inside the subquery.
-- DATE COLUMNS ARE STORED AS TEXT (VARCHAR). You MUST wrap them in CAST(col AS DATE) before ANY date function or comparison — DATE_TRUNC, EXTRACT, strftime, date_diff, ordering by month, or BETWEEN. Example: DATE_TRUNC('month', CAST(order_date AS DATE)), and CAST(order_date AS DATE) BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'. Writing DATE_TRUNC('month', order_date) directly WILL fail.
+- Obey the physical type printed in the schema for temporal fields. Cast a VARCHAR full-date column before DATE_TRUNC / EXTRACT / date_diff or DATE-literal comparison. Compare numeric calendar fields such as Year directly as numbers and NEVER CAST a NUMBER to DATE. Use native DATE values directly when the schema reports DATE.
 - JOIN across tables when needed, following the listed foreign keys.
 - Respect table ownership and join grain. A field is read from the physical table that owns it; a same-named field in another table is not interchangeable. When a one-to-many join would duplicate a measure from the one-side, pre-aggregate at the required grain before joining (or aggregate only the owning table) rather than summing duplicated values.
 - For counts of related records, count the related table's stable key or rows after the declared join. For counts of parent entities, use COUNT(DISTINCT parent_key) when the join fans out.
@@ -105,6 +105,11 @@ function extractJSONObject(content: string): DynamicQuerySpec | null {
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return null;
     try { return JSON.parse(match[0]) as DynamicQuerySpec; } catch { return null; }
+}
+
+function uniqueStrings(values: string[]): string[] {
+    return values.filter((value, index, all) => value
+        && all.findIndex(other => other.toLowerCase() === value.toLowerCase()) === index);
 }
 
 /** Freeze model planning to the locally established answer shape. */
@@ -209,11 +214,19 @@ export function reconcileQuerySpecWithCanonicalIntent(
         }];
     }
 
-    if (canonical.visibleFields.length) {
-        spec.expectedResult.columns = canonical.constraints.strictOutputProjection
-            ? [...canonical.visibleFields]
-            : [...new Set([...canonical.visibleFields, ...spec.expectedResult.columns])];
-    }
+    // The model draft is not allowed to widen the answer schema. Previously we
+    // unioned its columns back in after canonical reconciliation, which is how
+    // raw measures and unrelated attributes leaked into SELECT/GROUP BY (for
+    // example grouping by satisfaction_score while also averaging it).
+    const visibleGrain = uniqueStrings([...canonical.visibleFields, ...canonical.grainFields]);
+    const visibleMeasures = canonical.answerKind === 'detail_projection'
+        ? []
+        : canonical.measures.map(measure => measure.field
+            ? `${measure.aggregation.toUpperCase()}(${measure.field})`
+            : `${measure.aggregation.toUpperCase()}(*)`);
+    spec.expectedResult.columns = canonical.constraints.strictOutputProjection
+        ? [...visibleGrain]
+        : uniqueStrings([...visibleGrain, ...visibleMeasures]);
     spec.expectedResult.grain = canonical.cardinality === 'scalar'
         ? 'one scalar result row'
         : canonical.grainFields.length
@@ -295,6 +308,85 @@ export interface SQLCandidateDecision {
     contractErrors: number;
     contractWarnings: number;
     complexity: number;
+}
+
+function splitSqlList(value: string): string[] {
+    const items: string[] = [];
+    let start = 0;
+    let depth = 0;
+    let quote = '';
+    for (let index = 0; index < value.length; index += 1) {
+        const char = value[index];
+        if (quote) {
+            if (char === quote && value[index - 1] !== '\\') quote = '';
+            continue;
+        }
+        if (char === '"' || char === "'" || char === '`') { quote = char; continue; }
+        if (char === '(') depth += 1;
+        else if (char === ')') depth = Math.max(0, depth - 1);
+        else if (char === ',' && depth === 0) {
+            items.push(value.slice(start, index).trim());
+            start = index + 1;
+        }
+    }
+    items.push(value.slice(start).trim());
+    return items.filter(Boolean);
+}
+
+function bareSqlIdentifier(value: string): string | undefined {
+    const withoutAlias = value.replace(/\s+(?:as\s+)?["`]?[A-Za-z_][\w$]*["`]?\s*$/i, '').trim();
+    if (!/^(?:["`]?[A-Za-z_][\w$]*["`]?\.)?["`]?[A-Za-z_][\w$]*["`]?$/.test(withoutAlias)) return undefined;
+    return withoutAlias.replace(/["`]/g, '').split('.').pop()?.toLowerCase();
+}
+
+/**
+ * Apply only contract-preserving, syntax-local corrections that do not require
+ * data values or business vocabulary. Complex CTE/subquery/set SQL is left to
+ * the model reviewer. This catches the recurring wrong-grain shape where an
+ * aggregate input is also emitted raw and added to GROUP BY.
+ */
+export function normalizeSimpleSQLToContract(sql: string, contract?: QueryContract): string {
+    if (!contract || /^\s*with\b/i.test(sql) || (sql.match(/\bselect\b/gi) || []).length !== 1) return sql;
+    let normalized = sql.trim();
+
+    if (contract.prohibitsImplicitLimit) {
+        normalized = normalized.replace(/\s+limit\s+\d+\s*;?\s*$/i, '').trim();
+    }
+    if (!contract.requiresGrouping) return normalized;
+
+    const match = normalized.match(/^\s*select\s+([\s\S]*?)\s+from\s+([\s\S]*?)\s+group\s+by\s+([\s\S]*?)(?=\s+having\b|\s+order\s+by\b|\s+limit\b|$)/i);
+    if (!match) return normalized;
+    const aggregateArguments = new Set<string>();
+    for (const aggregate of match[1].matchAll(/\b(?:sum|avg|min|max|median)\s*\(\s*(?:["`]?[A-Za-z_][\w$]*["`]?\.)?["`]?([A-Za-z_][\w$]*)["`]?\s*\)/gi)) {
+        aggregateArguments.add(aggregate[1].toLowerCase());
+    }
+    if (!aggregateArguments.size) return normalized;
+
+    const originalGroups = splitSqlList(match[3]);
+    const groups = originalGroups.filter(item => {
+        const identifier = bareSqlIdentifier(item);
+        return !identifier || !aggregateArguments.has(identifier);
+    });
+    if (!groups.length || groups.length === originalGroups.length) return normalized;
+
+    const selected = splitSqlList(match[1]).filter(item => {
+        const identifier = bareSqlIdentifier(item);
+        return !identifier || !aggregateArguments.has(identifier);
+    });
+    if (!selected.length) return normalized;
+
+    const groupStart = (match.index || 0) + match[0].toLowerCase().lastIndexOf('group by');
+    const groupBodyStart = normalized.indexOf(match[3], groupStart + 'group by'.length);
+    if (groupBodyStart < 0) return normalized;
+    const groupBodyEnd = groupBodyStart + match[3].length;
+    normalized = `${normalized.slice(0, groupBodyStart)}${groups.join(', ')}${normalized.slice(groupBodyEnd)}`;
+
+    const selectKeywordEnd = normalized.search(/\bselect\b/i) + 'select'.length;
+    const selectBodyStart = normalized.indexOf(match[1], selectKeywordEnd);
+    if (selectBodyStart < 0) return normalized;
+    const selectBodyEnd = selectBodyStart + match[1].length;
+    normalized = `${normalized.slice(0, selectBodyStart)}${selected.join(', ')}${normalized.slice(selectBodyEnd)}`;
+    return normalized.trim();
 }
 
 function sqlStructuralComplexity(sql: string): number {
@@ -463,7 +555,10 @@ export async function generateDirectSQL(
     tokens += reviewUsage.total_tokens || ((reviewUsage.prompt_tokens || 0) + (reviewUsage.completion_tokens || 0)) || 0;
     let modelUsedForSQL = `${planner.model} → ${drafted.model} → ${reviewed.model}`;
     const candidateDecision = chooseBestSQLCandidate(draftSQL, reviewedSQL, queryContract);
-    let sql = candidateDecision.sql;
+    let sql = normalizeSimpleSQLToContract(candidateDecision.sql, queryContract);
+    if (sql !== candidateDecision.sql) {
+        console.log('[AI SQL] Deterministic contract normalizer removed an aggregate input from the raw SELECT/GROUP BY grain or removed an unrequested LIMIT.');
+    }
     if (candidateDecision.source === 'draft') {
         console.log(`[AI SQL] Retained the draft SQL because the reviewer candidate was less faithful or more complex (${candidateDecision.contractErrors} contract error(s), complexity ${candidateDecision.complexity}).`);
     }
