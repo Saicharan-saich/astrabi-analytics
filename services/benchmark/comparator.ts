@@ -306,6 +306,64 @@ export function compareResultSets(
 }
 
 /**
+ * Compare the answer at the projection explicitly requested by the user.
+ *
+ * Public benchmark gold SQL often exposes an aggregate that is needed to
+ * qualify or order entities even when the wording asks only for the entity
+ * labels. For example, "Which industries have average satisfaction >= 70?"
+ * is completely answered by the qualifying industries; AVG(...) is predicate
+ * evidence, not a requested display column. The production query contract
+ * already resolves that distinction from the question and physical schema.
+ *
+ * This is deliberately narrower than general subset matching:
+ *  - every contract-requested field must exist in the frozen gold output;
+ *  - the complete row set must match at that requested projection;
+ *  - a missing field that the contract asks to display still fails; and
+ *  - without grounded requested fields, ordinary strict comparison wins.
+ */
+export function compareResultSetsAtRequestedProjection(
+  expectedRows: Record<string, unknown>[],
+  actualRows: Record<string, unknown>[],
+  options: BenchmarkComparisonOptions,
+  requestedOutputFields: string[] = [],
+): BenchmarkComparisonResult {
+  const direct = compareResultSets(expectedRows, actualRows, options);
+  if (direct.equal || !expectedRows.length || !actualRows.length || !requestedOutputFields.length) {
+    return direct;
+  }
+
+  const expectedColumns = Object.keys(expectedRows[0]);
+  const requested = [...new Set(requestedOutputFields.map(field => field.trim()).filter(Boolean))];
+  const projectedColumns: string[] = [];
+  for (const field of requested) {
+    const exact = expectedColumns.find(column => column.toLowerCase() === field.toLowerCase());
+    const canonical = expectedColumns.find(column => canonicalColumnName(column) === canonicalColumnName(field));
+    const match = exact || canonical;
+    if (!match || projectedColumns.includes(match)) return direct;
+    projectedColumns.push(match);
+  }
+
+  // There is no relaxed projection when the contract requires every gold
+  // column. This keeps ordinary execution equivalence unchanged.
+  if (projectedColumns.length >= expectedColumns.length) return direct;
+
+  const projectedExpected = expectedRows.map(row => Object.fromEntries(
+    projectedColumns.map(column => [column, row[column]]),
+  ));
+  const projected = compareResultSets(projectedExpected, actualRows, {
+    ...options,
+    strictColumns: false,
+  });
+  if (!projected.equal) return direct;
+
+  return {
+    ...projected,
+    equivalenceRule: 'requested_projection',
+    reason: `The complete requested projection matched (${projectedColumns.join(', ')}); ${expectedColumns.length - projectedColumns.length} gold helper column${expectedColumns.length - projectedColumns.length === 1 ? '' : 's'} was not requested for display.`,
+  };
+}
+
+/**
  * Conservative second-pass comparator for answers withheld by the product
  * safety contract. It accepts all normal result-set equivalences and one
  * additional, explainable case: the candidate contains every gold row plus

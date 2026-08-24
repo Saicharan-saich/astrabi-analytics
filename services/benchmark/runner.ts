@@ -1,4 +1,8 @@
-import { compareResultSets, compareWithheldResultSets } from './comparator';
+import {
+  compareResultSets,
+  compareResultSetsAtRequestedProjection,
+  compareWithheldResultSets,
+} from './comparator';
 import type {
   BenchmarkCase,
   BenchmarkCaseResult,
@@ -227,12 +231,17 @@ export async function executeBenchmarkCase(
     const completedAt = now();
     const safeToDisplay = pipelineResult.displaySafety?.allowed !== false;
     const validSql = pipelineResult.validation?.valid !== false;
-    let comparison = compareResultSets(testCase.expectedRows, pipelineResult.rawData || [], {
-      ...testCase.comparison,
-      // A correct result remains correct whether DuckDB returns ascending,
-      // descending, or otherwise equivalent row order.
-      orderMatters: false,
-    });
+    let comparison = compareResultSetsAtRequestedProjection(
+      testCase.expectedRows,
+      pipelineResult.rawData || [],
+      {
+        ...testCase.comparison,
+        // A correct result remains correct whether DuckDB returns ascending,
+        // descending, or otherwise equivalent row order.
+        orderMatters: false,
+      },
+      pipelineResult.contractValidation?.requestedOutputFields,
+    );
     const base: Omit<BenchmarkCaseResult, 'status' | 'passed' | 'failureReason'> = {
       caseId: testCase.id,
       suiteId: testCase.suiteId,

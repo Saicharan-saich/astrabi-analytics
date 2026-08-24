@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalColumnName, compareResultSets, compareWithheldResultSets } from '../services/benchmark';
+import {
+  canonicalColumnName,
+  compareResultSets,
+  compareResultSetsAtRequestedProjection,
+  compareWithheldResultSets,
+} from '../services/benchmark';
 
 describe('benchmark result comparator', () => {
   it('normalizes common aggregate aliases and numeric representations', () => {
@@ -106,5 +111,56 @@ describe('benchmark result comparator', () => {
     const expected = [{ grade: 9 }, { grade: 10 }];
     const duplicated = [{ grade: 9 }, { grade: 9 }, { grade: 10 }, { grade: 10 }];
     expect(compareWithheldResultSets(expected, duplicated, { orderMatters: false }).equal).toBe(false);
+  });
+
+  it('accepts a complete entity answer when gold includes an unrequested HAVING helper', () => {
+    const expected = [
+      { industry: 'Healthcare', average_satisfaction_score: 70 },
+      { industry: 'Finance', average_satisfaction_score: 77 },
+      { industry: 'Education', average_satisfaction_score: 74.833333 },
+    ];
+    const actual = [
+      { industry: 'Healthcare' },
+      { industry: 'Finance' },
+      { industry: 'Education' },
+    ];
+
+    const result = compareResultSetsAtRequestedProjection(
+      expected,
+      actual,
+      { orderMatters: false },
+      ['industry'],
+    );
+    expect(result.equal).toBe(true);
+    expect(result.equivalenceRule).toBe('requested_projection');
+  });
+
+  it('still requires an aggregate when the answer contract asks to display it', () => {
+    const expected = [{ industry: 'Finance', average_satisfaction_score: 77 }];
+    const actual = [{ industry: 'Finance' }];
+    const result = compareResultSetsAtRequestedProjection(
+      expected,
+      actual,
+      { orderMatters: false },
+      ['industry', 'satisfaction_score'],
+    );
+    expect(result.equal).toBe(false);
+    expect(result.reason).toContain('average_satisfaction_score');
+  });
+
+  it('does not accept an incomplete entity set at the requested projection', () => {
+    const expected = [
+      { industry: 'Healthcare', average_satisfaction_score: 70 },
+      { industry: 'Finance', average_satisfaction_score: 77 },
+    ];
+    const actual = [{ industry: 'Finance' }];
+    const result = compareResultSetsAtRequestedProjection(
+      expected,
+      actual,
+      { orderMatters: false },
+      ['industry'],
+    );
+    expect(result.equal).toBe(false);
+    expect(result.reason).toContain('Expected 2 rows');
   });
 });

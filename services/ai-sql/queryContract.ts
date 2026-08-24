@@ -192,18 +192,21 @@ const STOP_WORDS = new Set([
     'show', 'the', 'their', 'them', 'there', 'to', 'what', 'which', 'who', 'with',
 ]);
 
-function singular(token: string): string {
-    const t = token.toLowerCase();
-    if (t.endsWith('ies') && t.length > 4) return `${t.slice(0, -3)}y`;
-    if (t.endsWith('ses') && t.length > 4) return t.slice(0, -2);
-    if (t.endsWith('s') && !t.endsWith('ss') && t.length > 3) return t.slice(0, -1);
-    return t;
+function inflectionVariants(token: string): Set<string> {
+    const value = token.toLowerCase();
+    const variants = new Set([value]);
+    if (value.endsWith('ies') && value.length > 4) variants.add(`${value.slice(0, -3)}y`);
+    if (value.endsWith('sses') && value.length > 5) variants.add(value.slice(0, -2));
+    if (value.endsWith('es') && value.length > 4) variants.add(value.slice(0, -2));
+    if (value.endsWith('s') && !value.endsWith('ss') && value.length > 3) variants.add(value.slice(0, -1));
+    return variants;
 }
 
 /** Small domain-neutral vocabulary bridges common schema nouns. */
 function conceptVariants(token: string): Set<string> {
-    const base = singular(token);
-    const variants = new Set([base]);
+    const inflections = inflectionVariants(token);
+    const base = [...inflections].sort((a, b) => a.length - b.length)[0];
+    const variants = new Set(inflections);
     const pairs: Record<string, string[]> = {
         maker: ['manufacturer', 'producer'],
         manufacturer: ['maker', 'producer'],
@@ -225,12 +228,14 @@ function words(value: string): string[] {
         .replace(/([a-z])([A-Z])/g, '$1 $2')
         .toLowerCase()
         .split(/[^a-z0-9]+/)
-        .map(singular)
         .filter(token => token.length > 1 && !STOP_WORDS.has(token));
 }
 
 function conceptMatches(schemaToken: string, questionTokens: Set<string>): boolean {
-    return [...conceptVariants(schemaToken)].some(token => questionTokens.has(token));
+    const schemaVariants = conceptVariants(schemaToken);
+    return [...questionTokens].some(questionToken =>
+        [...conceptVariants(questionToken)].some(token => schemaVariants.has(token))
+    );
 }
 
 function targetClause(question: string): string {
@@ -625,6 +630,11 @@ function resolveThreshold(question: string): Omit<NonNullable<QueryContract['thr
         const match = question.match(re);
         if (match) return { operator, value: Number(match[1]) };
     }
+    const symbolic = question.match(/(?:^|\s)(>=|<=|>|<|=)\s*(-?\d+(?:\.\d+)?)/);
+    if (symbolic) return {
+        operator: symbolic[1] as '>=' | '>' | '<=' | '<' | '=',
+        value: Number(symbolic[2]),
+    };
     return undefined;
 }
 
@@ -635,7 +645,26 @@ function thresholdUsesAggregate(question: string): boolean {
     // HAVING. An aggregate elsewhere must not move a raw-field predicate into
     // HAVING (for example "count pets whose age is over 20").
     const nearby = question.slice(Math.max(0, comparator.index - 80), comparator.index);
-    return /\b(?:total|sum|average|avg|mean|count|number\s+of|minimum|maximum|min|max)\b[^?.,;]{0,60}$/i.test(nearby);
+    const after = question.slice(comparator.index + comparator[0].length, comparator.index + comparator[0].length + 100);
+    return /\b(?:total|sum|average|avg|mean|count|number\s+of|minimum|maximum|min|max)\b[^?.,;]{0,60}$/i.test(nearby)
+        || /\b(?:on\s+average|on\s+mean)\b/i.test(after);
+}
+
+/** Aggregate formulas supplied as benchmark/business evidence describe a
+ * grouped predicate even when the natural wording asks only for entity labels.
+ * The aggregate belongs in HAVING/a subquery; it does not become a displayed
+ * output field. */
+function hasAggregatePredicateEvidence(question: string): boolean {
+    const evidence = question.match(/\bEvidence:\s*([\s\S]+)$/i)?.[1] || '';
+    return /\b(?:AVG|SUM|COUNT|MIN|MAX|DIVIDE|MULTIPLY|SUBTRACT|ADD)\s*\(/i.test(evidence)
+        && /(?:>=|<=|>|<|=)\s*-?\d+(?:\.\d+)?/i.test(evidence);
+}
+
+function aggregateOperationsFromEvidence(question: string): QueryContract['expectedAggregations'] {
+    const evidence = question.match(/\bEvidence:\s*([\s\S]+)$/i)?.[1] || '';
+    const operations = [...evidence.matchAll(/\b(AVG|SUM|COUNT|MIN|MAX)\s*\(/gi)]
+        .map(match => match[1].toLowerCase() as NonNullable<QueryContract['expectedAggregation']>);
+    return [...new Set(operations)];
 }
 
 function resolveRatio(
@@ -873,9 +902,11 @@ export function buildQueryContract(
     const answerClause = requestedAnswerClause(question);
     const answerAggregation = resolveExpectedAggregation(answerClause, plan);
     const asksCountAlongsideEntity = /\band\s+how\s+many\b/i.test(question);
+    const aggregatePredicateCue = thresholdUsesAggregate(question) || hasAggregatePredicateEvidence(question);
     const requiresRowProjection = requestedOutputFields.some(field => field.confidence === 'high')
         && !answerAggregation
         && !asksCountAlongsideEntity
+        && !aggregatePredicateCue
         && queryShape.operation !== 'ranking'
         && queryShape.operation !== 'grouped_aggregate';
     const planRequiresEntityAggregation = !requiresRowProjection && !!outputEntity
@@ -883,6 +914,7 @@ export function buildQueryContract(
         && !['single_metric', 'distribution'].includes(plan.intent);
     const explicitGroupingCue = queryShape.operation === 'grouped_aggregate'
         || queryShape.implicitFrequencyRanking
+        || (aggregatePredicateCue && !!outputEntity)
         || BREAKDOWN_CUE.test(breakdownQuestion)
         || /\b(?:in|for)\s+each\b/i.test(question)
         || (asksCountAlongsideEntity && !!outputEntity);
@@ -935,9 +967,12 @@ export function buildQueryContract(
     }
     const requiredDimension = resolvedRequestedDimension
         || (requiresGrouping && outputEntity?.confidence === 'high' ? outputEntity.field : undefined);
+    const evidenceAggregations = aggregateOperationsFromEvidence(question);
     let expectedAggregations = orderedProjection || requiresRowProjection
         ? []
-        : resolveExpectedAggregations(question, model);
+        : evidenceAggregations.length > 0
+            ? evidenceAggregations
+            : resolveExpectedAggregations(question, model);
     let expectedAggregation = expectedAggregations[0]
         || (orderedProjection || requiresRowProjection
             ? undefined

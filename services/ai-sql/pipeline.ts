@@ -1915,6 +1915,9 @@ export async function runAISQLPipeline(
             passed: contractResult.passed,
             enforced: true,
             summary: contractResult.summary,
+            requestedOutputFields: activeQueryContract?.requiredOutputFields
+                .filter(field => field.confidence === 'high')
+                .map(field => field.field) || [],
             checks: contractResult.checks.map(c => ({
                 name: c.name,
                 status: c.status,

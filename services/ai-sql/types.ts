@@ -495,6 +495,9 @@ export interface AISQLPipelineResult {
         /** True when the contract was used as a display gate, not telemetry only. */
         enforced?: boolean;
         summary: string;
+        /** Physical fields that the wording asks to display. Aggregate helper
+         * columns used only for filtering or ranking are intentionally absent. */
+        requestedOutputFields?: string[];
         checks: Array<{
             name: string;
             status: 'pass' | 'fail' | 'warn' | 'skip';

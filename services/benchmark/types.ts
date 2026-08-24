@@ -89,7 +89,7 @@ export interface BenchmarkComparisonResult {
   /** Deterministic rule that established equivalence. Useful when a safety
    * gate withheld an answer whose executed values still satisfy the gold
    * answer contract. */
-  equivalenceRule?: 'exact_result_set' | 'neutral_extra_rows';
+  equivalenceRule?: 'exact_result_set' | 'requested_projection' | 'neutral_extra_rows';
   expectedRowCount: number;
   actualRowCount: number;
   columnMapping: Record<string, string>;
@@ -110,6 +110,12 @@ export interface BenchmarkPipelineResult {
   provenance?: { strategy: string; model?: string; summary?: string; fallbackReason?: string };
   tokenUsage?: { prompt: number; completion: number; total: number };
   repairAttempts?: number;
+  /** Physical result fields independently grounded from the user's requested
+   * answer. Benchmark comparison uses these to distinguish a missing answer
+   * from a deliberately omitted helper aggregate used only by HAVING/ORDER BY. */
+  contractValidation?: {
+    requestedOutputFields?: string[];
+  };
 }
 
 export interface BenchmarkCaseResult {

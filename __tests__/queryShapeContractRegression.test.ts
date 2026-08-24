@@ -36,6 +36,55 @@ function plan(overrides: Partial<AnalysisPlan> = {}): AnalysisPlan {
 
 describe('dynamic query-shape and cardinality contract', () => {
     it.each([
+        ['Which 3 regions have the lowest sales?', 3, 'asc'],
+        ['Which 5 suppliers have the highest spend?', 5, 'desc'],
+        ['Which 3 contract types have the highest total line items?', 3, 'desc'],
+    ] as const)('preserves a leading requested ranking count: %s', (question, limit, direction) => {
+        expect(inferQueryShape(question)).toMatchObject({
+            operation: 'ranking',
+            selection: 'top_n',
+            explicitLimit: limit,
+        });
+        expect(inferQueryShape(question).orderDirection
+            || (/\b(?:lowest|least|bottom|smallest|minimum)\b/i.test(question) ? 'asc' : 'desc'))
+            .toBe(direction);
+    });
+
+    it('enforces a leading requested ranking count in the query contract', () => {
+        const question = 'Which 3 regions have the lowest sales?';
+        const limit = 3;
+        const direction = 'asc';
+        const rankingModel: SemanticModel = {
+            ...model,
+            fields: [
+                { ...model.fields[1], name: 'region', displayLabel: 'region' },
+                { ...model.fields[3], name: 'sales', displayLabel: 'sales' },
+            ],
+        };
+        const contract = buildQueryContract(question, plan({
+            intent: 'ranking',
+            dimensions: [{ field: 'region' }],
+            metrics: [{ field: 'sales', agg: 'sum' }],
+            limit,
+        }), [], rankingModel);
+        expect(contract.rankingLimit).toBe(limit);
+        expect(contract.rankingDirection).toBe(direction);
+        expect(validateSQLAgainstContract(
+            `SELECT region FROM data GROUP BY region ORDER BY SUM(sales) ${direction === 'asc' ? 'ASC' : 'DESC'} LIMIT ${limit}`,
+            contract,
+        )).toEqual([]);
+        expect(validateSQLAgainstContract(
+            `SELECT region FROM data GROUP BY region ORDER BY SUM(sales) ${direction === 'asc' ? 'ASC' : 'DESC'} LIMIT 1`,
+            contract,
+        ).map(issue => issue.code)).toContain('missing_ranking');
+    });
+
+    it('recognises a qualifying aggregate as grouped entity filtering', () => {
+        expect(inferQueryShape('Which industries have average satisfaction score at least 70?'))
+            .toMatchObject({ operation: 'grouped_aggregate', selection: 'all_groups', explicitAggregation: 'avg' });
+    });
+
+    it.each([
         ['Show each category and the maximum value for each category', 'grouped_aggregate', 'all_groups', 'max'],
         ['What is the average value for every category?', 'grouped_aggregate', 'all_groups', 'avg'],
         ['What is the maximum value?', 'scalar_aggregate', 'unspecified', 'max'],

@@ -121,6 +121,10 @@ export function inferQueryShape(question: string): QueryShape {
     // phrasings such as "teams with at least 5 players" without naming any
     // domain, table, field, or benchmark case.
     const thresholdedGroupCount = /\b(?:which|what|show|list|find)\b[\s\S]*?\b(?:have|has|with)\s+(?:(?:at\s+least|at\s+most|more\s+than|fewer\s+than|less\s+than)\s+-?\d+(?:\.\d+)?|-?\d+(?:\.\d+)?\s+or\s+(?:more|fewer|less))\s+[a-z]/i.test(question);
+    // "Which industries have average score at least 70?" asks for one row per
+    // entity even though the grouping is expressed through a qualifying
+    // aggregate rather than "by/per each" wording.
+    const aggregateQualifiedGroups = /^\s*(?:please\s+)?(?:which|what|show|list|find|return|give(?:\s+me)?)\b[\s\S]*?\b(?:have|has|with|whose)\b[\s\S]{0,100}\b(?:at\s+least|at\s+most|more\s+than|greater\s+than|fewer\s+than|less\s+than|over|under)\s+-?\d+(?:\.\d+)?/i.test(question);
     // Frequency winners are count rankings even when the count is implicit.
     // Cover both direct wording ("most common citizenship") and inverse
     // relative clauses ("the type that the most records belong to"). The
@@ -133,12 +137,18 @@ export function inferQueryShape(question: string): QueryShape {
     }
     const aggregation = requestedAggregations[0];
     const groupingText = question.replace(/\b(?:ordered|sorted|ranked)\s+by\b/gi, '');
-    const groupingCue = thresholdedGroupCount || frequencyWinner
+    const groupingCue = thresholdedGroupCount || aggregateQualifiedGroups || frequencyWinner
         || /\b(?:by|per|for\s+each|for\s+every|each|every)\b/i.test(groupingText)
         || /\bof\s+(?:singers?|records?|items?|entities?)\s+of\s+each\b/i.test(question);
     const order = ordering(question);
     const topN = question.match(/\b(top|bottom|first|last)\s+(\d+)\b/i);
-    const explicitLimit = topN ? Number(topN[2]) : undefined;
+    // Natural questions commonly put N before the entity: "Which 3 regions
+    // have the lowest sales?". Without this grammar, the later superlative was
+    // misread as a single winner and silently became LIMIT 1.
+    const leadingN = question.match(/^\s*(?:please\s+)?(?:which|what|show|list|find|return|give(?:\s+me)?)\s+(?:the\s+)?(\d+)\s+[a-z]/i);
+    const leadingNIsRanking = !!leadingN
+        && /\b(?:most|fewest|least|highest|lowest|largest|smallest|maximum|minimum|best|worst|top|bottom)\b/i.test(question);
+    const explicitLimit = topN ? Number(topN[2]) : leadingNIsRanking ? Number(leadingN![1]) : undefined;
     const directionalRange = /\bfrom\s+(?:the\s+)?(?:youngest|oldest|lowest|highest|least|most|smallest|largest|earliest|latest|newest)\s+to\s+(?:the\s+)?(?:youngest|oldest|lowest|highest|least|most|smallest|largest|earliest|latest|newest)\b/i.test(question);
     const rankingText = shapeText.replace(/\b(?:at|no)\s+(?:least|most)\b/gi, '');
     const singleWinner = !directionalRange && (frequencyWinner || hasExplicitSingleWinner(rankingText));

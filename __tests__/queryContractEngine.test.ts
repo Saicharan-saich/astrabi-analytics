@@ -44,6 +44,67 @@ function plan(overrides: Partial<AnalysisPlan> = {}): AnalysisPlan {
 }
 
 describe('production query-contract engine', () => {
+    it('treats an aggregate used only to qualify entities as predicate evidence, not mandatory output', () => {
+        const aggregateFilterModel: SemanticModel = {
+            ...model,
+            fields: [
+                field('industry', 'dimension', 'category'),
+                field('satisfaction_score', 'metric', 'quantity'),
+            ],
+        };
+        const question = 'Which industries have average satisfaction score at least 70?';
+        const contract = buildQueryContract(
+            question,
+            plan({
+                intent: 'aggregate_filter',
+                dimensions: [{ field: 'industry' }],
+                metrics: [{ field: 'satisfaction_score', agg: 'avg' }],
+            }),
+            [],
+            aggregateFilterModel,
+        );
+        expect(contract.requiredOutputFields.map(output => output.field)).toEqual(['industry']);
+        expect(contract.requiresGrouping).toBe(true);
+        expect(contract.expectedMeasures).toEqual(expect.arrayContaining([
+            expect.objectContaining({ field: 'satisfaction_score', aggregation: 'avg' }),
+        ]));
+        expect(validateSQLAgainstContract(
+            'SELECT industry FROM data GROUP BY industry HAVING AVG(satisfaction_score) >= 70',
+            contract,
+        )).toEqual([]);
+    });
+
+    it('uses an evidence-defined aggregate formula as a grouped predicate while returning entity labels', () => {
+        const expenseModel: SemanticModel = {
+            ...model,
+            fields: [
+                { ...field('expense_description', 'dimension', 'category'), synonyms: ['expense', 'expenses'] },
+                field('cost', 'metric', 'currency'),
+                field('expense_id', 'dimension', 'identifier'),
+            ],
+        };
+        const question = `List the expenses that spend more than fifty dollars on average.
+
+Evidence: expense refers to expense_description; spend more than fifty dollars on average refers to DIVIDE(SUM(cost), COUNT(expense_id)) > 50`;
+        const contract = buildQueryContract(question, plan({
+            intent: 'aggregate_filter',
+            dimensions: [{ field: 'expense_description' }],
+            metrics: [{ field: 'cost', agg: 'avg' }],
+        }), [], expenseModel);
+
+        expect(contract.requiredOutputFields.map(output => output.field)).toContain('expense_description');
+        expect(contract).toMatchObject({
+            expectedCardinality: 'grouped',
+            requiresGrouping: true,
+            threshold: { operator: '>', value: 50, requiresHaving: true },
+        });
+        expect(contract.expectedAggregations).toEqual(expect.arrayContaining(['sum', 'count']));
+        expect(validateSQLAgainstContract(
+            'SELECT expense_description FROM data GROUP BY expense_description HAVING SUM(cost) / COUNT(expense_id) > 50',
+            contract,
+        )).toEqual([]);
+    });
+
     it('locks the requested entity grain and relationship path', () => {
         const schema = {
             tables: [
