@@ -190,7 +190,11 @@ function resolveFieldPhrase(phrase: string, model: SemanticModel, role?: 'dimens
     const target = new Set(normalizedFieldWords(phrase));
     if (!target.size) return undefined;
     let best: { field: SemanticField; score: number } | undefined;
-    for (const field of model.fields.filter(candidate => !role || candidate.role === role)) {
+    // Semantic roles are useful preferences, not absolute gates. Statistical
+    // arbitration can occasionally classify a categorical code as a metric or
+    // a numeric measure as a dimension. Exact schema-language alignment must
+    // still recover the user's field dynamically.
+    for (const field of model.fields) {
         let fieldScore = 0;
         for (const alias of [field.name, field.displayLabel, ...(field.synonyms || [])]) {
             const aliasWords = normalizedFieldWords(alias);
@@ -198,10 +202,13 @@ function resolveFieldPhrase(phrase: string, model: SemanticModel, role?: 'dimens
             const overlap = aliasWords.filter(word => target.has(word)).length;
             if (!overlap) continue;
             const exact = aliasWords.length === target.size && aliasWords.every(word => target.has(word));
-            fieldScore = Math.max(fieldScore, exact ? 100 : (overlap / aliasWords.length) * 55 + (overlap / target.size) * 35);
+            const rolePreference = !role || field.role === role ? 12 : -10;
+            const identifierPenalty = field.semanticType === 'identifier' ? -25 : 0;
+            fieldScore = Math.max(fieldScore, exact
+                ? 120 + rolePreference + identifierPenalty
+                : (overlap / aliasWords.length) * 55 + (overlap / target.size) * 35 + rolePreference + identifierPenalty);
         }
-        if (field.semanticType === 'identifier') fieldScore -= 8;
-        if (fieldScore >= 45 && (!best || fieldScore > best.score)) best = { field, score: fieldScore };
+        if (fieldScore >= 55 && (!best || fieldScore > best.score)) best = { field, score: fieldScore };
     }
     return best?.field;
 }

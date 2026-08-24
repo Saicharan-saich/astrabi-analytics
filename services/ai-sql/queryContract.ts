@@ -112,7 +112,19 @@ export interface QueryContract {
     };
     /** Explicit relative-average language fixes where aggregation must occur. */
     relativeComparison?: {
-        scope: 'row_to_global_average' | 'group_aggregate_to_group_average';
+        scope: 'row_to_global_average' | 'row_to_filtered_average' | 'group_aggregate_to_group_average';
+        /** Population used to calculate the reference aggregate. Cohort filters
+         * are inherited unless the question explicitly asks for an overall or
+         * global benchmark. */
+        referencePopulation: 'global' | 'filtered_cohort' | 'group_aggregates';
+        /** Strict boundary implied by the wording ("higher than" is >, while
+         * "at least ... higher" is >=). */
+        comparator: '>' | '>=' | '<' | '<=';
+        /** Relative threshold multiplier: 20% higher => 1.2, 20% lower => 0.8. */
+        multiplier: number;
+        /** Pre-comparison predicates that define the reference cohort. The
+         * relative comparison predicate itself is deliberately excluded. */
+        inheritedFilters: Array<Pick<AnalysisPlan['filters'][number], 'field' | 'op' | 'value'>>;
     };
 }
 
@@ -385,7 +397,11 @@ function resolveRequestedDimension(question: string, model?: SemanticModel): str
     const phraseTokens = new Set(words(phrase));
     const questionTokens = new Set(words(question));
     let best: { field: string; score: number } | undefined;
-    for (const field of model.fields.filter(f => f.role === 'dimension')) {
+    // Role inference is advisory here. A low-cardinality text column can be
+    // misclassified, but exact wording such as "type of pet" must still beat a
+    // weak shared noun such as "pet" in "pet_age". Identifiers are penalised,
+    // but remain available when the user explicitly asks for an ID/code grain.
+    for (const field of model.fields) {
         const names = [field.name, field.displayLabel, ...(field.synonyms || [])];
         for (const name of names) {
             const nameTokens = words(name);
@@ -398,9 +414,17 @@ function resolveRequestedDimension(question: string, model?: SemanticModel): str
             const questionOverlap = nameTokens.filter(token => conceptMatches(token, questionTokens)).length;
             const exactPhrase = phraseOverlap === nameTokens.length && phraseTokens.size === nameTokens.length;
             if (isGenericSingleToken && !exactPhrase) continue;
-            const score = exactPhrase ? 100
-                : (phraseOverlap / nameTokens.length) * 60 + (questionOverlap / nameTokens.length) * 30;
-            if (score < 45) continue;
+            const phraseCoverage = phraseOverlap / nameTokens.length;
+            const phrasePrecision = phraseTokens.size ? phraseOverlap / phraseTokens.size : 0;
+            const rolePreference = field.role === 'dimension' ? 12 : -8;
+            const identifierPenalty = field.semanticType === 'identifier' ? -25 : 0;
+            const score = exactPhrase ? 120 + rolePreference + identifierPenalty
+                : phraseCoverage * 60 + phrasePrecision * 35
+                    + (questionOverlap / nameTokens.length) * 10 + rolePreference + identifierPenalty;
+            // A single incidental noun shared with a compound column is not a
+            // safe grouping contract. If no strong field exists, leave the
+            // dimension unresolved rather than rejecting valid model SQL.
+            if (score < 62) continue;
             if (!best || score > best.score) best = { field: field.name, score };
         }
     }
@@ -614,13 +638,40 @@ function resolveRatio(
     };
 }
 
-function resolveRelativeComparison(question: string): QueryContract['relativeComparison'] {
-    if (!/\b(?:above|below|more|greater|higher|less|lower|fewer)\s+than\s+(?:the\s+)?(?:overall\s+)?average\b/i.test(question)) {
+function resolveRelativeComparison(question: string, plan: AnalysisPlan): QueryContract['relativeComparison'] {
+    if (!/\b(?:(?:above|below)\s+(?:the\s+)?(?:overall\s+)?average|(?:more|greater|higher|less|lower|fewer)\s+than\s+(?:the\s+)?(?:overall\s+)?average)\b/i.test(question)) {
         return undefined;
     }
     const aggregateEntityCue = /\b(?:total|sum|combined|aggregate|per\s+\w+|for\s+each\s+\w+)\b/i.test(question);
+    const explicitGlobal = /\b(?:overall|global|whole[-\s]+dataset|entire[-\s]+dataset|all[-\s]+records?)\s+(?:row[-\s]+level\s+)?average\b/i.test(question);
+    const inheritedFilters = plan.filters
+        .filter(filter => !filter.isHaving && !['above_avg', 'below_avg'].includes(filter.op))
+        .map(filter => ({ field: filter.field, op: filter.op, value: filter.value }));
+    const percentage = question.match(/\b(\d+(?:\.\d+)?)\s*%\s*(?:higher|more|greater|above|lower|less|below)\s+than\s+(?:the\s+)?(?:overall\s+)?average\b/i);
+    const percentValue = percentage ? Number(percentage[1]) : 0;
+    const lowerDirection = /\b(?:below\s+(?:the\s+)?(?:overall\s+)?average|(?:less|lower|fewer)\s+than\s+(?:the\s+)?(?:overall\s+)?average)\b/i.test(question)
+        || /\b\d+(?:\.\d+)?\s*%\s*(?:lower|less|below)\s+than\s+(?:the\s+)?(?:overall\s+)?average\b/i.test(question);
+    const atLeast = /\b(?:at\s+least|no\s+less\s+than)\b[\s\S]{0,40}\b(?:higher|more|greater|above|lower|less|below)\b/i.test(question);
+    const atMost = /\b(?:at\s+most|no\s+more\s+than)\b[\s\S]{0,40}\b(?:higher|more|greater|above|lower|less|below)\b/i.test(question);
+    const referencePopulation = aggregateEntityCue
+        ? 'group_aggregates'
+        : !explicitGlobal && inheritedFilters.length > 0
+            ? 'filtered_cohort'
+            : 'global';
     return {
-        scope: aggregateEntityCue ? 'group_aggregate_to_group_average' : 'row_to_global_average',
+        scope: aggregateEntityCue
+            ? 'group_aggregate_to_group_average'
+            : referencePopulation === 'filtered_cohort'
+                ? 'row_to_filtered_average'
+                : 'row_to_global_average',
+        referencePopulation,
+        comparator: lowerDirection
+            ? atMost ? '>=' : atLeast ? '<=' : '<'
+            : atMost ? '<=' : atLeast ? '>=' : '>',
+        multiplier: percentValue > 0
+            ? lowerDirection ? 1 - percentValue / 100 : 1 + percentValue / 100
+            : 1,
+        inheritedFilters: referencePopulation === 'filtered_cohort' ? inheritedFilters : [],
     };
 }
 
@@ -666,7 +717,7 @@ export function buildQueryContract(
     const schema = schemaContext || schemaContextFromModel(model);
     const requestedOutputFields = resolveRequestedOutputFields(question, plan, schema, model);
     const inferredOutputEntity = resolveOutputEntity(question, plan, schema);
-    const outputEntity = inferredOutputEntity
+    let outputEntity = inferredOutputEntity
         || requestedOutputFields.find(field => descriptiveColumn(field.field))
         || requestedOutputFields[0];
     const queryShape = inferQueryShape(question);
@@ -718,9 +769,24 @@ export function buildQueryContract(
             || (/\b(bottom|lowest|least|worst|smallest|fewest|minimum|youngest|earliest)\b/i.test(question) ? 'asc' : 'desc')
         : undefined;
     const requiresComparison = COMPARISON_CUE.test(question) || Boolean(plan.comparison);
-    const requiredDimension = requiresGrouping
-        ? resolveRequestedDimension(question, model) || (outputEntity?.confidence === 'high' ? outputEntity.field : undefined)
+    const resolvedRequestedDimension = requiresGrouping
+        ? resolveRequestedDimension(question, model)
         : undefined;
+    // For grouped answers, the explicitly resolved grouping noun is also the
+    // visible entity. This prevents an incidental draft dimension from becoming
+    // a hard contract requirement (for example pet_age instead of PetType).
+    if (resolvedRequestedDimension && schema) {
+        const owner = schema.tables.find(table => table.columns.some(column =>
+            column.name.toLowerCase() === resolvedRequestedDimension.toLowerCase()
+        ));
+        if (owner) outputEntity = { table: owner.name, field: resolvedRequestedDimension, confidence: 'high' };
+    } else if (requiresGrouping && outputEntity?.confidence === 'high' && !descriptiveColumn(outputEntity.field)) {
+        // A non-descriptive fallback inferred partly from the draft plan is not
+        // strong enough to reject model SQL. Preserve it as context only.
+        outputEntity = { ...outputEntity, confidence: 'medium' };
+    }
+    const requiredDimension = resolvedRequestedDimension
+        || (requiresGrouping && outputEntity?.confidence === 'high' ? outputEntity.field : undefined);
     let expectedAggregations = orderedProjection || requiresRowProjection
         ? []
         : resolveExpectedAggregations(question, model);
@@ -768,7 +834,7 @@ export function buildQueryContract(
             .filter(field => !requestedPhysicalFields.has(field.toLowerCase())))]
         : [];
     const ratio = resolveRatio(question, model);
-    const relativeComparison = resolveRelativeComparison(question);
+    const relativeComparison = resolveRelativeComparison(question, plan);
     const joinPlan = schema && requiredTables.length > 1
         ? planJoins(requiredTables, schema.tables, schema.links, outputEntity && existenceMode === 'anti' ? { baseTable: outputEntity.table } : undefined)
         : undefined;
@@ -838,8 +904,10 @@ export function buildQueryContract(
     if (threshold) requirements.push(`${threshold.requiresHaving ? 'Apply the aggregate threshold in HAVING' : 'Apply the threshold'}: ${threshold.operator} ${threshold.value}.`);
     if (ratio?.basis === 'row_count') requirements.push('Calculate the requested ratio from row/entity counts, not from summed monetary or quantity values.');
     if (ratio?.basis === 'measure') requirements.push('Calculate the requested ratio from the additive measure named in the question, not from row counts.');
-    if (relativeComparison?.scope === 'row_to_global_average') requirements.push('Compare each underlying row value with the global row-level average before projecting the requested entity; do not average or sum by entity first.');
+    if (relativeComparison?.scope === 'row_to_global_average') requirements.push('Compare each underlying row value with the explicitly requested global row-level average before projecting the requested entity; do not average or sum by entity first.');
+    if (relativeComparison?.scope === 'row_to_filtered_average') requirements.push(`Calculate the reference average over the same filtered cohort (${relativeComparison.inheritedFilters.map(filter => filter.field).join(', ')}), then apply ${relativeComparison.comparator} average × ${relativeComparison.multiplier}. Outer WHERE predicates do not automatically apply inside a subquery; repeat them or derive both calculations from one filtered cohort CTE.`);
     if (relativeComparison?.scope === 'group_aggregate_to_group_average') requirements.push('Aggregate at the requested entity grain first, then compare each entity aggregate with the average across entity aggregates.');
+    if (relativeComparison && relativeComparison.scope !== 'row_to_filtered_average') requirements.push(`Apply the relative-average boundary exactly as ${relativeComparison.comparator} average × ${relativeComparison.multiplier}.`);
     if (requiresFiscalCalendar) requirements.push('Use the requested fiscal calendar definition, including its stated start month.');
     if (requiresRanking) requirements.push(`Rank ${rankingDirection === 'asc' ? 'ascending' : 'descending'}${rankingLimit ? ` and return ${rankingLimit}` : ''}.`);
     if (requiresComparison) requirements.push('Return both requested comparison periods with clearly labelled result columns or rows.');
@@ -937,6 +1005,86 @@ function topLevelSelectClauses(sql: string): string[] {
     }
     if (selectStart >= 0) clauses.push(sql.slice(selectStart).trim());
     return clauses;
+}
+
+interface ParenthesizedSQLScope {
+    text: string;
+    start: number;
+    end: number;
+}
+
+/** Extract balanced parenthesized SELECT scopes while respecting SQL quotes. */
+function parenthesizedSelectScopes(sql: string): ParenthesizedSQLScope[] {
+    const scopes: ParenthesizedSQLScope[] = [];
+    const stack: number[] = [];
+    let quote: "'" | '"' | '`' | null = null;
+    for (let index = 0; index < sql.length; index += 1) {
+        const char = sql[index];
+        if (quote) {
+            if (char === quote) {
+                if (sql[index + 1] === quote) index += 1;
+                else quote = null;
+            }
+            continue;
+        }
+        if (char === "'" || char === '"' || char === '`') {
+            quote = char;
+            continue;
+        }
+        if (char === '(') stack.push(index);
+        else if (char === ')' && stack.length) {
+            const start = stack.pop()!;
+            const text = sql.slice(start + 1, index);
+            if (/^\s*select\b/i.test(text)) scopes.push({ text, start, end: index });
+        }
+    }
+    return scopes;
+}
+
+function cteBodies(sql: string): Map<string, string> {
+    const bodies = new Map<string, string>();
+    const scopes = parenthesizedSelectScopes(sql);
+    for (const match of sql.matchAll(/\b([a-z_][a-z0-9_]*)\s+as\s*\(/gi)) {
+        const open = (match.index || 0) + match[0].lastIndexOf('(');
+        const scope = scopes.find(item => item.start === open);
+        if (scope) bodies.set(match[1].toLowerCase(), scope.text);
+    }
+    return bodies;
+}
+
+function scopeContainsReferenceFilters(
+    scope: string,
+    filters: NonNullable<QueryContract['relativeComparison']>['inheritedFilters'],
+): boolean {
+    return filters.every(filter => identifierPattern(filter.field).test(scope));
+}
+
+function filteredAverageUsesReferencePopulation(
+    sql: string,
+    comparison: NonNullable<QueryContract['relativeComparison']>,
+): boolean {
+    const averageScopes = parenthesizedSelectScopes(sql).filter(scope => /\bavg\s*\(/i.test(scope.text));
+    const ctes = cteBodies(sql);
+    return averageScopes.some(scope => {
+        if (scopeContainsReferenceFilters(scope.text, comparison.inheritedFilters)) return true;
+        const source = scope.text.match(/\bfrom\s+["`]?([a-z_][a-z0-9_]*)["`]?/i)?.[1]?.toLowerCase();
+        const sourceBody = source ? ctes.get(source) : undefined;
+        return !!sourceBody && scopeContainsReferenceFilters(sourceBody, comparison.inheritedFilters);
+    });
+}
+
+function hasExactRelativeComparator(sql: string, comparator: NonNullable<QueryContract['relativeComparison']>['comparator']): boolean {
+    const operators = sql.match(/(?:>=|<=|>|<)/g) || [];
+    return operators.includes(comparator);
+}
+
+function hasRelativeMultiplier(sql: string, multiplier: number): boolean {
+    if (Math.abs(multiplier - 1) < 1e-9) return true;
+    const literal = String(Number(multiplier.toFixed(8))).replace('.', '\\.');
+    if (new RegExp(`(?:^|[^0-9.])${literal}(?:[^0-9.]|$)`).test(sql)) return true;
+    const percentage = Math.abs(multiplier - 1) * 100;
+    const percentLiteral = String(Number(percentage.toFixed(8))).replace('.', '\\.');
+    return new RegExp(`${percentLiteral}\\s*\\/\\s*100`).test(sql);
 }
 
 /** Compact form used in model prompts; contains metadata/intent only. */
@@ -1180,6 +1328,15 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
             });
         }
     }
+    if (contract.relativeComparison?.scope === 'row_to_filtered_average') {
+        if (!filteredAverageUsesReferencePopulation(sql, contract.relativeComparison)) {
+            issues.push({
+                code: 'wrong_comparison_scope',
+                severity: 'error',
+                message: `The reference average must inherit the target cohort predicates (${contract.relativeComparison.inheritedFilters.map(filter => filter.field).join(', ')}); outer WHERE predicates do not apply inside the average subquery.`,
+            });
+        }
+    }
     if (contract.relativeComparison?.scope === 'group_aggregate_to_group_average') {
         const hasGroupedReference = /\bgroup\s+by\b/i.test(sql)
             && /\bavg\s*\(/i.test(sql)
@@ -1189,6 +1346,22 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
                 code: 'wrong_comparison_scope',
                 severity: 'error',
                 message: 'The question requires entity aggregates compared with the average across entity aggregates.',
+            });
+        }
+    }
+    if (contract.relativeComparison) {
+        if (!hasExactRelativeComparator(sql, contract.relativeComparison.comparator)) {
+            issues.push({
+                code: 'missing_comparator',
+                severity: 'error',
+                message: `The relative-average comparison must use the exact ${contract.relativeComparison.comparator} boundary required by the wording.`,
+            });
+        }
+        if (!hasRelativeMultiplier(sql, contract.relativeComparison.multiplier)) {
+            issues.push({
+                code: 'missing_comparator',
+                severity: 'error',
+                message: `The relative-average threshold must apply multiplier ${contract.relativeComparison.multiplier}.`,
             });
         }
     }
