@@ -30,12 +30,20 @@ export interface CanonicalQueryIntent {
         aggregation: 'sum' | 'avg' | 'count' | 'min' | 'max';
         confidence: 'high' | 'medium';
     }>;
+    predicates: QueryContract['requiredPredicates'];
     selection: QueryContract['selectionMode'];
-    order?: { field?: string; direction: 'asc' | 'desc'; limit?: number };
+    order?: {
+        field?: string;
+        aggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max';
+        mode?: 'row_value' | 'group_aggregate' | 'frequency';
+        direction: 'asc' | 'desc';
+        limit?: number;
+    };
     relationship: {
         tables: string[];
         mode: QueryContract['relationshipMode'];
         existence: QueryContract['existenceMode'];
+        path: QueryContract['relationshipPath'];
     };
     constraints: {
         prohibitImplicitLimit: boolean;
@@ -95,9 +103,16 @@ export function buildCanonicalQueryIntent(contract: QueryContract): CanonicalQue
         measures: [...(contract.expectedMeasures || (contract.expectedAggregation
             ? [{ aggregation: contract.expectedAggregation, confidence: 'medium' as const }]
             : []))],
+        predicates: (contract.requiredPredicates || []).map(predicate => ({ ...predicate })),
         selection: contract.selectionMode,
         order: contract.requiresRanking
-            ? { direction: contract.rankingDirection || 'desc', limit: contract.rankingLimit }
+            ? {
+                field: contract.rankingTarget?.field,
+                aggregation: contract.rankingTarget?.aggregation,
+                mode: contract.rankingTarget?.mode,
+                direction: contract.rankingDirection || 'desc',
+                limit: contract.rankingLimit,
+            }
             : contract.orderedProjection
                 ? {
                     field: contract.orderedProjection.orderBy,
@@ -108,6 +123,7 @@ export function buildCanonicalQueryIntent(contract: QueryContract): CanonicalQue
             tables: [...contract.requiredTables],
             mode: contract.relationshipMode,
             existence: contract.existenceMode,
+            path: contract.relationshipPath.map(step => ({ ...step })),
         },
         constraints: {
             prohibitImplicitLimit: contract.prohibitsImplicitLimit,
@@ -217,7 +233,7 @@ export function reconcilePlanWithCanonicalIntent(
             plan.limit = canonical.order.limit;
             changes.push(`aligned ranking limit to ${canonical.order.limit}`);
         }
-        const sortField = plan.metrics[0]?.field || canonical.grainFields[0] || plan.sort[0]?.field;
+        const sortField = canonical.order.field || plan.metrics[0]?.field || canonical.grainFields[0] || plan.sort[0]?.field;
         if (sortField) {
             plan.sort = [{ field: sortField, dir: canonical.order.direction }];
             changes.push(`aligned ranking direction to ${canonical.order.direction}`);

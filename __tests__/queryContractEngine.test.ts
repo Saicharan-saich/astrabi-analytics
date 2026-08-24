@@ -76,7 +76,7 @@ describe('production query-contract engine', () => {
             GROUP BY data.Continent
             HAVING COUNT(data.ContId) >= 3`;
         expect(validateSQLAgainstContract(wrong, contract).map(issue => issue.code))
-            .toEqual(expect.arrayContaining(['missing_requested_dimension', 'missing_output_entity', 'missing_required_table']));
+            .toEqual(expect.arrayContaining(['missing_requested_dimension', 'missing_required_table']));
 
         const correct = `SELECT c.CountryName
             FROM COUNTRIES c

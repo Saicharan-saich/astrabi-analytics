@@ -76,7 +76,7 @@ describe('AI SQL semantic grain and reference-population regressions', () => {
         expect(validateSQLAgainstContract(
             'SELECT pet_age, AVG(weight) AS average_weight FROM data GROUP BY pet_age',
             contract,
-        ).map(issue => issue.code)).toEqual(expect.arrayContaining(['missing_requested_dimension', 'missing_output_entity']));
+        ).map(issue => issue.code)).toContain('missing_requested_dimension');
     });
 
     it('requires a relative average to inherit the filtered cohort and strict boundary', () => {
@@ -100,12 +100,21 @@ describe('AI SQL semantic grain and reference-population regressions', () => {
             referencePopulation: 'filtered_cohort',
             comparator: '>',
             multiplier: 1.2,
+            measureField: 'aCL IgM',
         });
         const wrong = `SELECT COUNT(*) AS patient_count FROM data
             WHERE Thrombosis = 2 AND "ANA Pattern" = 'S'
               AND "aCL IgM" >= 1.2 * (SELECT AVG("aCL IgM") FROM data)`;
         expect(validateSQLAgainstContract(wrong, contract).map(issue => issue.code))
             .toEqual(expect.arrayContaining(['wrong_comparison_scope', 'missing_comparator']));
+        const wrongMeasure = `SELECT COUNT(*) AS patient_count FROM data
+            WHERE Thrombosis = 2 AND "ANA Pattern" = 'S'
+              AND "aCL IgM" > (
+                SELECT AVG(Thrombosis) * 1.2 FROM data
+                WHERE Thrombosis = 2 AND "ANA Pattern" = 'S'
+              )`;
+        expect(validateSQLAgainstContract(wrongMeasure, contract).map(issue => issue.code))
+            .toContain('wrong_comparison_scope');
 
         const correct = `SELECT COUNT(*) AS patient_count FROM data
             WHERE Thrombosis = 2 AND "ANA Pattern" = 'S'

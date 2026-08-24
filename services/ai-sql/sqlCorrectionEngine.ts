@@ -737,7 +737,7 @@ function buildDistinctValuesSQL(plan: AnalysisPlan, model: SemanticModel): strin
  */
 function buildConditionalPercentageSQL(plan: AnalysisPlan, model: SemanticModel): string {
     const equalityFilters = plan.filters.filter(f =>
-        (f.op === '=' || f.op === '==' || f.op === 'is') && typeof f.value === 'string');
+        f.op === '=' && typeof f.value === 'string');
     const baseFilters = plan.filters.filter(f => !equalityFilters.includes(f));
     const where = buildWhereClause(baseFilters);
     const condFilter = equalityFilters[0];

@@ -99,6 +99,26 @@ export interface QueryContract {
     }>;
     /** Backwards-compatible primary aggregation used by older consumers. */
     expectedAggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max';
+    /** Ordinary predicates that must survive planning and SQL generation.
+     * These are kept separate from relative-average rules because a hard
+     * question commonly combines joins, row filters, grouped thresholds and
+     * ranking in one request. */
+    requiredPredicates?: Array<{
+        field: string;
+        operator: AnalysisPlan['filters'][number]['op'];
+        value: unknown;
+        scope: 'where' | 'having';
+        confidence: 'high' | 'medium';
+    }>;
+    /** The expression that determines ranking. Direction and LIMIT alone are
+     * insufficient: ORDER BY the wrong field is syntactically valid but answers
+     * a different question. */
+    rankingTarget?: {
+        mode: 'row_value' | 'group_aggregate' | 'frequency';
+        field?: string;
+        aggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max';
+        confidence: 'high' | 'medium';
+    };
     threshold?: {
         operator: '>=' | '>' | '<=' | '<' | '=';
         value: number;
@@ -122,6 +142,9 @@ export interface QueryContract {
         comparator: '>' | '>=' | '<' | '<=';
         /** Relative threshold multiplier: 20% higher => 1.2, 20% lower => 0.8. */
         multiplier: number;
+        /** Physical measure whose value/aggregate is compared with the
+         * reference population. */
+        measureField?: string;
         /** Pre-comparison predicates that define the reference cohort. The
          * relative comparison predicate itself is deliberately excluded. */
         inheritedFilters: Array<Pick<AnalysisPlan['filters'][number], 'field' | 'op' | 'value'>>;
@@ -144,6 +167,8 @@ export interface SQLFaithfulnessIssue {
         | 'wrong_join_semantics'
         | 'missing_existence_logic'
         | 'missing_aggregation'
+        | 'missing_filter'
+        | 'wrong_ranking_target'
         | 'wrong_ratio_basis'
         | 'wrong_comparison_scope'
         | 'missing_comparator'
@@ -638,7 +663,11 @@ function resolveRatio(
     };
 }
 
-function resolveRelativeComparison(question: string, plan: AnalysisPlan): QueryContract['relativeComparison'] {
+function resolveRelativeComparison(
+    question: string,
+    plan: AnalysisPlan,
+    model?: SemanticModel,
+): QueryContract['relativeComparison'] {
     if (!/\b(?:(?:above|below)\s+(?:the\s+)?(?:overall\s+)?average|(?:more|greater|higher|less|lower|fewer)\s+than\s+(?:the\s+)?(?:overall\s+)?average)\b/i.test(question)) {
         return undefined;
     }
@@ -658,6 +687,22 @@ function resolveRelativeComparison(question: string, plan: AnalysisPlan): QueryC
         : !explicitGlobal && inheritedFilters.length > 0
             ? 'filtered_cohort'
             : 'global';
+    const relativeFilter = plan.filters.find(filter => ['above_avg', 'below_avg'].includes(filter.op));
+    const normalizedQuestion = question.toLowerCase().replace(/[_-]+/g, ' ');
+    const mentionedMeasure = (model?.fields || [])
+        .filter(field => field.role === 'metric')
+        .flatMap(field => [field.name, field.displayLabel, ...(field.synonyms || [])]
+            .map(alias => ({
+                field: field.name,
+                alias: alias.toLowerCase().replace(/[_-]+/g, ' ').trim(),
+            })))
+        .filter(candidate => candidate.alias.length > 1 && normalizedQuestion.includes(candidate.alias))
+        .sort((a, b) => b.alias.length - a.alias.length)[0]?.field;
+    const planMeasure = plan.metrics.find(metric => {
+        const phrase = metric.field.toLowerCase().replace(/[_-]+/g, ' ');
+        return phrase.length > 1 && normalizedQuestion.includes(phrase);
+    })?.field;
+    const measureField = relativeFilter?.field || mentionedMeasure || planMeasure;
     return {
         scope: aggregateEntityCue
             ? 'group_aggregate_to_group_average'
@@ -671,7 +716,73 @@ function resolveRelativeComparison(question: string, plan: AnalysisPlan): QueryC
         multiplier: percentValue > 0
             ? lowerDirection ? 1 - percentValue / 100 : 1 + percentValue / 100
             : 1,
+        measureField: measureField && measureField !== '*' ? measureField : undefined,
         inheritedFilters: referencePopulation === 'filtered_cohort' ? inheritedFilters : [],
+    };
+}
+
+function resolveRequiredPredicates(
+    plan: AnalysisPlan,
+    model?: SemanticModel,
+): QueryContract['requiredPredicates'] {
+    const knownFields = new Set((model?.fields || []).map(field => field.name.toLowerCase()));
+    return (plan.filters || [])
+        .filter(filter => !['above_avg', 'below_avg'].includes(filter.op))
+        .filter(filter => filter.field && filter.field !== '*')
+        .map(filter => ({
+            field: filter.field,
+            operator: filter.op,
+            value: filter.value,
+            scope: filter.isHaving ? 'having' as const : 'where' as const,
+            // Only schema-grounded predicates become blocking constraints. An
+            // unknown planner field remains useful context for model repair but
+            // cannot turn otherwise valid SQL into an application error.
+            confidence: (!model || knownFields.has(filter.field.toLowerCase()))
+                ? 'high' as const
+                : 'medium' as const,
+        }));
+}
+
+function resolveRankingTarget(
+    question: string,
+    plan: AnalysisPlan,
+    queryShape: ReturnType<typeof inferQueryShape>,
+    expectedMeasures: NonNullable<QueryContract['expectedMeasures']>,
+    requiresGrouping: boolean,
+): QueryContract['rankingTarget'] {
+    if (queryShape.operation !== 'ranking') return undefined;
+    if (queryShape.implicitFrequencyRanking
+        || (expectedMeasures[0]?.aggregation === 'count' && !expectedMeasures[0]?.field)) {
+        return { mode: 'frequency', aggregation: 'count', confidence: 'high' };
+    }
+
+    const explicitMeasure = expectedMeasures.find(measure => measure.confidence === 'high' && measure.field);
+    if (explicitMeasure?.field) {
+        return {
+            mode: requiresGrouping ? 'group_aggregate' : 'row_value',
+            field: explicitMeasure.field,
+            aggregation: requiresGrouping ? explicitMeasure.aggregation : undefined,
+            confidence: 'high',
+        };
+    }
+
+    const sortField = plan.sort?.[0]?.field;
+    const metric = sortField
+        ? plan.metrics.find(item => item.field.toLowerCase() === sortField.toLowerCase())
+        : plan.metrics[0];
+    const field = sortField || metric?.field;
+    if (!field || field === '*') return undefined;
+    const fieldTokens = words(field);
+    const questionTokens = new Set(words(question));
+    const explicitlyNamed = fieldTokens.length > 0
+        && fieldTokens.every(token => [...conceptVariants(token)].some(variant => questionTokens.has(variant)));
+    return {
+        mode: requiresGrouping && metric ? 'group_aggregate' : 'row_value',
+        field,
+        aggregation: requiresGrouping && metric && metric.agg !== 'count_distinct' && metric.agg !== 'median'
+            ? metric.agg
+            : undefined,
+        confidence: explicitlyNamed ? 'high' : 'medium',
     };
 }
 
@@ -693,10 +804,23 @@ function resolveRequiredTables(
     if (outputEntity) required.add(outputEntity.table);
     for (const field of requiredOutputFields) required.add(field.table);
 
+    const owners = new Map<string, string[]>();
+    for (const table of schema.tables) {
+        for (const column of table.columns) {
+            const key = column.name.toLowerCase();
+            owners.set(key, [...(owners.get(key) || []), table.name]);
+        }
+    }
+
     for (const table of schema.tables) {
         const tableMentioned = words(table.name).some(token => conceptMatches(token, qTokens));
         const fieldMentioned = table.columns.some(column => {
-            if (planFields.has(column.name.toLowerCase())) return true;
+            const columnOwners = owners.get(column.name.toLowerCase()) || [];
+            // A plan field that exists in several tables is not evidence that
+            // every one of those tables is required. Force a join only when
+            // ownership is unique or the table itself is named in the question.
+            if (planFields.has(column.name.toLowerCase())
+                && (columnOwners.length === 1 || tableMentioned)) return true;
             const semantic = words(column.name).filter(token => !['id', 'key', 'code', 'name', 'title', 'label', 'description'].includes(token));
             return semantic.length > 0 && semantic.some(token => conceptMatches(token, qTokens));
         });
@@ -752,6 +876,7 @@ export function buildQueryContract(
     const rowLevelSuperlative = queryShape.operation === 'ranking'
         && queryShape.selection === 'single'
         && !answerAggregation
+        && queryShape.explicitAggregations.length === 0
         && !explicitGroupingCue;
     const explicitScalarAggregationCue = /\b(?:how many|(?<!\bid )(?<!\bserial )(?<!\bphone )(?<!\baccount )(?<!\border )(?<!\brace )(?<!\bflight )(?<!\bticket )(?<!\bcard )(?<!\bmodel )(?<!\bpart )number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
     const requiresGrouping = !requiresRowProjection && !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
@@ -770,7 +895,12 @@ export function buildQueryContract(
         : undefined;
     const requiresComparison = COMPARISON_CUE.test(question) || Boolean(plan.comparison);
     const resolvedRequestedDimension = requiresGrouping
-        ? resolveRequestedDimension(question, model)
+        ? requiresRanking && outputEntity?.confidence === 'high' && !explicitGroupingCue
+            // In "which product has the highest total sales", product is the
+            // answer grain and sales is the ranking measure. A whole-question
+            // field scan must not accidentally group by the measure.
+            ? outputEntity.field
+            : resolveRequestedDimension(question, model)
         : undefined;
     // For grouped answers, the explicitly resolved grouping noun is also the
     // visible entity. This prevents an incidental draft dimension from becoming
@@ -825,6 +955,14 @@ export function buildQueryContract(
     }
     if (expectedAggregation && expectedAggregations.length === 0) expectedAggregations = [expectedAggregation];
     const expectedMeasures = resolveExpectedMeasures(question, expectedAggregations, model);
+    const requiredPredicates = resolveRequiredPredicates(plan, model);
+    const rankingTarget = resolveRankingTarget(
+        question,
+        plan,
+        queryShape,
+        expectedMeasures,
+        requiresGrouping,
+    );
     const strictOutputProjection = queryShape.selection === 'single'
         && requestedOutputFields.some(field => field.confidence === 'high');
     const requestedPhysicalFields = new Set(requestedOutputFields.map(field => field.field.toLowerCase()));
@@ -834,7 +972,7 @@ export function buildQueryContract(
             .filter(field => !requestedPhysicalFields.has(field.toLowerCase())))]
         : [];
     const ratio = resolveRatio(question, model);
-    const relativeComparison = resolveRelativeComparison(question, plan);
+    const relativeComparison = resolveRelativeComparison(question, plan, model);
     const joinPlan = schema && requiredTables.length > 1
         ? planJoins(requiredTables, schema.tables, schema.links, outputEntity && existenceMode === 'anti' ? { baseTable: outputEntity.table } : undefined)
         : undefined;
@@ -901,15 +1039,21 @@ export function buildQueryContract(
     if (expectedAggregations.length) {
         requirements.push(`Use every explicitly requested aggregate operation: ${expectedAggregations.map(aggregation => aggregation.toUpperCase()).join(' and ')}. Do not silently drop one measure.`);
     }
+    for (const predicate of requiredPredicates.filter(item => item.confidence === 'high')) {
+        requirements.push(`Preserve the ${predicate.scope.toUpperCase()} predicate on "${predicate.field}" with operator ${predicate.operator}; filtering fields do not automatically become visible output fields or grouping dimensions.`);
+    }
     if (threshold) requirements.push(`${threshold.requiresHaving ? 'Apply the aggregate threshold in HAVING' : 'Apply the threshold'}: ${threshold.operator} ${threshold.value}.`);
     if (ratio?.basis === 'row_count') requirements.push('Calculate the requested ratio from row/entity counts, not from summed monetary or quantity values.');
     if (ratio?.basis === 'measure') requirements.push('Calculate the requested ratio from the additive measure named in the question, not from row counts.');
-    if (relativeComparison?.scope === 'row_to_global_average') requirements.push('Compare each underlying row value with the explicitly requested global row-level average before projecting the requested entity; do not average or sum by entity first.');
-    if (relativeComparison?.scope === 'row_to_filtered_average') requirements.push(`Calculate the reference average over the same filtered cohort (${relativeComparison.inheritedFilters.map(filter => filter.field).join(', ')}), then apply ${relativeComparison.comparator} average × ${relativeComparison.multiplier}. Outer WHERE predicates do not automatically apply inside a subquery; repeat them or derive both calculations from one filtered cohort CTE.`);
-    if (relativeComparison?.scope === 'group_aggregate_to_group_average') requirements.push('Aggregate at the requested entity grain first, then compare each entity aggregate with the average across entity aggregates.');
+    if (relativeComparison?.scope === 'row_to_global_average') requirements.push(`Compare each underlying ${relativeComparison.measureField ? `"${relativeComparison.measureField}" ` : ''}row value with the explicitly requested global row-level average before projecting the requested entity; do not average or sum by entity first.`);
+    if (relativeComparison?.scope === 'row_to_filtered_average') requirements.push(`Calculate the reference average${relativeComparison.measureField ? ` of "${relativeComparison.measureField}"` : ''} over the same filtered cohort (${relativeComparison.inheritedFilters.map(filter => filter.field).join(', ')}), then apply ${relativeComparison.comparator} average × ${relativeComparison.multiplier}. Outer WHERE predicates do not automatically apply inside a subquery; repeat them or derive both calculations from one filtered cohort CTE.`);
+    if (relativeComparison?.scope === 'group_aggregate_to_group_average') requirements.push(`Aggregate${relativeComparison.measureField ? ` "${relativeComparison.measureField}"` : ''} at the requested entity grain first, then compare each entity aggregate with the average across entity aggregates.`);
     if (relativeComparison && relativeComparison.scope !== 'row_to_filtered_average') requirements.push(`Apply the relative-average boundary exactly as ${relativeComparison.comparator} average × ${relativeComparison.multiplier}.`);
     if (requiresFiscalCalendar) requirements.push('Use the requested fiscal calendar definition, including its stated start month.');
     if (requiresRanking) requirements.push(`Rank ${rankingDirection === 'asc' ? 'ascending' : 'descending'}${rankingLimit ? ` and return ${rankingLimit}` : ''}.`);
+    if (rankingTarget?.confidence === 'high') {
+        requirements.push(`Rank by ${rankingTarget.mode === 'frequency' ? 'COUNT(*) frequency' : `${rankingTarget.aggregation ? `${rankingTarget.aggregation.toUpperCase()} of ` : ''}"${rankingTarget.field}"`}; do not sort by an unrelated helper field.`);
+    }
     if (requiresComparison) requirements.push('Return both requested comparison periods with clearly labelled result columns or rows.');
     if (requiresDistinctProjection) requirements.push('Return every distinct requested value using SELECT DISTINCT; do not arbitrarily truncate the unique result set.');
     if (uniqueResultFields.length) requirements.push(`Return one row per qualifying group (${uniqueResultFields.join(', ')}); never filter the original detail rows in a way that repeats a qualifying group.`);
@@ -945,6 +1089,8 @@ export function buildQueryContract(
         expectedAggregations,
         expectedMeasures,
         expectedAggregation,
+        requiredPredicates,
+        rankingTarget,
         threshold,
         ratio,
         relativeComparison,
@@ -1063,7 +1209,12 @@ function filteredAverageUsesReferencePopulation(
     sql: string,
     comparison: NonNullable<QueryContract['relativeComparison']>,
 ): boolean {
-    const averageScopes = parenthesizedSelectScopes(sql).filter(scope => /\bavg\s*\(/i.test(scope.text));
+    const averageScopes = parenthesizedSelectScopes(sql).filter(scope => {
+        if (!/\bavg\s*\(/i.test(scope.text)) return false;
+        if (!comparison.measureField) return true;
+        const averageCalls = scope.text.match(/\bavg\s*\([^)]*\)/gi) || [];
+        return averageCalls.some(call => identifierPattern(comparison.measureField!).test(call));
+    });
     const ctes = cteBodies(sql);
     return averageScopes.some(scope => {
         if (scopeContainsReferenceFilters(scope.text, comparison.inheritedFilters)) return true;
@@ -1073,8 +1224,26 @@ function filteredAverageUsesReferencePopulation(
     });
 }
 
+function referenceAverageUsesMeasure(
+    sql: string,
+    comparison: NonNullable<QueryContract['relativeComparison']>,
+): boolean {
+    if (!comparison.measureField) return true;
+    const calls = sql.match(/\bavg\s*\([^)]*\)/gi) || [];
+    return calls.some(call => identifierPattern(comparison.measureField!).test(call));
+}
+
+function groupedReferenceUsesMeasure(
+    sql: string,
+    comparison: NonNullable<QueryContract['relativeComparison']>,
+): boolean {
+    if (!comparison.measureField) return true;
+    const aggregateCalls = sql.match(/\b(?:sum|avg|count|min|max)\s*\([^)]*\)/gi) || [];
+    return aggregateCalls.some(call => identifierPattern(comparison.measureField!).test(call));
+}
+
 function hasExactRelativeComparator(sql: string, comparator: NonNullable<QueryContract['relativeComparison']>['comparator']): boolean {
-    const operators = sql.match(/(?:>=|<=|>|<)/g) || [];
+    const operators: string[] = sql.match(/(?:>=|<=|>|<)/g) || [];
     return operators.includes(comparator);
 }
 
@@ -1085,6 +1254,71 @@ function hasRelativeMultiplier(sql: string, multiplier: number): boolean {
     const percentage = Math.abs(multiplier - 1) * 100;
     const percentLiteral = String(Number(percentage.toFixed(8))).replace('.', '\\.');
     return new RegExp(`${percentLiteral}\\s*\\/\\s*100`).test(sql);
+}
+
+function sqlLiteralPresent(sql: string, value: unknown): boolean {
+    if (value === null || value === undefined) return true;
+    if (Array.isArray(value)) return value.every(item => sqlLiteralPresent(sql, item));
+    if (typeof value === 'object') return Object.values(value as Record<string, unknown>)
+        .every(item => sqlLiteralPresent(sql, item));
+    if (typeof value === 'number') {
+        const literal = String(value).replace('.', '\\.');
+        return new RegExp(`(?:^|[^0-9.])${literal}(?:[^0-9.]|$)`).test(sql);
+    }
+    const normalized = String(value).trim();
+    if (!normalized) return true;
+    const escaped = normalized.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/'/g, "'{2}");
+    return new RegExp(escaped, 'i').test(sql);
+}
+
+function predicateOperatorPresent(
+    sql: string,
+    predicate: NonNullable<QueryContract['requiredPredicates']>[number],
+): boolean {
+    const field = identifierPattern(predicate.field).source;
+    const gap = '[\\s\\S]{0,140}?';
+    const op = predicate.operator;
+    if (/^this_/.test(op)) {
+        return new RegExp(`${field}${gap}(?:between|>=|>|=)`, 'i').test(sql);
+    }
+    if (op === 'between') {
+        const nativeBetween = new RegExp(`${field}${gap}\\bbetween\\b`, 'i').test(sql);
+        const lowerBound = new RegExp(`${field}${gap}(?:>=|>)`, 'i').test(sql);
+        const upperBound = new RegExp(`${field}${gap}(?:<=|<)`, 'i').test(sql);
+        return nativeBetween || (lowerBound && upperBound);
+    }
+    const operatorPattern = op === '=' ? '(?<![<>!])=(?!=)|\\bis\\b'
+        : op === '!=' ? '<>|!=|\\bis\\s+not\\b'
+            : op === 'in' ? '\\bin\\s*\\('
+                : op === 'not_in' ? '\\bnot\\s+in\\s*\\('
+                    : op === 'like' ? '\\blike\\b'
+                            : op.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp(`${field}${gap}(?:${operatorPattern})`, 'i').test(sql);
+}
+
+function aggregateRankingExpressionPresent(
+    sql: string,
+    target: NonNullable<QueryContract['rankingTarget']>,
+): boolean {
+    const orderClause = sql.match(/\border\s+by\s+([\s\S]*?)(?=\blimit\b|$)/i)?.[1] || '';
+    if (!orderClause) return false;
+    const aggregation = target.aggregation || (target.mode === 'frequency' ? 'count' : undefined);
+    const fieldPattern = target.field ? identifierPattern(target.field).source : '[^)]*';
+    if (!aggregation) return !!target.field && identifierPattern(target.field).test(orderClause);
+    const aggregateExpression = new RegExp(`\\b${aggregation}\\s*\\(${fieldPattern}\\)`, 'i');
+    if (aggregateExpression.test(orderClause)) return true;
+    if (target.mode === 'frequency' && /\bcount\s*\(\s*(?:\*|1|[^)]*)\)/i.test(orderClause)) return true;
+
+    // ORDER BY aliases are faithful only when the outer SELECT defines that
+    // alias from the required aggregate/field pair.
+    const projection = topLevelSelectClauses(sql).join(', ');
+    const aggregateInProjection = target.mode === 'frequency'
+        ? /\bcount\s*\(\s*(?:\*|1|[^)]*)\)/i
+        : new RegExp(`\\b${aggregation}\\s*\\(${fieldPattern}\\)`, 'i');
+    for (const match of projection.matchAll(/([\s\S]*?)\s+(?:as\s+)?["`]?([a-z_][a-z0-9_]*)["`]?(?=\s*,|$)/gi)) {
+        if (aggregateInProjection.test(match[1]) && identifierPattern(match[2]).test(orderClause)) return true;
+    }
+    return false;
 }
 
 /** Compact form used in model prompts; contains metadata/intent only. */
@@ -1108,11 +1342,16 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
         aggregations: contract.expectedAggregations || (contract.expectedAggregation ? [contract.expectedAggregation] : []),
         measures: contract.expectedMeasures || [],
         aggregation: contract.expectedAggregation,
+        predicates: contract.requiredPredicates || [],
         threshold: contract.threshold,
         ratio: contract.ratio,
         relativeComparison: contract.relativeComparison,
         orderedProjection: contract.orderedProjection,
-        ranking: contract.requiresRanking ? { direction: contract.rankingDirection, limit: contract.rankingLimit } : undefined,
+        ranking: contract.requiresRanking ? {
+            direction: contract.rankingDirection,
+            limit: contract.rankingLimit,
+            target: contract.rankingTarget,
+        } : undefined,
         comparison: contract.requiresComparison,
         requirements: contract.requirements,
     }, null, 2);
@@ -1288,6 +1527,20 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
             });
         }
     }
+    for (const predicate of (contract.requiredPredicates || []).filter(item => item.confidence === 'high')) {
+        const hasScope = predicate.scope === 'having'
+            ? /\bhaving\b/i.test(sql)
+            : /\bwhere\b/i.test(sql);
+        const hasOperator = predicateOperatorPresent(sql, predicate);
+        const hasLiteral = sqlLiteralPresent(sql, predicate.value);
+        if (!hasScope || !hasOperator || !hasLiteral) {
+            issues.push({
+                code: 'missing_filter',
+                severity: 'error',
+                message: `The SQL must preserve the ${predicate.scope.toUpperCase()} condition ${predicate.field} ${predicate.operator} ${JSON.stringify(predicate.value)}.`,
+            });
+        }
+    }
     if (contract.threshold) {
         const operator = contract.threshold.operator.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const value = String(contract.threshold.value).replace('.', '\\.');
@@ -1320,7 +1573,7 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
     if (contract.relativeComparison?.scope === 'row_to_global_average') {
         const hasGlobalAverage = /\bavg\s*\([^)]*\)[\s\S]*\bfrom\b/i.test(sql)
             && /\(\s*select[\s\S]*\bavg\s*\(/i.test(sql);
-        if (!hasGlobalAverage || /\bgroup\s+by\b/i.test(sql)) {
+        if (!hasGlobalAverage || !referenceAverageUsesMeasure(sql, contract.relativeComparison) || /\bgroup\s+by\b/i.test(sql)) {
             issues.push({
                 code: 'wrong_comparison_scope',
                 severity: 'error',
@@ -1341,7 +1594,7 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
         const hasGroupedReference = /\bgroup\s+by\b/i.test(sql)
             && /\bavg\s*\(/i.test(sql)
             && /\bselect\b[\s\S]*\bselect\b/i.test(sql);
-        if (!hasGroupedReference) {
+        if (!hasGroupedReference || !groupedReferenceUsesMeasure(sql, contract.relativeComparison)) {
             issues.push({
                 code: 'wrong_comparison_scope',
                 severity: 'error',
@@ -1380,6 +1633,15 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
         && /\border\s+by\b/.test(normalized)
         && !new RegExp(`\\border\\s+by[\\s\\S]*?\\b${contract.rankingDirection}\\b`, 'i').test(sql)) {
         issues.push({ code: 'wrong_ranking_direction', severity: 'error', message: `The ranking must sort ${contract.rankingDirection.toUpperCase()}.` });
+    }
+    if (contract.requiresRanking && contract.rankingTarget?.confidence === 'high'
+        && !aggregateRankingExpressionPresent(sql, contract.rankingTarget)) {
+        const target = contract.rankingTarget;
+        issues.push({
+            code: 'wrong_ranking_target',
+            severity: 'error',
+            message: `The ranking must be determined by ${target.mode === 'frequency' ? 'COUNT(*) frequency' : `${target.aggregation ? `${target.aggregation.toUpperCase()} over ` : ''}"${target.field}"`}, not an unrelated expression.`,
+        });
     }
     if (contract.requiresComparison
         && !/(?:\bunion\s+all\b|\bcurrent\b|\bprevious\b|\bprior\b|\bcomparison\b|(?:this|last)[_ -]?(?:day|week|month|quarter|year))/i.test(normalized)) {

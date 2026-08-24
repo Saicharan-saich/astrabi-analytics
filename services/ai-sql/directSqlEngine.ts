@@ -33,11 +33,14 @@ Rules:
 - When the AVG subquery is used with additional WHERE filters, those same filters must appear inside the subquery.
 - DATE COLUMNS ARE STORED AS TEXT (VARCHAR). You MUST wrap them in CAST(col AS DATE) before ANY date function or comparison — DATE_TRUNC, EXTRACT, strftime, date_diff, ordering by month, or BETWEEN. Example: DATE_TRUNC('month', CAST(order_date AS DATE)), and CAST(order_date AS DATE) BETWEEN DATE '2025-01-01' AND DATE '2025-12-31'. Writing DATE_TRUNC('month', order_date) directly WILL fail.
 - JOIN across tables when needed, following the listed foreign keys.
+- Respect table ownership and join grain. A field is read from the physical table that owns it; a same-named field in another table is not interchangeable. When a one-to-many join would duplicate a measure from the one-side, pre-aggregate at the required grain before joining (or aggregate only the owning table) rather than summing duplicated values.
+- For counts of related records, count the related table's stable key or rows after the declared join. For counts of parent entities, use COUNT(DISTINCT parent_key) when the join fans out.
 - Treat absence and exclusion as set logic. Questions such as "entities with no related records" require NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT against the related table; never simulate absence by grouping only the primary table and writing HAVING COUNT(...) = 0.
 - Preserve the requested output entity and grain. Do not return a continent when country names were requested, or collapse several requested rows into one group.
 - For grouped membership thresholds such as "grades with 4 or more students", return exactly one row per qualifying group. Use GROUP BY ... HAVING (or select once from an already-grouped CTE); never use the grouped result merely to filter and re-project the original detail rows.
 - Lock the OUTER SELECT to the fields and calculations the user explicitly asks to see. An aggregate used only to define a filter (for example, products above average sales) belongs in a subquery/CTE predicate and does not turn the outer result into COUNT, SUM, or AVG.
 - For a single-winner question, return one row at the requested entity grain. Do not return the winning entity's underlying detail rows, and do not expose helper fields used only to calculate the winner.
+- ORDER BY the exact criterion requested by the user. Direction and LIMIT do not make a ranking correct when the sort expression is an unrelated metric. A grouped ranking sorts by its group aggregate; a row-level superlative sorts by the raw requested attribute; a frequency winner sorts by COUNT(*).
 - Treat "most/least common", "most/least frequent", and inverse wording such as "the type that the most records belong to" as frequency rankings: group by the requested answer field, rank by COUNT(*) in the correct direction, and return the requested winner. The count may remain an ORDER BY helper when the user asks only for the winning field.
 - Never replace requested names, labels, dates, or other row attributes with COUNT, SUM, LIST, ARRAY_AGG, STRING_AGG, or ANY_VALUE. Use collection aggregates only when the user explicitly requests a single packed list.
 - Do not infer an aggregation from a physical column name containing words such as number, count, total, or amount. Aggregation comes from the question's requested operation.
@@ -74,6 +77,8 @@ export interface DynamicQuerySpec {
 const SPEC_PROMPT = `You are the planning stage of a privacy-first analytics system.
 Translate the question into a JSON Query Specification. You receive only a database schema and metadata, never data rows.
 Capture all requested analytical operations dynamically: measures/aggregations, filters, GROUP BY, HAVING, sorting, limits, joins, date logic, and window or table calculations. Use only exact physical schema fields and table names. When an entity is the answer, choose its human-readable descriptive field for expectedResult (not an opaque ID) whenever the schema provides one; IDs can be an optional secondary reference.
+Keep every predicate in the specification at its correct scope. Row predicates belong in filters/WHERE; aggregate predicates belong in having/HAVING. A field needed only for filtering, joining, or ordering must not be added to expectedResult or GROUP BY unless the question asks to display or group by it.
+For rankings, record the exact ranking expression and result cardinality. Distinguish a raw-field row ranking, a grouped aggregate ranking, and a frequency ranking; never infer LIMIT 1 when the wording requests every group.
 Define expectedResult from the words that describe what the user wants returned, before planning filters. Aggregates used only as comparison thresholds belong in filters/subqueries and must not replace those requested result fields. Never invent COUNT, collection aggregates, GROUP BY, or LIMIT from a column name or from a filter's aggregate.
 Relative analytical language is answerable without a user-supplied literal threshold. When the governed plan resolves "high/strong" to above_avg or "low/weak/negative" to below_avg, preserve that decision: compare each entity-level aggregate with the average across entity aggregates, record the rule in assumptions, and do NOT request clarification. Ask only when the required field or entity grain is genuinely unavailable.
 For a filtered population compared with an average, explicitly identify the reference population. Unless the wording says overall/global/all records, phrases such as "patients with X ... higher than average" use the same X-filtered cohort for both the outer population and the AVG reference. Preserve strict boundaries: "higher than" is >; "at least ... higher" is >=.
@@ -91,6 +96,7 @@ SEMANTIC RULES:
 - "What is the percentage of X that Y" → plan a conditional aggregation: SUM(condition) * 100 / COUNT(*), returning one scalar row. Do not GROUP BY individual entity rows.
 - Only include in expectedResult.columns the fields the question explicitly requests. Do not add extra columns (event_name, budget_id, etc.) unless asked.
 
+Across multiple tables, identify which table owns every output, filter and measure. Follow only declared relationship edges, and plan pre-aggregation whenever joining would otherwise multiply the measure's native grain.
 Return valid JSON only with: goal, operations, expectedResult, assumptions, clarification.
 If the schema genuinely cannot answer the question (no relevant table or column exists), set clarification instead of inventing a field.`;
 
@@ -140,16 +146,62 @@ export function reconcileQuerySpecWithCanonicalIntent(
 
     if (canonical.constraints.prohibitImplicitLimit) delete spec.operations.limit;
     if (canonical.order?.limit !== undefined) spec.operations.limit = canonical.order.limit;
+    if (canonical.predicates.length) {
+        const existingFilters = spec.operations.filters || [];
+        for (const predicate of canonical.predicates.filter(item => item.confidence === 'high' && item.scope === 'where')) {
+            const existing = existingFilters.find(filter =>
+                filter.field?.toLowerCase() === predicate.field.toLowerCase()
+            );
+            const canonicalFilter = {
+                ...(existing || {}),
+                field: predicate.field,
+                operator: predicate.operator,
+                value: predicate.value,
+            };
+            const index = existing ? existingFilters.indexOf(existing) : -1;
+            if (index >= 0) existingFilters[index] = canonicalFilter;
+            else existingFilters.push(canonicalFilter);
+        }
+        spec.operations.filters = existingFilters;
+        const existingHaving = spec.operations.having || [];
+        for (const predicate of canonical.predicates.filter(item => item.confidence === 'high' && item.scope === 'having')) {
+            const alreadyPresent = existingHaving.some(item =>
+                item.expression?.toLowerCase().includes(predicate.field.toLowerCase())
+            );
+            if (!alreadyPresent) {
+                existingHaving.push({
+                    expression: `${predicate.field} ${predicate.operator} ${JSON.stringify(predicate.value)}`,
+                });
+            }
+        }
+        spec.operations.having = existingHaving;
+    }
+    if (canonical.relationship.path.length) {
+        spec.operations.joins = canonical.relationship.path.map(step => ({
+            leftTable: step.fromTable,
+            rightTable: step.toTable,
+            condition: `"${step.fromTable}"."${step.fromColumn}" = "${step.toTable}"."${step.toColumn}"`,
+            purpose: step.fansOut
+                ? 'Declared relationship; preserve measure grain before crossing this fan-out edge'
+                : 'Declared relationship required by the canonical query intent',
+        }));
+    }
     if (canonical.order) {
         const current = spec.operations.orderBy?.[0];
         const rankedMeasure = canonical.measures[0];
-        const canonicalExpression = rankedMeasure
-            ? rankedMeasure.aggregation === 'count' && !rankedMeasure.field
-                ? 'COUNT(*)'
-                : `${rankedMeasure.aggregation.toUpperCase()}(${rankedMeasure.field || 'requested measure'})`
-            : undefined;
+        const canonicalExpression = canonical.order.mode === 'frequency'
+            ? 'COUNT(*)'
+            : canonical.order.aggregation && canonical.order.field
+                ? `${canonical.order.aggregation.toUpperCase()}(${canonical.order.field})`
+                : canonical.order.field
+                    ? canonical.order.field
+                    : rankedMeasure
+                        ? rankedMeasure.aggregation === 'count' && !rankedMeasure.field
+                            ? 'COUNT(*)'
+                            : `${rankedMeasure.aggregation.toUpperCase()}(${rankedMeasure.field || 'requested measure'})`
+                        : undefined;
         spec.operations.orderBy = [{
-            expression: canonical.order.field || canonicalExpression || current?.expression
+            expression: canonicalExpression || canonical.order.field || current?.expression
                 || (canonical.aggregations[0]
                     ? `${canonical.aggregations[0].toUpperCase()}(...)`
                     : canonical.grainFields[0] || 'requested ranking measure'),
@@ -235,6 +287,65 @@ export function extractSQL(content: string): string {
     const fence = s.match(/```(?:sql)?\s*([\s\S]*?)```/i);
     if (fence) s = fence[1].trim();
     return s.replace(/;+\s*$/, '').trim();
+}
+
+export interface SQLCandidateDecision {
+    sql: string;
+    source: 'draft' | 'review';
+    contractErrors: number;
+    contractWarnings: number;
+    complexity: number;
+}
+
+function sqlStructuralComplexity(sql: string): number {
+    const count = (pattern: RegExp) => (sql.match(pattern) || []).length;
+    return count(/\bwith\b/gi) * 3
+        + count(/\bjoin\b/gi) * 2
+        + count(/\bover\s*\(/gi) * 3
+        + count(/\bselect\b/gi)
+        + count(/\bunion\b/gi) * 2
+        + count(/\bgroup\s+by\b/gi);
+}
+
+/**
+ * A reviewer is advisory, not automatically authoritative. Select the SQL
+ * candidate that best satisfies the deterministic contract, then prefer the
+ * simpler faithful expression. This prevents a later model from replacing a
+ * correct projection/ranking with a more elaborate but less faithful query.
+ */
+export function chooseBestSQLCandidate(
+    draftSQL: string,
+    reviewedSQL: string,
+    queryContract?: QueryContract,
+): SQLCandidateDecision {
+    const evaluate = (sql: string, source: SQLCandidateDecision['source']): SQLCandidateDecision & { safe: boolean } => {
+        const safety = validateReadOnlySQL(sql);
+        const issues = safety.ok && queryContract ? validateSQLAgainstContract(safety.sql, queryContract) : [];
+        return {
+            sql: safety.ok ? safety.sql : sql,
+            source,
+            safe: safety.ok,
+            contractErrors: safety.ok ? issues.filter(issue => issue.severity === 'error').length : Number.MAX_SAFE_INTEGER,
+            contractWarnings: safety.ok ? issues.filter(issue => issue.severity === 'warn').length : Number.MAX_SAFE_INTEGER,
+            complexity: safety.ok ? sqlStructuralComplexity(safety.sql) : Number.MAX_SAFE_INTEGER,
+        };
+    };
+    const draft = evaluate(draftSQL, 'draft');
+    const review = evaluate(reviewedSQL, 'review');
+    const rank = (candidate: typeof draft) => [
+        candidate.safe ? 0 : 1,
+        candidate.contractErrors,
+        candidate.contractWarnings,
+        candidate.complexity,
+    ];
+    const draftRank = rank(draft);
+    const reviewRank = rank(review);
+    for (let index = 0; index < draftRank.length; index += 1) {
+        if (draftRank[index] < reviewRank[index]) return draft;
+        if (reviewRank[index] < draftRank[index]) return review;
+    }
+    // Equal evidence: retain the independent review.
+    return review;
 }
 
 /** Focused semantic retry after valid SQL returns an implausible empty result. */
@@ -337,7 +448,7 @@ export async function generateDirectSQL(
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userContext },
     ] as any, { temperature: 0, max_tokens: 2400, model: LUNA_MODEL, requestPurpose });
-    let sql = extractSQL(drafted.data.choices?.[0]?.message?.content || '');
+    const draftSQL = extractSQL(drafted.data.choices?.[0]?.message?.content || '');
     const draftUsage = drafted.data.usage || {};
     tokens += draftUsage.total_tokens || ((draftUsage.prompt_tokens || 0) + (draftUsage.completion_tokens || 0)) || 0;
 
@@ -345,12 +456,17 @@ export async function generateDirectSQL(
     // structured plan, then returns the final executable SQL.
     const reviewed = await fetchWithFallback([
         { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the question, schema, and deterministic contract. Correct only concrete violations. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and contract do not require. Return only final SQL.` },
-        { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${sql}\n\nFinal reviewed SQL:` },
+        { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${draftSQL}\n\nFinal reviewed SQL:` },
     ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
-    sql = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');
+    const reviewedSQL = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');
     const reviewUsage = reviewed.data.usage || {};
     tokens += reviewUsage.total_tokens || ((reviewUsage.prompt_tokens || 0) + (reviewUsage.completion_tokens || 0)) || 0;
     let modelUsedForSQL = `${planner.model} → ${drafted.model} → ${reviewed.model}`;
+    const candidateDecision = chooseBestSQLCandidate(draftSQL, reviewedSQL, queryContract);
+    let sql = candidateDecision.sql;
+    if (candidateDecision.source === 'draft') {
+        console.log(`[AI SQL] Retained the draft SQL because the reviewer candidate was less faithful or more complex (${candidateDecision.contractErrors} contract error(s), complexity ${candidateDecision.complexity}).`);
+    }
     console.log(`[AI SQL] Dynamic three-model route: ${modelUsedForSQL}`);
 
     // A fallback must never silently swap the dataset-relative reporting clock

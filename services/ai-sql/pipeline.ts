@@ -813,14 +813,25 @@ export async function runAISQLPipeline(
             m.field.toLowerCase() === f.field.toLowerCase()
             || (!!f.compositeRef && m.compositeId === f.compositeRef)
         ));
+    const deterministicContractIssues = qbSQL && activeQueryContract
+        ? validateSQLAgainstContract(qbSQL, activeQueryContract).filter(issue => issue.severity === 'error')
+        : [];
+    const canUseVerifiedDeterministicFallback = !!qbSQL && deterministicContractIssues.length === 0;
 
     // Detect false LLM clarifications about answer shape / field visibility.
     // These are answerable by the local compiler — the planner is being overly
     // cautious about grouping vs scalar, field visibility, or table identity.
     const isShapeClarification = directSqlBlocked && directSqlError && /(?:aggregate.*row|scalar|grouped.*row|splits.*group|must.*identify|field.*visible|no field.*identif|requires.*visible)/i.test(directSqlError);
 
-    if (directSqlBlocked && (canCompileRelativeThresholdsLocally || isShapeClarification)) {
-        console.warn(`[Pipeline] AI planner clarification bypassed — falling through to local compiler. Reason: ${directSqlError}`);
+    if (directSqlBlocked && canUseVerifiedDeterministicFallback) {
+        // A model-side contract failure must not become an application
+        // execution error when the deterministic compiler independently
+        // produced SQL that satisfies the exact same contract.
+        console.warn('[Pipeline] AI SQL candidate was rejected; continuing with independently contract-verified deterministic SQL.');
+        directSQL = null;
+        directSqlBlocked = false;
+    } else if (directSqlBlocked && (canCompileRelativeThresholdsLocally || isShapeClarification)) {
+        console.warn(`[Pipeline] AI planner clarification bypassed — falling through to the verified local compiler. Reason: ${directSqlError}`);
         directSQL = null;
         directSqlBlocked = false;
     }
