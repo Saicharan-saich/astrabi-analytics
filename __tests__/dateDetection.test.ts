@@ -62,3 +62,16 @@ describe('genuine written dates still parse', () => {
         expect(res.columns.find((c: any) => c.name === 'd')?.type).toBe('DATE');
     });
 });
+
+describe('numeric measurements are never promoted to dates', () => {
+    it('does not create a time context from decimal duration values', () => {
+        const measurements = Array.from({ length: 40 }, (_, i) => ({
+            patient_id: i + 1,
+            number_of_hours_spent_sitting_per_day: (i % 12) + 0.5,
+            age: 20 + (i % 40),
+        }));
+        const res: any = runAutomatedETL(measurements, 'measurements.csv');
+        expect(res.columns.find((c: any) => c.name === 'number_of_hours_spent_sitting_per_day')?.type).not.toBe('DATE');
+        expect(res.timeContext).toBeUndefined();
+    });
+});

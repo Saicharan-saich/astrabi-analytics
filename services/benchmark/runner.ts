@@ -14,7 +14,7 @@ const EMPTY_TOKENS = { prompt: 0, completion: 0, total: 0 };
 const EVIDENCE_ROW_LIMIT = 50;
 const DEFAULT_LOCAL_STAGE_TIMEOUT_MS = 60_000;
 const DEFAULT_PIPELINE_TIMEOUT_MS = 240_000;
-const LLM_UNAVAILABLE_PATTERN = /rate.?limit|too many (?:ai )?requests|daily ai (?:quota|limit)|quota exceeded|credits exhausted|permission.?denied|forbidden|guardrail|provider denied|model.*not available|service.*(?:down|unavailable)|network|fetch failed|timed?\s*out/i;
+const LLM_UNAVAILABLE_PATTERN = /rate.?limit|too many (?:ai )?requests|daily ai (?:quota|limit)|quota exceeded|credits exhausted|permission.?denied|forbidden|guardrail|provider (?:denied|.*unavailable)|model.*not available|service.*(?:down|unavailable)|network|fetch failed|timed?\s*out/i;
 const LOCAL_INFRASTRUCTURE_PATTERN = /benchmark (?:dataset load|duckdb reload|gold sql execution) timed out|duckdb-wasm|webassembly|failed to read from a readablestream|wasm engine|worker is not supported/i;
 
 function withStageTimeout<T>(operation: () => Promise<T>, timeoutMs: number, stage: string): Promise<T> {
@@ -264,11 +264,30 @@ export async function executeBenchmarkCase(
     // Accuracy evidence from this lab must be model-backed. Never silently
     // score a deterministic continuity answer as an AI SQL benchmark result,
     // even when the provider error text changes or omits a known keyword.
+    const tokenTotal = pipelineResult.tokenUsage?.total || 0;
     const pipelineWasLlmBacked = pipelineResult.provenance?.strategy !== 'deterministic'
-      && (pipelineResult.tokenUsage?.total || 0) > 0;
+      && tokenTotal > 0;
     if (!pipelineWasLlmBacked) {
       const fallbackReason = pipelineResult.provenance?.fallbackReason || '';
       const unavailable = LLM_UNAVAILABLE_PATTERN.test(fallbackReason);
+      // A provider outage is retryable. A local semantic gate or a model SQL
+      // candidate rejected by the deterministic contract is not: retrying the
+      // identical case only repeats the same logic error and falsely lowers the
+      // measured provider-availability rate.
+      if (!unavailable) {
+        const providerResponded = tokenTotal > 0;
+        return {
+          ...base,
+          confidence: undefined,
+          engine: providerResponded ? 'contract-rejected' : 'semantic-gate',
+          model: providerResponded ? pipelineResult.provenance?.model : undefined,
+          status: 'execution_error',
+          passed: false,
+          failureReason: providerResponded
+            ? `The LLM responded, but its SQL was rejected and the deterministic continuity result is not valid model-backed benchmark evidence${fallbackReason ? `: ${fallbackReason}` : '.'}`
+            : `The local semantic pipeline stopped before an LLM SQL response was produced${fallbackReason ? `: ${fallbackReason}` : '.'}`,
+        };
+      }
       return {
         ...base,
         // Local continuity output can be useful in the product, but it is not
@@ -278,9 +297,7 @@ export async function executeBenchmarkCase(
         model: undefined,
         status: 'llm_unavailable',
         passed: false,
-        failureReason: unavailable
-          ? `LLM unavailable: ${fallbackReason}`
-          : `LLM-backed execution required, but this case returned ${pipelineResult.provenance?.strategy || 'unknown provenance'} with ${pipelineResult.tokenUsage?.total || 0} tokens${fallbackReason ? `: ${fallbackReason}` : '.'}`,
+        failureReason: `LLM unavailable: ${fallbackReason}`,
       };
     }
 

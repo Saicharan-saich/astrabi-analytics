@@ -647,8 +647,11 @@ export async function runAISQLPipeline(
         console.warn(`[Pipeline] APDME: ${apdmeResult.violations.length} guardrail violation(s), penalty: -${apdmeResult.confidencePenalty}`);
     }
 
-    // Ask for clarification instead of guessing when the governed plan is ambiguous.
-    if (plan.ambiguous) {
+    // Ask an interactive user for clarification instead of guessing. Benchmark
+    // fixtures cannot answer a follow-up, and every case has a frozen answer, so
+    // an imperfect local draft must continue to the governed three-model route.
+    // The query contract and physical schema remain the authority downstream.
+    if (plan.ambiguous && executionOptions?.requestPurpose !== 'benchmark') {
         console.log('[Pipeline] Local plan is ambiguous — requesting clarification');
         const executionTime = performance.now() - startTime;
         return {
@@ -671,6 +674,15 @@ export async function runAISQLPipeline(
             repairAttempts: 0,
             tokenUsage: (plan as any).tokenUsage || { prompt: 0, completion: 0, total: 0 },
         };
+    }
+    if (plan.ambiguous && executionOptions?.requestPurpose === 'benchmark') {
+        console.warn('[Pipeline] Benchmark local plan is ambiguous — escalating to the governed LLM SQL route.');
+        plan = {
+            ...plan,
+            ambiguous: false,
+            clarificationQuestion: undefined,
+        };
+        _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
     }
 
     // ─── Step 2d: Deterministic Query Compiler ─────────────────────

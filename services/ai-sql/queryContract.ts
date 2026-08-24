@@ -505,6 +505,24 @@ function resolveExpectedAggregation(question: string, plan: AnalysisPlan): Query
 }
 
 function resolveExpectedAggregations(question: string, model?: SemanticModel): QueryContract['expectedAggregations'] {
+    // Benchmark/domain evidence may define a named business measure with an
+    // explicit formula, e.g. "average attendance = DIVIDE(COUNT(event_id),
+    // COUNT(DISTINCT event_name))". In that case the label "average" is not an
+    // instruction to emit AVG(); the formula is the authoritative operation.
+    // Parse formula right-hand sides generically rather than special-casing a
+    // dataset or question.
+    const evidenceText = question.match(/\bEvidence:\s*([\s\S]+)$/i)?.[1] || '';
+    const formulaText = evidenceText
+        .split(';')
+        .map(part => part.includes('=') ? part.slice(part.indexOf('=') + 1) : '')
+        .filter(Boolean)
+        .join(' ');
+    if (/\b(?:DIVIDE|MULTIPLY|SUBTRACT|ADD)\s*\(/i.test(formulaText)) {
+        const formulaAggregations = [...formulaText.matchAll(/\b(AVG|SUM|COUNT|MIN|MAX)\s*\(/gi)]
+            .map(match => match[1].toLowerCase() as 'sum' | 'avg' | 'count' | 'min' | 'max');
+        if (formulaAggregations.length) return [...new Set(formulaAggregations)];
+    }
+
     // Physical field names are nouns, not operations. Mask schema-grounded
     // metric phrases before parsing operations so a column such as
     // "Ticket_Count" does not invent COUNT when the user asks for its AVG/MAX.

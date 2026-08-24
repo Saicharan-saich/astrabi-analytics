@@ -339,11 +339,8 @@ describe('benchmark runner', () => {
     expect(run.interruptionReason).toContain('rate limited');
   });
 
-  it('halts on any zero-token deterministic continuity result even without a known provider message', async () => {
-    const suite = BENCHMARK_SUITES[0];
-    const expectedBySql = new Map(suite.cases.map(testCase => [testCase.goldSql, testCase.expectedRows]));
-    const run = await runBenchmark([suite], dependencies({
-      executeGoldSql: async (_rows, sql) => ({ data: expectedBySql.get(sql) || [] }),
+  it('does not mislabel a zero-token local semantic stop as a provider outage', async () => {
+    const result = await executeBenchmarkCase(firstCase, dependencies({
       runPipeline: async () => ({
         sql: 'SELECT 1',
         rawData: [],
@@ -352,13 +349,26 @@ describe('benchmark runner', () => {
         provenance: { strategy: 'deterministic' },
         tokenUsage: { prompt: 0, completion: 0, total: 0 },
       }),
-    }), { scope: 'smoke', appVersion: 'test' });
+    }));
 
-    expect(run.results).toHaveLength(1);
-    expect(run.results[0].status).toBe('llm_unavailable');
-    expect(run.interruptionReason).toContain('LLM-backed execution required');
-    expect(run.results[0].confidence).toBeUndefined();
-    expect(run.results[0].engine).toBe('provider-unavailable');
+    expect(result.status).toBe('execution_error');
+    expect(result.failureReason).toContain('local semantic pipeline stopped');
+    expect(result.confidence).toBeUndefined();
+    expect(result.engine).toBe('semantic-gate');
+  });
+
+  it('does not classify a model response rejected by the query contract as provider unavailable', async () => {
+    const result = await executeBenchmarkCase(firstCase, dependencies({
+      runPipeline: async () => ({
+        sql: 'SELECT 1', rawData: [], validation: { valid: true }, displaySafety: { allowed: true },
+        provenance: { strategy: 'deterministic', model: 'test-model', fallbackReason: 'Query contract rejected the SQL after repair.' },
+        tokenUsage: { prompt: 100, completion: 20, total: 120 },
+      }),
+    }));
+
+    expect(result.status).toBe('execution_error');
+    expect(result.failureReason).toContain('LLM responded');
+    expect(result.engine).toBe('contract-rejected');
   });
 
   it('times out a stalled local engine and pauses the run at the retryable case', async () => {

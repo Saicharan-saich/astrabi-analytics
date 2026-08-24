@@ -407,7 +407,7 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
             anchorDate: dataset.timeContext.defaultAnchorDate || dataset.timeContext.maxDate,
             minDate: dataset.timeContext.minDate,
             maxDate: dataset.timeContext.maxDate,
-            primaryDateColumn: primaryDateCol?.name || dataset.timeContext.anchorDateColumn || '',
+            primaryDateColumn: primaryDateCol?.name || '',
         } : undefined,
         joinGraph: dataset.sourceSchema ? {
             edges: dataset.sourceSchema.joinEdges.map(e => ({

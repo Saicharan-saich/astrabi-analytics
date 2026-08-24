@@ -42,6 +42,7 @@ describe('detectExplicitAggregation — distinct/unique', () => {
     });
     it('plain "how many" stays a plain count', () => {
         expect(detectExplicitAggregation('how many orders are there')).toBe('count');
+        expect(detectExplicitAggregation('How many paragraphs in total?')).toBe('count');
     });
 });
 

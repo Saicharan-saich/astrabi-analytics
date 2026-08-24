@@ -279,8 +279,12 @@ export function buildSemanticModel(
     }
 
     // ── Step 2: Determine primary date column ──
-    if (dataset.timeContext?.anchorDateColumn) {
+    if (dataset.timeContext?.anchorDateColumn && dateColumns.some(column =>
+        column.toLowerCase() === dataset.timeContext!.anchorDateColumn.toLowerCase()
+    )) {
         primaryDateColumn = dataset.timeContext.anchorDateColumn;
+    } else if (dataset.timeContext?.anchorDateColumn) {
+        warnings.push(`Ignored invalid time anchor "${dataset.timeContext.anchorDateColumn}" because it is not a DATE column.`);
     } else if (dateColumns.length === 1) {
         primaryDateColumn = dateColumns[0];
     } else if (dateColumns.length > 1) {

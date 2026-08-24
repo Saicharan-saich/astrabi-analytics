@@ -201,6 +201,19 @@ describe('AI SQL query contract regression suite', () => {
             .toContain('missing_aggregation');
         expect(validateSQLAgainstContract('SELECT AVG(sales) FROM data', averageContract)).toEqual([]);
 
+        const formulaContract = buildQueryContract(
+            'What is the average sales?\n\nEvidence: average sales = DIVIDE(SUM(sales), COUNT(order_id))',
+            plan({ metrics: [{ field: 'sales', agg: 'avg' }] }),
+            [],
+            model,
+        );
+        expect(formulaContract.expectedAggregations).toEqual(['sum', 'count']);
+        expect(formulaContract.expectedAggregation).toBe('sum');
+        expect(validateSQLAgainstContract(
+            'SELECT SUM(sales) / NULLIF(COUNT(order_id), 0) FROM data',
+            formulaContract,
+        ).map(issue => issue.code)).not.toContain('missing_aggregation');
+
         const rankContract = buildQueryContract(
             'Which product has the lowest total sales?',
             plan({ intent: 'ranking', dimensions: [{ field: 'product_name' }], limit: 1 }),

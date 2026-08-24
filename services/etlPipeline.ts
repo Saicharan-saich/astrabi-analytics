@@ -1516,6 +1516,10 @@ function buildTimeContext(rows: Record<string, any>[], columns: ColumnDefinition
             const [, yr, m, d] = ymdSlash;
             if (+m <= 12 && +d <= 31) return `${yr}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`;
         }
+        // Bare numeric values (including decimal measurements such as 0.5 or
+        // 8.0 hours) are not dates. JavaScript otherwise interprets several of
+        // them as dates in 2000/2001 and can poison the dataset time context.
+        if (/^[+-]?\d+(?:\.\d+)?$/.test(s)) return null;
         // Try JS Date parse for other formats (e.g., "Jan 3, 2017")
         const d = new Date(s);
         if (!isNaN(d.getTime()) && d.getFullYear() > 1900 && d.getFullYear() < 2100) {

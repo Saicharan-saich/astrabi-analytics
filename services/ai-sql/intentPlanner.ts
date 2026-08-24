@@ -128,13 +128,18 @@ export function detectExplicitAggregation(question: string): 'avg' | 'sum' | 'co
         return 'count_distinct';
     }
 
+    // The interrogative owns the operation: "how many paragraphs in total" is
+    // a row/entity count. A later word such as "total" must not overwrite it
+    // with SUM merely because the entity noun is unfamiliar.
+    if (/\b(how many|count of|number of|count the)\b/.test(q)) return 'count';
+
     // "total orders", "total customers", "total transactions" → COUNT, not SUM
     // These are count-like nouns where "total" means "how many" not "sum of"
     if (/\b(total|number of)\s+(orders|customers|products|items|transactions|records|employees|users|entries|shipments|returns|invoices|tickets|accounts|contracts|deals|leads|contacts)\b/.test(q)) return 'count';
 
     // "total sales", "total revenue", "total profit" → SUM
     if (/\b(total|sum|overall|combined|aggregate)\b/.test(q)) return 'sum';
-    if (/\b(count of|how many|number of|count distinct)\b/.test(q)) return 'count';
+    if (/\b(count distinct)\b/.test(q)) return 'count';
 
     // For min/max: ONLY apply when used as a scalar aggregation function,
     // NOT when used in ranking context ("which day this week had the lowest/highest").
