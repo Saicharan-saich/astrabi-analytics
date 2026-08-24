@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canonicalColumnName, compareResultSets } from '../services/benchmark';
+import { canonicalColumnName, compareResultSets, compareWithheldResultSets } from '../services/benchmark';
 
 describe('benchmark result comparator', () => {
   it('normalizes common aggregate aliases and numeric representations', () => {
@@ -71,5 +71,40 @@ describe('benchmark result comparator', () => {
       { orderMatters: false },
     );
     expect(result.equal).toBe(true);
+  });
+
+  it('normalizes DuckDB Arrow typed-array wrappers for integer aggregates', () => {
+    const result = compareResultSets(
+      [{ total_quantity: 108 }],
+      [{ total_quantity: new Uint32Array([108]) }],
+      { orderMatters: false, strictColumns: true },
+    );
+    expect(result.equal).toBe(true);
+  });
+
+  it('accepts only neutral aggregate rows in the withheld semantic re-check', () => {
+    const expected = [
+      { teacher_name: 'Anne', course_count: 2 },
+      { teacher_name: 'Gustaaf', course_count: 1 },
+    ];
+    const withZeroEntity = [
+      ...expected,
+      { teacher_name: 'Joseph', course_count: 0 },
+    ];
+    const withNonNeutralEntity = [
+      ...expected,
+      { teacher_name: 'Joseph', course_count: 1 },
+    ];
+
+    const accepted = compareWithheldResultSets(expected, withZeroEntity, { orderMatters: false });
+    expect(accepted.equal).toBe(true);
+    expect(accepted.equivalenceRule).toBe('neutral_extra_rows');
+    expect(compareWithheldResultSets(expected, withNonNeutralEntity, { orderMatters: false }).equal).toBe(false);
+  });
+
+  it('does not hide duplicate-grain errors during the withheld re-check', () => {
+    const expected = [{ grade: 9 }, { grade: 10 }];
+    const duplicated = [{ grade: 9 }, { grade: 9 }, { grade: 10 }, { grade: 10 }];
+    expect(compareWithheldResultSets(expected, duplicated, { orderMatters: false }).equal).toBe(false);
   });
 });

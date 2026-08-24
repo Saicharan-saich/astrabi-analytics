@@ -147,6 +147,32 @@ describe('benchmark runner', () => {
     expect(invalid.status).toBe('invalid_sql');
   });
 
+  it('promotes a withheld result only when the gold rows match and extras are neutral', async () => {
+    const semanticCase = {
+      ...firstCase,
+      expectedRows: [{ teacher_name: 'Anne', course_count: 2 }],
+    };
+    const result = await executeBenchmarkCase(semanticCase, dependencies({
+      executeGoldSql: async () => ({ data: semanticCase.expectedRows }),
+      runPipeline: async () => ({
+        sql: 'SELECT teacher_name, course_count FROM data',
+        rawData: [
+          { teacher_name: 'Anne', course_count: 2 },
+          { teacher_name: 'Joseph', course_count: 0 },
+        ],
+        validation: { valid: true },
+        displaySafety: { allowed: false, reasons: ['Contract validator requested review.'] },
+        provenance: { strategy: 'hybrid-plan-llm-sql', model: 'test-model' },
+        tokenUsage: { prompt: 10, completion: 5, total: 15 },
+      }),
+    }));
+
+    expect(result.status).toBe('pass');
+    expect(result.passed).toBe(true);
+    expect(result.safeToDisplay).toBe(false);
+    expect(result.comparison?.equivalenceRule).toBe('neutral_extra_rows');
+  });
+
   it('runs five cases per selected suite in smoke scope and aggregates metrics', async () => {
     const suite = BENCHMARK_SUITES[0];
     const expectedBySql = new Map(suite.cases.map(testCase => [testCase.goldSql, testCase.expectedRows]));
@@ -230,6 +256,63 @@ describe('benchmark runner', () => {
     expect(run.metrics.completed).toBe(5);
     expect(run.metrics.failuresByType.llm_unavailable).toBe(1);
     expect(run.interruptionReason).toBeUndefined();
+  });
+
+  it('retries a transient unavailable response before recording the case', async () => {
+    const suite = BENCHMARK_SUITES[0];
+    const expectedBySql = new Map(suite.cases.map(testCase => [testCase.goldSql, testCase.expectedRows]));
+    const expectedByQuestion = new Map(suite.cases.map(testCase => [testCase.question, testCase]));
+    const waits: number[] = [];
+    let calls = 0;
+    const run = await runBenchmark([suite], dependencies({
+      executeGoldSql: async (_rows, sql) => ({ data: expectedBySql.get(sql) || [] }),
+      runPipeline: async question => {
+        calls += 1;
+        const testCase = expectedByQuestion.get(question)!;
+        if (calls === 1) return {
+          sql: '', rawData: [], provenance: { strategy: 'deterministic', fallbackReason: 'Provider temporarily unavailable' },
+          tokenUsage: { prompt: 0, completion: 0, total: 0 },
+        };
+        return {
+          sql: testCase.goldSql, rawData: testCase.expectedRows,
+          validation: { valid: true }, displaySafety: { allowed: true },
+          provenance: { strategy: 'hybrid-plan-llm-sql', model: 'test-model' },
+          tokenUsage: { prompt: 10, completion: 5, total: 15 },
+        };
+      },
+    }), {
+      scope: 'smoke', appVersion: 'test', maxLlmAttemptsPerCase: 3,
+      llmRetryDelayMs: 10_000, wait: async milliseconds => { waits.push(milliseconds); },
+    });
+
+    expect(run.results).toHaveLength(5);
+    expect(run.results.every(result => result.status === 'pass')).toBe(true);
+    expect(calls).toBe(6);
+    expect(waits).toEqual([10_000]);
+  });
+
+  it('waits for the configured cooldown after every completed case', async () => {
+    const suite = BENCHMARK_SUITES[0];
+    const expectedBySql = new Map(suite.cases.map(testCase => [testCase.goldSql, testCase.expectedRows]));
+    const expectedByQuestion = new Map(suite.cases.map(testCase => [testCase.question, testCase]));
+    const waits: number[] = [];
+    await runBenchmark([suite], dependencies({
+      executeGoldSql: async (_rows, sql) => ({ data: expectedBySql.get(sql) || [] }),
+      runPipeline: async question => {
+        const testCase = expectedByQuestion.get(question)!;
+        return {
+          sql: testCase.goldSql, rawData: testCase.expectedRows,
+          validation: { valid: true }, displaySafety: { allowed: true },
+          provenance: { strategy: 'hybrid-plan-llm-sql', model: 'test-model' },
+          tokenUsage: { prompt: 10, completion: 5, total: 15 },
+        };
+      },
+    }), {
+      scope: 'smoke', appVersion: 'test', interCaseDelayMs: 10_000,
+      wait: async milliseconds => { waits.push(milliseconds); },
+    });
+
+    expect(waits).toEqual([10_000, 10_000, 10_000, 10_000]);
   });
 
   it('halts instead of silently scoring deterministic output after an LLM outage', async () => {

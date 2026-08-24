@@ -374,7 +374,11 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             setLiveResults(current => [...current, result]);
             setProgress({ completed: index + 1, total, question: result.question });
           },
-          minimumCaseIntervalMs: 3250,
+          // Give OpenRouter a full quiet period after every completed case and
+          // retry transient unavailable responses before opening the circuit.
+          interCaseDelayMs: 10_000,
+          maxLlmAttemptsPerCase: 3,
+          llmRetryDelayMs: 10_000,
           // Tolerate one-off provider errors, then pause a sustained outage so
           // the rest of a long run is not mislabelled as local-only evidence.
           stopOnLlmUnavailable: false,
@@ -664,7 +668,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                     <input type="checkbox" checked={confirmed} disabled={isRunning || selectedQuestionCount === 0} onChange={event => setConfirmed(event.target.checked)} className="mt-0.5 accent-violet-600" />
                     <span>
                       <span className={`block text-xs font-bold ${strong}`}>I understand this run will submit {selectedQuestionCount} isolated AI SQL questions.</span>
-                      <span className={`block text-[11px] mt-1 ${muted}`}>This run uses <strong className={strong}>{benchmarkPrivacyMode === 'enhanced' ? 'Better answers' : 'Private'}</strong> mode for every case. Gold outputs and raw fixture rows are never sent to the model.</span>
+                      <span className={`block text-[11px] mt-1 ${muted}`}>This run uses <strong className={strong}>{benchmarkPrivacyMode === 'enhanced' ? 'Better answers' : 'Private'}</strong> mode for every case. Gold outputs and raw fixture rows are never sent to the model. Requests use a 10-second cooldown and up to 3 transient-provider attempts.</span>
                     </span>
                   </label>
                 </div>

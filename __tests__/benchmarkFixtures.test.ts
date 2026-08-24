@@ -48,7 +48,10 @@ describe('AI SQL benchmark fixtures', () => {
             ...testCase.comparison,
             strictColumns: true,
           });
-          expect(comparison.equal, `${testCase.id}: ${comparison.reason}`).toBe(true);
+          expect(
+            comparison.equal,
+            `${testCase.id}: ${comparison.reason}\nExpected: ${JSON.stringify(testCase.expectedRows)}\nExecuted: ${JSON.stringify(executed, (_key, value) => typeof value === 'bigint' ? value.toString() : value)}\nTypes: ${JSON.stringify(Object.fromEntries(Object.entries(executed[0] || {}).map(([key, value]) => [key, { type: typeof value, value: String(value), tag: Object.prototype.toString.call(value) }])))}`,
+          ).toBe(true);
         }
       }
     } finally {

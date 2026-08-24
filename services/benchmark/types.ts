@@ -86,6 +86,10 @@ export interface BenchmarkSuite {
 export interface BenchmarkComparisonResult {
   equal: boolean;
   reason: string;
+  /** Deterministic rule that established equivalence. Useful when a safety
+   * gate withheld an answer whose executed values still satisfy the gold
+   * answer contract. */
+  equivalenceRule?: 'exact_result_set' | 'neutral_extra_rows';
   expectedRowCount: number;
   actualRowCount: number;
   columnMapping: Record<string, string>;
@@ -229,6 +233,12 @@ export interface BenchmarkRunOptions {
   onCaseComplete?: (result: BenchmarkCaseResult, index: number, total: number) => void;
   /** Minimum wall-clock spacing between case starts to respect the AI proxy. */
   minimumCaseIntervalMs?: number;
+  /** Cooldown after a completed case and before the next provider request. */
+  interCaseDelayMs?: number;
+  /** Maximum provider attempts for one case. Only unavailable attempts retry. */
+  maxLlmAttemptsPerCase?: number;
+  /** Delay before retrying an unavailable provider response. */
+  llmRetryDelayMs?: number;
   /** Stop rather than silently benchmarking local fallbacks during an outage. */
   stopOnLlmUnavailable?: boolean;
   /**

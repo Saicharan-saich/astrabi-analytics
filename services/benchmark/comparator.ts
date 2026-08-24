@@ -11,6 +11,10 @@ const AGGREGATION_WORDS = new Set([
   'max', 'maximum', 'value', 'amount', 'metric', 'result',
 ]);
 
+const STRONG_AGGREGATION_WORDS = new Set([
+  'sum', 'total', 'avg', 'average', 'mean', 'count', 'min', 'minimum', 'max', 'maximum',
+]);
+
 function tokenizeColumn(name: string): string[] {
   return String(name)
     .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
@@ -38,6 +42,13 @@ function firstDefinedValue(rows: Record<string, unknown>[], column: string): unk
  * exactly one JSON scalar layer so fixture transport formatting cannot turn a
  * correct execution into a fixture error. Objects and arrays stay untouched. */
 function normalizeScalar(value: unknown): unknown {
+  // DuckDB-WASM/Arrow may expose BIGINT aggregates as a one-value typed
+  // array in Node even though the browser path yields a scalar. Treat that
+  // transport wrapper as the numeric scalar it represents.
+  if (ArrayBuffer.isView(value) && !(value instanceof DataView)) {
+    const serialized = String(value).trim();
+    if (serialized !== '' && Number.isFinite(Number(serialized))) return Number(serialized);
+  }
   if (typeof value !== 'string') return value;
   const trimmed = value.trim();
   if (!(trimmed.startsWith('"') && trimmed.endsWith('"'))) return value;
@@ -208,6 +219,16 @@ function rowsEqual(
   );
 }
 
+function isAggregateEvidenceColumn(name: string): boolean {
+  return tokenizeColumn(name).some(token => STRONG_AGGREGATION_WORDS.has(token));
+}
+
+function isNeutralAggregateValue(value: unknown): boolean {
+  value = normalizeScalar(value);
+  if (value === null || value === undefined) return true;
+  return typeFamily(value) === 'number' && Number(value) === 0;
+}
+
 export function compareResultSets(
   expectedRows: Record<string, unknown>[],
   actualRows: Record<string, unknown>[],
@@ -277,8 +298,73 @@ export function compareResultSets(
     ...resultBase,
     columnMapping: mapping,
     equal: true,
+    equivalenceRule: 'exact_result_set',
     reason: options.orderMatters
       ? 'Values and row order match the gold output.'
       : 'Values match the gold output (row order ignored).',
+  };
+}
+
+/**
+ * Conservative second-pass comparator for answers withheld by the product
+ * safety contract. It accepts all normal result-set equivalences and one
+ * additional, explainable case: the candidate contains every gold row plus
+ * only zero/null aggregate rows for additional entities (for example a LEFT
+ * JOIN that includes teachers with zero courses).
+ *
+ * It deliberately does not accept duplicate grain, partial containment,
+ * scalar roll-ups, or non-neutral extra rows. Those remain genuine failures.
+ */
+export function compareWithheldResultSets(
+  expectedRows: Record<string, unknown>[],
+  actualRows: Record<string, unknown>[],
+  options: BenchmarkComparisonOptions,
+): BenchmarkComparisonResult {
+  const direct = compareResultSets(expectedRows, actualRows, {
+    ...options,
+    orderMatters: false,
+    strictColumns: false,
+  });
+  if (direct.equal) return direct;
+
+  const expected = Array.isArray(expectedRows) ? expectedRows : [];
+  const actual = Array.isArray(actualRows) ? actualRows : [];
+  const resultBase = {
+    expectedRowCount: expected.length,
+    actualRowCount: actual.length,
+    columnMapping: {} as Record<string, string>,
+  };
+  if (!expected.length || actual.length <= expected.length) return direct;
+
+  const { mapping, error } = buildColumnMapping(expected, actual, false);
+  if (error) return { ...resultBase, equal: false, reason: error, columnMapping: mapping };
+
+  const aggregateColumns = Object.keys(mapping).filter(isAggregateEvidenceColumn);
+  if (!aggregateColumns.length) return direct;
+
+  const absoluteTolerance = options.absoluteTolerance ?? DEFAULT_ABSOLUTE_TOLERANCE;
+  const relativeTolerance = options.relativeTolerance ?? DEFAULT_RELATIVE_TOLERANCE;
+  const unmatched = new Set(actual.map((_, index) => index));
+  for (const expectedRow of expected) {
+    const match = [...unmatched].find(index =>
+      rowsEqual(expectedRow, actual[index], mapping, absoluteTolerance, relativeTolerance)
+    );
+    if (match === undefined) return direct;
+    unmatched.delete(match);
+  }
+
+  const neutralExtras = [...unmatched].every(index =>
+    aggregateColumns.every(expectedColumn =>
+      isNeutralAggregateValue(actual[index][mapping[expectedColumn]])
+    )
+  );
+  if (!neutralExtras) return direct;
+
+  return {
+    ...resultBase,
+    equal: true,
+    columnMapping: mapping,
+    equivalenceRule: 'neutral_extra_rows',
+    reason: `All gold rows matched; ${unmatched.size} additional candidate row${unmatched.size === 1 ? '' : 's'} contained only zero/null aggregate evidence.`,
   };
 }
