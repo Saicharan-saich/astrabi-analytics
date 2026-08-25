@@ -116,9 +116,11 @@ function extractJSONObject(content: string): DynamicQuerySpec | null {
     try { return JSON.parse(match[0]) as DynamicQuerySpec; } catch { return null; }
 }
 
-function uniqueStrings(values: string[]): string[] {
-    return values.filter((value, index, all) => value
-        && all.findIndex(other => other.toLowerCase() === value.toLowerCase()) === index);
+function uniqueStrings(values: unknown[]): string[] {
+    const strings = values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    return strings.filter((value, index, all) =>
+        all.findIndex(other => other.toLowerCase() === value.toLowerCase()) === index
+    );
 }
 
 /** Freeze model planning to the locally established answer shape. */
@@ -139,7 +141,9 @@ export function reconcileQuerySpecWithCanonicalIntent(
         const existingMeasures = spec.operations.measures || [];
         spec.operations.measures = canonical.measures.map(measure => {
             const aggregation = measure.aggregation;
-            const existing = existingMeasures.find(measure => measure.aggregation?.toLowerCase() === aggregation)
+            const existing = existingMeasures.find(measure =>
+                typeof measure.aggregation === 'string' && measure.aggregation.toLowerCase() === aggregation
+            )
                 || existingMeasures[0];
             if (existing) return { ...existing, field: measure.field || existing.field, aggregation };
             if (measure.field) return { field: measure.field, aggregation };
@@ -151,7 +155,9 @@ export function reconcileQuerySpecWithCanonicalIntent(
         if (canonical.grainFields.length) {
             const existingGroups = spec.operations.groupBy || [];
             spec.operations.groupBy = canonical.grainFields.map(field =>
-                existingGroups.find(group => group.field?.toLowerCase() === field.toLowerCase()) || { field }
+                existingGroups.find(group =>
+                    typeof group.field === 'string' && group.field.toLowerCase() === field.toLowerCase()
+                ) || { field }
             );
         } else if (canonical.cardinality === 'scalar') {
             spec.operations.groupBy = [];
@@ -164,7 +170,7 @@ export function reconcileQuerySpecWithCanonicalIntent(
         const existingFilters = spec.operations.filters || [];
         for (const predicate of canonical.predicates.filter(item => item.confidence === 'high' && item.scope === 'where')) {
             const existing = existingFilters.find(filter =>
-                filter.field?.toLowerCase() === predicate.field.toLowerCase()
+                typeof filter.field === 'string' && filter.field.toLowerCase() === predicate.field.toLowerCase()
             );
             const canonicalFilter = {
                 ...(existing || {}),
@@ -180,7 +186,8 @@ export function reconcileQuerySpecWithCanonicalIntent(
         const existingHaving = spec.operations.having || [];
         for (const predicate of canonical.predicates.filter(item => item.confidence === 'high' && item.scope === 'having')) {
             const alreadyPresent = existingHaving.some(item =>
-                item.expression?.toLowerCase().includes(predicate.field.toLowerCase())
+                typeof item.expression === 'string'
+                && item.expression.toLowerCase().includes(predicate.field.toLowerCase())
             );
             if (!alreadyPresent) {
                 existingHaving.push({

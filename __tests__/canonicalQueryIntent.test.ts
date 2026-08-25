@@ -160,4 +160,32 @@ describe('canonical query intent', () => {
         // so the helper aggregate does not leak into the visible answer.
         expect(spec.expectedResult.columns).toEqual(['PetType']);
     });
+
+    it('normalizes malformed model arrays instead of throwing a toLowerCase runtime error', () => {
+        const canonical = buildCanonicalQueryIntent(buildQueryContract(
+            'What is the average weight for each type of pet?',
+            plan({
+                intent: 'breakdown',
+                dimensions: [{ field: 'PetType' }],
+                metrics: [{ field: 'Weight', agg: 'avg' }],
+            }),
+            [],
+            model,
+        ));
+        const malformed = {
+            goal: 'pets',
+            operations: {
+                measures: [{ field: 'Weight', aggregation: { bad: true } }],
+                groupBy: [{ field: { bad: true } }],
+                filters: [{ field: 7, operator: '=', value: 'cat' }],
+                having: [{ expression: { bad: true } }],
+            },
+            expectedResult: { grain: 'rows', columns: ['PetType', { bad: true }, null] },
+            assumptions: [],
+        } as any;
+
+        expect(() => reconcileQuerySpecWithCanonicalIntent(malformed, canonical)).not.toThrow();
+        expect(reconcileQuerySpecWithCanonicalIntent(malformed, canonical).expectedResult.columns)
+            .toEqual(['PetType', 'AVG(Weight)']);
+    });
 });

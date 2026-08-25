@@ -41,7 +41,7 @@ import { buildQueryPlan } from '../queryPlan/buildQueryPlan';
 import { compileSQL } from '../queryPlan/sqlCompiler';
 import { getDates } from '../dateHelpers';
 import { applyTableCalculation } from '../../utils/tableCalculations';
-import { auditSqlLiterals, buildValueCatalog, groundFilters, groundSqlLiterals } from './valueGrounding';
+import { auditSqlLiterals, buildValueCatalog, groundFilters, groundQuestionLiterals, groundSqlLiterals } from './valueGrounding';
 import { verifyPlan } from './planVerification';
 // ─── Ambiguity Intelligence Layer ────────────────────────────────
 import { detectAmbiguities } from './ambiguityDetector';
@@ -262,6 +262,7 @@ export async function runAISQLPipeline(
     }
 
     // ─── Step 1c: Value Catalog + governed fallback preparation ───
+    const joinCtx = discoverJoinContext(dataset.relatedTables, dataset.sourceSchema);
     let _valueCatalog: ReturnType<typeof buildValueCatalog> | null = null;
     try {
         _valueCatalog = buildValueCatalog(dataset.rows, semanticModel, 60, dataset.relatedTables);
@@ -273,7 +274,6 @@ export async function runAISQLPipeline(
     let directSchemaText = '';
     let activeQueryContract: QueryContract | undefined;
     let activeCanonicalIntent: CanonicalQueryIntent | undefined;
-    const joinCtx = discoverJoinContext(dataset.relatedTables, dataset.sourceSchema);
     // The hybrid path deliberately starts with the local semantic engines, then
     // asks a selected GPT-5.6 model to write plan-constrained SQL. The LLM never
     // receives dataset rows; local DuckDB remains the only execution engine.
@@ -466,7 +466,30 @@ export async function runAISQLPipeline(
     // when the LLM planner is unavailable/rate-limited.
     try {
         if (!_valueCatalog) throw new Error('value catalog unavailable');
-        const grounded = groundFilters(question, _valueCatalog, plan, semanticModel);
+        // Resolve only literals already typed by the user across every physical
+        // table. This local lookup is not capped by domain cardinality and does
+        // not expose a value catalogue or any unseen dataset value.
+        const literalGrounding = groundQuestionLiterals(
+            question,
+            dataset.rows,
+            dataset.relatedTables,
+            plan,
+        );
+        if (literalGrounding.added.length > 0) {
+            plan.filters.push(...literalGrounding.added);
+            console.log(`[Pipeline] Exact literal grounding recovered ${literalGrounding.added.length} filter(s): ${literalGrounding.added.map(filter => `${filter.grounding?.table ? `${filter.grounding.table}.` : ''}${filter.field} ${filter.op} ${JSON.stringify(filter.value)}`).join(', ')}`);
+        }
+        if (literalGrounding.ambiguous.length > 0) {
+            console.warn(`[Pipeline] Exact literal grounding left ${literalGrounding.ambiguous.length} ambiguous user-supplied literal(s) unresolved.`);
+        }
+
+        const entityNames = [
+            ...(joinCtx?.tableNames || []),
+            ...semanticModel.fields
+                .filter(field => field.semanticType === 'identifier' || /(?:^|_)id$/i.test(field.name))
+                .map(field => field.name.replace(/(?:^|_)(?:id|key|code)$/i, '')),
+        ];
+        const grounded = groundFilters(question, _valueCatalog, plan, semanticModel, { entityNames });
         if (grounded.added.length > 0) {
             plan.filters.push(...grounded.added);
             console.log(`[Pipeline] Value grounding recovered ${grounded.added.length} filter(s): ${grounded.added.map(f => `${f.field} ${f.op} ${JSON.stringify(f.value)}`).join(', ')}`);

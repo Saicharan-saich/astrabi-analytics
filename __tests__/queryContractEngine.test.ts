@@ -154,6 +154,66 @@ Evidence: expense refers to expense_description; spend more than fifty dollars o
             .toContain('missing_comparator');
     });
 
+    it('makes an exact local cross-table literal binding authoritative', () => {
+        const schema = {
+            tables: [
+                { name: 'member', rowCount: 33, columns: [{ name: 'member_id', isPK: true }, { name: 'position' }, { name: 'link_to_major' }] },
+                { name: 'major', rowCount: 113, columns: [{ name: 'major_id', isPK: true }, { name: 'major_name' }] },
+            ],
+            links: [
+                { leftTable: 'member', leftColumn: 'link_to_major', rightTable: 'major', rightColumn: 'major_id', type: 'fk' as const },
+            ],
+        };
+        const question = "How many members of the Student Club have major in 'Physics Teaching'?";
+        const contract = buildQueryContract(
+            question,
+            plan({
+                metrics: [{ field: '*', agg: 'count' }],
+                filters: [{
+                    field: 'major_name',
+                    op: '=',
+                    value: 'Physics Teaching',
+                    grounding: {
+                        kind: 'question_literal_exact',
+                        table: 'major',
+                        column: 'major_name',
+                        confidence: 'exact',
+                    },
+                }],
+            }),
+            [],
+            {
+                ...model,
+                fields: [
+                    field('member_id', 'dimension', 'identifier'),
+                    field('position', 'dimension', 'category'),
+                    field('link_to_major', 'dimension', 'identifier'),
+                ],
+            },
+            schema,
+        );
+
+        expect(contract.requiredTables).toEqual(expect.arrayContaining(['member', 'major']));
+        expect(contract.requiredPredicates).toContainEqual(expect.objectContaining({
+            table: 'major',
+            field: 'major_name',
+            operator: '=',
+            value: 'Physics Teaching',
+            confidence: 'high',
+        }));
+        expect(validateSQLAgainstContract(
+            `SELECT COUNT(*) FROM member WHERE position = 'Member'`,
+            contract,
+        ).map(issue => issue.code)).toEqual(expect.arrayContaining(['missing_required_table', 'missing_filter']));
+        expect(validateSQLAgainstContract(
+            `SELECT COUNT(m.member_id)
+             FROM member m
+             JOIN major j ON m.link_to_major = j.major_id
+             WHERE j.major_name = 'Physics Teaching'`,
+            contract,
+        )).toEqual([]);
+    });
+
     it('requires set-difference logic for absence questions', () => {
         const schema = {
             tables: [

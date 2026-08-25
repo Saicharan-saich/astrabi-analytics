@@ -24,6 +24,7 @@ const contract: QueryContract = {
   requiresDistinctProjection: false,
   requiredOutputFields: [],
   uniqueResultFields: [],
+  allowedGroupingFields: [],
   strictOutputProjection: false,
   forbiddenOutputFields: [],
   requiresRowProjection: false,
@@ -76,7 +77,7 @@ describe('direct SQL query-contract repair', () => {
     expect(mockedFetch).toHaveBeenCalledTimes(4);
   });
 
-  it('fails closed when the focused repair still violates the contract', async () => {
+  it('retains safe read-only SQL with advisory warnings when focused repair still violates the contract', async () => {
     mockedFetch
       .mockResolvedValueOnce(response(JSON.stringify({
         goal: 'Average sales',
@@ -98,7 +99,11 @@ describe('direct SQL query-contract repair', () => {
       contract,
     );
 
-    expect(result.blocked).toBe(true);
-    expect(result.error).toContain('after repair');
+    expect(result.blocked).toBeUndefined();
+    expect(result.error).toBeUndefined();
+    expect(result.sql).toContain('SUM(sales)');
+    expect(result.contractWarnings).toEqual(expect.arrayContaining([
+      expect.stringContaining('requires AVG semantics'),
+    ]));
   });
 });

@@ -59,8 +59,11 @@ export interface CanonicalReconciliation {
     changes: string[];
 }
 
-function unique(values: string[]): string[] {
-    return values.filter((value, index, all) => value && all.findIndex(other => other.toLowerCase() === value.toLowerCase()) === index);
+function unique(values: unknown[]): string[] {
+    const strings = values.filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+    return strings.filter((value, index, all) =>
+        all.findIndex(other => other.toLowerCase() === value.toLowerCase()) === index
+    );
 }
 
 export function buildCanonicalQueryIntent(contract: QueryContract): CanonicalQueryIntent {

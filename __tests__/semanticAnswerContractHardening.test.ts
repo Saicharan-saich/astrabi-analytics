@@ -14,7 +14,7 @@ import type { AnalysisPlan, SemanticField, SemanticModel } from '../services/ai-
 function field(
     name: string,
     role: SemanticField['role'],
-    semanticType: SemanticField['semanticType'] = role === 'metric' ? 'number' : 'category',
+    semanticType: SemanticField['semanticType'] = role === 'metric' ? 'quantity' : 'category',
     synonyms: string[] = [],
 ): SemanticField {
     return {
@@ -65,7 +65,7 @@ describe('semantic answer-contract hardening', () => {
             field('customer_segment', 'dimension', 'category', ['segment']),
             field('customer_name', 'dimension', 'category', ['customer']),
             field('category', 'dimension'),
-            field('quantity', 'metric', 'integer', ['units']),
+            field('quantity', 'metric', 'quantity', ['units']),
         ]);
         const contract = buildQueryContract(question, plan(question, {
             intent: 'breakdown',
@@ -89,7 +89,7 @@ describe('semantic answer-contract hardening', () => {
         const question = 'Which industries have average satisfaction score at least 70?';
         const semanticModel = model([
             field('industry', 'dimension'),
-            field('satisfaction_score', 'metric', 'number', ['score']),
+            field('satisfaction_score', 'metric', 'quantity', ['score']),
         ]);
         const contract = buildQueryContract(question, plan(question, {
             intent: 'breakdown',
@@ -174,7 +174,7 @@ describe('semantic answer-contract hardening', () => {
         const question = 'What are the record companies that are used by both orchestras founded before 2003 and those founded after 2003?';
         const semanticModel = model([
             field('Record_Company', 'dimension'),
-            field('Year_of_Founded', 'dimension', 'integer'),
+            field('Year_of_Founded', 'dimension', 'quantity'),
         ]);
         const draft = plan(question, {
             intent: 'breakdown',

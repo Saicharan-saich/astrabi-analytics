@@ -191,6 +191,17 @@ export interface PlanFilter {
     includeNonPositive?: boolean;
     /** Multiplier for relative thresholds, e.g. 1.2 for "20% higher than average". */
     multiplier?: number;
+    /**
+     * Evidence produced locally from a literal the user supplied in the
+     * question. Only the verified table/column binding is retained; no value
+     * catalogue or additional dataset values leave the browser.
+     */
+    grounding?: {
+        kind: 'question_literal_exact';
+        table?: string;
+        column: string;
+        confidence: 'exact';
+    };
 }
 
 export interface PlanSort {

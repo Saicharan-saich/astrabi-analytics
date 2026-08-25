@@ -207,14 +207,188 @@ export interface GroundingResult {
     setLogicFields: string[];
 }
 
+export interface LiteralGroundingResult {
+    /** Exact filters resolved from literals already present in the question. */
+    added: PlanFilter[];
+    /** User-supplied literals found in more than one plausible field. */
+    ambiguous: string[];
+    /** User-supplied literals not present in any local physical field. */
+    unmatched: string[];
+}
+
+export interface GroundingOptions {
+    /** Physical/business entities whose noun mentions must not become values. */
+    entityNames?: string[];
+}
+
+type LiteralFieldMatch = { table: string; column: string; value: string };
+
+function normalizedText(value: unknown): string {
+    return String(value ?? '').trim().toLowerCase();
+}
+
+function normalizedEntity(value: unknown): string {
+    return normalizedText(value)
+        .replace(/[_-]+/g, ' ')
+        .replace(/[^a-z0-9 ]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/(?:ies|sses|xes|zes|ches|shes)$/i, ending => ending === 'ies' ? 'y' : ending.replace(/es$/, ''))
+        .replace(/s$/i, '');
+}
+
+function extractQuestionLiterals(question: string): string[] {
+    const values: string[] = [];
+    const seen = new Set<string>();
+    const pattern = /'((?:[^']|'')+)'|"((?:[^"]|"")+)"|[‘’]([^‘’]+)[‘’]|[“”]([^“”]+)[“”]/g;
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(question)) !== null) {
+        const value = (match[1] || match[2] || match[3] || match[4] || '')
+            .replace(/''/g, "'")
+            .replace(/""/g, '"')
+            .trim();
+        const key = normalizedText(value);
+        // Date ranges belong to the time resolver, not categorical grounding.
+        if (!value || /^\d{4}-\d{1,2}-\d{1,2}(?:[ t].*)?$/i.test(value) || seen.has(key)) continue;
+        seen.add(key);
+        values.push(value);
+    }
+    return values;
+}
+
+function chooseLiteralMatch(
+    question: string,
+    literal: string,
+    matches: LiteralFieldMatch[],
+): LiteralFieldMatch | undefined {
+    if (matches.length === 1) return matches[0];
+    const literalAt = normalizedText(question).indexOf(normalizedText(literal));
+    const window = normalizedText(question).slice(Math.max(0, literalAt - 90), literalAt + literal.length + 90)
+        .replace(/[_-]+/g, ' ');
+    const ranked = matches.map(match => {
+        const column = normalizedText(match.column).replace(/[_-]+/g, ' ');
+        const table = normalizedText(match.table).replace(/[_-]+/g, ' ');
+        let score = 0;
+        if (column && window.includes(column)) score += 4;
+        if (table && window.includes(table)) score += 2;
+        return { match, score };
+    }).sort((a, b) => b.score - a.score);
+    return ranked[0]?.score > 0 && ranked[0].score > (ranked[1]?.score || 0)
+        ? ranked[0].match
+        : undefined;
+}
+
+/**
+ * Resolve only literals already typed by the user against all physical tables.
+ * This intentionally ignores the low-cardinality catalogue limit: looking up a
+ * supplied literal does not disclose an unseen domain. Rows stay local and the
+ * returned evidence contains only the supplied value and its exact field.
+ */
+export function groundQuestionLiterals(
+    question: string,
+    rows: Record<string, any>[],
+    relatedTables: Array<{ name: string; rows: Record<string, any>[] }> | undefined,
+    plan: AnalysisPlan,
+): LiteralGroundingResult {
+    const literals = extractQuestionLiterals(question);
+    const hasPhysicalTableNames = Boolean(relatedTables?.length);
+    const physicalTables = hasPhysicalTableNames
+        ? relatedTables
+        : [{ name: 'data', rows }];
+    const matchesByLiteral = new Map<string, LiteralFieldMatch[]>();
+    for (const literal of literals) matchesByLiteral.set(normalizedText(literal), []);
+
+    // One local pass resolves every supplied literal. No domain is materialised
+    // or returned, which keeps cost bounded and the privacy boundary explicit.
+    for (const table of physicalTables) {
+        const tableRows = table.rows || [];
+        if (!tableRows.length) continue;
+        const columns = Object.keys(tableRows[0] || {});
+        const found = new Set<string>();
+        for (const row of tableRows) {
+            for (const column of columns) {
+                const raw = row?.[column];
+                if (raw === null || raw === undefined || typeof raw === 'object') continue;
+                const key = normalizedText(raw);
+                if (!matchesByLiteral.has(key)) continue;
+                const identity = `${normalizedText(table.name)}.${normalizedText(column)}:${key}`;
+                if (found.has(identity)) continue;
+                found.add(identity);
+                matchesByLiteral.get(key)!.push({ table: table.name, column, value: String(raw).trim() });
+            }
+        }
+    }
+
+    const chosen: LiteralFieldMatch[] = [];
+    const ambiguous: string[] = [];
+    const unmatched: string[] = [];
+    for (const literal of literals) {
+        const matches = matchesByLiteral.get(normalizedText(literal)) || [];
+        if (matches.length === 0) { unmatched.push(literal); continue; }
+        const match = chooseLiteralMatch(question, literal, matches);
+        if (!match) { ambiguous.push(literal); continue; }
+        chosen.push(match);
+    }
+
+    const perField = new Map<string, { match: LiteralFieldMatch; values: Set<string>; negative: Set<string> }>();
+    const questionLower = question.toLowerCase();
+    for (const match of chosen) {
+        if (alreadyFiltered(plan, match.column, match.value)) continue;
+        const literalAt = questionLower.indexOf(match.value.toLowerCase());
+        const negated = literalAt >= 0 && isNegated(questionLower, literalAt);
+        const identity = `${normalizedText(match.table)}.${normalizedText(match.column)}`;
+        const bucket = perField.get(identity) || { match, values: new Set<string>(), negative: new Set<string>() };
+        (negated ? bucket.negative : bucket.values).add(match.value);
+        perField.set(identity, bucket);
+    }
+
+    const added: PlanFilter[] = [];
+    for (const { match, values, negative } of perField.values()) {
+        // Mixed polarity is set/exclusion logic and must not be guessed here.
+        if (values.size > 0 && negative.size > 0) {
+            ambiguous.push(...values, ...negative);
+            continue;
+        }
+        const selected = values.size ? values : negative;
+        const isNegative = negative.size > 0;
+        added.push({
+            field: match.column,
+            op: selected.size > 1
+                ? isNegative ? 'not_in' : 'in'
+                : isNegative ? '!=' : '=',
+            value: selected.size > 1 ? [...selected] : [...selected][0],
+            grounding: {
+                kind: 'question_literal_exact',
+                table: hasPhysicalTableNames ? match.table : undefined,
+                column: match.column,
+                confidence: 'exact',
+            },
+        });
+    }
+
+    return { added, ambiguous: [...new Set(ambiguous)], unmatched };
+}
+
 /** Does the plan already constrain `field` by `value` (either polarity)? */
 function alreadyFiltered(plan: AnalysisPlan, field: string, value: string): boolean {
     const v = value.toLowerCase();
     return plan.filters.some(f => {
-        if (f.field.toLowerCase() !== field.toLowerCase()) return false;
+        const planned = String(f.field || '').toLowerCase();
+        const requested = String(field || '').toLowerCase();
+        if (planned !== requested && !planned.endsWith(`.${requested}`) && !requested.endsWith(`.${planned}`)) return false;
         const fv = Array.isArray(f.value) ? f.value.map(x => String(x).toLowerCase()) : [String(f.value).toLowerCase()];
         return fv.includes(v);
     });
+}
+
+function maskQuotedText(question: string): string {
+    return question.replace(/'((?:[^']|'')*)'|"((?:[^"]|"")*)"|[‘’]([^‘’]*)[‘’]|[“”]([^“”]*)[“”]/g, match => ' '.repeat(match.length));
+}
+
+function explicitFieldCue(question: string, field: string, at: number): boolean {
+    const window = question.slice(Math.max(0, at - 48), at).replace(/[_-]+/g, ' ');
+    const name = field.split('.').pop()!.replace(/[_-]+/g, ' ').toLowerCase();
+    return name.length > 1 && window.toLowerCase().includes(name);
 }
 
 /**
@@ -226,10 +400,19 @@ export function groundFilters(
     catalog: ValueCatalog,
     plan: AnalysisPlan,
     model: SemanticModel,
+    options: GroundingOptions = {},
 ): GroundingResult {
-    const qLower = ` ${question.toLowerCase()} `;
+    // Exact quoted values are handled separately. Removing them here prevents
+    // the fuzzy low-cardinality path from adding a second, competing filter.
+    const qLower = ` ${maskQuotedText(question).toLowerCase()} `;
     const added: PlanFilter[] = [];
     const ambiguous: string[] = [];
+    const entityNames = new Set([
+        ...(options.entityNames || []),
+        ...model.fields
+            .filter(field => field.semanticType === 'identifier' || /(?:^|_)id$/i.test(field.name))
+            .map(field => field.name.replace(/(?:^|_)(?:id|key|code)$/i, '')),
+    ].map(normalizedEntity).filter(Boolean));
 
     // field → { pos: Set<value>, neg: Set<value> }
     const perField = new Map<string, { pos: Set<string>; neg: Set<string> }>();
@@ -239,13 +422,22 @@ export function groundFilters(
         // ("Beverages" matches the value "Beverage").
         const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const re = new RegExp(`(^|[^a-z0-9])${escaped}(?:s|es)?([^a-z0-9]|$)`, 'i');
-        const m = re.exec(qLower);
+        let m = re.exec(qLower);
         if (!m) continue;
 
         const eligibleEntries = entries.filter(entry => entry.filterEligible !== false);
         if (eligibleEntries.length > 1) { ambiguous.push(key); continue; } // belongs to 2+ plan columns
         if (eligibleEntries.length === 0) continue; // related-table values only correct generated SQL
         const { field, value } = eligibleEntries[0];
+        // An entity noun such as "members" identifies the table/grain. It is
+        // not the categorical value "Member" unless the question also names
+        // the physical filter field (for example "position Member").
+        if (entityNames.has(normalizedEntity(key)) && !explicitFieldCue(qLower, field, m.index)) {
+            const matches = [...qLower.matchAll(new RegExp(re.source, 'gi'))];
+            const explicit = matches.find(match => explicitFieldCue(qLower, field, match.index || 0));
+            if (!explicit) continue;
+            m = explicit;
+        }
         if (alreadyFiltered(plan, field, value)) continue;
 
         const at = m.index + m[1].length;

@@ -111,6 +111,7 @@ export interface QueryContract {
      * question commonly combines joins, row filters, grouped thresholds and
      * ranking in one request. */
     requiredPredicates?: Array<{
+        table?: string;
         field: string;
         operator: AnalysisPlan['filters'][number]['op'];
         value: unknown;
@@ -836,12 +837,27 @@ function resolveRelativeComparison(
 function resolveRequiredPredicates(
     plan: AnalysisPlan,
     model?: SemanticModel,
+    schema?: QuerySchemaContext,
 ): QueryContract['requiredPredicates'] {
     const knownFields = new Set((model?.fields || []).map(field => field.name.toLowerCase()));
+    const physicalFieldCounts = new Map<string, number>();
+    for (const table of schema?.tables || []) {
+        for (const column of table.columns) {
+            const key = column.name.toLowerCase();
+            physicalFieldCounts.set(key, (physicalFieldCounts.get(key) || 0) + 1);
+        }
+    }
+    const physicalFields = new Set((schema?.tables || []).flatMap(table =>
+        table.columns.flatMap(column => [
+            column.name.toLowerCase(),
+            `${table.name}.${column.name}`.toLowerCase(),
+        ])
+    ));
     return (plan.filters || [])
         .filter(filter => !['above_avg', 'below_avg'].includes(filter.op))
         .filter(filter => filter.field && filter.field !== '*')
         .map(filter => ({
+            table: filter.grounding?.table,
             field: filter.field,
             operator: filter.op,
             value: filter.value,
@@ -849,7 +865,11 @@ function resolveRequiredPredicates(
             // Only schema-grounded predicates become blocking constraints. An
             // unknown planner field remains useful context for model repair but
             // cannot turn otherwise valid SQL into an application error.
-            confidence: (!model || knownFields.has(filter.field.toLowerCase()))
+            confidence: filter.grounding?.kind === 'question_literal_exact'
+                || !model
+                || knownFields.has(String(filter.field).toLowerCase())
+                || physicalFieldCounts.get(String(filter.field).toLowerCase()) === 1
+                || physicalFields.has(`${filter.grounding?.table || ''}.${String(filter.field)}`.toLowerCase())
                 ? 'high' as const
                 : 'medium' as const,
         }));
@@ -908,11 +928,17 @@ function resolveRequiredTables(
     if (!schema || schema.tables.length <= 1) return [];
     const qTokens = new Set(words(question));
     const planFields = new Set([
-        ...plan.dimensions.map(d => d.field.toLowerCase()),
-        ...plan.metrics.map(m => m.field.toLowerCase()),
-        ...plan.filters.map(f => f.field.toLowerCase()),
+        ...plan.dimensions.map(d => String(d.field).toLowerCase()),
+        ...plan.metrics.map(m => String(m.field).toLowerCase()),
+        ...plan.filters.flatMap(f => [
+            String(f.field).toLowerCase(),
+            f.grounding?.table ? `${f.grounding.table}.${String(f.field)}`.toLowerCase() : '',
+        ]),
     ]);
     const required = new Set<string>();
+    for (const filter of plan.filters) {
+        if (filter.grounding?.table) required.add(filter.grounding.table);
+    }
     if (outputEntity) required.add(outputEntity.table);
     for (const field of requiredOutputFields) required.add(field.table);
 
@@ -931,8 +957,9 @@ function resolveRequiredTables(
             // A plan field that exists in several tables is not evidence that
             // every one of those tables is required. Force a join only when
             // ownership is unique or the table itself is named in the question.
-            if (planFields.has(column.name.toLowerCase())
-                && (columnOwners.length === 1 || tableMentioned)) return true;
+            const qualifiedPlanField = planFields.has(`${table.name}.${column.name}`.toLowerCase());
+            if ((planFields.has(column.name.toLowerCase()) || qualifiedPlanField)
+                && (columnOwners.length === 1 || tableMentioned || qualifiedPlanField)) return true;
             const semantic = words(column.name).filter(token => !['id', 'key', 'code', 'name', 'title', 'label', 'description'].includes(token));
             return semantic.length > 0 && semantic.some(token => conceptMatches(token, qTokens));
         });
@@ -1135,7 +1162,7 @@ export function buildQueryContract(
     }
     if (expectedAggregation && expectedAggregations.length === 0) expectedAggregations = [expectedAggregation];
     const expectedMeasures = resolveExpectedMeasures(question, expectedAggregations, model);
-    const requiredPredicates = resolveRequiredPredicates(plan, model);
+    const requiredPredicates = resolveRequiredPredicates(plan, model, schema);
     const rankingTarget = resolveRankingTarget(
         question,
         plan,
@@ -1237,7 +1264,7 @@ export function buildQueryContract(
         requirements.push(`Use every explicitly requested aggregate operation: ${expectedAggregations.map(aggregation => aggregation.toUpperCase()).join(' and ')}. Do not silently drop one measure.`);
     }
     for (const predicate of requiredPredicates.filter(item => item.confidence === 'high')) {
-        requirements.push(`Preserve the ${predicate.scope.toUpperCase()} predicate on "${predicate.field}" with operator ${predicate.operator}; filtering fields do not automatically become visible output fields or grouping dimensions.`);
+        requirements.push(`Preserve the ${predicate.scope.toUpperCase()} predicate on "${predicate.table ? `${predicate.table}.` : ''}${predicate.field}" with operator ${predicate.operator}; filtering fields do not automatically become visible output fields or grouping dimensions.`);
     }
     if (threshold) requirements.push(`${threshold.requiresHaving ? 'Apply the aggregate threshold in HAVING' : 'Apply the threshold'}: ${threshold.operator} ${threshold.value}.`);
     if (ratio?.basis === 'row_count') requirements.push('Calculate the requested ratio from row/entity counts, not from summed monetary or quantity values.');
