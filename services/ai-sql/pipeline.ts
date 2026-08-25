@@ -59,6 +59,7 @@ import { getEffectivePrivacyMode, type PrivacyMode } from './privacyMode';
 import { getSelection, applySelection } from './privacySelection';
 import {
     buildQueryContract,
+    normalizeResultToContract,
     validateResultAgainstContract,
     validateSQLAgainstContract,
     type QueryContract,
@@ -1089,6 +1090,13 @@ export async function runAISQLPipeline(
     // still answer a different question (for example, LIMIT 1 for "each group"
     // or a scalar aggregate for "all rows"). Compare only locally computed row
     // counts against the pre-SQL contract; no result values leave the browser.
+    if (activeQueryContract) {
+        const normalizedRows = normalizeResultToContract(execResult.data || [], activeQueryContract);
+        if (normalizedRows.length !== (execResult.data || []).length) {
+            console.log(`[Pipeline] Set-result normalization removed ${(execResult.data || []).length - normalizedRows.length} duplicate row(s).`);
+            execResult = { ...execResult, data: normalizedRows };
+        }
+    }
     let resultContractIssues = activeQueryContract
         ? validateResultAgainstContract(execResult.data || [], activeQueryContract)
             .filter(issue => issue.severity === 'error')
@@ -1119,14 +1127,17 @@ export async function runAISQLPipeline(
                     semanticModel.timeContext,
                     dataset.relatedTables,
                 );
-                const repairedContractIssues = repairedExecution.error || !activeQueryContract
+                const normalizedRepairedExecution = !repairedExecution.error && activeQueryContract
+                    ? { ...repairedExecution, data: normalizeResultToContract(repairedExecution.data || [], activeQueryContract) }
+                    : repairedExecution;
+                const repairedContractIssues = normalizedRepairedExecution.error || !activeQueryContract
                     ? resultContractIssues
-                    : validateResultAgainstContract(repairedExecution.data || [], activeQueryContract)
+                    : validateResultAgainstContract(normalizedRepairedExecution.data || [], activeQueryContract)
                         .filter(issue => issue.severity === 'error');
-                if (!repairedExecution.error && repairedContractIssues.length === 0) {
+                if (!normalizedRepairedExecution.error && repairedContractIssues.length === 0) {
                     currentSQL = repairedSQL;
                     directSQL = repairedSQL;
-                    execResult = repairedExecution;
+                    execResult = normalizedRepairedExecution;
                     validation = validateSQL(currentSQL, plan, semanticModel);
                     resultContractIssues = [];
                     repairAttempts++;
@@ -1153,13 +1164,16 @@ export async function runAISQLPipeline(
                 semanticModel.timeContext,
                 dataset.relatedTables,
             );
-            const deterministicResultIssues = !deterministicExecution.error && activeQueryContract
-                ? validateResultAgainstContract(deterministicExecution.data || [], activeQueryContract)
+            const normalizedDeterministicExecution = !deterministicExecution.error && activeQueryContract
+                ? { ...deterministicExecution, data: normalizeResultToContract(deterministicExecution.data || [], activeQueryContract) }
+                : deterministicExecution;
+            const deterministicResultIssues = !normalizedDeterministicExecution.error && activeQueryContract
+                ? validateResultAgainstContract(normalizedDeterministicExecution.data || [], activeQueryContract)
                     .filter(issue => issue.severity === 'error')
                 : resultContractIssues;
-            if (!deterministicExecution.error && deterministicResultIssues.length === 0) {
+            if (!normalizedDeterministicExecution.error && deterministicResultIssues.length === 0) {
                 currentSQL = deterministicSQL;
-                execResult = deterministicExecution;
+                execResult = normalizedDeterministicExecution;
                 resultContractIssues = [];
                 sqlEngine = qbSQL ? 'question-builder' : 'correction-engine';
                 usedDeterministicFallback = true;

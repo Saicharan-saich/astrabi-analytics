@@ -107,12 +107,22 @@ function withoutComparativeReferences(question: string): string {
         .replace(/\b(?:above|below)\s+(?:the\s+)?(?:average|mean|minimum|maximum)\b[^?.,;]*/gi, '');
 }
 
+/** "Number" is an aggregation only when it denotes cardinality. Common
+ * identifier phrases such as contact number and order number are attributes
+ * to project/filter, not COUNT instructions. */
+function withoutIdentifierNumberPhrases(question: string): string {
+    return question.replace(
+        /\b(?:contact|phone|telephone|mobile|cell|account|order|serial|model|part|ticket|card|flight|race|id)\s+number\b/gi,
+        ' identifier ',
+    );
+}
+
 function hasComparativeReference(question: string): boolean {
     return /\b(?:more|greater|higher|less|lower|fewer)\s+than\s+(?:the\s+)?(?:average|mean|minimum|maximum|lowest|highest)\b|\b(?:above|below)\s+(?:the\s+)?(?:average|mean|minimum|maximum)\b/i.test(question);
 }
 
 export function inferQueryShape(question: string): QueryShape {
-    const shapeText = withoutComparativeReferences(question);
+    const shapeText = withoutIdentifierNumberPhrases(withoutComparativeReferences(question));
     const comparativeReference = hasComparativeReference(question);
     // "Which grades have 4 or more students?" is a grouped count even though
     // the user never says the word "count". Keep this grammar-based: a

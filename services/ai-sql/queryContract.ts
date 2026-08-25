@@ -85,6 +85,9 @@ export interface QueryContract {
         toColumn: string;
         fansOut: boolean;
     }>;
+    /** Set membership requested by the wording. INTERSECTION is independent
+     * from GROUP BY: both populations must qualify the same projected entity. */
+    setOperation?: 'none' | 'intersection';
     existenceMode: 'none' | 'anti';
     /** Positive relationships default to matched records; LEFT JOIN is used
      * only when the wording explicitly asks to retain unmatched entities. */
@@ -169,6 +172,7 @@ export interface SQLFaithfulnessIssue {
         | 'missing_output_entity'
         | 'missing_required_table'
         | 'missing_relationship_path'
+        | 'missing_set_operation'
         | 'wrong_join_semantics'
         | 'missing_existence_logic'
         | 'missing_aggregation'
@@ -223,6 +227,11 @@ function conceptVariants(token: string): Set<string> {
         customer: ['client', 'buyer'],
         item: ['product'],
         product: ['item'],
+        phone: ['contact', 'telephone', 'mobile', 'cell'],
+        contact: ['phone', 'telephone', 'mobile', 'cell'],
+        telephone: ['phone', 'contact', 'mobile', 'cell'],
+        mobile: ['phone', 'contact', 'telephone', 'cell'],
+        cell: ['phone', 'contact', 'telephone', 'mobile'],
     };
     for (const value of pairs[base] || []) variants.add(value);
     return variants;
@@ -301,6 +310,7 @@ function resolveRequestedOutputFields(
     if (!schema?.tables.length) return [];
     const clause = requestedAnswerClause(question);
     const clauseTokens = new Set(words(clause));
+    const requestsFullName = /\bfull\s+name\b/i.test(clause);
     const planFields = new Set([
         ...(plan.projectionFields || []),
         ...plan.dimensions.map(dimension => dimension.field),
@@ -343,10 +353,18 @@ function resolveRequestedOutputFields(
             };
             const directCoverage = coverage(directAliases);
             const synonymCoverage = coverage(synonymAliases);
-            const bestCoverage = Math.max(directCoverage, synonymCoverage);
+            const columnTokens = words(column.name);
+            // "Full name" conventionally expands to the schema's name
+            // components. This is presentation vocabulary, not a dataset rule:
+            // first/given and last/family/surname fields are all retained.
+            const fullNameComponent = requestsFullName
+                && columnTokens.includes('name')
+                && columnTokens.some(token => ['first', 'given', 'last', 'family', 'surname'].includes(token));
+            const effectiveDirectCoverage = fullNameComponent ? 1 : directCoverage;
+            const bestCoverage = Math.max(effectiveDirectCoverage, synonymCoverage);
             if (bestCoverage === 0) continue;
             let score = bestCoverage * 75;
-            if (directCoverage > 0) score += 10;
+            if (effectiveDirectCoverage > 0) score += 10;
             if (tableMentioned) score += 20;
             const duplicateCount = duplicateFieldCounts.get(column.name.toLowerCase()) || 0;
             if (duplicateCount === 1) score += 15;
@@ -359,7 +377,7 @@ function resolveRequestedOutputFields(
                 // A synonym-only overlap is useful grounding evidence but is
                 // not authoritative output evidence when another physical
                 // field may literally match the same word (sales vs sales_rep).
-                confidence: score >= 80 && (directCoverage >= 0.75 || planFields.has(column.name.toLowerCase())) ? 'high' : 'medium',
+                confidence: score >= 80 && (effectiveDirectCoverage >= 0.75 || planFields.has(column.name.toLowerCase())) ? 'high' : 'medium',
                 score,
                 directMatch: directCoverage > 0,
             });
@@ -515,7 +533,7 @@ function resolveOrderedProjection(
 }
 
 function resolveExpectedAggregation(question: string, plan: AnalysisPlan): QueryContract['expectedAggregation'] {
-    if (/\b(how many|(?<!\bid )(?<!\bserial )(?<!\bphone )(?<!\baccount )(?<!\border )(?<!\brace )(?<!\bflight )(?<!\bticket )(?<!\bcard )(?<!\bmodel )(?<!\bpart )number of|count(?: of)?|count the)\b/i.test(question)) return 'count';
+    if (/\b(how many|(?<!\bid )(?<!\bserial )(?<!\bphone )(?<!\bcontact )(?<!\btelephone )(?<!\bmobile )(?<!\bcell )(?<!\baccount )(?<!\border )(?<!\brace )(?<!\bflight )(?<!\bticket )(?<!\bcard )(?<!\bmodel )(?<!\bpart )number of|count(?: of)?|count the)\b/i.test(question)) return 'count';
     if (/\b(average|avg|mean)\b/i.test(question)) return 'avg';
     if (/\b(total|sum(?: of)?)\b/i.test(question)) return 'sum';
     if (/\b(minimum|min value)\b/i.test(question)) return 'min';
@@ -656,6 +674,17 @@ function resolveThreshold(question: string): Omit<NonNullable<QueryContract['thr
     return undefined;
 }
 
+/** Resolve grammatical set intersection without relying on table names or
+ * benchmark cases. "Both A ... and those B ..." describes one entity that
+ * belongs to two independently filtered populations. */
+function resolveSetOperation(question: string): QueryContract['setOperation'] {
+    if (/\b(?:intersection|common\s+to|common\s+between|in\s+both)\b/i.test(question)) return 'intersection';
+    if (/\bboth\b[\s\S]{0,180}\band\s+(?:those|ones|the\s+ones|the\s+same)\b/i.test(question)) {
+        return 'intersection';
+    }
+    return 'none';
+}
+
 function thresholdUsesAggregate(question: string): boolean {
     const comparator = /\b(?:at\s+least|more\s+than|greater\s+than|over|at\s+most|fewer\s+than|less\s+than|under|exactly|equal\s+to)\b/i.exec(question);
     if (!comparator) return false;
@@ -663,8 +692,12 @@ function thresholdUsesAggregate(question: string): boolean {
     // HAVING. An aggregate elsewhere must not move a raw-field predicate into
     // HAVING (for example "count pets whose age is over 20").
     const nearby = question.slice(Math.max(0, comparator.index - 80), comparator.index);
+    const analyticalNearby = nearby.replace(
+        /\b(?:contact|phone|telephone|mobile|cell|account|order|serial|model|part|ticket|card|flight|race|id)\s+number\b/gi,
+        ' identifier ',
+    );
     const after = question.slice(comparator.index + comparator[0].length, comparator.index + comparator[0].length + 100);
-    return /\b(?:total|sum|average|avg|mean|count|number\s+of|minimum|maximum|min|max)\b[^?.,;]{0,60}$/i.test(nearby)
+    return /\b(?:total|sum|average|avg|mean|count|number\s+of|minimum|maximum|min|max)\b[^?.,;]{0,60}$/i.test(analyticalNearby)
         || /\b(?:on\s+average|on\s+mean)\b/i.test(after);
 }
 
@@ -927,6 +960,7 @@ export function buildQueryContract(
 ): QueryContract {
     const requirements: string[] = [];
     const schema = schemaContext || schemaContextFromModel(model);
+    const setOperation = resolveSetOperation(question);
     let requestedOutputFields = resolveRequestedOutputFields(question, plan, schema, model);
     const inferredOutputEntity = resolveOutputEntity(question, plan, schema);
     let outputEntity = inferredOutputEntity
@@ -963,20 +997,21 @@ export function buildQueryContract(
         )) outputEntity = requestedOutputFields[0];
     }
     const requiresRowProjection = requestedOutputFields.some(field => field.confidence === 'high')
-        && !answerAggregation
-        && !asksCountAlongsideEntity
-        && !aggregatePredicateCue
-        && queryShape.operation !== 'ranking'
-        && queryShape.operation !== 'grouped_aggregate';
+        && (setOperation === 'intersection'
+            || (!answerAggregation
+                && !asksCountAlongsideEntity
+                && !aggregatePredicateCue
+                && queryShape.operation !== 'ranking'
+                && queryShape.operation !== 'grouped_aggregate'));
     const planRequiresEntityAggregation = !requiresRowProjection && !!outputEntity
         && plan.metrics.some(metric => ['sum', 'avg', 'count', 'count_distinct', 'min', 'max', 'median'].includes(metric.agg))
         && !['single_metric', 'distribution'].includes(plan.intent);
-    const explicitGroupingCue = queryShape.operation === 'grouped_aggregate'
+    const explicitGroupingCue = setOperation !== 'intersection' && (queryShape.operation === 'grouped_aggregate'
         || queryShape.implicitFrequencyRanking
         || (aggregatePredicateCue && !!outputEntity)
         || BREAKDOWN_CUE.test(breakdownQuestion)
         || /\b(?:in|for)\s+each\b/i.test(question)
-        || (asksCountAlongsideEntity && !!outputEntity);
+        || (asksCountAlongsideEntity && !!outputEntity));
     // A local planner may represent a row-level superlative as MIN/MAX plus
     // LIMIT 1 (for example, "the song by the youngest singer"). That aggregate
     // is only an ordering aid; it must not turn the requested row projection
@@ -987,8 +1022,9 @@ export function buildQueryContract(
         && !answerAggregation
         && queryShape.explicitAggregations.length === 0
         && !explicitGroupingCue;
-    const explicitScalarAggregationCue = /\b(?:how many|(?<!\bid )(?<!\bserial )(?<!\bphone )(?<!\baccount )(?<!\border )(?<!\brace )(?<!\bflight )(?<!\bticket )(?<!\bcard )(?<!\bmodel )(?<!\bpart )number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
-    const requiresGrouping = !requiresRowProjection && !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
+    const explicitScalarAggregationCue = /\b(?:how many|(?<!\bid )(?<!\bserial )(?<!\bphone )(?<!\bcontact )(?<!\btelephone )(?<!\bmobile )(?<!\bcell )(?<!\baccount )(?<!\border )(?<!\brace )(?<!\bflight )(?<!\bticket )(?<!\bcard )(?<!\bmodel )(?<!\bpart )number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
+    const requiresGrouping = setOperation !== 'intersection'
+        && !requiresRowProjection && !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
         && (queryShape.implicitFrequencyRanking
             || (queryShape.groupingCue && queryShape.explicitAggregations.length > 0)
             || requiresFiscalCalendar
@@ -1123,13 +1159,14 @@ export function buildQueryContract(
         : 'none';
     const requiresDistinctProjection = !expectedAggregation
         && !requiresGrouping
-        && (queryShape.distinctRequested
+        && (setOperation === 'intersection'
+            || queryShape.distinctRequested
             || requestsSetProjection(
                 question,
                 requestedOutputFields,
                 requiresRowProjection,
                 model,
-                relationshipPath.some(step => step.fansOut),
+                relationshipPath.length > 0,
             ));
     const allowedGroupingFields = requiresGrouping && requiredDimension
         ? [requiredDimension]
@@ -1181,6 +1218,7 @@ export function buildQueryContract(
     if (relationshipMode === 'inner') requirements.push('Use matched-record (INNER JOIN) semantics; do not add unmatched zero-count entities with LEFT JOIN.');
     if (relationshipMode === 'left') requirements.push('Preserve unmatched output entities with LEFT JOIN semantics because the question explicitly asks for them.');
     if (existenceMode === 'anti') requirements.push('Preserve the full output-entity population and express absence with NOT EXISTS, LEFT JOIN ... IS NULL, NOT IN, or EXCEPT.');
+    if (setOperation === 'intersection') requirements.push('Return the requested entity only when it belongs to both independently filtered populations. Use INTERSECT, two correlated EXISTS predicates, or equivalent conditional aggregation, and return the entity once.');
     if (expectedAggregations.length) {
         requirements.push(`Use every explicitly requested aggregate operation: ${expectedAggregations.map(aggregation => aggregation.toUpperCase()).join(' and ')}. Do not silently drop one measure.`);
     }
@@ -1230,6 +1268,7 @@ export function buildQueryContract(
         outputEntity,
         requiredTables,
         relationshipPath,
+        setOperation,
         existenceMode,
         relationshipMode,
         expectedAggregations,
@@ -1484,6 +1523,7 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
         resultGrain: contract.requiredDimension,
         requiredTables: contract.requiredTables,
         relationshipPath: contract.relationshipPath,
+        setOperation: contract.setOperation || 'none',
         existenceMode: contract.existenceMode,
         relationshipMode: contract.relationshipMode,
         aggregations: contract.expectedAggregations || (contract.expectedAggregation ? [contract.expectedAggregation] : []),
@@ -1522,7 +1562,8 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
         });
     }
 
-    if (contract.requiresDistinctProjection && !/\bselect\s+distinct\b/i.test(sql)) {
+    const intersectionIsDistinct = contract.setOperation === 'intersection' && /\bintersect\b/i.test(sql);
+    if (contract.requiresDistinctProjection && !/\bselect\s+distinct\b/i.test(sql) && !intersectionIsDistinct) {
         issues.push({
             code: 'missing_distinct_projection',
             severity: 'error',
@@ -1677,6 +1718,20 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
     if (contract.existenceMode === 'anti'
         && !/(?:\bnot\s+exists\b|\bnot\s+in\s*\(|\bexcept\b|\bleft\s+(?:outer\s+)?join\b[\s\S]*\bis\s+null\b)/i.test(sql)) {
         issues.push({ code: 'missing_existence_logic', severity: 'error', message: 'The question asks for absent related records, but the SQL has no anti-join/set-difference operation.' });
+    }
+    if (contract.setOperation === 'intersection') {
+        const explicitIntersection = /\bintersect\b/i.test(sql);
+        const correlatedIntersection = (sql.match(/\bexists\s*\(/gi) || []).length >= 2;
+        const conditionalIntersection = /\bgroup\s+by\b/i.test(sql)
+            && /\bhaving\b/i.test(sql)
+            && (sql.match(/\b(?:case\s+when|filter\s*\()/gi) || []).length >= 2;
+        if (!explicitIntersection && !correlatedIntersection && !conditionalIntersection) {
+            issues.push({
+                code: 'missing_set_operation',
+                severity: 'error',
+                message: 'The question requires the intersection of two independently filtered populations, but the SQL does not prove membership in both populations.',
+            });
+        }
     }
     for (const expected of (contract.expectedAggregations?.length || 0) > 0
         ? contract.expectedAggregations!
@@ -1867,4 +1922,31 @@ export function validateResultAgainstContract(
         severity: 'error',
         message: `The executed query returned ${count} row(s), but the requested answer shape requires ${expected} (${expectation.basis}).`,
     }];
+}
+
+/** Normalize only genuinely set-valued projections. Grouped analytical rows
+ * are intentionally excluded: duplicate groups there indicate incorrect SQL
+ * and must still fail validation. */
+export function normalizeResultToContract(
+    rows: Array<Record<string, unknown>>,
+    contract: QueryContract,
+): Array<Record<string, unknown>> {
+    if (rows.length < 2 || (!contract.requiresDistinctProjection && contract.setOperation !== 'intersection')) {
+        return rows;
+    }
+    const normalizedKeys = new Map<string, string>();
+    for (const key of Object.keys(rows[0] || {})) normalizedKeys.set(key.toLowerCase(), key);
+    const requestedKeys = (contract.uniqueResultFields.length
+        ? contract.uniqueResultFields
+        : contract.requiredOutputFields.filter(field => field.confidence === 'high').map(field => field.field))
+        .map(field => normalizedKeys.get(field.toLowerCase()))
+        .filter((field): field is string => Boolean(field));
+    const keys = requestedKeys.length ? requestedKeys : Object.keys(rows[0] || {});
+    const seen = new Set<string>();
+    return rows.filter(row => {
+        const tuple = JSON.stringify(keys.map(field => row[field]));
+        if (seen.has(tuple)) return false;
+        seen.add(tuple);
+        return true;
+    });
 }

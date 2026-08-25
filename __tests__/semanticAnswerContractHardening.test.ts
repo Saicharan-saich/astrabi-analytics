@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { buildCanonicalQueryIntent } from '../services/ai-sql/canonicalIntent';
+import { buildCanonicalQueryIntent, reconcilePlanWithCanonicalIntent } from '../services/ai-sql/canonicalIntent';
 import {
     normalizeSimpleSQLToContract,
     reconcileQuerySpecWithCanonicalIntent,
 } from '../services/ai-sql/directSqlEngine';
 import {
     buildQueryContract,
+    normalizeResultToContract,
     validateSQLAgainstContract,
 } from '../services/ai-sql/queryContract';
 import type { AnalysisPlan, SemanticField, SemanticModel } from '../services/ai-sql/types';
@@ -167,5 +168,107 @@ describe('semantic answer-contract hardening', () => {
         expect(spec.operations.ratio).toMatchObject({ kind: 'percentage', basis: 'row_count', scale: 100 });
         expect(spec.operations.ratio?.numerator.description).toContain('qualifying subset');
         expect(spec.operations.ratio?.denominator.description).toContain('reference population');
+    });
+
+    it('treats two independently filtered populations as a set intersection, not GROUP BY', () => {
+        const question = 'What are the record companies that are used by both orchestras founded before 2003 and those founded after 2003?';
+        const semanticModel = model([
+            field('Record_Company', 'dimension'),
+            field('Year_of_Founded', 'dimension', 'integer'),
+        ]);
+        const draft = plan(question, {
+            intent: 'breakdown',
+            dimensions: [{ field: 'Record_Company' }],
+            metrics: [{ field: 'Year_of_Founded', agg: 'count' }],
+        });
+        const contract = buildQueryContract(question, draft, [], semanticModel, {
+            tables: [{
+                name: 'orchestra',
+                rowCount: 12,
+                columns: [{ name: 'Record_Company' }, { name: 'Year_of_Founded' }],
+            }],
+            links: [],
+        });
+        const canonical = buildCanonicalQueryIntent(contract);
+        const reconciled = reconcilePlanWithCanonicalIntent(draft, canonical).plan;
+        const intersectionSQL = `SELECT Record_Company FROM orchestra WHERE Year_of_Founded < 2003
+            INTERSECT SELECT Record_Company FROM orchestra WHERE Year_of_Founded > 2003`;
+
+        expect(contract).toMatchObject({
+            setOperation: 'intersection',
+            requiresGrouping: false,
+            requiresRowProjection: true,
+            requiresDistinctProjection: true,
+        });
+        expect(canonical.answerKind).toBe('set_result');
+        expect(reconciled.metrics).toEqual([]);
+        expect(reconciled.projectionFields).toEqual(['Record_Company']);
+        expect(validateSQLAgainstContract(intersectionSQL, contract)).toEqual([]);
+        expect(validateSQLAgainstContract(
+            'SELECT Record_Company FROM orchestra WHERE Year_of_Founded < 2003',
+            contract,
+        ).map(issue => issue.code)).toContain('missing_set_operation');
+        expect(normalizeResultToContract([
+            { Record_Company: 'Decca Records' },
+            { Record_Company: 'Decca Records' },
+        ], contract)).toEqual([{ Record_Company: 'Decca Records' }]);
+    });
+
+    it('keeps a comparison measure hidden when member identity and contact fields are requested', () => {
+        const question = 'Give the full name and contact number of members who had to spend more than average on each expense.';
+        const semanticModel = model([
+            field('first_name', 'dimension'),
+            field('last_name', 'dimension'),
+            field('phone', 'dimension'),
+            field('member_id', 'dimension', 'identifier'),
+            field('cost', 'metric'),
+            field('link_to_member', 'dimension', 'identifier'),
+        ]);
+        const draft = plan(question, {
+            dimensions: [{ field: 'cost' }],
+            projectionFields: ['cost'],
+            filters: [{ field: 'cost', op: 'above_avg', value: null }],
+        });
+        const contract = buildQueryContract(question, draft, [], semanticModel, {
+            tables: [
+                {
+                    name: 'expense', rowCount: 20,
+                    columns: [{ name: 'cost' }, { name: 'link_to_member' }],
+                },
+                {
+                    name: 'member', rowCount: 6,
+                    columns: [
+                        { name: 'member_id', isPK: true },
+                        { name: 'first_name' },
+                        { name: 'last_name' },
+                        { name: 'phone' },
+                    ],
+                },
+            ],
+            links: [{
+                leftTable: 'expense', leftColumn: 'link_to_member',
+                rightTable: 'member', rightColumn: 'member_id', type: 'fk',
+            }],
+        });
+        const canonical = buildCanonicalQueryIntent(contract);
+        const reconciled = reconcilePlanWithCanonicalIntent(draft, canonical).plan;
+        const correctSQL = `SELECT DISTINCT member.first_name, member.last_name, member.phone
+            FROM expense INNER JOIN member ON expense.link_to_member = member.member_id
+            WHERE expense.cost > (SELECT AVG(cost) FROM expense)`;
+
+        expect(contract.requiredOutputFields.filter(item => item.confidence === 'high').map(item => item.field))
+            .toEqual(expect.arrayContaining(['first_name', 'last_name', 'phone']));
+        expect(contract.requiredTables).toEqual(expect.arrayContaining(['expense', 'member']));
+        expect(contract.requiresDistinctProjection).toBe(true);
+        expect(reconciled.projectionFields).toEqual(expect.arrayContaining(['first_name', 'last_name', 'phone']));
+        expect(reconciled.projectionFields).not.toContain('cost');
+        expect(validateSQLAgainstContract(correctSQL, contract)).toEqual([]);
+        expect(validateSQLAgainstContract(
+            'SELECT DISTINCT cost FROM expense WHERE cost > (SELECT AVG(cost) FROM expense)',
+            contract,
+        ).map(issue => issue.code)).toEqual(expect.arrayContaining([
+            'missing_requested_output',
+            'missing_required_table',
+        ]));
     });
 });

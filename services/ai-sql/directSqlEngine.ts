@@ -36,6 +36,7 @@ Rules:
 - Respect table ownership and join grain. A field is read from the physical table that owns it; a same-named field in another table is not interchangeable. When a one-to-many join would duplicate a measure from the one-side, pre-aggregate at the required grain before joining (or aggregate only the owning table) rather than summing duplicated values.
 - For counts of related records, count the related table's stable key or rows after the declared join. For counts of parent entities, use COUNT(DISTINCT parent_key) when the join fans out.
 - Treat absence and exclusion as set logic. Questions such as "entities with no related records" require NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT against the related table; never simulate absence by grouping only the primary table and writing HAVING COUNT(...) = 0.
+- Treat "both population A and population B", "in both", and "common to" as set intersection. Use INTERSECT, two correlated EXISTS predicates, or equivalent conditional aggregation, and emit each requested entity once.
 - Preserve the requested output entity and grain. Do not return a continent when country names were requested, or collapse several requested rows into one group.
 - For grouped membership thresholds such as "grades with 4 or more students", return exactly one row per qualifying group. Use GROUP BY ... HAVING (or select once from an already-grouped CTE); never use the grouped result merely to filter and re-project the original detail rows.
 - Lock the OUTER SELECT to the fields and calculations the user explicitly asks to see. An aggregate used only to define a filter (for example, products above average sales) belongs in a subquery/CTE predicate and does not turn the outer result into COUNT, SUM, or AVG.
@@ -131,7 +132,7 @@ export function reconcileQuerySpecWithCanonicalIntent(
     spec.expectedResult.columns ||= [];
     spec.assumptions ||= [];
 
-    if (canonical.answerKind === 'detail_projection') {
+    if (canonical.answerKind === 'detail_projection' || canonical.answerKind === 'set_result') {
         spec.operations.measures = [];
         spec.operations.groupBy = [];
     } else {

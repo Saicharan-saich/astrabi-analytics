@@ -44,6 +44,7 @@ export interface CanonicalQueryIntent {
         tables: string[];
         mode: QueryContract['relationshipMode'];
         existence: QueryContract['existenceMode'];
+        setOperation: NonNullable<QueryContract['setOperation']>;
         path: QueryContract['relationshipPath'];
     };
     constraints: {
@@ -68,7 +69,7 @@ export function buildCanonicalQueryIntent(contract: QueryContract): CanonicalQue
         .filter((field): field is string => Boolean(field)));
     const answerKind: CanonicalAnswerKind = contract.requiresComparison
         ? 'comparison'
-        : contract.existenceMode === 'anti'
+        : contract.existenceMode === 'anti' || contract.setOperation === 'intersection'
             ? 'set_result'
             : contract.requiresRanking
                 ? 'ranked_result'
@@ -125,6 +126,7 @@ export function buildCanonicalQueryIntent(contract: QueryContract): CanonicalQue
             tables: [...contract.requiredTables],
             mode: contract.relationshipMode,
             existence: contract.existenceMode,
+            setOperation: contract.setOperation || 'none',
             path: contract.relationshipPath.map(step => ({ ...step })),
         },
         constraints: {
@@ -136,7 +138,7 @@ export function buildCanonicalQueryIntent(contract: QueryContract): CanonicalQue
 }
 
 function reconcileMetrics(plan: AnalysisPlan, canonical: CanonicalQueryIntent): PlanMetric[] {
-    if (canonical.answerKind === 'detail_projection' || canonical.aggregations.length === 0) return [];
+    if (canonical.answerKind === 'detail_projection' || canonical.answerKind === 'set_result' || canonical.aggregations.length === 0) return [];
     if (plan.metrics.length === 0) {
         return canonical.measures
             .filter((measure): measure is typeof measure & { field: string } => Boolean(measure.field))
@@ -180,13 +182,15 @@ export function reconcilePlanWithCanonicalIntent(
         return { plan, changes };
     }
 
-    if (canonical.answerKind === 'detail_projection') {
+    if (canonical.answerKind === 'detail_projection' || canonical.answerKind === 'set_result') {
         if (plan.intent !== 'projection') changes.push(`intent ${plan.intent} -> projection`);
         plan.intent = 'projection';
         if (plan.metrics.length) changes.push('removed aggregate metrics from row projection');
         plan.metrics = [];
         if (canonical.visibleFields.length) {
-            const fields = unique([...canonical.visibleFields, ...(plan.projectionFields || [])]);
+            // The canonical answer clause owns visible output. Predicate and
+            // comparison measures from a draft plan must not leak back in.
+            const fields = unique(canonical.visibleFields);
             plan.projectionFields = fields;
             plan.dimensions = fields.map(field => ({ field }));
         }
