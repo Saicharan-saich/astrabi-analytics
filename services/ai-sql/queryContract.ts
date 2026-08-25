@@ -195,6 +195,20 @@ const COMPARISON_CUE = /\b(vs\.?|versus|compared to|comparison|month[- ]over[- ]
 const FISCAL_CUE = /\bfiscal\s+(?:year|quarter|calendar)\b/i;
 const ANTI_EXISTENCE_CUE = /\b(?:without|never|not\s+a\s+single|with\s+no|(?:do|does|did)\s+not\s+have|(?:has|have|had)\s+no|zero\s+(?:related\s+)?\w+)\b/i;
 
+/**
+ * Distinguish absence of related records from ordinary status/quality wording.
+ * “Paid with no issue” describes a qualifying state; it does not ask for a
+ * missing relationship. The masked vocabulary is intentionally domain-neutral
+ * and covers common quality outcomes rather than dataset or benchmark names.
+ */
+function requestsAntiExistence(question: string): boolean {
+    const withoutQualityStatus = question.replace(
+        /\b(?:with|having|had)\s+no\s+(?:issues?|problems?|errors?|delays?|complaints?|incidents?|exceptions?|disputes?|defects?)\b/gi,
+        ' with acceptable status ',
+    );
+    return ANTI_EXISTENCE_CUE.test(withoutQualityStatus);
+}
+
 const STOP_WORDS = new Set([
     'a', 'an', 'all', 'and', 'are', 'as', 'at', 'be', 'by', 'do', 'does', 'each',
     'for', 'from', 'have', 'has', 'in', 'is', 'it', 'of', 'on', 'or', 'per',
@@ -968,7 +982,7 @@ export function buildQueryContract(
         || requestedOutputFields[0];
     const queryShape = inferQueryShape(question);
     const orderedProjection = resolveOrderedProjection(question, plan, model, outputEntity);
-    const existenceMode = ANTI_EXISTENCE_CUE.test(question) ? 'anti' : 'none';
+    const existenceMode = requestsAntiExistence(question) ? 'anti' : 'none';
     const requiresFiscalCalendar = FISCAL_CUE.test(question);
     const breakdownQuestion = question.replace(
         /\bby\s+(?:the\s+)?(?:youngest|oldest|earliest|latest|newest|highest|lowest|best|worst)\s+\w+/gi,

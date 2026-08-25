@@ -189,6 +189,76 @@ describe('AI SQL query contract regression suite', () => {
         expect(validateSQLAgainstContract(correct, contract)).toEqual([]);
     });
 
+    it('does not confuse a no-issue status phrase with missing related records', () => {
+        const loanModel: SemanticModel = {
+            ...model,
+            datasetName: 'loan',
+            fields: [
+                {
+                    name: 'status', displayLabel: 'Status', physicalType: 'string',
+                    semanticType: 'category', role: 'dimension', defaultAgg: 'none',
+                    timeGrainSupport: [], synonyms: [], valueDescriptors: [], distinctCount: 4, hasNulls: false,
+                },
+                {
+                    name: 'amount', displayLabel: 'Loan amount', physicalType: 'number',
+                    semanticType: 'currency', role: 'metric', defaultAgg: 'sum',
+                    timeGrainSupport: [], synonyms: ['loan amount'], valueDescriptors: [], distinctCount: 9000, hasNulls: false,
+                },
+            ],
+        };
+        const question = 'What is the percentage of loan amount that has been fully paid with no issue?';
+        const contract = buildQueryContract(question, plan({
+            intent: 'single_metric',
+            metrics: [{ field: 'amount', agg: 'sum' }],
+        }), [], loanModel);
+
+        expect(contract.existenceMode).toBe('none');
+        expect(validateSQLAgainstContract(
+            `SELECT CAST(SUM(CASE WHEN status = 'A' THEN amount ELSE 0 END) AS REAL) * 100 / SUM(amount) FROM data`,
+            contract,
+        ).map(issue => issue.code)).not.toContain('missing_existence_logic');
+    });
+
+    it('recognises a group with the most number of members as a frequency ranking', () => {
+        const channelModel: SemanticModel = {
+            ...model,
+            datasetName: 'TV_Channel',
+            fields: [
+                {
+                    name: 'Country', displayLabel: 'Country', physicalType: 'string',
+                    semanticType: 'category', role: 'dimension', defaultAgg: 'none',
+                    timeGrainSupport: [], synonyms: [], valueDescriptors: [], distinctCount: 4, hasNulls: false,
+                },
+                {
+                    name: 'channel_id', displayLabel: 'Channel ID', physicalType: 'number',
+                    semanticType: 'identifier', role: 'dimension', defaultAgg: 'count_distinct',
+                    timeGrainSupport: [], synonyms: ['TV channel'], valueDescriptors: [], distinctCount: 15, hasNulls: false,
+                },
+            ],
+        };
+        const question = 'What is the country with the most number of TV Channels and how many does it have?';
+        const rankingPlan = plan({
+            intent: 'ranking',
+            dimensions: [{ field: 'Country' }],
+            metrics: [{ field: 'channel_id', agg: 'count' }],
+            sort: [{ field: 'channel_id', dir: 'desc' }],
+            limit: 1,
+        });
+        const contract = buildQueryContract(question, rankingPlan, [], channelModel);
+
+        expect(contract.requiresGrouping).toBe(true);
+        expect(contract.requiredDimension).toBe('Country');
+        expect(contract.rankingLimit).toBe(1);
+        expect(validateSQLAgainstContract(
+            'SELECT COUNT(*) AS channel_count FROM data ORDER BY channel_count DESC LIMIT 1',
+            contract,
+        ).map(issue => issue.code)).toEqual(expect.arrayContaining(['missing_grouping', 'missing_requested_dimension']));
+        expect(validateSQLAgainstContract(
+            'SELECT Country, COUNT(*) AS channel_count FROM data GROUP BY Country ORDER BY channel_count DESC LIMIT 1',
+            contract,
+        )).toEqual([]);
+    });
+
     it('enforces explicit aggregation and ranking direction without inheriting a bad plan guess', () => {
         const averageContract = buildQueryContract(
             'What is the average sales?',

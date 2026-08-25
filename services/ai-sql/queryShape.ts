@@ -140,7 +140,7 @@ export function inferQueryShape(question: string): QueryShape {
     // relative clauses ("the type that the most records belong to"). The
     // action-prefix guard keeps an all-row ranking such as "Rank every ..."
     // from being collapsed to one winner merely because it mentions common.
-    const frequencyWinner = /^\s*(?:please\s+)?(?:which|what|find|return|give(?:\s+me)?|show)\b[\s\S]*?(?:\b(?:most|least)\s+(?:common(?:ly)?|frequent(?:ly)?|popular)\b|\b(?:that|which|who)\s+(?:[a-z][a-z0-9_-]*\s+){0,4}?(?:the\s+)?(?:most|fewest|least)\s+[a-z])/i.test(question);
+    const frequencyWinner = /^\s*(?:please\s+)?(?:which|what|find|return|give(?:\s+me)?|show)\b[\s\S]*?(?:\b(?:most|least)\s+(?:common(?:ly)?|frequent(?:ly)?|popular)\b|\bwith\s+(?:the\s+)?(?:most|fewest|least|greatest|smallest)\s+number\s+of\b|\b(?:that|which|who)\s+(?:[a-z][a-z0-9_-]*\s+){0,4}?(?:the\s+)?(?:most|fewest|least)\s+[a-z])/i.test(question);
     const requestedAggregations = explicitAggregations(shapeText);
     if ((thresholdedGroupCount || frequencyWinner) && !requestedAggregations.includes('count')) {
         requestedAggregations.push('count');
