@@ -156,6 +156,8 @@ describe('canonical query intent', () => {
         }, canonical);
 
         expect(spec.operations.groupBy).toEqual([{ field: 'PetType' }]);
-        expect(spec.expectedResult.columns).toEqual(['PetType', 'AVG(Weight)']);
+        // AVG(Weight) qualifies the pet types but the user asks which types,
+        // so the helper aggregate does not leak into the visible answer.
+        expect(spec.expectedResult.columns).toEqual(['PetType']);
     });
 });

@@ -31,6 +31,7 @@ export interface CanonicalQueryIntent {
         confidence: 'high' | 'medium';
     }>;
     predicates: QueryContract['requiredPredicates'];
+    ratio: QueryContract['ratio'];
     selection: QueryContract['selectionMode'];
     order?: {
         field?: string;
@@ -104,6 +105,7 @@ export function buildCanonicalQueryIntent(contract: QueryContract): CanonicalQue
             ? [{ aggregation: contract.expectedAggregation, confidence: 'medium' as const }]
             : []))],
         predicates: (contract.requiredPredicates || []).map(predicate => ({ ...predicate })),
+        ratio: contract.ratio ? { ...contract.ratio } : undefined,
         selection: contract.selectionMode,
         order: contract.requiresRanking
             ? {

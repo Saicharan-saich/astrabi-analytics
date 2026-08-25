@@ -56,6 +56,10 @@ export interface QueryContract {
      * checked after local execution so a grouped filter cannot accidentally
      * project the matching source rows and repeat each qualifying group. */
     uniqueResultFields: string[];
+    /** Exact physical fields allowed to define the GROUP BY grain when the
+     * question establishes that grain confidently. Extra raw grouping fields
+     * split an otherwise correct answer into a finer, unrequested result. */
+    allowedGroupingFields: string[];
     /** Row-level listing ordered by a raw field; aggregation/grouping is forbidden. */
     orderedProjection?: {
         fields: string[];
@@ -155,6 +159,7 @@ export interface SQLFaithfulnessIssue {
     code:
         | 'missing_grouping'
         | 'unexpected_grouping'
+        | 'unexpected_grouping_field'
         | 'unexpected_aggregation'
         | 'missing_requested_output'
         | 'missing_distinct_projection'
@@ -889,6 +894,29 @@ function resolveRequiredTables(
     return [...required];
 }
 
+/**
+ * A list/which/show request for named attributes is set-valued unless the user
+ * explicitly asks for underlying records/rows. This is grammatical rather
+ * than domain-specific: it works for event names, countries, template codes,
+ * products, or any future schema without maintaining a noun dictionary.
+ */
+function requestsSetProjection(
+    question: string,
+    requestedOutputFields: QueryEntityContract[],
+    requiresRowProjection: boolean,
+    model?: SemanticModel,
+    relationshipCanDuplicate = false,
+): boolean {
+    if (!requiresRowProjection || !requestedOutputFields.some(field => field.confidence === 'high')) return false;
+    if (!/^\s*(?:please\s+)?(?:which|what\s+are|list|find|return|show|give(?:\s+me)?)\b/i.test(question)) return false;
+    if (/\b(?:all|every|each)\s+(?:record|row|entry|transaction|observation)s?\b|\braw\s+(?:records?|rows?)\b/i.test(question)) return false;
+    const repeatedInSource = requestedOutputFields.some(output => {
+        const semantic = model?.fields.find(field => field.name.toLowerCase() === output.field.toLowerCase());
+        return !!semantic && semantic.distinctCount > 0 && semantic.distinctCount < (model?.rowCount || 0);
+    });
+    return relationshipCanDuplicate || repeatedInSource;
+}
+
 /** Build a concise, privacy-safe contract from question, plan and schema graph. */
 export function buildQueryContract(
     question: string,
@@ -1002,6 +1030,20 @@ export function buildQueryContract(
     }
     const requiredDimension = resolvedRequestedDimension
         || (requiresGrouping && outputEntity?.confidence === 'high' ? outputEntity.field : undefined);
+    if (requiresGrouping && requiredDimension) {
+        const groupingPhrase = question.match(/\b(?:for\s+each|for\s+every|per|by|each|every)\s+([^?.;]+)/i)?.[1] || '';
+        const explicitlyCompoundGrain = /\s+(?:and|plus)\s+|,/.test(groupingPhrase);
+        if (!explicitlyCompoundGrain) {
+            // Once the grouping noun is resolved confidently, incidental
+            // synonym matches must not widen the displayed answer schema. For
+            // example, "customer segment" resolves to customer_segment, not
+            // both customer_segment and customer_name merely because both
+            // share the token "customer".
+            requestedOutputFields = requestedOutputFields.filter(field =>
+                field.field.toLowerCase() === requiredDimension.toLowerCase()
+            );
+        }
+    }
     const evidenceAggregations = aggregateOperationsFromEvidence(question);
     let expectedAggregations = orderedProjection || requiresRowProjection
         ? []
@@ -1051,8 +1093,11 @@ export function buildQueryContract(
         expectedMeasures,
         requiresGrouping,
     );
-    const strictOutputProjection = queryShape.selection === 'single'
-        && requestedOutputFields.some(field => field.confidence === 'high');
+    // Output fields are independent from helper fields. A requested entity
+    // filtered by an aggregate ("which industries have average score >= 70")
+    // should expose the industry, while AVG(score) may remain solely in HAVING.
+    const strictOutputProjection = requestedOutputFields.some(field => field.confidence === 'high')
+        && (queryShape.selection === 'single' || requiresRowProjection || aggregatePredicateCue);
     const requestedPhysicalFields = new Set(requestedOutputFields.map(field => field.field.toLowerCase()));
     const forbiddenOutputFields = strictOutputProjection && schema
         ? [...new Set(schema.tables
@@ -1076,12 +1121,24 @@ export function buildQueryContract(
         ? 'anti'
         : relationshipPath.length ? (explicitlyInclusive ? 'left' : 'inner')
         : 'none';
-    const requiresDistinctProjection = queryShape.distinctRequested
-        && !expectedAggregation
-        && !requiresGrouping;
-    const uniqueResultFields = requiresGrouping && threshold && requiredDimension
+    const requiresDistinctProjection = !expectedAggregation
+        && !requiresGrouping
+        && (queryShape.distinctRequested
+            || requestsSetProjection(
+                question,
+                requestedOutputFields,
+                requiresRowProjection,
+                model,
+                relationshipPath.some(step => step.fansOut),
+            ));
+    const allowedGroupingFields = requiresGrouping && requiredDimension
         ? [requiredDimension]
         : [];
+    const uniqueResultFields = requiresGrouping && requiredDimension
+        ? [requiredDimension]
+        : requiresDistinctProjection
+            ? requestedOutputFields.filter(field => field.confidence === 'high').map(field => field.field)
+            : [];
     const canUsePrimaryTableStatistics = !!model
         && (schema?.tables.length || 0) === 1
         && relationshipMode === 'none'
@@ -1164,6 +1221,7 @@ export function buildQueryContract(
         requiresRowProjection,
         resultRowExpectation,
         uniqueResultFields,
+        allowedGroupingFields,
         orderedProjection,
         rankingLimit,
         rankingDirection,
@@ -1422,6 +1480,7 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
         requiresRowProjection: contract.requiresRowProjection,
         resultRowExpectation: contract.resultRowExpectation,
         uniqueResultFields: contract.uniqueResultFields,
+        allowedGroupingFields: contract.allowedGroupingFields,
         resultGrain: contract.requiredDimension,
         requiredTables: contract.requiredTables,
         relationshipPath: contract.relationshipPath,
@@ -1534,6 +1593,28 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
 
     if (contract.requiresGrouping && !/\bgroup\s+by\b/.test(normalized)) {
         issues.push({ code: 'missing_grouping', severity: 'error', message: 'The question requires an entity/breakdown grain, but the generated SQL has no GROUP BY.' });
+    }
+    if (contract.requiresGrouping && contract.allowedGroupingFields.length && groupByClauses.length) {
+        const allowed = new Set(contract.allowedGroupingFields.map(field => field.toLowerCase()));
+        const groupedIdentifiers = new Set<string>();
+        for (const clause of groupByClauses) {
+            for (const item of clause.split(',')) {
+                const expression = item.trim();
+                // Ordinals and computed time-grain expressions are already
+                // governed through the required-dimension check below.
+                if (/^\d+$/.test(expression) || /\b(?:date_trunc|extract|strftime)\s*\(/i.test(expression)) continue;
+                const match = expression.match(/(?:^|\.)["`]?([a-z_][a-z0-9_]*)["`]?\s*$/i);
+                if (match) groupedIdentifiers.add(match[1].toLowerCase());
+            }
+        }
+        const unexpected = [...groupedIdentifiers].filter(field => !allowed.has(field));
+        if (unexpected.length) {
+            issues.push({
+                code: 'unexpected_grouping_field',
+                severity: 'error',
+                message: `GROUP BY contains unrequested grain field(s): ${unexpected.join(', ')}. The requested grain is ${contract.allowedGroupingFields.join(', ')}.`,
+            });
+        }
     }
     if (contract.expectedCardinality === 'scalar' && /\bgroup\s+by\b/.test(normalized)) {
         issues.push({

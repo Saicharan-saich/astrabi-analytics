@@ -68,6 +68,13 @@ export interface DynamicQuerySpec {
         limit?: number;
         joins?: Array<{ leftTable: string; rightTable: string; condition: string; purpose?: string }>;
         tableCalculations?: Array<{ type: string; expression?: string; partitionBy?: string[]; orderBy?: string[] }>;
+        ratio?: {
+            kind: 'percentage' | 'ratio';
+            basis: 'row_count' | 'measure';
+            numerator: { description: string; expression?: string; filters?: Array<{ field: string; operator: string; value: unknown }> };
+            denominator: { description: string; expression?: string; filters?: Array<{ field: string; operator: string; value: unknown }> };
+            scale?: number;
+        };
     };
     expectedResult: { grain: string; columns: string[]; explanation?: string };
     assumptions: string[];
@@ -94,6 +101,7 @@ CRITICAL — do NOT return a clarification for any of these answerable patterns:
 SEMANTIC RULES:
 - "List out", "list", "enumerate" means return individual rows in expectedResult. The goal is projection, NOT counting. Do not plan a COUNT measure when the user says "list".
 - "What is the percentage of X that Y" → plan a conditional aggregation: SUM(condition) * 100 / COUNT(*), returning one scalar row. Do not GROUP BY individual entity rows.
+- Every percentage/ratio MUST populate operations.ratio with separate numerator and denominator definitions. Filters that define the denominator cohort belong in both populations; the condition being measured belongs only in the numerator. Do not put the numerator-only condition in the outer WHERE because that changes the denominator.
 - Only include in expectedResult.columns the fields the question explicitly requests. Do not add extra columns (event_name, budget_id, etc.) unless asked.
 
 Across multiple tables, identify which table owns every output, filter and measure. Follow only declared relationship edges, and plan pre-aggregation whenever joining would otherwise multiply the measure's native grain.
@@ -180,6 +188,24 @@ export function reconcileQuerySpecWithCanonicalIntent(
             }
         }
         spec.operations.having = existingHaving;
+    }
+    if (canonical.ratio) {
+        const existingRatio = spec.operations.ratio;
+        spec.operations.ratio = {
+            kind: canonical.ratio.kind,
+            basis: canonical.ratio.basis,
+            numerator: existingRatio?.numerator || {
+                description: canonical.ratio.basis === 'row_count'
+                    ? 'count the qualifying subset only'
+                    : 'sum the qualifying measure only',
+            },
+            denominator: existingRatio?.denominator || {
+                description: canonical.ratio.basis === 'row_count'
+                    ? 'count the complete requested reference population'
+                    : 'sum the complete requested reference population',
+            },
+            scale: canonical.ratio.kind === 'percentage' ? 100 : existingRatio?.scale,
+        };
     }
     if (canonical.relationship.path.length) {
         spec.operations.joins = canonical.relationship.path.map(step => ({
@@ -352,6 +378,9 @@ export function normalizeSimpleSQLToContract(sql: string, contract?: QueryContra
     if (contract.prohibitsImplicitLimit) {
         normalized = normalized.replace(/\s+limit\s+\d+\s*;?\s*$/i, '').trim();
     }
+    if (contract.requiresDistinctProjection && /^\s*select\s+(?!distinct\b)/i.test(normalized)) {
+        normalized = normalized.replace(/^\s*select\s+/i, 'SELECT DISTINCT ');
+    }
     if (!contract.requiresGrouping) return normalized;
 
     const match = normalized.match(/^\s*select\s+([\s\S]*?)\s+from\s+([\s\S]*?)\s+group\s+by\s+([\s\S]*?)(?=\s+having\b|\s+order\s+by\b|\s+limit\b|$)/i);
@@ -360,18 +389,23 @@ export function normalizeSimpleSQLToContract(sql: string, contract?: QueryContra
     for (const aggregate of match[1].matchAll(/\b(?:sum|avg|min|max|median)\s*\(\s*(?:["`]?[A-Za-z_][\w$]*["`]?\.)?["`]?([A-Za-z_][\w$]*)["`]?\s*\)/gi)) {
         aggregateArguments.add(aggregate[1].toLowerCase());
     }
-    if (!aggregateArguments.size) return normalized;
+    if (!aggregateArguments.size && !(contract.allowedGroupingFields || []).length) return normalized;
 
     const originalGroups = splitSqlList(match[3]);
+    const allowedGrouping = new Set((contract.allowedGroupingFields || []).map(field => field.toLowerCase()));
+    const removedGrouping = new Set<string>();
     const groups = originalGroups.filter(item => {
         const identifier = bareSqlIdentifier(item);
-        return !identifier || !aggregateArguments.has(identifier);
+        const removeAggregateInput = !!identifier && aggregateArguments.has(identifier);
+        const removeUnexpectedGrain = !!identifier && allowedGrouping.size > 0 && !allowedGrouping.has(identifier);
+        if (identifier && (removeAggregateInput || removeUnexpectedGrain)) removedGrouping.add(identifier);
+        return !removeAggregateInput && !removeUnexpectedGrain;
     });
     if (!groups.length || groups.length === originalGroups.length) return normalized;
 
     const selected = splitSqlList(match[1]).filter(item => {
         const identifier = bareSqlIdentifier(item);
-        return !identifier || !aggregateArguments.has(identifier);
+        return !identifier || (!aggregateArguments.has(identifier) && !removedGrouping.has(identifier));
     });
     if (!selected.length) return normalized;
 
@@ -547,7 +581,7 @@ export async function generateDirectSQL(
     // Sol independently checks every request against the question, schema and
     // structured plan, then returns the final executable SQL.
     const reviewed = await fetchWithFallback([
-        { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the question, schema, and deterministic contract. Correct only concrete violations. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and contract do not require. Return only final SQL.` },
+        { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the question, schema, and deterministic contract. Correct only concrete violations. Before returning SQL, audit: (1) outer SELECT contains only requested answer fields/calculations, (2) GROUP BY is exactly the requested grain, (3) ranking expression, direction, cardinality and tie behaviour match the wording, (4) aggregate predicates are in HAVING/subqueries without leaking helper metrics into the answer, (5) ratio numerator and denominator use the correct populations, (6) joins follow the declared ownership path, and (7) list/set answers cannot repeat because of join fan-out. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and contract do not require. Return only final SQL.` },
         { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${draftSQL}\n\nFinal reviewed SQL:` },
     ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
     const reviewedSQL = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');
