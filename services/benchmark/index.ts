@@ -4,6 +4,7 @@ export { RESEARCH_BENCHMARK_SUITES } from './researchFixtures.generated';
 export { clearResearchBenchmarkDatasetCache, loadResearchBenchmarkDataset } from './researchDatasetLoader';
 export {
   compareResultSets,
+  compareResultSetsAsUserAnswer,
   compareResultSetsAtRequestedProjection,
   compareWithheldResultSets,
   canonicalColumnName,

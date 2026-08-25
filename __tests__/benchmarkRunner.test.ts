@@ -128,7 +128,7 @@ describe('benchmark runner', () => {
     expect(result.comparison?.reason).toContain('row order ignored');
   });
 
-  it('retains withheld and invalid-SQL failure categories when values are wrong', async () => {
+  it('retains withheld but treats an executed plan warning as a wrong result, not invalid SQL', async () => {
     const withheld = await executeBenchmarkCase(firstCase, dependencies({
       runPipeline: async () => ({
         sql: firstCase.goldSql, rawData: [{ wrong: 999 }], validation: { valid: true },
@@ -144,7 +144,60 @@ describe('benchmark runner', () => {
       }),
     }));
     expect(withheld.status).toBe('withheld');
-    expect(invalid.status).toBe('invalid_sql');
+    expect(invalid.status).toBe('wrong_result');
+    expect(invalid.validSql).toBe(false);
+  });
+
+  it('passes a precise entity ranking when gold includes an unrequested ordering helper', async () => {
+    const semanticCase = {
+      ...firstCase,
+      question: 'Which 5 products have the shortest average delivery time?',
+      expectedRows: [
+        { product_name: 'Atlas Laptop', average_delivery_days: 4 },
+        { product_name: 'Delta Printer', average_delivery_days: 4 },
+        { product_name: 'Beacon Desk', average_delivery_days: 5 },
+        { product_name: 'Echo Binder', average_delivery_days: 5 },
+        { product_name: 'Cedar Chair', average_delivery_days: 6 },
+      ],
+    };
+    const result = await executeBenchmarkCase(semanticCase, dependencies({
+      executeGoldSql: async () => ({ data: semanticCase.expectedRows }),
+      runPipeline: async () => ({
+        sql: 'SELECT product_name FROM data GROUP BY product_name ORDER BY AVG(delivery_days) ASC LIMIT 5',
+        rawData: [
+          { product_name: 'Delta Printer' },
+          { product_name: 'Atlas Laptop' },
+          { product_name: 'Echo Binder' },
+          { product_name: 'Beacon Desk' },
+          { product_name: 'Cedar Chair' },
+        ],
+        validation: { valid: false },
+        displaySafety: { allowed: true },
+        provenance: { strategy: 'hybrid-plan-llm-sql', model: 'test-model' },
+        tokenUsage: { prompt: 10, completion: 5, total: 15 },
+      }),
+    }));
+
+    expect(result.status).toBe('pass');
+    expect(result.passed).toBe(true);
+    expect(result.validSql).toBe(false);
+    expect(result.comparison?.equivalenceRule).toBe('verified_helper_projection');
+  });
+
+  it('uses invalid SQL only when no executable candidate SQL exists', async () => {
+    const result = await executeBenchmarkCase(firstCase, dependencies({
+      runPipeline: async () => ({
+        sql: '',
+        rawData: [],
+        validation: { valid: false },
+        displaySafety: { allowed: true },
+        provenance: { strategy: 'hybrid-plan-llm-sql', model: 'test-model' },
+        tokenUsage: { prompt: 10, completion: 5, total: 15 },
+      }),
+    }));
+
+    expect(result.status).toBe('invalid_sql');
+    expect(result.failureReason).toContain('No executable candidate SQL');
   });
 
   it('promotes a withheld result only when the gold rows match and extras are neutral', async () => {

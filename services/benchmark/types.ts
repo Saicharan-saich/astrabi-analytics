@@ -89,7 +89,7 @@ export interface BenchmarkComparisonResult {
   /** Deterministic rule that established equivalence. Useful when a safety
    * gate withheld an answer whose executed values still satisfy the gold
    * answer contract. */
-  equivalenceRule?: 'exact_result_set' | 'requested_projection' | 'neutral_extra_rows';
+  equivalenceRule?: 'exact_result_set' | 'requested_projection' | 'verified_helper_projection' | 'neutral_extra_rows';
   expectedRowCount: number;
   actualRowCount: number;
   columnMapping: Record<string, string>;

@@ -363,6 +363,110 @@ export function compareResultSetsAtRequestedProjection(
   };
 }
 
+type AggregateHelper = {
+  aggregation: 'avg' | 'sum' | 'count' | 'min' | 'max';
+  measureTokens: string[];
+};
+
+function aggregateHelperFromColumn(column: string): AggregateHelper | undefined {
+  const tokens = tokenizeColumn(column);
+  const aggregateToken = tokens.find(token => STRONG_AGGREGATION_WORDS.has(token));
+  const aggregation = aggregateToken === 'average' || aggregateToken === 'mean' ? 'avg'
+    : aggregateToken === 'total' ? 'sum'
+      : aggregateToken === 'minimum' ? 'min'
+        : aggregateToken === 'maximum' ? 'max'
+          : aggregateToken as AggregateHelper['aggregation'] | undefined;
+  if (!aggregation || !['avg', 'sum', 'count', 'min', 'max'].includes(aggregation)) return undefined;
+
+  const functionArgument = column.match(/\b(?:avg|average|mean|sum|total|count|min|minimum|max|maximum)\s*\(([^)]*)\)/i)?.[1];
+  const measureTokens = tokenizeColumn(functionArgument || column)
+    .filter(token => !AGGREGATION_WORDS.has(token) && token !== 'star' && !/^t\d+$/.test(token));
+  return { aggregation, measureTokens };
+}
+
+function sqlUsesAggregateHelper(sql: string, helper: AggregateHelper): boolean {
+  const calls = [...sql.matchAll(/\b(avg|sum|count|min|max)\s*\(([^)]*)\)/gi)];
+  return calls.some(match => {
+    if (match[1].toLowerCase() !== helper.aggregation) return false;
+    if (helper.aggregation === 'count' && helper.measureTokens.length === 0) return true;
+    const argumentTokens = new Set(tokenizeColumn(match[2]));
+    return helper.measureTokens.length > 0
+      && helper.measureTokens.every(token => argumentTokens.has(token));
+  });
+}
+
+function questionExplicitlyRequestsHelper(question: string, helper: AggregateHelper): boolean {
+  const aggregateWords = helper.aggregation === 'avg' ? '(?:average|avg|mean)'
+    : helper.aggregation === 'sum' ? '(?:total|sum)'
+      : helper.aggregation === 'count' ? '(?:count|number|how many)'
+        : helper.aggregation === 'min' ? '(?:minimum|min)'
+          : '(?:maximum|max)';
+  return new RegExp(`\\b(?:and|along with|together with)\\s+(?:(?:its|their|the|corresponding)\\s+)?${aggregateWords}\\b`, 'i').test(question)
+    || new RegExp(`^\\s*(?:(?:what|which)\\s+(?:is|are)|calculate|compute|find|show|list|return|display|give(?:\\s+me)?)\\s+(?:the\\s+)?${aggregateWords}\\b`, 'i').test(question)
+    || new RegExp(`\\b${aggregateWords}\\b[\\s\\S]*?\\b(?:for|by|per)\\s+(?:each|every)\\b`, 'i').test(question)
+    || new RegExp(`^\\s*(?:show|list|return|display|give(?:\\s+me)?)\\b[\\s\\S]*?\\bwith\\s+(?:(?:its|their|the|corresponding)\\s+)?${aggregateWords}\\b`, 'i').test(question);
+}
+
+/**
+ * Benchmark-only semantic comparison for a complete user-facing answer whose
+ * frozen gold output also exposes an aggregate used solely to rank or qualify
+ * the returned entities. This is deliberately evidence-bound: the candidate
+ * SQL must contain the omitted aggregate over the matching measure, every
+ * entity row must match, duplicates still fail, and explicitly requested
+ * aggregate values may not be omitted.
+ */
+export function compareResultSetsAsUserAnswer(
+  expectedRows: Record<string, unknown>[],
+  actualRows: Record<string, unknown>[],
+  options: BenchmarkComparisonOptions,
+  requestedOutputFields: string[] = [],
+  context: { question: string; candidateSql: string } = { question: '', candidateSql: '' },
+): BenchmarkComparisonResult {
+  const grounded = compareResultSetsAtRequestedProjection(
+    expectedRows,
+    actualRows,
+    options,
+    requestedOutputFields,
+  );
+  if (grounded.equal || !expectedRows.length || !actualRows.length || !context.candidateSql.trim()) return grounded;
+
+  const expectedColumns = Object.keys(expectedRows[0]);
+  const { mapping } = buildColumnMapping(expectedRows, actualRows, false);
+  const mappedExpectedColumns = Object.keys(mapping);
+  const missingExpectedColumns = expectedColumns.filter(column => !mapping[column]);
+  if (!mappedExpectedColumns.length || !missingExpectedColumns.length) return grounded;
+
+  // At least one non-aggregate answer field must remain visible. A candidate
+  // returning only a helper metric cannot stand in for a missing entity label.
+  if (!mappedExpectedColumns.some(column => !aggregateHelperFromColumn(column))) return grounded;
+
+  const omittedHelpers = missingExpectedColumns.map(column => ({
+    column,
+    helper: aggregateHelperFromColumn(column),
+  }));
+  if (omittedHelpers.some(item => !item.helper
+    || questionExplicitlyRequestsHelper(context.question, item.helper)
+    || !sqlUsesAggregateHelper(context.candidateSql, item.helper))) {
+    return grounded;
+  }
+
+  const projectedExpected = expectedRows.map(row => Object.fromEntries(
+    mappedExpectedColumns.map(column => [column, row[column]]),
+  ));
+  const projected = compareResultSets(projectedExpected, actualRows, {
+    ...options,
+    orderMatters: false,
+    strictColumns: false,
+  });
+  if (!projected.equal) return grounded;
+
+  return {
+    ...projected,
+    equivalenceRule: 'verified_helper_projection',
+    reason: `The complete requested answer matched (${mappedExpectedColumns.join(', ')}); omitted gold helper column(s) ${missingExpectedColumns.join(', ')} were verified in candidate SQL and were not explicitly requested for display.`,
+  };
+}
+
 /**
  * Conservative second-pass comparator for answers withheld by the product
  * safety contract. It accepts all normal result-set equivalences and one

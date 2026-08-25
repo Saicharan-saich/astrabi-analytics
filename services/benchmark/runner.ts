@@ -1,6 +1,6 @@
 import {
   compareResultSets,
-  compareResultSetsAtRequestedProjection,
+  compareResultSetsAsUserAnswer,
   compareWithheldResultSets,
 } from './comparator';
 import type {
@@ -230,8 +230,12 @@ export async function executeBenchmarkCase(
     );
     const completedAt = now();
     const safeToDisplay = pipelineResult.displaySafety?.allowed !== false;
+    // A pipeline result exists only after DuckDB executed the candidate. Keep
+    // legacy plan conformance as a diagnostic (`validSql`), but do not confuse
+    // it with SQL syntax/executability when assigning the outcome.
     const validSql = pipelineResult.validation?.valid !== false;
-    let comparison = compareResultSetsAtRequestedProjection(
+    const executableSql = Boolean(pipelineResult.sql?.trim());
+    let comparison = compareResultSetsAsUserAnswer(
       testCase.expectedRows,
       pipelineResult.rawData || [],
       {
@@ -241,6 +245,7 @@ export async function executeBenchmarkCase(
         orderMatters: false,
       },
       pipelineResult.contractValidation?.requestedOutputFields,
+      { question: testCase.question, candidateSql: pipelineResult.sql || '' },
     );
     const base: Omit<BenchmarkCaseResult, 'status' | 'passed' | 'failureReason'> = {
       caseId: testCase.id,
@@ -310,6 +315,10 @@ export async function executeBenchmarkCase(
       };
     }
 
+    if (!executableSql) {
+      return { ...base, status: 'invalid_sql', passed: false, failureReason: 'No executable candidate SQL was produced.' };
+    }
+
     // Execution accuracy is determined by the values returned. Safety and SQL
     // validation remain independent diagnostic rates on the same passing case;
     // they must not turn a value-equivalent output into a wrong answer.
@@ -343,9 +352,8 @@ export async function executeBenchmarkCase(
         failureReason: pipelineResult.displaySafety?.reasons?.join(' ') || 'The answer contract withheld this result.',
       };
     }
-    if (!validSql) {
-      return { ...base, status: 'invalid_sql', passed: false, failureReason: 'The generated SQL did not pass validation.' };
-    }
+    // A plan-conformance warning is retained in `validSql`, confidence and the
+    // report, but SQL that DuckDB already executed is not "invalid SQL".
     return { ...base, status: 'wrong_result', passed: false, failureReason: comparison.reason };
   } catch (error) {
     const completedAt = now();
