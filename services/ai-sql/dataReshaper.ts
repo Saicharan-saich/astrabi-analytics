@@ -36,6 +36,29 @@ export function reshapeData(
         }
     }
 
+    // ─── 0.5 Contextual labels for two-total period comparisons ──
+    // SQL keeps stable Current/Previous roles for validation and downstream
+    // calculations. The chart/table should show the periods the user actually
+    // asked for (for example This Month and Last Month).
+    if (plan.intent === 'total_comparison' && plan.comparison?.mode === 'total' && reshapedData.length === 2) {
+        const periodKey = Object.keys(reshapedData[0] || {}).find(key => key.toLowerCase() === 'period');
+        if (periodKey) {
+            const grain = plan.comparison.grain;
+            const title = grain ? grain.charAt(0).toUpperCase() + grain.slice(1) : 'Period';
+            const currentLabel = grain ? `This ${title}` : 'Current Period';
+            const previousLabel = plan.comparison.type === 'same_period_last_year'
+                ? (grain === 'year' ? 'Last Year' : `Same ${title} Last Year`)
+                : grain ? `Last ${title}` : 'Previous Period';
+            reshapedData = reshapedData.map(row => {
+                const role = String(row[periodKey] || '').toLowerCase();
+                if (role === 'current') return { ...row, [periodKey]: currentLabel };
+                if (role === 'previous') return { ...row, [periodKey]: previousLabel };
+                return row;
+            });
+            if (updatedChart.growth) updatedChart.growth.label = `${currentLabel} vs ${previousLabel}`;
+        }
+    }
+
     // ─── 1. Pivot Comparison Data ────────────────────────────────
     // If we have a single row with multiple numeric columns (comparison query),
     // pivot into rows for the grouped bar chart
@@ -176,6 +199,17 @@ export function reshapeData(
                 }
                 reshapedData = filledData;
             }
+        }
+    }
+
+    // A synthetic Current/Previous comparison is not an ordinary chronological
+    // dimension. Keep the requested current period first instead of allowing
+    // the generic time sorter to alphabetize "Last Month" before "This Month".
+    if (plan.intent === 'total_comparison' && plan.comparison?.mode === 'total') {
+        const periodKey = Object.keys(reshapedData[0] || {}).find(key => key.toLowerCase() === 'period');
+        if (periodKey) {
+            const periodOrder = (value: unknown) => /^(?:this|current)\b/i.test(String(value || '')) ? 0 : 1;
+            reshapedData.sort((left, right) => periodOrder(left[periodKey]) - periodOrder(right[periodKey]));
         }
     }
 

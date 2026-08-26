@@ -50,7 +50,7 @@ export interface QueryContract {
         exact?: number;
         minimum?: number;
         maximum?: number;
-        basis: 'scalar' | 'source_rows' | 'distinct_groups' | 'explicit_limit';
+        basis: 'scalar' | 'source_rows' | 'distinct_groups' | 'explicit_limit' | 'period_comparison';
     };
     /** Result fields that must identify one row per requested group. This is
      * checked after local execution so a grouped filter cannot accidentally
@@ -1008,6 +1008,11 @@ export function buildQueryContract(
         || requestedOutputFields.find(field => descriptiveColumn(field.field))
         || requestedOutputFields[0];
     const queryShape = inferQueryShape(question);
+    const requiresComparison = COMPARISON_CUE.test(question) || Boolean(plan.comparison);
+    const comparisonHasExplicitGrain = /\b(?:by|per|for\s+each|for\s+every|broken\s+down\s+by|split\s+by)\b/i.test(question);
+    const ungroupedTotalPeriodComparison = requiresComparison
+        && plan.comparison?.mode === 'total'
+        && !comparisonHasExplicitGrain;
     const orderedProjection = resolveOrderedProjection(question, plan, model, outputEntity);
     const existenceMode = requestsAntiExistence(question) ? 'anti' : 'none';
     const requiresFiscalCalendar = FISCAL_CUE.test(question);
@@ -1023,7 +1028,13 @@ export function buildQueryContract(
     // Aggregate inputs are not automatically visible answer fields. This is
     // especially important for scalar questions: a synonym match such as
     // "sales" -> sales_rep must never force extra dimensions into SELECT.
-    if (queryShape.operation === 'scalar_aggregate'
+    if (ungroupedTotalPeriodComparison) {
+        // Period names are synthetic result labels, not source dimensions. Do
+        // not let a whole-question field scan promote order_id/year_month into
+        // the visible entity or grouping grain.
+        requestedOutputFields = [];
+        outputEntity = undefined;
+    } else if (queryShape.operation === 'scalar_aggregate'
         && !asksCountAlongsideEntity
         && !(requestsEntityRows && aggregatePredicateCue)) {
         requestedOutputFields = [];
@@ -1080,7 +1091,6 @@ export function buildQueryContract(
         ? queryShape.orderDirection
             || (/\b(bottom|lowest|least|worst|smallest|fewest|minimum|youngest|earliest)\b/i.test(question) ? 'asc' : 'desc')
         : undefined;
-    const requiresComparison = COMPARISON_CUE.test(question) || Boolean(plan.comparison);
     const outputEntityIsDimension = !!outputEntity && model?.fields.some(field =>
         field.name.toLowerCase() === outputEntity!.field.toLowerCase() && field.role === 'dimension'
     );
@@ -1224,7 +1234,9 @@ export function buildQueryContract(
         && !requiresComparison
         && !threshold;
     let resultRowExpectation: QueryContract['resultRowExpectation'];
-    if (expectedCardinality === 'scalar') {
+    if (ungroupedTotalPeriodComparison) {
+        resultRowExpectation = { exact: 2, basis: 'period_comparison' };
+    } else if (expectedCardinality === 'scalar') {
         resultRowExpectation = { exact: 1, basis: 'scalar' };
     } else if (queryShape.selection === 'single') {
         resultRowExpectation = { exact: 1, basis: 'explicit_limit' };
@@ -1279,6 +1291,7 @@ export function buildQueryContract(
         requirements.push(`Rank by ${rankingTarget.mode === 'frequency' ? 'COUNT(*) frequency' : `${rankingTarget.aggregation ? `${rankingTarget.aggregation.toUpperCase()} of ` : ''}"${rankingTarget.field}"`}; do not sort by an unrelated helper field.`);
     }
     if (requiresComparison) requirements.push('Return both requested comparison periods with clearly labelled result columns or rows.');
+    if (ungroupedTotalPeriodComparison) requirements.push('Return exactly two aggregated period totals. Do not GROUP BY or expose any source detail field unless the question explicitly requests a breakdown.');
     if (requiresDistinctProjection) requirements.push('Return every distinct requested value using SELECT DISTINCT; do not arbitrarily truncate the unique result set.');
     if (uniqueResultFields.length) requirements.push(`Return one row per qualifying group (${uniqueResultFields.join(', ')}); never filter the original detail rows in a way that repeats a qualifying group.`);
     if (resultRowExpectation?.exact !== undefined) requirements.push(`Return exactly ${resultRowExpectation.exact} result row(s); this cardinality is established from the requested shape and local metadata.`);
@@ -1759,6 +1772,13 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
     if (contract.existenceMode === 'anti'
         && !/(?:\bnot\s+exists\b|\bnot\s+in\s*\(|\bexcept\b|\bleft\s+(?:outer\s+)?join\b[\s\S]*\bis\s+null\b)/i.test(sql)) {
         issues.push({ code: 'missing_existence_logic', severity: 'error', message: 'The question asks for absent related records, but the SQL has no anti-join/set-difference operation.' });
+    }
+    if (contract.resultRowExpectation?.basis === 'period_comparison' && /\bgroup\s+by\b/.test(normalized)) {
+        issues.push({
+            code: 'unexpected_grouping',
+            severity: 'error',
+            message: 'The question requests two period totals, but the SQL groups them by an unrequested source detail field.',
+        });
     }
     if (contract.setOperation === 'intersection') {
         const explicitIntersection = /\bintersect\b/i.test(sql);

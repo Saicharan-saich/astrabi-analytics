@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { generateLocalPlan } from '../services/ai-sql/intentPlanner';
 import { correctSQL } from '../services/ai-sql/sqlCorrectionEngine';
-import { buildQueryContract, validateSQLAgainstContract } from '../services/ai-sql/queryContract';
+import { buildQueryContract, validateResultAgainstContract, validateSQLAgainstContract } from '../services/ai-sql/queryContract';
+import { canCompileTotalPeriodComparisonLocally } from '../services/ai-sql/deterministicRouting';
 import type { SemanticModel } from '../services/ai-sql/types';
 
 const field = (
@@ -178,5 +179,22 @@ describe('basic semantic intent regressions', () => {
     expect(sql).toContain("SELECT 'Previous' AS period");
     expect(sql).toContain("DATE '2025-02-01'");
     expect(sql).toContain("DATE '2025-02-28'");
+
+    expect(canCompileTotalPeriodComparisonLocally(plan, model)).toBe(true);
+    const contract = buildQueryContract('show the comparision between this month and last month sales', plan, [], model);
+    expect(contract.outputEntity).toBeUndefined();
+    expect(contract.requiredOutputFields).toEqual([]);
+    expect(contract.resultRowExpectation).toEqual({ exact: 2, basis: 'period_comparison' });
+    expect(validateSQLAgainstContract(
+      `SELECT order_id,
+              SUM(CASE WHEN order_date >= DATE '2025-03-01' THEN amount ELSE 0 END) AS this_month_sales,
+              SUM(CASE WHEN order_date < DATE '2025-03-01' THEN amount ELSE 0 END) AS last_month_sales
+       FROM data GROUP BY order_id`,
+      contract,
+    ).map(issue => issue.code)).toContain('unexpected_grouping');
+    expect(validateResultAgainstContract(
+      Array.from({ length: 6 }, (_, index) => ({ order_id: `B-${index}` })),
+      contract,
+    ).map(issue => issue.code)).toContain('unexpected_result_cardinality');
   });
 });

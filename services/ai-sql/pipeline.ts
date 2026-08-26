@@ -69,6 +69,7 @@ import {
     reconcilePlanWithCanonicalIntent,
     type CanonicalQueryIntent,
 } from './canonicalIntent';
+import { canCompileTotalPeriodComparisonLocally } from './deterministicRouting';
 
 /**
  * Post-LLM deterministic SQL sanitizer.
@@ -732,8 +733,25 @@ export async function runAISQLPipeline(
     let qbNotes: string[] = [];
     let qbReason: string | null = null;
     let qbTraceDetails: Record<string, any>;
+    const locallyOwnedTotalComparison = canCompileTotalPeriodComparisonLocally(
+        plan,
+        semanticModel,
+        apdmeResult.derivedMetricApplied,
+    );
 
-    if (antiJoin) {
+    if (locallyOwnedTotalComparison) {
+        // This is an exact two-row shape. Keep it inside the typed compiler so
+        // an LLM cannot reintroduce a row identifier or other detail grouping.
+        qbSQL = correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
+        qbNotes = ['two period totals; no detail grouping'];
+        qbTraceDetails = {
+            fits: true,
+            compiler: 'deterministic-period-comparison',
+            resultGrain: plan.resultGrain,
+            sql: qbSQL,
+        };
+        console.log('[Pipeline] Deterministic period-comparison SQL:', qbSQL);
+    } else if (antiJoin) {
         qbSQL = buildAntiJoinSQL(antiJoin, 'data');
         qbNotes = [`anti-join: ${antiJoin.entity} where ${antiJoin.filterField} in [${antiJoin.hasValues.join(', ')}] but never [${antiJoin.notValues.join(', ')}]`];
         qbTraceDetails = { antiJoin: true, spec: antiJoin, sql: qbSQL };
@@ -779,7 +797,7 @@ export async function runAISQLPipeline(
         }
     }
     traceStep({
-        stepNumber: 5, name: antiJoin ? 'Anti-Join Compiler' : 'Question Builder Compiler', engine: 'qbMapper', icon: '🎛️',
+        stepNumber: 5, name: locallyOwnedTotalComparison ? 'Period Comparison Compiler' : antiJoin ? 'Anti-Join Compiler' : 'Question Builder Compiler', engine: 'qbMapper', icon: '🎛️',
         status: qbSQL ? 'pass' : 'skip',
         summary: qbSQL
             ? `Governed deterministic query compiled — ${qbNotes.join('; ')}`
@@ -798,7 +816,19 @@ export async function runAISQLPipeline(
     let directSqlError: string | null = null;
     let directSqlBlocked = false;
     let directQuerySpec: DynamicQuerySpec | undefined;
-    {
+    if (locallyOwnedTotalComparison && qbSQL) {
+        directSqlError = 'Not required: the deterministic period compiler produced the exact two-row answer shape.';
+        traceStep({
+            stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
+            status: 'skip',
+            summary: 'Skipped — deterministic period SQL prevents unrequested detail grouping',
+            details: {
+                reason: directSqlError,
+                tokens: 0,
+                model: null,
+            },
+        }, _directSqlStart);
+    } else {
         // Hybrid path: the local engines build and verify the plan first; the
         // selected GPT-5.6 model then drafts SQL constrained by that plan. If the
         // model is unavailable or rejected, the local compiler remains a safe
@@ -912,7 +942,9 @@ export async function runAISQLPipeline(
         summary: directSQL
             ? `Hybrid SQL: ${directSqlModel || 'GPT-5.6'} generated SQL from the governed plan using ${effectivePrivacyMode === 'enhanced' ? 'metadata plus approved safe values' : 'metadata only'}`
             : qbSQL
-                ? 'Local continuity fallback: deterministic Question Builder SQL'
+                ? (locallyOwnedTotalComparison
+                    ? 'Local deterministic period comparison: exactly two aggregated rows'
+                    : 'Local continuity fallback: deterministic Question Builder SQL')
                 : `Local continuity fallback: generated via ${sqlMethod === 'deterministic' ? 'deterministic rules' : 'AI/LLM fallback'}`,
         details: { method: sqlMethod, sql: aiGeneratedSQL },
     }, _s1);
@@ -961,7 +993,7 @@ export async function runAISQLPipeline(
     // May be downgraded to a deterministic backup below if the LLM SQL won't run.
     let sqlEngine: 'question-builder' | 'llm-sql' | 'correction-engine' | 'llm' =
         directSQL ? 'llm-sql'
-            : qbSQL ? 'question-builder'
+            : qbSQL ? (locallyOwnedTotalComparison ? 'correction-engine' : 'question-builder')
                 : _correctionStatus === 'pass' ? 'correction-engine'
                     : (sqlMethod === 'llm' ? 'llm' : 'correction-engine');
 
@@ -1828,9 +1860,11 @@ export async function runAISQLPipeline(
         }
         : {
             strategy: 'deterministic' as const,
-            summary: 'The GPT SQL draft was unavailable or rejected, so the governed local compiler answered this request without sending dataset rows to an AI model.',
+            summary: locallyOwnedTotalComparison
+                ? 'The governed local period compiler produced two aggregate rows without an LLM SQL call.'
+                : 'The GPT SQL draft was unavailable or rejected, so the governed local compiler answered this request without sending dataset rows to an AI model.',
             dataAccess: 'metadata_only' as const,
-            fallbackReason: directSqlError || undefined,
+            fallbackReason: locallyOwnedTotalComparison ? undefined : directSqlError || undefined,
         };
 
     const pipelineResult: AISQLPipelineResult = {
