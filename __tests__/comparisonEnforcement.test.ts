@@ -35,6 +35,7 @@ describe('isTimePeriodComparison — category vs period', () => {
             'today vs yesterday',
             'Sales in 2024 vs 2023',
             'June vs July revenue',
+            'show the comparision between this month and last month sales',
         ];
         for (const q of periodQuestions) {
             expect(isTimePeriodComparison(q), q).toBe(true);

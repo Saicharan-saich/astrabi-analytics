@@ -32,7 +32,7 @@ import { recommendChart } from './chartRecommender';
 import { reshapeData } from './dataReshaper';
 import { scoreConfidence } from './confidenceScorer';
 import { logAuditEntry } from './auditLogger';
-import { resolveTimeContext, augmentQuestionWithTime } from './timeResolver';
+import { resolveTimeContext } from './timeResolver';
 import { processPlan } from './derivedMetricEngine';
 import { formatSQL } from '../sqlFormatter';
 import { generateTrustVerification } from './trustEngine';
@@ -244,7 +244,6 @@ export async function runAISQLPipeline(
     console.log('[Pipeline] Step 1b: Resolving time context...');
     _s1 = performance.now();
     const resolvedTime = resolveTimeContext(question, semanticModel);
-    const augmentedQuestion = augmentQuestionWithTime(question, resolvedTime);
     traceStep({
         stepNumber: 2, name: 'Time Resolver', engine: 'timeResolver', icon: '⏰',
         status: resolvedTime.filter ? 'pass' : 'skip',
@@ -411,7 +410,12 @@ export async function runAISQLPipeline(
     // the dataset-relative reporting anchor and lets the typed QueryPlan compiler
     // answer ordinary questions without sending any data or question to an LLM.
     const _dsEarly = { sql: null as string | null, tokens: 0, model: undefined as string | undefined, error: 'Deferred until deterministic compilation is unavailable' };
-    let plan = generateLocalPlan(augmentedQuestion, semanticModel, grainOverride);
+    // Preserve the complete wording for intent detection. Replacing only one
+    // relative phrase in a two-period question (for example replacing "last
+    // month" inside "this month vs last month") destroys the comparison cue
+    // and can turn a SUM comparison into a raw-row projection. The concrete
+    // resolved range is injected below after the comparison-aware plan exists.
+    let plan = generateLocalPlan(question, semanticModel, grainOverride);
     console.log('[Pipeline] Step 2: Plan built locally (governed deterministic-first path)');
     traceStep({
         stepNumber: 3, name: 'Intent Planner', engine: 'intentPlanner', icon: '🎯',

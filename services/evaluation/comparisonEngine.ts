@@ -15,6 +15,7 @@ import type { QueryPlan, Dimension } from '../queryPlan/types';
 import { executeQueryPlan } from '../queryPlan';
 import type { DateRange } from '../dateHelpers';
 import type { DimDateRow } from '../../types';
+import { previousComparisonPeriod } from '../comparisonPeriod';
 
 interface ComparisonParams {
     data: any[];
@@ -66,12 +67,21 @@ export function applyComparison(params: ComparisonParams): void {
         const partKey = (row: any): string =>
             partDims.map(pd => String(row[(pd as any).column] || '')).join('||');
 
-        if (comparison === 'previous_period' && data.length > 1) {
+        const explicitTimeRange = findTimeRange(plan, dateColKey);
+        if (comparison === 'previous_period' && explicitTimeRange) {
+            // A current-period filter commonly leaves a single grouped bucket.
+            // LAG cannot see the filtered-out prior bucket, so re-query the raw
+            // source using a shifted window and align the resulting buckets.
+            applyTimeShiftedComparison(data, plan, planDimKey, planMetricKey,
+                'previous_period', comparisonGrain, 1,
+                dateColKey, dateExtractor, dates, allRows, dimDate);
+        } else if (comparison === 'previous_period' && data.length > 1) {
+            // Preserve the normal unfiltered adjacent-period behavior.
             applyLag1(data, planMetricKey, partKey);
         } else if (comparison === 'same_period_last_n') {
             // Date-shifted re-query: fetch data from the comparison period and merge
-            applyTimeSPLN(data, plan, planDimKey, planMetricKey,
-                comparisonGrain, comparisonOffset || 1,
+            applyTimeShiftedComparison(data, plan, planDimKey, planMetricKey,
+                'same_period_last_n', comparisonGrain, comparisonOffset || 1,
                 dateColKey, dateExtractor, dates, allRows, dimDate);
         } else if (comparison === 'same_period_last_year') {
             applySPLY(data, plan, planDimKey, planMetricKey, partKey, dateColKey, allRows, dimDate);
@@ -89,6 +99,15 @@ export function applyComparison(params: ComparisonParams): void {
             comparison, comparisonGrain, comparisonOffset,
             dateColKey, dateExtractor, dates, allRows, dimDate);
     }
+}
+
+function findTimeRange(plan: QueryPlan, dateColKey: string): { start: string; end: string } | null {
+    const normalizedDate = String(dateColKey || '').toLowerCase().replace(/[_\s]+/g, '');
+    const filter = plan.filters.range.find(item => {
+        if ((item as any)._isTimeFilter) return true;
+        return item.column.toLowerCase().replace(/[_\s]+/g, '') === normalizedDate;
+    });
+    return filter?.start && filter?.end ? { start: filter.start, end: filter.end } : null;
 }
 
 // ── Convert grain + offset into actual row offset ────────────────
@@ -260,9 +279,10 @@ function applySPLY(
 // Instead of LAG (which requires enough rows), this shifts the entire
 // date range back by grain * offset, re-runs the query plan, and
 // maps previous values by time bucket key. Works for all grains.
-function applyTimeSPLN(
+function applyTimeShiftedComparison(
     data: any[], plan: QueryPlan,
     dimKey: string, metricKey: string,
+    comparisonType: 'previous_period' | 'same_period_last_n',
     comparisonGrain?: string, comparisonOffset: number = 1,
     dateColKey?: string, dateExtractor?: (r: any) => string,
     dates?: DateRange, allRows?: any[], dimDate?: DimDateRow[]
@@ -295,22 +315,16 @@ function applyTimeSPLN(
     }
     if (!timeFilterStart || !timeFilterEnd) return;
 
-    // Compute the shift in days based on grain * offset
-    const grainDaysMap: Record<string, number> = {
-        day: 1, week: 7, month: 30, quarter: 91, year: 365,
-    };
-    const shiftDays = (grainDaysMap[comparisonGrain || 'day'] || 1) * comparisonOffset;
+    const shifted = previousComparisonPeriod(
+        timeFilterStart,
+        timeFilterEnd,
+        comparisonGrain,
+        comparisonType === 'same_period_last_n' ? comparisonOffset : 1,
+    );
+    const prevStart = shifted.start;
+    const prevEnd = shifted.end;
 
-    // Shift the current date range back
-    const startD = new Date(`${timeFilterStart}T12:00:00Z`);
-    const endD = new Date(`${timeFilterEnd}T12:00:00Z`);
-    const prevStartD = new Date(startD.getTime() - shiftDays * 86400000);
-    const prevEndD = new Date(endD.getTime() - shiftDays * 86400000);
-    const fmt = (d: Date) => d.toISOString().split('T')[0];
-    const prevStart = fmt(prevStartD);
-    const prevEnd = fmt(prevEndD);
-
-    console.log(`[ComparisonEngine] TimeSPLN: current=${timeFilterStart}→${timeFilterEnd}, prev=${prevStart}→${prevEnd}, shift=${shiftDays}d`);
+    console.log(`[ComparisonEngine] ${comparisonType}: current=${timeFilterStart}→${timeFilterEnd}, prev=${prevStart}→${prevEnd}, grain=${comparisonGrain || 'day'}, offset=${comparisonOffset}`);
 
     // Filter raw rows for the comparison period
     const prevRows = allRows.filter(r => {
@@ -319,7 +333,7 @@ function applyTimeSPLN(
     });
 
     if (prevRows.length === 0) {
-        console.log(`[ComparisonEngine] TimeSPLN: no rows found for comparison period ${prevStart}→${prevEnd}`);
+        console.log(`[ComparisonEngine] ${comparisonType}: no rows found for comparison period ${prevStart}→${prevEnd}`);
         return;
     }
 
@@ -389,7 +403,7 @@ function applyTimeSPLN(
         }
     }
 
-    console.log(`[ComparisonEngine] TimeSPLN: ${prevRows.length} prev rows → ${prevData.length} buckets, matched ${Math.min(currKeys.length, prevKeys.length)}/${currKeys.length} current buckets`);
+    console.log(`[ComparisonEngine] ${comparisonType}: ${prevRows.length} prev rows → ${prevData.length} buckets, matched ${Math.min(currKeys.length, prevKeys.length)}/${currKeys.length} current buckets`);
 }
 
 // ── Non-time dimension comparison (categorical) ──────────────────
@@ -427,19 +441,15 @@ function applyNonTimeComparison(
         if (minD < '9999-12-31') { timeFilterStart = minD; timeFilterEnd = maxD; }
     }
 
-    const startD = new Date(`${timeFilterStart}T00:00:00Z`);
-    const endD = new Date(`${timeFilterEnd}T00:00:00Z`);
-    const periodMs = endD.getTime() - startD.getTime();
-    const periodDays = Math.max(1, Math.round(periodMs / 86400000));
-
     // Build comparison period boundaries
     let prevStart: string, prevEnd: string;
     if (comparison === 'previous_period') {
-        const prevEndD = new Date(startD.getTime() - 86400000);
-        const prevStartD = new Date(prevEndD.getTime() - (periodDays - 1) * 86400000);
-        prevStart = prevStartD.toISOString().split('T')[0];
-        prevEnd = prevEndD.toISOString().split('T')[0];
+        const shifted = previousComparisonPeriod(timeFilterStart, timeFilterEnd, comparisonGrain, 1);
+        prevStart = shifted.start;
+        prevEnd = shifted.end;
     } else if (comparison === 'same_period_last_year') {
+        const startD = new Date(`${timeFilterStart}T00:00:00Z`);
+        const endD = new Date(`${timeFilterEnd}T00:00:00Z`);
         const lyStart = new Date(startD);
         lyStart.setUTCFullYear(lyStart.getUTCFullYear() - 1);
         const lyEnd = new Date(endD);

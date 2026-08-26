@@ -1127,22 +1127,22 @@ function enforceTimeContext(plan: AnalysisPlan, question: string, model: Semanti
     let start: Date, end: Date;
 
     if (period === 'year') {
-        start = new Date(anchorData.getFullYear(), 0, 1);
-        end = new Date(anchorData.getFullYear(), 11, 31);
+        start = new Date(Date.UTC(anchorData.getUTCFullYear(), 0, 1));
+        end = new Date(Date.UTC(anchorData.getUTCFullYear(), 11, 31));
     } else if (period === 'month') {
-        start = new Date(anchorData.getFullYear(), anchorData.getMonth(), 1);
-        end = new Date(anchorData.getFullYear(), anchorData.getMonth() + 1, 0); // Last day of month
+        start = new Date(Date.UTC(anchorData.getUTCFullYear(), anchorData.getUTCMonth(), 1));
+        end = new Date(Date.UTC(anchorData.getUTCFullYear(), anchorData.getUTCMonth() + 1, 0)); // Last day of month
     } else if (period === 'week') {
         // Assume week starts on Sunday
-        const day = anchorData.getDay();
-        const diff = anchorData.getDate() - day;
-        start = new Date(anchorData.getFullYear(), anchorData.getMonth(), diff);
+        const day = anchorData.getUTCDay();
+        const diff = anchorData.getUTCDate() - day;
+        start = new Date(Date.UTC(anchorData.getUTCFullYear(), anchorData.getUTCMonth(), diff));
         end = new Date(start);
-        end.setDate(start.getDate() + 6);
+        end.setUTCDate(start.getUTCDate() + 6);
     } else if (period === 'quarter') {
-        const q = Math.floor(anchorData.getMonth() / 3);
-        start = new Date(anchorData.getFullYear(), q * 3, 1);
-        end = new Date(anchorData.getFullYear(), q * 3 + 3, 0);
+        const q = Math.floor(anchorData.getUTCMonth() / 3);
+        start = new Date(Date.UTC(anchorData.getUTCFullYear(), q * 3, 1));
+        end = new Date(Date.UTC(anchorData.getUTCFullYear(), q * 3 + 3, 0));
     } else { // day
         start = new Date(anchorData);
         end = new Date(anchorData);
@@ -1233,13 +1233,19 @@ function enforceComparison(plan: AnalysisPlan, question: string, model: Semantic
     // into a daily trend and prevents the two labelled totals from being produced.
     if (mode === 'total') {
         const before = plan.dimensions.length;
-        plan.dimensions = plan.dimensions.filter(d => {
-            const field = model.fields.find(f => f.name.toLowerCase() === d.field.toLowerCase());
-            return !(field?.semanticType === 'date' && !d.timeGrain);
-        });
+        const explicitlyGrouped = /\b(?:by|per|for\s+each|for\s+every|broken\s+down\s+by|split\s+by)\b/i.test(question);
+        plan.dimensions = explicitlyGrouped
+            ? plan.dimensions.filter(d => {
+                const field = model.fields.find(f => f.name.toLowerCase() === d.field.toLowerCase());
+                return field?.semanticType !== 'date' && field?.semanticType !== 'identifier' && !d.timeGrain;
+            })
+            : [];
         if (plan.dimensions.length !== before) {
-            console.log('[Intent Planner] Total comparison: removed raw date grouping dimension');
+            console.log('[Intent Planner] Total comparison: removed incidental date/identifier grouping dimensions');
         }
+        plan.resultGrain = explicitlyGrouped
+            ? `one current/previous comparison per ${plan.dimensions.map(d => d.field).join(' + ') || 'group'}`
+            : 'two period totals (current and previous)';
     }
 
     // Ensure there's a date filter — comparison SQL needs a BETWEEN filter to compute previous period
@@ -1265,17 +1271,17 @@ function enforceComparison(plan: AnalysisPlan, question: string, model: Semantic
         let endStr: string | null = null;
 
         if (/this\s+week|same\s+day\s+last\s+week/i.test(q)) {
-            const day = anchorDate.getDay();
-            const diff = anchorDate.getDate() - day;
-            const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), diff);
+            const day = anchorDate.getUTCDay();
+            const diff = anchorDate.getUTCDate() - day;
+            const start = new Date(Date.UTC(anchorDate.getUTCFullYear(), anchorDate.getUTCMonth(), diff));
             startStr = start.toISOString().split('T')[0];
             endStr = todayStr;
         } else if (/this\s+month/i.test(q)) {
-            const start = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), 1);
+            const start = new Date(Date.UTC(anchorDate.getUTCFullYear(), anchorDate.getUTCMonth(), 1));
             startStr = start.toISOString().split('T')[0];
             endStr = todayStr;
         } else if (/this\s+year/i.test(q)) {
-            startStr = `${anchorDate.getFullYear()}-01-01`;
+            startStr = `${anchorDate.getUTCFullYear()}-01-01`;
             endStr = todayStr;
         } else if (/\b(today|yesterday)\b/i.test(q)) {
             startStr = todayStr;

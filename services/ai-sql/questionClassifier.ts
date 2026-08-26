@@ -37,6 +37,18 @@ export function isTimePeriodComparison(question: string): boolean {
         return null;
     };
 
+    // Natural "comparison between A and B" phrasing, including the common
+    // misspelling "comparision". Require a time token on BOTH sides so category
+    // requests such as "comparison between Coffee and Tea" remain categorical.
+    const between = q.match(/\bcompar(?:ison|ision)\s+between\s+(.+?)\s+and\s+(.+?)(?:[?.!,]|$)/i);
+    if (between) {
+        const hasTimeToken = (text: string) => text
+            .split(/\s+/)
+            .map(clean)
+            .some(token => token && TIME_TOKEN.test(token));
+        if (hasTimeToken(between[1]) && hasTimeToken(between[2])) return true;
+    }
+
     let m: RegExpExecArray | null;
     while ((m = KEYWORD.exec(q)) !== null) {
         const before = firstMeaningful(q.slice(0, m.index).trim().split(/\s+/).filter(Boolean).reverse());

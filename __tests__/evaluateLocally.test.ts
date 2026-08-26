@@ -198,6 +198,30 @@ describe('evaluateLocally — previous_period comparison', () => {
         const rowsWithPrev = result.data.filter((r: any) => r.previous_value !== undefined);
         expect(rowsWithPrev.length).toBeGreaterThan(0);
     });
+
+    it('fetches the previous month outside a this-month filter for a single monthly bucket', async () => {
+        const query: QueryConfig = {
+            questionId: 'custom_builder',
+            metric: 'revenue',
+            dimension: 'month',
+            aggregation: AggregationType.SUM,
+            timeGrain: TimeGrain.RAW,
+            analysisType: AnalysisType.STANDARD,
+            asOfDate: '2025-03-15',
+            timeFilter: 'this_month',
+            comparison: 'previous_period' as any,
+            comparisonGrain: 'month' as any,
+        };
+
+        const result = await runAnalysis(ds, query);
+        expect(result.data).toHaveLength(1);
+        expect(Number(result.data[0][result.yKey])).toBe(400);
+        expect(Number((result.data[0] as any).previous_value)).toBe(400);
+        expect(Number((result.data[0] as any).growth_pct)).toBeCloseTo(0, 5);
+        expect(result.sql).toContain('previous_base');
+        expect(result.sql).toContain("DATE '2025-02-01'");
+        expect(result.sql).toContain("DATE '2025-02-15'");
+    });
 });
 
 describe('dateHelpers — pad and getISOWeek', () => {

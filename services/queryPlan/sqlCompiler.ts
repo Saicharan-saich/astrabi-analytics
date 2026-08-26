@@ -11,6 +11,7 @@ import {
 } from './types';
 import { sanitizeIdentifier, escapeStringValue } from '../analysisValidator';
 import { dateRangePredicate } from './sqlPrimitives';
+import { previousComparisonPeriod } from '../comparisonPeriod';
 
 // ── HELPERS ──────────────────────────────────────────────────────
 
@@ -391,22 +392,23 @@ export function compileEnrichedSQL(enriched: EnrichedQuery): string {
 
             if (dateRange && dateRange.start && dateRange.end) {
                 // Calculate the comparison period date range
-                const curStart = new Date(`${dateRange.start}T00:00:00Z`);
-                const curEnd = new Date(`${dateRange.end}T00:00:00Z`);
-                const rangeDays = Math.round((curEnd.getTime() - curStart.getTime()) / (86400000)) + 1;
-
                 let prevStart: string, prevEnd: string;
                 if (comp.type === 'same_period_last_year') {
+                    const curStart = new Date(`${dateRange.start}T00:00:00Z`);
+                    const curEnd = new Date(`${dateRange.end}T00:00:00Z`);
                     const ps = new Date(curStart); ps.setUTCFullYear(ps.getUTCFullYear() - 1);
                     const pe = new Date(curEnd); pe.setUTCFullYear(pe.getUTCFullYear() - 1);
                     prevStart = ps.toISOString().split('T')[0];
                     prevEnd = pe.toISOString().split('T')[0];
                 } else {
-                    // previous_period: shift back by the range length
-                    const pe = new Date(curStart); pe.setUTCDate(pe.getUTCDate() - 1);
-                    const ps = new Date(pe); ps.setUTCDate(ps.getUTCDate() - rangeDays + 1);
-                    prevStart = ps.toISOString().split('T')[0];
-                    prevEnd = pe.toISOString().split('T')[0];
+                    const previous = previousComparisonPeriod(
+                        dateRange.start,
+                        dateRange.end,
+                        comp.grain,
+                        comp.type === 'same_period_last_n' ? (comp.offset || 1) : 1,
+                    );
+                    prevStart = previous.start;
+                    prevEnd = previous.end;
                 }
 
                 // Build the categorical comparison SQL with a proper UNION ALL
@@ -418,6 +420,9 @@ export function compileEnrichedSQL(enriched: EnrichedQuery): string {
                     .replace(/\nORDER BY[^\n]*/i, '')
                     .replace(/\nLIMIT[^\n]*/i, '');
 
+                const currentPredicate = dateRangePredicate(safeDate, dateRange.start, dateRange.end);
+                const previousPredicate = dateRangePredicate(safeDate, prevStart, prevEnd);
+                const previousSQL = baseSQLNoOrder.replace(currentPredicate, previousPredicate);
                 const catCompSQL = [
                     `-- Postgres/DuckDB compatible`,
                     `-- Categorical comparison: ${comp.type}`,
@@ -429,11 +434,7 @@ export function compileEnrichedSQL(enriched: EnrichedQuery): string {
                     `),`,
                     ``,
                     `previous_period AS (`,
-                    `${baseSQLNoOrder}`
-                        .replace(
-                            new RegExp(`BETWEEN '${dateRange.start}' AND '${dateRange.end}'`, 'g'),
-                            `BETWEEN '${prevStart}' AND '${prevEnd}'`
-                        ),
+                    `${previousSQL}`,
                     `)`,
                     ``,
                     `SELECT`,
@@ -442,7 +443,7 @@ export function compileEnrichedSQL(enriched: EnrichedQuery): string {
                     `  ROUND((c.${metricAlias} - p.${metricAlias}) / NULLIF(ABS(p.${metricAlias}), 0) * 100, 2) AS "growth_pct"`,
                     `FROM current_period c`,
                     `LEFT JOIN previous_period p`,
-                    `  ON ${partitionCols.map(col => `c.${col} = p.${col}`).join(' AND ')}`,
+                    `  ON ${partitionCols.length ? partitionCols.map(col => `c.${col} = p.${col}`).join(' AND ') : 'TRUE'}`,
                     finalOrderBy ? finalOrderBy : '',
                 ].filter(Boolean).join('\n');
 
@@ -456,6 +457,39 @@ export function compileEnrichedSQL(enriched: EnrichedQuery): string {
         const windowSpec = `${partitionClause}${windowOrderClause}`;
 
         if (comp.type === 'previous_period') {
+            // A time filter removes the prior bucket before LAG can see it. In
+            // that case compile a second source query outside the current filter
+            // and align its buckets positionally within each categorical group.
+            if (comp.dateRange?.start && comp.dateRange?.end) {
+                const previous = previousComparisonPeriod(
+                    comp.dateRange.start,
+                    comp.dateRange.end,
+                    comp.grain || timeDim!.grain,
+                    1,
+                );
+                const dateCol = safeId(plan._dateColumnKey || 'date');
+                const currentPredicate = dateRangePredicate(dateCol, comp.dateRange.start, comp.dateRange.end);
+                const previousPredicate = dateRangePredicate(dateCol, previous.start, previous.end);
+                const previousBaseSQL = baseSQLForCTE.replace(currentPredicate, previousPredicate);
+                const rowNumberPartition = partitionCols.length ? `PARTITION BY ${partitionCols.join(', ')} ` : '';
+                const joinParts = [
+                    'c."__comparison_row" = p."__comparison_row"',
+                    ...partitionCols.map(col => `c.${col} = p.${col}`),
+                ];
+
+                ctes.push(`previous_base AS (\n${previousBaseSQL}\n)`);
+                ctes.push(`current_numbered AS (\n    SELECT *, ROW_NUMBER() OVER (${rowNumberPartition}ORDER BY ${timeDimAlias} ASC) AS "__comparison_row"\n    FROM base\n)`);
+                ctes.push(`previous_numbered AS (\n    SELECT *, ROW_NUMBER() OVER (${rowNumberPartition}ORDER BY ${timeDimAlias} ASC) AS "__comparison_row"\n    FROM previous_base\n)`);
+                return [
+                    `WITH ${ctes.join(',\n')}`,
+                    `SELECT c.* EXCLUDE ("__comparison_row"),`,
+                    `       p.${metricAlias} AS "previous_value",`,
+                    `       (c.${metricAlias} - p.${metricAlias}) / NULLIF(ABS(p.${metricAlias}), 0) * 100 AS "growth_pct"`,
+                    `FROM current_numbered c`,
+                    `LEFT JOIN previous_numbered p ON ${joinParts.join(' AND ')}`,
+                    finalOrderBy,
+                ].filter(Boolean).join('\n');
+            }
             ctes.push(`lagged AS (\n    SELECT *,\n        LAG(${metricAlias}) OVER (${windowSpec}) AS "previous_value"\n    FROM ${currentSource}\n)`);
             currentSource = 'lagged';
             selectExprs.length = 0;

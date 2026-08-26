@@ -141,4 +141,42 @@ describe('basic semantic intent regressions', () => {
       'unexpected_limit', 'unexpected_aggregation', 'unexpected_grouping', 'missing_ordering_field', 'missing_output_entity',
     ]));
   });
+
+  it('keeps this-month versus last-month sales as a two-total comparison', () => {
+    const model: SemanticModel = {
+      ...baseModel([
+        field('order_id', 'dimension', 'identifier'),
+        field('order_date', 'dimension', 'date'),
+        field('year_month', 'dimension', 'category'),
+        field('amount', 'metric', 'currency', ['sales', 'revenue']),
+      ]),
+      timeContext: {
+        primaryDateColumn: 'order_date',
+        anchorDate: '2025-03-15',
+        minDate: '2024-01-01',
+        maxDate: '2025-03-15',
+      },
+    };
+    const plan = generateLocalPlan('show the comparision between this month and last month sales', model);
+
+    expect(plan.intent).toBe('total_comparison');
+    expect(plan.comparison).toEqual(expect.objectContaining({
+      type: 'previous_period',
+      mode: 'total',
+      grain: 'month',
+    }));
+    expect(plan.metrics).toEqual([expect.objectContaining({ field: 'amount', agg: 'sum' })]);
+    expect(plan.dimensions).toEqual([]);
+    expect(plan.filters).toContainEqual(expect.objectContaining({
+      field: 'order_date',
+      op: 'between',
+      value: ['2025-03-01', '2025-03-31'],
+    }));
+
+    const sql = correctSQL(plan, model);
+    expect(sql).toContain("SELECT 'Current' AS period");
+    expect(sql).toContain("SELECT 'Previous' AS period");
+    expect(sql).toContain("DATE '2025-02-01'");
+    expect(sql).toContain("DATE '2025-02-28'");
+  });
 });
