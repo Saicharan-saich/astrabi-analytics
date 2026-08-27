@@ -36,6 +36,8 @@ describe('isTimePeriodComparison — category vs period', () => {
             'Sales in 2024 vs 2023',
             'June vs July revenue',
             'show the comparision between this month and last month sales',
+            'Compare this and last month sales',
+            'Compare last and this month sales',
         ];
         for (const q of periodQuestions) {
             expect(isTimePeriodComparison(q), q).toBe(true);
@@ -62,6 +64,7 @@ describe('classifyQuestion — the classifier agrees with the enforcement layer'
 
     it('still labels a genuine period comparison', () => {
         expect(classifyQuestion('How did sales this month compare to last month?').intent).toBe('comparison');
+        expect(classifyQuestion('Compare this and last month sales').intent).toBe('comparison');
     });
 
     it('recognises a plain counting question instead of giving up', () => {

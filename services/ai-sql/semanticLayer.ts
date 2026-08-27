@@ -106,6 +106,50 @@ function deriveFormatHint(semanticType: SemanticType): SemanticField['formatHint
     }
 }
 
+function inferUnit(semanticType: SemanticType): NonNullable<SemanticField['unit']> {
+    switch (semanticType) {
+        case 'currency': return 'currency';
+        case 'percentage': return 'percentage';
+        case 'ratio': return 'ratio';
+        case 'quantity':
+        case 'count':
+        case 'ordinal': return 'quantity';
+        case 'date': return 'date';
+        case 'identifier': return 'identifier';
+        case 'boolean': return 'boolean';
+        case 'category':
+        case 'geography':
+        case 'text': return 'text';
+        default: return 'unknown';
+    }
+}
+
+function inferAdditivity(semanticType: SemanticType, role: FieldRole): NonNullable<SemanticField['additivity']> {
+    if (role === 'dimension') return 'not_applicable';
+    if (semanticType === 'currency' || semanticType === 'quantity' || semanticType === 'count') return 'additive';
+    if (semanticType === 'percentage' || semanticType === 'ratio' || semanticType === 'ordinal') return 'non_additive';
+    return 'semi_additive';
+}
+
+function inferEntityName(columnName: string, ownerTable?: string): string | undefined {
+    const normalized = columnName.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
+    const explicit = normalized.match(/^(.+?)_(?:id|key|code|name|type|category|date)$/)?.[1];
+    return explicit?.replace(/_/g, ' ') || ownerTable?.replace(/[_-]+/g, ' ');
+}
+
+function describeBusinessMeaning(
+    label: string,
+    semanticType: SemanticType,
+    role: FieldRole,
+    ownerTable?: string,
+): string {
+    const ownership = ownerTable ? ` owned by ${ownerTable}` : '';
+    const analyticalUse = role === 'metric'
+        ? `a ${semanticType} measure${ownership}`
+        : `a ${semanticType} descriptive field${ownership}`;
+    return `${label} is ${analyticalUse}.`;
+}
+
 /**
  * Build a ColumnStatProfile from dataset rows for the constraint engine.
  */
@@ -304,6 +348,7 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
     const rows = dataset.rows;
     const totalRows = rows.length;
     const domain = dataset.domainProfile?.domain || 'Other';
+    const grain = detectGrain(dataset);
 
     let arbitrationStats = { total: 0, ordinal: 0, feedbackUsed: 0, needsReview: 0 };
 
@@ -341,6 +386,25 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
         const role = arbResult.role;
         const defaultAgg = inferDefaultAgg(semanticType, role);
         const formatHint = deriveFormatHint(semanticType);
+        const ownerCandidates = (dataset.sourceSchema?.tables || []).filter(table =>
+            table.columns.some(column => column.name.toLowerCase() === col.name.toLowerCase())
+        );
+        const ownerTable = ownerCandidates.length === 1 ? ownerCandidates[0].name : undefined;
+        const ownerColumn = ownerCandidates.length === 1
+            ? ownerCandidates[0].columns.find(column => column.name.toLowerCase() === col.name.toLowerCase())
+            : undefined;
+        const participatesAsForeignKey = (dataset.sourceSchema?.joinEdges || []).some(edge =>
+            (edge.leftTable === ownerTable && edge.leftColumn.toLowerCase() === col.name.toLowerCase())
+            || (edge.rightTable === ownerTable && edge.rightColumn.toLowerCase() === col.name.toLowerCase())
+        );
+        const uniquenessRatio = totalRows > 0 ? statProfile.distinctCount / totalRows : 0;
+        const keyRole: NonNullable<SemanticField['keyRole']> = ownerColumn?.isPK
+            ? 'primary_key'
+            : participatesAsForeignKey
+                ? 'foreign_key'
+                : semanticType === 'identifier' || uniquenessRatio >= 0.98
+                    ? 'identifier'
+                    : 'none';
 
         const timeGrainSupport = semanticType === 'date'
             ? (['day', 'week', 'month', 'quarter', 'year'] as const).map(g => g)
@@ -368,6 +432,14 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
             displayLabel: generateDisplayLabel(col.name),
             formatHint,
             classificationSignals: arbResult.signals,
+            ownerTable,
+            keyRole,
+            uniquenessRatio,
+            additivity: inferAdditivity(semanticType, role),
+            unit: inferUnit(semanticType),
+            entity: inferEntityName(col.name, ownerTable),
+            nativeGrain: ownerTable ? `one row per ${ownerTable.replace(/[_-]+/g, ' ')}` : grain,
+            businessMeaning: describeBusinessMeaning(generateDisplayLabel(col.name), semanticType, role, ownerTable),
         });
     }
 
@@ -382,9 +454,6 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
             || dateFields.find(f => f.name.toLowerCase().includes('transaction'))
             || dateFields[0])
         : undefined;
-
-    // Detect grain
-    const grain = detectGrain(dataset);
 
     // Build composite metrics from the semantic fields
     const compositeMetrics = buildCompositeMetrics(fields);
@@ -416,6 +485,17 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
                 leftCol: e.leftColumn,
                 rightCol: e.rightColumn,
                 type: e.type,
+                cardinality: (() => {
+                    const left = dataset.sourceSchema?.tables.find(table => table.name === e.leftTable)
+                        ?.columns.find(column => column.name.toLowerCase() === e.leftColumn.toLowerCase());
+                    const right = dataset.sourceSchema?.tables.find(table => table.name === e.rightTable)
+                        ?.columns.find(column => column.name.toLowerCase() === e.rightColumn.toLowerCase());
+                    if (left?.isPK && right?.isPK) return 'one_to_one' as const;
+                    if (left?.isPK) return 'one_to_many' as const;
+                    if (right?.isPK) return 'many_to_one' as const;
+                    return 'many_to_many' as const;
+                })(),
+                confidence: e.type === 'fk' ? 1 : 0.7,
             }))
         } : undefined,
         grain,

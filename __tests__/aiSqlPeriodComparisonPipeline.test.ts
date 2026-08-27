@@ -56,14 +56,27 @@ describe('AI SQL deterministic period-comparison route', () => {
         };
 
         const result = await runAISQLPipeline(
-            'show the comparision between this month and last month sales',
+            'Compare this and last month sales',
             dataset,
         );
 
         expect(directSqlMocks.generateDirectSQL).not.toHaveBeenCalled();
         expect(directSqlMocks.executeSQLViaDuckDB).toHaveBeenCalled();
+        const executedSql = String((directSqlMocks.executeSQLViaDuckDB.mock.calls as any[][])[0]?.[1] || '');
+        expect(executedSql).toMatch(/^WITH periods/i);
+        expect(executedSql).toMatch(/\bLAG\s*\(/i);
+        expect(executedSql).toMatch(/\bgrowth_pct\b/i);
+        expect(executedSql).not.toMatch(/GROUP BY\s+.*order_id/i);
         expect(result.engine).toBe('correction-engine');
         expect(result.tokenUsage.total).toBe(0);
+        expect(result.plan.intent).toBe('total_comparison');
+        expect(result.plan.metrics).toEqual([expect.objectContaining({ field: 'amount', agg: 'sum' })]);
+        expect(result.plan.dimensions).toEqual([]);
+        expect(result.plan.filters).toContainEqual(expect.objectContaining({
+            field: 'order_date',
+            op: 'between',
+            value: ['2025-03-01', '2025-03-31'],
+        }));
         expect(result.rawData).toHaveLength(2);
         expect(result.rawData.map(row => row.period)).toEqual(['Current', 'Previous']);
         expect(result.rawData.some(row => 'order_id' in row)).toBe(false);

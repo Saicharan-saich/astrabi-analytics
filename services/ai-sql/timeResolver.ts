@@ -356,6 +356,24 @@ function toISO(d: Date): string {
     return d.toISOString().split('T')[0];
 }
 
+/** Resolve the shared unit in shorthand such as "compare this and last month".
+ * The general pattern list sees "last month" first; without this pre-pass it
+ * incorrectly makes the previous month the current comparison window. */
+function coordinatedCurrentPeriodGrain(question: string): 'day' | 'week' | 'month' | 'quarter' | 'year' | null {
+    const q = question.toLowerCase();
+    const comparison = /\b(?:compare|comparison|versus|vs\.?)\b/.test(q);
+    if (!comparison) return null;
+    const coordinated = /\b(?:this|current)\b[\s\S]{0,35}\b(?:and|with|to|against|versus|vs\.?)\b[\s\S]{0,20}\b(?:last|previous|prior)\b/i.test(q)
+        || /\b(?:last|previous|prior)\b[\s\S]{0,35}\b(?:and|with|to|against|versus|vs\.?)\b[\s\S]{0,20}\b(?:this|current)\b/i.test(q);
+    if (!coordinated) return null;
+    if (/\bquarter\b/.test(q)) return 'quarter';
+    if (/\byear\b/.test(q)) return 'year';
+    if (/\bweek\b/.test(q)) return 'week';
+    if (/\bday\b/.test(q)) return 'day';
+    if (/\bmonth\b/.test(q)) return 'month';
+    return null;
+}
+
 /**
  * Resolve relative time references in a question to concrete date filters.
  * Runs BEFORE the LLM planner so it receives unambiguous dates.
@@ -376,6 +394,40 @@ export function resolveTimeContext(question: string, model: SemanticModel): Reso
     const dateField = model.fields.find(f => f.semanticType === 'date' && f.role === 'dimension')?.name
         || model.timeContext?.primaryDateColumn
         || 'order_date';
+
+    const coordinatedGrain = coordinatedCurrentPeriodGrain(question);
+    if (coordinatedGrain) {
+        let start: Date;
+        let end: Date;
+        if (coordinatedGrain === 'month') {
+            start = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth(), 1));
+            end = new Date(Date.UTC(anchor.getUTCFullYear(), anchor.getUTCMonth() + 1, 0));
+        } else if (coordinatedGrain === 'quarter') {
+            const quarter = Math.floor(anchor.getUTCMonth() / 3);
+            start = new Date(Date.UTC(anchor.getUTCFullYear(), quarter * 3, 1));
+            end = new Date(Date.UTC(anchor.getUTCFullYear(), quarter * 3 + 3, 0));
+        } else if (coordinatedGrain === 'year') {
+            start = new Date(Date.UTC(anchor.getUTCFullYear(), 0, 1));
+            end = new Date(Date.UTC(anchor.getUTCFullYear(), 11, 31));
+        } else if (coordinatedGrain === 'week') {
+            start = new Date(anchor);
+            start.setUTCDate(anchor.getUTCDate() - anchor.getUTCDay());
+            end = new Date(start);
+            end.setUTCDate(start.getUTCDate() + 6);
+        } else {
+            start = new Date(anchor);
+            end = new Date(anchor);
+        }
+        const startStr = toISO(start);
+        const endStr = toISO(end);
+        console.log(`[Time Resolver] coordinated ${coordinatedGrain} comparison → ${dateField} BETWEEN ${startStr} AND ${endStr}`);
+        return {
+            filter: { field: dateField, op: 'between', value: [startStr, endStr] },
+            matchedPhrase: `this and last ${coordinatedGrain}`,
+            description: `this ${coordinatedGrain}: ${startStr} to ${endStr}`,
+            comparisonOffset: `1 ${coordinatedGrain}`,
+        };
+    }
 
     let comparisonOffset = null;
     const comparisonMatch = question.match(/\b(yoy|mom|qoq|wow|sply)\b/i);

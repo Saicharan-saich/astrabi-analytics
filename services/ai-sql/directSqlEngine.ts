@@ -18,6 +18,12 @@ import {
     type QueryContract,
 } from './queryContract';
 import { buildCanonicalQueryIntent, type CanonicalQueryIntent } from './canonicalIntent';
+import {
+    formatAnalyticalIRForPrompt,
+    type AnalyticalIR,
+    type AnalyticalOperator,
+} from './analyticalIR';
+import { compileAnalyticalIRToSQL } from './analyticalSqlAst';
 
 const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
 Given a database schema and a question, output a SINGLE read-only SQL SELECT that answers it.
@@ -371,6 +377,120 @@ export interface SQLCandidateDecision {
     complexity: number;
 }
 
+/**
+ * Make the frozen Analytical IR authoritative over the model-authored query
+ * specification. Expressions may be enriched by the model, but answer fields,
+ * grain, populations, joins, ranking and limits cannot drift.
+ */
+export function reconcileQuerySpecWithAnalyticalIR(
+    draft: DynamicQuerySpec,
+    ir: AnalyticalIR,
+): DynamicQuerySpec {
+    const spec: DynamicQuerySpec = JSON.parse(JSON.stringify(draft));
+    spec.operations ||= {};
+    spec.expectedResult ||= { grain: '', columns: [] };
+    spec.assumptions ||= [];
+
+    const find = <K extends AnalyticalOperator['kind']>(kind: K) =>
+        ir.operators.filter((operator): operator is Extract<AnalyticalOperator, { kind: K }> => operator.kind === kind);
+    const aggregates = find('aggregate').flatMap(operator => operator.measures);
+    const groups = find('group')[0]?.grain || [];
+    const filters = find('filter').flatMap(operator => operator.predicates);
+    const rank = find('rank')[0];
+    const limit = find('limit')[0];
+    const ratio = find('ratio')[0];
+    const joins = find('join')[0];
+    const windows = find('window');
+
+    if (ir.answer.kind === 'detail_projection' || ir.answer.kind === 'set_result') {
+        spec.operations.measures = [];
+        spec.operations.groupBy = [];
+    } else {
+        const existingMeasures = spec.operations.measures || [];
+        spec.operations.measures = aggregates.map(measure => {
+            const existing = existingMeasures.find(candidate =>
+                candidate.field?.toLowerCase() === measure.field.toLowerCase()
+                && candidate.aggregation?.toLowerCase() === measure.aggregation
+            ) || existingMeasures.find(candidate => candidate.aggregation?.toLowerCase() === measure.aggregation);
+            if (measure.field === '*') return { ...(existing || {}), aggregation: 'count', expression: 'COUNT(*)' };
+            return { ...(existing || {}), field: measure.field, aggregation: measure.aggregation };
+        });
+        spec.operations.groupBy = groups.map(group => ({ field: group.field }));
+    }
+
+    spec.operations.filters = filters
+        .filter(predicate => predicate.scope === 'where')
+        .map(predicate => ({ field: predicate.field, operator: predicate.operator, value: predicate.value }));
+    spec.operations.having = filters
+        .filter(predicate => predicate.scope === 'having')
+        .map(predicate => ({ expression: `${predicate.field} ${predicate.operator} ${JSON.stringify(predicate.value)}` }));
+
+    if (joins) {
+        spec.operations.joins = joins.path.map(step => ({
+            leftTable: step.fromTable,
+            rightTable: step.toTable,
+            condition: `"${step.fromTable}"."${step.fromColumn}" = "${step.toTable}"."${step.toColumn}"`,
+            purpose: step.fansOut
+                ? 'Pre-aggregate the owning measure before this fan-out relationship.'
+                : 'Relationship required by the frozen analytical IR.',
+        }));
+    }
+    if (rank) {
+        const expression = rank.mode === 'frequency'
+            ? 'COUNT(*)'
+            : rank.aggregation && rank.target
+                ? `${rank.aggregation.toUpperCase()}(${rank.target.field})`
+                : rank.target?.field || 'requested ranking expression';
+        spec.operations.orderBy = [{ expression, direction: rank.direction }];
+    }
+    if (limit) spec.operations.limit = limit.count;
+    else if (ir.constraints.prohibitImplicitLimit) delete spec.operations.limit;
+    if (ratio) {
+        const numerator = ir.populations.find(population => population.id === ratio.numeratorPopulationId);
+        const denominator = ir.populations.find(population => population.id === ratio.denominatorPopulationId);
+        spec.operations.ratio = {
+            kind: ratio.scale === 100 ? 'percentage' : 'ratio',
+            basis: ratio.basis,
+            numerator: {
+                description: numerator?.description || 'qualifying population',
+                filters: numerator?.filters.map(filter => ({ field: filter.field, operator: filter.operator, value: filter.value })),
+            },
+            denominator: {
+                description: denominator?.description || 'reference population',
+                filters: denominator?.filters.map(filter => ({ field: filter.field, operator: filter.operator, value: filter.value })),
+            },
+            scale: ratio.scale,
+        };
+    }
+    if (windows.length) {
+        spec.operations.tableCalculations = windows.map(({ operation }) => ({
+            type: operation.kind,
+            partitionBy: [...operation.partitionBy],
+            orderBy: operation.orderBy ? [operation.orderBy] : [],
+            windowSize: operation.windowSize,
+            buckets: operation.buckets,
+            outputAlias: operation.outputAlias,
+            required: true,
+        }));
+    }
+
+    spec.expectedResult.columns = ir.answer.fields
+        .filter(field => field.visibility === 'visible')
+        .map(field => field.field);
+    spec.expectedResult.grain = ir.answer.cardinality === 'scalar'
+        ? 'one scalar result row'
+        : ir.answer.grain.length
+            ? `one row per ${ir.answer.grain.map(field => field.field).join(' + ')}`
+            : 'one row per matching entity';
+    if (ir.confidence.unresolved.length === 0) spec.clarification = undefined;
+    spec.assumptions = [
+        ...spec.assumptions,
+        `Frozen Analytical IR v${ir.version} governs this query.`,
+        `Result kind: ${ir.answer.kind}; cardinality: ${ir.answer.cardinality}.`,
+    ];
+    return spec;
+}
+
 function splitSqlList(value: string): string[] {
     const items: string[] = [];
     let start = 0;
@@ -575,6 +695,7 @@ export async function generateDirectSQL(
     semanticModel?: SemanticModel,
     requestPurpose?: 'benchmark',
     queryContract?: QueryContract,
+    analyticalIR?: AnalyticalIR,
 ): Promise<DirectSQLResult> {
     const planContext = analysisPlan
         ? `\n\nUntrusted local semantic hints (advisory only):\n${JSON.stringify(analysisPlan, null, 2)}\nDo not copy a metric, dimension, filter, grouping, or limit from these hints unless it is grounded by the user's question and physical schema. The deterministic query contract and the user's requested output take precedence over every conflicting hint.`
@@ -586,6 +707,9 @@ export async function generateDirectSQL(
     const contractContext = queryContract
         ? `\n\nDeterministic Query Contract (mandatory; do not weaken or replace it):\n${formatQueryContractForPrompt(queryContract)}`
         : '';
+    const analyticalIRContext = analyticalIR
+        ? `\n\nFrozen Canonical Analytical IR (authoritative; compile these operators and populations exactly):\n${formatAnalyticalIRForPrompt(analyticalIR)}`
+        : '';
 
     // Terra interprets the question into a typed, open-ended analytical plan.
     // This is deliberately not a collection of keyword rules: the specification
@@ -593,7 +717,7 @@ export async function generateDirectSQL(
     // and any schema-grounded analytical shape.
     const planner = await fetchWithFallback([
         { role: 'system', content: SPEC_PROMPT },
-        { role: 'user', content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}${contractContext}\n\nQuestion: ${question}` },
+        { role: 'user', content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}${contractContext}${analyticalIRContext}\n\nQuestion: ${question}` },
     ] as any, { temperature: 0, max_tokens: 2200, model: PLANNER_MODEL, requestPurpose });
     const specContent = planner.data.choices?.[0]?.message?.content || '';
     const draftSpec = extractJSONObject(specContent);
@@ -601,14 +725,17 @@ export async function generateDirectSQL(
     let tokens = plannerUsage.total_tokens || ((plannerUsage.prompt_tokens || 0) + (plannerUsage.completion_tokens || 0)) || 0;
     if (!draftSpec) return { sql: '', tokens, model: planner.model, error: 'AI planner returned an invalid query specification', blocked: true };
     const canonicalIntent = queryContract ? buildCanonicalQueryIntent(queryContract) : undefined;
-    const spec = canonicalIntent
+    const canonicalSpec = canonicalIntent
         ? reconcileQuerySpecWithCanonicalIntent(draftSpec, canonicalIntent)
         : draftSpec;
+    const spec = analyticalIR
+        ? reconcileQuerySpecWithAnalyticalIR(canonicalSpec, analyticalIR)
+        : canonicalSpec;
     if (spec.clarification) {
         return { sql: '', tokens, model: planner.model, error: spec.clarification, blocked: true, querySpec: spec, canonicalIntent };
     }
 
-    const userContext = `Schema:\n${schemaText}${presentationContext}${contractContext}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
+    const userContext = `Schema:\n${schemaText}${presentationContext}${contractContext}${analyticalIRContext}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
     const drafted = await fetchWithFallback([
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userContext },
@@ -634,6 +761,22 @@ export async function generateDirectSQL(
     }
     if (candidateDecision.source === 'draft') {
         console.log(`[AI SQL] Retained the draft SQL because the reviewer candidate was less faithful or more complex (${candidateDecision.contractErrors} contract error(s), complexity ${candidateDecision.complexity}).`);
+    }
+    if (analyticalIR) {
+        const structuralCandidate = compileAnalyticalIRToSQL(analyticalIR);
+        if (structuralCandidate.supported && structuralCandidate.sql) {
+            const modelIssues = queryContract
+                ? validateSQLAgainstContract(sql, queryContract).filter(issue => issue.severity === 'error')
+                : [];
+            const structuralIssues = queryContract
+                ? validateSQLAgainstContract(structuralCandidate.sql, queryContract).filter(issue => issue.severity === 'error')
+                : [];
+            if (structuralIssues.length < modelIssues.length) {
+                sql = structuralCandidate.sql;
+                modelUsedForSQL = `${modelUsedForSQL} → IR-AST recovery`;
+                console.warn(`[AI SQL] Replaced a semantically drifting model candidate with the frozen IR AST (${modelIssues.length} contract error(s) → ${structuralIssues.length}).`);
+            }
+        }
     }
     console.log(`[AI SQL] Dynamic three-model route: ${modelUsedForSQL}`);
 

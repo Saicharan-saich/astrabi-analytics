@@ -175,8 +175,9 @@ describe('basic semantic intent regressions', () => {
     }));
 
     const sql = correctSQL(plan, model);
-    expect(sql).toContain("SELECT 'Current' AS period");
-    expect(sql).toContain("SELECT 'Previous' AS period");
+    expect(sql).toMatch(/^WITH periods/i);
+    expect(sql).toMatch(/LAG\("amount_sum", 1\) OVER \(ORDER BY period_order\)/i);
+    expect(sql).toContain('AS growth_pct');
     expect(sql).toContain("DATE '2025-02-01'");
     expect(sql).toContain("DATE '2025-02-28'");
 

@@ -120,10 +120,18 @@ describe('AI SQL query contract regression suite', () => {
             comparison: { type: 'previous_period', mode: 'total', grain: 'month' },
         }))).toContain('missing_comparison');
         expect(validateSQLAgainstContract(
-            `SELECT
-                SUM(CASE WHEN order_date >= DATE '2017-12-01' THEN sales ELSE 0 END) AS sales_this_month,
-                SUM(CASE WHEN order_date < DATE '2017-12-01' THEN sales ELSE 0 END) AS sales_last_month
-              FROM data`,
+            `WITH period_totals AS (
+                SELECT period, SUM(sales) AS total_sales
+                FROM data
+                GROUP BY period
+             ), comparison AS (
+                SELECT period, total_sales,
+                       LAG(total_sales, 1) OVER (ORDER BY period) AS previous_value
+                FROM period_totals
+             )
+             SELECT period, total_sales, previous_value,
+                    (total_sales - previous_value) * 100.0 / NULLIF(previous_value, 0) AS growth_pct
+             FROM comparison`,
             contract,
         )).toEqual([]);
     });

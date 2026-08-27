@@ -108,7 +108,7 @@ FROM base`;
         expect(growthSQL).toMatch(/AS "growth_pct"/i);
     });
 
-    it('does not force window functions onto ordinary top-N questions or scalar period comparisons', () => {
+    it('keeps ordinary top-N simple and requires SQL growth for scalar period comparisons', () => {
         const ranking = trendPlan('Which 10 products generated the most sales?', {
             intent: 'ranking',
             dimensions: [{ field: 'product_name' }],
@@ -122,6 +122,7 @@ FROM base`;
             dimensions: [],
             comparison: { type: 'previous_period', mode: 'total', grain: 'month' },
         });
-        expect(buildQueryContract(comparison.originalQuestion, comparison, [], model).analyticOperations).toEqual([]);
+        expect(buildQueryContract(comparison.originalQuestion, comparison, [], model).analyticOperations)
+            .toEqual([expect.objectContaining({ kind: 'period_growth', outputAlias: 'growth_pct' })]);
     });
 });

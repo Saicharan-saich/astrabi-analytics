@@ -231,11 +231,17 @@ export function serializeSemanticModelSchema(
 
     for (const f of model.fields) {
         const notes: string[] = [];
+        if (f.ownerTable) notes.push(`owned by table ${f.ownerTable}`);
+        if (f.keyRole && f.keyRole !== 'none') notes.push(f.keyRole.replace(/_/g, ' '));
+        if (f.nativeGrain) notes.push(`native grain: ${f.nativeGrain}`);
+        if (f.unit && f.unit !== 'unknown') notes.push(`unit: ${f.unit}`);
         if (f.role === 'metric') {
             notes.push('measure');
             if (f.semanticType === 'currency') notes.push('money');
-            if (isNonAdditiveMetric(f)) {
+            if (f.additivity === 'non_additive' || isNonAdditiveMetric(f)) {
                 notes.push('per-unit/rate — do NOT SUM; use AVG');
+            } else if (f.additivity === 'semi_additive') {
+                notes.push('semi-additive — aggregate only at a compatible grain');
             } else if (f.defaultAgg && f.defaultAgg !== 'none') {
                 notes.push(`additive — aggregate with ${f.defaultAgg.toUpperCase()}`);
             }
@@ -270,6 +276,7 @@ export function serializeSemanticModelSchema(
             }
         }
         if (f.synonyms?.length) notes.push(`aka ${f.synonyms.slice(0, 4).join(', ')}`);
+        if (f.businessMeaning) notes.push(f.businessMeaning);
         const dom = domains?.get(f.name);
         if (dom && dom.values.length) {
             const shown = dom.values.map(v => `'${v}'`).join(', ');
@@ -295,7 +302,7 @@ export function serializeSemanticModelSchema(
         lines.push('');
         lines.push('Foreign keys:');
         for (const e of model.joinGraph.edges) {
-            lines.push(`  ${idn(e.left)}.${idn(e.leftCol)} = ${idn(e.right)}.${idn(e.rightCol)}`);
+            lines.push(`  ${idn(e.left)}.${idn(e.leftCol)} = ${idn(e.right)}.${idn(e.rightCol)}${e.cardinality ? ` (${e.cardinality.replace(/_/g, ':')}${typeof e.confidence === 'number' ? `, confidence ${e.confidence.toFixed(2)}` : ''})` : ''}`);
         }
     }
 

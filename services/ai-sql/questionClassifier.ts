@@ -25,6 +25,17 @@ export function isTimePeriodComparison(question: string): boolean {
     const STOPWORD = /^(the|a|an|our|my|its|their|of|in|for)$/;
     const clean = (w: string) => w.replace(/[^a-z0-9]/gi, '');
 
+    // Coordinated shorthand keeps the shared time unit at the end:
+    // "compare this and last month" / "last versus this quarter". Requiring
+    // both a current/previous determiner and a time unit avoids treating
+    // ordinary category comparisons as period comparisons.
+    const coordinatedPeriods = [
+        /\b(?:compare|comparison\s+(?:of|between))\s+(?:the\s+)?(?:this|current)\s+(?:(?:day|week|month|quarter|year)\s+)?(?:and|with|to|against|versus|vs\.?)\s+(?:the\s+)?(?:last|previous|prior)\s+(?:day|week|month|quarter|year)\b/i,
+        /\b(?:compare|comparison\s+(?:of|between))\s+(?:the\s+)?(?:last|previous|prior)\s+(?:(?:day|week|month|quarter|year)\s+)?(?:and|with|to|against|versus|vs\.?)\s+(?:the\s+)?(?:this|current)\s+(?:day|week|month|quarter|year)\b/i,
+        /\b(?:this|current)\s+(?:day|week|month|quarter|year)\s+(?:and|with|to|against|versus|vs\.?)\s+(?:the\s+)?(?:last|previous|prior)\s+(?:day|week|month|quarter|year)\b/i,
+    ];
+    if (coordinatedPeriods.some(pattern => pattern.test(q))) return true;
+
     // Only the operand IMMEDIATELY either side of the keyword counts (skipping
     // articles). In "Coffee vs Tea last month" the operands are Coffee and Tea —
     // "last month" merely scopes the question, so this is still a category

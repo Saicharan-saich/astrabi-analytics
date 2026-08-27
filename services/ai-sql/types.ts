@@ -80,6 +80,22 @@ export interface SemanticField {
     formatHint?: 'currency_usd' | 'currency_eur' | 'percent' | 'decimal' | 'integer' | 'date' | 'text';
     /** Classification signals — explainability & arbitration audit trail */
     classificationSignals?: FieldClassificationSignals;
+    /** Physical source table that owns this field when ownership is unambiguous. */
+    ownerTable?: string;
+    /** Key semantics inferred from schema metadata and local uniqueness. */
+    keyRole?: 'primary_key' | 'foreign_key' | 'identifier' | 'none';
+    /** Local uniqueness ratio (distinct non-null values / rows), never shared as row data. */
+    uniquenessRatio?: number;
+    /** Whether aggregation across rows preserves the analytical meaning. */
+    additivity?: 'additive' | 'semi_additive' | 'non_additive' | 'not_applicable';
+    /** Unit carried by the value, when it can be inferred without inspecting private values. */
+    unit?: 'currency' | 'percentage' | 'ratio' | 'duration' | 'quantity' | 'date' | 'identifier' | 'text' | 'boolean' | 'unknown';
+    /** Entity this field most likely describes, for example order, customer or product. */
+    entity?: string;
+    /** Dataset/table grain at which this field is natively observed. */
+    nativeGrain?: string;
+    /** Privacy-safe analytical description used by planners and model prompts. */
+    businessMeaning?: string;
 }
 
 export interface MetricDefinition {
@@ -155,7 +171,15 @@ export interface SemanticModel {
     };
     /** Join graph (for multi-table datasets) */
     joinGraph?: {
-        edges: { left: string; right: string; leftCol: string; rightCol: string; type: 'fk' | 'name_match' }[];
+        edges: {
+            left: string;
+            right: string;
+            leftCol: string;
+            rightCol: string;
+            type: 'fk' | 'name_match';
+            cardinality?: 'one_to_one' | 'one_to_many' | 'many_to_one' | 'many_to_many' | 'unknown';
+            confidence?: number;
+        }[];
     };
     /** Declared grain of the dataset */
     grain: string;
@@ -449,6 +473,13 @@ export interface AIQueryProvenance {
 export interface AISQLPipelineResult {
     /** The structured analysis plan */
     plan: AnalysisPlan;
+    /** Frozen compositional analytical meaning shared by every downstream engine. */
+    analyticalIR?: import('./analyticalIR').AnalyticalIR;
+    /** Structural and post-execution invariant evidence for the analytical IR. */
+    analyticalValidation?: {
+        passed: boolean;
+        issues: import('./analyticalIR').IRVerificationIssue[];
+    };
     /** Generated SQL */
     sql: string;
     /** Which engine generated `sql`: the local typed Question Builder

@@ -79,7 +79,8 @@ export function detectAdvancedAnalyticOperations(
     }
 
     const explicitPeriodGrowth = /\b(?:month[- ]over[- ]month|quarter[- ]over[- ]quarter|year[- ]over[- ]year|week[- ]over[- ]week|day[- ]over[- ]day|mom|qoq|yoy|wow|dod)\b/i.test(question)
-        || /\b(?:change|growth|difference|increase|decrease)\s+(?:from|versus|vs\.?)\s+(?:the\s+)?previous\s+(?:period|day|week|month|quarter|year)\b/i.test(question);
+        || /\b(?:change|growth|difference|increase|decrease)\s+(?:from|versus|vs\.?)\s+(?:the\s+)?previous\s+(?:period|day|week|month|quarter|year)\b/i.test(question)
+        || (Boolean(plan.comparison) && /\b(?:compare|comparison|compared|versus|vs\.?)\b/i.test(question));
     if (explicitPeriodGrowth || (plan.comparison?.mode === 'trend' && /\b(?:growth|change|difference|increase|decrease|percent)\b/i.test(question))) {
         add({ kind: 'period_growth', required: true, implementation: 'window', measureField, orderBy, partitionBy, outputAlias: 'growth_pct' });
     }

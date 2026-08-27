@@ -60,14 +60,21 @@ describe('Period comparison SQL', () => {
         const sql = correctSQL(plan({ filters: [{ field: 'order_date', op: 'between', value: ['2024-05-01', '2024-05-31'] }] }), model);
         expect(sql).toMatch(/CAST\(\s*"?order_date"?\s+AS DATE\)\s+BETWEEN/i);
         expect(sql).not.toMatch(/"order_date"\s+BETWEEN\s+DATE/i);
+        expect(sql).toMatch(/^WITH periods/i);
+        expect(sql).toMatch(/\bLAG\s*\(/i);
+        expect(sql).toMatch(/\bgrowth_pct\b/i);
     });
 });
 
 describe('Period comparison accuracy', () => {
     it('single month vs previous month', () => {
-        const res = byPeriod(run(plan({ filters: [{ field: 'order_date', op: 'between', value: ['2024-05-01', '2024-05-31'] }] })));
+        const rows = run(plan({ filters: [{ field: 'order_date', op: 'between', value: ['2024-05-01', '2024-05-31'] }] }));
+        const res = byPeriod(rows);
         expect(res.Current).toBeCloseTo(sumInRange('2024-05-01', '2024-05-31'), 1);
         expect(res.Previous).toBeCloseTo(sumInRange('2024-04-01', '2024-04-30'), 1);
+        const current = rows.find(row => row.period === 'Current');
+        const expectedGrowth = (res.Current - res.Previous) * 100 / Math.abs(res.Previous);
+        expect(num(current?.growth_pct)).toBeCloseTo(expectedGrowth, 1);
     });
 
     it('QUARTER vs previous quarter — previous period is a FULL quarter, not one month', () => {

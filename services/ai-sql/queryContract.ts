@@ -10,6 +10,7 @@
 import type { AnalysisPlan, SemanticModel } from './types';
 import { planJoins, type JoinLink, type JoinTable } from './joinEngine';
 import { inferQueryShape, type SelectionMode } from './queryShape';
+import { isTimePeriodComparison } from './questionClassifier';
 import {
     advancedOperationRequirement,
     detectAdvancedAnalyticOperations,
@@ -1018,7 +1019,7 @@ export function buildQueryContract(
         || requestedOutputFields.find(field => descriptiveColumn(field.field))
         || requestedOutputFields[0];
     const queryShape = inferQueryShape(question);
-    const requiresComparison = COMPARISON_CUE.test(question) || Boolean(plan.comparison);
+    const requiresComparison = isTimePeriodComparison(question) || COMPARISON_CUE.test(question) || Boolean(plan.comparison);
     const analyticOperations = detectAdvancedAnalyticOperations(question, plan);
     const comparisonHasExplicitGrain = /\b(?:by|per|for\s+each|for\s+every|broken\s+down\s+by|split\s+by)\b/i.test(question);
     const ungroupedTotalPeriodComparison = requiresComparison
@@ -1204,8 +1205,19 @@ export function buildQueryContract(
         : [];
     const ratio = resolveRatio(question, model);
     const relativeComparison = resolveRelativeComparison(question, plan, model);
+    const measureOwnerTable = schema
+        ? expectedMeasures
+            .map(measure => measure.field)
+            .filter((field): field is string => Boolean(field))
+            .map(field => schema.tables.filter(table => table.columns.some(column => column.name.toLowerCase() === field.toLowerCase())))
+            .find(matches => matches.length === 1)?.[0]?.name
+        : undefined;
+    // Join direction is an analytical decision: begin at the measure's native
+    // owner when one exists; otherwise preserve the requested output entity's
+    // population. Row count is not a reliable fact/dimension classifier.
+    const joinBaseTable = measureOwnerTable || outputEntity?.table;
     const joinPlan = schema && requiredTables.length > 1
-        ? planJoins(requiredTables, schema.tables, schema.links, outputEntity && existenceMode === 'anti' ? { baseTable: outputEntity.table } : undefined)
+        ? planJoins(requiredTables, schema.tables, schema.links, joinBaseTable ? { baseTable: joinBaseTable } : undefined)
         : undefined;
     const relationshipPath = (joinPlan?.steps || []).map(step => ({
         fromTable: step.toTable,

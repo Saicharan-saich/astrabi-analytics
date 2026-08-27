@@ -69,6 +69,14 @@ import {
     reconcilePlanWithCanonicalIntent,
     type CanonicalQueryIntent,
 } from './canonicalIntent';
+import {
+    buildAnalyticalIR,
+    verifyAnalyticalIR,
+    type AnalyticalIR,
+    type IRVerificationIssue,
+} from './analyticalIR';
+import { validateAnalyticalResult } from './analyticalResultValidator';
+import { compileAnalyticalIRToSQL } from './analyticalSqlAst';
 import { canCompileTotalPeriodComparisonLocally } from './deterministicRouting';
 
 /**
@@ -279,6 +287,8 @@ export async function runAISQLPipeline(
     let directSchemaText = '';
     let activeQueryContract: QueryContract | undefined;
     let activeCanonicalIntent: CanonicalQueryIntent | undefined;
+    let activeAnalyticalIR: AnalyticalIR | undefined;
+    let analyticalIRIssues: IRVerificationIssue[] = [];
     // The hybrid path deliberately starts with the local semantic engines, then
     // asks a selected GPT-5.6 model to write plan-constrained SQL. The LLM never
     // receives dataset rows; local DuckDB remains the only execution engine.
@@ -334,6 +344,8 @@ export async function runAISQLPipeline(
                     joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
                 );
                 activeCanonicalIntent = buildCanonicalQueryIntent(activeQueryContract);
+                activeAnalyticalIR = buildAnalyticalIR(question, plan, semanticModel, activeQueryContract, activeCanonicalIntent);
+                analyticalIRIssues = verifyAnalyticalIR(activeAnalyticalIR);
             }
             // Preserve the dataset-relative reporting clock even on the
             // approved direct-SQL fallback. Relative terms must never resolve
@@ -352,6 +364,7 @@ export async function runAISQLPipeline(
                 semanticModel,
                 executionOptions?.requestPurpose,
                 activeQueryContract,
+                activeAnalyticalIR,
             );
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
@@ -634,6 +647,8 @@ export async function runAISQLPipeline(
         joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
     );
     activeCanonicalIntent = buildCanonicalQueryIntent(activeQueryContract);
+    activeAnalyticalIR = buildAnalyticalIR(question, plan, semanticModel, activeQueryContract, activeCanonicalIntent);
+    analyticalIRIssues = verifyAnalyticalIR(activeAnalyticalIR);
     const requiresAdvancedSql = activeCanonicalIntent.analyticOperations.length > 0;
     const canonicalReconciliation = reconcilePlanWithCanonicalIntent(plan, activeCanonicalIntent);
     plan = canonicalReconciliation.plan;
@@ -643,12 +658,14 @@ export async function runAISQLPipeline(
     }
     traceStep({
         stepNumber: 4,
-        name: 'Canonical Query Intent',
-        engine: 'canonicalIntent',
+        name: 'Canonical Analytical IR',
+        engine: 'analyticalIR',
         icon: '🧭',
-        status: _verification.ok ? 'pass' : 'warn',
-        summary: `${activeCanonicalIntent.answerKind} · ${activeCanonicalIntent.cardinality} · ${activeCanonicalIntent.grainFields.length ? activeCanonicalIntent.grainFields.join(', ') : 'no grouping grain'}`,
+        status: analyticalIRIssues.some(issue => issue.severity === 'error') ? 'warn' : 'pass',
+        summary: `${activeAnalyticalIR.answer.kind} · ${activeAnalyticalIR.answer.cardinality} · ${activeAnalyticalIR.operators.map(operator => operator.kind).join(' → ')}`,
         details: {
+            analyticalIR: activeAnalyticalIR,
+            analyticalIRIssues,
             canonicalIntent: activeCanonicalIntent,
             reconciliationChanges: canonicalReconciliation.changes,
             postReconciliationVerification: _verification.issues,
@@ -839,7 +856,10 @@ export async function runAISQLPipeline(
         // selected GPT-5.6 model then drafts SQL constrained by that plan. If the
         // model is unavailable or rejected, the local compiler remains a safe
         // continuity fallback rather than executing untrusted SQL.
-        const _ds = await runHybridSql(_verification.issues);
+        const _ds = await runHybridSql([
+            ..._verification.issues,
+            ...analyticalIRIssues,
+        ]);
         directSQL = _ds.sql;
         directSqlTokens = _ds.tokens;
         directSqlModel = _ds.model;
@@ -1169,7 +1189,52 @@ export async function runAISQLPipeline(
         ? validateResultAgainstContract(execResult.data || [], activeQueryContract)
             .filter(issue => issue.severity === 'error')
         : [];
-    if (resultContractIssues.length
+    let analyticalResultIssues = activeAnalyticalIR
+        ? validateAnalyticalResult(execResult.data || [], activeAnalyticalIR)
+            .filter(issue => issue.severity === 'error')
+        : [];
+    // Prefer a structural recovery compiled from the frozen IR before asking a
+    // model to patch its own SQL. This fixes valid-but-wrong result shapes (for
+    // example repeated qualifying groups) without regex surgery or row data
+    // leaving DuckDB.
+    if ((resultContractIssues.length || analyticalResultIssues.length) && activeAnalyticalIR) {
+        const structuralRecovery = compileAnalyticalIRToSQL(activeAnalyticalIR);
+        if (structuralRecovery.supported && structuralRecovery.sql && structuralRecovery.sql !== currentSQL) {
+            const sqlIssues = activeQueryContract
+                ? validateSQLAgainstContract(structuralRecovery.sql, activeQueryContract).filter(issue => issue.severity === 'error')
+                : [];
+            if (sqlIssues.length === 0) {
+                const structuralExecution = await executeSQLViaDuckDB(
+                    dataset.rows,
+                    structuralRecovery.sql,
+                    semanticModel.timeContext,
+                    dataset.relatedTables,
+                );
+                const normalizedStructural = !structuralExecution.error && activeQueryContract
+                    ? { ...structuralExecution, data: normalizeResultToContract(structuralExecution.data || [], activeQueryContract) }
+                    : structuralExecution;
+                const structuralContractIssues = normalizedStructural.error || !activeQueryContract
+                    ? resultContractIssues
+                    : validateResultAgainstContract(normalizedStructural.data || [], activeQueryContract).filter(issue => issue.severity === 'error');
+                const structuralAnalyticalIssues = normalizedStructural.error
+                    ? analyticalResultIssues
+                    : validateAnalyticalResult(normalizedStructural.data || [], activeAnalyticalIR).filter(issue => issue.severity === 'error');
+                if (!normalizedStructural.error && structuralContractIssues.length === 0 && structuralAnalyticalIssues.length === 0) {
+                    currentSQL = structuralRecovery.sql;
+                    execResult = normalizedStructural;
+                    validation = validateSQL(currentSQL, plan, semanticModel);
+                    resultContractIssues = [];
+                    analyticalResultIssues = [];
+                    repairAttempts++;
+                    directSQL = null;
+                    usedDeterministicFallback = true;
+                    sqlEngine = 'correction-engine';
+                    console.warn('[Pipeline] Frozen IR AST recovered a contract-valid analytical result locally.');
+                }
+            }
+        }
+    }
+    if ((resultContractIssues.length || analyticalResultIssues.length)
         && directSQL
         && directSchemaText
         && !usedDeterministicFallback
@@ -1181,7 +1246,7 @@ export async function runAISQLPipeline(
                 directSchemaText,
                 directQuerySpec,
                 currentSQL,
-                resultContractIssues.map(issue => issue.message).join(' '),
+                [...resultContractIssues, ...analyticalResultIssues].map(issue => issue.message).join(' '),
                 executionOptions?.requestPurpose,
                 activeQueryContract,
             );
@@ -1202,12 +1267,17 @@ export async function runAISQLPipeline(
                     ? resultContractIssues
                     : validateResultAgainstContract(normalizedRepairedExecution.data || [], activeQueryContract)
                         .filter(issue => issue.severity === 'error');
-                if (!normalizedRepairedExecution.error && repairedContractIssues.length === 0) {
+                const repairedAnalyticalIssues = normalizedRepairedExecution.error || !activeAnalyticalIR
+                    ? analyticalResultIssues
+                    : validateAnalyticalResult(normalizedRepairedExecution.data || [], activeAnalyticalIR)
+                        .filter(issue => issue.severity === 'error');
+                if (!normalizedRepairedExecution.error && repairedContractIssues.length === 0 && repairedAnalyticalIssues.length === 0) {
                     currentSQL = repairedSQL;
                     directSQL = repairedSQL;
                     execResult = normalizedRepairedExecution;
                     validation = validateSQL(currentSQL, plan, semanticModel);
                     resultContractIssues = [];
+                    analyticalResultIssues = [];
                     repairAttempts++;
                     sqlResult.explanation = semanticRepair.explanation;
                     console.log(`[Pipeline] Result-cardinality repair recovered ${(execResult.data || []).length} row(s).`);
@@ -1218,25 +1288,27 @@ export async function runAISQLPipeline(
         }
     }
 
-    if (resultContractIssues.length) {
+    if (resultContractIssues.length || analyticalResultIssues.length) {
         // The query already passed the read-only safety boundary and DuckDB
         // executed it successfully. Shape mismatches are semantic evidence,
         // not execution failures: retain them for confidence/audit while
         // allowing the actual result (or benchmark gold comparator) to judge
         // correctness.
-        console.warn('[Pipeline] Presenting executed read-only result with advisory answer-shape issues:', resultContractIssues.map(issue => issue.message));
+        console.warn('[Pipeline] Presenting executed read-only result with advisory analytical issues:', [...resultContractIssues, ...analyticalResultIssues].map(issue => issue.message));
     }
 
     traceStep({
         stepNumber: 9, name: 'DuckDB Execution', engine: 'duckdbEngine', icon: '🦆',
-        status: repairAttempts > 0 || resultContractIssues.length > 0 ? 'warn' : 'pass',
-        summary: `${(execResult.data || []).length} rows returned${repairAttempts > 0 ? ` (after ${repairAttempts} repair attempt${repairAttempts > 1 ? 's' : ''})` : ''}${resultContractIssues.length > 0 ? ` · ${resultContractIssues.length} advisory shape warning(s)` : ''}`,
+        status: repairAttempts > 0 || resultContractIssues.length > 0 || analyticalResultIssues.length > 0 ? 'warn' : 'pass',
+        summary: `${(execResult.data || []).length} rows returned${repairAttempts > 0 ? ` (after ${repairAttempts} repair attempt${repairAttempts > 1 ? 's' : ''})` : ''}${resultContractIssues.length + analyticalResultIssues.length > 0 ? ` · ${resultContractIssues.length + analyticalResultIssues.length} advisory analytical warning(s)` : ''}`,
         details: {
             rowCount: (execResult.data || []).length,
             columnCount: (execResult.columns || []).length,
             columns: execResult.columns || [],
             repairAttempts,
             contractWarnings: resultContractIssues.map(issue => issue.message),
+            analyticalInvariantWarnings: analyticalResultIssues.map(issue => issue.message),
+            analyticalIRVersion: activeAnalyticalIR?.version || null,
             sql: currentSQL,
         },
     }, _s1);
@@ -1264,12 +1336,9 @@ export async function runAISQLPipeline(
     }
 
     // ─── Step 5c: Time Intelligence Engine ─────────────────────────
-    // Post-SQL time intelligence (LAG/running totals computed in JS for consistency).
-    // This JS engine computes ALL time intelligence post-SQL:
-    //   A) Total period comparison (this year vs last year → growth badge)
-    //   B) Trend growth (MoM, QoQ, YoY → LAG emulation)
-    //   C) Running totals (cumulative SUM)
-    //   D) Moving averages (3-period rolling)
+    // Compatibility time intelligence. Advanced requests are now calculated in
+    // SQL; this layer only fills calculations absent from legacy/simple SQL and
+    // derives presentation metadata such as the growth badge.
 
     if (rawData.length > 0) {
         const cols = Object.keys(rawData[0]);
@@ -1292,15 +1361,25 @@ export async function runAISQLPipeline(
                     const diff = currentVal - previousVal;
                     // Guard: division by zero → null (not 0, not Infinity)
                     const rawPct = previousVal !== 0 ? (diff / Math.abs(previousVal)) * 100 : null;
-                    const pct = rawPct !== null && isFinite(rawPct) ? rawPct : null;
+                    const computedPct = rawPct !== null && isFinite(rawPct) ? rawPct : null;
+                    const sqlPct = Number(currentRow.growth_pct);
+                    const pct = sqlProvidedCalculations.has('growth_pct') && isFinite(sqlPct)
+                        ? sqlPct
+                        : computedPct;
 
-                    // Enrich both rows with growth data
-                    currentRow.growth_pct = pct;
-                    currentRow.growth_abs = diff;
-                    currentRow.previous_value = previousVal;
-                    previousRow.growth_pct = null;
-                    previousRow.growth_abs = null;
-                    previousRow.previous_value = null;
+                    // Enrich only fields the SQL did not already calculate.
+                    if (!sqlProvidedCalculations.has('growth_pct')) {
+                        currentRow.growth_pct = pct;
+                        previousRow.growth_pct = null;
+                    }
+                    if (!sqlProvidedCalculations.has('growth_abs')) {
+                        currentRow.growth_abs = diff;
+                        previousRow.growth_abs = null;
+                    }
+                    if (!sqlProvidedCalculations.has('previous_value')) {
+                        currentRow.previous_value = previousVal;
+                        previousRow.previous_value = null;
+                    }
 
                     // Store growth on the plan for KPI card rendering
                     (plan as any)._computedGrowth = {
@@ -1854,8 +1933,9 @@ export async function runAISQLPipeline(
     // Surface ERROR-level faithfulness issues to the user rather than answering
     // silently — the "never a silent wrong answer" guarantee.
     const _vErrors = _verification.issues.filter(i => i.severity === 'error');
-    const verificationCaveat = _vErrors.length > 0
-        ? ` ⚠️ Heads up: ${_vErrors.map(i => i.message).join(' ')} Please double-check or rephrase.`
+    const _analyticalErrors = [...analyticalIRIssues, ...analyticalResultIssues].filter(issue => issue.severity === 'error');
+    const verificationCaveat = _vErrors.length > 0 || _analyticalErrors.length > 0
+        ? ` ⚠️ Heads up: ${[..._vErrors, ..._analyticalErrors].map(i => i.message).join(' ')} Please double-check or rephrase.`
         : '';
     const finalExplanation = (dataAnswer || sqlResult.explanation || '') + verificationCaveat;
 
@@ -1885,6 +1965,12 @@ export async function runAISQLPipeline(
 
     const pipelineResult: AISQLPipelineResult = {
         plan,
+        analyticalIR: activeAnalyticalIR,
+        analyticalValidation: {
+            passed: analyticalIRIssues.every(issue => issue.severity !== 'error')
+                && analyticalResultIssues.every(issue => issue.severity !== 'error'),
+            issues: [...analyticalIRIssues, ...analyticalResultIssues],
+        },
         sql: currentSQL,
         engine: sqlEngine,
         validation,

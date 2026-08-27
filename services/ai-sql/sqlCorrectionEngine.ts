@@ -199,6 +199,14 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
     const advancedOperations = detectAdvancedAnalyticOperations(plan.originalQuestion || '', plan);
     if (advancedOperations.length > 0 && plan.metrics.length > 0) {
         logger.info('[SQL Correction]', `Compiling advanced SQL: ${advancedOperations.map(operation => operation.kind).join(', ')}`);
+        // A scalar current-vs-previous comparison needs a synthetic two-period
+        // base before LAG can run. The generic advanced compiler expects an
+        // ordinary time dimension, so route this shape to its dedicated CTE.
+        if (plan.intent === 'total_comparison'
+            && plan.comparison?.mode === 'total'
+            && advancedOperations.some(operation => operation.kind === 'period_growth')) {
+            return buildComparisonSQL(plan, model);
+        }
         return buildAdvancedAnalyticSQL(plan, model, advancedOperations, apdmeMetrics);
     }
 
@@ -1532,17 +1540,49 @@ function buildComparisonSQL(plan: AnalysisPlan, model: SemanticModel): string {
     }
 
     if (plan.comparison.mode === 'total') {
-        // Total comparison: two rows (current + previous) with a period label
-        const sql = [
-            `SELECT 'Current' AS period, ${metExprs.join(', ')}`,
-            fromTable(),
-            `WHERE ${dateRangePredicate(dateField, currentStart, currentEnd)}`,
-            `UNION ALL`,
-            `SELECT 'Previous' AS period, ${metExprs.join(', ')}`,
-            fromTable(),
-            `WHERE ${dateRangePredicate(dateField, prevDates.start, prevDates.end)}`,
-        ];
-        return sql.join('\n');
+        // Materialise both periods first, aggregate once, then calculate growth
+        // with a real SQL window. VALUES + LEFT JOIN guarantees two bars even
+        // when one period has no matching source rows.
+        const metricDefinitions = plan.metrics.map((metric, index) => {
+            const rendered = metExprs[index];
+            const marker = rendered.toUpperCase().lastIndexOf(' AS ');
+            return {
+                expression: marker >= 0 ? rendered.slice(0, marker) : rendered,
+                alias: getMetricAlias(metric, model),
+            };
+        });
+        const primaryAlias = metricDefinitions[0]?.alias;
+        if (!primaryAlias) return buildBreakdownSQL(plan, model);
+        const lag = `LAG(${primaryAlias}, 1) OVER (ORDER BY period_order)`;
+        return [
+            `WITH periods(period, period_order, start_date, end_date) AS (`,
+            `  VALUES`,
+            `    ('Previous', 0, DATE '${prevDates.start}', DATE '${prevDates.end}'),`,
+            `    ('Current', 1, DATE '${currentStart}', DATE '${currentEnd}')`,
+            `),`,
+            `period_totals AS (`,
+            `  SELECT periods.period, periods.period_order,`,
+            metricDefinitions.map((metric, index) =>
+                `         COALESCE(${metric.expression}, 0) AS ${metric.alias}${index < metricDefinitions.length - 1 ? ',' : ''}`
+            ).join('\n'),
+            `  FROM periods`,
+            `  LEFT JOIN ${TABLE_REF}`,
+            `    ON TRY_CAST(${dateField} AS DATE) BETWEEN periods.start_date AND periods.end_date`,
+            `  GROUP BY periods.period, periods.period_order`,
+            `),`,
+            `comparison AS (`,
+            `  SELECT period, period_order, ${metricDefinitions.map(metric => metric.alias).join(', ')},`,
+            `         ${lag} AS previous_value`,
+            `  FROM period_totals`,
+            `)`,
+            `SELECT period, ${metricDefinitions.map(metric => metric.alias).join(', ')},`,
+            `       CASE WHEN period = 'Current' THEN previous_value ELSE NULL END AS previous_value,`,
+            `       CASE WHEN period = 'Current'`,
+            `            THEN ROUND((${primaryAlias} - previous_value) * 100.0 / NULLIF(ABS(previous_value), 0), 2)`,
+            `            ELSE NULL END AS growth_pct`,
+            `FROM comparison`,
+            `ORDER BY period_order DESC`,
+        ].join('\n');
     }
 
     // Trend comparison: two time series UNIONed with period labels

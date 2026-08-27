@@ -44,6 +44,10 @@ export interface JoinLink {
     rightColumn: string;
     /** 'fk' is trusted; 'name_match' is inferred and weaker. */
     type?: 'fk' | 'name_match';
+    /** Directional cardinality from left table to right table. */
+    cardinality?: 'one-to-one' | 'one-to-many' | 'many-to-one' | 'many-to-many' | 'unknown';
+    /** Evidence strength for inferred relationships. Declared FKs use 1. */
+    confidence?: number;
 }
 
 export interface JoinStep {
@@ -273,13 +277,28 @@ export function fromSourceSchema(source: {
             rowCount: t.rows || 0,
             columns: (t.columns || []).map(c => ({ name: c.name, isPK: !!c.isPK })),
         })),
-        links: (source.joinEdges || []).map(e => ({
-            leftTable: e.leftTable,
-            leftColumn: e.leftColumn,
-            rightTable: e.rightTable,
-            rightColumn: e.rightColumn,
-            type: e.type === 'fk' ? 'fk' : 'name_match',
-        })),
+        links: (source.joinEdges || []).map(e => {
+            const left = source.tables.find(table => table.name === e.leftTable)
+                ?.columns.find(column => norm(column.name) === norm(e.leftColumn));
+            const right = source.tables.find(table => table.name === e.rightTable)
+                ?.columns.find(column => norm(column.name) === norm(e.rightColumn));
+            const cardinality: NonNullable<JoinLink['cardinality']> = left?.isPK && right?.isPK
+                ? 'one-to-one'
+                : left?.isPK
+                    ? 'one-to-many'
+                    : right?.isPK
+                        ? 'many-to-one'
+                        : 'many-to-many';
+            return {
+                leftTable: e.leftTable,
+                leftColumn: e.leftColumn,
+                rightTable: e.rightTable,
+                rightColumn: e.rightColumn,
+                type: e.type === 'fk' ? 'fk' : 'name_match',
+                cardinality,
+                confidence: e.type === 'fk' ? 1 : 0.7,
+            };
+        }),
     };
 }
 
@@ -307,7 +326,8 @@ export function describeSchemaForLLM(tables: JoinTable[], links: JoinLink[]): st
         lines.push('Relationships — join on these:');
         for (const l of links) {
             const note = l.type === 'name_match' ? '  (inferred from column names — verify it makes sense)' : '';
-            lines.push(`  ${l.leftTable}.${l.leftColumn} = ${l.rightTable}.${l.rightColumn}${note}`);
+            const shape = l.cardinality ? ` [${l.cardinality}${typeof l.confidence === 'number' ? `; confidence ${l.confidence.toFixed(2)}` : ''}]` : '';
+            lines.push(`  ${l.leftTable}.${l.leftColumn} = ${l.rightTable}.${l.rightColumn}${shape}${note}`);
         }
     }
     lines.push('');
@@ -425,6 +445,8 @@ export function discoverJoinContext(
             leftTable: r.fromTable, leftColumn: r.fromColumn,
             rightTable: r.toTable, rightColumn: r.toColumn,
             type: 'fk' as const,
+            cardinality: r.cardinality,
+            confidence: r.confidence,
         }));
     }
 
