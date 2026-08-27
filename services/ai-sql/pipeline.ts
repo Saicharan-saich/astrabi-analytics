@@ -76,8 +76,13 @@ import { canCompileTotalPeriodComparisonLocally } from './deterministicRouting';
  * Applies corrections for patterns the LLM consistently gets wrong
  * despite explicit prompt rules.
  */
-function sanitizeLLMSQL(sql: string, question: string): string {
+function sanitizeLLMSQL(sql: string, question: string, preserveAdvancedStructure = false): string {
     let result = sql;
+
+    // Advanced SQL is governed by the typed query contract. The legacy
+    // sanitizer is regex-based and must not rewrite nested SELECT lists, CTEs,
+    // window frames or their scoped predicates.
+    if (preserveAdvancedStructure && /(?:^\s*with\b|\bover\s*\()/i.test(result)) return result;
 
     // 1. Column-trim + DISTINCT for listing questions.
     //    "What are the budget category of..." → SELECT DISTINCT category, type
@@ -388,7 +393,7 @@ export async function runAISQLPipeline(
                     }
                 }
 
-                sql = sanitizeLLMSQL(sql, question);
+                sql = sanitizeLLMSQL(sql, question, (activeQueryContract?.analyticOperations?.length || 0) > 0);
                 console.log('[Pipeline] Direct-SQL engine SQL:', sql);
                 return { sql, tokens: ds.tokens || 0, model: ds.model, error: null, querySpec: ds.querySpec };
             }
@@ -629,6 +634,7 @@ export async function runAISQLPipeline(
         joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
     );
     activeCanonicalIntent = buildCanonicalQueryIntent(activeQueryContract);
+    const requiresAdvancedSql = activeCanonicalIntent.analyticOperations.length > 0;
     const canonicalReconciliation = reconcilePlanWithCanonicalIntent(plan, activeCanonicalIntent);
     plan = canonicalReconciliation.plan;
     _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
@@ -923,7 +929,7 @@ export async function runAISQLPipeline(
         // Question Builder's share-of-total table calc (it only applies to
         // builder-compiled SQL).
         qbShareValueKey = null;
-    } else if (qbSQL) {
+    } else if (qbSQL && !requiresAdvancedSql) {
         // Normal governed path: locally compiled SQL.
         sqlResult = { sql: qbSQL, method: 'question-builder', explanation: '' };
     } else {
@@ -957,12 +963,15 @@ export async function runAISQLPipeline(
     let currentSQL: string;
     let _correctionStatus: 'pass' | 'warn' | 'skip' = 'pass';
     // Keep the local SQL available as a safety net if a fallback query cannot run.
-    let deterministicSQL: string | null = qbSQL;
+    // A basic Question Builder query is not a semantically equivalent backup
+    // for an explicit window/table calculation. The correction engine below
+    // must first compile the required advanced operation.
+    let deterministicSQL: string | null = requiresAdvancedSql ? null : qbSQL;
     if (directSQL) {
         // An approved fallback query is being executed.
         currentSQL = directSQL;
         _correctionStatus = 'skip';
-    } else if (qbSQL) {
+    } else if (qbSQL && !requiresAdvancedSql) {
         // Locally compiled deterministic SQL.
         currentSQL = qbSQL;
         _correctionStatus = 'skip';
@@ -1014,7 +1023,7 @@ export async function runAISQLPipeline(
     reportProgress('Validating SQL...', 6);
     console.log('[Pipeline] Step 4: Validating SQL...');
     // Apply post-generation deterministic sanitizer to ALL engine paths.
-    currentSQL = sanitizeLLMSQL(currentSQL, question);
+    currentSQL = sanitizeLLMSQL(currentSQL, question, requiresAdvancedSql);
     _s1 = performance.now();
     let validation = validateSQL(currentSQL, plan, semanticModel);
     const _failedChecks = validation.checks.filter(c => c.status === 'fail');
@@ -1264,6 +1273,7 @@ export async function runAISQLPipeline(
 
     if (rawData.length > 0) {
         const cols = Object.keys(rawData[0]);
+        const sqlProvidedCalculations = new Set(cols.map(column => column.toLowerCase()));
 
         // ── (A) Total Period Comparison ─────────────────────────────
         // Detect UNION ALL "Current"/"Previous" pattern from comparison queries
@@ -1365,30 +1375,36 @@ export async function runAISQLPipeline(
 
                         // (B) Growth — compared to PREVIOUS row of the SAME entity
                         if (i === 0) {
-                            partRows[i].previous_value = null;
-                            partRows[i].growth_pct = null;
-                            partRows[i].growth_abs = null;
+                            if (!sqlProvidedCalculations.has('previous_value')) partRows[i].previous_value = null;
+                            if (!sqlProvidedCalculations.has('growth_pct')) partRows[i].growth_pct = null;
+                            if (!sqlProvidedCalculations.has('growth_abs')) partRows[i].growth_abs = null;
                         } else {
                             const previous = Number(partRows[i - 1][primaryMetric]) || 0;
-                            partRows[i].previous_value = previous;
-                            partRows[i].growth_abs = current - previous;
+                            if (!sqlProvidedCalculations.has('previous_value')) partRows[i].previous_value = previous;
+                            if (!sqlProvidedCalculations.has('growth_abs')) partRows[i].growth_abs = current - previous;
                             const rawGrowth = previous !== 0
                                 ? ((current - previous) / Math.abs(previous)) * 100
                                 : null;
-                            partRows[i].growth_pct = rawGrowth !== null && isFinite(rawGrowth) ? rawGrowth : null;
+                            if (!sqlProvidedCalculations.has('growth_pct')) {
+                                partRows[i].growth_pct = rawGrowth !== null && isFinite(rawGrowth) ? rawGrowth : null;
+                            }
                         }
 
                         // (C) Running Total — cumulative within this entity only
-                        partRows[i].running_total = partRows
-                            .slice(0, i + 1)
-                            .reduce((sum, r) => sum + (Number(r[primaryMetric]) || 0), 0);
+                        if (!sqlProvidedCalculations.has('running_total')) {
+                            partRows[i].running_total = partRows
+                                .slice(0, i + 1)
+                                .reduce((sum, r) => sum + (Number(r[primaryMetric]) || 0), 0);
+                        }
 
                         // (D) Moving Average (3-period) — within this entity only
-                        if (i >= 2) {
-                            const window = partRows.slice(i - 2, i + 1);
-                            partRows[i].moving_avg = window.reduce((s, r) => s + (Number(r[primaryMetric]) || 0), 0) / 3;
-                        } else {
-                            partRows[i].moving_avg = null;
+                        if (!sqlProvidedCalculations.has('moving_avg')) {
+                            if (i >= 2) {
+                                const window = partRows.slice(i - 2, i + 1);
+                                partRows[i].moving_avg = window.reduce((s, r) => s + (Number(r[primaryMetric]) || 0), 0) / 3;
+                            } else {
+                                partRows[i].moving_avg = null;
+                            }
                         }
                     }
                 }

@@ -42,6 +42,42 @@ const groupRows = (dim: string) => { const m = new Map<string, any[]>(); for (co
 const sumBy = (rs: any[], f: string) => rs.reduce((a, r) => a + Number(r[f]), 0);
 
 describe('Advanced intent accuracy', () => {
+    it('WINDOW SQL: monthly running total is cumulative and ends at the complete total', () => {
+        const res = run(plan('trend', {
+            dimensions: [{ field: 'order_date', timeGrain: 'month' }],
+            sort: [{ field: 'order_date', dir: 'asc' }],
+            originalQuestion: 'Show monthly sales with a running total.',
+        }));
+        expect(res).toHaveLength(12);
+        const running = res.map(row => num(row.running_total));
+        expect(running.every((value, index) => index === 0 || value >= running[index - 1])).toBe(true);
+        expect(running[running.length - 1]).toBeCloseTo(sumBy(rows, 'sales'), 1);
+    });
+
+    it('WINDOW SQL: 3-month moving average uses the current and two preceding monthly totals', () => {
+        const res = run(plan('trend', {
+            dimensions: [{ field: 'order_date', timeGrain: 'month' }],
+            sort: [{ field: 'order_date', dir: 'asc' }],
+            originalQuestion: 'Show the 3-month moving average of monthly sales.',
+        }));
+        const monthly = res.map(row => num(row.sales_sum));
+        expect(num(res[0].moving_avg)).toBeCloseTo(monthly[0], 6);
+        expect(num(res[2].moving_avg)).toBeCloseTo((monthly[0] + monthly[1] + monthly[2]) / 3, 6);
+    });
+
+    it('WINDOW SQL: month-over-month growth uses the preceding monthly total', () => {
+        const res = run(plan('trend_comparison', {
+            dimensions: [{ field: 'order_date', timeGrain: 'month' }],
+            sort: [{ field: 'order_date', dir: 'asc' }],
+            comparison: { type: 'previous_period', mode: 'trend', grain: 'month' },
+            originalQuestion: 'Show month-over-month sales growth.',
+        }));
+        expect(res[0].previous_value).toBeNull();
+        expect(num(res[1].previous_value)).toBeCloseTo(num(res[0].sales_sum), 6);
+        const expected = ((num(res[1].sales_sum) - num(res[0].sales_sum)) / Math.abs(num(res[0].sales_sum))) * 100;
+        expect(num(res[1].growth_pct)).toBeCloseTo(expected, 2);
+    });
+
     it('GROWTH: current/previous split at the range midpoint, and current+previous = total', () => {
         // Replicate the engine's midpoint from the model's date range.
         const minMs = new Date(model.timeContext.minDate + 'T00:00:00Z').getTime();

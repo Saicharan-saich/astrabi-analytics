@@ -9,6 +9,7 @@
  */
 import type { AnalysisPlan, AnalysisIntent, PlanMetric } from './types';
 import type { QueryContract } from './queryContract';
+import type { AdvancedAnalyticOperation } from './advancedAnalytics';
 
 export type CanonicalAnswerKind =
     | 'detail_projection'
@@ -32,6 +33,8 @@ export interface CanonicalQueryIntent {
     }>;
     predicates: QueryContract['requiredPredicates'];
     ratio: QueryContract['ratio'];
+    /** Advanced analytical operations explicitly requested by the question. */
+    analyticOperations: AdvancedAnalyticOperation[];
     selection: QueryContract['selectionMode'];
     order?: {
         field?: string;
@@ -110,6 +113,10 @@ export function buildCanonicalQueryIntent(contract: QueryContract): CanonicalQue
             : []))],
         predicates: (contract.requiredPredicates || []).map(predicate => ({ ...predicate })),
         ratio: contract.ratio ? { ...contract.ratio } : undefined,
+        analyticOperations: (contract.analyticOperations || []).map(operation => ({
+            ...operation,
+            partitionBy: [...operation.partitionBy],
+        })),
         selection: contract.selectionMode,
         order: contract.requiresRanking
             ? {

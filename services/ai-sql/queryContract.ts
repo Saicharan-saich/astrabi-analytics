@@ -10,6 +10,12 @@
 import type { AnalysisPlan, SemanticModel } from './types';
 import { planJoins, type JoinLink, type JoinTable } from './joinEngine';
 import { inferQueryShape, type SelectionMode } from './queryShape';
+import {
+    advancedOperationRequirement,
+    detectAdvancedAnalyticOperations,
+    sqlImplementsAdvancedOperation,
+    type AdvancedAnalyticOperation,
+} from './advancedAnalytics';
 
 export interface QuerySchemaContext {
     tables: JoinTable[];
@@ -71,6 +77,9 @@ export interface QueryContract {
     rankingLimit?: number;
     rankingDirection?: 'asc' | 'desc';
     requiresComparison: boolean;
+    /** Explicit window/table calculations requested by the user. These are
+     * first-class semantic requirements, not optional SQL decoration. */
+    analyticOperations?: AdvancedAnalyticOperation[];
     /** Exact schema field requested for the grouping, when confidently resolved. */
     requiredDimension?: string;
     /** Human-readable entity the question asks the result to return. */
@@ -183,6 +192,7 @@ export interface SQLFaithfulnessIssue {
         | 'wrong_comparison_scope'
         | 'missing_comparator'
         | 'missing_fiscal_calendar'
+        | 'missing_advanced_analytic_operation'
         | 'missing_ranking'
         | 'wrong_ranking_direction'
         | 'missing_comparison'
@@ -1009,6 +1019,7 @@ export function buildQueryContract(
         || requestedOutputFields[0];
     const queryShape = inferQueryShape(question);
     const requiresComparison = COMPARISON_CUE.test(question) || Boolean(plan.comparison);
+    const analyticOperations = detectAdvancedAnalyticOperations(question, plan);
     const comparisonHasExplicitGrain = /\b(?:by|per|for\s+each|for\s+every|broken\s+down\s+by|split\s+by)\b/i.test(question);
     const ungroupedTotalPeriodComparison = requiresComparison
         && plan.comparison?.mode === 'total'
@@ -1291,6 +1302,7 @@ export function buildQueryContract(
         requirements.push(`Rank by ${rankingTarget.mode === 'frequency' ? 'COUNT(*) frequency' : `${rankingTarget.aggregation ? `${rankingTarget.aggregation.toUpperCase()} of ` : ''}"${rankingTarget.field}"`}; do not sort by an unrelated helper field.`);
     }
     if (requiresComparison) requirements.push('Return both requested comparison periods with clearly labelled result columns or rows.');
+    for (const operation of analyticOperations) requirements.push(advancedOperationRequirement(operation));
     if (ungroupedTotalPeriodComparison) requirements.push('Return exactly two aggregated period totals. Do not GROUP BY or expose any source detail field unless the question explicitly requests a breakdown.');
     if (requiresDistinctProjection) requirements.push('Return every distinct requested value using SELECT DISTINCT; do not arbitrarily truncate the unique result set.');
     if (uniqueResultFields.length) requirements.push(`Return one row per qualifying group (${uniqueResultFields.join(', ')}); never filter the original detail rows in a way that repeats a qualifying group.`);
@@ -1318,6 +1330,7 @@ export function buildQueryContract(
         rankingLimit,
         rankingDirection,
         requiresComparison,
+        analyticOperations,
         requiredDimension,
         outputEntity,
         requiredTables,
@@ -1607,6 +1620,16 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
     const outerAggregatePattern = /\b(?:sum|avg|count|min|max|median|list|array_agg|string_agg|any_value)\s*\(/i;
     const groupByClauses = [...sql.matchAll(/\bgroup\s+by\s+([\s\S]*?)(?=\bhaving\b|\border\s+by\b|\blimit\b|\bunion\b|$)/gi)]
         .map(match => match[1]);
+
+    for (const operation of contract.analyticOperations || []) {
+        if (!sqlImplementsAdvancedOperation(sql, operation)) {
+            issues.push({
+                code: 'missing_advanced_analytic_operation',
+                severity: 'error',
+                message: advancedOperationRequirement(operation),
+            });
+        }
+    }
 
     if (contract.prohibitsImplicitLimit && /\blimit\s+\d+\b/i.test(sql)) {
         issues.push({
@@ -1910,8 +1933,12 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
     if (contract.requiresRanking && !/\border\s+by\b/.test(normalized)) {
         issues.push({ code: 'missing_ranking', severity: 'error', message: 'The question requires a ranking, but the SQL has no ORDER BY.' });
     }
+    const windowRankLimit = contract.rankingLimit !== undefined
+        && (contract.analyticOperations || []).some(operation => ['partitioned_rank', 'explicit_rank'].includes(operation.kind))
+        && new RegExp('(?:row_rank|rank)["`]?\\s*\\)?\\s*<=\\s*' + contract.rankingLimit + '\\b', 'i').test(sql);
     if (contract.rankingLimit !== undefined
-        && !new RegExp('\\blimit\\s+' + contract.rankingLimit + '\\b').test(normalized)) {
+        && !new RegExp('\\blimit\\s+' + contract.rankingLimit + '\\b').test(normalized)
+        && !windowRankLimit) {
         issues.push({ code: 'missing_ranking', severity: 'error', message: `The question requires LIMIT ${contract.rankingLimit}.` });
     }
     if (contract.requiresRanking && contract.rankingDirection

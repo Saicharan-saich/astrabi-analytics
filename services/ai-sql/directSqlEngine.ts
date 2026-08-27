@@ -45,7 +45,8 @@ Rules:
 - Treat "most/least common", "most/least frequent", and inverse wording such as "the type that the most records belong to" as frequency rankings: group by the requested answer field, rank by COUNT(*) in the correct direction, and return the requested winner. The count may remain an ORDER BY helper when the user asks only for the winning field.
 - Never replace requested names, labels, dates, or other row attributes with COUNT, SUM, LIST, ARRAY_AGG, STRING_AGG, or ANY_VALUE. Use collection aggregates only when the user explicitly requests a single packed list.
 - Do not infer an aggregation from a physical column name containing words such as number, count, total, or amount. Aggregation comes from the question's requested operation.
-- Prefer the simplest faithful SQL. Do not add CTEs, windows, grouping, extra output columns, or LIMIT unless they are necessary for the question.
+- Prefer the simplest SQL only among candidates that are equally faithful. When the query contract requires a running total, moving average, period growth, partitioned/explicit rank, percent of total, or analytical buckets, preserve that operation with the required CTE/window structure; never remove it merely to simplify the SQL.
+- Implement required tableCalculations in SQL, not as an unstated presentation step. Use the declared outputAlias. For windows, aggregate to the requested base grain in a CTE/subquery first when necessary, then apply OVER with the declared PARTITION BY, ORDER BY and frame. Running totals use ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW; N-period moving averages use ROWS BETWEEN N-1 PRECEDING AND CURRENT ROW; period growth uses LAG; within-group top-N uses a partitioned ranking window.
 - The user's explicit question and the verified schema are the source of truth. The local Analysis Plan is a governed draft: preserve valid resolved metrics, filters, comparison semantics, sorting, and limits, but repair any omission or misclassification called out by Planner Verification.
 - Preserve governed relative thresholds. A plan filter with op "above_avg" or "below_avg" means: aggregate the metric at the requested entity grain first, calculate the average of those entity aggregates in a CTE/subquery, then retain entities above or below that threshold. Never replace it with an invented literal threshold. If includeNonPositive is true, combine the below-average condition with OR aggregate <= 0 so wording such as "low or negative" is preserved exactly.
 - Treat the deterministic relativeComparison contract as authoritative. When referencePopulation is "filtered_cohort", calculate AVG over the same pre-comparison cohort predicates used by the outer query; SQL outer WHERE predicates do not flow into a scalar subquery automatically. When it is "global", do not copy cohort filters. Preserve its exact comparator and multiplier (for example, "20% higher than" means > AVG(...) * 1.2, while "at least 20% higher" means >=).
@@ -68,7 +69,16 @@ export interface DynamicQuerySpec {
         orderBy?: Array<{ expression: string; direction?: 'asc' | 'desc' }>;
         limit?: number;
         joins?: Array<{ leftTable: string; rightTable: string; condition: string; purpose?: string }>;
-        tableCalculations?: Array<{ type: string; expression?: string; partitionBy?: string[]; orderBy?: string[] }>;
+        tableCalculations?: Array<{
+            type: string;
+            expression?: string;
+            partitionBy?: string[];
+            orderBy?: string[];
+            windowSize?: number;
+            buckets?: number;
+            outputAlias?: string;
+            required?: boolean;
+        }>;
         ratio?: {
             kind: 'percentage' | 'ratio';
             basis: 'row_count' | 'measure';
@@ -84,7 +94,7 @@ export interface DynamicQuerySpec {
 
 const SPEC_PROMPT = `You are the planning stage of a privacy-first analytics system.
 Translate the question into a JSON Query Specification. You receive only a database schema and metadata, never data rows.
-Capture all requested analytical operations dynamically: measures/aggregations, filters, GROUP BY, HAVING, sorting, limits, joins, date logic, and window or table calculations. Use only exact physical schema fields and table names. When an entity is the answer, choose its human-readable descriptive field for expectedResult (not an opaque ID) whenever the schema provides one; IDs can be an optional secondary reference.
+Capture all requested analytical operations dynamically: measures/aggregations, filters, GROUP BY, HAVING, sorting, limits, joins, date logic, and window or table calculations. A requested advanced calculation is part of the answer contract, not optional presentation metadata: record its partition, chronological order, frame/window size and stable output alias. Use only exact physical schema fields and table names. When an entity is the answer, choose its human-readable descriptive field for expectedResult (not an opaque ID) whenever the schema provides one; IDs can be an optional secondary reference.
 Keep every predicate in the specification at its correct scope. Row predicates belong in filters/WHERE; aggregate predicates belong in having/HAVING. A field needed only for filtering, joining, or ordering must not be added to expectedResult or GROUP BY unless the question asks to display or group by it.
 For rankings, record the exact ranking expression and result cardinality. Distinguish a raw-field row ranking, a grouped aggregate ranking, and a frequency ranking; never infer LIMIT 1 when the wording requests every group.
 Define expectedResult from the words that describe what the user wants returned, before planning filters. Aggregates used only as comparison thresholds belong in filters/subqueries and must not replace those requested result fields. Never invent COUNT, collection aggregates, GROUP BY, or LIMIT from a column name or from a filter's aggregate.
@@ -214,6 +224,21 @@ export function reconcileQuerySpecWithCanonicalIntent(
             },
             scale: canonical.ratio.kind === 'percentage' ? 100 : existingRatio?.scale,
         };
+    }
+
+    if (canonical.analyticOperations.length) {
+        // The canonical contract owns explicitly requested advanced analytics.
+        // A planner may enrich expressions, but it may not silently omit the
+        // calculation or change its partition/order/window semantics.
+        spec.operations.tableCalculations = canonical.analyticOperations.map(operation => ({
+            type: operation.kind,
+            partitionBy: [...operation.partitionBy],
+            orderBy: operation.orderBy ? [operation.orderBy] : [],
+            windowSize: operation.windowSize,
+            buckets: operation.buckets,
+            outputAlias: operation.outputAlias,
+            required: true,
+        }));
     }
     if (canonical.relationship.path.length) {
         spec.operations.joins = canonical.relationship.path.map(step => ({
@@ -382,7 +407,7 @@ function bareSqlIdentifier(value: string): string | undefined {
  * aggregate input is also emitted raw and added to GROUP BY.
  */
 export function normalizeSimpleSQLToContract(sql: string, contract?: QueryContract): string {
-    if (!contract || /^\s*with\b/i.test(sql) || (sql.match(/\bselect\b/gi) || []).length !== 1) return sql;
+    if (!contract || (contract.analyticOperations?.length || 0) > 0 || /^\s*with\b/i.test(sql) || (sql.match(/\bselect\b/gi) || []).length !== 1) return sql;
     let normalized = sql.trim();
 
     if (contract.prohibitsImplicitLimit) {
@@ -433,11 +458,16 @@ export function normalizeSimpleSQLToContract(sql: string, contract?: QueryContra
     return normalized.trim();
 }
 
-function sqlStructuralComplexity(sql: string): number {
+function sqlStructuralComplexity(sql: string, contract?: QueryContract): number {
     const count = (pattern: RegExp) => (sql.match(pattern) || []).length;
-    return count(/\bwith\b/gi) * 3
+    const advanced = contract?.analyticOperations || [];
+    const requiredWindow = advanced.some(operation => operation.implementation === 'window');
+    const requiredAdvancedStructure = advanced.length > 0;
+    // Required analytical structure is not complexity debt. It is penalised
+    // only when the question/contract does not call for it.
+    return count(/\bwith\b/gi) * (requiredAdvancedStructure ? 0 : 3)
         + count(/\bjoin\b/gi) * 2
-        + count(/\bover\s*\(/gi) * 3
+        + count(/\bover\s*\(/gi) * (requiredWindow ? 0 : 3)
         + count(/\bselect\b/gi)
         + count(/\bunion\b/gi) * 2
         + count(/\bgroup\s+by\b/gi);
@@ -463,7 +493,7 @@ export function chooseBestSQLCandidate(
             safe: safety.ok,
             contractErrors: safety.ok ? issues.filter(issue => issue.severity === 'error').length : Number.MAX_SAFE_INTEGER,
             contractWarnings: safety.ok ? issues.filter(issue => issue.severity === 'warn').length : Number.MAX_SAFE_INTEGER,
-            complexity: safety.ok ? sqlStructuralComplexity(safety.sql) : Number.MAX_SAFE_INTEGER,
+            complexity: safety.ok ? sqlStructuralComplexity(safety.sql, queryContract) : Number.MAX_SAFE_INTEGER,
         };
     };
     const draft = evaluate(draftSQL, 'draft');
@@ -590,7 +620,7 @@ export async function generateDirectSQL(
     // Sol independently checks every request against the question, schema and
     // structured plan, then returns the final executable SQL.
     const reviewed = await fetchWithFallback([
-        { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the question, schema, and deterministic contract. Correct only concrete violations. Before returning SQL, audit: (1) outer SELECT contains only requested answer fields/calculations, (2) GROUP BY is exactly the requested grain, (3) ranking expression, direction, cardinality and tie behaviour match the wording, (4) aggregate predicates are in HAVING/subqueries without leaking helper metrics into the answer, (5) ratio numerator and denominator use the correct populations, (6) joins follow the declared ownership path, and (7) list/set answers cannot repeat because of join fan-out. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and contract do not require. Return only final SQL.` },
+        { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the question, schema, and deterministic contract. Correct only concrete violations. Before returning SQL, audit: (1) outer SELECT contains only requested answer fields/calculations, (2) GROUP BY is exactly the requested grain, (3) ranking expression, direction, cardinality and tie behaviour match the wording, (4) aggregate predicates are in HAVING/subqueries without leaking helper metrics into the answer, (5) ratio numerator and denominator use the correct populations, (6) joins follow the declared ownership path, (7) list/set answers cannot repeat because of join fan-out, and (8) every required tableCalculation is implemented with its declared partition, order, frame and output alias. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and contract do not require; never remove a required CTE/window/table calculation merely to make SQL shorter. Return only final SQL.` },
         { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${draftSQL}\n\nFinal reviewed SQL:` },
     ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
     const reviewedSQL = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');

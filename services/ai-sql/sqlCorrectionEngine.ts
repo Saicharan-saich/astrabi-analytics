@@ -24,6 +24,7 @@ import type { DerivedMetric } from './derivedMetricEngine';
 import { logger } from '../logger';
 import { dateRangePredicate } from '../queryPlan/sqlPrimitives';
 import { isRowIdentifier } from './modelHelpers';
+import { detectAdvancedAnalyticOperations, type AdvancedAnalyticOperation } from './advancedAnalytics';
 
 // â”€â”€â”€ Table Reference â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Set dynamically by correctSQL() so all builder functions use the
@@ -194,6 +195,13 @@ export function correctSQL(plan: AnalysisPlan, model: SemanticModel, apdmeMetric
             ].join('\n');
         }
     }
+
+    const advancedOperations = detectAdvancedAnalyticOperations(plan.originalQuestion || '', plan);
+    if (advancedOperations.length > 0 && plan.metrics.length > 0) {
+        logger.info('[SQL Correction]', `Compiling advanced SQL: ${advancedOperations.map(operation => operation.kind).join(', ')}`);
+        return buildAdvancedAnalyticSQL(plan, model, advancedOperations, apdmeMetrics);
+    }
+
     // Check for derived metrics FIRST (two-stage aggregation)
     // This handles cases like "average daily sales" where the plan
     // references a derived metric OR where the LLM set intent=derived_metric
@@ -1060,6 +1068,129 @@ function buildGrowthAnalysisSQL(plan: AnalysisPlan, model: SemanticModel): strin
     }
 
     return parts.join('\n');
+}
+
+function dimensionResultAlias(dimension: PlanDimension): string {
+    return q(dimension.timeGrain && dimension.timeGrain !== 'day'
+        ? `${dimension.field}_${dimension.timeGrain}`
+        : dimension.field);
+}
+
+/**
+ * Compile every explicitly requested advanced calculation over one governed
+ * base-grain CTE. This keeps the calculation reproducible in DuckDB SQL and
+ * prevents the visual layer from becoming the only place where the answer
+ * exists. Multiple requested windows share the same base aggregation.
+ */
+function buildAdvancedAnalyticSQL(
+    plan: AnalysisPlan,
+    model: SemanticModel,
+    operations: AdvancedAnalyticOperation[],
+    apdmeMetrics?: DerivedMetric[],
+): string {
+    if (!plan.metrics.length) throw new Error('Advanced analytics require a schema-grounded metric.');
+
+    const dimExprs = buildDimensionExpressions(plan.dimensions);
+    const metExprs = buildMetricExpressions(plan.metrics, model, apdmeMetrics);
+    const groupBy = buildGroupByClause(plan.dimensions);
+    const where = buildWhereClause(plan.filters);
+    const metricAlias = getMetricAlias(plan.metrics[0], model, apdmeMetrics);
+    const timeDimension = plan.dimensions.find(dimension => dimension.timeGrain);
+    const defaultOrder = timeDimension
+        ? dimensionResultAlias(timeDimension)
+        : plan.sort[0]?.field
+            ? q(plan.sort[0].field)
+            : metricAlias;
+    const orderDirection = (plan.sort[0]?.dir || 'desc').toUpperCase() as 'ASC' | 'DESC';
+
+    const aliasForField = (field: string | undefined): string | undefined => {
+        if (!field) return undefined;
+        const dimension = plan.dimensions.find(candidate => candidate.field.toLowerCase() === field.toLowerCase());
+        if (dimension) return dimensionResultAlias(dimension);
+        if (plan.metrics.some(metric => metric.field.toLowerCase() === field.toLowerCase())) return metricAlias;
+        return q(field);
+    };
+    const windowFor = (operation: AdvancedAnalyticOperation, includeOrder = true): string => {
+        const partitions = operation.partitionBy.map(aliasForField).filter((field): field is string => Boolean(field));
+        const partitionClause = partitions.length ? `PARTITION BY ${partitions.join(', ')} ` : '';
+        const order = aliasForField(operation.orderBy) || defaultOrder;
+        return `${partitionClause}${includeOrder ? `ORDER BY ${order}` : ''}`.trim();
+    };
+
+    const calculations: string[] = [];
+    const calculationAliases: string[] = [];
+    let rankFilter: number | undefined;
+    for (const operation of operations) {
+        const window = windowFor(operation);
+        switch (operation.kind) {
+            case 'running_total':
+                calculations.push(`SUM(${metricAlias}) OVER (${window} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS ${q(operation.outputAlias)}`);
+                calculationAliases.push(q(operation.outputAlias));
+                break;
+            case 'moving_average': {
+                const preceding = Math.max(0, (operation.windowSize || 3) - 1);
+                calculations.push(`AVG(${metricAlias}) OVER (${window} ROWS BETWEEN ${preceding} PRECEDING AND CURRENT ROW) AS ${q(operation.outputAlias)}`);
+                calculationAliases.push(q(operation.outputAlias));
+                break;
+            }
+            case 'period_growth': {
+                const lag = `LAG(${metricAlias}, 1) OVER (${window})`;
+                calculations.push(`${lag} AS ${q('previous_value')}`);
+                calculations.push(`ROUND((${metricAlias} - ${lag}) / NULLIF(ABS(${lag}), 0) * 100, 2) AS ${q(operation.outputAlias)}`);
+                calculationAliases.push(q('previous_value'), q(operation.outputAlias));
+                break;
+            }
+            case 'partitioned_rank':
+                calculations.push(`ROW_NUMBER() OVER (${windowFor(operation).replace(/ORDER BY[\s\S]*$/i, `ORDER BY ${metricAlias} ${orderDirection}`)}) AS ${q(operation.outputAlias)}`);
+                calculationAliases.push(q(operation.outputAlias));
+                rankFilter = plan.limit || undefined;
+                break;
+            case 'explicit_rank':
+                calculations.push(`RANK() OVER (${windowFor(operation).replace(/ORDER BY[\s\S]*$/i, `ORDER BY ${metricAlias} ${orderDirection}`)}) AS ${q(operation.outputAlias)}`);
+                calculationAliases.push(q(operation.outputAlias));
+                rankFilter = plan.limit || undefined;
+                break;
+            case 'percent_of_total':
+                calculations.push(`ROUND(${metricAlias} * 100.0 / NULLIF(SUM(${metricAlias}) OVER (), 0), 2) AS ${q(operation.outputAlias)}`);
+                calculationAliases.push(q(operation.outputAlias));
+                break;
+            case 'ntile':
+                calculations.push(`NTILE(${operation.buckets || 4}) OVER (ORDER BY ${metricAlias} ${orderDirection}) AS ${q(operation.outputAlias)}`);
+                calculationAliases.push(q(operation.outputAlias));
+                break;
+        }
+    }
+
+    if (!calculations.length) throw new Error('No supported advanced analytical calculation was compiled.');
+    const baseSelects = [...dimExprs, ...metExprs];
+    const finalColumns = [
+        ...plan.dimensions.map(dimensionResultAlias),
+        ...plan.metrics.map(metric => getMetricAlias(metric, model, apdmeMetrics)),
+        ...calculationAliases,
+    ];
+    const base = [
+        `SELECT ${baseSelects.join(', ')}`,
+        fromTable(),
+        where ? `WHERE ${where}` : '',
+        groupBy ? `GROUP BY ${groupBy}` : '',
+    ].filter(Boolean).join('\n');
+    const sql = [
+        `WITH base AS (`,
+        base.split('\n').map(line => `  ${line}`).join('\n'),
+        `), analytic AS (`,
+        `  SELECT base.*,`,
+        calculations.map((calculation, index) => `         ${calculation}${index < calculations.length - 1 ? ',' : ''}`).join('\n'),
+        `  FROM base`,
+        `)`,
+        `SELECT ${finalColumns.join(', ')}`,
+        `FROM analytic`,
+    ];
+    if (rankFilter) sql.push(`WHERE ${q('row_rank')} <= ${rankFilter}`);
+    const finalOrder = operations.some(operation => ['partitioned_rank', 'explicit_rank', 'ntile'].includes(operation.kind))
+        ? q(operations.find(operation => ['partitioned_rank', 'explicit_rank', 'ntile'].includes(operation.kind))!.outputAlias)
+        : defaultOrder;
+    sql.push(`ORDER BY ${finalOrder}`);
+    return sql.join('\n');
 }
 
 // ═══════════════════════════════════════════════════════════════════
