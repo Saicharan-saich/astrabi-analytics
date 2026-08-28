@@ -157,4 +157,46 @@ describe('mature compositional AI SQL contracts', () => {
     expect(contract.requiredTables).toEqual(expect.arrayContaining(['teacher', 'course_arrange']));
     expect(contract.requiredTables).not.toContain('audit_log');
   });
+
+  it('preserves two independent rankings and their set difference as a compositional contract', () => {
+    const semanticModel = model([
+      { ...field('city', 'dimension'), synonyms: ['cities'] },
+      { ...field('amount', 'metric', 'currency'), displayLabel: 'Sales Amount', synonyms: ['sales'] },
+      { ...field('profit', 'metric', 'currency'), synonyms: ['profit'] },
+    ]);
+    const question = 'Which cities are in the top 10 by sales but not in the top 10 by profit?';
+    const contract = buildQueryContract(question, plan({
+      intent: 'ranking',
+      dimensions: [{ field: 'city' }],
+      metrics: [{ field: 'profit', agg: 'sum' }],
+      sort: [{ field: 'profit', dir: 'desc' }],
+      limit: 10,
+    }), [], semanticModel);
+
+    expect(contract.rankedSetOperation).toEqual({
+      operation: 'difference',
+      entityField: 'city',
+      branches: [
+        { metricField: 'amount', aggregation: 'sum', direction: 'desc', limit: 10 },
+        { metricField: 'profit', aggregation: 'sum', direction: 'desc', limit: 10 },
+      ],
+    });
+
+    const collapsed = 'SELECT city FROM data GROUP BY city ORDER BY SUM(profit) DESC LIMIT 10';
+    expect(validateSQLAgainstContract(collapsed, contract).map(issue => issue.code)).toEqual(expect.arrayContaining([
+      'missing_ranked_set_branch',
+      'missing_ranked_set_operation',
+      'missing_aggregation',
+    ]));
+
+    const composed = `WITH sales_top AS (
+      SELECT city FROM data GROUP BY city ORDER BY SUM(amount) DESC LIMIT 10
+    ), profit_top AS (
+      SELECT city FROM data GROUP BY city ORDER BY SUM(profit) DESC LIMIT 10
+    )
+    SELECT city FROM sales_top
+    EXCEPT
+    SELECT city FROM profit_top`;
+    expect(validateSQLAgainstContract(composed, contract)).toEqual([]);
+  });
 });

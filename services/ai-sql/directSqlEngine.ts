@@ -20,11 +20,9 @@ import {
 import { buildCanonicalQueryIntent, type CanonicalQueryIntent } from './canonicalIntent';
 import {
     formatAnalyticalIRForPrompt,
-    verifyAnalyticalIR,
     type AnalyticalIR,
     type AnalyticalOperator,
 } from './analyticalIR';
-import { compileAnalyticalIRToSQL } from './analyticalSqlAst';
 
 const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
 Given a database schema and a question, output a SINGLE read-only SQL SELECT that answers it.
@@ -93,6 +91,16 @@ export interface DynamicQuerySpec {
             denominator: { description: string; expression?: string; filters?: Array<{ field: string; operator: string; value: unknown }> };
             scale?: number;
         };
+        rankedSets?: {
+            operation: 'difference' | 'intersection';
+            entity: string;
+            branches: Array<{
+                metric: string;
+                aggregation: string;
+                direction: 'asc' | 'desc';
+                limit: number;
+            }>;
+        };
     };
     expectedResult: { grain: string; columns: string[]; explanation?: string };
     assumptions: string[];
@@ -104,6 +112,7 @@ Translate the question into a JSON Query Specification. You receive only a datab
 Capture all requested analytical operations dynamically: measures/aggregations, filters, GROUP BY, HAVING, sorting, limits, joins, date logic, and window or table calculations. A requested advanced calculation is part of the answer contract, not optional presentation metadata: record its partition, chronological order, frame/window size and stable output alias. Use only exact physical schema fields and table names. When an entity is the answer, choose its human-readable descriptive field for expectedResult (not an opaque ID) whenever the schema provides one; IDs can be an optional secondary reference.
 Keep every predicate in the specification at its correct scope. Row predicates belong in filters/WHERE; aggregate predicates belong in having/HAVING. A field needed only for filtering, joining, or ordering must not be added to expectedResult or GROUP BY unless the question asks to display or group by it.
 For rankings, record the exact ranking expression and result cardinality. Distinguish a raw-field row ranking, a grouped aggregate ranking, and a frequency ranking; never infer LIMIT 1 when the wording requests every group.
+When a question compares membership in independently ranked populations (for example top N by one measure but not top N by another), record operations.rankedSets with every branch and the requested set operation. Do not collapse multiple rankings into one orderBy/limit.
 Define expectedResult from the words that describe what the user wants returned, before planning filters. Aggregates used only as comparison thresholds belong in filters/subqueries and must not replace those requested result fields. Never invent COUNT, collection aggregates, GROUP BY, or LIMIT from a column name or from a filter's aggregate.
 Relative analytical language is answerable without a user-supplied literal threshold. When the governed plan resolves "high/strong" to above_avg or "low/weak/negative" to below_avg, preserve that decision: compare each entity-level aggregate with the average across entity aggregates, record the rule in assumptions, and do NOT request clarification. Ask only when the required field or entity grain is genuinely unavailable.
 For a filtered population compared with an average, explicitly identify the reference population. Unless the wording says overall/global/all records, phrases such as "patients with X ... higher than average" use the same X-filtered cohort for both the outer population and the AVG reference. Preserve strict boundaries: "higher than" is >; "at least ... higher" is >=.
@@ -710,11 +719,10 @@ export async function generateDirectSQL(
     queryContract?: QueryContract,
     analyticalIR?: AnalyticalIR,
 ): Promise<DirectSQLResult> {
-    // Once a frozen IR exists, do not also show the model a mutable legacy
-    // plan. Even when labelled advisory, two overlapping representations invite
-    // the planner to cherry-pick conflicting grain, projection, or limits.
-    const planContext = analysisPlan && !analyticalIR
-        ? `\n\nUntrusted local semantic hints (advisory only):\n${JSON.stringify(analysisPlan, null, 2)}\nDo not copy a metric, dimension, filter, grouping, or limit from these hints unless it is grounded by the user's question and physical schema. The deterministic query contract and the user's requested output take precedence over every conflicting hint.`
+    // Deterministic preprocessing supplies grounded facts and a compact GAFS
+    // plan. It is evidence for the model, not a competing SQL author.
+    const planContext = analysisPlan
+        ? `\n\nCompact deterministic question plan (schema-grounded evidence, not a SQL solution):\n${JSON.stringify(analysisPlan, null, 2)}\nUse it for grounded fields, GAFS operations, filters and limits. You own the higher-level reasoning and may choose CTEs, subqueries, windows or set operators needed to answer the complete question.`
         : '';
     const verificationContext = plannerVerification?.length
         ? `\n\nLocal diagnostics to consider:\n${JSON.stringify(plannerVerification, null, 2)}`
@@ -724,7 +732,7 @@ export async function generateDirectSQL(
         ? `\n\nDeterministic Query Contract (mandatory; do not weaken or replace it):\n${formatQueryContractForPrompt(queryContract)}`
         : '';
     const analyticalIRContext = analyticalIR
-        ? `\n\nFrozen Canonical Analytical IR (authoritative; compile these operators and populations exactly):\n${formatAnalyticalIRForPrompt(analyticalIR)}`
+        ? `\n\nDeterministic analytical evidence (advisory; do not let an incomplete operator list erase meaning present in the question):\n${formatAnalyticalIRForPrompt(analyticalIR)}`
         : '';
 
     // Terra interprets the question into a typed, open-ended analytical plan.
@@ -741,12 +749,10 @@ export async function generateDirectSQL(
     let tokens = plannerUsage.total_tokens || ((plannerUsage.prompt_tokens || 0) + (plannerUsage.completion_tokens || 0)) || 0;
     if (!draftSpec) return { sql: '', tokens, model: planner.model, error: 'AI planner returned an invalid query specification', blocked: true };
     const canonicalIntent = queryContract ? buildCanonicalQueryIntent(queryContract) : undefined;
-    const canonicalSpec = canonicalIntent
-        ? reconcileQuerySpecWithCanonicalIntent(draftSpec, canonicalIntent)
-        : draftSpec;
-    const spec = analyticalIR
-        ? reconcileQuerySpecWithAnalyticalIR(canonicalSpec, analyticalIR)
-        : canonicalSpec;
+    // The model-authored specification remains authoritative. Deterministic
+    // contracts are supplied in the prompt and validated afterwards; they do
+    // not rewrite a richer multi-stage plan into a simpler local shape.
+    const spec = draftSpec;
     if (spec.clarification) {
         return { sql: '', tokens, model: planner.model, error: spec.clarification, blocked: true, querySpec: spec, canonicalIntent };
     }
@@ -771,29 +777,9 @@ export async function generateDirectSQL(
     tokens += reviewUsage.total_tokens || ((reviewUsage.prompt_tokens || 0) + (reviewUsage.completion_tokens || 0)) || 0;
     let modelUsedForSQL = `${planner.model} → ${drafted.model} → ${reviewed.model}`;
     const candidateDecision = chooseBestSQLCandidate(draftSQL, reviewedSQL, queryContract);
-    let sql = normalizeSimpleSQLToContract(candidateDecision.sql, queryContract);
-    if (sql !== candidateDecision.sql) {
-        console.log('[AI SQL] Deterministic contract normalizer removed an aggregate input from the raw SELECT/GROUP BY grain or removed an unrequested LIMIT.');
-    }
+    let sql = candidateDecision.sql;
     if (candidateDecision.source === 'draft') {
         console.log(`[AI SQL] Retained the draft SQL because the reviewer candidate was less faithful or more complex (${candidateDecision.contractErrors} contract error(s), complexity ${candidateDecision.complexity}).`);
-    }
-    if (analyticalIR) {
-        const structuralCandidate = compileAnalyticalIRToSQL(analyticalIR);
-        const structuralIRIssues = verifyAnalyticalIR(analyticalIR).filter(issue => issue.severity === 'error');
-        if (structuralCandidate.supported && structuralCandidate.sql && structuralIRIssues.length === 0) {
-            const modelIssues = queryContract
-                ? validateSQLAgainstContract(sql, queryContract).filter(issue => issue.severity === 'error')
-                : [];
-            const structuralIssues = queryContract
-                ? validateSQLAgainstContract(structuralCandidate.sql, queryContract).filter(issue => issue.severity === 'error')
-                : [];
-            if (structuralIssues.length === 0) {
-                sql = structuralCandidate.sql;
-                modelUsedForSQL = `${modelUsedForSQL} → IR-AST recovery`;
-                console.warn(`[AI SQL] Selected the contract-valid frozen IR AST as the authoritative executable form (${modelIssues.length} model contract error(s)).`);
-            }
-        }
     }
     console.log(`[AI SQL] Dynamic three-model route: ${modelUsedForSQL}`);
 

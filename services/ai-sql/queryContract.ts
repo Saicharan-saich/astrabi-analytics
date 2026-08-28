@@ -147,6 +147,19 @@ export interface QueryContract {
         aggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max';
         confidence: 'high' | 'medium';
     };
+    /** Two independently ranked populations combined with set logic. The
+     * deterministic layer records the requested operations and grounded
+     * fields, but deliberately does not choose a SQL implementation. */
+    rankedSetOperation?: {
+        operation: 'difference' | 'intersection';
+        entityField?: string;
+        branches: Array<{
+            metricField: string;
+            aggregation: 'sum' | 'avg' | 'count' | 'min' | 'max';
+            direction: 'asc' | 'desc';
+            limit: number;
+        }>;
+    };
     threshold?: {
         operator: '>=' | '>' | '<=' | '<' | '=';
         value: number;
@@ -204,6 +217,8 @@ export interface SQLFaithfulnessIssue {
         | 'missing_aggregation'
         | 'missing_filter'
         | 'wrong_ranking_target'
+        | 'missing_ranked_set_branch'
+        | 'missing_ranked_set_operation'
         | 'wrong_ratio_basis'
         | 'wrong_comparison_scope'
         | 'missing_comparator'
@@ -763,6 +778,57 @@ function resolveSetOperation(question: string): QueryContract['setOperation'] {
     return 'none';
 }
 
+function resolveRankedSetOperation(
+    question: string,
+    model?: SemanticModel,
+    outputEntity?: QueryEntityContract,
+): QueryContract['rankedSetOperation'] {
+    const difference = /\bbut\s+not\s+(?:in\s+)?(?:the\s+)?/i.exec(question);
+    if (!difference || difference.index === undefined) return undefined;
+
+    const clauses = [
+        question.slice(0, difference.index),
+        question.slice(difference.index + difference[0].length),
+    ];
+    const metricFields = (model?.fields || []).filter(field => field.role === 'metric');
+    const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const resolveMetric = (text: string) => metricFields
+        .flatMap(field => [field.name, field.displayLabel, ...(field.synonyms || [])]
+            .map(alias => ({ field, alias: alias.replace(/[_-]+/g, ' ').trim() })))
+        .filter(candidate => candidate.alias.length > 1
+            && new RegExp(`(?:^|[^a-z0-9])${escape(candidate.alias).replace(/\s+/g, '\\s+')}(?:$|[^a-z0-9])`, 'i').test(text.replace(/[_-]+/g, ' ')))
+        .sort((left, right) => right.alias.length - left.alias.length)[0]?.field;
+    const aggregationFor = (text: string, field: NonNullable<ReturnType<typeof resolveMetric>>) => {
+        if (/\b(?:average|avg|mean)\b/i.test(text)) return 'avg' as const;
+        if (/\b(?:count|number\s+of|how\s+many)\b/i.test(text)) return 'count' as const;
+        if (/\b(?:minimum|min)\b/i.test(text)) return 'min' as const;
+        if (/\b(?:maximum|max)\b/i.test(text)) return 'max' as const;
+        if (/\b(?:total|sum)\b/i.test(text)) return 'sum' as const;
+        return ['sum', 'avg', 'count', 'min', 'max'].includes(field.defaultAgg)
+            ? field.defaultAgg as 'sum' | 'avg' | 'count' | 'min' | 'max'
+            : 'sum';
+    };
+
+    const branches = clauses.flatMap(clause => {
+        const ranking = clause.replace(/[?.,;!]+\s*$/, '').match(/\b(top|bottom)\s+(\d+)\b[\s\S]*?\bby\s+([^?.,;]+)$/i);
+        if (!ranking) return [];
+        const field = resolveMetric(ranking[3]);
+        if (!field) return [];
+        return [{
+            metricField: field.name,
+            aggregation: aggregationFor(ranking[3], field),
+            direction: ranking[1].toLowerCase() === 'bottom' ? 'asc' as const : 'desc' as const,
+            limit: Number(ranking[2]),
+        }];
+    });
+    if (branches.length !== 2 || branches.some(branch => !Number.isInteger(branch.limit) || branch.limit < 1)) return undefined;
+    return {
+        operation: 'difference',
+        entityField: outputEntity?.confidence === 'high' ? outputEntity.field : undefined,
+        branches,
+    };
+}
+
 function thresholdUsesAggregate(question: string): boolean {
     const comparator = /\b(?:at\s+least|more\s+than|greater\s+than|over|at\s+most|fewer\s+than|less\s+than|under|exactly|equal\s+to)\b/i.exec(question);
     if (!comparator) return false;
@@ -1109,6 +1175,7 @@ export function buildQueryContract(
         || requestedOutputFields.find(field => descriptiveColumn(field.field))
         || requestedOutputFields[0];
     const queryShape = inferQueryShape(question);
+    const rankedSetOperation = resolveRankedSetOperation(question, model, outputEntity);
     const ratio = resolveRatio(question, model, plan);
     const requiresComparison = isTimePeriodComparison(question) || COMPARISON_CUE.test(question) || Boolean(plan.comparison);
     const analyticOperations = detectAdvancedAnalyticOperations(question, plan);
@@ -1187,7 +1254,8 @@ export function buildQueryContract(
     const explicitScalarAggregationCue = /\b(?:how many|(?<!\bid )(?<!\bserial )(?<!\bphone )(?<!\bcontact )(?<!\btelephone )(?<!\bmobile )(?<!\bcell )(?<!\baccount )(?<!\border )(?<!\brace )(?<!\bflight )(?<!\bticket )(?<!\bcard )(?<!\bmodel )(?<!\bpart )number of|count(?: of)?|what is (?:the )?(?:average|mean|total|sum|minimum|maximum)|what are (?:the )?(?:minimum and maximum|maximum and minimum))\b/i.test(question);
     const requiresGrouping = setOperation !== 'intersection'
         && !requiresRowProjection && !orderedProjection && (!explicitScalarAggregationCue || explicitGroupingCue)
-        && (queryShape.implicitFrequencyRanking
+        && (!!rankedSetOperation
+            || queryShape.implicitFrequencyRanking
             || (queryShape.groupingCue && queryShape.explicitAggregations.length > 0)
             || requiresFiscalCalendar
             || BREAKDOWN_CUE.test(breakdownQuestion)
@@ -1227,6 +1295,7 @@ export function buildQueryContract(
     }
     const requiredDimension = resolvedRequestedDimension
         || (requiresGrouping && outputEntity?.confidence === 'high' ? outputEntity.field : undefined);
+    if (rankedSetOperation && requiredDimension) rankedSetOperation.entityField = requiredDimension;
     if (requiresGrouping && requiredDimension) {
         const groupingPhrase = question.match(/\b(?:for\s+each|for\s+every|per|by|each|every)\s+([^?.;]+)/i)?.[1] || '';
         const explicitlyCompoundGrain = /\s+(?:and|plus)\s+|,/.test(groupingPhrase);
@@ -1242,7 +1311,9 @@ export function buildQueryContract(
         }
     }
     const evidenceAggregations = aggregateOperationsFromEvidence(question);
-    let expectedAggregations = orderedProjection || requiresRowProjection
+    let expectedAggregations = rankedSetOperation
+        ? [...new Set(rankedSetOperation.branches.map(branch => branch.aggregation))]
+        : orderedProjection || requiresRowProjection
         ? []
         : evidenceAggregations.length > 0
             ? evidenceAggregations
@@ -1282,10 +1353,16 @@ export function buildQueryContract(
         expectedAggregations = ['count'];
     }
     if (expectedAggregation && expectedAggregations.length === 0) expectedAggregations = [expectedAggregation];
-    const expectedMeasures = resolveExpectedMeasures(question, expectedAggregations, model);
+    const expectedMeasures = rankedSetOperation
+        ? rankedSetOperation.branches.map(branch => ({
+            field: branch.metricField,
+            aggregation: branch.aggregation,
+            confidence: 'high' as const,
+        }))
+        : resolveExpectedMeasures(question, expectedAggregations, model);
     const expectedComputedMetrics = resolveExpectedComputedMetrics(question, model);
     const requiredPredicates = resolveRequiredPredicates(plan, model, schema);
-    const rankingTarget = resolveRankingTarget(
+    const rankingTarget = rankedSetOperation ? undefined : resolveRankingTarget(
         question,
         plan,
         queryShape,
@@ -1296,7 +1373,7 @@ export function buildQueryContract(
     // filtered by an aggregate ("which industries have average score >= 70")
     // should expose the industry, while AVG(score) may remain solely in HAVING.
     const strictOutputProjection = requestedOutputFields.some(field => field.confidence === 'high')
-        && (queryShape.selection === 'single' || requiresRowProjection || aggregatePredicateCue);
+        && (queryShape.selection === 'single' || requiresRowProjection || aggregatePredicateCue || !!rankedSetOperation);
     const requestedPhysicalFields = new Set(requestedOutputFields.map(field => field.field.toLowerCase()));
     const forbiddenOutputFields = strictOutputProjection && schema
         ? [...new Set(schema.tables
@@ -1412,6 +1489,10 @@ export function buildQueryContract(
     if (relativeComparison && relativeComparison.scope !== 'row_to_filtered_average') requirements.push(`Apply the relative-average boundary exactly as ${relativeComparison.comparator} average × ${relativeComparison.multiplier}.`);
     if (requiresFiscalCalendar) requirements.push('Use the requested fiscal calendar definition, including its stated start month.');
     if (requiresRanking) requirements.push(`Rank ${rankingDirection === 'asc' ? 'ascending' : 'descending'}${rankingLimit ? ` and return ${rankingLimit}` : ''}.`);
+    if (rankedSetOperation) {
+        requirements.push(`Build ${rankedSetOperation.branches.length} independent ranked populations at the ${rankedSetOperation.entityField || 'requested entity'} grain: ${rankedSetOperation.branches.map(branch => `${branch.direction === 'desc' ? 'top' : 'bottom'} ${branch.limit} by ${branch.aggregation.toUpperCase()}(${branch.metricField})`).join('; ')}.`);
+        requirements.push(`Combine those ranked populations with ${rankedSetOperation.operation.toUpperCase()} set semantics. A single ORDER BY/LIMIT query cannot satisfy this contract.`);
+    }
     if (rankingTarget?.confidence === 'high') {
         requirements.push(`Rank by ${rankingTarget.mode === 'frequency' ? 'COUNT(*) frequency' : `${rankingTarget.aggregation ? `${rankingTarget.aggregation.toUpperCase()} of ` : ''}"${rankingTarget.field}"`}; do not sort by an unrelated helper field.`);
     }
@@ -1458,6 +1539,7 @@ export function buildQueryContract(
         expectedAggregation,
         requiredPredicates,
         rankingTarget,
+        rankedSetOperation,
         threshold,
         ratio,
         relativeComparison,
@@ -1722,6 +1804,7 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
             limit: contract.rankingLimit,
             target: contract.rankingTarget,
         } : undefined,
+        rankedSetOperation: contract.rankedSetOperation,
         comparison: contract.requiresComparison,
         requirements: contract.requirements,
     }, null, 2);
@@ -1933,6 +2016,44 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
             });
         }
     }
+    if (contract.rankedSetOperation) {
+        const rankedSet = contract.rankedSetOperation;
+        const entityGroupCount = rankedSet.entityField
+            ? groupByClauses.filter(clause => identifierPattern(rankedSet.entityField!).test(clause)).length
+            : groupByClauses.length;
+        const limitCount = rankedSet.branches.reduce((total, branch) => {
+            const literalLimit = (sql.match(new RegExp(`\\blimit\\s+${branch.limit}\\b`, 'gi')) || []).length;
+            const rankPredicate = (sql.match(new RegExp(`(?:row_number|dense_rank|rank|row_rank)[\\s\\S]{0,80}<=\\s*${branch.limit}\\b`, 'gi')) || []).length;
+            return total + literalLimit + rankPredicate;
+        }, 0);
+        const missingBranches = rankedSet.branches.filter(branch => {
+            const aggregate = new RegExp(`\\b${branch.aggregation}\\s*\\(\\s*(?:["\\x60]?[A-Za-z_][\\w$]*["\\x60]?\\.)?["\\x60]?${branch.metricField.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&')}["\\x60]?\\s*\\)`, 'i');
+            const ordered = new RegExp(`\\border\\s+by[\\s\\S]{0,160}${branch.direction}\\b`, 'i');
+            return !aggregate.test(sql) || !ordered.test(sql);
+        });
+        if (missingBranches.length || entityGroupCount < rankedSet.branches.length || limitCount < rankedSet.branches.length) {
+            issues.push({
+                code: 'missing_ranked_set_branch',
+                severity: 'error',
+                message: `The question requires ${rankedSet.branches.length} independent entity rankings (${rankedSet.branches.map(branch => `${branch.aggregation.toUpperCase()}(${branch.metricField}) ${branch.direction.toUpperCase()} LIMIT ${branch.limit}`).join('; ')}), but one or more ranking branches are absent or collapsed.`,
+            });
+        }
+        const hasDifference = /\bexcept\b/i.test(sql)
+            || /\bnot\s+in\s*\(/i.test(sql)
+            || /\bnot\s+exists\b/i.test(sql)
+            || (/\bleft\s+(?:outer\s+)?join\b/i.test(sql) && /\bis\s+null\b/i.test(sql));
+        const hasIntersection = /\bintersect\b/i.test(sql)
+            || (sql.match(/\bexists\s*\(/gi) || []).length >= 2
+            || /\binner\s+join\b/i.test(sql);
+        if ((rankedSet.operation === 'difference' && !hasDifference)
+            || (rankedSet.operation === 'intersection' && !hasIntersection)) {
+            issues.push({
+                code: 'missing_ranked_set_operation',
+                severity: 'error',
+                message: `The independently ranked populations must be combined with ${rankedSet.operation.toUpperCase()} semantics.`,
+            });
+        }
+    }
     for (const expected of (contract.expectedAggregations?.length || 0) > 0
         ? contract.expectedAggregations!
         : contract.expectedAggregation ? [contract.expectedAggregation] : []) {
@@ -2086,7 +2207,7 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
         && !new RegExp(`\\border\\s+by[\\s\\S]*?\\b${contract.rankingDirection}\\b`, 'i').test(sql)) {
         issues.push({ code: 'wrong_ranking_direction', severity: 'error', message: `The ranking must sort ${contract.rankingDirection.toUpperCase()}.` });
     }
-    if (contract.requiresRanking && contract.rankingTarget?.confidence === 'high'
+    if (!contract.rankedSetOperation && contract.requiresRanking && contract.rankingTarget?.confidence === 'high'
         && !aggregateRankingExpressionPresent(sql, contract.rankingTarget)) {
         const target = contract.rankingTarget;
         issues.push({

@@ -106,4 +106,74 @@ describe('direct SQL query-contract repair', () => {
       expect.stringContaining('requires AVG semantics'),
     ]));
   });
+
+  it('keeps the model-authored compositional plan instead of canonicalising it to one ranking', async () => {
+    const rankedContract: QueryContract = {
+      ...contract,
+      requirements: ['Build two independent rankings and subtract the second population from the first.'],
+      expectedCardinality: 'grouped',
+      requiresGrouping: true,
+      requiresRanking: true,
+      selectionMode: 'top_n',
+      requiredOutputFields: [{ table: 'data', field: 'city', confidence: 'high' }],
+      strictOutputProjection: true,
+      forbiddenOutputFields: ['amount', 'profit'],
+      uniqueResultFields: ['city'],
+      allowedGroupingFields: ['city'],
+      requiredDimension: 'city',
+      rankingLimit: 10,
+      rankingDirection: 'desc',
+      expectedAggregation: 'sum',
+      expectedAggregations: ['sum'],
+      expectedMeasures: [
+        { field: 'amount', aggregation: 'sum', confidence: 'high' },
+        { field: 'profit', aggregation: 'sum', confidence: 'high' },
+      ],
+      rankedSetOperation: {
+        operation: 'difference',
+        entityField: 'city',
+        branches: [
+          { metricField: 'amount', aggregation: 'sum', direction: 'desc', limit: 10 },
+          { metricField: 'profit', aggregation: 'sum', direction: 'desc', limit: 10 },
+        ],
+      },
+    };
+    const spec = {
+      goal: 'Cities in sales top ten but outside profit top ten',
+      operations: {
+        rankedSets: {
+          operation: 'difference',
+          entity: 'city',
+          branches: [
+            { metric: 'amount', aggregation: 'sum', direction: 'desc', limit: 10 },
+            { metric: 'profit', aggregation: 'sum', direction: 'desc', limit: 10 },
+          ],
+        },
+      },
+      expectedResult: { grain: 'one row per city', columns: ['city'] },
+      assumptions: [],
+    };
+    const sql = `WITH sales_top AS (SELECT city FROM data GROUP BY city ORDER BY SUM(amount) DESC LIMIT 10),
+      profit_top AS (SELECT city FROM data GROUP BY city ORDER BY SUM(profit) DESC LIMIT 10)
+      SELECT city FROM sales_top EXCEPT SELECT city FROM profit_top`;
+    mockedFetch
+      .mockResolvedValueOnce(response(JSON.stringify(spec), 'terra'))
+      .mockResolvedValueOnce(response(sql, 'luna'))
+      .mockResolvedValueOnce(response(sql, 'sol'));
+
+    const result = await generateDirectSQL(
+      'Which cities are in the top 10 by sales but not in the top 10 by profit?',
+      'Table data(city VARCHAR, amount DOUBLE, profit DOUBLE)',
+      undefined,
+      undefined,
+      undefined,
+      'benchmark',
+      rankedContract,
+    );
+
+    expect(result.error).toBeUndefined();
+    expect(result.sql).toBe(sql);
+    expect(result.querySpec?.operations.rankedSets?.branches).toHaveLength(2);
+    expect(mockedFetch).toHaveBeenCalledTimes(3);
+  });
 });

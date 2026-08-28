@@ -79,96 +79,9 @@ import { validateAnalyticalResult } from './analyticalResultValidator';
 import { compileAnalyticalIRToSQL } from './analyticalSqlAst';
 import { canCompileTotalPeriodComparisonLocally } from './deterministicRouting';
 
-/**
- * Post-LLM deterministic SQL sanitizer.
- * Applies corrections for patterns the LLM consistently gets wrong
- * despite explicit prompt rules.
- */
-function sanitizeLLMSQL(sql: string, question: string, preserveAdvancedStructure = false): string {
-    let result = sql;
-
-    // Advanced SQL is governed by the typed query contract. The legacy
-    // sanitizer is regex-based and must not rewrite nested SELECT lists, CTEs,
-    // window frames or their scoped predicates.
-    if (preserveAdvancedStructure && /(?:^\s*with\b|\bover\s*\()/i.test(result)) return result;
-
-    // 1. Column-trim + DISTINCT for listing questions.
-    //    "What are the budget category of..." → SELECT DISTINCT category, type
-    //    Keep ALL columns whose base name appears anywhere in the question text.
-    const listingMatch = /\b(?:what\s+are|what\s+is)\s+(?:the\s+)?(?:\w+\s+)?(?:types?|kinds?|categor(?:y|ies))\s+(?:of|for|in)\b/i.test(question);
-    if (listingMatch) {
-        const selectMatch = result.match(/\bSELECT\s+(?:DISTINCT\s+)?([\s\S]*?)\bFROM\b/i);
-        if (selectMatch) {
-            const columns = selectMatch[1].split(',').map(c => c.trim()).filter(c => c.length > 0);
-            if (columns.length > 2) {
-                const qLower = question.toLowerCase();
-                // Keep columns whose base name appears in the question
-                const kept = columns.filter(col => {
-                    const colName = col.replace(/^[\w.]*\./, '').replace(/["` ]/g, '').toLowerCase();
-                    return qLower.includes(colName);
-                });
-                if (kept.length > 0 && kept.length < columns.length) {
-                    const newSelect = `SELECT DISTINCT\n    ${kept.join(',\n    ')}`;
-                    result = result.replace(/\bSELECT\s+(?:DISTINCT\s+)?[\s\S]*?\bFROM\b/i, `${newSelect}\nFROM`);
-                    console.log(`[Pipeline] Sanitizer: Trimmed SELECT to DISTINCT [${kept.join(', ')}]`);
-                }
-            }
-        }
-    }
-
-    // 2. Percentage conditional aggregation rewrite.
-    //    ONLY for simple SQL without nested subqueries (NOT EXISTS, correlated, etc.)
-    //    to avoid regex corruption of complex SQL structures.
-    const percentageMatch = /\bpercentage\s+of\b/i.test(question)
-        || /\bcalculate\s+(?:the\s+)?percentage\b/i.test(question);
-    const hasSubquery = /\bNOT\s+EXISTS\b/i.test(result) || /\bEXISTS\s*\(/i.test(result)
-        || (result.match(/\bSELECT\b/gi) || []).length > 1;
-    if (percentageMatch && /\bGROUP\s+BY\b/i.test(result) && !hasSubquery) {
-        const whereMatch = result.match(/\bWHERE\s+([\s\S]*?)(?:\bGROUP\s+BY\b|\bORDER\s+BY\b|$)/i);
-        // Match "WHEN field = 'value'" but use a non-greedy capture for the field qualifier
-        const caseMatch = result.match(/\bWHEN\s+(?:[\w."]+\.)?["']?(\w+)["']?\s*=\s*'([^']+)'/i);
-        const fromMatch = result.match(/\bFROM\s+(["'\w. `]+(?:\s+(?:AS\s+)?\w+)?)/i);
-        if (caseMatch && fromMatch) {
-            const condField = caseMatch[1];
-            const condValue = caseMatch[2];
-            const fromClause = fromMatch[1];
-            const whereClause = whereMatch ? whereMatch[1].trim().replace(/\s+$/, '') : '';
-            const wherePart = whereClause ? `\nWHERE ${whereClause}` : '';
-            result = `SELECT CAST(SUM(${condField} = '${condValue}') AS REAL) * 100.0 / COUNT(*) AS percentage\nFROM ${fromClause}${wherePart}`;
-            console.log('[Pipeline] Sanitizer: Rewrote percentage GROUP BY → conditional aggregation');
-        }
-    }
-
-    // 3. AVG subquery scope propagation.
-    //    The LLM writes "col > 1.20 * (\n  SELECT AVG(col) FROM table\n)" without WHERE.
-    //    Must allow whitespace between ( and SELECT, and extract all outer WHERE filters.
-    const avgSubPattern = /(\d+(?:\.\d+)?\s*\*\s*)?\(\s*SELECT\s+AVG\(([^)]+)\)\s*(?:\*\s*\d+(?:\.\d+)?)?\s+FROM\s+([\w."` ]+)\s*\)/i;
-    const avgSubMatch = result.match(avgSubPattern);
-    if (avgSubMatch) {
-        const subqueryFull = avgSubMatch[0];
-        if (!/\bWHERE\b/i.test(subqueryFull)) {
-            // Find WHERE clause, then collect all conditions before the AVG subquery line.
-            // Split by AND, drop the last one (it contains the AVG comparison).
-            const whereBlock = result.match(/\bWHERE\s+([\s\S]+?)(?=\s*$)/i);
-            if (whereBlock) {
-                const allConds = whereBlock[1].split(/\s+AND\s+/i);
-                // The last condition is the one with the AVG subquery — drop it
-                const filterConds = allConds.filter(c => !/SELECT\s+AVG/i.test(c));
-                if (filterConds.length > 0 && filterConds.length < allConds.length) {
-                    const outerFilters = filterConds.join(' AND ');
-                    const newSubquery = subqueryFull.replace(
-                        /(\)\s*)$/,
-                        ` WHERE ${outerFilters}$1`
-                    );
-                    result = result.replace(subqueryFull, newSubquery);
-                    console.log('[Pipeline] Sanitizer: Propagated outer WHERE into AVG subquery');
-                }
-            }
-        }
-    }
-
-    return result;
-}
+/** AI SQL policy: local engines describe and validate analytical facts; the
+ * governed LLM route is the sole author of executable AI SQL. */
+const AI_SQL_MODEL_OWNS_SQL = true;
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -330,6 +243,7 @@ export async function runAISQLPipeline(
                 // table hint from older upload flows.
                 richSchema = `${serializeSemanticModelSchema(semanticModel, 'data', domains)}\n\nMULTI-TABLE CONTRACT:\n- The DuckDB table "data" contains ONLY the rows and columns of primary table "${primaryTable}"; it is not a pre-joined copy.\n- All physical tables are independently queryable. If a requested field, filter, entity, or existence test belongs to another table, use the physical table names and the listed relationship path.\n- Never use "data" as a substitute for a related table. Never infer that a missing related record can be found by grouping "data" alone.\n- For "no", "without", "never", or "not a single" related record, preserve the complete entity population and use NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT.\n\n${joinCtx.description}`;
             }
+            richSchema += `\n\nEXECUTION AND PRIVACY CONTRACT:\n- SQL dialect: DuckDB. Only one read-only SELECT/WITH query is allowed.\n- Execution occurs locally in browser DuckDB-WASM; the model never executes SQL and never receives result rows.\n- Privacy mode: ${privacyMode}.\n- Shared context: ${domains ? 'schema metadata plus only the explicitly approved, non-sensitive categorical domains shown above' : 'schema and semantic metadata only; no dataset values'}.\n- User-typed literals may appear in the question/plan. Never invent an unseen literal; preserve grounded spelling and casing when supplied.\n- PII, identifiers, sensitive categorical values and transaction rows are not available to the model.`;
             directSchemaText = richSchema;
             // Build one shared, deterministic contract before any model writes
             // SQL. This unifies entity intent, query grain, relationship paths,
@@ -364,7 +278,7 @@ export async function runAISQLPipeline(
                 semanticModel,
                 executionOptions?.requestPurpose,
                 activeQueryContract,
-                activeAnalyticalIR,
+                undefined,
             );
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
@@ -377,36 +291,9 @@ export async function runAISQLPipeline(
                         console.log('[Pipeline] Grounded SQL literals:', g.changed.join(', '));
                     }
                 }
-                // Post-LLM deterministic corrections for patterns the LLM
-                // consistently gets wrong despite prompt rules.
-
-                // HARD OVERRIDE: For conditional_percentage intent, the LLM
-                // invariably generates GROUP BY + NOT EXISTS instead of a
-                // simple scalar SUM(cond)*100/COUNT(*). Extract the LLM's
-                // correct condition & filters, then rebuild deterministically.
-                if (plan.intent === 'conditional_percentage' && /\bGROUP\s+BY\b/i.test(sql)) {
-                    const caseMatch = sql.match(/WHEN\s+(?:[\w."]+\.)?["']?(\w+)["']?\s*=\s*'([^']+)'/i);
-                    // Extract simple WHERE conditions (skip NOT EXISTS blocks)
-                    const whereBlock = sql.match(/\bWHERE\s+([\s\S]+?)(?:\s+(?:GROUP\s+BY|ORDER\s+BY)\b)/i);
-                    if (caseMatch) {
-                        const condField = caseMatch[1];
-                        const condValue = caseMatch[2];
-                        // Filter out NOT EXISTS and subquery lines from WHERE
-                        const rawWhere = whereBlock ? whereBlock[1] : '';
-                        const cleanFilters = rawWhere
-                            .split(/\s+AND\s+/i)
-                            .filter(c => !/NOT\s+EXISTS|SELECT\s+/i.test(c))
-                            .map(c => c.trim())
-                            .filter(c => c.length > 0);
-                        const wherePart = cleanFilters.length > 0
-                            ? `\nWHERE ${cleanFilters.join('\n  AND ')}`
-                            : '';
-                        sql = `SELECT CAST(SUM(${condField} = '${condValue}') AS REAL) * 100.0 / COUNT(*) AS percentage\nFROM "data"${wherePart}`;
-                        console.log('[Pipeline] Forced deterministic conditional_percentage SQL');
-                    }
-                }
-
-                sql = sanitizeLLMSQL(sql, question, (activeQueryContract?.analyticOperations?.length || 0) > 0);
+                // Literal grounding may correct the spelling/casing of a value
+                // already supplied by the user. No deterministic engine is
+                // allowed to rewrite the SQL structure authored by the model.
                 console.log('[Pipeline] Direct-SQL engine SQL:', sql);
                 return { sql, tokens: ds.tokens || 0, model: ds.model, error: null, querySpec: ds.querySpec };
             }
@@ -667,21 +554,9 @@ export async function runAISQLPipeline(
         console.warn(`[Pipeline] APDME: ${apdmeResult.violations.length} guardrail violation(s), penalty: -${apdmeResult.confidencePenalty}`);
     }
 
-    // Build one provisional contract from the enriched plan, reconcile only
-    // high-confidence structural facts, then rebuild the final contract and IR
-    // from the reconciled plan. Downstream engines now receive one frozen
-    // analytical meaning rather than different snapshots of a mutable plan.
-    let provisionalContract = buildQueryContract(
-        question,
-        plan,
-        _verification.issues,
-        semanticModel,
-        joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
-    );
-    let provisionalCanonical = buildCanonicalQueryIntent(provisionalContract);
-    const canonicalReconciliation = reconcilePlanWithCanonicalIntent(plan, provisionalCanonical);
-    plan = canonicalReconciliation.plan;
-    _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
+    // Freeze the enriched local plan as evidence. Canonical reconciliation is
+    // now diagnostic-only: it may expose a conflict for the model/reviewer, but
+    // it must never mutate the question plan or pre-solve the SQL.
     activeQueryContract = buildQueryContract(
         question,
         plan,
@@ -690,6 +565,8 @@ export async function runAISQLPipeline(
         joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
     );
     activeCanonicalIntent = buildCanonicalQueryIntent(activeQueryContract);
+    const canonicalReconciliation = reconcilePlanWithCanonicalIntent(plan, activeCanonicalIntent);
+    _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
     activeAnalyticalIR = buildAnalyticalIR(
         question,
         plan,
@@ -701,7 +578,7 @@ export async function runAISQLPipeline(
     analyticalIRIssues = verifyAnalyticalIR(activeAnalyticalIR);
     const requiresAdvancedSql = activeCanonicalIntent.analyticOperations.length > 0;
     if (canonicalReconciliation.changes.length) {
-        console.log(`[Pipeline] Canonical intent reconciled ${canonicalReconciliation.changes.length} structural conflict(s): ${canonicalReconciliation.changes.join('; ')}`);
+        console.log(`[Pipeline] Canonical audit found ${canonicalReconciliation.changes.length} advisory structural conflict(s): ${canonicalReconciliation.changes.join('; ')}`);
     }
     traceStep({
         stepNumber: 4,
@@ -714,52 +591,28 @@ export async function runAISQLPipeline(
             analyticalIR: activeAnalyticalIR,
             analyticalIRIssues,
             canonicalIntent: activeCanonicalIntent,
-            reconciliationChanges: canonicalReconciliation.changes,
-            postReconciliationVerification: _verification.issues,
+            advisoryReconciliationChanges: canonicalReconciliation.changes,
+            planVerification: _verification.issues,
         },
     }, performance.now());
 
-    // Ask an interactive user for clarification instead of guessing. Benchmark
-    // fixtures cannot answer a follow-up, and every case has a frozen answer, so
-    // an imperfect local draft must continue to the governed three-model route.
-    // The query contract and physical schema remain the authority downstream.
-    if (plan.ambiguous && executionOptions?.requestPurpose !== 'benchmark') {
-        console.log('[Pipeline] Local plan is ambiguous — requesting clarification');
-        const executionTime = performance.now() - startTime;
-        return {
-            plan,
-            sql: '',
-            validation: { valid: false, checks: [] },
-            rawData: [],
-            chartData: [],
-            profile: {
-                rowCount: 0, columnCount: 0, metricCount: 0, dimensionCount: 0,
-                dimensionColumns: [], metricColumns: [], dimensionCardinality: {},
-                hasTimeDimension: false, metricsScaleMismatch: 1, metricSemanticTypes: {},
-                isPivoted: false, isSingleValue: false,
-            },
-            chart: { chartType: 'table', xKey: '', yKey: '', useDualAxis: false, reason: 'Ambiguous query — awaiting clarification' },
-            confidence: { score: 0, level: 'low', factors: { semanticMatch: 0, filterClarity: 0, aggregationCertainty: 0, planComplexity: 0, repairAttempts: 0 }, reasons: ['Query is ambiguous'] },
-            explanation: plan.clarificationQuestion || 'Could not determine the exact intent. Please rephrase.',
-            columnsUsed: [],
-            executionTimeMs: executionTime,
-            repairAttempts: 0,
-            tokenUsage: (plan as any).tokenUsage || { prompt: 0, completion: 0, total: 0 },
-        };
-    }
-    if (plan.ambiguous && executionOptions?.requestPurpose === 'benchmark') {
-        console.warn('[Pipeline] Benchmark local plan is ambiguous — escalating to the governed LLM SQL route.');
+    // Local uncertainty is evidence for the model, not a deterministic veto.
+    // The model sees the competing plan/verification signals and decides whether
+    // it can produce SQL or whether a genuine clarification is still required.
+    if (plan.ambiguous) {
+        console.warn('[Pipeline] Local plan is ambiguous — escalating the uncertainty to the governed model route.');
         plan = {
             ...plan,
             ambiguous: false,
             clarificationQuestion: undefined,
         };
-        _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
     }
 
-    // ─── Step 2d: Deterministic Query Compiler ─────────────────────
-    // Map the typed plan onto the finite Question Builder knob set. Only a
-    // request outside that governed surface can escalate to the AI SQL fallback.
+    // ─── Step 2d: Deterministic Context Builder ────────────────────
+    // AI SQL uses the local engines to describe schema facts, semantics,
+    // relationships, grounded literals, GAFS operations and answer shape. The
+    // legacy compilers remain behind a disabled compatibility switch; they do
+    // not author or replace SQL on the model-owned route.
     reportProgress('Mapping to Question Builder...', 4);
     console.log('[Pipeline] Step 2d: Question Builder mapping gate...');
     _s1 = performance.now();
@@ -776,22 +629,33 @@ export async function runAISQLPipeline(
     let qbNotes: string[] = [];
     let qbReason: string | null = null;
     let qbTraceDetails: Record<string, any>;
-    const locallyOwnedTotalComparison = canCompileTotalPeriodComparisonLocally(
+    const locallyOwnedTotalComparison = !AI_SQL_MODEL_OWNS_SQL && canCompileTotalPeriodComparisonLocally(
         plan,
         semanticModel,
         apdmeResult.derivedMetricApplied,
     );
-    const irCompilation = compileAnalyticalIRToSQL(activeAnalyticalIR);
+    const irCompilation = AI_SQL_MODEL_OWNS_SQL
+        ? { supported: false as const, sql: undefined, reasons: ['AI SQL model owns SQL synthesis'] }
+        : compileAnalyticalIRToSQL(activeAnalyticalIR);
     const irContractIssues = irCompilation.supported && irCompilation.sql && activeQueryContract
         ? validateSQLAgainstContract(irCompilation.sql, activeQueryContract).filter(issue => issue.severity === 'error')
         : [];
-    const locallyOwnedCanonicalIR = executionOptions?.requestPurpose !== 'benchmark'
+    const locallyOwnedCanonicalIR = !AI_SQL_MODEL_OWNS_SQL
+        && executionOptions?.requestPurpose !== 'benchmark'
         && irCompilation.supported
         && !!irCompilation.sql
         && analyticalIRIssues.every(issue => issue.severity !== 'error')
         && irContractIssues.length === 0;
 
-    if (locallyOwnedCanonicalIR) {
+    if (AI_SQL_MODEL_OWNS_SQL) {
+        qbReason = 'AI SQL deterministic engines provide context and validation only; the governed LLM authors SQL.';
+        qbTraceDetails = {
+            fits: false,
+            role: 'context-only',
+            questionPlan: plan,
+            queryContract: activeQueryContract,
+        };
+    } else if (locallyOwnedCanonicalIR) {
         // For the compiler's proven subset, execute the frozen IR directly.
         // This is the actual zero-token hybrid route: the LLM is reserved for
         // semantic shapes the typed compiler cannot yet express. Benchmarks
@@ -864,26 +728,27 @@ export async function runAISQLPipeline(
         }
     }
     traceStep({
-        stepNumber: 5, name: locallyOwnedCanonicalIR ? 'Canonical IR Compiler' : locallyOwnedTotalComparison ? 'Period Comparison Compiler' : antiJoin ? 'Anti-Join Compiler' : 'Question Builder Compiler', engine: 'qbMapper', icon: '🎛️',
+        stepNumber: 5, name: AI_SQL_MODEL_OWNS_SQL ? 'Deterministic Context Builder' : locallyOwnedCanonicalIR ? 'Canonical IR Compiler' : locallyOwnedTotalComparison ? 'Period Comparison Compiler' : antiJoin ? 'Anti-Join Compiler' : 'Question Builder Compiler', engine: 'qbMapper', icon: '🎛️',
         status: qbSQL ? 'pass' : 'skip',
         summary: qbSQL
             ? `Governed deterministic query compiled — ${qbNotes.join('; ')}`
-            : `Request requires an approved AI fallback — ${qbReason || 'compilation failed'}`,
+            : AI_SQL_MODEL_OWNS_SQL
+                ? 'Schema, semantics, relationships, grounded literals, question plan and output contract prepared for the LLM'
+                : `Request requires an approved AI fallback — ${qbReason || 'compilation failed'}`,
         details: qbTraceDetails,
     }, _s1);
 
-    // ─── Step 2e: Governed Direct-SQL Fallback ─────────────────────
-    // When a request is outside the deterministic compiler's supported surface,
-    // the fallback receives only the semantic schema plus explicitly approved
-    // safe domains (if Enhanced privacy mode is enabled). It never receives
-    // dataset rows, and its route and model are returned as provenance.
+    // ─── Step 2e: Governed Model SQL Synthesis ─────────────────────
+    // The model receives the compact deterministic context plus explicitly
+    // approved safe domains (Enhanced mode only). It never receives dataset
+    // rows, and its complete route and token usage are returned as provenance.
     let directSQL: string | null = null;
     let directSqlTokens = 0;
     let directSqlModel: string | undefined;
     let directSqlError: string | null = null;
     let directSqlBlocked = false;
     let directQuerySpec: DynamicQuerySpec | undefined;
-    if ((locallyOwnedCanonicalIR || locallyOwnedTotalComparison) && qbSQL) {
+    if (!AI_SQL_MODEL_OWNS_SQL && (locallyOwnedCanonicalIR || locallyOwnedTotalComparison) && qbSQL) {
         directSqlError = locallyOwnedCanonicalIR
             ? 'Not required: the frozen Canonical Analytical IR compiled to contract-valid typed SQL.'
             : 'Not required: the deterministic period compiler produced the exact two-row answer shape.';
@@ -900,10 +765,8 @@ export async function runAISQLPipeline(
             },
         }, _directSqlStart);
     } else {
-        // Hybrid path: the local engines build and verify the plan first; the
-        // selected GPT-5.6 model then drafts SQL constrained by that plan. If the
-        // model is unavailable or rejected, the local compiler remains a safe
-        // continuity fallback rather than executing untrusted SQL.
+        // The local engines build grounded evidence first; the governed model
+        // performs compositional reasoning and authors the executable SQL.
         const _ds = await runHybridSql([
             ..._verification.issues,
             ...analyticalIRIssues,
@@ -919,7 +782,7 @@ export async function runAISQLPipeline(
             status: directSQL ? 'pass' : 'skip',
             summary: directSQL
                 ? `Hybrid SQL: ${directSqlModel || 'GPT-5.6'} wrote plan-constrained SQL using ${effectivePrivacyMode === 'enhanced' ? 'metadata plus approved safe values' : 'metadata only'}`
-                : 'Hybrid SQL unavailable or rejected — continuing with the local deterministic compiler',
+                : 'Model SQL unavailable or rejected — no deterministic query will be substituted',
             details: {
                 sql: directSQL,
                 error: directSqlError,
@@ -938,49 +801,16 @@ export async function runAISQLPipeline(
                     relativeComparison: activeQueryContract.relativeComparison,
                     rankingDirection: activeQueryContract.rankingDirection,
                     rankingLimit: activeQueryContract.rankingLimit,
+                    rankedSetOperation: activeQueryContract.rankedSetOperation,
                 } : null,
             },
         }, _directSqlStart);
     }
 
-    // A contract rejection normally stops execution so an explicit analytical
-    // shape is never silently discarded. Governed relative-threshold plans are
-    // the exception: above_avg/below_avg are fully represented by the local
-    // aggregate-filter compiler, so an unnecessary LLM clarification must not
-    // turn an answerable question into a failure.
-    const governedRelativeFilters = plan.intent === 'aggregate_filter'
-        ? plan.filters.filter(f => ['above_avg', 'below_avg'].includes(normalizeFilterOp(f.op)))
-        : [];
-    const canCompileRelativeThresholdsLocally = governedRelativeFilters.length > 0
-        && plan.dimensions.length > 0
-        && governedRelativeFilters.every(f => plan.metrics.some(m =>
-            m.field.toLowerCase() === f.field.toLowerCase()
-            || (!!f.compositeRef && m.compositeId === f.compositeRef)
-        ));
-    const deterministicContractIssues = qbSQL && activeQueryContract
-        ? validateSQLAgainstContract(qbSQL, activeQueryContract).filter(issue => issue.severity === 'error')
-        : [];
-    const canUseVerifiedDeterministicFallback = !!qbSQL && deterministicContractIssues.length === 0;
-
-    // Detect false LLM clarifications about answer shape / field visibility.
-    // These are answerable by the local compiler — the planner is being overly
-    // cautious about grouping vs scalar, field visibility, or table identity.
-    const isShapeClarification = directSqlBlocked && directSqlError && /(?:aggregate.*row|scalar|grouped.*row|splits.*group|must.*identify|field.*visible|no field.*identif|requires.*visible)/i.test(directSqlError);
-
-    if (directSqlBlocked && canUseVerifiedDeterministicFallback) {
-        // A model-side contract failure must not become an application
-        // execution error when the deterministic compiler independently
-        // produced SQL that satisfies the exact same contract.
-        console.warn('[Pipeline] AI SQL candidate was rejected; continuing with independently contract-verified deterministic SQL.');
-        directSQL = null;
-        directSqlBlocked = false;
-    } else if (directSqlBlocked && (canCompileRelativeThresholdsLocally || isShapeClarification)) {
-        console.warn(`[Pipeline] AI planner clarification bypassed — falling through to the verified local compiler. Reason: ${directSqlError}`);
-        directSQL = null;
-        directSqlBlocked = false;
-    }
-
-    if (directSqlBlocked && !canCompileRelativeThresholdsLocally) {
+    // AI SQL never substitutes a locally authored query when model planning is
+    // unavailable or uncertain. That would silently change the requested
+    // reasoning while presenting the result as AI SQL.
+    if (directSqlBlocked || !directSQL) {
         throw new Error(directSqlError || 'AI SQL stopped before execution because it could not preserve the requested analytical shape.');
     }
 
@@ -997,7 +827,7 @@ export async function runAISQLPipeline(
         // Question Builder's share-of-total table calc (it only applies to
         // builder-compiled SQL).
         qbShareValueKey = null;
-    } else if (qbSQL && !requiresAdvancedSql) {
+    } else if (!AI_SQL_MODEL_OWNS_SQL && qbSQL && !requiresAdvancedSql) {
         // Normal governed path: locally compiled SQL.
         sqlResult = { sql: qbSQL, method: 'question-builder', explanation: '' };
     } else {
@@ -1034,12 +864,12 @@ export async function runAISQLPipeline(
     // A basic Question Builder query is not a semantically equivalent backup
     // for an explicit window/table calculation. The correction engine below
     // must first compile the required advanced operation.
-    let deterministicSQL: string | null = requiresAdvancedSql ? null : qbSQL;
+    let deterministicSQL: string | null = !AI_SQL_MODEL_OWNS_SQL && !requiresAdvancedSql ? qbSQL : null;
     if (directSQL) {
         // An approved fallback query is being executed.
         currentSQL = directSQL;
         _correctionStatus = 'skip';
-    } else if (qbSQL && !requiresAdvancedSql) {
+    } else if (!AI_SQL_MODEL_OWNS_SQL && qbSQL && !requiresAdvancedSql) {
         // Locally compiled deterministic SQL.
         currentSQL = qbSQL;
         _correctionStatus = 'skip';
@@ -1090,8 +920,8 @@ export async function runAISQLPipeline(
     // ─── Step 4: Validate SQL ────────────────────────────────────
     reportProgress('Validating SQL...', 6);
     console.log('[Pipeline] Step 4: Validating SQL...');
-    // Apply post-generation deterministic sanitizer to ALL engine paths.
-    currentSQL = sanitizeLLMSQL(currentSQL, question, requiresAdvancedSql);
+    // Validate the model-authored SQL as written. Structural corrections are
+    // delegated back to the model with the validator evidence below.
     _s1 = performance.now();
     let validation = validateSQL(currentSQL, plan, semanticModel);
     const _failedChecks = validation.checks.filter(c => c.status === 'fail');
@@ -1149,7 +979,7 @@ export async function runAISQLPipeline(
     // deterministic engines — the Question Builder backup if one was built,
     // otherwise the correction engine — which always produce runnable SQL from
     // the plan. This keeps a failed LLM query from crashing into an error.
-    if (execResult.error && directSQL) {
+    if (!AI_SQL_MODEL_OWNS_SQL && execResult.error && directSQL) {
         console.warn('[Pipeline] LLM SQL failed to execute after repair — using the deterministic backup.');
         try {
             const usingQbBackup = !!deterministicSQL;
@@ -1245,7 +1075,7 @@ export async function runAISQLPipeline(
     // model to patch its own SQL. This fixes valid-but-wrong result shapes (for
     // example repeated qualifying groups) without regex surgery or row data
     // leaving DuckDB.
-    if ((resultContractIssues.length || analyticalResultIssues.length) && activeAnalyticalIR) {
+    if (!AI_SQL_MODEL_OWNS_SQL && (resultContractIssues.length || analyticalResultIssues.length) && activeAnalyticalIR) {
         const structuralRecovery = compileAnalyticalIRToSQL(activeAnalyticalIR);
         if (structuralRecovery.supported && structuralRecovery.sql && structuralRecovery.sql !== currentSQL) {
             const sqlIssues = activeQueryContract

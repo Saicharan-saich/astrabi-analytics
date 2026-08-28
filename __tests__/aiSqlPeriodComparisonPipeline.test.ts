@@ -25,10 +25,37 @@ vi.mock('../services/duckdbEngine', async importOriginal => ({
 
 import { runAISQLPipeline } from '../services/ai-sql/pipeline';
 
-describe('AI SQL deterministic period-comparison route', () => {
-    it('returns two monthly totals and never lets direct SQL add order_id', async () => {
+describe('AI SQL model-owned period-comparison route', () => {
+    it('gives the LLM the governed plan and executes its two-period SQL without deterministic replacement', async () => {
         directSqlMocks.generateDirectSQL.mockClear();
         directSqlMocks.executeSQLViaDuckDB.mockClear();
+        directSqlMocks.generateDirectSQL.mockResolvedValue({
+            sql: `WITH periods AS (
+                SELECT DATE_TRUNC('month', CAST(order_date AS DATE)) AS period_month,
+                       SUM(amount) AS amount_sum
+                FROM data
+                WHERE CAST(order_date AS DATE) >= DATE '2025-02-01'
+                  AND CAST(order_date AS DATE) < DATE '2025-04-01'
+                GROUP BY 1
+            ), compared AS (
+                SELECT period_month, amount_sum,
+                       LAG(amount_sum) OVER (ORDER BY period_month) AS previous_amount
+                FROM periods
+            )
+            SELECT CASE WHEN period_month = DATE '2025-03-01' THEN 'Current' ELSE 'Previous' END AS period,
+                   amount_sum,
+                   100.0 * (amount_sum - previous_amount) / NULLIF(previous_amount, 0) AS growth_pct
+            FROM compared
+            ORDER BY period_month DESC`,
+            tokens: 30,
+            model: 'terra → luna → sol',
+            querySpec: {
+                goal: 'Compare current and previous month sales totals',
+                operations: {},
+                expectedResult: { grain: 'one row per comparison period', columns: ['period', 'amount_sum', 'growth_pct'] },
+                assumptions: [],
+            },
+        });
         const rows = [
             { order_id: 'F-1', order_date: '2025-02-03', amount: 100 },
             { order_id: 'F-2', order_date: '2025-02-20', amount: 200 },
@@ -60,15 +87,15 @@ describe('AI SQL deterministic period-comparison route', () => {
             dataset,
         );
 
-        expect(directSqlMocks.generateDirectSQL).not.toHaveBeenCalled();
+        expect(directSqlMocks.generateDirectSQL).toHaveBeenCalledOnce();
         expect(directSqlMocks.executeSQLViaDuckDB).toHaveBeenCalled();
         const executedSql = String((directSqlMocks.executeSQLViaDuckDB.mock.calls as any[][])[0]?.[1] || '');
         expect(executedSql).toMatch(/^WITH periods/i);
         expect(executedSql).toMatch(/\bLAG\s*\(/i);
         expect(executedSql).toMatch(/\bgrowth_pct\b/i);
         expect(executedSql).not.toMatch(/GROUP BY\s+.*order_id/i);
-        expect(result.engine).toBe('correction-engine');
-        expect(result.tokenUsage.total).toBe(0);
+        expect(result.engine).toBe('llm-sql');
+        expect(result.tokenUsage.total).toBe(30);
         expect(result.plan.intent).toBe('total_comparison');
         expect(result.plan.metrics).toEqual([expect.objectContaining({ field: 'amount', agg: 'sum' })]);
         expect(result.plan.dimensions).toEqual([]);
