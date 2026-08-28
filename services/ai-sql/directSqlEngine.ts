@@ -20,6 +20,7 @@ import {
 import { buildCanonicalQueryIntent, type CanonicalQueryIntent } from './canonicalIntent';
 import {
     formatAnalyticalIRForPrompt,
+    verifyAnalyticalIR,
     type AnalyticalIR,
     type AnalyticalOperator,
 } from './analyticalIR';
@@ -709,7 +710,10 @@ export async function generateDirectSQL(
     queryContract?: QueryContract,
     analyticalIR?: AnalyticalIR,
 ): Promise<DirectSQLResult> {
-    const planContext = analysisPlan
+    // Once a frozen IR exists, do not also show the model a mutable legacy
+    // plan. Even when labelled advisory, two overlapping representations invite
+    // the planner to cherry-pick conflicting grain, projection, or limits.
+    const planContext = analysisPlan && !analyticalIR
         ? `\n\nUntrusted local semantic hints (advisory only):\n${JSON.stringify(analysisPlan, null, 2)}\nDo not copy a metric, dimension, filter, grouping, or limit from these hints unless it is grounded by the user's question and physical schema. The deterministic query contract and the user's requested output take precedence over every conflicting hint.`
         : '';
     const verificationContext = plannerVerification?.length
@@ -776,17 +780,18 @@ export async function generateDirectSQL(
     }
     if (analyticalIR) {
         const structuralCandidate = compileAnalyticalIRToSQL(analyticalIR);
-        if (structuralCandidate.supported && structuralCandidate.sql) {
+        const structuralIRIssues = verifyAnalyticalIR(analyticalIR).filter(issue => issue.severity === 'error');
+        if (structuralCandidate.supported && structuralCandidate.sql && structuralIRIssues.length === 0) {
             const modelIssues = queryContract
                 ? validateSQLAgainstContract(sql, queryContract).filter(issue => issue.severity === 'error')
                 : [];
             const structuralIssues = queryContract
                 ? validateSQLAgainstContract(structuralCandidate.sql, queryContract).filter(issue => issue.severity === 'error')
                 : [];
-            if (structuralIssues.length < modelIssues.length) {
+            if (structuralIssues.length === 0) {
                 sql = structuralCandidate.sql;
                 modelUsedForSQL = `${modelUsedForSQL} → IR-AST recovery`;
-                console.warn(`[AI SQL] Replaced a semantically drifting model candidate with the frozen IR AST (${modelIssues.length} contract error(s) → ${structuralIssues.length}).`);
+                console.warn(`[AI SQL] Selected the contract-valid frozen IR AST as the authoritative executable form (${modelIssues.length} model contract error(s)).`);
             }
         }
     }

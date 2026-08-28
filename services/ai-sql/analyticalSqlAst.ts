@@ -80,6 +80,9 @@ function column(field: IRFieldRef, qualify = false): SqlExpression {
 function aggregateExpression(
     measure: Extract<AnalyticalOperator, { kind: 'aggregate' }>['measures'][number],
 ): SqlExpression {
+    if (measure.governedFormula) {
+        return { kind: 'governed_formula', formula: measure.governedFormula };
+    }
     return {
         kind: 'aggregate',
         fn: measure.aggregation.toUpperCase() as 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX',
@@ -125,9 +128,20 @@ export function compileAnalyticalIRToSQL(ir: AnalyticalIR): IRSQLCompilation {
     const reasons: string[] = [];
     const operators = <K extends AnalyticalOperator['kind']>(kind: K) =>
         ir.operators.filter((operator): operator is Extract<AnalyticalOperator, { kind: K }> => operator.kind === kind);
-    const unsupportedKinds = new Set(['join', 'set', 'relative_compare', 'ratio', 'compare_periods', 'window']);
+    const ratio = operators('ratio')[0];
+    const relativeComparison = operators('relative_compare')[0];
+    const unsupportedKinds = new Set(['join', 'set', 'compare_periods', 'window']);
     const unsupported = ir.operators.filter(operator => unsupportedKinds.has(operator.kind));
     if (unsupported.length) reasons.push(`Unsupported compositional operators: ${[...new Set(unsupported.map(operator => operator.kind))].join(', ')}`);
+    if (relativeComparison?.scope === 'group_aggregate_to_group_average') {
+        reasons.push('Group-aggregate reference comparisons require the compositional CTE compiler.');
+    }
+    if (relativeComparison && !relativeComparison.measure) {
+        reasons.push('Relative comparison measure is not grounded.');
+    }
+    if (ratio?.basis === 'measure' && !ratio.measure) {
+        reasons.push('Measure-based ratio has no grounded additive measure.');
+    }
     if (ir.relationships.tables.length > 1) reasons.push('Multi-table SQL must follow the relationship-graph compiler or constrained LLM route.');
     if (ir.confidence.unresolved.length) reasons.push(...ir.confidence.unresolved);
     if (reasons.length) return { supported: false, reasons };
@@ -142,7 +156,11 @@ export function compileAnalyticalIRToSQL(ir: AnalyticalIR): IRSQLCompilation {
     const table = ir.relationships.tables[0] || 'data';
     const select: SelectItemAst[] = [];
 
-    const physicalVisible = ir.answer.fields.filter(field => field.visibility === 'visible' && field.role !== 'calculation');
+    const physicalVisible = ir.answer.fields.filter(field =>
+        field.visibility === 'visible'
+        && field.role !== 'calculation'
+        && (!ratio || group.some(grain => grain.field.toLowerCase() === field.field.toLowerCase()))
+    );
     for (const field of physicalVisible) select.push({ expression: column(field) });
     for (const measure of aggregates.filter(candidate => candidate.visibility === 'visible')) {
         select.push({ expression: aggregateExpression(measure), alias: measure.alias });
@@ -155,6 +173,36 @@ export function compileAnalyticalIRToSQL(ir: AnalyticalIR): IRSQLCompilation {
             select.push({ expression: column(field) });
         }
     }
+    if (ratio) {
+        const numerator = ir.populations.find(population => population.id === ratio.numeratorPopulationId);
+        const denominator = ir.populations.find(population => population.id === ratio.denominatorPopulationId);
+        if (!numerator || !denominator) return { supported: false, reasons: ['Ratio populations are incomplete.'] };
+        const predicateKey = (predicate: IRPredicate) => `${predicate.table || ''}.${predicate.field}:${predicate.operator}:${JSON.stringify(predicate.value)}`.toLowerCase();
+        const denominatorKeys = new Set(denominator.filters.map(predicateKey));
+        const numeratorOnly = numerator.filters.filter(predicate => !denominatorKeys.has(predicateKey(predicate)));
+        if (!numeratorOnly.length) {
+            return { supported: false, reasons: ['Ratio numerator condition is not grounded separately from its denominator population.'] };
+        }
+        const numeratorCondition = numeratorOnly.length
+            ? numeratorOnly.map(predicate => {
+                const expression = predicateExpression(predicate, aggregates);
+                return expression ? renderExpression(expression) : '';
+            }).filter(Boolean).join(' AND ')
+            : 'TRUE';
+        const numeratorExpression = ratio.basis === 'measure'
+            ? `SUM(CASE WHEN ${numeratorCondition} THEN ${quoteIdentifier(ratio.measure!.field)} ELSE 0 END)`
+            : `SUM(CASE WHEN ${numeratorCondition} THEN 1 ELSE 0 END)`;
+        const denominatorExpression = ratio.basis === 'measure'
+            ? `SUM(${quoteIdentifier(ratio.measure!.field)})`
+            : 'COUNT(*)';
+        select.push({
+            expression: {
+                kind: 'governed_formula',
+                formula: `${ratio.scale}.0 * ${numeratorExpression} / NULLIF(${denominatorExpression}, 0)`,
+            },
+            alias: ratio.outputAlias,
+        });
+    }
     if (!select.length && aggregates.length) {
         for (const measure of aggregates) select.push({ expression: aggregateExpression(measure), alias: measure.alias });
     }
@@ -162,10 +210,27 @@ export function compileAnalyticalIRToSQL(ir: AnalyticalIR): IRSQLCompilation {
 
     const where: SqlExpression[] = [];
     const having: SqlExpression[] = [];
-    for (const filter of filters) {
+    const ratioDenominator = ratio
+        ? ir.populations.find(population => population.id === ratio.denominatorPopulationId)?.filters || []
+        : undefined;
+    for (const filter of ratioDenominator || filters) {
         const expression = predicateExpression(filter, aggregates);
         if (!expression) return { supported: false, reasons: [`Predicate ${filter.field} ${filter.operator} requires a compositional subquery compiler.`] };
         (filter.scope === 'having' ? having : where).push(expression);
+    }
+    if (relativeComparison?.measure) {
+        const reference = ir.populations.find(population => population.id === relativeComparison.referencePopulationId);
+        if (!reference) return { supported: false, reasons: ['Relative comparison reference population is missing.'] };
+        const referenceConditions = reference.filters.map(predicate => {
+            const expression = predicateExpression(predicate, aggregates);
+            return expression ? renderExpression(expression) : '';
+        }).filter(Boolean);
+        const referenceWhere = referenceConditions.length ? ` WHERE ${referenceConditions.join(' AND ')}` : '';
+        const measure = quoteIdentifier(relativeComparison.measure.field);
+        where.push({
+            kind: 'governed_formula',
+            formula: `${measure} ${relativeComparison.comparator} ${relativeComparison.multiplier} * (SELECT AVG(${measure}) FROM ${quoteIdentifier(table)}${referenceWhere})`,
+        });
     }
 
     const orderBy: SelectQueryAst['orderBy'] = [];

@@ -346,7 +346,10 @@ interface SQLTemplate {
 const FUNCTION_REGISTRY: Record<string, Record<string, SQLTemplate>> = {
     difference: {
         duration: {
-            expression: `CAST(JULIANDAY({left}) - JULIANDAY({right}) AS INTEGER)`,
+            // DuckDB has no SQLite JULIANDAY() function. DATE_DIFF keeps the
+            // operation executable in the in-browser DuckDB runtime and makes
+            // the direction explicit: start/right → end/left.
+            expression: `DATE_DIFF('day', {right}, {left})`,
             aliasPattern: '{name}_days',
         },
         number: { expression: `({left} - {right})`, aliasPattern: '{name}' },
@@ -398,9 +401,10 @@ export function buildDerivedMetric(
         throw new Error(`[APDME] No SQL template for operation=${op.type}, type=${semType}`);
     }
 
+    const quoteIdentifier = (identifier: string) => `"${identifier.replace(/"/g, '""')}"`;
     const expression = template.expression
-        .replace(/\{left\}/g, op.left)
-        .replace(/\{right\}/g, op.right);
+        .replace(/\{left\}/g, quoteIdentifier(op.left))
+        .replace(/\{right\}/g, quoteIdentifier(op.right));
 
     const alias = template.aliasPattern.replace(/\{name\}/g, op.derivedName);
 
@@ -566,6 +570,23 @@ export function processPlan(
     plan: AnalysisPlan,
     model: SemanticModel
 ): APDMEResult {
+    // APDME is semantic enrichment, not an owner of the caller's mutable
+    // planning state. Work on a structural copy so the canonical-analysis
+    // coordinator can decide when the enriched plan becomes authoritative.
+    // This also prevents a failed/partial APDME pass from leaking mutations
+    // into a later LLM or deterministic fallback.
+    plan = {
+        ...plan,
+        dimensions: plan.dimensions.map(dimension => ({ ...dimension })),
+        metrics: plan.metrics.map(metric => ({ ...metric })),
+        filters: plan.filters.map(filter => ({
+            ...filter,
+            grounding: filter.grounding ? { ...filter.grounding } : undefined,
+        })),
+        sort: plan.sort.map(sort => ({ ...sort })),
+        comparison: plan.comparison ? { ...plan.comparison } : undefined,
+        projectionFields: plan.projectionFields ? [...plan.projectionFields] : undefined,
+    };
     const question = plan.originalQuestion;
     const derivedMetrics: DerivedMetric[] = [];
 

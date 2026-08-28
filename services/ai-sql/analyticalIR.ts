@@ -9,6 +9,7 @@
 import type { AnalysisPlan, PlanFilter, SemanticField, SemanticModel } from './types';
 import type { QueryContract } from './queryContract';
 import type { CanonicalQueryIntent } from './canonicalIntent';
+import type { DerivedMetric } from './derivedMetricEngine';
 
 export type IRConfidence = 'high' | 'medium' | 'low';
 
@@ -53,10 +54,10 @@ export type AnalyticalOperator =
     | { id: string; kind: 'filter'; populationId: string; predicates: IRPredicate[]; dependsOn: string[] }
     | { id: string; kind: 'set'; operation: 'intersection' | 'difference'; entity?: IRFieldRef; dependsOn: string[] }
     | { id: string; kind: 'group'; grain: IRFieldRef[]; dependsOn: string[] }
-    | { id: string; kind: 'aggregate'; measures: Array<IRFieldRef & { aggregation: 'sum' | 'avg' | 'count' | 'min' | 'max'; alias: string }>; dependsOn: string[] }
+    | { id: string; kind: 'aggregate'; measures: Array<IRFieldRef & { aggregation: 'sum' | 'avg' | 'count' | 'min' | 'max'; alias: string; governedFormula?: string; dependsOnFields?: string[] }>; dependsOn: string[] }
     | { id: string; kind: 'derive'; calculations: Array<{ id: string; label: string; alias: string; formula: string; dependsOnFields: string[]; visibility: 'visible' | 'helper'; unit?: SemanticField['unit'] }>; dependsOn: string[] }
     | { id: string; kind: 'relative_compare'; scope: NonNullable<QueryContract['relativeComparison']>['scope']; referencePopulationId: string; comparator: '>' | '>=' | '<' | '<='; multiplier: number; measure?: IRFieldRef; dependsOn: string[] }
-    | { id: string; kind: 'ratio'; basis: 'row_count' | 'measure'; numeratorPopulationId: string; denominatorPopulationId: string; scale: number; dependsOn: string[] }
+    | { id: string; kind: 'ratio'; basis: 'row_count' | 'measure'; numeratorPopulationId: string; denominatorPopulationId: string; scale: number; measure?: IRFieldRef; outputAlias: string; dependsOn: string[] }
     | { id: string; kind: 'compare_periods'; mode: 'total' | 'trend'; grain?: string; dependsOn: string[] }
     | { id: string; kind: 'window'; operation: CanonicalQueryIntent['analyticOperations'][number]; dependsOn: string[] }
     | { id: string; kind: 'rank'; target?: IRFieldRef; aggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max'; mode?: 'row_value' | 'group_aggregate' | 'frequency'; direction: 'asc' | 'desc'; limit?: number; dependsOn: string[] }
@@ -181,6 +182,7 @@ export function buildAnalyticalIR(
     model: SemanticModel,
     contract: QueryContract,
     canonical: CanonicalQueryIntent,
+    derivedMetrics: DerivedMetric[] = [],
 ): AnalyticalIR {
     const evidence: IREvidence[] = [];
     const outputFields = unique(canonical.visibleFields.map(field => {
@@ -203,6 +205,16 @@ export function buildAnalyticalIR(
     const predicates = (contract.requiredPredicates || []).map(predicateFromContract);
     const wherePredicates = predicates.filter(predicate => predicate.scope === 'where');
     const havingPredicates = predicates.filter(predicate => predicate.scope === 'having');
+    const ratioPredicates = (filters: NonNullable<QueryContract['ratio']>['denominatorFilters']) => filters.map(filter => ({
+        field: filter.field,
+        operator: filter.op,
+        value: filter.value,
+        scope: 'where' as const,
+        confidence: 'high' as const,
+    }));
+    const effectiveBasePredicates = contract.ratio
+        ? ratioPredicates(contract.ratio.denominatorFilters)
+        : wherePredicates;
     const tables = canonical.relationship.tables.length ? canonical.relationship.tables : ['data'];
     const timeExpressions: AnalyticalIR['time']['expressions'] = [];
     for (const predicate of predicates) {
@@ -248,13 +260,13 @@ export function buildAnalyticalIR(
     };
     const populations: IRPopulation[] = [basePopulation];
     let activePopulationId = basePopulation.id;
-    if (wherePredicates.length) {
+    if (effectiveBasePredicates.length) {
         populations.push({
             id: 'population_filtered',
             role: 'filtered',
             entity,
             tables,
-            filters: wherePredicates,
+            filters: effectiveBasePredicates,
             description: 'Rows satisfying the question-level filters.',
         });
         activePopulationId = 'population_filtered';
@@ -266,7 +278,7 @@ export function buildAnalyticalIR(
             role: 'denominator',
             entity,
             tables,
-            filters: wherePredicates,
+            filters: ratioPredicates(contract.ratio.denominatorFilters),
             description: 'The complete eligible population used as the ratio denominator.',
         });
         populations.push({
@@ -274,7 +286,7 @@ export function buildAnalyticalIR(
             role: 'numerator',
             entity,
             tables,
-            filters: predicates,
+            filters: ratioPredicates(contract.ratio.numeratorFilters),
             description: 'The denominator population plus the measured condition.',
         });
     }
@@ -307,21 +319,25 @@ export function buildAnalyticalIR(
     if (canonical.relationship.path.length) {
         append({ id: 'op_join', kind: 'join', path: canonical.relationship.path, mode: canonical.relationship.mode, dependsOn: prior });
     }
-    if (wherePredicates.length) append({ id: 'op_filter', kind: 'filter', populationId: activePopulationId, predicates: wherePredicates, dependsOn: prior });
+    if (effectiveBasePredicates.length) append({ id: 'op_filter', kind: 'filter', populationId: activePopulationId, predicates: effectiveBasePredicates, dependsOn: prior });
     if (canonical.relationship.setOperation === 'intersection') append({ id: 'op_set', kind: 'set', operation: 'intersection', entity, dependsOn: prior });
     if (canonical.relationship.existence === 'anti') append({ id: 'op_set', kind: 'set', operation: 'difference', entity, dependsOn: prior });
     if (canonical.grainFields.length) append({ id: 'op_group', kind: 'group', grain, dependsOn: prior });
 
-    const showAggregates = aggregateIsExplicitlyVisible(question, canonical.cardinality, contract);
+    const showAggregates = !contract.ratio && aggregateIsExplicitlyVisible(question, canonical.cardinality, contract);
+    const derivedByAlias = new Map(derivedMetrics.map(metric => [metric.alias.toLowerCase(), metric]));
     const aggregateMeasures = canonical.measures.map((measure, index) => {
         const sourceField = measure.field || plan.metrics[index]?.field || plan.metrics[0]?.field || '*';
+        const derived = derivedByAlias.get(sourceField.toLowerCase());
         const alias = sourceField === '*'
             ? `${measure.aggregation}_rows`
-            : `${measure.aggregation}_${sourceField.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}`;
+            : derived?.alias || `${measure.aggregation}_${sourceField.replace(/[^a-z0-9]+/gi, '_').toLowerCase()}`;
         return {
             ...fieldRef(model, sourceField, 'measure', showAggregates ? 'visible' : 'helper', measure.confidence),
             aggregation: measure.aggregation,
             alias,
+            governedFormula: derived?.aggregatedExpression,
+            dependsOnFields: derived ? [...derived.sourceColumns] : undefined,
         };
     });
     if (aggregateMeasures.length) append({ id: 'op_aggregate', kind: 'aggregate', measures: aggregateMeasures, dependsOn: prior });
@@ -351,7 +367,19 @@ export function buildAnalyticalIR(
             dependsOn: prior,
         });
     }
-    if (contract.ratio) append({ id: 'op_ratio', kind: 'ratio', basis: contract.ratio.basis, numeratorPopulationId: 'population_numerator', denominatorPopulationId: 'population_denominator', scale: contract.ratio.kind === 'percentage' ? 100 : 1, dependsOn: prior });
+    if (contract.ratio) append({
+        id: 'op_ratio',
+        kind: 'ratio',
+        basis: contract.ratio.basis,
+        numeratorPopulationId: 'population_numerator',
+        denominatorPopulationId: 'population_denominator',
+        scale: contract.ratio.kind === 'percentage' ? 100 : 1,
+        measure: contract.ratio.measureField
+            ? fieldRef(model, contract.ratio.measureField, 'measure', 'helper')
+            : undefined,
+        outputAlias: contract.ratio.kind === 'percentage' ? 'percentage' : 'ratio',
+        dependsOn: prior,
+    });
     if (plan.comparison) append({ id: 'op_compare_periods', kind: 'compare_periods', mode: plan.comparison.mode, grain: plan.comparison.grain, dependsOn: prior });
     for (const [index, operation] of canonical.analyticOperations.entries()) append({ id: `op_window_${index}`, kind: 'window', operation, dependsOn: prior });
     if (canonical.order && canonical.answerKind === 'ranked_result') {
@@ -378,13 +406,18 @@ export function buildAnalyticalIR(
             : []),
         ...aggregateMeasures.filter(measure => measure.visibility === 'visible').map(measure => ({ ...measure, field: measure.alias, role: 'calculation' as const })),
         ...computedMeasures.filter(measure => measure.visibility === 'visible').map(measure => fieldRef(model, measure.alias, 'calculation', 'visible')),
+        ...(contract.ratio ? [fieldRef(model, contract.ratio.kind === 'percentage' ? 'percentage' : 'ratio', 'calculation', 'visible')] : []),
         ...canonical.analyticOperations.map(operation => fieldRef(model, operation.outputAlias, 'calculation', 'visible')),
     ], item => `${item.table || ''}.${item.field}`);
     append({ id: 'op_project', kind: 'project', fields: finalFields, dependsOn: prior });
 
     const unresolved: string[] = [];
     if (!finalFields.length && canonical.cardinality !== 'scalar') unresolved.push('No requested output field could be grounded.');
-    if (canonical.measures.some(measure => !measure.field && measure.aggregation !== 'count')) unresolved.push('An aggregate measure is not grounded to a physical field.');
+    if (canonical.measures.some((measure, index) => {
+        if (measure.field || measure.aggregation === 'count') return false;
+        const plannedField = plan.metrics[index]?.field || plan.metrics[0]?.field;
+        return !plannedField || !derivedByAlias.has(plannedField.toLowerCase());
+    })) unresolved.push('An aggregate measure is not grounded to a physical field or governed derived metric.');
     if (plan.ambiguous && plan.clarificationQuestion) unresolved.push(plan.clarificationQuestion);
 
     const confidencePenalty = unresolved.length * 0.2

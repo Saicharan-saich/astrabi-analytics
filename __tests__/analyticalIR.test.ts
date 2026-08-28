@@ -10,6 +10,7 @@ import { reconcileQuerySpecWithAnalyticalIR, type DynamicQuerySpec } from '../se
 import { validateAnalyticalResult } from '../services/ai-sql/analyticalResultValidator';
 import { compileAnalyticalIRToSQL } from '../services/ai-sql/analyticalSqlAst';
 import { generateLocalPlan } from '../services/ai-sql/intentPlanner';
+import { processPlan } from '../services/ai-sql/derivedMetricEngine';
 
 const field = (
     name: string,
@@ -276,5 +277,117 @@ describe('Canonical Analytical IR', () => {
         expect(compiled.sql).toContain('LIMIT 5');
         expect(validateAnalyticalResult([{ customer_name: 'A' }], ir).map(issue => issue.code))
             .toContain('missing_visible_calculation');
+    });
+
+    it('enriches derived duration metrics before IR freeze without mutating the draft plan', () => {
+        const durationModel: SemanticModel = {
+            datasetName: 'data',
+            rowCount: 20,
+            grain: 'one row per delivery',
+            compositeMetrics: [],
+            derivedMetrics: [],
+            fields: [
+                { ...field('product_name', 'dimension'), synonyms: ['product', 'products'] },
+                { ...field('order date', 'dimension', 'date'), physicalType: 'date', semanticType: 'date' },
+                { ...field('delivery date', 'dimension', 'date'), physicalType: 'date', semanticType: 'date' },
+            ],
+        };
+        const draft = plan({
+            intent: 'breakdown',
+            dimensions: [{ field: 'product_name' }],
+            metrics: [{ field: 'delivery date', agg: 'avg' }],
+            originalQuestion: 'What is the average delivery time for each product?',
+        });
+
+        const enriched = processPlan(draft, durationModel);
+        expect(draft.metrics).toEqual([{ field: 'delivery date', agg: 'avg' }]);
+        expect(enriched.plan.metrics[0]).toMatchObject({ derivedMetricId: 'date_diff' });
+        const contract = buildQueryContract(draft.originalQuestion, enriched.plan, [], durationModel);
+        const canonical = buildCanonicalQueryIntent(contract);
+        const ir = buildAnalyticalIR(
+            draft.originalQuestion,
+            enriched.plan,
+            durationModel,
+            contract,
+            canonical,
+            enriched.derivedMetrics,
+        );
+        const compiled = compileAnalyticalIRToSQL(ir);
+
+        expect(compiled.supported).toBe(true);
+        expect(compiled.sql).toContain(`AVG(DATE_DIFF('day', "order date", "delivery date"))`);
+        expect(compiled.sql).toContain('GROUP BY "product_name"');
+        expect(compiled.sql).not.toContain('JULIANDAY');
+    });
+
+    it('compiles numerator and denominator populations for conditional percentages', () => {
+        const question = 'What percentage of loan amount has status A?';
+        const draft = plan({
+            intent: 'conditional_percentage',
+            metrics: [{ field: 'amount', agg: 'sum' }],
+            filters: [{ field: 'status', op: '=', value: 'A' }],
+            originalQuestion: question,
+        });
+        const contract = buildQueryContract(question, draft, [], model);
+        const canonical = buildCanonicalQueryIntent(contract);
+        const ir = buildAnalyticalIR(question, draft, model, contract, canonical);
+        const compiled = compileAnalyticalIRToSQL(ir);
+
+        expect(contract.ratio).toMatchObject({
+            basis: 'measure',
+            measureField: 'amount',
+            denominatorFilters: [],
+            numeratorFilters: [{ field: 'status', op: '=', value: 'A' }],
+        });
+        expect(ir.operators.some(operator => operator.kind === 'filter')).toBe(false);
+        expect(verifyAnalyticalIR(ir)).toEqual([]);
+        expect(compiled.supported).toBe(true);
+        expect(compiled.sql).toContain(`SUM(CASE WHEN "status" = 'A' THEN "amount" ELSE 0 END)`);
+        expect(compiled.sql).toContain('NULLIF(SUM("amount"), 0)');
+        expect(compiled.sql).toContain('AS "percentage"');
+        expect(compiled.sql).not.toContain('WHERE "status"');
+        expect(validateSQLAgainstContract(compiled.sql!, contract).filter(issue => issue.severity === 'error')).toEqual([]);
+    });
+
+    it('compiles a row value against the average of the same filtered cohort', () => {
+        const cohortModel: SemanticModel = {
+            datasetName: 'data',
+            rowCount: 100,
+            grain: 'one row per patient',
+            compositeMetrics: [],
+            derivedMetrics: [],
+            fields: [
+                field('Thrombosis', 'dimension'),
+                field('ANA Pattern', 'dimension'),
+                field('aCL IgM', 'metric'),
+            ],
+        };
+        const question = 'What number of patients with Thrombosis 2 and ANA Pattern S have aCL IgM 20% higher than average?';
+        const draft = plan({
+            intent: 'aggregate_filter',
+            metrics: [{ field: '*', agg: 'count' }],
+            filters: [
+                { field: 'Thrombosis', op: '=', value: 2 },
+                { field: 'ANA Pattern', op: '=', value: 'S' },
+                { field: 'aCL IgM', op: 'above_avg', value: null, isHaving: true },
+            ],
+            originalQuestion: question,
+        });
+        const contract = buildQueryContract(question, draft, [], cohortModel);
+        const canonical = buildCanonicalQueryIntent(contract);
+        const ir = buildAnalyticalIR(question, draft, cohortModel, contract, canonical);
+        const compiled = compileAnalyticalIRToSQL(ir);
+
+        expect(contract.relativeComparison).toMatchObject({
+            scope: 'row_to_filtered_average',
+            comparator: '>',
+            multiplier: 1.2,
+            measureField: 'aCL IgM',
+        });
+        expect(compiled.supported).toBe(true);
+        expect(compiled.sql).toContain('"Thrombosis" = 2');
+        expect(compiled.sql).toContain(`"ANA Pattern" = 'S'`);
+        expect(compiled.sql).toContain(`"aCL IgM" > 1.2 * (SELECT AVG("aCL IgM") FROM "data" WHERE "Thrombosis" = 2 AND "ANA Pattern" = 'S')`);
+        expect(validateSQLAgainstContract(compiled.sql!, contract).filter(issue => issue.severity === 'error')).toEqual([]);
     });
 });

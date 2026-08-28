@@ -635,48 +635,16 @@ export async function runAISQLPipeline(
         console.warn('[Pipeline] Pre-execution ambiguity gate unavailable:', ambiguityError?.message);
     }
 
-    // Build the answer contract once, then make it the source of truth for the
-    // deterministic compiler and all three models. Only high-confidence shape
-    // facts are reconciled; filters, time logic and schema-grounded fields are
-    // retained from the existing plan.
-    activeQueryContract = buildQueryContract(
-        question,
-        plan,
-        _verification.issues,
-        semanticModel,
-        joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
-    );
-    activeCanonicalIntent = buildCanonicalQueryIntent(activeQueryContract);
-    activeAnalyticalIR = buildAnalyticalIR(question, plan, semanticModel, activeQueryContract, activeCanonicalIntent);
-    analyticalIRIssues = verifyAnalyticalIR(activeAnalyticalIR);
-    const requiresAdvancedSql = activeCanonicalIntent.analyticOperations.length > 0;
-    const canonicalReconciliation = reconcilePlanWithCanonicalIntent(plan, activeCanonicalIntent);
-    plan = canonicalReconciliation.plan;
-    _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
-    if (canonicalReconciliation.changes.length) {
-        console.log(`[Pipeline] Canonical intent reconciled ${canonicalReconciliation.changes.length} structural conflict(s): ${canonicalReconciliation.changes.join('; ')}`);
-    }
-    traceStep({
-        stepNumber: 4,
-        name: 'Canonical Analytical IR',
-        engine: 'analyticalIR',
-        icon: '🧭',
-        status: analyticalIRIssues.some(issue => issue.severity === 'error') ? 'warn' : 'pass',
-        summary: `${activeAnalyticalIR.answer.kind} · ${activeAnalyticalIR.answer.cardinality} · ${activeAnalyticalIR.operators.map(operator => operator.kind).join(' → ')}`,
-        details: {
-            analyticalIR: activeAnalyticalIR,
-            analyticalIRIssues,
-            canonicalIntent: activeCanonicalIntent,
-            reconciliationChanges: canonicalReconciliation.changes,
-            postReconciliationVerification: _verification.issues,
-        },
-    }, performance.now());
-
     // ─── Step 2c: APDME — Derived Metrics & Guardrails ─────────────
+    // Semantic enrichment must finish before the canonical meaning is frozen.
+    // Previously APDME ran after the contract and IR had already been built,
+    // allowing derived metrics and the downstream SQL plan to disagree with
+    // the supposedly authoritative IR.
     reportProgress('Analyzing derived metrics...', 3);
     console.log('[Pipeline] Step 2c: Running APDME (Derived Metric Engine)...');
     _s1 = performance.now();
     const apdmeResult = processPlan(plan, semanticModel);
+    plan = apdmeResult.plan;
     traceStep({
         stepNumber: 4, name: 'APDME Guardrails', engine: 'derivedMetricEngine', icon: '🛡️',
         status: apdmeResult.violations.length > 0 ? 'warn' : 'pass',
@@ -698,6 +666,58 @@ export async function runAISQLPipeline(
     if (apdmeResult.violations.length > 0) {
         console.warn(`[Pipeline] APDME: ${apdmeResult.violations.length} guardrail violation(s), penalty: -${apdmeResult.confidencePenalty}`);
     }
+
+    // Build one provisional contract from the enriched plan, reconcile only
+    // high-confidence structural facts, then rebuild the final contract and IR
+    // from the reconciled plan. Downstream engines now receive one frozen
+    // analytical meaning rather than different snapshots of a mutable plan.
+    let provisionalContract = buildQueryContract(
+        question,
+        plan,
+        _verification.issues,
+        semanticModel,
+        joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
+    );
+    let provisionalCanonical = buildCanonicalQueryIntent(provisionalContract);
+    const canonicalReconciliation = reconcilePlanWithCanonicalIntent(plan, provisionalCanonical);
+    plan = canonicalReconciliation.plan;
+    _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
+    activeQueryContract = buildQueryContract(
+        question,
+        plan,
+        _verification.issues,
+        semanticModel,
+        joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
+    );
+    activeCanonicalIntent = buildCanonicalQueryIntent(activeQueryContract);
+    activeAnalyticalIR = buildAnalyticalIR(
+        question,
+        plan,
+        semanticModel,
+        activeQueryContract,
+        activeCanonicalIntent,
+        apdmeResult.derivedMetrics,
+    );
+    analyticalIRIssues = verifyAnalyticalIR(activeAnalyticalIR);
+    const requiresAdvancedSql = activeCanonicalIntent.analyticOperations.length > 0;
+    if (canonicalReconciliation.changes.length) {
+        console.log(`[Pipeline] Canonical intent reconciled ${canonicalReconciliation.changes.length} structural conflict(s): ${canonicalReconciliation.changes.join('; ')}`);
+    }
+    traceStep({
+        stepNumber: 4,
+        name: 'Canonical Analytical IR',
+        engine: 'analyticalIR',
+        icon: '🧭',
+        status: analyticalIRIssues.some(issue => issue.severity === 'error') ? 'warn' : 'pass',
+        summary: `${activeAnalyticalIR.answer.kind} · ${activeAnalyticalIR.answer.cardinality} · ${activeAnalyticalIR.operators.map(operator => operator.kind).join(' → ')}`,
+        details: {
+            analyticalIR: activeAnalyticalIR,
+            analyticalIRIssues,
+            canonicalIntent: activeCanonicalIntent,
+            reconciliationChanges: canonicalReconciliation.changes,
+            postReconciliationVerification: _verification.issues,
+        },
+    }, performance.now());
 
     // Ask an interactive user for clarification instead of guessing. Benchmark
     // fixtures cannot answer a follow-up, and every case has a frozen answer, so
@@ -761,8 +781,32 @@ export async function runAISQLPipeline(
         semanticModel,
         apdmeResult.derivedMetricApplied,
     );
+    const irCompilation = compileAnalyticalIRToSQL(activeAnalyticalIR);
+    const irContractIssues = irCompilation.supported && irCompilation.sql && activeQueryContract
+        ? validateSQLAgainstContract(irCompilation.sql, activeQueryContract).filter(issue => issue.severity === 'error')
+        : [];
+    const locallyOwnedCanonicalIR = executionOptions?.requestPurpose !== 'benchmark'
+        && irCompilation.supported
+        && !!irCompilation.sql
+        && analyticalIRIssues.every(issue => issue.severity !== 'error')
+        && irContractIssues.length === 0;
 
-    if (locallyOwnedTotalComparison) {
+    if (locallyOwnedCanonicalIR) {
+        // For the compiler's proven subset, execute the frozen IR directly.
+        // This is the actual zero-token hybrid route: the LLM is reserved for
+        // semantic shapes the typed compiler cannot yet express. Benchmarks
+        // deliberately continue through the model-backed route so their AI-SQL
+        // evidence remains comparable with previous runs.
+        qbSQL = irCompilation.sql!;
+        qbNotes = ['canonical IR compiled to typed SQL AST'];
+        qbTraceDetails = {
+            fits: true,
+            compiler: 'canonical-ir-ast',
+            resultGrain: plan.resultGrain,
+            sql: qbSQL,
+        };
+        console.log('[Pipeline] Canonical IR-AST SQL:', qbSQL);
+    } else if (locallyOwnedTotalComparison) {
         // This is an exact two-row shape. Keep it inside the typed compiler so
         // an LLM cannot reintroduce a row identifier or other detail grouping.
         qbSQL = correctSQL(plan, semanticModel, apdmeResult.derivedMetrics);
@@ -820,7 +864,7 @@ export async function runAISQLPipeline(
         }
     }
     traceStep({
-        stepNumber: 5, name: locallyOwnedTotalComparison ? 'Period Comparison Compiler' : antiJoin ? 'Anti-Join Compiler' : 'Question Builder Compiler', engine: 'qbMapper', icon: '🎛️',
+        stepNumber: 5, name: locallyOwnedCanonicalIR ? 'Canonical IR Compiler' : locallyOwnedTotalComparison ? 'Period Comparison Compiler' : antiJoin ? 'Anti-Join Compiler' : 'Question Builder Compiler', engine: 'qbMapper', icon: '🎛️',
         status: qbSQL ? 'pass' : 'skip',
         summary: qbSQL
             ? `Governed deterministic query compiled — ${qbNotes.join('; ')}`
@@ -839,12 +883,16 @@ export async function runAISQLPipeline(
     let directSqlError: string | null = null;
     let directSqlBlocked = false;
     let directQuerySpec: DynamicQuerySpec | undefined;
-    if (locallyOwnedTotalComparison && qbSQL) {
-        directSqlError = 'Not required: the deterministic period compiler produced the exact two-row answer shape.';
+    if ((locallyOwnedCanonicalIR || locallyOwnedTotalComparison) && qbSQL) {
+        directSqlError = locallyOwnedCanonicalIR
+            ? 'Not required: the frozen Canonical Analytical IR compiled to contract-valid typed SQL.'
+            : 'Not required: the deterministic period compiler produced the exact two-row answer shape.';
         traceStep({
             stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
             status: 'skip',
-            summary: 'Skipped — deterministic period SQL prevents unrequested detail grouping',
+            summary: locallyOwnedCanonicalIR
+                ? 'Skipped — canonical IR compiled locally with zero model tokens'
+                : 'Skipped — deterministic period SQL prevents unrequested detail grouping',
             details: {
                 reason: directSqlError,
                 tokens: 0,

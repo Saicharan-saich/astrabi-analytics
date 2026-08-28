@@ -157,6 +157,11 @@ export interface QueryContract {
         kind: 'percentage' | 'ratio';
         basis: 'row_count' | 'measure';
         subject?: string;
+        measureField?: string;
+        /** Filters inherited by both sides of the ratio (the population). */
+        denominatorFilters: Array<Pick<AnalysisPlan['filters'][number], 'field' | 'op' | 'value'>>;
+        /** Population filters plus the condition measured in the numerator. */
+        numeratorFilters: Array<Pick<AnalysisPlan['filters'][number], 'field' | 'op' | 'value'>>;
     };
     /** Explicit relative-average language fixes where aggregation must occur. */
     relativeComparison?: {
@@ -794,6 +799,7 @@ function aggregateOperationsFromEvidence(question: string): QueryContract['expec
 function resolveRatio(
     question: string,
     model?: SemanticModel,
+    plan?: AnalysisPlan,
 ): QueryContract['ratio'] {
     const cue = question.match(/\b(percentage|percent|proportion|ratio|share)\b/i);
     if (!cue) return undefined;
@@ -808,15 +814,19 @@ function resolveRatio(
         .flatMap(field => [field.name, field.displayLabel, ...(field.synonyms || [])])
         .map(value => value.toLowerCase().replace(/_/g, ' ').trim())
         .filter(value => value.length >= 3);
-    const explicitMetric = metricNames.find(name => normalized.includes(name))
+    const includesPhrase = (text: string, phrase: string) => {
+        const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+');
+        return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:$|[^a-z0-9])`, 'i').test(text);
+    };
+    const explicitMetric = [...metricNames].sort((a, b) => b.length - a.length).find(name => includesPhrase(normalized, name))
         || normalized.match(/\b(?:cost|amount|sales|revenue|profit|spend|budget|price|income|weight|quantity|value)\b/)?.[0];
-    const explicitEntity = dimensionNames.find(name => normalized.includes(name))
+    const explicitEntity = [...dimensionNames].sort((a, b) => b.length - a.length).find(name => includesPhrase(normalized, name))
         || normalized.match(/\b(?:accounts?|patients?|members?|people|persons?|customers?|students?|employees?|teachers?|superheroes?|orders?|transactions?|events?|records?|rows?)\b/)?.[0];
 
     // If both occur, the noun immediately governed by "percentage/share of"
     // decides the denominator: "percentage of accounts" is a row count even
     // when an amount column also appears elsewhere in the question.
-    const governedSubject = normalized.match(/\b(?:percentage|percent|proportion|share)\s+of\s+(?:the\s+)?([a-z][a-z0-9 _-]{1,40}?)(?=\s+(?:that|which|who|with|where|among|in|for|is|are|was|were)\b|[?.!,]|$)/)?.[1]?.trim();
+    const governedSubject = normalized.match(/\b(?:percentage|percent|proportion|share)\s+of\s+(?:the\s+)?([a-z][a-z0-9 _-]{1,40}?)(?=\s+(?:that|which|who|with|where|among|in|for|has|have|had|is|are|was|were)\b|[?.!,]|$)/)?.[1]?.trim();
     const governedLooksMetric = !!governedSubject && metricNames.some(name => governedSubject.includes(name))
         || !!governedSubject && /\b(?:cost|amount|sales|revenue|profit|spend|budget|price|income|value)\b/.test(governedSubject);
     const governedLooksEntity = !!governedSubject && dimensionNames.some(name => governedSubject.includes(name))
@@ -827,10 +837,43 @@ function resolveRatio(
         : explicitMetric && !explicitEntity ? 'measure'
         : undefined;
     if (!basis) return undefined;
+    const ordinaryFilters = (plan?.filters || [])
+        .filter(filter => !filter.isHaving && !['above_avg', 'below_avg'].includes(filter.op))
+        .map(filter => ({ field: filter.field, op: filter.op, value: filter.value }));
+    const cueIndex = normalized.search(/\b(?:percentage|percent|proportion|ratio|share)\b/i);
+    const denominatorFilters = ordinaryFilters.filter(filter => {
+        const value = String(filter.value ?? '').toLowerCase().replace(/_/g, ' ').trim();
+        const field = filter.field.toLowerCase().replace(/_/g, ' ');
+        const valueIndex = value ? normalized.indexOf(value) : -1;
+        const fieldIndex = normalized.indexOf(field);
+        const mentionIndex = valueIndex >= 0 ? valueIndex : fieldIndex;
+        if (mentionIndex < 0 || cueIndex < 0 || mentionIndex >= cueIndex) return false;
+        const prefix = normalized.slice(Math.max(0, mentionIndex - 45), mentionIndex);
+        return /\b(?:among|within|for|in|of)\b/i.test(prefix);
+    });
+    const sameFilter = (
+        left: Pick<AnalysisPlan['filters'][number], 'field' | 'op' | 'value'>,
+        right: Pick<AnalysisPlan['filters'][number], 'field' | 'op' | 'value'>,
+    ) => left.field.toLowerCase() === right.field.toLowerCase()
+        && left.op === right.op
+        && JSON.stringify(left.value) === JSON.stringify(right.value);
+    const numeratorFilters = [
+        ...denominatorFilters,
+        ...ordinaryFilters.filter(filter => !denominatorFilters.some(base => sameFilter(base, filter))),
+    ];
+    const measureField = basis === 'measure'
+        ? (model?.fields || [])
+            .filter(field => field.role === 'metric')
+            .find(field => [field.name, field.displayLabel, ...(field.synonyms || [])]
+                .some(alias => includesPhrase(normalized, alias.toLowerCase().replace(/_/g, ' '))))?.name
+        : undefined;
     return {
         kind: /ratio/i.test(cue[1]) ? 'ratio' : 'percentage',
         basis,
         subject: governedSubject || explicitEntity || explicitMetric,
+        measureField,
+        denominatorFilters,
+        numeratorFilters,
     };
 }
 
@@ -1066,6 +1109,7 @@ export function buildQueryContract(
         || requestedOutputFields.find(field => descriptiveColumn(field.field))
         || requestedOutputFields[0];
     const queryShape = inferQueryShape(question);
+    const ratio = resolveRatio(question, model, plan);
     const requiresComparison = isTimePeriodComparison(question) || COMPARISON_CUE.test(question) || Boolean(plan.comparison);
     const analyticOperations = detectAdvancedAnalyticOperations(question, plan);
     const comparisonHasExplicitGrain = /\b(?:by|per|for\s+each|for\s+every|broken\s+down\s+by|split\s+by)\b/i.test(question);
@@ -1087,7 +1131,14 @@ export function buildQueryContract(
     // Aggregate inputs are not automatically visible answer fields. This is
     // especially important for scalar questions: a synonym match such as
     // "sales" -> sales_rep must never force extra dimensions into SELECT.
-    if (ungroupedTotalPeriodComparison) {
+    const explicitRatioGrouping = !!ratio && /\b(?:by|per|for\s+each|for\s+every|broken\s+down\s+by|split\s+by)\b/i.test(question);
+    if (ratio && !explicitRatioGrouping) {
+        // A conditional percentage/ratio is a calculated scalar. Measure and
+        // condition fields belong inside its numerator/denominator expression,
+        // not in the outer answer projection.
+        requestedOutputFields = [];
+        outputEntity = undefined;
+    } else if (ungroupedTotalPeriodComparison) {
         // Period names are synthetic result labels, not source dimensions. Do
         // not let a whole-question field scan promote order_id/year_month into
         // the visible entity or grouping grain.
@@ -1107,7 +1158,7 @@ export function buildQueryContract(
             field.name.toLowerCase() === outputEntity!.field.toLowerCase() && field.role === 'metric'
         )) outputEntity = requestedOutputFields[0];
     }
-    const requiresRowProjection = requestedOutputFields.some(field => field.confidence === 'high')
+    const requiresRowProjection = !ratio && requestedOutputFields.some(field => field.confidence === 'high')
         && (setOperation === 'intersection'
             || (!answerAggregation
                 && !asksCountAlongsideEntity
@@ -1200,7 +1251,8 @@ export function buildQueryContract(
         || (orderedProjection || requiresRowProjection
             ? undefined
             : resolveExpectedAggregation(question, plan) || queryShape.explicitAggregation);
-    const expectedCardinality: QueryContract['expectedCardinality'] = orderedProjection || requiresRowProjection ? 'detail'
+    const expectedCardinality: QueryContract['expectedCardinality'] = ratio && !requiresGrouping ? 'scalar'
+        : orderedProjection || requiresRowProjection ? 'detail'
         : requiresGrouping ? 'grouped'
         : expectedAggregation && explicitScalarAggregationCue ? 'scalar'
         : 'detail';
@@ -1251,7 +1303,6 @@ export function buildQueryContract(
             .flatMap(table => table.columns.map(column => column.name))
             .filter(field => !requestedPhysicalFields.has(field.toLowerCase())))]
         : [];
-    const ratio = resolveRatio(question, model);
     const relativeComparison = resolveRelativeComparison(question, plan, model);
     const measureOwnerTable = schema
         ? expectedMeasures
@@ -1916,9 +1967,18 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
         }
     }
     for (const predicate of (contract.requiredPredicates || []).filter(item => item.confidence === 'high')) {
-        const hasScope = predicate.scope === 'having'
-            ? /\bhaving\b/i.test(sql)
-            : /\bwhere\b/i.test(sql);
+        const sameRatioFilter = (filter: Pick<AnalysisPlan['filters'][number], 'field' | 'op' | 'value'>) =>
+            filter.field.toLowerCase() === predicate.field.toLowerCase()
+            && filter.op === predicate.operator
+            && JSON.stringify(filter.value) === JSON.stringify(predicate.value);
+        const isConditionalNumerator = !!contract.ratio
+            && contract.ratio.numeratorFilters.some(sameRatioFilter)
+            && !contract.ratio.denominatorFilters.some(sameRatioFilter);
+        const hasScope = isConditionalNumerator
+            ? true
+            : predicate.scope === 'having'
+                ? /\bhaving\b/i.test(sql)
+                : /\bwhere\b/i.test(sql);
         const hasOperator = predicateOperatorPresent(sql, predicate);
         const hasLiteral = sqlLiteralPresent(sql, predicate.value);
         if (!hasScope || !hasOperator || !hasLiteral) {
