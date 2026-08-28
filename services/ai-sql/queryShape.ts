@@ -6,6 +6,8 @@
  * query has: operation, selection cardinality, ordering, grouping and limits.
  */
 
+import { detectRequestedLimit } from './questionNumbers';
+
 export type SelectionMode = 'all_rows' | 'all_groups' | 'single' | 'top_n' | 'unspecified';
 export type QueryOperation = 'projection' | 'grouped_aggregate' | 'scalar_aggregate' | 'ranking' | 'unknown';
 
@@ -151,20 +153,21 @@ export function inferQueryShape(question: string): QueryShape {
     // from truncation: LIMIT is legal only when the user asks for a winner/N.
     const explicitAllGroupRanking = !!aggregation
         && /\b(?:rank|ranked|ranking|order|ordered|sort|sorted)\b[\s\S]{0,100}\bby\b/i.test(question)
-        && !/\b(?:top|bottom|first|last)\s+\d+\b/i.test(question);
+        && !detectRequestedLimit(question);
     const groupingText = question.replace(/\b(?:ordered|sorted|ranked)\s+by\b/gi, '');
     const groupingCue = thresholdedGroupCount || aggregateQualifiedGroups || frequencyWinner || explicitAllGroupRanking
         || /\b(?:by|per|for\s+each|for\s+every|each|every)\b/i.test(groupingText)
         || /\bof\s+(?:singers?|records?|items?|entities?)\s+of\s+each\b/i.test(question);
     const order = ordering(question);
-    const topN = question.match(/\b(top|bottom|first|last)\s+(\d+)\b/i);
+    const requestedLimit = detectRequestedLimit(question);
     // Natural questions commonly put N before the entity: "Which 3 regions
     // have the lowest sales?". Without this grammar, the later superlative was
     // misread as a single winner and silently became LIMIT 1.
-    const leadingN = question.match(/^\s*(?:please\s+)?(?:which|what|show|list|find|return|give(?:\s+me)?)\s+(?:the\s+)?(\d+)\s+[a-z]/i);
-    const leadingNIsRanking = !!leadingN
+    const leadingNIsRanking = requestedLimit?.placement === 'leading_count'
         && /\b(?:most|fewest|least|highest|lowest|largest|smallest|maximum|minimum|best|worst|top|bottom)\b/i.test(question);
-    const explicitLimit = topN ? Number(topN[2]) : leadingNIsRanking ? Number(leadingN![1]) : undefined;
+    const explicitLimit = requestedLimit?.placement === 'rank_prefix' || leadingNIsRanking
+        ? requestedLimit?.limit
+        : undefined;
     const directionalRange = /\bfrom\s+(?:the\s+)?(?:youngest|oldest|lowest|highest|least|most|smallest|largest|earliest|latest|newest)\s+to\s+(?:the\s+)?(?:youngest|oldest|lowest|highest|least|most|smallest|largest|earliest|latest|newest)\b/i.test(question);
     const rankingText = shapeText
         .replace(/\b(?:at|no)\s+(?:least|most)\b/gi, '')

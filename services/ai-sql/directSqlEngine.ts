@@ -167,6 +167,11 @@ export function reconcileQuerySpecWithCanonicalIntent(
                 ? { aggregation, expression: 'COUNT(*)' }
                 : { aggregation };
         });
+        spec.operations.measures.push(...canonical.computedMeasures.map(metric => ({
+            field: metric.id,
+            aggregation: 'formula',
+            expression: metric.formula,
+        })));
 
         if (canonical.grainFields.length) {
             const existingGroups = spec.operations.groupBy || [];
@@ -289,9 +294,10 @@ export function reconcileQuerySpecWithCanonicalIntent(
         : canonical.measures.map(measure => measure.field
             ? `${measure.aggregation.toUpperCase()}(${measure.field})`
             : `${measure.aggregation.toUpperCase()}(*)`);
+    const visibleComputed = canonical.computedMeasures.map(metric => metric.id);
     spec.expectedResult.columns = canonical.constraints.strictOutputProjection
         ? [...visibleGrain]
-        : uniqueStrings([...visibleGrain, ...visibleMeasures]);
+        : uniqueStrings([...visibleGrain, ...visibleMeasures, ...visibleComputed]);
     spec.expectedResult.grain = canonical.cardinality === 'scalar'
         ? 'one scalar result row'
         : canonical.grainFields.length
@@ -394,6 +400,7 @@ export function reconcileQuerySpecWithAnalyticalIR(
     const find = <K extends AnalyticalOperator['kind']>(kind: K) =>
         ir.operators.filter((operator): operator is Extract<AnalyticalOperator, { kind: K }> => operator.kind === kind);
     const aggregates = find('aggregate').flatMap(operator => operator.measures);
+    const calculations = find('derive').flatMap(operator => operator.calculations);
     const groups = find('group')[0]?.grain || [];
     const filters = find('filter').flatMap(operator => operator.predicates);
     const rank = find('rank')[0];
@@ -415,6 +422,11 @@ export function reconcileQuerySpecWithAnalyticalIR(
             if (measure.field === '*') return { ...(existing || {}), aggregation: 'count', expression: 'COUNT(*)' };
             return { ...(existing || {}), field: measure.field, aggregation: measure.aggregation };
         });
+        spec.operations.measures.push(...calculations.map(calculation => ({
+            field: calculation.id,
+            aggregation: 'formula',
+            expression: calculation.formula,
+        })));
         spec.operations.groupBy = groups.map(group => ({ field: group.field }));
     }
 

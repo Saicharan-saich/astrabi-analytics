@@ -7,6 +7,8 @@
  * Priority order: exact pattern match → keyword combination → fallback to LLM
  */
 
+import { detectRequestedLimit } from './questionNumbers';
+
 /** Tokens that mark a TIME period rather than a data value. */
 const TIME_TOKEN = /^(today|yesterday|tomorrow|now|ytd|mtd|qtd|yoy|mom|qoq|wow|last|previous|prior|this|current|next|year|years|quarter|quarters|month|months|week|weeks|day|days|period|periods|q[1-4]|h[12]|fy\d*|\d{4}|jan\w*|feb\w*|mar\w*|apr\w*|may|jun\w*|jul\w*|aug\w*|sep\w*|oct\w*|nov\w*|dec\w*)$/i;
 
@@ -226,12 +228,10 @@ function detectSortDirection(q: string): 'asc' | 'desc' | undefined {
 function detectLimit(q: string): number | undefined {
     const lower = q.toLowerCase();
 
-    // "top 5", "bottom 10"
-    const topNMatch = lower.match(/\b(top|bottom|first|last)\s+(\d+)\b/);
-    if (topNMatch) return parseInt(topNMatch[2]);
-
-    // "which X" → limit 1
-    if (/\bwhich\s+\w+\b/.test(lower)) return 1;
+    // Explicit digits and number words. A bare “which X” does not establish a
+    // cardinality; query-shape inference handles genuine single winners.
+    const explicit = detectRequestedLimit(q);
+    if (explicit) return explicit.limit;
 
     // day of week → 7
     if (DAY_OF_WEEK_PATTERNS.some(p => p.test(lower))) return 7;

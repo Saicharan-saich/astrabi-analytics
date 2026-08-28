@@ -5,6 +5,8 @@ export type SqlExpression =
     | { kind: 'star' }
     | { kind: 'literal'; value: unknown }
     | { kind: 'aggregate'; fn: 'SUM' | 'AVG' | 'COUNT' | 'MIN' | 'MAX'; argument: SqlExpression }
+    /** Formula emitted by the local governed metric registry, never model/user SQL. */
+    | { kind: 'governed_formula'; formula: string }
     | { kind: 'binary'; left: SqlExpression; operator: string; right: SqlExpression }
     | { kind: 'list'; values: SqlExpression[] };
 
@@ -51,6 +53,7 @@ function renderExpression(expression: SqlExpression): string {
         case 'star': return '*';
         case 'literal': return literal(expression.value);
         case 'aggregate': return `${expression.fn}(${renderExpression(expression.argument)})`;
+        case 'governed_formula': return expression.formula;
         case 'binary': return `${renderExpression(expression.left)} ${expression.operator} ${renderExpression(expression.right)}`;
         case 'list': return `(${expression.values.map(renderExpression).join(', ')})`;
     }
@@ -130,6 +133,7 @@ export function compileAnalyticalIRToSQL(ir: AnalyticalIR): IRSQLCompilation {
     if (reasons.length) return { supported: false, reasons };
 
     const aggregates = operators('aggregate')[0]?.measures || [];
+    const calculations = operators('derive')[0]?.calculations || [];
     const group = operators('group')[0]?.grain || [];
     const filters = operators('filter').flatMap(operator => operator.predicates);
     const rank = operators('rank')[0];
@@ -142,6 +146,9 @@ export function compileAnalyticalIRToSQL(ir: AnalyticalIR): IRSQLCompilation {
     for (const field of physicalVisible) select.push({ expression: column(field) });
     for (const measure of aggregates.filter(candidate => candidate.visibility === 'visible')) {
         select.push({ expression: aggregateExpression(measure), alias: measure.alias });
+    }
+    for (const calculation of calculations.filter(candidate => candidate.visibility === 'visible')) {
+        select.push({ expression: { kind: 'governed_formula', formula: calculation.formula }, alias: calculation.alias });
     }
     for (const field of group) {
         if (!select.some(item => item.expression.kind === 'column' && item.expression.name.toLowerCase() === field.field.toLowerCase())) {
@@ -192,4 +199,3 @@ export function compileAnalyticalIRToSQL(ir: AnalyticalIR): IRSQLCompilation {
     };
     return { supported: true, ast, sql: renderSelectAst(ast), reasons: [] };
 }
-

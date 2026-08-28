@@ -56,6 +56,23 @@ export function validateAnalyticalResult(
                 issues.push({ code: 'missing_visible_field', severity: 'error', message: `The result is missing requested field "${field.field}".` });
             }
         }
+        const expectedCalculations = ir.answer.fields.filter(candidate =>
+            candidate.visibility === 'visible' && candidate.role === 'calculation'
+        );
+        const exactCalculations = expectedCalculations.filter(field =>
+            available.some(column => column.toLowerCase() === field.field.toLowerCase())
+        ).length;
+        const numericColumns = available.filter(column => {
+            const value = rows[0][column];
+            return typeof value === 'number' && Number.isFinite(value);
+        }).length;
+        if (expectedCalculations.length && Math.max(exactCalculations, numericColumns) < expectedCalculations.length) {
+            issues.push({
+                code: 'missing_visible_calculation',
+                severity: 'error',
+                message: `The result returns ${numericColumns} numeric calculation column(s), but ${expectedCalculations.length} were explicitly requested (${expectedCalculations.map(field => field.field).join(', ')}).`,
+            });
+        }
     }
 
     if (ratio?.scale === 100 && rows.length === 1) {
@@ -68,4 +85,3 @@ export function validateAnalyticalResult(
 
     return issues;
 }
-

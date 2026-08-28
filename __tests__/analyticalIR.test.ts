@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AnalysisPlan, SemanticModel } from '../services/ai-sql/types';
-import { buildQueryContract } from '../services/ai-sql/queryContract';
+import { buildQueryContract, validateSQLAgainstContract } from '../services/ai-sql/queryContract';
 import { buildCanonicalQueryIntent } from '../services/ai-sql/canonicalIntent';
 import {
     buildAnalyticalIR,
@@ -9,6 +9,7 @@ import {
 import { reconcileQuerySpecWithAnalyticalIR, type DynamicQuerySpec } from '../services/ai-sql/directSqlEngine';
 import { validateAnalyticalResult } from '../services/ai-sql/analyticalResultValidator';
 import { compileAnalyticalIRToSQL } from '../services/ai-sql/analyticalSqlAst';
+import { generateLocalPlan } from '../services/ai-sql/intentPlanner';
 
 const field = (
     name: string,
@@ -216,5 +217,64 @@ describe('Canonical Analytical IR', () => {
         expect(compiled.sql).toContain('GROUP BY "grade"');
         expect(compiled.sql).toMatch(/HAVING COUNT\("ID"\) >= 4/);
         expect(compiled.sql).not.toMatch(/WHERE\s+"grade"\s+IN/i);
+    });
+
+    it('preserves a word-number Top N, multiple physical measures, and a governed KPI', () => {
+        const customerModel: SemanticModel = {
+            datasetName: 'data',
+            rowCount: 100,
+            grain: 'one row per order line',
+            derivedMetrics: [],
+            fields: [
+                { ...field('order_id', 'dimension', 'identifier'), role: 'dimension', defaultAgg: 'none' },
+                { ...field('customer_name', 'dimension'), synonyms: ['customer', 'customers'] },
+                { ...field('amount', 'metric', 'currency'), displayLabel: 'Sales Amount', synonyms: ['sales', 'total sales', 'revenue'] },
+                { ...field('profit', 'metric', 'currency'), displayLabel: 'Profit', synonyms: ['total profit'] },
+            ],
+            compositeMetrics: [{
+                id: 'net_profit_margin_pct',
+                label: 'Net Profit Margin %',
+                formula: 'SUM(profit) / NULLIF(SUM(amount), 0) * 100',
+                dependsOn: ['profit', 'amount'],
+                semanticType: 'percentage',
+                preAggregated: true,
+                description: 'Profit as a percentage of sales',
+                synonyms: ['profit margin', 'net margin', 'profit pct'],
+            }],
+        };
+        const question = 'Which five customers generated the highest total sales, and what were their total profit and profit margin?';
+        const localPlan = generateLocalPlan(question, customerModel);
+        const contract = buildQueryContract(question, localPlan, [], customerModel);
+        const canonical = buildCanonicalQueryIntent(contract);
+        const ir = buildAnalyticalIR(question, localPlan, customerModel, contract, canonical);
+        const compiled = compileAnalyticalIRToSQL(ir);
+
+        expect(localPlan.limit).toBe(5);
+        expect(localPlan.dimensions).toEqual([{ field: 'customer_name' }]);
+        expect(localPlan.metrics).toEqual(expect.arrayContaining([
+            expect.objectContaining({ field: 'amount', agg: 'sum' }),
+            expect.objectContaining({ field: 'profit', agg: 'sum' }),
+            expect.objectContaining({ compositeId: 'net_profit_margin_pct' }),
+        ]));
+        expect(contract.rankingLimit).toBe(5);
+        expect(contract.expectedMeasures).toEqual(expect.arrayContaining([
+            expect.objectContaining({ field: 'amount', aggregation: 'sum' }),
+            expect.objectContaining({ field: 'profit', aggregation: 'sum' }),
+        ]));
+        expect(contract.expectedComputedMetrics?.map(metric => metric.id)).toEqual(['net_profit_margin_pct']);
+        expect(validateSQLAgainstContract(
+            'SELECT customer_name FROM data GROUP BY customer_name ORDER BY SUM(amount) DESC LIMIT 1',
+            contract,
+        ).filter(issue => issue.severity === 'error').map(issue => issue.code)).toEqual(expect.arrayContaining([
+            'missing_ranking', 'missing_aggregation',
+        ]));
+        expect(compiled.supported).toBe(true);
+        expect(compiled.sql).toContain('SUM("amount") AS "sum_amount"');
+        expect(compiled.sql).toContain('SUM("profit") AS "sum_profit"');
+        expect(compiled.sql).toContain('SUM(profit) / NULLIF(SUM(amount), 0) * 100 AS "net_profit_margin_pct"');
+        expect(compiled.sql).toContain('ORDER BY SUM("amount") DESC');
+        expect(compiled.sql).toContain('LIMIT 5');
+        expect(validateAnalyticalResult([{ customer_name: 'A' }], ir).map(issue => issue.code))
+            .toContain('missing_visible_calculation');
     });
 });

@@ -54,6 +54,7 @@ export type AnalyticalOperator =
     | { id: string; kind: 'set'; operation: 'intersection' | 'difference'; entity?: IRFieldRef; dependsOn: string[] }
     | { id: string; kind: 'group'; grain: IRFieldRef[]; dependsOn: string[] }
     | { id: string; kind: 'aggregate'; measures: Array<IRFieldRef & { aggregation: 'sum' | 'avg' | 'count' | 'min' | 'max'; alias: string }>; dependsOn: string[] }
+    | { id: string; kind: 'derive'; calculations: Array<{ id: string; label: string; alias: string; formula: string; dependsOnFields: string[]; visibility: 'visible' | 'helper'; unit?: SemanticField['unit'] }>; dependsOn: string[] }
     | { id: string; kind: 'relative_compare'; scope: NonNullable<QueryContract['relativeComparison']>['scope']; referencePopulationId: string; comparator: '>' | '>=' | '<' | '<='; multiplier: number; measure?: IRFieldRef; dependsOn: string[] }
     | { id: string; kind: 'ratio'; basis: 'row_count' | 'measure'; numeratorPopulationId: string; denominatorPopulationId: string; scale: number; dependsOn: string[] }
     | { id: string; kind: 'compare_periods'; mode: 'total' | 'trend'; grain?: string; dependsOn: string[] }
@@ -152,8 +153,16 @@ function predicateFromContract(predicate: NonNullable<QueryContract['requiredPre
     };
 }
 
-function aggregateIsExplicitlyVisible(question: string, cardinality: QueryContract['expectedCardinality']): boolean {
+function aggregateIsExplicitlyVisible(
+    question: string,
+    cardinality: QueryContract['expectedCardinality'],
+    contract: QueryContract,
+): boolean {
     if (cardinality === 'scalar') return true;
+    // Aggregate predicates qualify entities but do not automatically become
+    // display columns. Ordinary grouped/ranked measures are visible unless the
+    // question is purely a qualification such as “which X have AVG(Y) >= 70?”.
+    if (!contract.threshold && !contract.relativeComparison) return true;
     return /\b(?:and\s+(?:the\s+)?(?:number|count|average|avg|total|sum|maximum|max|minimum|min|percentage|percent|amount|value)|how\s+many)\b/i.test(question)
         || /\b(?:what\s+(?:is|are)|show|give|display|return|calculate)\b[\s\S]{0,50}\b(?:number|count|average|avg|total|sum|maximum|max|minimum|min|percentage|percent|amount|value)\b/i.test(question);
 }
@@ -303,7 +312,7 @@ export function buildAnalyticalIR(
     if (canonical.relationship.existence === 'anti') append({ id: 'op_set', kind: 'set', operation: 'difference', entity, dependsOn: prior });
     if (canonical.grainFields.length) append({ id: 'op_group', kind: 'group', grain, dependsOn: prior });
 
-    const showAggregates = aggregateIsExplicitlyVisible(question, canonical.cardinality);
+    const showAggregates = aggregateIsExplicitlyVisible(question, canonical.cardinality, contract);
     const aggregateMeasures = canonical.measures.map((measure, index) => {
         const sourceField = measure.field || plan.metrics[index]?.field || plan.metrics[0]?.field || '*';
         const alias = sourceField === '*'
@@ -316,6 +325,16 @@ export function buildAnalyticalIR(
         };
     });
     if (aggregateMeasures.length) append({ id: 'op_aggregate', kind: 'aggregate', measures: aggregateMeasures, dependsOn: prior });
+    const computedMeasures = canonical.computedMeasures.map(metric => ({
+        id: metric.id,
+        label: metric.label,
+        alias: metric.id,
+        formula: metric.formula,
+        dependsOnFields: [...metric.dependsOn],
+        visibility: 'visible' as const,
+        unit: metric.semanticType === 'percentage' ? 'percentage' as const : undefined,
+    }));
+    if (computedMeasures.length) append({ id: 'op_derive', kind: 'derive', calculations: computedMeasures, dependsOn: prior });
     if (havingPredicates.length) append({ id: 'op_having', kind: 'filter', populationId: activePopulationId, predicates: havingPredicates, dependsOn: prior });
 
     if (contract.relativeComparison) {
@@ -358,6 +377,7 @@ export function buildAnalyticalIR(
             ? grain.map(field => ({ ...field, visibility: 'visible' as const }))
             : []),
         ...aggregateMeasures.filter(measure => measure.visibility === 'visible').map(measure => ({ ...measure, field: measure.alias, role: 'calculation' as const })),
+        ...computedMeasures.filter(measure => measure.visibility === 'visible').map(measure => fieldRef(model, measure.alias, 'calculation', 'visible')),
         ...canonical.analyticOperations.map(operation => fieldRef(model, operation.outputAlias, 'calculation', 'visible')),
     ], item => `${item.table || ''}.${item.field}`);
     append({ id: 'op_project', kind: 'project', fields: finalFields, dependsOn: prior });

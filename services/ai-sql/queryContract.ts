@@ -114,6 +114,16 @@ export interface QueryContract {
         aggregation: 'sum' | 'avg' | 'count' | 'min' | 'max';
         confidence: 'high' | 'medium';
     }>;
+    /** Governed derived KPIs explicitly requested by name. Their formulas come
+     * from the local semantic registry, never from dataset values or guesses. */
+    expectedComputedMetrics?: Array<{
+        id: string;
+        label: string;
+        formula: string;
+        dependsOn: string[];
+        semanticType: string;
+        confidence: 'high' | 'medium';
+    }>;
     /** Backwards-compatible primary aggregation used by older consumers. */
     expectedAggregation?: 'sum' | 'avg' | 'count' | 'min' | 'max';
     /** Ordinary predicates that must survive planning and SQL generation.
@@ -614,6 +624,15 @@ function resolveExpectedMeasures(
     model?: SemanticModel,
 ): NonNullable<QueryContract['expectedMeasures']> {
     const normalized = question.toLowerCase().replace(/[_-]+/g, ' ');
+    const escapePattern = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const compositeRanges = (model?.compositeMetrics || []).flatMap(metric =>
+        [metric.id, metric.label, ...(metric.synonyms || [])].flatMap(alias => {
+            const phrase = alias.toLowerCase().replace(/[_-]+/g, ' ').trim();
+            if (phrase.length < 3) return [];
+            return [...normalized.matchAll(new RegExp(`\\b${escapePattern(phrase)}\\b`, 'gi'))]
+                .map(match => ({ start: match.index || 0, end: (match.index || 0) + match[0].length }));
+        })
+    );
     let candidates = (model?.fields || [])
         .filter(field => field.role === 'metric')
         .flatMap(field => [field.name, field.displayLabel, ...(field.synonyms || [])]
@@ -622,13 +641,21 @@ function resolveExpectedMeasures(
                 alias: alias.toLowerCase().replace(/[_-]+/g, ' ').trim(),
             })))
         .map(candidate => {
-            const escaped = candidate.alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            return { ...candidate, index: new RegExp(`\\b${escaped}\\b`, 'i').exec(normalized)?.index ?? -1 };
+            const matches = [...normalized.matchAll(new RegExp(`\\b${escapePattern(candidate.alias)}\\b`, 'gi'))]
+                .filter(match => !compositeRanges.some(range =>
+                    (match.index || 0) >= range.start && (match.index || 0) + match[0].length <= range.end
+                ));
+            return { ...candidate, index: matches[0]?.index ?? -1 };
         })
         .filter(candidate => candidate.alias.length > 1 && candidate.index >= 0)
         // Exclude fields appearing in comparison/filter contexts — e.g. "height higher than 200"
         // means Height is a WHERE filter, not an aggregation target.
         .filter(candidate => {
+            const beforeField = normalized.slice(Math.max(0, candidate.index - 24), candidate.index);
+            // A noun introduced by "by", "per" or "for each" defines the
+            // grouping grain even if upstream profiling misclassified the
+            // column as numeric/metric (for example PetType encoded as 1/2).
+            if (/\b(?:by|per|for\s+each|each)\s+(?:type\s+of\s+)?$/i.test(beforeField)) return false;
             const afterField = normalized.slice(candidate.index + candidate.alias.length, candidate.index + candidate.alias.length + 40);
             return !/^\s*(?:higher|greater|larger|bigger|more|less|lower|smaller|fewer|above|below|over|under|equal|(?:>|<|=))\b/i.test(afterField);
         })
@@ -663,6 +690,26 @@ function resolveExpectedMeasures(
             })
             .filter(candidate => candidate.overlap > 0 && candidate.score >= 0.6)
             .sort((a, b) => a.index - b.index || b.score - a.score);
+    }
+
+    const localAggregation = (candidate: typeof candidates[number]): NonNullable<QueryContract['expectedAggregation']> => {
+        const before = normalized.slice(Math.max(0, candidate.index - 50), candidate.index);
+        const cues = [...before.matchAll(/\b(average|avg|mean|total|sum|count|minimum|min|maximum|max)\b/gi)];
+        const cue = cues[cues.length - 1]?.[1]?.toLowerCase() || '';
+        if (/^(?:average|avg|mean)$/.test(cue)) return 'avg';
+        if (cue === 'count') return 'count';
+        if (/^(?:minimum|min)$/.test(cue)) return 'min';
+        if (/^(?:maximum|max)$/.test(cue)) return 'max';
+        if (/^(?:total|sum)$/.test(cue)) return 'sum';
+        return aggregations[0] || 'sum';
+    };
+
+    if (candidates.length > 1) {
+        return candidates.map(candidate => ({
+            field: candidate.field,
+            aggregation: localAggregation(candidate),
+            confidence: 'high' as const,
+        }));
     }
 
     return aggregations.map((aggregation, index) => {
@@ -1184,6 +1231,7 @@ export function buildQueryContract(
     }
     if (expectedAggregation && expectedAggregations.length === 0) expectedAggregations = [expectedAggregation];
     const expectedMeasures = resolveExpectedMeasures(question, expectedAggregations, model);
+    const expectedComputedMetrics = resolveExpectedComputedMetrics(question, model);
     const requiredPredicates = resolveRequiredPredicates(plan, model, schema);
     const rankingTarget = resolveRankingTarget(
         question,
@@ -1298,6 +1346,9 @@ export function buildQueryContract(
     if (expectedAggregations.length) {
         requirements.push(`Use every explicitly requested aggregate operation: ${expectedAggregations.map(aggregation => aggregation.toUpperCase()).join(' and ')}. Do not silently drop one measure.`);
     }
+    for (const metric of expectedComputedMetrics) {
+        requirements.push(`Return the explicitly requested governed KPI "${metric.label}" using its local formula ${metric.formula}; do not replace or omit separately requested physical measures.`);
+    }
     for (const predicate of requiredPredicates.filter(item => item.confidence === 'high')) {
         requirements.push(`Preserve the ${predicate.scope.toUpperCase()} predicate on "${predicate.table ? `${predicate.table}.` : ''}${predicate.field}" with operator ${predicate.operator}; filtering fields do not automatically become visible output fields or grouping dimensions.`);
     }
@@ -1352,6 +1403,7 @@ export function buildQueryContract(
         relationshipMode,
         expectedAggregations,
         expectedMeasures,
+        expectedComputedMetrics,
         expectedAggregation,
         requiredPredicates,
         rankingTarget,
@@ -1607,6 +1659,7 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
         relationshipMode: contract.relationshipMode,
         aggregations: contract.expectedAggregations || (contract.expectedAggregation ? [contract.expectedAggregation] : []),
         measures: contract.expectedMeasures || [],
+        computedMetrics: contract.expectedComputedMetrics || [],
         aggregation: contract.expectedAggregation,
         predicates: contract.requiredPredicates || [],
         threshold: contract.threshold,
@@ -1847,6 +1900,21 @@ export function validateSQLAgainstContract(sql: string, contract: QueryContract)
             });
         }
     }
+    for (const metric of (contract.expectedComputedMetrics || []).filter(item => item.confidence === 'high')) {
+        const dependenciesPresent = metric.dependsOn.every(field =>
+            new RegExp(`\\b(?:sum|avg|count|min|max)\\s*\\((?:[^()]|\\([^()]*\\))*${identifierPattern(field).source}`, 'i').test(outerProjection)
+        );
+        const divisionPresent = !metric.formula.includes('/') || /\//.test(outerProjection);
+        const nullGuardPresent = !/\bNULLIF\s*\(/i.test(metric.formula) || /\bNULLIF\s*\(/i.test(outerProjection);
+        const scalePresent = !/\*\s*100(?:\.0+)?\b/.test(metric.formula) || /\*\s*100(?:\.0+)?\b/.test(outerProjection);
+        if (!dependenciesPresent || !divisionPresent || !nullGuardPresent || !scalePresent) {
+            issues.push({
+                code: 'missing_aggregation',
+                severity: 'error',
+                message: `The question explicitly requests governed KPI "${metric.label}" (${metric.formula}), but the outer SELECT does not return that calculation.`,
+            });
+        }
+    }
     for (const predicate of (contract.requiredPredicates || []).filter(item => item.confidence === 'high')) {
         const hasScope = predicate.scope === 'having'
             ? /\bhaving\b/i.test(sql)
@@ -2049,4 +2117,29 @@ export function normalizeResultToContract(
         seen.add(tuple);
         return true;
     });
+}
+
+function resolveExpectedComputedMetrics(
+    question: string,
+    model?: SemanticModel,
+): NonNullable<QueryContract['expectedComputedMetrics']> {
+    const normalized = question.toLowerCase().replace(/[_-]+/g, ' ');
+    const escaped = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return (model?.compositeMetrics || [])
+        .map(metric => {
+            const aliases = [metric.id, metric.label, ...(metric.synonyms || [])]
+                .map(alias => alias.toLowerCase().replace(/[_-]+/g, ' ').trim())
+                .filter(alias => alias.length >= 3)
+                .sort((a, b) => b.length - a.length);
+            const matched = aliases.some(alias => new RegExp(`\\b${escaped(alias)}\\b`, 'i').test(normalized));
+            return matched ? {
+                id: metric.id,
+                label: metric.label,
+                formula: metric.formula,
+                dependsOn: [...metric.dependsOn],
+                semanticType: metric.semanticType,
+                confidence: 'high' as const,
+            } : undefined;
+        })
+        .filter((metric): metric is NonNullable<typeof metric> => Boolean(metric));
 }

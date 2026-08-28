@@ -18,6 +18,7 @@ import { serializeSemanticModel } from './semanticLayer';
 import { fetchWithFallback, PRIMARY_MODEL, selectAISQLModel, API_KEY } from './modelConfig';
 import { classifyQuestion, ClassificationResult, isTimePeriodComparison } from './questionClassifier';
 import { inferQueryShape } from './queryShape';
+import { detectRequestedLimit } from './questionNumbers';
 
 // Re-exported: the classifier owns this so both it and the enforcement below
 // judge "vs" the same way.
@@ -200,6 +201,9 @@ function resolveFieldPhrase(phrase: string, model: SemanticModel, role?: 'dimens
     // a numeric measure as a dimension. Exact schema-language alignment must
     // still recover the user's field dynamically.
     for (const field of model.fields) {
+        // Identifiers can be counted, but must never become monetary/quantity
+        // measures because a long phrase happens to share an incidental noun.
+        if (role === 'metric' && field.semanticType === 'identifier') continue;
         let fieldScore = 0;
         for (const alias of [field.name, field.displayLabel, ...(field.synonyms || [])]) {
             const aliasWords = normalizedFieldWords(alias);
@@ -278,19 +282,61 @@ export function enforceRequestedBreakdownDimension(plan: AnalysisPlan, question:
 
 /** Explicit measure wording outranks incidental token overlap in other columns. */
 export function enforceExplicitMeasure(plan: AnalysisPlan, question: string, model: SemanticModel): void {
+    if (plan.intent === 'projection') return;
     const aggregation = detectExplicitAggregation(question);
     if (!aggregation) return;
-    const match = question.match(/\b(?:average|avg|mean|total|sum|count|minimum|maximum)\s+(?:of\s+)?(.+?)(?=\s+(?:of\s+\w+|with\s+|having\s+|whose\s+|for\s+each|for\s+every|per|by|where|when|during|in)\b|[?.,;]|$)/i);
-    if (!match) return;
-    const requested = resolveFieldPhrase(match[1], model, 'metric');
-    if (!requested) return;
-    const existing = plan.metrics.find(metric => metric.field.toLowerCase() === requested.name.toLowerCase());
-    plan.metrics = [{
-        ...(existing || { field: requested.name }),
-        field: requested.name,
-        agg: aggregation,
-    }];
-    console.log(`[Intent Planner] Explicit measure locked to ${aggregation}(${requested.name})`);
+    const normalized = question.toLowerCase().replace(/[_-]+/g, ' ');
+    const escaped = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const compositeRanges = model.compositeMetrics.flatMap(metric =>
+        [metric.id, metric.label, ...(metric.synonyms || [])].flatMap(alias => {
+            const phrase = alias.toLowerCase().replace(/[_-]+/g, ' ').trim();
+            if (phrase.length < 3) return [];
+            return [...normalized.matchAll(new RegExp(`\\b${escaped(phrase)}\\b`, 'gi'))]
+                .map(match => ({ start: match.index || 0, end: (match.index || 0) + match[0].length }));
+        })
+    );
+    const mentioned = model.fields
+        .filter(field => field.role === 'metric' && field.semanticType !== 'identifier')
+        .flatMap(field => [field.name, field.displayLabel, ...(field.synonyms || [])].map(alias => ({ field, alias })))
+        .flatMap(({ field, alias }) => {
+            const phrase = alias.toLowerCase().replace(/[_-]+/g, ' ').trim();
+            if (phrase.length < 2) return [];
+            return [...normalized.matchAll(new RegExp(`\\b${escaped(phrase)}\\b`, 'gi'))]
+                .filter(match => !compositeRanges.some(range =>
+                    (match.index || 0) >= range.start && (match.index || 0) + match[0].length <= range.end
+                ))
+                .map(match => ({ field, index: match.index || 0 }));
+        })
+        .sort((a, b) => a.index - b.index)
+        .filter((candidate, index, all) => all.findIndex(other =>
+            other.field.name.toLowerCase() === candidate.field.name.toLowerCase()
+        ) === index);
+
+    if (!mentioned.length) {
+        const match = question.match(/\b(?:average|avg|mean|total|sum|count|minimum|maximum)\s+(?:of\s+)?(.+?)(?=\s+(?:of\s+\w+|with\s+|having\s+|whose\s+|for\s+each|for\s+every|per|by|where|when|during|in)\b|[?.,;]|$)/i);
+        const requested = match ? resolveFieldPhrase(match[1], model, 'metric') : undefined;
+        if (!requested) return;
+        mentioned.push({ field: requested, index: match?.index || 0 });
+    }
+
+    const explicitOperations = inferQueryShape(question).explicitAggregations;
+    const requestedMetrics = mentioned.flatMap(({ field, index }) => {
+        const localText = normalized.slice(Math.max(0, index - 45), index);
+        const cues = [...localText.matchAll(/\b(average|avg|mean|total|sum|count|minimum|min|maximum|max)\b/gi)];
+        const cue = cues[cues.length - 1]?.[1]?.toLowerCase() || '';
+        const localAgg: AnalysisPlan['metrics'][number]['agg'] = /^(?:average|avg|mean)$/.test(cue) ? 'avg'
+            : cue === 'count' ? 'count'
+                : /^(?:minimum|min)$/.test(cue) ? 'min'
+                    : /^(?:maximum|max)$/.test(cue) ? 'max'
+                        : /^(?:total|sum)$/.test(cue) ? 'sum'
+                            : aggregation;
+        const operations = mentioned.length === 1 && explicitOperations.length > 1
+            ? explicitOperations
+            : [localAgg];
+        return operations.map(agg => ({ field: field.name, agg }));
+    });
+    plan.metrics = requestedMetrics;
+    console.log(`[Intent Planner] Explicit measures locked to ${requestedMetrics.map(metric => `${metric.agg}(${metric.field})`).join(', ')}`);
 }
 
 /**
@@ -460,18 +506,18 @@ function enforceIntentFromKeywords(plan: AnalysisPlan, question: string): void {
     }
 
     // ── "top N" / "bottom N" extraction → enforce limit ──
-    const topNMatch = q.match(/\b(top|bottom|first|last)\s+(\d+)\b/);
-    if (topNMatch) {
-        const n = parseInt(topNMatch[2]);
+    const requestedLimit = detectRequestedLimit(question);
+    if (requestedLimit) {
+        const n = requestedLimit.limit;
         if (n > 0 && n <= 100) {
             if (plan.limit !== n) {
-                console.log(`[Intent Planner] Limit override: ${plan.limit} → ${n} (detected "${topNMatch[0]}")`);
+                console.log(`[Intent Planner] Limit override: ${plan.limit} → ${n} (detected "${requestedLimit.source}")`);
                 plan.limit = n;
             }
             if (plan.intent !== 'ranking') {
                 plan.intent = 'ranking';
             }
-            if (topNMatch[1] === 'bottom' || topNMatch[1] === 'last') {
+            if (requestedLimit.directionHint === 'asc') {
                 const sortField = plan.metrics.length > 0 ? plan.metrics[0].field : '';
                 plan.sort = plan.sort.length > 0
                     ? plan.sort.map(s => ({ ...s, dir: 'asc' as const }))
@@ -531,14 +577,51 @@ export function enforceCompositeMetrics(plan: AnalysisPlan, question: string, mo
             const alreadyUsed = plan.metrics.some(m => m.compositeId === metricId);
             if (alreadyUsed) continue;
 
-            // Replace all metrics with the governed composite metric
-            console.log(`[Intent Planner] Composite override: forcing "${metricId}" (weighted formula: ${composite.formula})`);
-            plan.metrics = [{
+            const compositeAliases = [composite.id, composite.label, ...(composite.synonyms || [])]
+                .filter((alias): alias is string => typeof alias === 'string')
+                .map(alias => alias.toLowerCase().replace(/[_-]+/g, ' ').trim())
+                .filter(alias => alias.length > 1);
+            const compositeRanges = compositeAliases.flatMap(alias => {
+                const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                return [...q.replace(/[_-]+/g, ' ').matchAll(new RegExp(`\\b${escaped}\\b`, 'gi'))]
+                    .map(match => ({ start: match.index || 0, end: (match.index || 0) + match[0].length }));
+            });
+            const normalizedQuestion = q.replace(/[_-]+/g, ' ');
+            const explicitlyRequestedPhysical = (model.fields || [])
+                .filter(field => field.role === 'metric')
+                .some(field => [field.name, field.displayLabel, ...(field.synonyms || [])]
+                    .map(alias => alias.toLowerCase().replace(/[_-]+/g, ' ').trim())
+                    .filter(alias => alias.length > 1)
+                    .some(alias => {
+                        const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        return [...normalizedQuestion.matchAll(new RegExp(`\\b${escaped}\\b`, 'gi'))]
+                            .some(match => !compositeRanges.some(range =>
+                                (match.index || 0) >= range.start
+                                && (match.index || 0) + match[0].length <= range.end
+                            ));
+                    }));
+
+            const governedMetric = {
                 field: composite.dependsOn[0],
                 agg: 'sum', // Ignored for composite, but required by type
                 compositeId: metricId,
-            }];
-            break;
+            } as AnalysisPlan['metrics'][number];
+
+            // A standalone governed concept ("revenue") replaces an LLM's
+            // surrogate physical measure. When the user separately asks for
+            // physical measures as well ("sales, profit and profit margin"),
+            // preserve those outputs and append the governed calculation.
+            if (explicitlyRequestedPhysical) {
+                console.log(`[Intent Planner] Composite metric added: "${metricId}" (weighted formula: ${composite.formula})`);
+                plan.metrics.push(governedMetric);
+            } else {
+                console.log(`[Intent Planner] Composite metric enforced: "${metricId}" (weighted formula: ${composite.formula})`);
+                plan.metrics = [governedMetric];
+            }
+
+            // Patterns are ordered from most-specific to least-specific.
+            // Never let a generic concept override or duplicate the winner.
+            return;
         }
     }
 }
@@ -1030,9 +1113,8 @@ function enforceAggregation(plan: AnalysisPlan, question: string, model: Semanti
         }
 
         // Ensure limit is set (default to 1 for "which day" style questions)
-        if (!plan.limit) {
-            plan.limit = queryShape.explicitLimit || 1;
-        }
+        if (queryShape.explicitLimit) plan.limit = queryShape.explicitLimit;
+        else if (!plan.limit) plan.limit = 1;
 
         // Do NOT override aggregation for rankings — use the field's default
         // (e.g., "lowest sales" should be SUM(sales) sorted ASC, not MIN(sales))

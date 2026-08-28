@@ -39,6 +39,8 @@ describe('dynamic query-shape and cardinality contract', () => {
         ['Which 3 regions have the lowest sales?', 3, 'asc'],
         ['Which 5 suppliers have the highest spend?', 5, 'desc'],
         ['Which 3 contract types have the highest total line items?', 3, 'desc'],
+        ['Which five customers generated the highest total sales?', 5, 'desc'],
+        ['Show the bottom twenty-one cities by profit', 21, 'asc'],
     ] as const)('preserves a leading requested ranking count: %s', (question, limit, direction) => {
         expect(inferQueryShape(question)).toMatchObject({
             operation: 'ranking',

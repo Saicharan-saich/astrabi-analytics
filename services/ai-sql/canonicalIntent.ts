@@ -31,6 +31,7 @@ export interface CanonicalQueryIntent {
         aggregation: 'sum' | 'avg' | 'count' | 'min' | 'max';
         confidence: 'high' | 'medium';
     }>;
+    computedMeasures: NonNullable<QueryContract['expectedComputedMetrics']>;
     predicates: QueryContract['requiredPredicates'];
     ratio: QueryContract['ratio'];
     /** Advanced analytical operations explicitly requested by the question. */
@@ -111,6 +112,10 @@ export function buildCanonicalQueryIntent(contract: QueryContract): CanonicalQue
         measures: [...(contract.expectedMeasures || (contract.expectedAggregation
             ? [{ aggregation: contract.expectedAggregation, confidence: 'medium' as const }]
             : []))],
+        computedMeasures: (contract.expectedComputedMetrics || []).map(metric => ({
+            ...metric,
+            dependsOn: [...metric.dependsOn],
+        })),
         predicates: (contract.requiredPredicates || []).map(predicate => ({ ...predicate })),
         ratio: contract.ratio ? { ...contract.ratio } : undefined,
         analyticOperations: (contract.analyticOperations || []).map(operation => ({
@@ -148,22 +153,30 @@ export function buildCanonicalQueryIntent(contract: QueryContract): CanonicalQue
 }
 
 function reconcileMetrics(plan: AnalysisPlan, canonical: CanonicalQueryIntent): PlanMetric[] {
-    if (canonical.answerKind === 'detail_projection' || canonical.answerKind === 'set_result' || canonical.aggregations.length === 0) return [];
+    if (canonical.answerKind === 'detail_projection' || canonical.answerKind === 'set_result') return [];
+    const computed = canonical.computedMeasures.map(metric => {
+        const existing = plan.metrics.find(candidate => candidate.compositeId === metric.id);
+        return existing
+            ? { ...existing }
+            : { field: metric.dependsOn[0] || metric.id, agg: 'sum' as const, compositeId: metric.id };
+    });
     if (plan.metrics.length === 0) {
-        return canonical.measures
+        const physical = canonical.measures
             .filter((measure): measure is typeof measure & { field: string } => Boolean(measure.field))
             .map(measure => ({ field: measure.field, agg: measure.aggregation }));
+        return [...physical, ...computed];
     }
 
     // Preserve schema-grounded metric fields. Only the operation is canonical.
     // If the question explicitly requests several operations over one measure,
     // duplicate that grounded measure rather than silently dropping an output.
-    return canonical.measures.map((measure, index) => {
+    const physical = canonical.measures.map((measure, index) => {
         const aggregation = measure.aggregation;
         const exact = plan.metrics.find(metric => metric.agg === aggregation);
         const source = exact || plan.metrics[Math.min(index, plan.metrics.length - 1)] || plan.metrics[0];
         return { ...source, field: measure.field || source.field, agg: aggregation };
     });
+    return [...physical, ...computed];
 }
 
 /**
