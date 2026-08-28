@@ -287,12 +287,12 @@ const PAGE_INFO: Record<PageKey, PageInfo> = {
     },
     AI_SQL_ENGINES: {
         title: 'AI SQL Engines',
-        description: 'Admin-only global controls for optional AI SQL understanding, verification, repair, and result-quality stages.',
+        description: 'Admin-only global controls for every AI SQL understanding, planning, synthesis, safety, execution, repair, and result-quality stage.',
         features: [
             'Production and LLM-led operating profiles',
             'Per-stage switches with plain-language explanations',
             'Globally persisted settings applied to every new question',
-            'Locked privacy, read-only safety, and local DuckDB execution',
+            'Fail-closed privacy, read-only safety, and local DuckDB execution controls',
         ],
         tips: [
             'Keep Production selected for normal use',

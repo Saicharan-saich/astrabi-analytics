@@ -9,6 +9,7 @@ import {
     KeyRound,
     Loader2,
     Lock,
+    Power,
     RefreshCw,
     Save,
     ShieldCheck,
@@ -20,6 +21,7 @@ import { useAuthStore } from '../store/useAuthStore';
 import { useTheme } from './ThemeProvider';
 import {
     AI_SQL_ENGINE_PRESETS,
+    AI_SQL_ENGINE_IDS,
     fetchAISQLEngineConfig,
     getAISQLEngineConfig,
     saveAISQLEngineConfig,
@@ -49,18 +51,18 @@ const CONFIGURABLE_ENGINES: EngineCard[] = [
     { id: 'answerContractValidation', name: 'Answer contract validation', group: 'Result quality', description: 'Runs the final answer-shape and display-safety verification before presenting the result.' },
 ];
 
-const LOCKED_ENGINES = [
-    { name: 'Semantic layer', icon: BrainCircuit, description: 'Schema, roles, additivity, units and business metadata.' },
-    { name: 'Intent & GAFS plan', icon: GitBranch, description: 'Compact question evidence supplied to the LLM.' },
-    { name: 'Relationship graph', icon: Database, description: 'Table ownership, joins, cardinality and fan-out risk.' },
-    { name: 'Privacy gateway', icon: KeyRound, description: 'Enforces the selected metadata-only or approved-value policy.' },
-    { name: 'LLM plan & SQL writer', icon: Sparkles, description: 'Owns higher-level reasoning and DuckDB SQL synthesis.' },
-    { name: 'Read-only SQL safety', icon: ShieldCheck, description: 'Blocks writes and unsafe statements before execution.' },
-    { name: 'Local DuckDB-WASM', icon: Cpu, description: 'Executes the query in the browser; rows stay local.' },
+const CORE_ENGINES: Array<{ id: AISQLEngineId; name: string; icon: React.FC<any>; description: string; failClosed?: boolean }> = [
+    { id: 'semanticLayer', name: 'Semantic layer', icon: BrainCircuit, description: 'When off, the LLM receives only physical column names/types; dependent local plan context is also withheld.' },
+    { id: 'intentPlanner', name: 'Intent & GAFS plan', icon: GitBranch, description: 'When off, the local plan and analytical contract are withheld from the LLM for a true schema-only ablation.' },
+    { id: 'relationshipGraph', name: 'Relationship graph', icon: Database, description: 'When off, table relationships, cardinality and join-path guidance are withheld from the LLM.' },
+    { id: 'privacyGateway', name: 'Privacy gateway', icon: KeyRound, description: 'Turning this off pauses model calls; it never permits ungoverned row sharing.', failClosed: true },
+    { id: 'llmSqlWriter', name: 'LLM plan & SQL writer', icon: Sparkles, description: 'Turning this off pauses AI SQL synthesis because the current architecture assigns SQL authorship to the LLM.', failClosed: true },
+    { id: 'readOnlySafety', name: 'Read-only SQL safety', icon: ShieldCheck, description: 'Turning this off pauses execution; unsafe or write SQL is never allowed through.', failClosed: true },
+    { id: 'duckdbExecution', name: 'Local DuckDB-WASM', icon: Cpu, description: 'Turning this off stops before local execution, allowing controlled pipeline-ablation checks.', failClosed: true },
 ];
 
 const sameEngines = (left: Record<AISQLEngineId, boolean>, right: Record<AISQLEngineId, boolean>) =>
-    CONFIGURABLE_ENGINES.every(({ id }) => left[id] === right[id]);
+    AI_SQL_ENGINE_IDS.every(id => left[id] === right[id]);
 
 export const AISQLEngineControlView: React.FC = () => {
     const { currentUser } = useAuthStore();
@@ -85,7 +87,7 @@ export const AISQLEngineControlView: React.FC = () => {
     }, []);
 
     const dirty = !sameEngines(saved.engines, draft.engines);
-    const enabledCount = CONFIGURABLE_ENGINES.filter(engine => draft.engines[engine.id]).length;
+    const enabledCount = AI_SQL_ENGINE_IDS.filter(id => draft.engines[id]).length;
     const selectedPreset = useMemo(() => {
         if (sameEngines(draft.engines, AI_SQL_ENGINE_PRESETS.production)) return 'production';
         if (sameEngines(draft.engines, AI_SQL_ENGINE_PRESETS.llmLed)) return 'llmLed';
@@ -136,7 +138,7 @@ export const AISQLEngineControlView: React.FC = () => {
                         </div>
                         <h1 className="text-2xl font-black tracking-tight lg:text-3xl">AI SQL Engines</h1>
                         <p className={`mt-2 max-w-3xl text-sm leading-6 ${muted}`}>
-                            Control optional understanding, verification and repair stages for every user. Core privacy, safety and local execution stages stay locked.
+                            Control every AI SQL stage for all users. Safety-critical stages fail closed: switching them off pauses the pipeline instead of bypassing protection.
                         </p>
                     </div>
                     <div className="flex items-center gap-3">
@@ -175,7 +177,7 @@ export const AISQLEngineControlView: React.FC = () => {
                             <input type="radio" checked={selectedPreset === 'custom'} readOnly />
                             <span><strong>Custom</strong></span>
                         </label>
-                        <span className="ml-auto rounded-full bg-slate-500/10 px-3 py-1.5 text-xs font-bold">{enabledCount}/{CONFIGURABLE_ENGINES.length} optional stages on</span>
+                        <span className="ml-auto rounded-full bg-slate-500/10 px-3 py-1.5 text-xs font-bold">{enabledCount}/{AI_SQL_ENGINE_IDS.length} stages on</span>
                     </div>
                 </div>
 
@@ -189,22 +191,27 @@ export const AISQLEngineControlView: React.FC = () => {
                 <section className="mt-7">
                     <div className="mb-3 flex items-center justify-between">
                         <div>
-                            <h2 className="text-base font-black">Locked core</h2>
-                            <p className={`mt-1 text-xs ${muted}`}>Always active and intentionally unavailable as switches.</p>
+                            <h2 className="text-base font-black">Core stages</h2>
+                            <p className={`mt-1 text-xs ${muted}`}>Admin-controlled. Safety-critical stages stop safely when disabled.</p>
                         </div>
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-500"><ShieldCheck className="h-3.5 w-3.5" /> Protected</span>
+                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-3 py-1.5 text-xs font-bold text-emerald-500"><ShieldCheck className="h-3.5 w-3.5" /> Fail closed</span>
                     </div>
                     <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                        {LOCKED_ENGINES.map(engine => (
-                            <div key={engine.name} className={`rounded-2xl border p-4 ${panel}`}>
+                        {CORE_ENGINES.map(engine => {
+                            const enabled = draft.engines[engine.id];
+                            return (
+                            <button type="button" role="switch" aria-checked={enabled} onClick={() => toggleEngine(engine.id)} key={engine.name} className={`rounded-2xl border p-4 text-left transition ${panel} ${enabled ? 'ring-1 ring-emerald-500/20' : 'opacity-60'}`}>
                                 <div className="flex items-center justify-between">
-                                    <engine.icon className="h-5 w-5 text-emerald-500" />
-                                    <Lock className="h-3.5 w-3.5 text-slate-500" />
+                                    <engine.icon className={`h-5 w-5 ${enabled ? 'text-emerald-500' : 'text-slate-500'}`} />
+                                    <span className={`inline-flex h-6 w-11 items-center rounded-full p-0.5 transition ${enabled ? 'bg-emerald-500' : 'bg-slate-500/35'}`}>
+                                        <span className={`h-5 w-5 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
+                                    </span>
                                 </div>
-                                <h3 className="mt-3 text-sm font-black">{engine.name}</h3>
+                                <h3 className="mt-3 flex items-center gap-2 text-sm font-black">{engine.name}<span className={`text-[10px] uppercase ${enabled ? 'text-emerald-500' : 'text-slate-500'}`}>{enabled ? 'On' : 'Off'}</span></h3>
                                 <p className={`mt-1.5 text-xs leading-5 ${muted}`}>{engine.description}</p>
-                            </div>
-                        ))}
+                                {engine.failClosed && <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-500"><Power className="h-3 w-3" /> Off pauses pipeline</span>}
+                            </button>
+                        );})}
                     </div>
                 </section>
 

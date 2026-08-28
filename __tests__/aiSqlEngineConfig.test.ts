@@ -26,10 +26,13 @@ describe('AI SQL engine configuration', () => {
         expect(Object.keys(config.engines)).toEqual([...AI_SQL_ENGINE_IDS]);
     });
 
-    it('keeps privacy and SQL safety out of the configurable surface', () => {
-        expect(AI_SQL_ENGINE_IDS).not.toContain('privacyGateway');
-        expect(AI_SQL_ENGINE_IDS).not.toContain('readOnlySafety');
-        expect(AI_SQL_ENGINE_IDS).not.toContain('duckdbExecution');
+    it('exposes the core stages for admin-led ablation', () => {
+        expect(AI_SQL_ENGINE_IDS).toContain('semanticLayer');
+        expect(AI_SQL_ENGINE_IDS).toContain('intentPlanner');
+        expect(AI_SQL_ENGINE_IDS).toContain('relationshipGraph');
+        expect(AI_SQL_ENGINE_IDS).toContain('privacyGateway');
+        expect(AI_SQL_ENGINE_IDS).toContain('readOnlySafety');
+        expect(AI_SQL_ENGINE_IDS).toContain('duckdbExecution');
     });
 
     it('provides a full-on production preset and a reduced-intervention LLM-led preset', () => {

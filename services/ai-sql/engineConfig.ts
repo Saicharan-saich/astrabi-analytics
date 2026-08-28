@@ -4,11 +4,19 @@
  * The server copy is authoritative and is loaded for every signed-in user.
  * Defaults are deliberately fail-open for correctness: if the settings API is
  * unavailable, every optional reasoning/repair stage remains enabled.
- * Security and privacy boundaries are not represented here and cannot be
- * disabled from the UI.
+ * Safety-critical boundaries are configurable for admin-led ablation, but
+ * their disabled state is fail-closed: the pipeline pauses rather than
+ * bypassing privacy, read-only validation, or local execution.
  */
 
 export const AI_SQL_ENGINE_IDS = [
+    'semanticLayer',
+    'intentPlanner',
+    'relationshipGraph',
+    'privacyGateway',
+    'llmSqlWriter',
+    'readOnlySafety',
+    'duckdbExecution',
     'timeResolver',
     'valueGrounding',
     'ambiguityResolver',

@@ -1901,11 +1901,17 @@ app.post('/api/admin/tab-visibility', async (req, res) => {
 });
 
 // ── Global AI SQL engine controls ───────────────────────
-// Only optional reasoning, verification and repair stages are configurable.
-// Authentication, privacy enforcement, read-only SQL safety and local DuckDB
-// execution are deliberately absent from this list and therefore cannot be
-// disabled from the admin UI.
+// Every named stage is configurable for admin-led ablation. Safety-critical
+// switches are fail-closed in the client pipeline: disabling privacy,
+// read-only validation, or DuckDB pauses the run instead of bypassing it.
 const AI_SQL_ENGINE_KEYS = [
+    'semanticLayer',
+    'intentPlanner',
+    'relationshipGraph',
+    'privacyGateway',
+    'llmSqlWriter',
+    'readOnlySafety',
+    'duckdbExecution',
     'timeResolver',
     'valueGrounding',
     'ambiguityResolver',

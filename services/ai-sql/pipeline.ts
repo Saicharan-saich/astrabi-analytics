@@ -196,7 +196,9 @@ export async function runAISQLPipeline(
     }
 
     // ─── Step 1c: Value Catalog + governed fallback preparation ───
-    const joinCtx = discoverJoinContext(dataset.relatedTables, dataset.sourceSchema);
+    const joinCtx = engineConfig.relationshipGraph
+        ? discoverJoinContext(dataset.relatedTables, dataset.sourceSchema)
+        : null;
     let _valueCatalog: ReturnType<typeof buildValueCatalog> | null = null;
     if (engineConfig.valueGrounding) {
         try {
@@ -219,6 +221,12 @@ export async function runAISQLPipeline(
         plannerIssues: Array<{ code?: string; severity?: string; message?: string }> = [],
     ): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null; blocked?: boolean; querySpec?: DynamicQuerySpec }> => {
         try {
+            if (!engineConfig.privacyGateway) {
+                return { sql: null, tokens: 0, error: 'AI SQL paused by admin: the privacy gateway is disabled.', blocked: true };
+            }
+            if (!engineConfig.llmSqlWriter) {
+                return { sql: null, tokens: 0, error: 'AI SQL paused by admin: the LLM plan and SQL writer is disabled.', blocked: true };
+            }
             // Privacy mode gates what the LLM may see. Strict = metadata only, no
             // data values leave the browser. Enhanced = also send bounded category
             // domains (non-sensitive, low-cardinality; PII, identifiers and
@@ -226,7 +234,7 @@ export async function runAISQLPipeline(
             const privacyMode = effectivePrivacyMode;
             // The automatic filter decides what is eligible; the user's own
             // per-column and per-value choices then subtract from that.
-            let domains = privacyMode === 'enhanced'
+            let domains = privacyMode === 'enhanced' && engineConfig.semanticLayer
                 ? collectSafeDomains(dataset.rows, semanticModel)
                 : undefined;
             if (domains) {
@@ -238,7 +246,10 @@ export async function runAISQLPipeline(
                 if (domains.size === 0) domains = undefined;
             }
             console.log(`[Pipeline] Direct-SQL privacy mode: ${privacyMode}${domains ? ` (${domains.size} category domain(s) shared)` : ' (metadata only)'}`);
-            let richSchema = serializeSemanticModelSchema(semanticModel, 'data', domains);
+            const baseSchemaText = engineConfig.semanticLayer
+                ? serializeSemanticModelSchema(semanticModel, 'data', domains)
+                : `Table "data" (physical schema only):\n${dataset.columns.map(column => `- "${column.name}" ${column.originalType || column.type}`).join('\n')}\nSemantic roles, business meanings, units and aggregation rules are intentionally disabled for this run.`;
+            let richSchema = baseSchemaText;
 
             // When the source had several tables, describe those too. The
             // flattened "data" table can double-count after a one-to-many join,
@@ -251,9 +262,9 @@ export async function runAISQLPipeline(
                 // Rebuild from the base schema so the authoritative physical
                 // table contract cannot coexist with an obsolete flattened-
                 // table hint from older upload flows.
-                richSchema = `${serializeSemanticModelSchema(semanticModel, 'data', domains)}\n\nMULTI-TABLE CONTRACT:\n- The DuckDB table "data" contains ONLY the rows and columns of primary table "${primaryTable}"; it is not a pre-joined copy.\n- All physical tables are independently queryable. If a requested field, filter, entity, or existence test belongs to another table, use the physical table names and the listed relationship path.\n- Never use "data" as a substitute for a related table. Never infer that a missing related record can be found by grouping "data" alone.\n- For "no", "without", "never", or "not a single" related record, preserve the complete entity population and use NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT.\n\n${joinCtx.description}`;
+                richSchema = `${baseSchemaText}\n\nMULTI-TABLE CONTRACT:\n- The DuckDB table "data" contains ONLY the rows and columns of primary table "${primaryTable}"; it is not a pre-joined copy.\n- All physical tables are independently queryable. If a requested field, filter, entity, or existence test belongs to another table, use the physical table names and the listed relationship path.\n- Never use "data" as a substitute for a related table. Never infer that a missing related record can be found by grouping "data" alone.\n- For "no", "without", "never", or "not a single" related record, preserve the complete entity population and use NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT.\n\n${joinCtx.description}`;
             }
-            richSchema += `\n\nEXECUTION AND PRIVACY CONTRACT:\n- SQL dialect: DuckDB. Only one read-only SELECT/WITH query is allowed.\n- Execution occurs locally in browser DuckDB-WASM; the model never executes SQL and never receives result rows.\n- Privacy mode: ${privacyMode}.\n- Shared context: ${domains ? 'schema metadata plus only the explicitly approved, non-sensitive categorical domains shown above' : 'schema and semantic metadata only; no dataset values'}.\n- User-typed literals may appear in the question/plan. Never invent an unseen literal; preserve grounded spelling and casing when supplied.\n- PII, identifiers, sensitive categorical values and transaction rows are not available to the model.`;
+            richSchema += `\n\nEXECUTION AND PRIVACY CONTRACT:\n- SQL dialect: DuckDB. Only one read-only SELECT/WITH query is allowed.\n- Execution occurs locally in browser DuckDB-WASM; the model never executes SQL and never receives result rows.\n- Privacy mode: ${privacyMode}.\n- Shared context: ${domains ? 'schema metadata plus only the explicitly approved, non-sensitive categorical domains shown above' : engineConfig.semanticLayer ? 'schema and semantic metadata only; no dataset values' : 'physical schema names and types only; no semantic enrichment and no dataset values'}.\n- User-typed literals may appear in the question/plan. Never invent an unseen literal; preserve grounded spelling and casing when supplied.\n- PII, identifiers, sensitive categorical values and transaction rows are not available to the model.`;
             directSchemaText = richSchema;
             // Build one shared, deterministic contract before any model writes
             // SQL. This unifies entity intent, query grain, relationship paths,
@@ -283,12 +294,12 @@ export async function runAISQLPipeline(
             const ds = await generateDirectSQL(
                 anchoredQuestion,
                 richSchema,
-                plan,
-                plannerIssues,
-                semanticModel,
+                engineConfig.semanticLayer && engineConfig.intentPlanner ? plan : undefined,
+                engineConfig.semanticLayer && engineConfig.intentPlanner ? plannerIssues : undefined,
+                engineConfig.semanticLayer ? semanticModel : undefined,
                 executionOptions?.requestPurpose,
-                activeQueryContract,
-                undefined,
+                engineConfig.semanticLayer && engineConfig.intentPlanner ? activeQueryContract : undefined,
+                engineConfig.semanticLayer && engineConfig.intentPlanner ? activeAnalyticalIR : undefined,
             );
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
@@ -546,6 +557,7 @@ export async function runAISQLPipeline(
             icon: '🔍',
             status: 'skip',
             summary: 'Disabled by the global AI SQL engine configuration',
+            details: { disabledByAdmin: true },
         }, performance.now());
     }
 
@@ -856,6 +868,9 @@ export async function runAISQLPipeline(
     if (directSqlBlocked || !directSQL) {
         throw new Error(directSqlError || 'AI SQL stopped before execution because it could not preserve the requested analytical shape.');
     }
+    if (!engineConfig.readOnlySafety) {
+        throw new Error('AI SQL paused by admin: read-only SQL safety is disabled. Execution remains blocked rather than running unverified SQL.');
+    }
 
 
     // ─── Step 3: Generate SQL (Step B — deterministic + LLM fallback) ─
@@ -984,6 +999,9 @@ export async function runAISQLPipeline(
     reportProgress('Executing SQL...', 7);
     console.log('[Pipeline] Step 5: Executing SQL...');
     _s1 = performance.now();
+    if (!engineConfig.duckdbExecution) {
+        throw new Error('AI SQL paused by admin: local DuckDB-WASM execution is disabled. The generated SQL was not executed.');
+    }
     let execResult = await executeSQLViaDuckDB(dataset.rows, currentSQL, semanticModel.timeContext, dataset.relatedTables);
 
     // ─── Step 5b: Repair Loop (max 2 attempts) ──────────────────
