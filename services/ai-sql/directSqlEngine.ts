@@ -23,6 +23,7 @@ import {
     type AnalyticalIR,
     type AnalyticalOperator,
 } from './analyticalIR';
+import { getAISQLEngineConfig } from './engineConfig';
 
 const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
 Given a database schema and a question, output a SINGLE read-only SQL SELECT that answers it.
@@ -719,6 +720,7 @@ export async function generateDirectSQL(
     queryContract?: QueryContract,
     analyticalIR?: AnalyticalIR,
 ): Promise<DirectSQLResult> {
+    const engineConfig = getAISQLEngineConfig().engines;
     // Deterministic preprocessing supplies grounded facts and a compact GAFS
     // plan. It is evidence for the model, not a competing SQL author.
     const planContext = analysisPlan
@@ -766,22 +768,30 @@ export async function generateDirectSQL(
     const draftUsage = drafted.data.usage || {};
     tokens += draftUsage.total_tokens || ((draftUsage.prompt_tokens || 0) + (draftUsage.completion_tokens || 0)) || 0;
 
-    // Sol independently checks every request against the question, schema and
-    // structured plan, then returns the final executable SQL.
-    const reviewed = await fetchWithFallback([
-        { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the question, schema, and deterministic contract. Correct only concrete violations. Before returning SQL, audit: (1) outer SELECT contains only requested answer fields/calculations, (2) GROUP BY is exactly the requested grain, (3) ranking expression, direction, cardinality and tie behaviour match the wording, (4) aggregate predicates are in HAVING/subqueries without leaking helper metrics into the answer, (5) ratio numerator and denominator use the correct populations, (6) joins follow the declared ownership path, (7) list/set answers cannot repeat because of join fan-out, and (8) every required tableCalculation is implemented with its declared partition, order, frame and output alias. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and contract do not require; never remove a required CTE/window/table calculation merely to make SQL shorter. Return only final SQL.` },
-        { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${draftSQL}\n\nFinal reviewed SQL:` },
-    ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
-    const reviewedSQL = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');
-    const reviewUsage = reviewed.data.usage || {};
-    tokens += reviewUsage.total_tokens || ((reviewUsage.prompt_tokens || 0) + (reviewUsage.completion_tokens || 0)) || 0;
-    let modelUsedForSQL = `${planner.model} → ${drafted.model} → ${reviewed.model}`;
-    const candidateDecision = chooseBestSQLCandidate(draftSQL, reviewedSQL, queryContract);
+    let reviewedSQL = draftSQL;
+    let modelUsedForSQL = `${planner.model} → ${drafted.model}`;
+    if (engineConfig.llmReviewer) {
+        // Sol independently checks every request against the question, schema
+        // and structured plan, then returns the final executable SQL.
+        const reviewed = await fetchWithFallback([
+            { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the question, schema, and deterministic contract. Correct only concrete violations. Before returning SQL, audit: (1) outer SELECT contains only requested answer fields/calculations, (2) GROUP BY is exactly the requested grain, (3) ranking expression, direction, cardinality and tie behaviour match the wording, (4) aggregate predicates are in HAVING/subqueries without leaking helper metrics into the answer, (5) ratio numerator and denominator use the correct populations, (6) joins follow the declared ownership path, (7) list/set answers cannot repeat because of join fan-out, and (8) every required tableCalculation is implemented with its declared partition, order, frame and output alias. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and contract do not require; never remove a required CTE/window/table calculation merely to make SQL shorter. Return only final SQL.` },
+            { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${draftSQL}\n\nFinal reviewed SQL:` },
+        ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
+        reviewedSQL = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');
+        const reviewUsage = reviewed.data.usage || {};
+        tokens += reviewUsage.total_tokens || ((reviewUsage.prompt_tokens || 0) + (reviewUsage.completion_tokens || 0)) || 0;
+        modelUsedForSQL = `${modelUsedForSQL} → ${reviewed.model}`;
+    } else {
+        console.log('[AI SQL] Independent LLM reviewer disabled by the global engine configuration.');
+    }
+    const candidateDecision = engineConfig.llmReviewer
+        ? chooseBestSQLCandidate(draftSQL, reviewedSQL, queryContract)
+        : { sql: draftSQL, source: 'draft' as const, contractErrors: 0, complexity: 0 };
     let sql = candidateDecision.sql;
-    if (candidateDecision.source === 'draft') {
+    if (engineConfig.llmReviewer && candidateDecision.source === 'draft') {
         console.log(`[AI SQL] Retained the draft SQL because the reviewer candidate was less faithful or more complex (${candidateDecision.contractErrors} contract error(s), complexity ${candidateDecision.complexity}).`);
     }
-    console.log(`[AI SQL] Dynamic three-model route: ${modelUsedForSQL}`);
+    console.log(`[AI SQL] Dynamic model route: ${modelUsedForSQL}`);
 
     // A fallback must never silently swap the dataset-relative reporting clock
     // for the user's machine/server clock. The caller passes an anchor whenever
@@ -805,7 +815,7 @@ export async function generateDirectSQL(
     if (queryContract) {
         let contractIssues = validateSQLAgainstContract(safe.sql, queryContract)
             .filter(issue => issue.severity === 'error');
-        if (contractIssues.length) {
+        if (contractIssues.length && engineConfig.contractRepair) {
             // A contract should help the system recover, not merely turn a
             // detectable omission into a user-facing failure. Give the reviewer
             // one focused, metadata-only correction. If that optional repair is
@@ -846,6 +856,9 @@ export async function generateDirectSQL(
                 contractWarnings = contractIssues.map(issue => issue.message);
                 console.warn('[AI SQL] Read-only SQL will execute with advisory contract issues:', contractWarnings);
             }
+        } else if (contractIssues.length) {
+            contractWarnings = contractIssues.map(issue => issue.message);
+            console.warn('[AI SQL] Contract-guided repair disabled; retaining read-only SQL with advisory issues:', contractWarnings);
         }
     }
     return { sql: safe.sql, tokens, model: modelUsedForSQL, querySpec: spec, canonicalIntent, contractWarnings };

@@ -1900,6 +1900,84 @@ app.post('/api/admin/tab-visibility', async (req, res) => {
     }
 });
 
+// ── Global AI SQL engine controls ───────────────────────
+// Only optional reasoning, verification and repair stages are configurable.
+// Authentication, privacy enforcement, read-only SQL safety and local DuckDB
+// execution are deliberately absent from this list and therefore cannot be
+// disabled from the admin UI.
+const AI_SQL_ENGINE_KEYS = [
+    'timeResolver',
+    'valueGrounding',
+    'ambiguityResolver',
+    'derivedMetricGuardrails',
+    'planVerification',
+    'canonicalAudit',
+    'llmReviewer',
+    'contractRepair',
+    'sqlExecutionRepair',
+    'semanticResultRepair',
+    'resultContractValidation',
+    'answerContractValidation',
+];
+
+function normalizeAISQLEngineSettings(value, metadata = {}) {
+    const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    const sourceEngines = source.engines && typeof source.engines === 'object' && !Array.isArray(source.engines)
+        ? source.engines
+        : source;
+    const engines = {};
+    for (const key of AI_SQL_ENGINE_KEYS) {
+        engines[key] = typeof sourceEngines[key] === 'boolean' ? sourceEngines[key] : true;
+    }
+    return { version: 1, engines, ...metadata };
+}
+
+app.get('/api/settings/ai-sql-engines', requireAuthenticatedUser, async (req, res) => {
+    if (!authPool) return res.json(normalizeAISQLEngineSettings({}));
+    try {
+        const { rows } = await authPool.query(
+            `SELECT value, updated_by, updated_at FROM app_settings WHERE key = 'ai_sql_engines'`,
+        );
+        const row = rows[0];
+        res.json(normalizeAISQLEngineSettings(row?.value, {
+            ...(row?.updated_by ? { updatedBy: row.updated_by } : {}),
+            ...(row?.updated_at ? { updatedAt: row.updated_at } : {}),
+        }));
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/admin/ai-sql-engines', async (req, res) => {
+    const user = await extractCurrentAdmin(req);
+    if (!user) return res.status(403).json({ error: 'Admin access required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+    if (!req.body?.engines || typeof req.body.engines !== 'object' || Array.isArray(req.body.engines)) {
+        return res.status(400).json({ error: 'engines must be an object of boolean settings' });
+    }
+    for (const [key, enabled] of Object.entries(req.body.engines)) {
+        if (!AI_SQL_ENGINE_KEYS.includes(key) || typeof enabled !== 'boolean') {
+            return res.status(400).json({ error: `Invalid AI SQL engine setting: ${key}` });
+        }
+    }
+    try {
+        const config = normalizeAISQLEngineSettings({ engines: req.body.engines });
+        await authPool.query(
+            `INSERT INTO app_settings (key, value, updated_by, updated_at)
+             VALUES ('ai_sql_engines', $1, $2, NOW())
+             ON CONFLICT (key) DO UPDATE SET value = $1, updated_by = $2, updated_at = NOW()`,
+            [JSON.stringify(config), user.email],
+        );
+        console.log(`[Admin] ${user.email} updated global AI SQL engine settings`);
+        res.json({
+            success: true,
+            config: { ...config, updatedBy: user.email, updatedAt: new Date().toISOString() },
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // ── Remembered column classifications ────────────────────
 // A self-improving map of column corrections, SCOPED BY DATASET SIGNATURE so a
 // correction to "region" in one dataset never rewrites a same-named column in an

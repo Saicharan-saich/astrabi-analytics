@@ -12,7 +12,7 @@ export type PageKey =
     | 'UPLOAD' | 'COLUMN_MAPPING' | 'DASHBOARD' | 'BUILDER' | 'WORKBENCH'
     | 'DATA' | 'ETL' | 'SCHEMA' | 'CONNECTORS' | 'NLQ' | 'AI_SQL'
     | 'CUSTOM_QUESTIONS' | 'DATASET_SUMMARY' | 'SMART_QUESTIONS' | 'ALERTS'
-    | 'VISUAL_PREVIEW' | 'DERIVED_COLUMNS' | 'USER_INSIGHTS' | 'BENCHMARK' | 'GAME';
+    | 'VISUAL_PREVIEW' | 'DERIVED_COLUMNS' | 'USER_INSIGHTS' | 'BENCHMARK' | 'AI_SQL_ENGINES' | 'GAME';
 
 interface PageInfo {
     title: string;
@@ -283,6 +283,20 @@ const PAGE_INFO: Record<PageKey, PageInfo> = {
         tips: [
             'Run the 5-question-per-suite smoke test before spending tokens on all 150 questions',
             'Use the exported suite version and methodology label whenever reporting a score',
+        ],
+    },
+    AI_SQL_ENGINES: {
+        title: 'AI SQL Engines',
+        description: 'Admin-only global controls for optional AI SQL understanding, verification, repair, and result-quality stages.',
+        features: [
+            'Production and LLM-led operating profiles',
+            'Per-stage switches with plain-language explanations',
+            'Globally persisted settings applied to every new question',
+            'Locked privacy, read-only safety, and local DuckDB execution',
+        ],
+        tips: [
+            'Keep Production selected for normal use',
+            'Use non-production combinations only for controlled diagnosis or ablation experiments',
         ],
     },
     GAME: {

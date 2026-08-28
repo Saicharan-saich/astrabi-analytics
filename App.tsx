@@ -13,6 +13,7 @@ import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, g
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
 import { buildSemanticModel } from './services/semanticModel';
 import { fetchGlobalHiddenTabs } from './services/tabVisibilityService';
+import { fetchAISQLEngineConfig } from './services/ai-sql/engineConfig';
 import { fetchColumnCorrections, saveColumnCorrections, rememberedOverridesFor, datasetSignature } from './services/columnCorrectionsService';
 import { buildAutoDashboard } from './services/autoDashboardBuilder';
 import { refreshLiveDataset } from './services/liveRefreshService';
@@ -57,6 +58,7 @@ import { DataStoryView } from './components/DataStoryView';
 import LegalPage from './components/LegalPage';
 import { GameView } from './components/GameView';
 import { TabVisibilityManager } from './components/TabVisibilityManager';
+import { AISQLEngineControlView } from './components/AISQLEngineControlView';
 import { useMobile } from './hooks/useMobile';
 
 // The 150-case benchmark fixtures are admin-only and intentionally loaded only
@@ -242,6 +244,9 @@ function App() {
       fetchGlobalHiddenTabs()
         .then((tabs) => useAppStore.getState().setHiddenTabs(tabs))
         .catch(() => { /* fail-open: keep whatever is local */ });
+      // Load the admin-defined global AI SQL stages for every user. On an API
+      // failure the client keeps the all-on production defaults.
+      fetchAISQLEngineConfig().catch(() => { /* fail-open: all optional stages remain enabled */ });
       // Prime the remembered column-classification cache so future uploads can
       // auto-apply corrections. Metadata only (columnName → role) — never data.
       fetchColumnCorrections().catch(() => { /* fail-open */ });
@@ -1772,6 +1777,12 @@ function App() {
                     <React.Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-slate-400">Loading Benchmark Lab…</div>}>
                       <BenchmarkLabView activeDataset={dataset} />
                     </React.Suspense>
+                  )}
+                </div>
+
+                <div className={`h-full w-full ${activeTab === Tab.AI_SQL_ENGINES ? '' : 'hidden'}`}>
+                  {activeTab === Tab.AI_SQL_ENGINES && currentUser?.role === UserRole.ADMIN && (
+                    <AISQLEngineControlView />
                   )}
                 </div>
 

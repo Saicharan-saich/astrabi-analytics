@@ -78,6 +78,7 @@ import {
 import { validateAnalyticalResult } from './analyticalResultValidator';
 import { compileAnalyticalIRToSQL } from './analyticalSqlAst';
 import { canCompileTotalPeriodComparisonLocally } from './deterministicRouting';
+import { getAISQLEngineConfig } from './engineConfig';
 
 /** AI SQL policy: local engines describe and validate analytical facts; the
  * governed LLM route is the sole author of executable AI SQL. */
@@ -128,6 +129,9 @@ export async function runAISQLPipeline(
         && executionOptions.privacyModeOverride
         ? executionOptions.privacyModeOverride
         : getEffectivePrivacyMode();
+    // Snapshot the global configuration once so an in-flight query cannot
+    // change behaviour halfway through if an admin saves new settings.
+    const engineConfig = getAISQLEngineConfig().engines;
     let repairAttempts = 0;
     const TOTAL_STEPS = 12;
     const reportProgress = (step: string, stepNumber: number) => {
@@ -170,11 +174,15 @@ export async function runAISQLPipeline(
     reportProgress('Resolving time context...', 2);
     console.log('[Pipeline] Step 1b: Resolving time context...');
     _s1 = performance.now();
-    const resolvedTime = resolveTimeContext(question, semanticModel);
+    const resolvedTime = engineConfig.timeResolver
+        ? resolveTimeContext(question, semanticModel)
+        : { filter: null, matchedPhrase: null, description: null };
     traceStep({
         stepNumber: 2, name: 'Time Resolver', engine: 'timeResolver', icon: '⏰',
         status: resolvedTime.filter ? 'pass' : 'skip',
-        summary: resolvedTime.filter
+        summary: !engineConfig.timeResolver
+            ? 'Disabled by the global AI SQL engine configuration'
+            : resolvedTime.filter
             ? `"${resolvedTime.matchedPhrase}" → ${resolvedTime.description}`
             : 'No time reference detected in question',
         details: {
@@ -190,10 +198,12 @@ export async function runAISQLPipeline(
     // ─── Step 1c: Value Catalog + governed fallback preparation ───
     const joinCtx = discoverJoinContext(dataset.relatedTables, dataset.sourceSchema);
     let _valueCatalog: ReturnType<typeof buildValueCatalog> | null = null;
-    try {
-        _valueCatalog = buildValueCatalog(dataset.rows, semanticModel, 60, dataset.relatedTables);
-    } catch (cErr: any) {
-        console.warn('[Pipeline] Value catalog build skipped:', cErr?.message);
+    if (engineConfig.valueGrounding) {
+        try {
+            _valueCatalog = buildValueCatalog(dataset.rows, semanticModel, 60, dataset.relatedTables);
+        } catch (cErr: any) {
+            console.warn('[Pipeline] Value catalog build skipped:', cErr?.message);
+        }
     }
 
     const _directSqlStart = performance.now();
@@ -374,7 +384,7 @@ export async function runAISQLPipeline(
     // dataset's actual dimension values (deterministic, no LLM). Fixes the
     // "revenue from Delivery → filter vanished" class of bug, and works even
     // when the LLM planner is unavailable/rate-limited.
-    try {
+    if (engineConfig.valueGrounding) try {
         if (!_valueCatalog) throw new Error('value catalog unavailable');
         // Resolve only literals already typed by the user across every physical
         // table. This local lookup is not capped by domain cardinality and does
@@ -409,6 +419,8 @@ export async function runAISQLPipeline(
         }
     } catch (gErr: any) {
         console.warn('[Pipeline] Value grounding skipped:', gErr?.message);
+    } else {
+        console.log('[Pipeline] Value grounding disabled by the global AI SQL engine configuration');
     }
 
     // ─── Step 2b″: Plan Verification (faithfulness gate) ─────────
@@ -416,14 +428,18 @@ export async function runAISQLPipeline(
     // question? Surfaces dropped filters / wrong metric / missing ranking so a
     // mismatch becomes a flagged, low-confidence answer instead of a silent
     // wrong one.
-    let _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
+    let _verification = engineConfig.planVerification
+        ? verifyPlan(question, plan, semanticModel, _valueCatalog || undefined)
+        : { ok: true, issues: [] };
     if (_verification.issues.length > 0) {
         console.warn(`[Pipeline] Plan verification: ${_verification.issues.length} issue(s) — ${_verification.issues.map(i => `[${i.severity}] ${i.code}`).join(', ')}`);
     }
     traceStep({
         stepNumber: 4, name: 'Plan Verification', engine: 'planVerification', icon: '🔎',
-        status: _verification.ok ? (_verification.issues.length ? 'warn' : 'pass') : 'fail',
-        summary: _verification.issues.length === 0
+        status: !engineConfig.planVerification ? 'skip' : _verification.ok ? (_verification.issues.length ? 'warn' : 'pass') : 'fail',
+        summary: !engineConfig.planVerification
+            ? 'Disabled by the global AI SQL engine configuration'
+            : _verification.issues.length === 0
             ? 'Plan faithfully represents the question'
             : `${_verification.issues.length} faithfulness issue(s): ${_verification.issues.map(i => i.code).join(', ')}`,
         details: { ok: _verification.ok, issues: _verification.issues },
@@ -441,7 +457,7 @@ export async function runAISQLPipeline(
         localStats: Awaited<ReturnType<typeof resolveLocalStatistics>>;
     } | null = null;
 
-    try {
+    if (engineConfig.ambiguityResolver) try {
         const domainName = dataset.domainProfile?.domain || undefined;
         const detection = detectAmbiguities(question, semanticModel, domainName);
 
@@ -491,7 +507,9 @@ export async function runAISQLPipeline(
                 plan = applyResolvedAmbiguitiesToPlan(plan, resolution);
                 // Validate the plan that will actually be compiled, not the
                 // pre-resolution draft.
-                _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
+                if (engineConfig.planVerification) {
+                    _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
+                }
                 console.log(`[Pipeline] Applied ${resolution.autoResolvedCount} evidence-backed ambiguity resolution(s) before SQL generation`);
             }
 
@@ -520,6 +538,15 @@ export async function runAISQLPipeline(
         // Preserve the existing governed planner as a compatibility fallback,
         // but never claim that ambiguity evidence was applied.
         console.warn('[Pipeline] Pre-execution ambiguity gate unavailable:', ambiguityError?.message);
+    } else {
+        traceStep({
+            stepNumber: 4,
+            name: 'Pre-Execution Ambiguity Gate',
+            engine: 'ambiguityResolver',
+            icon: '🔍',
+            status: 'skip',
+            summary: 'Disabled by the global AI SQL engine configuration',
+        }, performance.now());
     }
 
     // ─── Step 2c: APDME — Derived Metrics & Guardrails ─────────────
@@ -530,12 +557,22 @@ export async function runAISQLPipeline(
     reportProgress('Analyzing derived metrics...', 3);
     console.log('[Pipeline] Step 2c: Running APDME (Derived Metric Engine)...');
     _s1 = performance.now();
-    const apdmeResult = processPlan(plan, semanticModel);
+    const apdmeResult = engineConfig.derivedMetricGuardrails
+        ? processPlan(plan, semanticModel)
+        : {
+            plan,
+            derivedMetrics: [],
+            violations: [],
+            confidencePenalty: 0,
+            derivedMetricApplied: false,
+        };
     plan = apdmeResult.plan;
     traceStep({
         stepNumber: 4, name: 'APDME Guardrails', engine: 'derivedMetricEngine', icon: '🛡️',
-        status: apdmeResult.violations.length > 0 ? 'warn' : 'pass',
-        summary: apdmeResult.derivedMetricApplied
+        status: !engineConfig.derivedMetricGuardrails ? 'skip' : apdmeResult.violations.length > 0 ? 'warn' : 'pass',
+        summary: !engineConfig.derivedMetricGuardrails
+            ? 'Disabled by the global AI SQL engine configuration'
+            : apdmeResult.derivedMetricApplied
             ? `Derived metric applied: ${apdmeResult.derivedMetrics.map(d => d.aggregatedExpression).join(', ')}`
             : apdmeResult.violations.length > 0
                 ? `${apdmeResult.violations.length} guardrail violation(s), penalty: -${apdmeResult.confidencePenalty}`
@@ -565,8 +602,12 @@ export async function runAISQLPipeline(
         joinCtx ? { tables: joinCtx.tables, links: joinCtx.links } : undefined,
     );
     activeCanonicalIntent = buildCanonicalQueryIntent(activeQueryContract);
-    const canonicalReconciliation = reconcilePlanWithCanonicalIntent(plan, activeCanonicalIntent);
-    _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
+    const canonicalReconciliation = engineConfig.canonicalAudit
+        ? reconcilePlanWithCanonicalIntent(plan, activeCanonicalIntent)
+        : { plan, changes: [] };
+    if (engineConfig.planVerification) {
+        _verification = verifyPlan(question, plan, semanticModel, _valueCatalog || undefined);
+    }
     activeAnalyticalIR = buildAnalyticalIR(
         question,
         plan,
@@ -575,7 +616,7 @@ export async function runAISQLPipeline(
         activeCanonicalIntent,
         apdmeResult.derivedMetrics,
     );
-    analyticalIRIssues = verifyAnalyticalIR(activeAnalyticalIR);
+    analyticalIRIssues = engineConfig.canonicalAudit ? verifyAnalyticalIR(activeAnalyticalIR) : [];
     const requiresAdvancedSql = activeCanonicalIntent.analyticOperations.length > 0;
     if (canonicalReconciliation.changes.length) {
         console.log(`[Pipeline] Canonical audit found ${canonicalReconciliation.changes.length} advisory structural conflict(s): ${canonicalReconciliation.changes.join('; ')}`);
@@ -585,8 +626,10 @@ export async function runAISQLPipeline(
         name: 'Canonical Analytical IR',
         engine: 'analyticalIR',
         icon: '🧭',
-        status: analyticalIRIssues.some(issue => issue.severity === 'error') ? 'warn' : 'pass',
-        summary: `${activeAnalyticalIR.answer.kind} · ${activeAnalyticalIR.answer.cardinality} · ${activeAnalyticalIR.operators.map(operator => operator.kind).join(' → ')}`,
+        status: !engineConfig.canonicalAudit ? 'skip' : analyticalIRIssues.some(issue => issue.severity === 'error') ? 'warn' : 'pass',
+        summary: !engineConfig.canonicalAudit
+            ? 'Canonical IR created for model context; deterministic audit disabled'
+            : `${activeAnalyticalIR.answer.kind} · ${activeAnalyticalIR.answer.cardinality} · ${activeAnalyticalIR.operators.map(operator => operator.kind).join(' → ')}`,
         details: {
             analyticalIR: activeAnalyticalIR,
             analyticalIRIssues,
@@ -944,7 +987,7 @@ export async function runAISQLPipeline(
     let execResult = await executeSQLViaDuckDB(dataset.rows, currentSQL, semanticModel.timeContext, dataset.relatedTables);
 
     // ─── Step 5b: Repair Loop (max 2 attempts) ──────────────────
-    while (execResult.error && repairAttempts < 2) {
+    while (engineConfig.sqlExecutionRepair && execResult.error && repairAttempts < 2) {
         repairAttempts++;
         console.log(`[Pipeline] Step 5b: Repair attempt ${repairAttempts}...`);
         try {
@@ -1010,7 +1053,8 @@ export async function runAISQLPipeline(
         && preRepairLiteralIssues.length > 0
         && Object.values(resultRows[0] || {}).some(value => value !== null && value !== undefined)
         && Object.values(resultRows[0] || {}).every(value => value === null || value === undefined || Number(value) === 0);
-    const shouldRepairEmptyResult = !!directSQL
+    const shouldRepairEmptyResult = engineConfig.semanticResultRepair
+        && !!directSQL
         && !usedDeterministicFallback
         && (resultRows.length === 0 || isSuspiciousZeroAggregate)
         && (isSuspiciousZeroAggregate || !/\b(?:count|how many|are there|is there|zero rows|no results)\b/i.test(question));
@@ -1056,18 +1100,18 @@ export async function runAISQLPipeline(
     // still answer a different question (for example, LIMIT 1 for "each group"
     // or a scalar aggregate for "all rows"). Compare only locally computed row
     // counts against the pre-SQL contract; no result values leave the browser.
-    if (activeQueryContract) {
+    if (engineConfig.resultContractValidation && activeQueryContract) {
         const normalizedRows = normalizeResultToContract(execResult.data || [], activeQueryContract);
         if (normalizedRows.length !== (execResult.data || []).length) {
             console.log(`[Pipeline] Set-result normalization removed ${(execResult.data || []).length - normalizedRows.length} duplicate row(s).`);
             execResult = { ...execResult, data: normalizedRows };
         }
     }
-    let resultContractIssues = activeQueryContract
+    let resultContractIssues = engineConfig.resultContractValidation && activeQueryContract
         ? validateResultAgainstContract(execResult.data || [], activeQueryContract)
             .filter(issue => issue.severity === 'error')
         : [];
-    let analyticalResultIssues = activeAnalyticalIR
+    let analyticalResultIssues = engineConfig.resultContractValidation && activeAnalyticalIR
         ? validateAnalyticalResult(execResult.data || [], activeAnalyticalIR)
             .filter(issue => issue.severity === 'error')
         : [];
@@ -1112,7 +1156,8 @@ export async function runAISQLPipeline(
             }
         }
     }
-    if ((resultContractIssues.length || analyticalResultIssues.length)
+    if (engineConfig.semanticResultRepair
+        && (resultContractIssues.length || analyticalResultIssues.length)
         && directSQL
         && directSchemaText
         && !usedDeterministicFallback
@@ -1899,7 +1944,7 @@ export async function runAISQLPipeline(
     }
 
     // ── Step 12: Answer Contract Validation ───────────────────────
-    try {
+    if (engineConfig.answerContractValidation) try {
         const contractStart = performance.now();
         let localStatsForContract;
         try { localStatsForContract = await resolveLocalStatistics('data', semanticModel); } catch { /* skip */ }
@@ -2007,6 +2052,18 @@ export async function runAISQLPipeline(
             pipelineResult.trust.confidence = 'low';
             pipelineResult.trust.summary = 'Verification did not complete, so the result has been withheld.';
         }
+    } else {
+        pipelineResult.contractValidation = {
+            passed: true,
+            enforced: false,
+            summary: 'Answer contract validation disabled by the global AI SQL engine configuration.',
+            requestedOutputFields: [],
+            checks: [{
+                name: 'Answer contract validator',
+                status: 'skip',
+                message: 'Disabled by an administrator for this run.',
+            }],
+        };
     }
 
     return pipelineResult;
