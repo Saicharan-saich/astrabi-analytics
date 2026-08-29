@@ -242,26 +242,35 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
 
   return (
     <div className={`relative flex flex-col h-full ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
-      {/* ── Result navigation floats over the canvas without consuming chart space ── */}
+      {/* ── Result navigation stays visible above the chart ── */}
       {workspaceMode === 'result' && (
-        <>
-          <button
-            onClick={() => { if (drillDown) { setDrillDown(null); } else { onBack(); } }}
-            className={`absolute bottom-5 left-5 z-[90] flex h-9 w-9 items-center justify-center rounded-full border shadow-lg backdrop-blur-md transition-transform hover:scale-105 ${isDark ? 'border-white/10 bg-slate-900/85 text-white' : 'border-slate-200 bg-white/90 text-slate-700'}`}
-            aria-label="Back"
-            title="Back to AI SQL"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </button>
+        <div className={`flex min-h-16 shrink-0 items-center justify-between gap-4 border-b px-4 py-2.5 sm:px-6 ${isDark ? 'border-white/[0.08] bg-[#0d1117]' : 'border-slate-200 bg-white'}`}>
+          <div className="flex min-w-0 items-center gap-3">
+            <button
+              onClick={() => { if (drillDown) { setDrillDown(null); } else { onBack(); } }}
+              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors ${isDark ? 'border-white/10 bg-white/[0.05] text-white hover:bg-white/10' : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'}`}
+              aria-label="Back"
+              title="Back to AI SQL"
+            >
+              <ArrowLeft className="h-5 w-5" />
+            </button>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-extrabold sm:text-base">{activeQuery}</div>
+              <div className="mt-0.5 text-[11px] font-medium text-slate-400">
+                {activeTableData.length.toLocaleString()} rows
+                {activePipeline?.executionTimeMs ? ` · ${activePipeline.executionTimeMs.toLocaleString()}ms` : ''}
+              </div>
+            </div>
+          </div>
           <button
             onClick={() => { setDetailsSection('overview'); setWorkspaceMode('details'); }}
             aria-label="Open answer details"
             aria-controls="ai-sql-details-workspace"
-            className={`absolute bottom-5 right-5 z-[90] flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-bold shadow-lg backdrop-blur-md transition-transform hover:scale-[1.03] ${isDark ? 'border-indigo-400/25 bg-slate-900/90 text-indigo-200' : 'border-indigo-200 bg-white/95 text-indigo-700'}`}
+            className="flex h-12 shrink-0 items-center gap-2.5 rounded-xl bg-indigo-600 px-5 text-sm font-extrabold text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-500 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2"
           >
-            <Database className="h-3.5 w-3.5" /> Details
+            <Database className="h-5 w-5" /> <span className="hidden sm:inline">View </span>Details
           </button>
-        </>
+        </div>
       )}
 
       {/* ── Details workspace header: diagnostics and actions stay separate ── */}
