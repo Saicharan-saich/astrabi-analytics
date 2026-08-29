@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom';
-import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers, MapPin, Clock, Check, Search } from 'lucide-react';
+import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers, MapPin, Clock, Check, Search, Calculator, GitCompareArrows, Blocks } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
+import type { TableCalculation } from '../utils/tableCalculations';
 import { FilterItem } from './FilterItem';
 import { DateFilterItem } from './DateFilterItem';
 import { Tooltip } from './Tooltip';
@@ -28,7 +29,13 @@ interface QuestionBuilderProps {
     onAnchorColumnChange?: (col: string) => void;
     /** Whether the Question Builder route is currently visible. */
     isActive?: boolean;
+    tableCalculations?: TableCalculation[];
+    movingAvgWindow?: number;
+    onTableCalculationsChange?: (calculations: TableCalculation[]) => void;
+    onMovingAvgWindowChange?: (windowSize: number) => void;
 }
+
+type BuilderTab = 'build' | 'time' | 'compare' | 'calculations';
 
 interface DimensionFilter {
     id: number;
@@ -86,7 +93,11 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     onDateChange,
     anchorColumn,
     onAnchorColumnChange,
-    isActive = true
+    isActive = true,
+    tableCalculations = [],
+    movingAvgWindow = 3,
+    onTableCalculationsChange,
+    onMovingAvgWindowChange,
 }) => {
     const [metric, setMetric] = useState<string>(initialMetric);
     const [aggregation, setAggregation] = useState<string>(initialAggregation);
@@ -115,6 +126,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const [comparison, setComparison] = useState<string>(initialComparison);
     const [comparisonGrain, setComparisonGrain] = useState<string>(initialComparisonGrain);
     const [comparisonOffset, setComparisonOffset] = useState<number>(initialComparisonOffset);
+    const [activeBuilderTab, setActiveBuilderTab] = useState<BuilderTab>('build');
 
     // UI Enhancement states
     const [showOptions, setShowOptions] = useState(false);
@@ -134,6 +146,11 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         left: number;
         placement: 'up' | 'down';
     }>({ top: 0, left: 8, placement: 'down' });
+
+    useEffect(() => {
+        setShowOptions(false);
+        setShowFilterMenu(false);
+    }, [activeBuilderTab]);
 
     // Computed: is the current grouping a time grain?
     const isTimeDimension = !!timeGrain;
@@ -639,9 +656,47 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     return (
         <div className="qi-question-builder max-w-7xl mx-auto px-6 pt-5 pb-4 bg-gradient-to-b from-slate-900 to-slate-800 rounded-2xl overflow-visible relative" style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.2)' }}>
 
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
+                <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-slate-950/35 p-1">
+                    {([
+                        { id: 'build', label: 'Build', icon: Blocks },
+                        { id: 'time', label: 'Time', icon: Clock },
+                        { id: 'compare', label: 'Compare', icon: GitCompareArrows },
+                        { id: 'calculations', label: 'Calculations', icon: Calculator },
+                    ] as Array<{ id: BuilderTab; label: string; icon: React.ComponentType<{ className?: string }> }>).map(tab => {
+                        const Icon = tab.icon;
+                        const active = activeBuilderTab === tab.id;
+                        return (
+                            <button
+                                key={tab.id}
+                                type="button"
+                                onClick={() => setActiveBuilderTab(tab.id)}
+                                className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${active
+                                    ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-950/30'
+                                    : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
+                            >
+                                <Icon className="h-3.5 w-3.5" />
+                                {tab.label}
+                                {tab.id === 'compare' && comparison && <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />}
+                                {tab.id === 'calculations' && tableCalculations.length > 0 && (
+                                    <span className="rounded-full bg-white/15 px-1.5 text-[9px]">{tableCalculations.length}</span>
+                                )}
+                            </button>
+                        );
+                    })}
+                </div>
+                <div className="min-w-0 text-right">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Current analysis</div>
+                    <div className="max-w-[540px] truncate text-xs font-semibold text-slate-300">
+                        {summaryText || 'Choose a metric to begin'}
+                    </div>
+                </div>
+            </div>
+
             <div className="flex items-start justify-between w-full">
                 {/* ═══════════════ PRIMARY ROW: THE CORE QUESTION ═══════════════ */}
                 <div className="flex flex-wrap items-center gap-3 text-sm leading-snug flex-1 pr-4 pt-1 pb-1">
+                    {activeBuilderTab === 'build' && (<>
                     <img src="/logo.jpg" alt="QuickInsight" className="w-5 h-5 rounded-md opacity-80" />
                     <span className="qi-builder-verb text-slate-200 text-base font-bold tracking-wide">Show me</span>
 
@@ -847,8 +902,14 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             />
                         );
                     })()}
+                    </>)}
 
                     {/* Date/Time Grain Selector (separate) */}
+                    {activeBuilderTab === 'time' && (<>
+                    <div className="mr-2 max-w-[260px]">
+                        <div className="text-sm font-black text-white">Time intelligence</div>
+                        <div className="text-[11px] leading-4 text-slate-400">Choose the reporting grain and the period evaluated against the dataset’s AS OF date.</div>
+                    </div>
                     <div className="qi-builder-time-grain flex flex-col gap-0.5">
                         <span className="text-[10px] font-semibold uppercase tracking-wider text-cyan-400/70 pl-1">Time Grain</span>
                         <Tooltip text="Group by a time grain to see trends over time. Can be combined with a dimension." position="bottom">
@@ -951,14 +1012,123 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         )}
                         </div>
                     </div>
+                    </>)}
+
+                    {activeBuilderTab === 'compare' && (
+                        <div className="flex w-full flex-wrap items-end gap-4 rounded-xl border border-amber-400/15 bg-amber-400/5 p-4">
+                            <div className="mr-auto max-w-[300px]">
+                                <div className="text-sm font-black text-white">Period comparison</div>
+                                <div className="mt-1 text-[11px] leading-4 text-slate-400">Compare the current filtered period with its immediately preceding period or the same period farther back.</div>
+                            </div>
+                            <div className="flex flex-col gap-1">
+                                <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Comparison</span>
+                                <QuerySelect
+                                    menuPlacement="auto"
+                                    value={comparison}
+                                    onChange={setComparison}
+                                    options={[
+                                        { label: 'No Comparison', value: '' },
+                                        { label: 'vs Previous Period', value: 'previous_period' },
+                                        { label: 'vs Same Period Last N', value: 'same_period_last_n' },
+                                    ]}
+                                    colorTextClass="text-yellow-400"
+                                    colorRingClass="focus:ring-yellow-500/30"
+                                    searchable={false}
+                                />
+                            </div>
+                            {comparison === 'same_period_last_n' && (
+                                <div className="flex flex-wrap items-center gap-1">
+                                    {(['day', 'week', 'month', 'quarter', 'year'] as const).map(grain => (
+                                        <button
+                                            key={grain}
+                                            type="button"
+                                            onClick={() => setComparisonGrain(grain)}
+                                            className={`rounded-md border px-2 py-1 text-xs font-bold ${comparisonGrain === grain
+                                                ? 'border-amber-300/40 bg-amber-400/20 text-amber-200'
+                                                : 'border-white/10 bg-white/5 text-slate-400'}`}
+                                        >{grain[0].toUpperCase()}</button>
+                                    ))}
+                                    <button type="button" onClick={() => setComparisonOffset(Math.max(1, comparisonOffset - 1))} className="ml-2 h-7 w-7 rounded-md bg-white/10 text-white">−</button>
+                                    <span className="min-w-6 text-center text-sm font-black text-white">{comparisonOffset}</span>
+                                    <button type="button" onClick={() => setComparisonOffset(comparisonOffset + 1)} className="h-7 w-7 rounded-md bg-white/10 text-white">+</button>
+                                </div>
+                            )}
+                            {comparison === 'previous_period' && timeFilter.startsWith('this_') && (
+                                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-slate-300">
+                                    {timeFilter === 'this_week' ? 'This Week vs Last Week'
+                                        : timeFilter === 'this_month' ? 'This Month vs Last Month'
+                                            : timeFilter === 'this_quarter' ? 'This Quarter vs Last Quarter'
+                                                : timeFilter === 'this_year' ? 'This Year vs Last Year'
+                                                    : 'Current vs Previous'}
+                                </span>
+                            )}
+                        </div>
+                    )}
+
+                    {activeBuilderTab === 'calculations' && (
+                        <div className="w-full rounded-xl border border-fuchsia-400/15 bg-fuchsia-400/5 p-4">
+                            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
+                                <div>
+                                    <div className="text-sm font-black text-white">Table calculations</div>
+                                    <div className="mt-1 text-[11px] text-slate-400">Apply calculations to the aggregated result without rebuilding the core question.</div>
+                                </div>
+                                {tableCalculations.length > 0 && (
+                                    <button type="button" onClick={() => onTableCalculationsChange?.([])} className="text-[11px] font-bold text-slate-400 hover:text-red-300">Clear all</button>
+                                )}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {([
+                                    ['percent_of_total', '% of total'],
+                                    ['rank_desc', 'Rank high to low'],
+                                    ['rank_asc', 'Rank low to high'],
+                                    ['running_total', 'Running total'],
+                                    ['moving_avg', 'Moving average'],
+                                    ['pct_diff_from_prev', '% change'],
+                                    ['diff_from_prev', 'Difference'],
+                                    ['percentile', 'Percentile'],
+                                ] as Array<[TableCalculation, string]>).map(([calculation, label]) => {
+                                    const selected = tableCalculations.includes(calculation);
+                                    return (
+                                        <button
+                                            key={calculation}
+                                            type="button"
+                                            onClick={() => onTableCalculationsChange?.(selected
+                                                ? tableCalculations.filter(item => item !== calculation)
+                                                : [...tableCalculations, calculation])}
+                                            className={`rounded-lg border px-3 py-2 text-xs font-bold transition-all ${selected
+                                                ? 'border-fuchsia-300/40 bg-fuchsia-400/20 text-fuchsia-100'
+                                                : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10'}`}
+                                        >
+                                            {selected && <Check className="mr-1 inline h-3 w-3" />}{label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            {tableCalculations.includes('moving_avg') && (
+                                <label className="mt-4 flex items-center gap-2 text-xs font-bold text-slate-300">
+                                    Moving window
+                                    <input
+                                        type="number"
+                                        min="2"
+                                        max="50"
+                                        value={movingAvgWindow}
+                                        onChange={event => onMovingAvgWindowChange?.(Math.max(2, Number(event.target.value) || 3))}
+                                        className="w-20 rounded-lg border border-white/10 bg-slate-950/50 px-2 py-1.5 text-center text-white outline-none focus:border-fuchsia-400/50"
+                                    />
+                                    periods
+                                </label>
+                            )}
+                        </div>
+                    )}
 
                 </div>
                 {/* ═══════════════ RIGHT CONTROLS: AS-OF, OPTIONS, FILTERS ═══════════════ */}
+                {(activeBuilderTab === 'build' || activeBuilderTab === 'time') && (
                 <div className="qi-builder-actions flex flex-col items-end gap-2 flex-shrink-0 relative z-[200]">
                     {/* Time anchor controls live in BuilderView’s top command bar. */}
                     <div className="qi-builder-action-row flex items-center gap-2">
                         {/* Options button */}
-                        <button
+                        {activeBuilderTab === 'build' && <button
                             ref={optionsButtonRef}
                             onClick={() => setShowOptions(!showOptions)}
                             className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase rounded-xl border transition-all duration-200 ${showOptions ? 'bg-white/15 border-white/20 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`}
@@ -966,7 +1136,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         >
                             <SlidersHorizontal className="w-3.5 h-3.5" />
                             Options
-                        </button>
+                        </button>}
 
                         {/* ═══ Enhancement 3: Consolidated Filter Button ═══ */}
                         <div className="relative" ref={filterMenuRef}>
@@ -1021,10 +1191,11 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         </div>
                     </div>
                 </div>
+                )}
             </div>
 
             {/* ═══════════════ ROW 2: SECONDARY CONTROLS (Always visible) ═══════════════ */}
-            {showOptions && ReactDOM.createPortal(
+            {activeBuilderTab === 'build' && showOptions && ReactDOM.createPortal(
                 <div
                     className="qi-dropdown-surface qi-builder-options-panel fixed z-[9999] flex flex-wrap items-center gap-4 rounded-xl border border-white/15 p-4 text-sm shadow-2xl animate-in fade-in slide-in-from-bottom-2 duration-200"
                     style={{
@@ -1076,67 +1247,6 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             />
                         </div>
                     )}
-
-                    {/* COMPARE */}
-                    <div className="flex items-center gap-2">
-                        <span className="text-xs text-yellow-400 uppercase tracking-wider font-bold">Compare</span>
-                        <QuerySelect
-                            menuPlacement="auto"
-                            value={comparison}
-                            onChange={setComparison}
-                            options={[
-                                { label: 'No Comparison', value: '' },
-                                { label: 'vs Previous Period', value: 'previous_period' },
-                                { label: 'vs Same Period Last N', value: 'same_period_last_n' }
-                            ]}
-                            colorTextClass="text-yellow-400"
-                            colorRingClass="focus:ring-yellow-500/30"
-                            searchable={false}
-                        />
-
-                        {/* Grain + Offset for Same Period Last N */}
-                        {comparison === 'same_period_last_n' && (
-                            <div className="flex items-center gap-1 animate-in fade-in slide-in-from-left-2 duration-300">
-                                {(['day', 'week', 'month', 'quarter', 'year'] as const).map(g => (
-                                    <button
-                                        key={g}
-                                        onClick={() => setComparisonGrain(g)}
-                                        className={`px-2 py-0.5 rounded-md text-xs font-bold transition-all border ${comparisonGrain === g
-                                            ? 'bg-white/15 text-white border-white/20'
-                                            : 'bg-white/5 text-slate-400 border-white/10 hover:bg-white/10'
-                                            }`}
-                                    >
-                                        {g[0].toUpperCase()}
-                                    </button>
-                                ))}
-                                <div className="flex items-center gap-0.5 ml-1">
-                                    <button
-                                        onClick={() => setComparisonOffset(Math.max(1, comparisonOffset - 1))}
-                                        className="w-5 h-5 rounded bg-white/10 text-white font-bold text-xs flex items-center justify-center hover:bg-white/15 transition-all"
-                                    >−</button>
-                                    <span className="text-xs font-bold text-white min-w-[1.2rem] text-center">{comparisonOffset}</span>
-                                    <button
-                                        onClick={() => setComparisonOffset(comparisonOffset + 1)}
-                                        className="w-5 h-5 rounded bg-white/10 text-white font-bold text-xs flex items-center justify-center hover:bg-white/15 transition-all"
-                                    >+</button>
-                                </div>
-                                <span className="text-[10px] font-semibold text-slate-400 ml-1 whitespace-nowrap">
-                                    (Last {comparisonOffset} {comparisonGrain}{comparisonOffset > 1 ? 's' : ''})
-                                </span>
-                            </div>
-                        )}
-
-                        {/* Quick comparison hint */}
-                        {comparison === 'previous_period' && timeFilter.startsWith('this_') && (
-                            <span className="text-[10px] font-semibold text-slate-300 bg-white/5 px-2 py-0.5 rounded-full border border-white/10">
-                                {timeFilter === 'this_week' ? 'This Week vs Last Week'
-                                    : timeFilter === 'this_month' ? 'This Month vs Last Month'
-                                        : timeFilter === 'this_quarter' ? 'This Quarter vs Last Quarter'
-                                            : timeFilter === 'this_year' ? 'This Year vs Last Year'
-                                                : 'Current vs Previous'}
-                            </span>
-                        )}
-                    </div>
 
                     {/* LIMIT — Top / Bottom */}
                     {!isTimeDimension && (

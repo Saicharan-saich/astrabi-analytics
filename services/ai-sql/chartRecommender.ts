@@ -51,6 +51,12 @@ function getPresentationDimensions(columns: string[], model: SemanticModel): str
     return readable.length > 0 ? readable : columns;
 }
 
+/** Rank/row-number columns are useful in the table and tooltip, but plotting
+ * them as a measure distorts the scale of the business metrics. */
+function isOrdinalHelperMetric(column: string): boolean {
+    return /(?:^|_)(?:rank|ranking|row_rank|row_number|dense_rank)(?:_|$)/i.test(column);
+}
+
 /**
  * Derive the axis/label format for the primary metric based on its semantic type.
  * Used to ensure data labels always show '%' for discounts, '$' for revenue, etc.
@@ -86,6 +92,7 @@ export function recommendChart(
     // one readable category into a second visual series.
     const presentationDimensionColumns = getPresentationDimensions(dimensionColumns, model);
     const presentationDimensionCount = presentationDimensionColumns.length;
+    const visualMetricColumns = metricColumns.filter(column => !isOrdinalHelperMetric(column));
 
     // Default configuration
     let chartType: RecommendedChart = 'bar';
@@ -184,10 +191,29 @@ export function recommendChart(
     // ─── Rule 4: Share of Total → Donut or Bar ──────────────────
     if (plan.intent === 'share_of_total') {
         const cardinality = dimensionCardinality[dimensionColumns[0]] || 0;
-        leftAxisFormat = 'percent'; // Share of total is always percentage
+        const pctColumns = visualMetricColumns.filter(column => metricSemanticTypes[column] === 'percentage'
+            || /pct|percent|share|ratio/i.test(column));
+        const baseColumns = visualMetricColumns.filter(column => !pctColumns.includes(column));
+
+        // A compound answer such as sales + share + cumulative share must keep
+        // every requested analytical measure. Use bars for the additive measure
+        // and percentage lines on a right axis; ordinal rank remains in the table.
+        if (baseColumns.length > 0 && pctColumns.length > 0) {
+            chartType = 'dualAxisCombo';
+            xKey = presentationDimensionColumns[0] || dimensionColumns[0];
+            yKey = baseColumns[0];
+            secondaryYKeys = pctColumns;
+            useDualAxis = true;
+            leftAxisFormat = deriveAxisFormat(yKey, metricSemanticTypes);
+            rightAxisFormat = 'percent';
+            reason = `Share-of-total answer with base measure and ${pctColumns.length} percentage calculation(s) → Dual-Axis Combo`;
+            return { chartType, xKey, yKey, secondaryYKeys, useDualAxis, leftAxisFormat, rightAxisFormat, reason };
+        }
+
+        leftAxisFormat = 'percent'; // A pure share-of-total answer is percentage-only
 
         // Use the percentage column (e.g., sales_pct) as yKey, not the sum
-        const pctCol = metricColumns.find(c => /pct|percent|share|ratio/i.test(c));
+        const pctCol = pctColumns[0];
         if (pctCol) {
             yKey = pctCol;
         }

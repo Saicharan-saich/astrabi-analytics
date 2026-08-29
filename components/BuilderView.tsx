@@ -394,6 +394,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     anchorColumn={anchorColumn}
                     onAnchorColumnChange={handleAnchorColumnChange}
                     isActive={isActive}
+                    tableCalculations={(formatting?.tableCalculations || []).filter(calculation => calculation !== 'none')}
+                    movingAvgWindow={formatting?.movingAvgWindow || 3}
+                    onTableCalculationsChange={tableCalculations => formatting && onUpdateFormatting?.({ ...formatting, tableCalculations })}
+                    onMovingAvgWindowChange={movingAvgWindow => formatting && onUpdateFormatting?.({ ...formatting, movingAvgWindow })}
                 />
             </div>
 

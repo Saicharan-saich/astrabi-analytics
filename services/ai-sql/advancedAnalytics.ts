@@ -13,6 +13,7 @@ export type AdvancedAnalyticKind =
     | 'partitioned_rank'
     | 'explicit_rank'
     | 'percent_of_total'
+    | 'cumulative_percent'
     | 'ntile';
 
 export interface AdvancedAnalyticOperation {
@@ -61,7 +62,10 @@ export function detectAdvancedAnalyticOperations(
         if (!operations.some(existing => existing.kind === operation.kind)) operations.push(operation);
     };
 
-    if (/\b(?:running\s+total|cumulative\s+(?:sum|total|sales|revenue|profit|amount|quantity)|year[- ]to[- ]date\s+cumulative)\b/i.test(question)) {
+    const requestsCumulativePercent = /\bcumulative\b[\s\S]{0,40}\b(?:percent(?:age)?|share|contribution)\b/i.test(question)
+        || /\b(?:percent(?:age)?|share|contribution)\b[\s\S]{0,40}\bcumulative\b/i.test(question);
+
+    if (!requestsCumulativePercent && /\b(?:running\s+total|cumulative\s+(?:sum|total|sales|revenue|profit|amount|quantity)|year[- ]to[- ]date\s+cumulative)\b/i.test(question)) {
         add({ kind: 'running_total', required: true, implementation: 'window', measureField, orderBy, partitionBy, outputAlias: 'running_total' });
     }
 
@@ -93,13 +97,26 @@ export function detectAdvancedAnalyticOperations(
             : unique(plan.dimensions.slice(0, -1).map(dimension => dimension.field));
         add({ kind: 'partitioned_rank', required: true, implementation: 'window', measureField, orderBy: plan.sort[0]?.field || measureField, partitionBy: rankPartitions, outputAlias: 'row_rank' });
     } else if (/\b(?:show|include|display|return|calculate|assign|give)\s+(?:me\s+)?(?:the\s+)?(?:rank|ranking|rank position)\b/i.test(question)
-        || /\b(?:what|which)\s+(?:is|are)\b[\s\S]{0,60}\b(?:rank|ranking|rank position)\b/i.test(question)) {
+        || /\b(?:what|which)\s+(?:is|are)\b[\s\S]{0,60}\b(?:rank|ranking|rank position)\b/i.test(question)
+        || /(?:^|,|\band\s+)\s*(?:the\s+)?(?:rank|ranking|rank position)(?=\s*(?:,|\band\b|[?.]|$))/i.test(question)) {
         add({ kind: 'explicit_rank', required: true, implementation: 'window', measureField, orderBy: plan.sort[0]?.field || measureField, partitionBy: [], outputAlias: 'row_rank' });
     }
 
     if (plan.intent === 'share_of_total'
         || /\b(?:percent(?:age)?|share|contribution)\s+of\s+(?:the\s+)?(?:grand\s+)?total\b/i.test(question)) {
         add({ kind: 'percent_of_total', required: true, implementation: 'cte_or_window', measureField, orderBy, partitionBy, outputAlias: 'pct_of_total' });
+    }
+
+    if (requestsCumulativePercent) {
+        add({
+            kind: 'cumulative_percent',
+            required: true,
+            implementation: 'cte_or_window',
+            measureField,
+            orderBy: plan.sort[0]?.field || measureField,
+            partitionBy,
+            outputAlias: 'cumulative_pct',
+        });
     }
 
     const buckets = bucketCountFromQuestion(question);
@@ -131,6 +148,11 @@ export function sqlImplementsAdvancedOperation(sql: string, operation: AdvancedA
             const hasSeparatePopulation = /^\s*with\b/i.test(sql) || (sql.match(/\bselect\b/gi) || []).length > 1;
             return hasWindowDenominator || hasSeparatePopulation;
         }
+        case 'cumulative_percent': {
+            const hasCumulativeNumerator = /\bsum\s*\([\s\S]*?\)\s*over\s*\([\s\S]*?\b(?:rows\s+(?:between\s+)?unbounded\s+preceding|order\s+by)\b/i.test(sql);
+            const hasGrandTotalDenominator = /\bsum\s*\([\s\S]*?\)\s*over\s*\(\s*\)/i.test(sql);
+            return hasCumulativeNumerator && hasGrandTotalDenominator;
+        }
         case 'ntile':
             return /\bntile\s*\(/i.test(sql) && hasWindow;
         default:
@@ -152,6 +174,8 @@ export function advancedOperationRequirement(operation: AdvancedAnalyticOperatio
             return 'Expose the requested rank using RANK, DENSE_RANK, or ROW_NUMBER as appropriate for the requested tie semantics.';
         case 'percent_of_total':
             return 'Calculate each requested group contribution against an unfiltered grand-total denominator using a window total or an equivalent CTE/subquery.';
+        case 'cumulative_percent':
+            return `Calculate cumulative percentage of the requested measure in the requested order${operation.orderBy ? ` (${operation.orderBy})` : ''}: cumulative grouped measure divided by the grand total, multiplied by 100.`;
         case 'ntile':
             return `Assign the requested ${operation.buckets || ''} analytical buckets with NTILE.`;
         default:

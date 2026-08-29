@@ -259,24 +259,27 @@ export function enforceOrderedProjection(plan: AnalysisPlan, question: string, m
 export function enforceRequestedBreakdownDimension(plan: AnalysisPlan, question: string, model: SemanticModel): void {
     if (plan.intent === 'conditional_percentage') return; // Never downgrade a detected conditional_percentage
     const shape = inferQueryShape(question);
-    if (shape.operation !== 'grouped_aggregate' || !detectExplicitAggregation(question)) return;
-    if (/\b(?:top|bottom|highest|lowest|most|least|best|worst|youngest|oldest)\b/i.test(question)) return;
-    const match = question.match(/\b(?:for\s+each|for\s+every|per|by|each|every)\s+([^?.,;]+)/i);
+    const hasAnalyticalOutput = Boolean(detectExplicitAggregation(question))
+        || /\b(?:percent(?:age)?|share|contribution|rank|ranking|cumulative|running\s+total|moving\s+average|growth|margin|ratio)\b/i.test(question)
+        || plan.metrics.length > 0;
+    if (!hasAnalyticalOutput && shape.operation !== 'grouped_aggregate') return;
+    const possessive = question.match(/\b(?:for\s+)?(?:each|every)\s+(.+?)(?:['’]s)\b/i);
+    const match = possessive || question.match(/\b(?:for\s+each|for\s+every|per|by|each|every)\s+([^?.,;]+)/i);
     if (!match) return;
     const requested = resolveFieldPhrase(match[1], model, 'dimension');
     if (!requested) return;
-    plan.intent = 'breakdown';
-    plan.limit = null;
-    if (!shape.orderDirection) plan.sort = [];
-    if (plan.dimensions.some(dimension => dimension.field.toLowerCase() === requested.name.toLowerCase())) {
-        return;
+    if (!['share_of_total', 'ranking', 'trend', 'trend_comparison', 'total_comparison'].includes(plan.intent)) {
+        plan.intent = 'breakdown';
     }
+    if (!/\b(?:top|bottom)\s+\d+\b/i.test(question)) plan.limit = null;
+    if (!shape.orderDirection) plan.sort = [];
 
     const timeDimensions = plan.dimensions.filter(dimension => {
         const field = model.fields.find(candidate => candidate.name.toLowerCase() === dimension.field.toLowerCase());
         return field?.semanticType === 'date' && dimension.timeGrain;
     });
     plan.dimensions = [...timeDimensions, { field: requested.name }];
+    plan.resultGrain = `one row per ${requested.name}`;
     console.log(`[Intent Planner] Requested breakdown grain locked to ${requested.name}`);
 }
 

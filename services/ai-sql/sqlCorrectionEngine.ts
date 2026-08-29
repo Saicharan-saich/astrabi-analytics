@@ -1162,6 +1162,12 @@ function buildAdvancedAnalyticSQL(
                 calculations.push(`ROUND(${metricAlias} * 100.0 / NULLIF(SUM(${metricAlias}) OVER (), 0), 2) AS ${q(operation.outputAlias)}`);
                 calculationAliases.push(q(operation.outputAlias));
                 break;
+            case 'cumulative_percent': {
+                const cumulativeOrder = aliasForField(operation.orderBy) || metricAlias;
+                calculations.push(`ROUND(SUM(${metricAlias}) OVER (ORDER BY ${cumulativeOrder} ${orderDirection} ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) * 100.0 / NULLIF(SUM(${metricAlias}) OVER (), 0), 2) AS ${q(operation.outputAlias)}`);
+                calculationAliases.push(q(operation.outputAlias));
+                break;
+            }
             case 'ntile':
                 calculations.push(`NTILE(${operation.buckets || 4}) OVER (ORDER BY ${metricAlias} ${orderDirection}) AS ${q(operation.outputAlias)}`);
                 calculationAliases.push(q(operation.outputAlias));

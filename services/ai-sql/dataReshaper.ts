@@ -114,12 +114,19 @@ export function reshapeData(
 
     // ─── 3. Percent-of-Total ─────────────────────────────────────
     if (plan.intent === 'share_of_total' && profile.metricColumns.length >= 1) {
-        const metricCol = chart.yKey;
+        const metricCol = updatedChart.yKey;
+        const explicitPercentageColumns = profile.metricColumns.filter(column =>
+            /(?:pct|percent|share|ratio)/i.test(column)
+        );
+        const hasCompoundAnalyticalOutput = profile.metricColumns.length > 1
+            && explicitPercentageColumns.length > 0;
 
         // If SQL already computed a _pct column (e.g., sales_pct), don't re-append _pct
-        const alreadyPct = /[_](pct|percent|share|ratio)$/i.test(metricCol);
+        const alreadyPct = /(?:pct|percent|share|ratio)/i.test(metricCol);
 
-        if (!alreadyPct) {
+        // Preserve SQL-produced base and calculated measures. Derive-and-swap
+        // only for the simple one-metric share case.
+        if (!alreadyPct && !hasCompoundAnalyticalOutput) {
             const total = reshapedData.reduce((sum, r) => sum + (Number(r[metricCol]) || 0), 0);
 
             if (total > 0) {
