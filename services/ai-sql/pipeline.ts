@@ -1801,23 +1801,12 @@ export async function runAISQLPipeline(
         reshaped.chart = chartRec;
     }
 
-    // For share_of_total (donut/pie), strip non-percentage metric columns
-    // to prevent the sum column from rendering as a secondary bar/line
-    // Use reshaped.chart (post-reshaper) keys, not chartRec (pre-reshaper)
-    if (plan.intent === 'share_of_total' && reshaped.chart.yKey) {
-        const keepKeys = new Set([reshaped.chart.xKey, reshaped.chart.yKey]);
-        reshaped.data = reshaped.data.map((row: any) => {
-            const cleaned: any = {};
-            for (const key of Object.keys(row)) {
-                // Keep dimension, pct metric, and non-numeric fields
-                if (keepKeys.has(key) || typeof row[key] !== 'number') {
-                    cleaned[key] = row[key];
-                }
-            }
-            return cleaned;
-        });
-        console.log(`[Pipeline] share_of_total cleanup: kept keys=[${[...keepKeys]}], stripped extra metrics`);
-    }
+    // Keep every column returned by the executed SQL. ChartRecommendation is
+    // the presentation contract: xKey/yKey/secondaryYKeys decide which columns
+    // are plotted, while rank/helper/display columns remain available to the
+    // result table and tooltips. A previous share-of-total cleanup deleted all
+    // but one measure here, which destroyed valid compound answers such as
+    // sales + share + rank + cumulative share after DuckDB had calculated them.
 
     // ─── Step 10: Score Confidence ───────────────────────────────
     console.log('[Pipeline] Step 10: Scoring confidence...');

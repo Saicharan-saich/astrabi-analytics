@@ -93,6 +93,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
 
   const activeResult = drillDown?.result || result;
   const activePipeline = drillDown?.pipeline || pipeline;
+  // The chart may use reshaped/pivoted rows, but the Table tab is evidence of
+  // the SQL result and must retain every column DuckDB returned.
+  const activeTableData = activePipeline?.rawData?.length
+    ? activePipeline.rawData
+    : activeResult.data;
   const activeQuery = drillDown?.query || query;
   const sql = activeResult.sql || activePipeline?.sql || '';
   const explanation = activeResult.insight || activePipeline?.explanation || '';
@@ -180,6 +185,27 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
 
   const handleCopySQL = () => {
     if (sql) { navigator.clipboard.writeText(sql); setCopiedSQL(true); setTimeout(() => setCopiedSQL(false), 2000); }
+  };
+
+  const formatTableCell = (column: string, value: unknown) => {
+    if (typeof value !== 'number') return String(value ?? '');
+    const normalized = column.toLowerCase();
+    const semanticType = activePipeline?.profile?.metricSemanticTypes?.[column];
+    if (/(?:pct|percent|percentage|share)/i.test(normalized) || semanticType === 'percentage') {
+      return `${value.toLocaleString(undefined, { maximumFractionDigits: 2 })}%`;
+    }
+    if (/(?:^|_)(?:rank|ranking|row_number|dense_rank)(?:_|$)/i.test(normalized)) {
+      return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
+    if (semanticType === 'currency') {
+      return value.toLocaleString(undefined, {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: Number.isInteger(value) ? 0 : 2,
+        maximumFractionDigits: 2,
+      });
+    }
+    return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
   };
 
   const handlePin = () => {
@@ -368,6 +394,8 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
             <div className={`relative overflow-hidden border border-slate-200 bg-white shadow-xl ${workspaceMode === 'result' ? 'm-3 h-[calc(100%_-_1.5rem)] rounded-[24px] p-4 sm:m-5 sm:h-[calc(100%_-_2.5rem)] sm:p-5' : 'h-full rounded-2xl p-6'}`} ref={chartContainerRef}>
               <ChartVisualization
                 data={activeResult.data} xKey={activeResult.xKey} yKey={activeResult.yKey} yLabel={activeResult.yLabel}
+                config={activeResult.config}
+                seriesLabel={activeResult.yKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
                 chartType={(drillDown ? ((({ kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'horizontalBar' } as Record<string,string>)[drillDown.pipeline.chart.chartType] || 'bar')) : chartType) as any}
                 onChartTypeChange={(type) => setChartType(type)}
                 formatting={localFormatting}
@@ -416,13 +444,13 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                     {activePipeline?.plan?.intent === 'ranking' && (
                       <th className={`w-14 text-center text-[11px] uppercase tracking-wider px-3 py-3 font-bold sticky top-0 ${isDark ? 'text-slate-400 bg-slate-800/95' : 'text-slate-500 bg-slate-50'}`}>#</th>
                     )}
-                    {activeResult.data.length > 0 && Object.keys(activeResult.data[0]).map(col => (
+                    {activeTableData.length > 0 && Object.keys(activeTableData[0]).map(col => (
                       <th key={col} className={`text-left text-[11px] uppercase tracking-wider px-4 py-3 font-bold sticky top-0 ${isDark ? 'text-slate-300 bg-slate-800/95' : 'text-slate-600 bg-slate-50'}`}>
                         {col.replace(/_/g, ' ')}
                       </th>
                     ))}
                   </tr></thead>
-                  <tbody>{activeResult.data.map((row: any, i: number) => (
+                  <tbody>{activeTableData.map((row: any, i: number) => (
                     <tr key={i} className={`border-t transition-colors ${isDark ? 'border-white/[0.05] hover:bg-white/[0.04]' : 'border-slate-100 hover:bg-indigo-50/40'}`}>
                       {activePipeline?.plan?.intent === 'ranking' && (
                         <td className={`px-3 py-3 text-center text-xs font-bold ${i < 3 ? 'text-indigo-500' : isDark ? 'text-slate-500' : 'text-slate-400'}`}>{i + 1}</td>
@@ -434,9 +462,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                         const isNumeric = typeof val === 'number';
                         return (
                           <td key={j} className={`px-4 py-3 text-xs ${isNumeric ? 'text-right font-mono tabular-nums font-semibold' : 'text-left font-medium'} ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>
-                            {isNumeric
-                              ? (isIdLike ? String(val) : val.toLocaleString(undefined, { maximumFractionDigits: 2 }))
-                              : String(val ?? '')}
+                            {isNumeric ? (isIdLike ? String(val) : formatTableCell(col, val)) : String(val ?? '')}
                           </td>
                         );
                       })}
@@ -444,7 +470,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                   ))}</tbody>
                 </table>
               </div>
-              {detailsSection === 'workspace' && <div className="text-xs text-gray-400 dark:text-slate-500 mt-3 text-center">{activeResult.data.length} rows</div>}
+              {detailsSection === 'workspace' && <div className="text-xs text-gray-400 dark:text-slate-500 mt-3 text-center">{activeTableData.length} rows</div>}
             </div>
           )}
 

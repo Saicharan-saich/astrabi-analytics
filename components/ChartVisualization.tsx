@@ -78,6 +78,8 @@ interface ChartVisualizationProps {
     onAIInsight?: () => void;
     isAIInsightOpen?: boolean;
     chartContainerRef?: React.RefObject<HTMLDivElement | null>;
+    /** Concise legend/axis label; yLabel may remain the full question elsewhere. */
+    seriesLabel?: string;
     /** Prevent incidental string columns (such as paired IDs) becoming chart series. */
     disableAutoSeries?: boolean;
 }
@@ -181,6 +183,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     onAIInsight,
     isAIInsightOpen,
     chartContainerRef,
+    seriesLabel,
     disableAutoSeries = false
 }) => {
     // Chart ref for PNG export
@@ -268,7 +271,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const result = !primaryCalc
             ? {
                 transformedData: data,
-                yLabel: yLabel || '',
+                yLabel: seriesLabel || yLabel || '',
                 suggestedNumberFormat: formatting?.numberFormat || 'raw'
             }
             : applyTableCalculation(
@@ -292,7 +295,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             sanitized, chartType, yKey, (formatting as any)?.maxCategories,
         );
         return { ...result, transformedData: capped, truncatedFrom };
-    }, [data, xKey, yKey, primaryCalc, yLabel, formatting?.numberFormat, formatting?.movingAvgWindow, formatting?.tableCalculationComparison, chartType, (formatting as any)?.maxCategories]);
+    }, [data, xKey, yKey, primaryCalc, yLabel, seriesLabel, formatting?.numberFormat, formatting?.movingAvgWindow, formatting?.tableCalculationComparison, chartType, (formatting as any)?.maxCategories]);
 
     // Calculation output semantics take precedence over the source metric. For
     // example, "% of Total (Sales)" is a percentage, while rank is ordinal.
@@ -1062,10 +1065,6 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // ── SECONDARY METRIC DATASETS (multi-metric overlay) ──
         // Auto-detect additional numeric keys in data beyond xKey, yKey, and known metadata keys
         const knownKeys = new Set([xKey, yKey, 'previous_value', 'previous_period_label', 'growth_pct', 'difference', 'raw_value', 'rawValue', '__original_value', '_original', 'x', 'value', 'period', 'metric']);
-        // Also exclude table-calculation derived fields so they don't spawn phantom chart series
-        // Filter table calculation fields — but NOT SQL aggregation aliases like discount_avg, sales_sum
-        // Table calc keys have specific prefixes (running_total_, pct_of_total_, etc.) or are exact matches
-        const isTableCalcKey = (k: string) => /running_total|cumulative|percent_of_total|pct_of_total|rank|percentile|moving_avg|pct_diff|diff_from_prev/i.test(k);
         // Skip secondary metric detection for pie/doughnut charts — they only use one metric
         // Arc/gauge charts return before this Cartesian dataset path.
         const skipSecondary = false;
@@ -1081,7 +1080,16 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             return declaredSecondary.includes(raw) || declaredSecondary.includes(k.toLowerCase().trim());
         };
         const secondaryKeys = (!skipSecondary && declaredSecondary.length > 0 && data.length > 0)
-            ? Object.keys(data[0]).filter(k => !knownKeys.has(k) && !isTableCalcKey(k) && typeof data[0][k] === 'number' && matchesDeclared(k))
+            ? Object.keys(data[0]).filter(k => {
+                const explicitlyDeclared = matchesDeclared(k);
+                return !knownKeys.has(k)
+                    && typeof data[0][k] === 'number'
+                    // Only the explicit presentation contract can create an
+                    // overlay. This safely permits SQL-authored outputs named
+                    // percentage_of_total_sales or cumulative_* while keeping
+                    // incidental numeric columns out of the visual.
+                    && explicitlyDeclared;
+            })
             : [];
 
         const SECONDARY_COLORS = [

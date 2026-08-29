@@ -94,6 +94,13 @@ describe('compound grouped share analysis', () => {
             rightAxisFormat: 'percent',
         });
         expect(reshaped.chart.yKey).toBe('total_sales');
+        expect(Object.keys(reshaped.data[0])).toEqual([
+            'category',
+            'total_sales',
+            'percentage_of_total_sales',
+            'sales_rank',
+            'cumulative_sales_percentage',
+        ]);
         expect(Object.keys(reshaped.data[0])).not.toContain('total_sales_pct');
     });
 });
