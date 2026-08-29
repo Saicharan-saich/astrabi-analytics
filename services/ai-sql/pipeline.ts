@@ -52,7 +52,12 @@ import { rankPlans } from './planRanker';
 import { buildAssumptions } from './assumptionRegistry';
 import { validateAnswerContract } from './answerContractValidator';
 import { detectAntiJoin, buildAntiJoinSQL } from './antiJoin';
-import { generateDirectSQL, repairSemanticSQL, type DynamicQuerySpec } from './directSqlEngine';
+import {
+    applyQuerySpecToAnalysisPlan,
+    generateDirectSQL,
+    repairSemanticSQL,
+    type DynamicQuerySpec,
+} from './directSqlEngine';
 import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerializer';
 import { describeSchemaForLLM, discoverJoinContext } from './joinEngine';
 import { getEffectivePrivacyMode, type PrivacyMode } from './privacyMode';
@@ -289,17 +294,23 @@ export async function runAISQLPipeline(
             const anchoredQuestion = anchorDate
                 ? `${question}\n\nDataset reporting anchor: ${anchorDate}. Interpret relative dates such as "this month" against this dataset anchor, and use date literals rather than CURRENT_DATE, NOW(), or CURRENT_TIMESTAMP.`
                 : question;
-            // Hybrid SQL: pass the locally governed plan to the selected GPT-5.6
-            // model. It receives no dataset rows; DuckDB still executes locally.
+            const explicitUIConstraints = externalFilters?.length
+                ? `\n\nExplicit filters selected by the user in the interface (mandatory factual constraints):\n${JSON.stringify(externalFilters, null, 2)}`
+                : '';
+            // The selected GPT-5.6 planner receives the complete question and
+            // verified data facts, but no local NLP interpretation and no rows.
             const ds = await generateDirectSQL(
-                anchoredQuestion,
+                `${anchoredQuestion}${explicitUIConstraints}`,
                 richSchema,
-                engineConfig.semanticLayer && engineConfig.intentPlanner ? plan : undefined,
-                engineConfig.semanticLayer && engineConfig.intentPlanner ? plannerIssues : undefined,
+                // The LLM reads the complete question itself. Local NLP plans,
+                // contracts and analytical IR are deliberately excluded from
+                // this route because they are interpretations, not schema facts.
+                undefined,
+                undefined,
                 engineConfig.semanticLayer ? semanticModel : undefined,
                 executionOptions?.requestPurpose,
-                engineConfig.semanticLayer && engineConfig.intentPlanner ? activeQueryContract : undefined,
-                engineConfig.semanticLayer && engineConfig.intentPlanner ? activeAnalyticalIR : undefined,
+                undefined,
+                undefined,
             );
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
@@ -343,11 +354,11 @@ export async function runAISQLPipeline(
     // and can turn a SUM comparison into a raw-row projection. The concrete
     // resolved range is injected below after the comparison-aware plan exists.
     let plan = generateLocalPlan(question, semanticModel, grainOverride);
-    console.log('[Pipeline] Step 2: Plan built locally (governed deterministic-first path)');
+    console.log('[Pipeline] Step 2: Local compatibility plan built for diagnostics only');
     traceStep({
         stepNumber: 3, name: 'Intent Planner', engine: 'intentPlanner', icon: '🎯',
         status: plan.ambiguous ? 'warn' : 'pass',
-        summary: `Local deterministic plan (0 tokens) — intent: ${plan.intent} | ${plan.dimensions.length} dim(s), ${plan.metrics.length} metric(s), ${plan.filters.length} filter(s)${plan.limit ? `, limit ${plan.limit}` : ''}`,
+        summary: `Non-authoritative local audit (0 tokens) — the LLM independently interprets the full question`,
         details: {
             intent: plan.intent,
             dimensions: plan.dimensions.map(d => ({ field: d.field, grain: d.timeGrain || null })),
@@ -358,6 +369,7 @@ export async function runAISQLPipeline(
             resultGrain: plan.resultGrain,
             ambiguous: plan.ambiguous,
             plannerCallSkipped: true,
+            semanticAuthority: false,
         },
     }, _s1);
 
@@ -451,9 +463,9 @@ export async function runAISQLPipeline(
         summary: !engineConfig.planVerification
             ? 'Disabled by the global AI SQL engine configuration'
             : _verification.issues.length === 0
-            ? 'Plan faithfully represents the question'
-            : `${_verification.issues.length} faithfulness issue(s): ${_verification.issues.map(i => i.code).join(', ')}`,
-        details: { ok: _verification.ok, issues: _verification.issues },
+            ? 'Local compatibility audit found no conflicts (advisory only)'
+            : `${_verification.issues.length} local compatibility issue(s), supplied only as audit evidence`,
+        details: { ok: _verification.ok, issues: _verification.issues, semanticAuthority: false },
     }, performance.now());
 
     // ─── Step 2c: Pre-Execution Ambiguity Gate ───────────────────
@@ -836,14 +848,14 @@ export async function runAISQLPipeline(
             stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
             status: directSQL ? 'pass' : 'skip',
             summary: directSQL
-                ? `Hybrid SQL: ${directSqlModel || 'GPT-5.6'} wrote plan-constrained SQL using ${effectivePrivacyMode === 'enhanced' ? 'metadata plus approved safe values' : 'metadata only'}`
+                ? `LLM-owned SQL: ${directSqlModel || 'GPT-5.6'} interpreted the complete question using ${effectivePrivacyMode === 'enhanced' ? 'metadata plus approved safe values' : 'metadata only'}`
                 : 'Model SQL unavailable or rejected — no deterministic query will be substituted',
             details: {
                 sql: directSQL,
                 error: directSqlError,
                 tokens: directSqlTokens,
                 model: directSqlModel || null,
-                queryContract: activeQueryContract ? {
+                localCompatibilityAudit: activeQueryContract ? {
                     outputEntity: activeQueryContract.outputEntity,
                     expectedCardinality: activeQueryContract.expectedCardinality,
                     resultGrain: activeQueryContract.requiredDimension,
@@ -867,6 +879,10 @@ export async function runAISQLPipeline(
     // reasoning while presenting the result as AI SQL.
     if (directSqlBlocked || !directSQL) {
         throw new Error(directSqlError || 'AI SQL stopped before execution because it could not preserve the requested analytical shape.');
+    }
+    if (directQuerySpec) {
+        plan = applyQuerySpecToAnalysisPlan(plan, directQuerySpec, semanticModel);
+        console.log('[Pipeline] Downstream presentation and validation now use the model-authored Query Specification.');
     }
     if (!engineConfig.readOnlySafety) {
         throw new Error('AI SQL paused by admin: read-only SQL safety is disabled. Execution remains blocked rather than running unverified SQL.');
@@ -902,7 +918,7 @@ export async function runAISQLPipeline(
         stepNumber: 6, name: 'SQL Generator', engine: 'sqlGenerator', icon: '⚡',
         status: 'pass',
         summary: directSQL
-            ? `Hybrid SQL: ${directSqlModel || 'GPT-5.6'} generated SQL from the governed plan using ${effectivePrivacyMode === 'enhanced' ? 'metadata plus approved safe values' : 'metadata only'}`
+            ? `LLM-owned SQL: ${directSqlModel || 'GPT-5.6'} generated SQL from its own Query Specification using ${effectivePrivacyMode === 'enhanced' ? 'metadata plus approved safe values' : 'metadata only'}`
             : qbSQL
                 ? (locallyOwnedTotalComparison
                     ? 'Local deterministic period comparison: exactly two aggregated rows'
@@ -947,7 +963,7 @@ export async function runAISQLPipeline(
         stepNumber: 7, name: 'SQL Correction Engine', engine: 'sqlCorrectionEngine', icon: '🔧',
         status: _correctionStatus,
         summary: _correctionStatus === 'skip'
-            ? (directSQL ? 'Skipped — plan-constrained GPT SQL passed the safety gate' : 'Skipped — local deterministic compiler produced the SQL')
+            ? (directSQL ? 'Skipped — model-authored SQL passed the read-only safety gate' : 'Skipped — local deterministic compiler produced the SQL')
             : _correctionStatus === 'pass'
                 ? 'Local continuity fallback: SQL rebuilt deterministically — verified column names, GROUP BY, aggregations'
                 : 'Correction engine failed — using AI-generated SQL as fallback',
@@ -1016,11 +1032,13 @@ export async function runAISQLPipeline(
                 semanticModel,
                 repairAttempts,
                 executionOptions?.requestPurpose,
-                { schemaText: directSchemaText || undefined, queryContract: activeQueryContract },
+                {
+                    schemaText: directSchemaText || undefined,
+                    question,
+                    querySpec: directQuerySpec,
+                },
             );
-            const repairContractIssues = activeQueryContract
-                ? validateSQLAgainstContract(repaired.sql, activeQueryContract).filter(issue => issue.severity === 'error')
-                : [];
+            const repairContractIssues: ReturnType<typeof validateSQLAgainstContract> = [];
             if (repairContractIssues.length) {
                 console.warn('[Pipeline] Executing read-only SQL repair with advisory contract issues:', repairContractIssues.map(issue => issue.message));
             }
@@ -1089,7 +1107,7 @@ export async function runAISQLPipeline(
                 currentSQL,
                 `The query executed successfully but returned ${isSuspiciousZeroAggregate ? 'a suspicious all-zero aggregate' : '0 rows'} although the requested result shape expects a meaningful answer.${literalDiagnostic}`,
                 executionOptions?.requestPurpose,
-                activeQueryContract,
+                undefined,
             );
             directSqlTokens += semanticRepair.tokens;
             if (!semanticRepair.error && semanticRepair.sql !== currentSQL) {
@@ -1118,18 +1136,18 @@ export async function runAISQLPipeline(
     // still answer a different question (for example, LIMIT 1 for "each group"
     // or a scalar aggregate for "all rows"). Compare only locally computed row
     // counts against the pre-SQL contract; no result values leave the browser.
-    if (engineConfig.resultContractValidation && activeQueryContract) {
+    if (!AI_SQL_MODEL_OWNS_SQL && engineConfig.resultContractValidation && activeQueryContract) {
         const normalizedRows = normalizeResultToContract(execResult.data || [], activeQueryContract);
         if (normalizedRows.length !== (execResult.data || []).length) {
             console.log(`[Pipeline] Set-result normalization removed ${(execResult.data || []).length - normalizedRows.length} duplicate row(s).`);
             execResult = { ...execResult, data: normalizedRows };
         }
     }
-    let resultContractIssues = engineConfig.resultContractValidation && activeQueryContract
+    let resultContractIssues = !AI_SQL_MODEL_OWNS_SQL && engineConfig.resultContractValidation && activeQueryContract
         ? validateResultAgainstContract(execResult.data || [], activeQueryContract)
             .filter(issue => issue.severity === 'error')
         : [];
-    let analyticalResultIssues = engineConfig.resultContractValidation && activeAnalyticalIR
+    let analyticalResultIssues = !AI_SQL_MODEL_OWNS_SQL && engineConfig.resultContractValidation && activeAnalyticalIR
         ? validateAnalyticalResult(execResult.data || [], activeAnalyticalIR)
             .filter(issue => issue.severity === 'error')
         : [];
@@ -1189,7 +1207,7 @@ export async function runAISQLPipeline(
                 currentSQL,
                 [...resultContractIssues, ...analyticalResultIssues].map(issue => issue.message).join(' '),
                 executionOptions?.requestPurpose,
-                activeQueryContract,
+                undefined,
             );
             directSqlTokens += semanticRepair.tokens;
             if (!semanticRepair.error && semanticRepair.sql !== currentSQL) {
@@ -1967,28 +1985,10 @@ export async function runAISQLPipeline(
         let localStatsForContract;
         try { localStatsForContract = await resolveLocalStatistics('data', semanticModel); } catch { /* skip */ }
 
-        // The model-produced spec is useful execution evidence, but its output
-        // columns must not overrule fields independently grounded from the
-        // user's wording and physical schema. This prevents a bad draft metric
-        // from withholding a correct answer (for example, validating an
-        // unrelated measure after the final SQL correctly answers a ranking).
-        const groundedOutputColumns = activeQueryContract?.requiredOutputFields
-            .filter(field => field.confidence === 'high')
-            .map(field => field.field) || [];
-        const finalAnswerContract = directQuerySpec
-            ? {
-                ...directQuerySpec,
-                expectedResult: groundedOutputColumns.length
-                    ? {
-                        ...directQuerySpec.expectedResult,
-                        grain: activeQueryContract?.requiredDimension
-                            || activeQueryContract?.outputEntity?.field
-                            || directQuerySpec.expectedResult?.grain,
-                        columns: groundedOutputColumns,
-                    }
-                    : directQuerySpec.expectedResult,
-            }
-            : undefined;
+        // The LLM planner owns analytical meaning. The answer validator checks
+        // the exact model-authored specification; a locally inferred category,
+        // identifier, metric or grain is never substituted at this late stage.
+        const finalAnswerContract = directQuerySpec;
 
         const contractResult = validateAnswerContract(
             plan,
@@ -2006,9 +2006,7 @@ export async function runAISQLPipeline(
             passed: contractResult.passed,
             enforced: true,
             summary: contractResult.summary,
-            requestedOutputFields: activeQueryContract?.requiredOutputFields
-                .filter(field => field.confidence === 'high')
-                .map(field => field.field) || [],
+            requestedOutputFields: directQuerySpec?.expectedResult?.columns || [],
             checks: contractResult.checks.map(c => ({
                 name: c.name,
                 status: c.status,

@@ -26,7 +26,7 @@ vi.mock('../services/duckdbEngine', async importOriginal => ({
 import { runAISQLPipeline } from '../services/ai-sql/pipeline';
 
 describe('AI SQL model-owned period-comparison route', () => {
-    it('gives the LLM the governed plan and executes its two-period SQL without deterministic replacement', async () => {
+    it('gives the LLM schema facts and executes its model-authored two-period SQL without deterministic replacement', async () => {
         directSqlMocks.generateDirectSQL.mockClear();
         directSqlMocks.executeSQLViaDuckDB.mockClear();
         directSqlMocks.generateDirectSQL.mockResolvedValue({
@@ -51,7 +51,20 @@ describe('AI SQL model-owned period-comparison route', () => {
             model: 'terra → luna → sol',
             querySpec: {
                 goal: 'Compare current and previous month sales totals',
-                operations: {},
+                operations: {
+                    measures: [{ field: 'amount', aggregation: 'sum' }],
+                    filters: [{
+                        field: 'order_date',
+                        operator: 'between',
+                        value: ['2025-03-01', '2025-03-31'],
+                    }],
+                    tableCalculations: [{
+                        type: 'period_growth',
+                        orderBy: ['period_month'],
+                        outputAlias: 'growth_pct',
+                        required: true,
+                    }],
+                },
                 expectedResult: { grain: 'one row per comparison period', columns: ['period', 'amount_sum', 'growth_pct'] },
                 assumptions: [],
             },

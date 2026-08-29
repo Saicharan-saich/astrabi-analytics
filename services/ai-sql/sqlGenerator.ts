@@ -537,7 +537,12 @@ export async function repairSQL(
     model: SemanticModel,
     attempt: number = 1,
     requestPurpose?: 'benchmark',
-    repairContext?: { schemaText?: string; queryContract?: QueryContract },
+    repairContext?: {
+        schemaText?: string;
+        queryContract?: QueryContract;
+        question?: string;
+        querySpec?: unknown;
+    },
 ): Promise<{ sql: string; explanation: string }> {
     if (attempt > 2) {
         throw new Error(`SQL repair failed after 2 attempts. Last error: ${error}`);
@@ -549,14 +554,16 @@ export async function repairSQL(
     const contractText = repairContext?.queryContract
         ? `\nDETERMINISTIC QUERY CONTRACT (must remain satisfied):\n${formatQueryContractForPrompt(repairContext.queryContract)}\n`
         : '';
+    const semanticAuthority = repairContext?.querySpec
+        ? `QUESTION:\n${repairContext.question || plan.originalQuestion}\n\nMODEL-AUTHORED QUERY SPECIFICATION (authoritative):\n${JSON.stringify(repairContext.querySpec, null, 2)}`
+        : `LEGACY ANALYSIS PLAN:\n${JSON.stringify(plan, null, 2)}`;
 
     const prompt = `The following SQL query failed with an error. Fix it.
 
 SEMANTIC MODEL:
 ${serialized}
 
-ORIGINAL PLAN:
-${JSON.stringify(plan, null, 2)}
+${semanticAuthority}
 ${contractText}
 
 FAILED SQL:
@@ -567,7 +574,7 @@ ${error}
 
 RULES:
 - Use only physical tables and columns present in the supplied schema. When the schema contains several tables, preserve the original relationship path and do not collapse the query into "data".
-- Preserve the requested output entity, grain, aggregation, filters, comparison, ranking, anti-join/existence semantics, and every deterministic query-contract requirement.
+- Preserve the question and model-authored Query Specification. Deterministic metadata may correct physical names, types and relationship paths, but must not replace the chosen entity, grain, metrics, filters, comparison, ranking or output fields.
 - Do not use STRFTIME or EXTRACT. Use YEAR(), MONTH(), QUARTER(). Always wrap date columns with CAST(column AS DATE) e.g. MONTH(CAST(order_date AS DATE)).
 - Fix ONLY the error. Do not change other parts of the query.
 

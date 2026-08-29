@@ -1,9 +1,11 @@
 /**
  * Governed plan-to-SQL engine.
  * ─────────────────────────────────────────────────────────────────────
- * The local semantic engines first create a typed AnalysisPlan. The selected
- * GPT-5.6 model then reasons over that plan plus a metadata-only schema to write
- * SQL, which is safety-gated and executed only in local DuckDB.
+ * Deterministic engines describe the physical schema, semantic field metadata,
+ * relationships, time anchor and privacy rules. The selected GPT-5.6 planner
+ * interprets the complete question, writes a Query Specification, and the SQL
+ * models synthesize SQL from that model-owned interpretation. Deterministic
+ * code then enforces read-only safety and executes only in local DuckDB.
  *
  * Privacy is unchanged: no dataset rows leave the browser. The model receives
  * the user's question, the governed plan, schema metadata, and only
@@ -11,7 +13,7 @@
  */
 import { fetchWithFallback, LUNA_MODEL, PLANNER_MODEL, SOL_MODEL } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
-import type { AnalysisPlan, SemanticModel } from './types';
+import type { AnalysisIntent, AnalysisPlan, SemanticModel } from './types';
 import {
     formatQueryContractForPrompt,
     validateSQLAgainstContract,
@@ -53,11 +55,11 @@ Rules:
 - Treat "most/least common", "most/least frequent", and inverse wording such as "the type that the most records belong to" as frequency rankings: group by the requested answer field, rank by COUNT(*) in the correct direction, and return the requested winner. The count may remain an ORDER BY helper when the user asks only for the winning field.
 - Never replace requested names, labels, dates, or other row attributes with COUNT, SUM, LIST, ARRAY_AGG, STRING_AGG, or ANY_VALUE. Use collection aggregates only when the user explicitly requests a single packed list.
 - Do not infer an aggregation from a physical column name containing words such as number, count, total, or amount. Aggregation comes from the question's requested operation.
-- Prefer the simplest SQL only among candidates that are equally faithful. When the query contract requires a running total, moving average, period growth, partitioned/explicit rank, percent of total, or analytical buckets, preserve that operation with the required CTE/window structure; never remove it merely to simplify the SQL.
+- Prefer the simplest SQL only among candidates that are equally faithful. When the model-authored Query Specification requires a running total, moving average, period growth, partitioned/explicit rank, percent of total, or analytical buckets, preserve that operation with the required CTE/window structure; never remove it merely to simplify the SQL.
 - Implement required tableCalculations in SQL, not as an unstated presentation step. Use the declared outputAlias. For windows, aggregate to the requested base grain in a CTE/subquery first when necessary, then apply OVER with the declared PARTITION BY, ORDER BY and frame. Running totals use ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW; N-period moving averages use ROWS BETWEEN N-1 PRECEDING AND CURRENT ROW; period growth uses LAG; within-group top-N uses a partitioned ranking window.
-- The user's explicit question and the verified schema are the source of truth. The local Analysis Plan is a governed draft: preserve valid resolved metrics, filters, comparison semantics, sorting, and limits, but repair any omission or misclassification called out by Planner Verification.
-- Preserve governed relative thresholds. A plan filter with op "above_avg" or "below_avg" means: aggregate the metric at the requested entity grain first, calculate the average of those entity aggregates in a CTE/subquery, then retain entities above or below that threshold. Never replace it with an invented literal threshold. If includeNonPositive is true, combine the below-average condition with OR aggregate <= 0 so wording such as "low or negative" is preserved exactly.
-- Treat the deterministic relativeComparison contract as authoritative. When referencePopulation is "filtered_cohort", calculate AVG over the same pre-comparison cohort predicates used by the outer query; SQL outer WHERE predicates do not flow into a scalar subquery automatically. When it is "global", do not copy cohort filters. Preserve its exact comparator and multiplier (for example, "20% higher than" means > AVG(...) * 1.2, while "at least 20% higher" means >=).
+- The user's complete question, the verified schema facts, and the model-authored Query Specification are the semantic source of truth. Never replace them with a keyword-derived local interpretation.
+- Preserve relative thresholds chosen in the Query Specification. An above-average or below-average comparison means: aggregate the metric at the requested entity grain first, calculate the average of those entity aggregates in a CTE/subquery, then retain entities above or below that threshold. Never replace it with an invented literal threshold.
+- Preserve the Query Specification's reference population. When it identifies a filtered cohort, calculate AVG over the same pre-comparison cohort predicates used by the outer query; SQL outer WHERE predicates do not flow into a scalar subquery automatically. When it identifies a global population, do not copy cohort filters. Preserve its exact comparator and multiplier.
 - Never return a generic scalar total merely because the draft plan has no dimension. If the user asks "by", "over time", a fiscal calendar, a comparison, ranking, or another explicit analytical shape, implement that shape using the available schema.
 - For a total period comparison, return two labelled aggregate rows, 'Current' and 'Previous'. For a trend comparison, retain the period label and the requested time grain.
 - If the question includes a "Dataset reporting anchor", that anchor is the reporting clock. Resolve relative periods using explicit DATE literals from it; NEVER use CURRENT_DATE, CURRENT_TIMESTAMP, NOW(), or other wall-clock functions.
@@ -118,7 +120,7 @@ For rankings, record the exact ranking expression and result cardinality. Distin
 When a question compares membership in independently ranked populations (for example top N by one measure but not top N by another), record operations.rankedSets with every branch and the requested set operation. Do not collapse multiple rankings into one orderBy/limit.
 Define expectedResult from the words that describe what the user wants returned, before planning filters. Aggregates used only as comparison thresholds belong in filters/subqueries and must not replace those requested result fields. Never invent COUNT, collection aggregates, GROUP BY, or LIMIT from a column name or from a filter's aggregate.
 Explicit grouping language is authoritative: "each X's", "for every X", "per X", and "by X" make X the GROUP BY and expected-result grain. Never substitute a row identifier merely because it is unique. If multiple calculations refer to the same measure, calculate one grouped base measure and derive share, rank, running/cumulative percentage, and related outputs from that base; do not change a measure-share request into row-count share.
-Relative analytical language is answerable without a user-supplied literal threshold. When the governed plan resolves "high/strong" to above_avg or "low/weak/negative" to below_avg, preserve that decision: compare each entity-level aggregate with the average across entity aggregates, record the rule in assumptions, and do NOT request clarification. Ask only when the required field or entity grain is genuinely unavailable.
+Relative analytical language is answerable without a user-supplied literal threshold. Interpret "high/strong" and "low/weak/negative" from the complete question and schema, explicitly record the chosen reference population and comparison in the Query Specification, and ask only when genuinely competing interpretations would materially change the answer.
 For a filtered population compared with an average, explicitly identify the reference population. Unless the wording says overall/global/all records, phrases such as "patients with X ... higher than average" use the same X-filtered cohort for both the outer population and the AVG reference. Preserve strict boundaries: "higher than" is >; "at least ... higher" is >=.
 Represent negative existence explicitly as an anti-join/set operation (NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT). Preserve the requested entity as expectedResult grain and columns; never substitute a related table or a higher-level grouping.
 
@@ -144,6 +146,109 @@ function extractJSONObject(content: string): DynamicQuerySpec | null {
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return null;
     try { return JSON.parse(match[0]) as DynamicQuerySpec; } catch { return null; }
+}
+
+const SUPPORTED_AGGREGATIONS = new Set(['sum', 'avg', 'count', 'count_distinct', 'min', 'max', 'median']);
+const SUPPORTED_FILTER_OPERATORS = new Set([
+    '=', '!=', '>', '<', '>=', '<=', 'in', 'not_in', 'between', 'like',
+    'this_month', 'this_week', 'this_year', 'this_quarter', 'this_day',
+    'above_avg', 'below_avg',
+]);
+
+function specField(value: unknown): string | undefined {
+    if (typeof value !== 'string') return undefined;
+    const normalized = value.trim().replace(/^['"`]|['"`]$/g, '');
+    if (!normalized || /[()*/+]/.test(normalized)) return undefined;
+    const finalPart = normalized.split('.').pop()?.replace(/^['"`]|['"`]$/g, '');
+    return finalPart || undefined;
+}
+
+/**
+ * Make the model-authored Query Specification the semantic source used by
+ * downstream charting, validation and audit. This adapter interprets the
+ * structured model output; it never re-parses the user's natural language.
+ * Deterministic code only resolves returned names against the physical schema.
+ */
+export function applyQuerySpecToAnalysisPlan(
+    base: AnalysisPlan,
+    spec: DynamicQuerySpec,
+    model: SemanticModel,
+): AnalysisPlan {
+    const resolvePhysicalField = (value: unknown): string | undefined => {
+        const candidate = specField(value);
+        if (!candidate) return undefined;
+        return model.fields.find(field => field.name.toLowerCase() === candidate.toLowerCase())?.name;
+    };
+    const groupBy = Array.isArray(spec.operations?.groupBy) ? spec.operations.groupBy : [];
+    const dimensions = groupBy
+        .map(group => resolvePhysicalField(typeof group === 'string' ? group : group?.field))
+        .filter((field): field is string => Boolean(field))
+        .filter((field, index, all) => all.findIndex(other => other.toLowerCase() === field.toLowerCase()) === index)
+        .map(field => ({ field }));
+    const measures = (Array.isArray(spec.operations?.measures) ? spec.operations.measures : [])
+        .map(measure => {
+            const field = resolvePhysicalField(measure?.field);
+            const aggregation = String(measure?.aggregation || '').toLowerCase();
+            if (!field || !SUPPORTED_AGGREGATIONS.has(aggregation)) return undefined;
+            return { field, agg: aggregation as AnalysisPlan['metrics'][number]['agg'] };
+        })
+        .filter((metric): metric is AnalysisPlan['metrics'][number] => Boolean(metric));
+    const expectedFields = (Array.isArray(spec.expectedResult?.columns) ? spec.expectedResult.columns : [])
+        .map(resolvePhysicalField)
+        .filter((field): field is string => Boolean(field));
+    const filters = (Array.isArray(spec.operations?.filters) ? spec.operations.filters : [])
+        .map(filter => {
+            const field = resolvePhysicalField(filter?.field);
+            const operator = String(filter?.operator || '').toLowerCase();
+            if (!field || !SUPPORTED_FILTER_OPERATORS.has(operator)) return undefined;
+            return {
+                field,
+                op: operator as AnalysisPlan['filters'][number]['op'],
+                value: filter?.value,
+            };
+        })
+        .filter((filter): filter is AnalysisPlan['filters'][number] => Boolean(filter));
+    const hasRatio = Boolean(spec.operations?.ratio);
+    const tableCalculations = Array.isArray(spec.operations?.tableCalculations)
+        ? spec.operations.tableCalculations
+        : [];
+    const hasRanking = Boolean(spec.operations?.rankedSets)
+        || tableCalculations.some(calculation => /rank|top|bottom/i.test(calculation?.type || ''));
+    const hasTimeCalculation = tableCalculations.some(calculation => /growth|lag|moving|running|cumulative/i.test(calculation?.type || ''));
+    const expectedColumnNames = (spec.expectedResult?.columns || []).map(column => String(column).toLowerCase());
+    const isTotalPeriodComparison = /comparison\s+period|current\s+and\s+previous|two\s+period/i.test(spec.expectedResult?.grain || '')
+        || (expectedColumnNames.some(column => /^(?:period|period_label)$/.test(column))
+            && expectedColumnNames.some(column => /growth|previous/.test(column)));
+    const intent: AnalysisIntent = isTotalPeriodComparison
+        ? 'total_comparison'
+        : hasRatio
+        ? 'share_of_total'
+        : hasTimeCalculation
+            ? 'growth_analysis'
+            : hasRanking || (spec.operations?.limit && spec.operations.limit > 0)
+                ? 'ranking'
+                : dimensions.length > 0
+                    ? 'breakdown'
+                    : measures.length > 0
+                        ? 'single_metric'
+                        : 'projection';
+
+    return {
+        ...base,
+        intent,
+        dimensions,
+        metrics: measures,
+        projectionFields: expectedFields.length ? expectedFields : undefined,
+        // Filters and ordering remain expressed in the authoritative QuerySpec
+        // and SQL. Do not translate arbitrary model expressions into lossy local
+        // operators that could later rewrite or mis-score the answer.
+        filters,
+        sort: [],
+        limit: typeof spec.operations?.limit === 'number' ? spec.operations.limit : null,
+        ambiguous: false,
+        clarificationQuestion: undefined,
+        resultGrain: spec.expectedResult?.grain || base.resultGrain,
+    };
 }
 
 function uniqueStrings(values: unknown[]): string[] {
@@ -724,17 +829,17 @@ export async function generateDirectSQL(
     analyticalIR?: AnalyticalIR,
 ): Promise<DirectSQLResult> {
     const engineConfig = getAISQLEngineConfig().engines;
-    // Deterministic preprocessing supplies grounded facts and a compact GAFS
-    // plan. It is evidence for the model, not a competing SQL author.
+    // Legacy callers may still supply a local plan for diagnostics. It is never
+    // semantic authority: the model must independently interpret the question.
     const planContext = analysisPlan
-        ? `\n\nCompact deterministic question plan (schema-grounded evidence, not a SQL solution):\n${JSON.stringify(analysisPlan, null, 2)}\nUse it for grounded fields, GAFS operations, filters and limits. You own the higher-level reasoning and may choose CTEs, subqueries, windows or set operators needed to answer the complete question.`
+        ? `\n\nLegacy local-plan diagnostics (untrusted semantic suggestions):\n${JSON.stringify(analysisPlan, null, 2)}\nDo not copy its entity, grain, metrics, filters, sorting or limit unless your own reading of the complete question confirms them. Use verified physical field names only.`
         : '';
     const verificationContext = plannerVerification?.length
         ? `\n\nLocal diagnostics to consider:\n${JSON.stringify(plannerVerification, null, 2)}`
         : '';
     const presentationContext = buildEntityPresentationContext(semanticModel);
     const contractContext = queryContract
-        ? `\n\nDeterministic Query Contract (mandatory; do not weaken or replace it):\n${formatQueryContractForPrompt(queryContract)}`
+        ? `\n\nDeterministic compatibility diagnostics (advisory only; the question and your Query Specification own the analytical meaning):\n${formatQueryContractForPrompt(queryContract)}`
         : '';
     const analyticalIRContext = analyticalIR
         ? `\n\nDeterministic analytical evidence (advisory; do not let an incomplete operator list erase meaning present in the question):\n${formatAnalyticalIRForPrompt(analyticalIR)}`
@@ -777,7 +882,7 @@ export async function generateDirectSQL(
         // Sol independently checks every request against the question, schema
         // and structured plan, then returns the final executable SQL.
         const reviewed = await fetchWithFallback([
-            { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the question, schema, and deterministic contract. Correct only concrete violations. Before returning SQL, audit: (1) outer SELECT contains only requested answer fields/calculations, (2) GROUP BY is exactly the requested grain, (3) ranking expression, direction, cardinality and tie behaviour match the wording, (4) aggregate predicates are in HAVING/subqueries without leaking helper metrics into the answer, (5) ratio numerator and denominator use the correct populations, (6) joins follow the declared ownership path, (7) list/set answers cannot repeat because of join fan-out, and (8) every required tableCalculation is implemented with its declared partition, order, frame and output alias. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and contract do not require; never remove a required CTE/window/table calculation merely to make SQL shorter. Return only final SQL.` },
+            { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the complete question, verified schema facts, and model-authored Query Specification. Correct only concrete violations. Before returning SQL, audit: (1) outer SELECT contains only requested answer fields/calculations, (2) GROUP BY is exactly the requested grain, (3) ranking expression, direction, cardinality and tie behaviour match the wording, (4) aggregate predicates are in HAVING/subqueries without leaking helper metrics into the answer, (5) ratio numerator and denominator use the correct populations, (6) joins follow the declared ownership path, (7) list/set answers cannot repeat because of join fan-out, and (8) every required tableCalculation is implemented with its declared partition, order, frame and output alias. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and Query Specification do not require; never remove a required CTE/window/table calculation merely to make SQL shorter. Return only final SQL.` },
             { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${draftSQL}\n\nFinal reviewed SQL:` },
         ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
         reviewedSQL = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');
@@ -787,12 +892,18 @@ export async function generateDirectSQL(
     } else {
         console.log('[AI SQL] Independent LLM reviewer disabled by the global engine configuration.');
     }
-    const candidateDecision = engineConfig.llmReviewer
-        ? chooseBestSQLCandidate(draftSQL, reviewedSQL, queryContract)
-        : { sql: draftSQL, source: 'draft' as const, contractErrors: 0, complexity: 0 };
-    let sql = candidateDecision.sql;
-    if (engineConfig.llmReviewer && candidateDecision.source === 'draft') {
-        console.log(`[AI SQL] Retained the draft SQL because the reviewer candidate was less faithful or more complex (${candidateDecision.contractErrors} contract error(s), complexity ${candidateDecision.complexity}).`);
+    // On the model-owned route, semantic arbitration belongs to the independent
+    // reviewer—not to a shorter-query heuristic or a locally inferred contract.
+    // Read-only safety is the only deterministic reason to reject its candidate.
+    const reviewedSafety = validateReadOnlySQL(reviewedSQL);
+    const draftSafety = validateReadOnlySQL(draftSQL);
+    let sql = engineConfig.llmReviewer && reviewedSafety.ok
+        ? reviewedSafety.sql
+        : draftSafety.ok
+            ? draftSafety.sql
+            : reviewedSQL || draftSQL;
+    if (engineConfig.llmReviewer && !reviewedSafety.ok && draftSafety.ok) {
+        console.warn('[AI SQL] Reviewer SQL failed read-only safety; retaining the safe draft SQL.');
     }
     console.log(`[AI SQL] Dynamic model route: ${modelUsedForSQL}`);
 
