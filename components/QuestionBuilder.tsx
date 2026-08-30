@@ -685,9 +685,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         );
                     })}
                 </div>
-                <div className="min-w-0 text-right">
+                <div className="min-w-0 w-full text-left sm:w-auto sm:text-right">
                     <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Current analysis</div>
-                    <div className="max-w-[540px] truncate text-xs font-semibold text-slate-300">
+                    <div className="max-w-[540px] whitespace-normal break-words text-xs font-semibold leading-5 text-slate-300">
                         {summaryText || 'Choose a metric to begin'}
                     </div>
                 </div>
