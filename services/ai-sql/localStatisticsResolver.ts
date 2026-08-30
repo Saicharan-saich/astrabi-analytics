@@ -94,6 +94,7 @@ function getCacheKey(datasetName: string, semanticModel: SemanticModel): string 
 
     const identity = [
         datasetName,
+        semanticModel.revision || '',
         semanticModel.datasetName,
         semanticModel.rowCount,
         semanticModel.timeContext?.minDate || '',

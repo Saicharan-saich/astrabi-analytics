@@ -132,6 +132,13 @@ export interface Dataset {
   liveConnection?: LiveConnectionInfo;   // Only present when connectionMode === 'live'
   // ── System Correction Directive additions ──
   semanticModel?: import('./services/semanticModel').SemanticModel; // Deterministic semantic model (MANDATORY for analysis)
+  /**
+   * AI SQL has a richer semantic representation than the legacy analysis
+   * model above. It is built from cleaned ETL output, persisted with the
+   * dataset, and reused until aiSqlSemanticRevision changes.
+   */
+  aiSqlSemanticModel?: import('./services/ai-sql/types').SemanticModel;
+  aiSqlSemanticRevision?: string;
   version?: number;            // Incremented on every re-upload or re-ETL
   createdAt?: number;          // Timestamp of dataset creation
   refreshSchedule?: RefreshSchedule;     // Auto-refresh configuration for live connections

@@ -8,7 +8,7 @@ import {
     hasEnhancedConsent, grantEnhancedConsent, revokeEnhancedConsent,
 } from '../services/ai-sql/privacyMode';
 import { buildPrivacyDisclosure } from '../services/ai-sql/privacyDisclosure';
-import { buildSemanticModel } from '../services/ai-sql/semanticLayer';
+import { resolveAISQLSemanticModel } from '../services/ai-sql/semanticLayer';
 import { PrivacyConsentDialog } from './PrivacyConsentDialog';
 import {
     getSelection, setSelection, applySelection, countSharedValues,
@@ -59,7 +59,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const disclosure = useMemo(() => {
         if (!consentDialog || !dataset?.rows?.length) return null;
         try {
-            return buildPrivacyDisclosure(dataset.rows, buildSemanticModel(dataset));
+            return buildPrivacyDisclosure(dataset.rows, resolveAISQLSemanticModel(dataset).model);
         } catch (e) {
             console.warn('[Privacy] Could not build disclosure:', e);
             return null;
@@ -70,7 +70,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const sharingSummary = useMemo(() => {
         if (!enhancedActive || !dataset?.rows?.length) return { values: 0, columns: 0 };
         try {
-            const domains = collectSafeDomains(dataset.rows, buildSemanticModel(dataset));
+            const domains = collectSafeDomains(dataset.rows, resolveAISQLSemanticModel(dataset).model);
             const kept = applySelection(domains, selection);
             return { values: countSharedValues(domains, selection), columns: kept.size };
         } catch {

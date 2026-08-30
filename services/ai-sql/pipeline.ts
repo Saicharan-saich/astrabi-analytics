@@ -21,7 +21,7 @@
 
 import { Dataset } from '../../types';
 import { AISQLPipelineResult, AuditEntry, PlanFilter, PipelineStepTrace, PipelineTrace } from './types';
-import { buildSemanticModel } from './semanticLayer';
+import { resolveAISQLSemanticModel } from './semanticLayer';
 import { generateLocalPlan } from './intentPlanner';
 import { generateSQLFromPlan, repairSQL } from './sqlGenerator';
 import { correctSQL, normalizeFilterOp } from './sqlCorrectionEngine';
@@ -156,18 +156,23 @@ export async function runAISQLPipeline(
         console.log(`[Pipeline] ${externalFilters.length} external filter(s) provided from UI`);
     }
 
-    // ─── Step 1: Build Semantic Model ────────────────────────────
-    reportProgress('Building semantic model...', 1);
-    console.log('[Pipeline] Step 1: Building semantic model...');
+    // ─── Step 1: Load the upload-time Semantic Model ─────────────
+    // ETL and semantic profiling belong to the dataset lifecycle, not the
+    // question lifecycle. A revision mismatch is the only reason to rebuild.
+    reportProgress('Loading semantic model...', 1);
     let _s1 = performance.now();
-    const semanticModel = buildSemanticModel(dataset);
+    const semanticResolution = resolveAISQLSemanticModel(dataset);
+    const semanticModel = semanticResolution.model;
+    console.log(`[Pipeline] Step 1: ${semanticResolution.reused ? 'Reusing cached' : 'Rebuilt stale/missing'} semantic model (${semanticResolution.revision})`);
     const _metrics = semanticModel.fields.filter(f => f.role === 'metric').length;
     const _dims = semanticModel.fields.filter(f => f.role === 'dimension').length;
     traceStep({
         stepNumber: 1, name: 'Semantic Model', engine: 'semanticLayer', icon: '🧠',
         status: 'pass',
-        summary: `Classified ${semanticModel.fields.length} fields → ${_metrics} metrics, ${_dims} dimensions, ${semanticModel.compositeMetrics.length} composite`,
+        summary: `${semanticResolution.reused ? 'Reused upload-time model' : 'Rebuilt stale/missing model'} · ${semanticModel.fields.length} fields → ${_metrics} metrics, ${_dims} dimensions, ${semanticModel.compositeMetrics.length} composite`,
         details: {
+            revision: semanticResolution.revision,
+            reused: semanticResolution.reused,
             fields: semanticModel.fields.map(f => ({ name: f.name, role: f.role, type: f.semanticType, agg: f.defaultAgg })),
             compositeMetrics: semanticModel.compositeMetrics.map(c => c.label),
             derivedMetrics: (semanticModel.derivedMetrics || []).map(d => d.label),

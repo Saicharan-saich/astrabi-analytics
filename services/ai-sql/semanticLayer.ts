@@ -22,6 +22,121 @@ import { lookupFeedback, bucketUniqueRatio, bucketRangeSpan } from './classifica
 import { arbitrate } from './arbitrationEngine';
 import { runAIArbitration, AIClassificationRequest } from './aiArbitrator';
 
+/**
+ * Bump this whenever the shape or classification rules of SemanticModel
+ * change. Old IndexedDB snapshots will then be rebuilt automatically.
+ */
+export const AI_SQL_SEMANTIC_SNAPSHOT_VERSION = 1;
+
+function stableHash(input: string): string {
+    let hash = 2166136261;
+    for (let i = 0; i < input.length; i++) {
+        hash ^= input.charCodeAt(i);
+        hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0).toString(16);
+}
+
+/**
+ * A privacy-safe identity for the cleaned dataset and the metadata that can
+ * affect semantic inference. It intentionally contains no row values.
+ * Dataset.version is the data revision; schema/profile/time metadata make
+ * migrations and mapping edits independently detectable.
+ */
+export function getAISQLSemanticRevision(dataset: Dataset): string {
+    const columns = dataset.columns
+        .map(column => `${column.name}:${column.type}:${column.originalType || ''}`)
+        .sort()
+        .join('|');
+    const profile = dataset.domainProfile
+        ? JSON.stringify({
+            domain: dataset.domainProfile.domain,
+            grain: dataset.domainProfile.grain || '',
+            detectedAt: dataset.domainProfile.detectedAt || 0,
+            columns: Object.entries(dataset.domainProfile.columnSemantics || {})
+                .sort(([left], [right]) => left.localeCompare(right))
+                .map(([name, semantic]) => [
+                    name,
+                    semantic.role,
+                    semantic.aggregation,
+                    semantic.semanticRole || '',
+                    semantic.isHidden ? 1 : 0,
+                ]),
+        })
+        : '';
+    const time = dataset.timeContext
+        ? JSON.stringify({
+            min: dataset.timeContext.minDate,
+            max: dataset.timeContext.maxDate,
+            anchor: dataset.timeContext.defaultAnchorDate,
+            column: dataset.timeContext.anchorDateColumn,
+        })
+        : '';
+    const sourceSchema = dataset.sourceSchema
+        ? JSON.stringify({
+            tables: dataset.sourceSchema.tables.map(table => ({
+                name: table.name,
+                rows: table.rows,
+                columns: table.columns.map(column => [
+                    column.name,
+                    column.dataType,
+                    column.isPK ? 1 : 0,
+                    column.isNullable ? 1 : 0,
+                ]),
+            })),
+            edges: dataset.sourceSchema.joinEdges.map(edge => [
+                edge.leftTable,
+                edge.leftColumn,
+                edge.rightTable,
+                edge.rightColumn,
+                edge.type,
+            ]),
+        })
+        : '';
+
+    return `aisql-sem-v${AI_SQL_SEMANTIC_SNAPSHOT_VERSION}-${stableHash([
+        dataset.id,
+        dataset.name,
+        dataset.version || 0,
+        dataset.rows.length,
+        dataset.totalRows,
+        columns,
+        profile,
+        time,
+        sourceSchema,
+    ].join('::'))}`;
+}
+
+export interface AISQLSemanticResolution {
+    model: SemanticModel;
+    revision: string;
+    reused: boolean;
+}
+
+/**
+ * Return the persisted upload-time AI SQL semantic model when it is current,
+ * otherwise rebuild it exactly once and attach the new snapshot to the
+ * dataset. The caller may persist the mutated dataset to IndexedDB.
+ */
+export function resolveAISQLSemanticModel(
+    dataset: Dataset,
+    options: { forceRebuild?: boolean } = {},
+): AISQLSemanticResolution {
+    const revision = getAISQLSemanticRevision(dataset);
+    if (!options.forceRebuild
+        && dataset.aiSqlSemanticModel
+        && dataset.aiSqlSemanticRevision === revision
+        && dataset.aiSqlSemanticModel.revision === revision) {
+        return { model: dataset.aiSqlSemanticModel, revision, reused: true };
+    }
+
+    const model = buildSemanticModel(dataset);
+    model.revision = revision;
+    dataset.aiSqlSemanticModel = model;
+    dataset.aiSqlSemanticRevision = revision;
+    return { model, revision, reused: false };
+}
+
 // ─── Synonym Dictionary ──────────────────────────────────────────
 const SYNONYM_MAP: Record<string, string[]> = {
     // Revenue / Sales

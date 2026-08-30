@@ -183,6 +183,11 @@ export interface SemanticModel {
     };
     /** Declared grain of the dataset */
     grain: string;
+    /**
+     * Revision of the cleaned dataset metadata used to build this model.
+     * Persisted snapshots use this to prevent cross-dataset or stale reuse.
+     */
+    revision?: string;
 }
 
 // ─── Intent Planner ──────────────────────────────────────────────

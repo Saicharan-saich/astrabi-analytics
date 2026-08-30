@@ -12,6 +12,7 @@ import {
 import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, getSampleData } from './services/analysisEngine';
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
 import { buildSemanticModel } from './services/semanticModel';
+import { resolveAISQLSemanticModel } from './services/ai-sql/semanticLayer';
 import { fetchGlobalHiddenTabs } from './services/tabVisibilityService';
 import { fetchAISQLEngineConfig } from './services/ai-sql/engineConfig';
 import { fetchColumnCorrections, saveColumnCorrections, rememberedOverridesFor, datasetSignature } from './services/columnCorrectionsService';
@@ -71,6 +72,20 @@ const BenchmarkLabView = React.lazy(() =>
 // Stored in sessionStorage: survives page refresh but cleared on tab close or logout.
 // Never persisted to localStorage/IndexedDB — password stays ephemeral.
 interface CachedCredentials { host: string; port: string; database: string; username: string; password: string; ssl: boolean }
+
+/** Build and attach the richer AI SQL model while the cleaned dataset is being
+ * created or revised. It is then persisted with the dataset and reused by
+ * every question until the dataset revision changes. */
+function refreshAISQLSemanticSnapshot(dataset: Dataset, reason: string): void {
+  try {
+    const resolution = resolveAISQLSemanticModel(dataset, { forceRebuild: true });
+    console.log(`[App] AI SQL semantic snapshot refreshed (${reason}): ${resolution.model.fields.length} fields · ${resolution.revision}`);
+  } catch (err) {
+    // AI SQL can still rebuild lazily on the first question. Dataset loading
+    // must not fail just because semantic snapshotting encountered bad input.
+    console.warn(`[App] AI SQL semantic snapshot failed (${reason}); first query will retry:`, err);
+  }
+}
 
 function cacheSessionCredentials(datasetId: string, creds: CachedCredentials): void {
   try {
@@ -373,12 +388,24 @@ function App() {
     });
   }, [currentUser?.id]);
 
-  // Pre-warm DuckDB when dataset is loaded (eliminates cold-start on first AI SQL query)
+  // Pre-warm DuckDB and migrate older persisted datasets that predate the
+  // revisioned AI SQL semantic snapshot.
   useEffect(() => {
     if (dataset?.rows?.length) {
       preloadDuckDB(dataset.name, dataset.rows).catch(() => {/* non-fatal */});
+      try {
+        const resolution = resolveAISQLSemanticModel(dataset);
+        if (!resolution.reused) {
+          const migrated = { ...dataset };
+          setDataset(migrated);
+          saveDatasetToDB(migrated);
+          console.log(`[App] Persisted AI SQL semantic snapshot migration: ${resolution.revision}`);
+        }
+      } catch (err) {
+        console.warn('[App] AI SQL semantic snapshot migration deferred:', err);
+      }
     }
-  }, [dataset?.name]);
+  }, [dataset?.id, dataset?.version]);
 
   // Auto-collapse sidebar when entering the builder
   useEffect(() => {
@@ -468,6 +495,7 @@ function App() {
         } catch (err) {
           console.warn('[App] Semantic model build failed (non-blocking):', err);
         }
+        refreshAISQLSemanticSnapshot(newDataset, 'upload ETL complete');
 
         setDataset(newDataset);
         saveDatasetToDB(newDataset);
@@ -513,6 +541,7 @@ function App() {
             } catch (err) {
               console.warn('[App] Semantic model AI enrichment failed (keeping ETL model):', err);
             }
+            refreshAISQLSemanticSnapshot(profiled, 'AI domain profile applied');
             setDataset(profiled);
             saveDatasetToDB(profiled);
             setPendingProfile(profile);
@@ -544,6 +573,7 @@ function App() {
               detectedAt: Date.now(),
             };
             const profiled: Dataset = { ...newDataset, domainProfile: fallbackProfile };
+            refreshAISQLSemanticSnapshot(profiled, 'heuristic domain profile applied');
             setDataset(profiled);
             saveDatasetToDB(profiled);
             setPendingProfile(fallbackProfile);
@@ -576,6 +606,7 @@ function App() {
             detectedAt: Date.now(),
           };
           const profiled: Dataset = { ...newDataset, domainProfile: fallbackProfile };
+          refreshAISQLSemanticSnapshot(profiled, 'AI profile fallback applied');
           setDataset(profiled);
           saveDatasetToDB(profiled);
           setPendingProfile(fallbackProfile);
@@ -614,7 +645,15 @@ function App() {
           etlLogs: logs,
           timeContext,
           dimDate,
+          version: (dataset.version || 1) + 1,
         };
+        try {
+          const model = buildSemanticModel(updated, dataset.semanticModel);
+          updated.semanticModel = model;
+        } catch (err) {
+          console.warn('[App] Semantic model rebuild failed after schema override:', err);
+        }
+        refreshAISQLSemanticSnapshot(updated, `schema override: ${columnName}`);
         setDataset(updated);
         saveDatasetToDB(updated);
         worker.terminate();
@@ -632,7 +671,13 @@ function App() {
   const handleDatasetRowsRecovered = (recoveredRows: Record<string, any>[]) => {
     if (!dataset) return;
     const updatedRows = [...dataset.rows, ...recoveredRows];
-    const updated: Dataset = { ...dataset, rows: updatedRows, totalRows: updatedRows.length };
+    const updated: Dataset = {
+      ...dataset,
+      rows: updatedRows,
+      totalRows: updatedRows.length,
+      version: (dataset.version || 1) + 1,
+    };
+    refreshAISQLSemanticSnapshot(updated, 'rows recovered');
     setDataset(updated);
     saveDatasetToDB(updated);
     console.log(`[App] Recovered ${recoveredRows.length} rows. New total: ${updatedRows.length}`);
@@ -640,7 +685,13 @@ function App() {
 
   const handleDatasetDataCleaned = (newRows: Record<string, any>[], log: any) => {
     if (!dataset) return;
-    const updated: Dataset = { ...dataset, rows: newRows, totalRows: newRows.length };
+    const updated: Dataset = {
+      ...dataset,
+      rows: newRows,
+      totalRows: newRows.length,
+      version: (dataset.version || 1) + 1,
+    };
+    refreshAISQLSemanticSnapshot(updated, `manual cleaning: ${log.operation}`);
     setDataset(updated);
     saveDatasetToDB(updated);
     console.log(`[App] Data cleaning: ${log.operation} — ${log.rowsAffected} rows affected. New total: ${newRows.length}`);
@@ -652,7 +703,11 @@ function App() {
   ) => {
     if (!dataset) return;
     // Semantic-only update: preserves rows and avoids another ETL run.
-    let finalDataset: Dataset = { ...dataset, domainProfile: updatedProfile };
+    let finalDataset: Dataset = {
+      ...dataset,
+      domainProfile: updatedProfile,
+      version: (dataset.version || 1) + 1,
+    };
     if (Object.keys(columnTypeOverrides).length > 0) {
       const updatedColumns = dataset.columns.map(col => {
         const override = columnTypeOverrides[col.name];
@@ -669,6 +724,7 @@ function App() {
     } catch (err) {
       console.warn('[App] Semantic model rebuild failed:', err);
     }
+    refreshAISQLSemanticSnapshot(finalDataset, 'column mapping applied');
     setDataset(finalDataset);
     saveDatasetToDB(finalDataset);
     setPendingProfile(null);
@@ -712,17 +768,8 @@ function App() {
           version: 1,
           createdAt: Date.now(),
         };
-        // ── BUILD SEMANTIC MODEL ──
-        try {
-          const model = buildSemanticModel(sampleDs);
-          (sampleDs as any).semanticModel = model;
-          console.log(`[App] Sample data semantic model: ${model.measures.length} measures, ${model.dimensions.length} dimensions`);
-        } catch (err) {
-          console.warn('[App] Semantic model build failed for sample data:', err);
-        }
-        setDataset(sampleDs);
-        saveDatasetToDB(sampleDs);
-        // Open Column Mapping Wizard
+        // Build the local domain profile before either semantic model so the
+        // persisted snapshots describe the same dataset revision.
         const colSem: Record<string, any> = {};
         for (const col of columns) {
           colSem[col.name] = {
@@ -736,7 +783,20 @@ function App() {
           };
         }
         const sampleProfile: any = { domain: 'Sales', summary: 'Sample sales dataset', confidence: 0.9, themeColor: '#6366f1', columnSemantics: colSem, detectedAt: Date.now() };
-        (sampleDs as any).domainProfile = sampleProfile;
+        sampleDs.domainProfile = sampleProfile;
+
+        // ── BUILD SEMANTIC MODELS ──
+        try {
+          const model = buildSemanticModel(sampleDs);
+          (sampleDs as any).semanticModel = model;
+          console.log(`[App] Sample data semantic model: ${model.measures.length} measures, ${model.dimensions.length} dimensions`);
+        } catch (err) {
+          console.warn('[App] Semantic model build failed for sample data:', err);
+        }
+        refreshAISQLSemanticSnapshot(sampleDs, 'sample upload ETL complete');
+        setDataset(sampleDs);
+        saveDatasetToDB(sampleDs);
+        // Open Column Mapping Wizard
         setPendingProfile(sampleProfile);
         setActiveTab(Tab.COLUMN_MAPPING);
         setProcessing(false);
@@ -799,6 +859,7 @@ function App() {
         } catch (err) {
           console.warn('[App] Semantic model build failed for connector:', err);
         }
+        refreshAISQLSemanticSnapshot(connDs, 'connector ETL complete');
 
         // Set state AFTER domainProfile is attached — prevents useEffect race condition
         setDataset(connDs);
@@ -901,6 +962,7 @@ function App() {
           } catch (err) {
             console.warn('[App] Semantic model rebuild failed on refresh:', err);
           }
+          refreshAISQLSemanticSnapshot(refreshedDs, 'live refresh ETL complete');
           // Update schedule: record success + reset failure counter
           if (refreshedDs.refreshSchedule?.enabled) {
             refreshedDs.refreshSchedule = {
@@ -1708,7 +1770,11 @@ function App() {
                 <div className={`h-full w-full overflow-hidden ${activeTab === Tab.DERIVED_COLUMNS ? '' : 'hidden'}`}>
                   <DerivedColumnsView
                     dataset={dataset}
-                    onDatasetUpdate={(updated) => { setDataset(updated); saveDatasetToDB(updated); }}
+                    onDatasetUpdate={(updated) => {
+                      refreshAISQLSemanticSnapshot(updated, 'derived column update');
+                      setDataset(updated);
+                      saveDatasetToDB(updated);
+                    }}
                   />
                 </div>
 
