@@ -27,6 +27,8 @@ import {
 } from './analyticalIR';
 import { getAISQLEngineConfig } from './engineConfig';
 
+export const SIGNED_OUTCOME_SEMANTICS = `For signed business outcome measures such as profit, net income, margin, balance, or variance, ordinary phrases such as "no profit", "not profitable", "did not make a profit", or "failed to make a positive margin" mean the aggregated outcome is non-positive (<= 0) at the requested entity grain. Reserve exact equality (= 0) for explicit wording such as "zero", "exactly zero", or "equal to zero". This rule is about signed outcomes; questions about no related records still use anti-join/existence logic.`;
+
 const SYSTEM_PROMPT = `You are an expert analyst who writes SQL for DuckDB.
 Given a database schema and a question, output a SINGLE read-only SQL SELECT that answers it.
 Rules:
@@ -44,6 +46,7 @@ Rules:
 - Respect table ownership and join grain. A field is read from the physical table that owns it; a same-named field in another table is not interchangeable. When a one-to-many join would duplicate a measure from the one-side, pre-aggregate at the required grain before joining (or aggregate only the owning table) rather than summing duplicated values.
 - For counts of related records, count the related table's stable key or rows after the declared join. For counts of parent entities, use COUNT(DISTINCT parent_key) when the join fans out.
 - Treat absence and exclusion as set logic. Questions such as "entities with no related records" require NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT against the related table; never simulate absence by grouping only the primary table and writing HAVING COUNT(...) = 0.
+- ${SIGNED_OUTCOME_SEMANTICS}
 - Treat "both population A and population B", "in both", and "common to" as set intersection. Use INTERSECT, two correlated EXISTS predicates, or equivalent conditional aggregation, and emit each requested entity once.
 - Preserve the requested output entity and grain. Do not return a continent when country names were requested, or collapse several requested rows into one group.
 - Explicit grouping language is authoritative: "each category's ...", "for every region", "per customer", and "by product" make that named field the result grain. Never replace it with an available row identifier such as order_id, event_id, or customer_id.
@@ -121,6 +124,7 @@ When a question compares membership in independently ranked populations (for exa
 Define expectedResult from the words that describe what the user wants returned, before planning filters. Aggregates used only as comparison thresholds belong in filters/subqueries and must not replace those requested result fields. Never invent COUNT, collection aggregates, GROUP BY, or LIMIT from a column name or from a filter's aggregate.
 Explicit grouping language is authoritative: "each X's", "for every X", "per X", and "by X" make X the GROUP BY and expected-result grain. Never substitute a row identifier merely because it is unique. If multiple calculations refer to the same measure, calculate one grouped base measure and derive share, rank, running/cumulative percentage, and related outputs from that base; do not change a measure-share request into row-count share.
 Relative analytical language is answerable without a user-supplied literal threshold. Interpret "high/strong" and "low/weak/negative" from the complete question and schema, explicitly record the chosen reference population and comparison in the Query Specification, and ask only when genuinely competing interpretations would materially change the answer.
+${SIGNED_OUTCOME_SEMANTICS} Record this as an aggregate HAVING condition when the question asks which grouped entities qualify.
 For a filtered population compared with an average, explicitly identify the reference population. Unless the wording says overall/global/all records, phrases such as "patients with X ... higher than average" use the same X-filtered cohort for both the outer population and the AVG reference. Preserve strict boundaries: "higher than" is >; "at least ... higher" is >=.
 Represent negative existence explicitly as an anti-join/set operation (NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT). Preserve the requested entity as expectedResult grain and columns; never substitute a related table or a higher-level grouping.
 
@@ -778,7 +782,7 @@ export async function repairSemanticSQL(
     const repaired = await fetchWithFallback([
         {
             role: 'system',
-            content: `${SYSTEM_PROMPT}\n\nYou are performing a result-aware semantic repair. The SQL was syntactically valid, but local execution violated the expected result shape. Re-check table selection, relationship path, entity grain, filter placement, case-sensitive literals, anti-join logic, grouping, and output columns. Do not remove a requested condition merely to manufacture rows. Return only corrected SQL.`,
+            content: `${SYSTEM_PROMPT}\n\nYou are performing a result-aware semantic repair. The SQL was syntactically valid, but local execution violated the expected result shape. Re-check table selection, relationship path, entity grain, filter placement, case-sensitive literals, anti-join logic, grouping, comparison boundaries, and output columns. In particular, distinguish an explicitly requested exact zero from a signed business outcome that failed to become positive. Do not remove a requested condition merely to manufacture rows. Return only corrected SQL.`,
         },
         {
             role: 'user',

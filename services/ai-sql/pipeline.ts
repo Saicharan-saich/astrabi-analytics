@@ -41,6 +41,7 @@ import { buildQueryPlan } from '../queryPlan/buildQueryPlan';
 import { compileSQL } from '../queryPlan/sqlCompiler';
 import { getDates } from '../dateHelpers';
 import { applyTableCalculation } from '../../utils/tableCalculations';
+import { buildNoDataExplanation } from './noDataExplanation';
 import { auditSqlLiterals, buildValueCatalog, groundFilters, groundQuestionLiterals, groundSqlLiterals } from './valueGrounding';
 import { verifyPlan } from './planVerification';
 // ─── Ambiguity Intelligence Layer ────────────────────────────────
@@ -1614,23 +1615,14 @@ export async function runAISQLPipeline(
     }
 
     if (rawData.length === 0) {
-        // Build a helpful no-data message instead of throwing
-        const tc = semanticModel.timeContext;
-        const periodDesc = resolvedTime?.description
-            ? `for ${resolvedTime.description}`
-            : plan.filters.length > 0 ? 'for the specified filters' : '';
-        const rangeNote = tc
-            ? ` The dataset contains data from ${tc.minDate} to ${tc.maxDate}.`
-            : '';
-
-        const valueNote = unmatchedLiterals.length > 0
-            ? ` These value(s) weren't found in your data: ${unmatchedLiterals.map(v => `"${v}"`).join(', ')}. Check the spelling, or they may be stored in a different column${effectivePrivacyMode === 'strict' ? ' — or switch to "Better answers" mode so the AI can see your real values' : ''}.`
-            : '';
-
-        const noDataExplanation = unmatchedLiterals.length > 0
-            ? `No matching data found.${valueNote}`
-            : `No data found ${periodDesc}.${rangeNote} ` +
-              `Try broadening your date range, removing filters, or checking if your data covers this period.`;
+        const noDataExplanation = buildNoDataExplanation({
+            sql: currentSQL,
+            plan,
+            semanticModel,
+            resolvedTime,
+            unmatchedLiterals,
+            privacyMode: effectivePrivacyMode,
+        });
 
         console.warn('[Pipeline] Query returned 0 rows —', noDataExplanation);
 
