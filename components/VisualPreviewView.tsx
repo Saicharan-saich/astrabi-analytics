@@ -2,10 +2,11 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ArrowLeft, Pin, Code, Table2, BarChart2, Palette, Activity, Sparkles,
   Copy, Check, X, RefreshCw, Play, Database, Loader2, Microscope,
-  MessageSquare, Send, MousePointerClick, ChevronDown
+  MessageSquare, Send, MousePointerClick, ChevronDown, ListChecks
 } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { ChartVisualization } from './ChartVisualization';
+import { DimensionResultView } from './DimensionResultView';
 import { FormatPanel } from './FormatPanel';
 import { AIInsightPanel } from './AIInsightPanel';
 import { getCalculationDisplayName, type TableCalculation } from '../utils/tableCalculations';
@@ -13,6 +14,7 @@ import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { useTheme } from './ThemeProvider';
 import TrustBadge from './TrustBadge';
 import { PipelineReport } from './PipelineReport';
+import { isDimensionOnlyResult } from '../services/ai-sql/resultPresentation';
 
 interface VisualPreviewViewProps {
   dataset: Dataset | null;
@@ -38,7 +40,9 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [activeTab, setActiveTab] = useState<'chart' | 'table' | 'sql'>(() =>
-    initialPipeline?.chart?.chartType === 'table' ? 'table' : 'chart'
+    isDimensionOnlyResult(initialPipeline?.profile, initialPipeline?.rawData?.length ? initialPipeline.rawData : initialResult.data)
+      ? 'chart'
+      : initialPipeline?.chart?.chartType === 'table' ? 'table' : 'chart'
   );
   const [workspaceMode, setWorkspaceMode] = useState<'result' | 'details'>('result');
   const [detailsSection, setDetailsSection] = useState<'overview' | 'workspace'>('overview');
@@ -77,8 +81,9 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   useEffect(() => {
     setResult(initialResult);
     const recommendedTable = initialPipeline?.chart?.chartType === 'table';
+    const dimensionOnly = isDimensionOnlyResult(initialPipeline?.profile, initialPipeline?.rawData?.length ? initialPipeline.rawData : initialResult.data);
     setChartType(recommendedTable ? 'horizontalBar' : ((initialResult.vis as string) || 'bar'));
-    setActiveTab(recommendedTable ? 'table' : 'chart');
+    setActiveTab(dimensionOnly ? 'chart' : recommendedTable ? 'table' : 'chart');
     setWorkspaceMode('result');
     setDetailsSection('overview');
   }, [initialResult, initialPipeline]);
@@ -98,6 +103,13 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const activeTableData = activePipeline?.rawData?.length
     ? activePipeline.rawData
     : activeResult.data;
+  const activeDimensionOnly = isDimensionOnlyResult(activePipeline?.profile, activeTableData);
+  useEffect(() => {
+    if (!activeDimensionOnly) return;
+    setIsFormatPanelOpen(false);
+    setIsAnalyticsPanelOpen(false);
+    setIsAIInsightOpen(false);
+  }, [activeDimensionOnly]);
   const activeQuery = drillDown?.query || query;
   const sql = activeResult.sql || activePipeline?.sql || '';
   const explanation = activeResult.insight || activePipeline?.explanation || '';
@@ -144,7 +156,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           secondaryYKeys: res.chart.secondaryYKeys,
         },
       });
-      setActiveTab(res.chart.chartType === 'table' ? 'table' : 'chart');
+      setActiveTab(isDimensionOnlyResult(res.profile, res.rawData) ? 'chart' : res.chart.chartType === 'table' ? 'table' : 'chart');
     } catch { /* ignore */ } finally { setIsDrilling(false); }
   }, [dataset, isDrilling, pipeline, query]);
 
@@ -173,7 +185,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       });
       setPipeline(res);
       setChartType(chartMap[res.chart.chartType] || 'bar');
-      setActiveTab(res.chart.chartType === 'table' ? 'table' : 'chart');
+      setActiveTab(isDimensionOnlyResult(res.profile, res.rawData) ? 'chart' : res.chart.chartType === 'table' ? 'table' : 'chart');
       setWorkspaceMode('result');
     } catch { /* ignore */ } finally { setIsFollowUpLoading(false); }
   }, [dataset, followUpQuery, isFollowUpLoading, activeQuery, activePipeline]);
@@ -230,7 +242,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         secondaryYKeys: res.chart.secondaryYKeys,
       });
       setChartType((chartMap[res.chart.chartType] || 'bar'));
-      setActiveTab(res.chart.chartType === 'table' ? 'table' : 'chart');
+      setActiveTab(isDimensionOnlyResult(res.profile, res.rawData) ? 'chart' : res.chart.chartType === 'table' ? 'table' : 'chart');
       setWorkspaceMode('result');
     } catch { /* ignore */ } finally { setIsReloading(false); }
   };
@@ -377,12 +389,18 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       {workspaceMode === 'details' && (
       <div role="tablist" aria-label="Answer detail sections" className={`flex items-center gap-2 px-5 py-2 border-b shrink-0 ${isDark ? 'border-white/[0.06] bg-[#0f1219]/50' : 'bg-gray-50/50 border-gray-100'}`}>
         <button role="tab" aria-selected={detailsSection === 'overview'} aria-controls="ai-sql-details-overview" onClick={() => setDetailsSection('overview')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${detailsSection === 'overview' ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 ring-1 ring-indigo-400/30' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}><Database className="w-3.5 h-3.5" /> Overview</button>
-        <button role="tab" aria-selected={detailsSection === 'workspace' && activeTab === 'chart'} aria-controls="ai-sql-result-workspace" onClick={() => { setActiveTab('chart'); setDetailsSection('workspace'); }} className={tabBtnClass('chart')}><BarChart2 className="w-3.5 h-3.5" /> Chart</button>
+        <button role="tab" aria-selected={detailsSection === 'workspace' && activeTab === 'chart'} aria-controls="ai-sql-result-workspace" onClick={() => { setActiveTab('chart'); setDetailsSection('workspace'); }} className={tabBtnClass('chart')}>
+          {activeDimensionOnly ? <ListChecks className="w-3.5 h-3.5" /> : <BarChart2 className="w-3.5 h-3.5" />} {activeDimensionOnly ? 'List' : 'Chart'}
+        </button>
         <button role="tab" aria-selected={detailsSection === 'workspace' && activeTab === 'table'} aria-controls="ai-sql-result-workspace" onClick={() => { setActiveTab('table'); setDetailsSection('workspace'); }} className={tabBtnClass('table')}><Table2 className="w-3.5 h-3.5" /> Table</button>
         <button role="tab" aria-selected={detailsSection === 'workspace' && activeTab === 'sql'} aria-controls="ai-sql-result-workspace" onClick={() => { setActiveTab('sql'); setDetailsSection('workspace'); }} className={tabBtnClass('sql')}><Code className="w-3.5 h-3.5" /> SQL</button>
         <div className="w-px h-5 bg-gray-200 dark:bg-white/10 mx-1" />
-        <button onClick={() => { setActiveTab('chart'); setDetailsSection('workspace'); setIsFormatPanelOpen(!isFormatPanelOpen); }} className={`px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${isFormatPanelOpen ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 ring-1 ring-indigo-400/30' : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}><Palette className="w-3.5 h-3.5 inline mr-1" />Format</button>
-        <button onClick={() => { setActiveTab('chart'); setDetailsSection('workspace'); setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen); }} className={`px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${isAnalyticsPanelOpen ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 ring-1 ring-emerald-400/30' : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}><Activity className="w-3.5 h-3.5 inline mr-1" />Analytics</button>
+        {!activeDimensionOnly && (
+          <>
+            <button onClick={() => { setActiveTab('chart'); setDetailsSection('workspace'); setIsFormatPanelOpen(!isFormatPanelOpen); }} className={`px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${isFormatPanelOpen ? 'bg-indigo-50 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 ring-1 ring-indigo-400/30' : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}><Palette className="w-3.5 h-3.5 inline mr-1" />Format</button>
+            <button onClick={() => { setActiveTab('chart'); setDetailsSection('workspace'); setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen); }} className={`px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${isAnalyticsPanelOpen ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 ring-1 ring-emerald-400/30' : 'text-gray-500 dark:text-slate-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}><Activity className="w-3.5 h-3.5 inline mr-1" />Analytics</button>
+          </>
+        )}
         <div className="flex-1" />
         {/* KPI badge */}
         {result.kpi !== undefined && (
@@ -400,7 +418,17 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* Chart Tab */}
           {activeTab === 'chart' && (
-            <div className={`relative overflow-hidden border border-slate-200 bg-white shadow-xl ${workspaceMode === 'result' ? 'm-3 h-[calc(100%_-_1.5rem)] rounded-[24px] p-4 sm:m-5 sm:h-[calc(100%_-_2.5rem)] sm:p-5' : 'h-full rounded-2xl p-6'}`} ref={chartContainerRef}>
+            <div className={activeDimensionOnly
+              ? `relative overflow-hidden ${workspaceMode === 'result' ? 'm-3 h-[calc(100%_-_1.5rem)] sm:m-5 sm:h-[calc(100%_-_2.5rem)]' : 'h-full p-4'}`
+              : `relative overflow-hidden border border-slate-200 bg-white shadow-xl ${workspaceMode === 'result' ? 'm-3 h-[calc(100%_-_1.5rem)] rounded-[24px] p-4 sm:m-5 sm:h-[calc(100%_-_2.5rem)] sm:p-5' : 'h-full rounded-2xl p-6'}`
+            } ref={chartContainerRef}>
+              {activeDimensionOnly ? (
+                <DimensionResultView
+                  rows={activeTableData}
+                  isDark={isDark}
+                  ranked={activePipeline?.plan?.intent === 'ranking'}
+                />
+              ) : (
               <ChartVisualization
                 data={activeResult.data} xKey={activeResult.xKey} yKey={activeResult.yKey} yLabel={activeResult.yLabel}
                 config={activeResult.config}
@@ -434,13 +462,14 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 onDrillDown={handleDrillDown}
                 disableAutoSeries={Boolean(activePipeline) && !['stackedBar', 'groupedBar', 'multiLine'].includes(activePipeline?.chart?.chartType || '')}
               />
+              )}
               {/* Drill-down hint */}
-              {(workspaceMode === 'result' || detailsSection === 'workspace') && !drillDown && !isDrilling && (
+              {!activeDimensionOnly && (workspaceMode === 'result' || detailsSection === 'workspace') && !drillDown && !isDrilling && (
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 text-[10px] text-gray-400 dark:text-slate-500 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm px-3 py-1 rounded-full border border-gray-200/50 dark:border-white/5 opacity-60 hover:opacity-100 transition-opacity pointer-events-none">
                   <MousePointerClick className="w-3 h-3" /> Click any data point to drill down
                 </div>
               )}
-              {(workspaceMode === 'result' || detailsSection === 'workspace') && <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={activeResult.yLabel} chartContext={{ chartType: activeResult.vis, xKey: activeResult.xKey, yKey: activeResult.yKey, comparisonMode: (activeResult.config as any)?.comparison || undefined }} />}
+              {!activeDimensionOnly && (workspaceMode === 'result' || detailsSection === 'workspace') && <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={activeResult.yLabel} chartContext={{ chartType: activeResult.vis, xKey: activeResult.xKey, yKey: activeResult.yKey, comparisonMode: (activeResult.config as any)?.comparison || undefined }} />}
             </div>
           )}
 
@@ -549,12 +578,12 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         </div>
 
         {/* ── Side Panels ─────────────────────────────── */}
-        {(workspaceMode === 'result' || detailsSection === 'workspace') && isFormatPanelOpen && (
+        {!activeDimensionOnly && (workspaceMode === 'result' || detailsSection === 'workspace') && isFormatPanelOpen && (
           <div className={`w-[320px] shrink-0 border-l overflow-hidden ${isDark ? 'border-white/[0.06] bg-[#0f1219]' : 'border-gray-200 bg-white'}`}>
             <FormatPanel embedded formatting={localFormatting} onUpdateFormatting={updateFormatting} onClose={() => setIsFormatPanelOpen(false)} chartType={chartType} />
           </div>
         )}
-        {(workspaceMode === 'result' || detailsSection === 'workspace') && isAnalyticsPanelOpen && (
+        {!activeDimensionOnly && (workspaceMode === 'result' || detailsSection === 'workspace') && isAnalyticsPanelOpen && (
           <div className={`w-72 shrink-0 border-l overflow-y-auto ${isDark ? 'border-white/[0.06] bg-[#0f1219]' : 'border-gray-200 bg-white'}`}>
             <div className="p-4 border-b border-gray-100 dark:border-white/5">
               <div className="flex justify-between items-center">
