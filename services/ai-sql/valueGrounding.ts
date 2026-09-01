@@ -29,6 +29,23 @@ export interface SqlLiteralAuditIssue {
     operator: '=' | 'LIKE' | 'ILIKE';
 }
 
+export interface SqlPredicateProvenanceOptions {
+    /** Original user wording. Quoted literals are authoritative user input. */
+    question?: string;
+    /** High-confidence locally grounded predicates from the query contract. */
+    requiredPredicates?: Array<{
+        table?: string;
+        field: string;
+        value: unknown;
+        confidence?: 'high' | 'medium';
+    }>;
+}
+
+export interface SqlPredicateProvenanceRepair {
+    sql: string;
+    removed: SqlLiteralAuditIssue[];
+}
+
 const NEGATION_CUES = [
     'not ', "n't ", 'never ', 'without ', 'excluding ', 'exclude ', 'except ',
     'other than ', 'apart from ', 'besides ', 'no ',
@@ -161,6 +178,172 @@ export function auditSqlLiterals(sql: string, catalog: ValueCatalog): SqlLiteral
         if (!found) issues.push({ field, literal, operator });
     }
     return issues;
+}
+
+function samePredicateField(left: string, right: string, table?: string): boolean {
+    const normalizedLeft = left.toLowerCase();
+    const normalizedRight = right.toLowerCase();
+    if (normalizedLeft === normalizedRight || normalizedLeft.endsWith(`.${normalizedRight}`)) return true;
+    return Boolean(table && normalizedLeft === `${table}.${normalizedRight}`.toLowerCase());
+}
+
+function requiredPredicateSupportsIssue(
+    issue: SqlLiteralAuditIssue,
+    predicates: SqlPredicateProvenanceOptions['requiredPredicates'],
+): boolean {
+    return (predicates || []).some(predicate => {
+        if (predicate.confidence === 'medium') return false;
+        const values = Array.isArray(predicate.value) ? predicate.value : [predicate.value];
+        return samePredicateField(issue.field, predicate.field, predicate.table)
+            && values.some(value => normalizedText(value) === normalizedText(issue.literal));
+    });
+}
+
+function questionExplicitlySupportsIssue(question: string, issue: SqlLiteralAuditIssue): boolean {
+    if (!question) return false;
+    if (extractQuestionLiterals(question).some(value => normalizedText(value) === normalizedText(issue.literal))) {
+        return true;
+    }
+
+    // An unquoted value is authoritative only when the question also names the
+    // referenced field close to it ("position Alumni"). This prevents a source
+    // or domain name such as Student_Club from becoming position='Student_Club'.
+    const normalizedQuestion = normalizedText(question).replace(/[_-]+/g, ' ');
+    const literal = normalizedText(issue.literal).replace(/[_-]+/g, ' ');
+    const column = issue.field.split('.').pop()!.replace(/[_-]+/g, ' ');
+    let at = normalizedQuestion.indexOf(literal);
+    while (at >= 0) {
+        const window = normalizedQuestion.slice(Math.max(0, at - 64), at + literal.length + 64);
+        if (window.includes(column)) return true;
+        at = normalizedQuestion.indexOf(literal, at + literal.length);
+    }
+    return false;
+}
+
+/**
+ * Return model-authored categorical predicates that have no local provenance.
+ *
+ * A predicate is challenged only when the referenced field has a complete
+ * bounded local domain and the literal is absent from it. Explicit user
+ * literals and high-confidence contract predicates remain authoritative, so a
+ * legitimate request for a value with no matching rows is never broadened.
+ */
+export function auditSqlPredicateProvenance(
+    sql: string,
+    catalog: ValueCatalog,
+    options: SqlPredicateProvenanceOptions = {},
+): SqlLiteralAuditIssue[] {
+    return auditSqlLiterals(sql, catalog).filter(issue =>
+        !questionExplicitlySupportsIssue(options.question || '', issue)
+        && !requiredPredicateSupportsIssue(issue, options.requiredPredicates)
+    );
+}
+
+type SqlWord = { value: string; start: number; end: number };
+
+/** Top-level SQL words, excluding quoted text and nested subqueries. */
+function topLevelSqlWords(sql: string): SqlWord[] {
+    const words: SqlWord[] = [];
+    let depth = 0;
+    let quote: "'" | '"' | '`' | null = null;
+    for (let i = 0; i < sql.length;) {
+        const char = sql[i];
+        if (quote) {
+            if (char === quote) {
+                if (sql[i + 1] === quote) { i += 2; continue; }
+                quote = null;
+            }
+            i += 1;
+            continue;
+        }
+        if (char === "'" || char === '"' || char === '`') { quote = char; i += 1; continue; }
+        if (char === '(') { depth += 1; i += 1; continue; }
+        if (char === ')') { depth = Math.max(0, depth - 1); i += 1; continue; }
+        if (depth === 0 && /[a-z_]/i.test(char)) {
+            const start = i;
+            i += 1;
+            while (i < sql.length && /[a-z0-9_$]/i.test(sql[i])) i += 1;
+            words.push({ value: sql.slice(start, i).toLowerCase(), start, end: i });
+            continue;
+        }
+        i += 1;
+    }
+    return words;
+}
+
+function unwrapPredicate(value: string): string {
+    let out = value.trim();
+    while (out.startsWith('(') && out.endsWith(')')) {
+        const words = topLevelSqlWords(out.slice(1, -1));
+        // The word scan is also a balanced-quote/parenthesis check for the
+        // simple leaf form below; nested expressions are deliberately refused.
+        if (words.some(word => ['select', 'and', 'or'].includes(word.value))) break;
+        out = out.slice(1, -1).trim();
+    }
+    return out;
+}
+
+function conjunctMatchesIssue(conjunct: string, issue: SqlLiteralAuditIssue): boolean {
+    const leaf = unwrapPredicate(conjunct);
+    const match = /^(?:["`]?([a-z_][\w$]*)["`]?\s*\.\s*)?["`]?([a-z_][\w$]*)["`]?\s*(=|like|ilike)\s*'((?:[^']|'')*)'$/i.exec(leaf);
+    if (!match) return false;
+    const column = match[2].toLowerCase();
+    const operator = match[3].toUpperCase();
+    const literal = match[4].replace(/''/g, "'");
+    return issue.field.toLowerCase().endsWith(`.${column}`)
+        || issue.field.toLowerCase() === column
+        ? operator === issue.operator && normalizedText(literal) === normalizedText(issue.literal)
+        : false;
+}
+
+/**
+ * Remove only unsupported *top-level AND leaf* predicates from an outer WHERE.
+ * OR expressions, BETWEEN, subqueries, and a sole predicate are never changed.
+ * This narrow structural fallback runs only after the model has been offered a
+ * semantic repair; it cannot rewrite joins, projections, grouping, or metrics.
+ */
+export function removeUnsupportedTopLevelPredicates(
+    sql: string,
+    issues: SqlLiteralAuditIssue[],
+): SqlPredicateProvenanceRepair {
+    if (!issues.length) return { sql, removed: [] };
+    const words = topLevelSqlWords(sql);
+    const whereIndex = words.findIndex(word => word.value === 'where');
+    if (whereIndex < 0) return { sql, removed: [] };
+    const whereWord = words[whereIndex];
+    const clauseEndWord = words.slice(whereIndex + 1).find(word =>
+        ['group', 'having', 'qualify', 'window', 'order', 'limit', 'union', 'intersect', 'except'].includes(word.value)
+    );
+    const bodyEnd = clauseEndWord?.start ?? sql.replace(/;\s*$/, '').length;
+    const body = sql.slice(whereWord.end, bodyEnd);
+    const bodyWords = topLevelSqlWords(body);
+    // BETWEEN contains a semantic AND, while OR cannot be safely broadened by
+    // deleting one branch. Both shapes are left for model repair/clarification.
+    if (bodyWords.some(word => word.value === 'or' || word.value === 'between')) return { sql, removed: [] };
+
+    const andWords = bodyWords.filter(word => word.value === 'and');
+    if (!andWords.length) return { sql, removed: [] };
+    const conjuncts: string[] = [];
+    let start = 0;
+    for (const andWord of andWords) {
+        conjuncts.push(body.slice(start, andWord.start));
+        start = andWord.end;
+    }
+    conjuncts.push(body.slice(start));
+
+    const removed: SqlLiteralAuditIssue[] = [];
+    const retained = conjuncts.filter(conjunct => {
+        const issue = issues.find(candidate => conjunctMatchesIssue(conjunct, candidate));
+        if (!issue) return true;
+        removed.push(issue);
+        return false;
+    });
+    if (!removed.length || retained.length === 0) return { sql, removed: [] };
+
+    const prefix = sql.slice(0, whereWord.end).trimEnd();
+    const suffix = sql.slice(bodyEnd).trimStart();
+    const repaired = `${prefix} ${retained.map(item => item.trim()).join(' AND ')}${suffix ? `\n${suffix}` : ''}`;
+    return { sql: repaired, removed };
 }
 
 /**

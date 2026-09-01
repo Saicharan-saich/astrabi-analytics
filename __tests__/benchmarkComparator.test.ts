@@ -136,6 +136,42 @@ describe('benchmark result comparator', () => {
     expect(result.equivalenceRule).toBe('requested_projection');
   });
 
+  it('normalizes structured model output descriptors instead of throwing c.trim', () => {
+    const expected = [
+      { category: 'Advertisement', type: 'Guest Speaker' },
+      { category: 'Parking', type: 'Guest Speaker' },
+    ];
+    const actual = [
+      { category: 'Advertisement' },
+      { category: 'Parking' },
+    ];
+
+    expect(() => compareResultSetsAtRequestedProjection(
+      expected,
+      actual,
+      { orderMatters: false },
+      [{ field: 'category' }] as any,
+    )).not.toThrow();
+    expect(compareResultSetsAtRequestedProjection(
+      expected,
+      actual,
+      { orderMatters: false },
+      [{ field: 'category' }] as any,
+    )).toMatchObject({ equal: true, equivalenceRule: 'requested_projection' });
+  });
+
+  it('fails closed without throwing for unusable output descriptors', () => {
+    const expected = [{ category: 'Advertisement', type: 'Guest Speaker' }];
+    const actual = [{ category: 'Advertisement' }];
+    const result = compareResultSetsAtRequestedProjection(
+      expected,
+      actual,
+      { orderMatters: false },
+      [{ unexpected: ['category'] }] as any,
+    );
+    expect(result.equal).toBe(false);
+  });
+
   it('still requires an aggregate when the answer contract asks to display it', () => {
     const expected = [{ industry: 'Finance', average_satisfaction_score: 77 }];
     const actual = [{ industry: 'Finance' }];

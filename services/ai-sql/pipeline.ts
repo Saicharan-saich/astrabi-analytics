@@ -42,7 +42,15 @@ import { compileSQL } from '../queryPlan/sqlCompiler';
 import { getDates } from '../dateHelpers';
 import { applyTableCalculation } from '../../utils/tableCalculations';
 import { buildNoDataExplanation } from './noDataExplanation';
-import { auditSqlLiterals, buildValueCatalog, groundFilters, groundQuestionLiterals, groundSqlLiterals } from './valueGrounding';
+import {
+    auditSqlLiterals,
+    auditSqlPredicateProvenance,
+    buildValueCatalog,
+    groundFilters,
+    groundQuestionLiterals,
+    groundSqlLiterals,
+    removeUnsupportedTopLevelPredicates,
+} from './valueGrounding';
 import { verifyPlan } from './planVerification';
 // ─── Ambiguity Intelligence Layer ────────────────────────────────
 import { detectAmbiguities } from './ambiguityDetector';
@@ -56,6 +64,7 @@ import { detectAntiJoin, buildAntiJoinSQL } from './antiJoin';
 import {
     applyQuerySpecToAnalysisPlan,
     generateDirectSQL,
+    normalizeQuerySpecOutputFields,
     repairSemanticSQL,
     type DynamicQuerySpec,
 } from './directSqlEngine';
@@ -1016,6 +1025,106 @@ export async function runAISQLPipeline(
     if (!validation.valid) {
         console.warn('[Pipeline] SQL validation failed:', _failedChecks);
     }
+
+    // ─── Step 4b: Predicate Provenance Gate ─────────────────────
+    // A read-only query can still be confidently wrong when the model turns a
+    // dataset/domain name into an invented categorical filter. Validate every
+    // equality/LIKE literal whose local field domain is complete before the
+    // query reaches DuckDB. Only unsupported metadata is shared with repair;
+    // local values and result rows remain in the browser.
+    const predicateGateStart = performance.now();
+    let predicateIssues = _valueCatalog
+        ? auditSqlPredicateProvenance(currentSQL, _valueCatalog, {
+            question,
+            requiredPredicates: activeQueryContract?.requiredPredicates,
+        })
+        : [];
+    const originalPredicateIssueCount = predicateIssues.length;
+    let predicateGateResolution: 'pass' | 'model-repair' | 'local-safe-removal' = 'pass';
+    if (predicateIssues.length > 0 && directSQL) {
+        console.warn('[Pipeline] Predicate provenance rejected unsupported model filters:', predicateIssues);
+
+        // First return the concrete metadata violation to the SQL author. This
+        // keeps analytical reasoning model-owned while making local evidence a
+        // real execution boundary rather than a post-hoc warning.
+        if (engineConfig.semanticResultRepair && directSchemaText) {
+            try {
+                const semanticRepair = await repairSemanticSQL(
+                    question,
+                    directSchemaText,
+                    directQuerySpec,
+                    currentSQL,
+                    `Pre-execution predicate provenance failed. These model-authored categorical predicates use values that do not exist in their referenced complete local domains and are not explicitly grounded by the user or query contract: ${predicateIssues.map(issue => `${issue.field} ${issue.operator} '${issue.literal.replace(/'/g, "''")}'`).join('; ')}. Remove the unsupported predicate(s); do not invent replacements and preserve every other requested output, join, and filter.`,
+                    executionOptions?.requestPurpose,
+                    activeQueryContract,
+                );
+                directSqlTokens += semanticRepair.tokens;
+                if (!semanticRepair.error && semanticRepair.sql !== currentSQL) {
+                    let repairedSQL = semanticRepair.sql;
+                    if (_valueCatalog) repairedSQL = groundSqlLiterals(repairedSQL, _valueCatalog).sql;
+                    const remainingIssues = _valueCatalog
+                        ? auditSqlPredicateProvenance(repairedSQL, _valueCatalog, {
+                            question,
+                            requiredPredicates: activeQueryContract?.requiredPredicates,
+                        })
+                        : [];
+                    if (remainingIssues.length === 0) {
+                        currentSQL = repairedSQL;
+                        directSQL = repairedSQL;
+                        validation = validateSQL(currentSQL, plan, semanticModel);
+                        predicateIssues = [];
+                        predicateGateResolution = 'model-repair';
+                        repairAttempts++;
+                        sqlResult.explanation = 'Removed an unsupported categorical interpretation before local execution.';
+                    } else {
+                        predicateIssues = remainingIssues;
+                    }
+                }
+            } catch (predicateRepairError: any) {
+                console.warn('[Pipeline] Predicate provenance model repair skipped:', predicateRepairError?.message || predicateRepairError);
+            }
+        }
+
+        // Bounded structural fallback: remove only a provably unsupported,
+        // simple outer-WHERE leaf joined by AND. Complex OR/BETWEEN/subquery
+        // logic is never rewritten; it remains blocked for clarification.
+        if (predicateIssues.length > 0) {
+            const localRepair = removeUnsupportedTopLevelPredicates(currentSQL, predicateIssues);
+            if (localRepair.removed.length > 0) {
+                currentSQL = localRepair.sql;
+                directSQL = localRepair.sql;
+                validation = validateSQL(currentSQL, plan, semanticModel);
+                predicateIssues = _valueCatalog
+                    ? auditSqlPredicateProvenance(currentSQL, _valueCatalog, {
+                        question,
+                        requiredPredicates: activeQueryContract?.requiredPredicates,
+                    })
+                    : [];
+                if (predicateIssues.length === 0) {
+                    predicateGateResolution = 'local-safe-removal';
+                    repairAttempts++;
+                    sqlResult.explanation = 'Removed a provably unsupported categorical predicate before local execution.';
+                }
+            }
+        }
+
+        if (predicateIssues.length > 0) {
+            throw new Error(`AI SQL stopped before execution because ${predicateIssues.length} categorical predicate(s) had no user, contract, or local-domain provenance: ${predicateIssues.map(issue => `${issue.field} ${issue.operator} '${issue.literal}'`).join('; ')}.`);
+        }
+    }
+    traceStep({
+        stepNumber: 8,
+        name: 'Predicate Provenance Gate',
+        engine: 'valueGrounding',
+        icon: '🔎',
+        status: originalPredicateIssueCount > 0 ? 'warn' : 'pass',
+        summary: originalPredicateIssueCount === 0
+            ? 'All auditable categorical predicates have local or user provenance'
+            : predicateGateResolution === 'model-repair'
+                ? `Model repair removed ${originalPredicateIssueCount} unsupported categorical predicate(s)`
+                : `Safely removed ${originalPredicateIssueCount} unsupported top-level categorical predicate(s)`,
+        details: { issueCount: originalPredicateIssueCount, resolution: predicateGateResolution },
+    }, predicateGateStart);
 
     // ─── Step 5: Execute SQL ─────────────────────────────────────
     reportProgress('Executing SQL...', 7);
@@ -1992,7 +2101,7 @@ export async function runAISQLPipeline(
             passed: contractResult.passed,
             enforced: true,
             summary: contractResult.summary,
-            requestedOutputFields: directQuerySpec?.expectedResult?.columns || [],
+            requestedOutputFields: normalizeQuerySpecOutputFields(directQuerySpec?.expectedResult?.columns),
             checks: contractResult.checks.map(c => ({
                 name: c.name,
                 status: c.status,

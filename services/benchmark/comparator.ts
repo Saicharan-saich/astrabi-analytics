@@ -325,7 +325,7 @@ export function compareResultSetsAtRequestedProjection(
   expectedRows: Record<string, unknown>[],
   actualRows: Record<string, unknown>[],
   options: BenchmarkComparisonOptions,
-  requestedOutputFields: string[] = [],
+  requestedOutputFields: readonly unknown[] = [],
 ): BenchmarkComparisonResult {
   const direct = compareResultSets(expectedRows, actualRows, options);
   if (direct.equal || !expectedRows.length || !actualRows.length || !requestedOutputFields.length) {
@@ -333,7 +333,17 @@ export function compareResultSetsAtRequestedProjection(
   }
 
   const expectedColumns = Object.keys(expectedRows[0]);
-  const requested = [...new Set(requestedOutputFields.map(field => field.trim()).filter(Boolean))];
+  const requested = [...new Set(requestedOutputFields.map(field => {
+    if (typeof field === 'string') return field.trim();
+    if (!field || typeof field !== 'object' || Array.isArray(field)) return '';
+    const descriptor = field as Record<string, unknown>;
+    const candidate = descriptor.field ?? descriptor.column ?? descriptor.name ?? descriptor.expression;
+    return typeof candidate === 'string' ? candidate.trim() : '';
+  }).filter(Boolean))];
+  // An unusable runtime descriptor is not evidence for relaxed projection.
+  // Fall back to the ordinary strict comparison instead of throwing or
+  // silently accepting an incomplete answer.
+  if (!requested.length) return direct;
   const projectedColumns: string[] = [];
   for (const field of requested) {
     const exact = expectedColumns.find(column => column.toLowerCase() === field.toLowerCase());
@@ -419,7 +429,7 @@ export function compareResultSetsAsUserAnswer(
   expectedRows: Record<string, unknown>[],
   actualRows: Record<string, unknown>[],
   options: BenchmarkComparisonOptions,
-  requestedOutputFields: string[] = [],
+  requestedOutputFields: readonly unknown[] = [],
   context: { question: string; candidateSql: string } = { question: '', candidateSql: '' },
 ): BenchmarkComparisonResult {
   const grounded = compareResultSetsAtRequestedProjection(

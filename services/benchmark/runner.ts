@@ -235,18 +235,32 @@ export async function executeBenchmarkCase(
     // it with SQL syntax/executability when assigning the outcome.
     const validSql = pipelineResult.validation?.valid !== false;
     const executableSql = Boolean(pipelineResult.sql?.trim());
-    let comparison = compareResultSetsAsUserAnswer(
-      testCase.expectedRows,
-      pipelineResult.rawData || [],
-      {
-        ...testCase.comparison,
-        // A correct result remains correct whether DuckDB returns ascending,
-        // descending, or otherwise equivalent row order.
-        orderMatters: false,
-      },
-      pipelineResult.contractValidation?.requestedOutputFields,
-      { question: testCase.question, candidateSql: pipelineResult.sql || '' },
-    );
+    const comparisonOptions = {
+      ...testCase.comparison,
+      // A correct result remains correct whether DuckDB returns ascending,
+      // descending, or otherwise equivalent row order.
+      orderMatters: false,
+    };
+    let comparison;
+    try {
+      comparison = compareResultSetsAsUserAnswer(
+        testCase.expectedRows,
+        pipelineResult.rawData || [],
+        comparisonOptions,
+        pipelineResult.contractValidation?.requestedOutputFields,
+        { question: testCase.question, candidateSql: pipelineResult.sql || '' },
+      );
+    } catch (comparisonError) {
+      // Comparator/reporting defects must never erase an already-executed
+      // candidate, its rows, model route, or token evidence. Preserve strict
+      // result-set scoring as the fail-closed fallback.
+      console.error('[Benchmark Runner] Semantic comparator failed; using strict result comparison:', comparisonError);
+      comparison = compareResultSets(
+        testCase.expectedRows,
+        pipelineResult.rawData || [],
+        comparisonOptions,
+      );
+    }
     const base: Omit<BenchmarkCaseResult, 'status' | 'passed' | 'failureReason'> = {
       caseId: testCase.id,
       suiteId: testCase.suiteId,

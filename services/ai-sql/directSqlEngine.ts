@@ -69,6 +69,7 @@ Rules:
 - "List out", "list", "enumerate", "show me the X" means return individual rows — never COUNT. Example: "List out the Id number of races held in 2009" → SELECT raceId FROM races WHERE year = 2009. NOT SELECT COUNT(*).
 - "What is the percentage of X that Y" → ALWAYS use conditional aggregation as a single scalar with NO GROUP BY. Example: "what percentage of accounts with amount < 100000 are running?" → SELECT CAST(SUM(status = 'C') AS REAL) * 100.0 / COUNT(*) FROM loan WHERE amount < 100000. NEVER GROUP BY amount or any per-row field.
 - Only SELECT the columns the question explicitly asks about. If the question says "what are the budget categories", select ONLY category with SELECT DISTINCT. Do NOT add event_name, budget_id, event_status, or other unrequested columns. Do NOT omit DISTINCT when the question asks for unique values/categories.
+- A dataset, database, workbook, club, organization, or domain name identifies the source context; it is not automatically a stored categorical value. Add a categorical predicate only when the question explicitly ties that value to a field, the Query Specification contains the grounded predicate, or an approved value domain proves the mapping. Never turn a source name into an invented status, position, type, or category filter.
 - When a subquery computes AVG/SUM and the outer query has WHERE filters, the SAME WHERE filters MUST appear inside the subquery. Example: "patients with thrombosis=2 and ANA='S' having aCL IgM 20% above average" → ... > 1.2 * (SELECT AVG("aCL IgM") FROM Examination WHERE Thrombosis = 2 AND "ANA Pattern" = 'S'). NEVER use the unfiltered table average.
 - Return ONLY the SQL — no prose, no explanation, no markdown fences.`;
 
@@ -142,6 +143,7 @@ SEMANTIC RULES:
 - Only include in expectedResult.columns the fields the question explicitly requests. Do not add extra columns (event_name, budget_id, etc.) unless asked.
 
 Across multiple tables, identify which table owns every output, filter and measure. Follow only declared relationship edges, and plan pre-aggregation whenever joining would otherwise multiply the measure's native grain.
+Treat dataset, database, workbook, club, organization, and domain names as source context, not row predicates. Add a categorical filter only when the wording explicitly binds a value to a field or supplied grounded evidence proves that binding; never infer status/position/type/category merely from the source name.
 Return valid JSON only with: goal, operations, expectedResult, assumptions, clarification.
 If the schema genuinely cannot answer the question (no relevant table or column exists), set clarification instead of inventing a field.`;
 
@@ -165,6 +167,25 @@ function specField(value: unknown): string | undefined {
     if (!normalized || /[()*/+]/.test(normalized)) return undefined;
     const finalPart = normalized.split('.').pop()?.replace(/^['"`]|['"`]$/g, '');
     return finalPart || undefined;
+}
+
+/** Normalize model-authored output descriptors at the JSON trust boundary.
+ * Models occasionally emit `{ field: "category" }` even though the requested
+ * schema says `columns: ["category"]`. Both are semantically unambiguous; no
+ * downstream validator or benchmark reporter should crash on that harmless
+ * shape variation. Invalid descriptors are rejected rather than stringified. */
+export function normalizeQuerySpecOutputFields(value: unknown): string[] {
+    if (!Array.isArray(value)) return [];
+    const fields = value.map(item => {
+        if (typeof item === 'string') return item.trim();
+        if (!item || typeof item !== 'object' || Array.isArray(item)) return '';
+        const record = item as Record<string, unknown>;
+        const candidate = record.field ?? record.column ?? record.name ?? record.expression;
+        return typeof candidate === 'string' ? candidate.trim() : '';
+    }).filter(Boolean);
+    return fields.filter((field, index, all) =>
+        all.findIndex(candidate => candidate.toLowerCase() === field.toLowerCase()) === index
+    );
 }
 
 /**
@@ -197,7 +218,7 @@ export function applyQuerySpecToAnalysisPlan(
             return { field, agg: aggregation as AnalysisPlan['metrics'][number]['agg'] };
         })
         .filter((metric): metric is AnalysisPlan['metrics'][number] => Boolean(metric));
-    const expectedFields = (Array.isArray(spec.expectedResult?.columns) ? spec.expectedResult.columns : [])
+    const expectedFields = normalizeQuerySpecOutputFields(spec.expectedResult?.columns)
         .map(resolvePhysicalField)
         .filter((field): field is string => Boolean(field));
     const filters = (Array.isArray(spec.operations?.filters) ? spec.operations.filters : [])
@@ -219,7 +240,8 @@ export function applyQuerySpecToAnalysisPlan(
     const hasRanking = Boolean(spec.operations?.rankedSets)
         || tableCalculations.some(calculation => /rank|top|bottom/i.test(calculation?.type || ''));
     const hasTimeCalculation = tableCalculations.some(calculation => /growth|lag|moving|running|cumulative/i.test(calculation?.type || ''));
-    const expectedColumnNames = (spec.expectedResult?.columns || []).map(column => String(column).toLowerCase());
+    const expectedColumnNames = normalizeQuerySpecOutputFields(spec.expectedResult?.columns)
+        .map(column => column.toLowerCase());
     const isTotalPeriodComparison = /comparison\s+period|current\s+and\s+previous|two\s+period/i.test(spec.expectedResult?.grain || '')
         || (expectedColumnNames.some(column => /^(?:period|period_label)$/.test(column))
             && expectedColumnNames.some(column => /growth|previous/.test(column)));
@@ -867,6 +889,10 @@ export async function generateDirectSQL(
     // contracts are supplied in the prompt and validated afterwards; they do
     // not rewrite a richer multi-stage plan into a simpler local shape.
     const spec = draftSpec;
+    if (!spec.expectedResult || typeof spec.expectedResult !== 'object' || Array.isArray(spec.expectedResult)) {
+        spec.expectedResult = { grain: 'unspecified', columns: [] };
+    }
+    spec.expectedResult.columns = normalizeQuerySpecOutputFields(spec.expectedResult.columns);
     if (spec.clarification) {
         return { sql: '', tokens, model: planner.model, error: spec.clarification, blocked: true, querySpec: spec, canonicalIntent };
     }
@@ -886,7 +912,7 @@ export async function generateDirectSQL(
         // Sol independently checks every request against the question, schema
         // and structured plan, then returns the final executable SQL.
         const reviewed = await fetchWithFallback([
-            { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the complete question, verified schema facts, and model-authored Query Specification. Correct only concrete violations. Before returning SQL, audit: (1) outer SELECT contains only requested answer fields/calculations, (2) GROUP BY is exactly the requested grain, (3) ranking expression, direction, cardinality and tie behaviour match the wording, (4) aggregate predicates are in HAVING/subqueries without leaking helper metrics into the answer, (5) ratio numerator and denominator use the correct populations, (6) joins follow the declared ownership path, (7) list/set answers cannot repeat because of join fan-out, and (8) every required tableCalculation is implemented with its declared partition, order, frame and output alias. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and Query Specification do not require; never remove a required CTE/window/table calculation merely to make SQL shorter. Return only final SQL.` },
+            { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the complete question, verified schema facts, and model-authored Query Specification. Correct only concrete violations. Before returning SQL, audit: (1) outer SELECT contains only requested answer fields/calculations, (2) GROUP BY is exactly the requested grain, (3) ranking expression, direction, cardinality and tie behaviour match the wording, (4) aggregate predicates are in HAVING/subqueries without leaking helper metrics into the answer, (5) ratio numerator and denominator use the correct populations, (6) joins follow the declared ownership path, (7) list/set answers cannot repeat because of join fan-out, (8) every required tableCalculation is implemented with its declared partition, order, frame and output alias, and (9) every categorical predicate is explicitly supported by the question/specification rather than inferred from a dataset or domain name. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and Query Specification do not require; never remove a required CTE/window/table calculation merely to make SQL shorter. Return only final SQL.` },
             { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${draftSQL}\n\nFinal reviewed SQL:` },
         ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
         reviewedSQL = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');
