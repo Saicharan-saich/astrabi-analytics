@@ -6,7 +6,22 @@ export type BenchmarkSuiteId =
   | 'bird-compatible'
   | 'spider2-compatible'
   | 'spider-dev-research'
-  | 'bird-dev-research';
+  | 'bird-dev-research'
+  | 'bird-dev-holdout'
+  | 'spider2-lite-holdout';
+
+export type BenchmarkCorpusId = 'legacy-550' | 'holdout-550';
+
+export interface PublishedBenchmarkReference {
+  kind: 'published-result';
+  sourceCommit: string;
+  alternatives: Array<{
+    source: string;
+    sha256: string;
+    rows: Record<string, unknown>[];
+    conditionColumns: number[];
+  }>;
+}
 
 export type BenchmarkDifficulty = 'easy' | 'medium' | 'hard';
 
@@ -64,6 +79,10 @@ export interface BenchmarkCase {
   /** Embedded fixtures use `dataset`; research packs are fetched lazily via `datasetRef`. */
   dataset?: Dataset;
   datasetRef?: string;
+  /** SHA-256 of the complete decompressed JSON fixture bytes, verified before loading. */
+  datasetSha256?: string;
+  /** Some genuine Spider 2.0 cases publish results but no reference SQL. */
+  referenceResult?: PublishedBenchmarkReference;
   goldSql: string;
   expectedRows: Record<string, unknown>[];
   comparison: BenchmarkComparisonOptions;
@@ -75,6 +94,8 @@ export interface BenchmarkSuite {
   name: string;
   shortName: string;
   version: string;
+  corpusId?: BenchmarkCorpusId;
+  manifestSha256?: string;
   description: string;
   methodology: string;
   accent: 'violet' | 'cyan' | 'amber';
@@ -146,6 +167,8 @@ export interface BenchmarkCaseResult {
   fallbackReason?: string;
   confidence?: number;
   repairAttempts: number;
+  referenceResult?: PublishedBenchmarkReference;
+  matchedReferenceSource?: string;
   tokenUsage: { prompt: number; completion: number; total: number };
   /** Optional admin review. Automatic status and `passed` remain unchanged. */
   adjudication?: BenchmarkAdjudication;
@@ -180,6 +203,9 @@ export interface BenchmarkRunMetrics {
 export interface BenchmarkRun {
   id: string;
   schemaVersion: 1;
+  /** Absent in legacy reports, which belong to the original 550-case corpus. */
+  corpusId?: BenchmarkCorpusId;
+  corpusManifestSha256?: string;
   suiteVersions: Record<string, string>;
   selectedSuiteIds: BenchmarkSuiteId[];
   scope: 'smoke' | 'full';
@@ -200,6 +226,7 @@ export interface BenchmarkRun {
   methodologyLabel:
     | 'Curated Subset Execution Accuracy'
     | 'Official Public Subset Execution Accuracy'
+    | 'Oracle-Table DuckDB-Adapted Subset Execution Accuracy'
     | 'Mixed-Suite Execution Accuracy';
   results: BenchmarkCaseResult[];
   metrics: BenchmarkRunMetrics;

@@ -32,6 +32,9 @@ export function benchmarkRunToCsv(run: BenchmarkRun): string {
   const runMetadata = {
     id: run.id,
     schemaVersion: run.schemaVersion,
+    corpusId: run.corpusId || 'legacy-550',
+    corpusManifestSha256: run.corpusManifestSha256,
+    shuffleSeed: run.shuffleSeed,
     suiteVersions: run.suiteVersions,
     selectedSuiteIds: run.selectedSuiteIds,
     scope: run.scope,
@@ -49,6 +52,7 @@ export function benchmarkRunToCsv(run: BenchmarkRun): string {
 
   const headers = [
     'run_id', 'run_schema_version', 'app_version', 'methodology', 'scope', 'question_limit', 'privacy_mode',
+    'corpus_id', 'corpus_manifest_sha256', 'shuffle_seed',
     'selected_suites_json', 'suite_versions_json', 'run_started_at', 'run_completed_at',
     'run_cancelled', 'run_interruption_reason', 'run_resume_count', 'run_metrics_json',
     'case_id', 'source_id', 'suite', 'question', 'benchmark_context', 'category', 'difficulty',
@@ -76,6 +80,9 @@ export function benchmarkRunToCsv(run: BenchmarkRun): string {
     run.scope,
     run.questionLimit,
     run.privacyMode || 'strict',
+    run.corpusId || 'legacy-550',
+    run.corpusManifestSha256,
+    run.shuffleSeed,
     jsonCell(run.selectedSuiteIds),
     jsonCell(run.suiteVersions),
     isoTimestamp(run.startedAt),

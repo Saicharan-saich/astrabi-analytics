@@ -35,6 +35,9 @@ import { ensureDuckDBReady, executeSQLViaDuckDB, reloadIsolatedBenchmarkData, re
 import {
   ALL_BENCHMARK_SUITES,
   BENCHMARK_SUITES,
+  BENCHMARK_CORPUS_LABELS,
+  getBenchmarkCorpusSuites,
+  getRunCorpusId,
   clearBenchmarkRun,
   deleteBenchmarkRunFromHistory,
   getBenchmarkResumeIndex,
@@ -50,6 +53,7 @@ import {
   type BenchmarkAdjudicationVerdict,
   type BenchmarkRun,
   type BenchmarkSuiteId,
+  type BenchmarkCorpusId,
 } from '../services/benchmark';
 
 interface BenchmarkLabViewProps {
@@ -192,17 +196,18 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [activeView, setActiveView] = useState<LabView>('overview');
+  const [selectedCorpus, setSelectedCorpus] = useState<BenchmarkCorpusId>('legacy-550');
   const [selectedSuites, setSelectedSuites] = useState<Set<BenchmarkSuiteId>>(
-    () => new Set(BENCHMARK_SUITES.map(suite => suite.id))
+    () => new Set(getBenchmarkCorpusSuites('legacy-550').map(suite => suite.id))
   );
-  const [scope, setScope] = useState<RunSizeMode>('smoke');
+  const [scope, setScope] = useState<RunSizeMode>('full');
   const [customQuestionCount, setCustomQuestionCount] = useState(200);
   const [benchmarkPrivacyMode, setBenchmarkPrivacyMode] = useState<PrivacyMode>('strict');
   const [shuffleEnabled, setShuffleEnabled] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [progress, setProgress] = useState({ completed: 0, total: 0, question: '' });
-  const [latestRun, setLatestRun] = useState<BenchmarkRun | null>(() => loadBenchmarkRun());
+  const [storedLatestRun, setLatestRun] = useState<BenchmarkRun | null>(() => loadBenchmarkRun());
   const [selectedHistoryRun, setSelectedHistoryRun] = useState<BenchmarkRun | null>(null);
   const [runHistory, setRunHistory] = useState<BenchmarkRun[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -231,9 +236,14 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
   }, []);
 
   const accessible = canAccessBenchmark(currentUser?.role);
+  const corpusSuites = getBenchmarkCorpusSuites(selectedCorpus);
+  const corpusHistory = runHistory.filter(run => getRunCorpusId(run) === selectedCorpus);
+  const latestRun = [storedLatestRun, ...corpusHistory]
+    .filter((run): run is BenchmarkRun => Boolean(run && getRunCorpusId(run) === selectedCorpus))
+    .sort((a, b) => b.startedAt - a.startedAt)[0] || null;
   const selectedSuiteObjects = useMemo(
-    () => ALL_BENCHMARK_SUITES.filter(suite => selectedSuites.has(suite.id)),
-    [selectedSuites],
+    () => getBenchmarkCorpusSuites(selectedCorpus).filter(suite => selectedSuites.has(suite.id)),
+    [selectedSuites, selectedCorpus],
   );
   const availableQuestionCount = selectedSuiteObjects.reduce((total, suite) => total + suite.cases.length, 0);
   const customCountValid = Number.isInteger(customQuestionCount)
@@ -278,6 +288,21 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
       return next;
     });
     setConfirmed(false);
+  };
+
+  const switchCorpus = (id: BenchmarkCorpusId) => {
+    if (isRunning || id === selectedCorpus) return;
+    setSelectedCorpus(id);
+    setSelectedSuites(new Set(getBenchmarkCorpusSuites(id).map(suite => suite.id)));
+    setSelectedHistoryRun(null);
+    setScope('full');
+    setConfirmed(false);
+    setStatusFilter('all');
+    setSuiteFilter('all');
+    setExpandedCase(null);
+    setLiveResults([]);
+    setRunError(null);
+    setActiveView('overview');
   };
 
   const updateAdjudication = (
@@ -417,6 +442,10 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     if (selectedHistoryRun) {
       await deleteBenchmarkRunFromHistory(selectedHistoryRun.id);
       setRunHistory(current => current.filter(run => run.id !== selectedHistoryRun.id));
+      if (storedLatestRun?.id === selectedHistoryRun.id) {
+        clearBenchmarkRun();
+        setLatestRun(null);
+      }
       setSelectedHistoryRun(null);
       setExpandedCase(null);
       return;
@@ -425,8 +454,10 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
       await deleteBenchmarkRunFromHistory(latestRun.id);
       setRunHistory(current => current.filter(run => run.id !== latestRun.id));
     }
-    clearBenchmarkRun();
-    setLatestRun(null);
+    if (storedLatestRun?.id === latestRun?.id) {
+      clearBenchmarkRun();
+      setLatestRun(null);
+    }
     setLiveResults([]);
     setExpandedCase(null);
   };
@@ -436,7 +467,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     await deleteBenchmarkRunFromHistory(run.id);
     setRunHistory(current => current.filter(saved => saved.id !== run.id));
     if (selectedHistoryRun?.id === run.id) setSelectedHistoryRun(null);
-    if (latestRun?.id === run.id) {
+    if (storedLatestRun?.id === run.id) {
       clearBenchmarkRun();
       setLatestRun(null);
     }
@@ -476,7 +507,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                   <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Data runs locally</span>
                 </div>
                 <p className={`mt-2 max-w-3xl text-sm leading-6 ${muted}`}>
-                  Run repeatable, execution-based evaluation against 150 product-regression questions or 400 official public development questions. Every candidate answer uses the production AI SQL pipeline; gold SQL and verification run in the same in-browser DuckDB engine.
+                  Choose the original 550-question baseline or a separate 550-question BIRD + Spider 2.0 set. Every candidate answer uses the production AI SQL pipeline and executes locally; reference answers remain outside the model prompt.
                 </p>
               </div>
             </div>
@@ -490,6 +521,23 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
           </div>
         </section>
 
+        <section className={`rounded-2xl border p-4 ${panel}`} aria-label="Benchmark question set">
+          <div role="tablist" aria-label="Benchmark corpus" className="flex flex-wrap gap-3">
+            {(Object.keys(BENCHMARK_CORPUS_LABELS) as BenchmarkCorpusId[]).map(id => (
+              <button key={id} type="button" role="tab" aria-selected={selectedCorpus === id}
+                disabled={isRunning} onClick={() => switchCorpus(id)}
+                className={`rounded-xl border px-5 py-3 text-sm font-black transition-all disabled:cursor-not-allowed ${selectedCorpus === id ? 'bg-violet-600 border-violet-500 text-white' : `${softSurface} ${muted}`}`}>
+                {BENCHMARK_CORPUS_LABELS[id]}
+              </button>
+            ))}
+          </div>
+          <p className={`mt-3 text-xs leading-5 ${muted}`}>
+            {selectedCorpus === 'legacy-550'
+              ? 'Original 550 cases retained unchanged: 150 compatibility cases + 200 Spider Dev + 200 BIRD Dev. Old reports remain in this tab.'
+              : '500 new BIRD + 50 genuine Spider 2.0 Lite SQLite questions. Disjoint from the old catalog; public sources may be known to LLMs. Oracle-table, DuckDB-adapted evaluation—not an official leaderboard score. New results and history stay separate.'}
+          </p>
+        </section>
+
         {runError && (
           <div className="rounded-2xl border border-rose-500/25 bg-rose-500/10 px-4 py-3 flex items-start gap-3 text-rose-400">
             <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -499,9 +547,9 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
 
         {activeView === 'overview' && (
           <>
-            <section>
+            {selectedCorpus === 'legacy-550' && <section>
               <div className="flex items-end justify-between gap-4 mb-3">
-                <div><h2 className={`text-sm font-black ${strong}`}>Product regression suites</h2><p className={`text-[11px] mt-1 ${muted}`}>The existing 150-case synthetic compatibility baseline. Selected by default.</p></div>
+                <div><h2 className={`text-sm font-black ${strong}`}>Product regression suites</h2><p className={`text-[11px] mt-1 ${muted}`}>The existing 150-case synthetic compatibility baseline, part of the original 550.</p></div>
                 <span className={`text-[10px] font-black uppercase tracking-wider ${muted}`}>150 questions</span>
               </div>
               <div className="grid md:grid-cols-3 gap-4">
@@ -535,15 +583,15 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                 );
               })}
               </div>
-            </section>
+            </section>}
 
             <section>
               <div className="flex items-end justify-between gap-4 mb-3">
-                <div><h2 className={`text-sm font-black ${strong}`}>Research evaluation</h2><p className={`text-[11px] mt-1 ${muted}`}>Original public development questions, official gold SQL, frozen outputs, and lazy-loaded source tables. Opt in deliberately.</p></div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400">400 questions</span>
+                <div><h2 className={`text-sm font-black ${strong}`}>Research evaluation</h2><p className={`text-[11px] mt-1 ${muted}`}>Original public-source questions, frozen reference outputs, and complete lazy-loaded table fixtures.</p></div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400">{corpusSuites.filter(suite => suite.evaluationClass === 'official-public-subset').reduce((n, suite) => n + suite.cases.length, 0)} questions</span>
               </div>
               <div className="grid md:grid-cols-2 gap-4">
-              {ALL_BENCHMARK_SUITES.filter(suite => suite.evaluationClass === 'official-public-subset').map(suite => {
+              {corpusSuites.filter(suite => suite.evaluationClass === 'official-public-subset').map(suite => {
                 const selected = selectedSuites.has(suite.id);
                 const accent = SUITE_ACCENTS[suite.accent];
                 return (
@@ -563,7 +611,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                     <div className="mt-4 flex items-center gap-2 flex-wrap">
                       <span className={`px-2 py-1 rounded-lg border text-[10px] font-black ${accent.badge}`}>{suite.cases.length} questions</span>
                       <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>v{suite.version}</span>
-                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>Public dev split</span>
+                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>{suite.id === 'spider2-lite-holdout' ? 'Public SQLite subset' : 'Public dev split'}</span>
                     </div>
                   </button>
                 );
@@ -822,7 +870,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                 <div className="flex items-center gap-2 flex-wrap">
                   <select value={suiteFilter} onChange={event => setSuiteFilter(event.target.value as 'all' | BenchmarkSuiteId)} className={`px-3 py-2 rounded-xl border text-xs font-bold outline-none ${softSurface} ${strong}`}>
                     <option value="all">All suites</option>
-                    {ALL_BENCHMARK_SUITES.map(suite => <option key={suite.id} value={suite.id}>{suite.shortName}</option>)}
+                    {corpusSuites.map(suite => <option key={suite.id} value={suite.id}>{suite.shortName}</option>)}
                   </select>
                   <select value={statusFilter} onChange={event => setStatusFilter(event.target.value as 'all' | BenchmarkCaseStatus)} className={`px-3 py-2 rounded-xl border text-xs font-bold outline-none ${softSurface} ${strong}`}>
                     <option value="all">All outcomes</option>
@@ -912,8 +960,9 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                                   )}
                                   <div className="grid xl:grid-cols-2 gap-4">
                                     <div>
-                                      <div className={`text-[10px] uppercase tracking-wider font-black mb-2 ${muted}`}>Gold SQL</div>
-                                      <pre className={`rounded-xl border p-3 text-[11px] leading-5 overflow-auto max-h-64 whitespace-pre-wrap ${softSurface} ${strong}`}>{result.goldSql}</pre>
+                                      <div className={`text-[10px] uppercase tracking-wider font-black mb-2 ${muted}`}>{result.referenceResult ? 'Published reference · source SQLite SQL (when available)' : 'Gold SQL'}</div>
+                                      <pre className={`rounded-xl border p-3 text-[11px] leading-5 overflow-auto max-h-64 whitespace-pre-wrap ${softSurface} ${strong}`}>{result.goldSql || 'The publisher supplies reference result files for this case, but no gold SQL. No substitute gold SQL was invented.'}</pre>
+                                      {result.referenceResult && <p className={`mt-2 text-[11px] ${muted}`}>{result.referenceResult.alternatives.length} published reference alternative(s). {result.matchedReferenceSource ? `Matched: ${result.matchedReferenceSource}` : 'Scored against publisher-specified columns with row-preserving comparison.'}</p>}
                                     </div>
                                     <div>
                                       <div className={`text-[10px] uppercase tracking-wider font-black mb-2 ${muted}`}>Candidate SQL</div>
@@ -954,13 +1003,13 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                     <p className={`mt-1 text-xs ${muted}`}>The 20 most recent reports are stored privately in this browser using IndexedDB.</p>
                   </div>
                 </div>
-                <span className={`rounded-xl border px-3 py-2 text-xs font-black ${softSurface} ${strong}`}>{runHistory.length} saved run{runHistory.length === 1 ? '' : 's'}</span>
+                <span className={`rounded-xl border px-3 py-2 text-xs font-black ${softSurface} ${strong}`}>{BENCHMARK_CORPUS_LABELS[selectedCorpus]} · {corpusHistory.length} saved runs</span>
               </div>
             </div>
 
             {historyLoading ? (
               <div className={`rounded-2xl border p-10 text-center ${panel}`}><Loader2 className="w-6 h-6 mx-auto animate-spin text-violet-400" /><div className={`mt-3 text-xs ${muted}`}>Loading local benchmark history…</div></div>
-            ) : runHistory.length === 0 ? (
+            ) : corpusHistory.length === 0 ? (
               <div className={`rounded-2xl border p-10 text-center ${panel}`}>
                 <History className={`w-8 h-8 mx-auto ${muted}`} />
                 <div className={`mt-3 text-sm font-black ${strong}`}>No saved benchmark runs yet</div>
@@ -968,7 +1017,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               </div>
             ) : (
               <div className="space-y-3">
-                {runHistory.map(run => {
+                {corpusHistory.map(run => {
                   const counts = Object.fromEntries(ALL_STATUSES.map(status => [status, 0])) as Record<BenchmarkCaseStatus, number>;
                   run.results.forEach(result => { counts[result.status] += 1; });
                   return (
@@ -1013,7 +1062,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                 {[
                   ['1', 'Fixture integrity', 'Gold SQL is executed against the embedded dataset and must reproduce the frozen output before AI SQL is scored.'],
                   ['2', 'Production pipeline', 'The same runAISQLPipeline entry point used by the product receives one isolated question with cache bypass enabled and the run-scoped privacy mode selected by the administrator.'],
-                  ['3', 'Local execution', 'Candidate SQL and gold SQL run inside DuckDB-WASM. Dataset rows are not submitted to the gold evaluator or model.'],
+                  ['3', 'Local execution', 'Candidate SQL executes in DuckDB-WASM. BIRD gold SQL is rechecked locally; Spider 2.0 uses published result files. Private mode shares metadata, not database rows.'],
                   ['4', 'Value-set equivalence', 'Aliases, harmless column naming differences, row order, nulls, and numeric tolerance are normalized. Sorting never changes execution correctness.'],
                   ['5', 'Independent diagnostics', 'Matching values count as correct. Safety and SQL-validation warnings remain visible and continue to affect their own rates without overriding execution accuracy.'],
                 ].map(([number, title, description]) => (
@@ -1029,7 +1078,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               </div>
             </div>
             <div className="space-y-4">
-              {ALL_BENCHMARK_SUITES.map(suite => (
+              {corpusSuites.map(suite => (
                 <div key={suite.id} className={`rounded-2xl border p-5 ${panel}`}>
                   <div className="flex items-center justify-between gap-3"><h3 className={`text-sm font-black ${strong}`}>{suite.name}</h3><span className={`text-[10px] font-bold ${muted}`}>v{suite.version}</span></div>
                   <p className={`mt-2 text-xs leading-5 ${muted}`}>{suite.methodology}</p>

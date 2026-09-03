@@ -3,6 +3,8 @@ import {
   compareResultSetsAsUserAnswer,
   compareWithheldResultSets,
 } from './comparator';
+import { getRunCorpusId, getSuiteCorpus } from './corpus';
+import { BenchmarkFixtureIntegrityError } from './researchDatasetLoader';
 import type {
   BenchmarkCase,
   BenchmarkCaseResult,
@@ -131,6 +133,7 @@ function failureResult(
     goldSql: testCase.goldSql,
     candidateSql: '',
     expectedRows: testCase.expectedRows.slice(0, EVIDENCE_ROW_LIMIT),
+    referenceResult: testCase.referenceResult,
     actualRows: [],
     failureReason: reason,
     repairAttempts: 0,
@@ -174,43 +177,53 @@ export async function executeBenchmarkCase(
       localStageTimeoutMs,
       'DuckDB reload',
     );
-    const goldExecution = await withStageTimeout(
-      () => dependencies.executeGoldSql(
-        dataset.rows,
-        testCase.goldSql,
-        dataset.timeContext ? {
-          minDate: dataset.timeContext.minDate,
-          maxDate: dataset.timeContext.maxDate,
-          primaryDateColumn: dataset.timeContext.anchorDateColumn,
-        } : undefined,
-        dataset.relatedTables,
-      ),
-      localStageTimeoutMs,
-      'gold SQL execution',
-    );
-
-    if (goldExecution.error) {
-      const completedAt = now();
-      return failureResult(testCase, 'fixture_error', `Gold SQL failed: ${goldExecution.error}`, startedAt, completedAt);
-    }
-
-    const fixtureComparison = compareResultSets(testCase.expectedRows, goldExecution.data, {
-      ...testCase.comparison,
-      // Execution accuracy is value-set equivalence. Presentation order is
-      // deliberately excluded from benchmark correctness.
-      orderMatters: false,
-      strictColumns: true,
-    });
-    if (!fixtureComparison.equal) {
-      const completedAt = now();
-      return failureResult(
-        testCase,
-        'fixture_error',
-        `Frozen gold output does not match gold SQL: ${fixtureComparison.reason}`,
-        startedAt,
-        completedAt,
-        { comparison: fixtureComparison, actualRows: goldExecution.data.slice(0, EVIDENCE_ROW_LIMIT) },
+    if (testCase.referenceResult) {
+      // Spider 2.0 publishes result files for tasks without released gold SQL.
+      // Do not invent executable "gold" from those answers. Dataset bytes are
+      // checksum-verified by the production fixture loader before this point.
+      if (!testCase.datasetRef || !/^[a-f0-9]{64}$/.test(testCase.datasetSha256 || '')
+        || !testCase.referenceResult.alternatives.length
+        || testCase.referenceResult.alternatives.some(reference => !/^[a-f0-9]{64}$/.test(reference.sha256) || !reference.rows.length)) {
+        return failureResult(testCase, 'fixture_error', 'Published reference or immutable dataset checksum is missing.', startedAt, now());
+      }
+    } else {
+      const goldExecution = await withStageTimeout(
+        () => dependencies.executeGoldSql(
+          dataset.rows,
+          testCase.goldSql,
+          dataset.timeContext ? {
+            minDate: dataset.timeContext.minDate,
+            maxDate: dataset.timeContext.maxDate,
+            primaryDateColumn: dataset.timeContext.anchorDateColumn,
+          } : undefined,
+          dataset.relatedTables,
+        ),
+        localStageTimeoutMs,
+        'gold SQL execution',
       );
+
+      if (goldExecution.error) {
+        const completedAt = now();
+        return failureResult(testCase, 'fixture_error', `Gold SQL failed: ${goldExecution.error}`, startedAt, completedAt);
+      }
+
+      const fixtureComparison = compareResultSets(testCase.expectedRows, goldExecution.data, {
+        ...testCase.comparison,
+        // Retain the original corpus's order-insensitive gold-integrity check.
+        orderMatters: false,
+        strictColumns: true,
+      });
+      if (!fixtureComparison.equal) {
+        const completedAt = now();
+        return failureResult(
+          testCase,
+          'fixture_error',
+          `Frozen gold output does not match gold SQL: ${fixtureComparison.reason}`,
+          startedAt,
+          completedAt,
+          { comparison: fixtureComparison, actualRows: goldExecution.data.slice(0, EVIDENCE_ROW_LIMIT) },
+        );
+      }
     }
 
     // The AI pipeline shares one in-browser DuckDB connection. Reloading here
@@ -239,11 +252,24 @@ export async function executeBenchmarkCase(
       ...testCase.comparison,
       // A correct result remains correct whether DuckDB returns ascending,
       // descending, or otherwise equivalent row order.
-      orderMatters: false,
+      orderMatters: testCase.referenceResult ? testCase.comparison.orderMatters : false,
     };
     let comparison;
+    let matchedReference = testCase.referenceResult?.alternatives[0];
     try {
-      comparison = compareResultSetsAsUserAnswer(
+      if (testCase.referenceResult) {
+        // Use only publisher-specified reference projections/alternatives. Do
+        // not weaken a held-out result based on the model's own claimed intent.
+        comparison = compareResultSets(matchedReference!.rows, pipelineResult.rawData || [], comparisonOptions);
+        for (const reference of testCase.referenceResult.alternatives) {
+          const checked = compareResultSets(reference.rows, pipelineResult.rawData || [], comparisonOptions);
+          if (checked.equal) {
+            comparison = checked;
+            matchedReference = reference;
+            break;
+          }
+        }
+      } else comparison = compareResultSetsAsUserAnswer(
         testCase.expectedRows,
         pipelineResult.rawData || [],
         comparisonOptions,
@@ -277,7 +303,9 @@ export async function executeBenchmarkCase(
       pipelineLatencyMs: pipelineResult.executionTimeMs || 0,
       goldSql: testCase.goldSql,
       candidateSql: pipelineResult.sql || '',
-      expectedRows: testCase.expectedRows.slice(0, EVIDENCE_ROW_LIMIT),
+      expectedRows: (matchedReference?.rows || testCase.expectedRows).slice(0, EVIDENCE_ROW_LIMIT),
+      referenceResult: testCase.referenceResult,
+      matchedReferenceSource: comparison.equal ? matchedReference?.source : undefined,
       actualRows: (pipelineResult.rawData || []).slice(0, EVIDENCE_ROW_LIMIT),
       comparison,
       engine: pipelineResult.engine,
@@ -344,7 +372,7 @@ export async function executeBenchmarkCase(
       // A contract warning must not create a false negative when executed
       // evidence is still deterministically equivalent to the frozen answer.
       // This re-check remains deliberately narrower than human adjudication.
-      const withheldComparison = compareWithheldResultSets(
+      const withheldComparison = testCase.referenceResult ? comparison : compareWithheldResultSets(
         testCase.expectedRows,
         pipelineResult.rawData || [],
         testCase.comparison,
@@ -374,7 +402,8 @@ export async function executeBenchmarkCase(
     const reason = error instanceof Error ? error.message : String(error);
     return failureResult(
       testCase,
-      /Benchmark AI SQL pipeline timed out/i.test(reason) ? 'llm_unavailable' : 'execution_error',
+      error instanceof BenchmarkFixtureIntegrityError ? 'fixture_error'
+        : /Benchmark AI SQL pipeline timed out/i.test(reason) ? 'llm_unavailable' : 'execution_error',
       reason,
       startedAt,
       completedAt,
@@ -409,7 +438,10 @@ function assertCompatibleResume(
   const questionLimit = options.scope === 'full' && options.questionLimit
     ? Math.max(1, Math.floor(options.questionLimit))
     : undefined;
+  const corpus = getSuiteCorpus(suites);
   if (!sameSuites || !versionsMatch || previous.scope !== options.scope
+    || getRunCorpusId(previous) !== corpus.corpusId
+    || previous.corpusManifestSha256 !== corpus.corpusManifestSha256
     || previous.questionLimit !== questionLimit
     || (previous.privacyMode || 'strict') !== privacyMode || previous.metrics.total !== total) {
     throw new Error('This benchmark cannot be resumed because its suite manifest, scope, privacy mode, or version has changed. Start a new run instead.');
@@ -481,15 +513,17 @@ export async function runBenchmark(
   dependencies: BenchmarkRunnerDependencies,
   options: BenchmarkRunOptions,
 ): Promise<BenchmarkRun> {
+  const corpus = getSuiteCorpus(suites);
   const questionLimit = options.scope === 'full' && options.questionLimit
     ? Math.max(1, Math.floor(options.questionLimit))
     : undefined;
-  const shuffleSeed = options.shuffle
-    ? (options.resumeRun?.shuffleSeed ?? (Date.now() ^ (Math.random() * 0x7fffffff | 0)))
-    : undefined;
+  const shuffleSeed = options.resumeRun ? options.resumeRun.shuffleSeed : options.shuffle
+    ? (Date.now() ^ (Math.random() * 0x7fffffff | 0)) : undefined;
   const selectedCases = selectBenchmarkCases(suites, options.scope, questionLimit, shuffleSeed);
   const evaluationClasses = new Set(suites.map(suite => suite.evaluationClass || 'curated-compatibility'));
-  const methodologyLabel: BenchmarkRun['methodologyLabel'] = evaluationClasses.size > 1
+  const methodologyLabel: BenchmarkRun['methodologyLabel'] = corpus.corpusId === 'holdout-550'
+    ? 'Oracle-Table DuckDB-Adapted Subset Execution Accuracy'
+    : evaluationClasses.size > 1
     ? 'Mixed-Suite Execution Accuracy'
     : evaluationClasses.has('official-public-subset')
       ? 'Official Public Subset Execution Accuracy'
@@ -501,6 +535,7 @@ export async function runBenchmark(
   const run: BenchmarkRun = {
     id: `benchmark-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     schemaVersion: 1,
+    ...corpus,
     suiteVersions: Object.fromEntries(suites.map(suite => [suite.id, suite.version])),
     selectedSuiteIds: suites.map(suite => suite.id),
     scope: options.scope,

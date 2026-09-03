@@ -3,6 +3,7 @@
 
 const path = require('path');
 const readline = require('readline');
+const arrow = require('apache-arrow');
 const duckdb = require('../node_modules/@duckdb/duckdb-wasm/dist/duckdb-node-blocking.cjs');
 
 const quoteIdentifier = value => `"${String(value).replace(/"/g, '""')}"`;
@@ -99,15 +100,19 @@ async function main() {
   database.open({ query: { castBigIntToDouble: true } });
   const connection = database.connect();
   let createdTables = [];
+  let loadedAsset;
+  const bulkFixtures = process.env.BENCHMARK_BULK_FIXTURES === '1';
 
   const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
   for await (const line of input) {
     if (!line.trim()) continue;
     try {
-      for (const table of createdTables) connection.query(`DROP TABLE IF EXISTS ${quoteIdentifier(table)}`);
-      createdTables = [];
       const request = JSON.parse(line);
       const asset = request.asset;
+      if (!bulkFixtures || loadedAsset !== asset.id) {
+      loadedAsset = undefined;
+      for (const table of createdTables) connection.query(`DROP TABLE IF EXISTS ${quoteIdentifier(table)}`);
+      createdTables = [];
       const tables = [
         { name: 'data', rows: asset.rows },
         ...(asset.relatedTables || []).filter(table => safeTableName(table.name) !== 'data'),
@@ -121,10 +126,28 @@ async function main() {
         const definitions = columns.map(column => `${quoteIdentifier(column)} ${types[column]}`).join(', ');
         connection.query(`CREATE TABLE ${quoteIdentifier(name)} (${definitions})`);
         createdTables.push(name);
+        if (bulkFixtures) {
+          // Identical scalar coercion to the INSERT path, but avoid reparsing
+          // hundreds of thousands of SQL literals during offline validation.
+          const vectors = Object.fromEntries(columns.map(column => {
+            const values = rows.map(row => {
+              const value = row[column];
+              if (value === null || value === undefined) return null;
+              if (types[column] !== 'DOUBLE') return String(value);
+              const number = Number(String(value).replace(/[$,]/g, ''));
+              return Number.isFinite(number) ? number : null;
+            });
+            return [column, arrow.vectorFromArray(values, types[column] === 'DOUBLE' ? new arrow.Float64() : new arrow.Utf8())];
+          }));
+          connection.insertArrowTable(arrow.tableFromArrays(vectors), { name, create: false });
+          continue;
+        }
         for (let start = 0; start < rows.length; start += 500) {
           const values = rows.slice(start, start + 500).map(row => `(${columns.map(column => sqlValue(row[column], types[column])).join(',')})`).join(',');
           connection.query(`INSERT INTO ${quoteIdentifier(name)} VALUES ${values}`);
         }
+      }
+      loadedAsset = asset.id;
       }
 
       const result = connection.query(normalizeSQL(request.sql));

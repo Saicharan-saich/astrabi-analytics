@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  ALL_BENCHMARK_SUITES,
+  LEGACY_BENCHMARK_SUITES,
   BENCHMARK_SUITES,
   executeBenchmarkCase,
   getBenchmarkResumeIndex,
@@ -34,7 +34,7 @@ function dependencies(overrides: Partial<BenchmarkRunnerDependencies> = {}): Ben
 
 describe('benchmark runner', () => {
   it('selects a deterministic, balanced 200-question custom research run', () => {
-    const researchSuites = ALL_BENCHMARK_SUITES.filter(suite => suite.evaluationClass === 'official-public-subset');
+    const researchSuites = LEGACY_BENCHMARK_SUITES.filter(suite => suite.evaluationClass === 'official-public-subset');
     const selected = selectBenchmarkCases(researchSuites, 'full', 200);
     const repeated = selectBenchmarkCases(researchSuites, 'full', 200);
     const counts = selected.reduce<Record<string, number>>((totals, testCase) => {
