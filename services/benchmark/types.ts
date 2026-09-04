@@ -25,6 +25,12 @@ export interface PublishedBenchmarkReference {
 
 export type BenchmarkDifficulty = 'easy' | 'medium' | 'hard';
 
+export type BenchmarkOracleQuality =
+  | 'no_issue_found'
+  | 'confirmed_defect'
+  | 'review_required'
+  | 'not_fully_verifiable';
+
 export type BenchmarkCaseStatus =
   | 'pass'
   | 'wrong_result'
@@ -87,6 +93,10 @@ export interface BenchmarkCase {
   expectedRows: Record<string, unknown>[];
   comparison: BenchmarkComparisonOptions;
   tags: string[];
+  /** Independent corpus-quality audit. Cases that are not no_issue_found are
+   * quarantined before run selection and cannot affect model accuracy. */
+  oracleQuality?: BenchmarkOracleQuality;
+  oracleQualityNote?: string;
 }
 
 export interface BenchmarkSuite {
@@ -96,6 +106,12 @@ export interface BenchmarkSuite {
   version: string;
   corpusId?: BenchmarkCorpusId;
   manifestSha256?: string;
+  /** Original frozen source manifest when manifestSha256 also incorporates a
+   * later oracle-quality audit. */
+  sourceManifestSha256?: string;
+  oracleAuditSha256?: string;
+  sourceCaseCount?: number;
+  quarantinedCaseCount?: number;
   description: string;
   methodology: string;
   accent: 'violet' | 'cyan' | 'amber';

@@ -33,9 +33,9 @@ import type { PrivacyMode } from '../services/ai-sql/privacyMode';
 import { benchmarkRunToCsv, benchmarkRunToJson } from '../services/benchmark/export';
 import { ensureDuckDBReady, executeSQLViaDuckDB, reloadIsolatedBenchmarkData, resetDuckDB } from '../services/duckdbEngine';
 import {
-  ALL_BENCHMARK_SUITES,
   BENCHMARK_SUITES,
   BENCHMARK_CORPUS_LABELS,
+  getAvailableBenchmarkSuite,
   getBenchmarkCorpusSuites,
   getRunCorpusId,
   clearBenchmarkRun,
@@ -246,6 +246,8 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     [selectedSuites, selectedCorpus],
   );
   const availableQuestionCount = selectedSuiteObjects.reduce((total, suite) => total + suite.cases.length, 0);
+  const sourceQuestionCount = corpusSuites.reduce((total, suite) => total + (suite.sourceCaseCount || suite.cases.length), 0);
+  const quarantinedQuestionCount = corpusSuites.reduce((total, suite) => total + (suite.quarantinedCaseCount || 0), 0);
   const customCountValid = Number.isInteger(customQuestionCount)
     && customQuestionCount >= 1
     && customQuestionCount <= availableQuestionCount;
@@ -346,8 +348,8 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
     // re-render during a long run, but the benchmark manifest must never drift.
     const runSuites = resumeRun
       ? resumeRun.selectedSuiteIds
-        .map(id => ALL_BENCHMARK_SUITES.find(suite => suite.id === id))
-        .filter((suite): suite is (typeof ALL_BENCHMARK_SUITES)[number] => Boolean(suite))
+        .map(getAvailableBenchmarkSuite)
+        .filter((suite): suite is NonNullable<ReturnType<typeof getAvailableBenchmarkSuite>> => Boolean(suite))
       : [...selectedSuiteObjects];
     const runScope = resumeRun?.scope || (scope === 'smoke' ? 'smoke' : 'full');
     const runQuestionLimit = resumeRun?.questionLimit
@@ -507,7 +509,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                   <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Data runs locally</span>
                 </div>
                 <p className={`mt-2 max-w-3xl text-sm leading-6 ${muted}`}>
-                  Choose the original 550-question baseline or a separate 550-question BIRD + Spider 2.0 set. Every candidate answer uses the production AI SQL pipeline and executes locally; reference answers remain outside the model prompt.
+                  Choose the unchanged original 550-question baseline or the independently audited BIRD + Spider 2.0 holdout. Every candidate answer uses the production AI SQL pipeline and executes locally; reference answers remain outside the model prompt.
                 </p>
               </div>
             </div>
@@ -534,7 +536,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
           <p className={`mt-3 text-xs leading-5 ${muted}`}>
             {selectedCorpus === 'legacy-550'
               ? 'Original 550 cases retained unchanged: 150 compatibility cases + 200 Spider Dev + 200 BIRD Dev. Old reports remain in this tab.'
-              : '500 new BIRD + 50 genuine Spider 2.0 Lite SQLite questions. Disjoint from the old catalog; public sources may be known to LLMs. Oracle-table, DuckDB-adapted evaluation—not an official leaderboard score. New results and history stay separate.'}
+              : `${sourceQuestionCount} frozen new questions remain preserved and disjoint from the old catalog. The 2026-09-03 oracle audit cleared ${sourceQuestionCount - quarantinedQuestionCount} for scoring and quarantined ${quarantinedQuestionCount}; quarantined gold, fixture, or ambiguous cases are never sent to the model and cannot affect accuracy.`}
           </p>
         </section>
 
@@ -587,8 +589,8 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
 
             <section>
               <div className="flex items-end justify-between gap-4 mb-3">
-                <div><h2 className={`text-sm font-black ${strong}`}>Research evaluation</h2><p className={`text-[11px] mt-1 ${muted}`}>Original public-source questions, frozen reference outputs, and complete lazy-loaded table fixtures.</p></div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400">{corpusSuites.filter(suite => suite.evaluationClass === 'official-public-subset').reduce((n, suite) => n + suite.cases.length, 0)} questions</span>
+                <div><h2 className={`text-sm font-black ${strong}`}>Research evaluation</h2><p className={`text-[11px] mt-1 ${muted}`}>Original public-source questions, frozen reference outputs, complete lazy-loaded fixtures, and an independently recorded oracle-quality gate.</p></div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400">{corpusSuites.filter(suite => suite.evaluationClass === 'official-public-subset').reduce((n, suite) => n + suite.cases.length, 0)} quality-cleared</span>
               </div>
               <div className="grid md:grid-cols-2 gap-4">
               {corpusSuites.filter(suite => suite.evaluationClass === 'official-public-subset').map(suite => {
@@ -609,7 +611,8 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                     <div className="mt-4 flex items-center gap-2 flex-wrap"><h2 className={`text-base font-black ${strong}`}>{suite.name}</h2><span className="px-2 py-0.5 rounded-md border border-cyan-500/25 bg-cyan-500/10 text-[9px] font-black uppercase tracking-wider text-cyan-400">Official-source subset</span></div>
                     <p className={`mt-2 text-xs leading-5 ${muted}`}>{suite.description}</p>
                     <div className="mt-4 flex items-center gap-2 flex-wrap">
-                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-black ${accent.badge}`}>{suite.cases.length} questions</span>
+                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-black ${accent.badge}`}>{suite.cases.length} runnable</span>
+                      {(suite.quarantinedCaseCount || 0) > 0 && <span className="px-2 py-1 rounded-lg border border-amber-500/25 bg-amber-500/10 text-[10px] font-black text-amber-400">{suite.quarantinedCaseCount} quarantined</span>}
                       <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>v{suite.version}</span>
                       <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>{suite.id === 'spider2-lite-holdout' ? 'Public SQLite subset' : 'Public dev split'}</span>
                     </div>

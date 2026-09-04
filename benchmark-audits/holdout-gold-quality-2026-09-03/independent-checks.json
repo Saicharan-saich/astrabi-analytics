@@ -1,0 +1,6278 @@
+[
+  {
+    "caseId": "holdout-bird-dev-0016",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(T1.CDSCode) FROM schools AS T1 INNER JOIN satscores AS T2 ON T1.CDSCode = T2.cds WHERE T1.StatusType = 'Merged' AND T2.NumTstTakr < 100 AND T1.County = 'Alameda'",
+    "rows": [
+      {
+        "COUNT(T1.CDSCode)": 0
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0088",
+    "purpose": "Inspect whether winning SAT row is school or district aggregate",
+    "sql": "SELECT s.School, t.sname,t.NumGE1500,s.Phone FROM satscores t JOIN schools s ON t.cds=s.CDSCode ORDER BY t.NumGE1500 DESC LIMIT 4",
+    "rows": [
+      {
+        "School": null,
+        "sname": null,
+        "NumGE1500": 5837,
+        "Phone": "(213) 241-1000"
+      },
+      {
+        "School": null,
+        "sname": null,
+        "NumGE1500": 2125,
+        "Phone": "(619) 725-8000"
+      },
+      {
+        "School": null,
+        "sname": null,
+        "NumGE1500": 1659,
+        "Phone": "(408) 522-2200"
+      },
+      {
+        "School": null,
+        "sname": null,
+        "NumGE1500": 1506,
+        "Phone": "(949) 234-9200"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0007",
+    "purpose": "Rank named schools only; compare source district aggregate winner",
+    "sql": "SELECT T2.Phone FROM satscores AS T1 INNER JOIN schools AS T2 ON T1.cds = T2.CDSCode WHERE T2.School IS NOT NULL ORDER BY T1.NumGE1500 DESC LIMIT 1",
+    "rows": [
+      {
+        "Phone": "(415) 759-2730"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0044",
+    "purpose": "Rank named schools only; compare source district aggregate winner",
+    "sql": "SELECT T1.AvgScrWrite, T2.City FROM satscores AS T1 INNER JOIN schools AS T2 ON T1.cds = T2.CDSCode WHERE T2.School IS NOT NULL ORDER BY T1.NumGE1500 DESC LIMIT 1",
+    "rows": [
+      {
+        "AvgScrWrite": 594,
+        "City": "San Francisco"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0088",
+    "purpose": "Rank named schools only; compare source district aggregate winner",
+    "sql": "SELECT T2.AdmEmail1, T2.School FROM satscores AS T1 INNER JOIN schools AS T2 ON T1.cds = T2.CDSCode WHERE T2.School IS NOT NULL ORDER BY T1.NumGE1500 DESC LIMIT 1",
+    "rows": [
+      {
+        "AdmEmail1": "ishibashia@sfusd.edu",
+        "School": "Lowell High"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0109",
+    "purpose": "Use actual account branch, not residential district",
+    "sql": "SELECT COUNT(DISTINCT c.client_id) FROM client c JOIN disp d ON d.client_id=c.client_id JOIN account a ON a.account_id=d.account_id JOIN district b ON b.district_id=a.district_id WHERE c.gender='F' AND b.A2='Jesenik'",
+    "rows": [
+      {
+        "COUNT(DISTINCT c.client_id)": 25
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0112",
+    "purpose": "Actual account opening district",
+    "sql": "SELECT DISTINCT b.A2 FROM client c JOIN disp d ON d.client_id=c.client_id JOIN account a ON a.account_id=d.account_id JOIN district b ON b.district_id=a.district_id WHERE c.gender='F' AND c.birth_date='1976-01-29'",
+    "rows": [
+      {
+        "A2": "Tachov"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true
+  },
+  {
+    "caseId": "holdout-bird-dev-0130",
+    "purpose": "Account owners with no credit card; residence scope retained to isolate ownership error",
+    "sql": "SELECT COUNT(DISTINCT c.client_id) FROM client c JOIN district b ON b.district_id=c.district_id WHERE b.A3='south Bohemia' AND EXISTS(SELECT 1 FROM disp d WHERE d.client_id=c.client_id AND d.type='OWNER') AND NOT EXISTS(SELECT 1 FROM disp d JOIN card k ON k.disp_id=d.disp_id WHERE d.client_id=c.client_id)",
+    "rows": [
+      {
+        "COUNT(DISTINCT c.client_id)": 297
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0197",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT AVG(n) FROM (SELECT m.molecule_id,COUNT(a.atom_id) n FROM molecule m LEFT JOIN atom a ON a.molecule_id=m.molecule_id AND a.element='o' WHERE EXISTS(SELECT 1 FROM bond b WHERE b.molecule_id=m.molecule_id AND b.bond_type='-') GROUP BY m.molecule_id)",
+    "rows": [
+      {
+        "AVG(n)": 2.161290322580645
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0198",
+    "purpose": "Average single-bond count per carcinogenic molecule having a single bond; removes atom fan-out",
+    "sql": "SELECT AVG(n) FROM (SELECT m.molecule_id,COUNT(b.bond_id) n FROM molecule m JOIN bond b ON b.molecule_id=m.molecule_id WHERE m.label='+' AND b.bond_type='-' GROUP BY m.molecule_id)",
+    "rows": [
+      {
+        "AVG(n)": 20.25
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0207",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT DISTINCT a.element FROM atom a JOIN connected c ON c.atom_id=a.atom_id JOIN bond b ON b.bond_id=c.bond_id WHERE b.bond_type='='",
+    "rows": [
+      {
+        "element": "c"
+      },
+      {
+        "element": "o"
+      },
+      {
+        "element": "n"
+      },
+      {
+        "element": "s"
+      },
+      {
+        "element": "ca"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0214",
+    "purpose": "Labels absent from all tin-containing molecules",
+    "sql": "SELECT DISTINCT label FROM molecule EXCEPT SELECT m.label FROM molecule m JOIN atom a ON a.molecule_id=m.molecule_id WHERE a.element='sn'",
+    "rows": [
+      {
+        "label": "+"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0218",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT 100.0*SUM(NOT EXISTS(SELECT 1 FROM atom a WHERE a.molecule_id=m.molecule_id AND a.element='f'))/COUNT(*) FROM molecule m WHERE label='+'",
+    "rows": [
+      {
+        "100.0*SUM(NOT EXISTS(SELECT 1 FROM atom a WHERE a.molecule_id=m.molecule_id AND a.element='f'))/COUNT(*)": 99.34210526315789
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0234",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(DISTINCT bond_id) FROM connected WHERE atom_id='TR009_12' OR atom_id2='TR009_12'",
+    "rows": [
+      {
+        "COUNT(DISTINCT bond_id)": 3
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0245",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(c.bond_id)*1.0/COUNT(DISTINCT a.atom_id) FROM atom a LEFT JOIN connected c ON c.atom_id=a.atom_id WHERE a.element='i'",
+    "rows": [
+      {
+        "COUNT(c.bond_id)*1.0/COUNT(DISTINCT a.atom_id)": 1.0
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true
+  },
+  {
+    "caseId": "holdout-bird-dev-0247",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT DISTINCT a.element FROM atom a WHERE NOT EXISTS(SELECT 1 FROM connected c WHERE c.atom_id=a.atom_id OR c.atom_id2=a.atom_id)",
+    "rows": [
+      {
+        "element": "na"
+      },
+      {
+        "element": "cl"
+      },
+      {
+        "element": "h"
+      },
+      {
+        "element": "zn"
+      },
+      {
+        "element": "k"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0254",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "WITH pairs AS (SELECT DISTINCT c.bond_id,MIN(a.element,b.element) x,MAX(a.element,b.element) y FROM connected c JOIN atom a ON a.atom_id=c.atom_id JOIN atom b ON b.atom_id=c.atom_id2), counts AS (SELECT x,y,COUNT(*) n FROM pairs GROUP BY x,y) SELECT MAX(n)*100.0/(SELECT COUNT(*) FROM bond) percentage FROM counts",
+    "rows": [
+      {
+        "percentage": 38.91267469100897
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0263",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT SUM(a.element='cl')*100.0/COUNT(*) FROM atom a WHERE EXISTS(SELECT 1 FROM bond b WHERE b.molecule_id=a.molecule_id AND b.bond_type='-')",
+    "rows": [
+      {
+        "SUM(a.element='cl')*100.0/COUNT(*)": 3.4807302231237323
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0269",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(DISTINCT c.bond_id) FROM atom a JOIN connected c ON c.atom_id=a.atom_id WHERE a.element='i'",
+    "rows": [
+      {
+        "COUNT(DISTINCT c.bond_id)": 6
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0286",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT SUM(EXISTS(SELECT 1 FROM bond b WHERE b.molecule_id=m.molecule_id AND b.bond_type='#'))*100.0/COUNT(*) FROM molecule m",
+    "rows": [
+      {
+        "SUM(EXISTS(SELECT 1 FROM bond b WHERE b.molecule_id=m.molecule_id AND b.bond_type='#'))*100.0/COUNT(*)": 0.8746355685131195
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0298",
+    "purpose": "Molecule share of all molecules that are carcinogenic and contain hydrogen",
+    "sql": "SELECT SUM(m.label='+' AND EXISTS(SELECT 1 FROM atom a WHERE a.molecule_id=m.molecule_id AND a.element='h'))*100.0/COUNT(*) FROM molecule m",
+    "rows": [
+      {
+        "SUM(m.label='+' AND EXISTS(SELECT 1 FROM atom a WHERE a.molecule_id=m.molecule_id AND a.element='h'))*100.0/COUNT(*)": 41.98250728862974
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0311",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(*) FROM molecule m WHERE NOT EXISTS(SELECT 1 FROM atom a WHERE a.molecule_id=m.molecule_id AND a.element='s') AND NOT EXISTS(SELECT 1 FROM bond b WHERE b.molecule_id=m.molecule_id AND b.bond_type='=')",
+    "rows": null,
+    "error": "interrupted",
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0326",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT DISTINCT a.molecule_id FROM atom a JOIN connected c ON c.atom_id=a.atom_id JOIN bond b ON b.bond_id=c.bond_id WHERE a.element='s' AND b.bond_type='='",
+    "rows": [
+      {
+        "molecule_id": "TR018"
+      },
+      {
+        "molecule_id": "TR020"
+      },
+      {
+        "molecule_id": "TR031"
+      },
+      {
+        "molecule_id": "TR045"
+      },
+      {
+        "molecule_id": "TR046"
+      },
+      {
+        "molecule_id": "TR050"
+      },
+      {
+        "molecule_id": "TR051"
+      },
+      {
+        "molecule_id": "TR056"
+      },
+      {
+        "molecule_id": "TR062"
+      },
+      {
+        "molecule_id": "TR084"
+      },
+      {
+        "molecule_id": "TR101"
+      },
+      {
+        "molecule_id": "TR102"
+      },
+      {
+        "molecule_id": "TR113"
+      },
+      {
+        "molecule_id": "TR115"
+      },
+      {
+        "molecule_id": "TR124"
+      },
+      {
+        "molecule_id": "TR126"
+      },
+      {
+        "molecule_id": "TR129"
+      },
+      {
+        "molecule_id": "TR132"
+      },
+      {
+        "molecule_id": "TR138"
+      },
+      {
+        "molecule_id": "TR148"
+      },
+      {
+        "molecule_id": "TR149"
+      },
+      {
+        "molecule_id": "TR151"
+      },
+      {
+        "molecule_id": "TR152"
+      },
+      {
+        "molecule_id": "TR166"
+      },
+      {
+        "molecule_id": "TR172"
+      },
+      {
+        "molecule_id": "TR208"
+      },
+      {
+        "molecule_id": "TR211"
+      },
+      {
+        "molecule_id": "TR220"
+      },
+      {
+        "molecule_id": "TR225"
+      },
+      {
+        "molecule_id": "TR234"
+      },
+      {
+        "molecule_id": "TR238"
+      },
+      {
+        "molecule_id": "TR268"
+      },
+      {
+        "molecule_id": "TR296"
+      },
+      {
+        "molecule_id": "TR307"
+      },
+      {
+        "molecule_id": "TR335"
+      },
+      {
+        "molecule_id": "TR356"
+      },
+      {
+        "molecule_id": "TR357"
+      },
+      {
+        "molecule_id": "TR387"
+      },
+      {
+        "molecule_id": "TR388"
+      },
+      {
+        "molecule_id": "TR395"
+      },
+      {
+        "molecule_id": "TR397"
+      },
+      {
+        "molecule_id": "TR405"
+      },
+      {
+        "molecule_id": "TR412"
+      },
+      {
+        "molecule_id": "TR430"
+      },
+      {
+        "molecule_id": "TR457"
+      },
+      {
+        "molecule_id": "TR464"
+      },
+      {
+        "molecule_id": "TR501"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0328",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT DISTINCT a.element FROM atom a JOIN connected c ON c.atom_id=a.atom_id JOIN bond b ON b.bond_id=c.bond_id WHERE a.molecule_id='TR024' AND b.bond_type='='",
+    "rows": [
+      {
+        "element": "c"
+      },
+      {
+        "element": "o"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0330",
+    "purpose": "Existence probe: does requested triple-bonded hydrogen population exist?",
+    "sql": "SELECT COUNT(DISTINCT a.molecule_id) AS molecules_with_triple_bonded_hydrogen FROM atom a JOIN connected c ON c.atom_id=a.atom_id JOIN bond b ON b.bond_id=c.bond_id WHERE a.element='h' AND b.bond_type='#'",
+    "rows": [
+      {
+        "molecules_with_triple_bonded_hydrogen": 0
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0335",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(DISTINCT a.molecule_id) FROM atom a JOIN connected c ON c.atom_id=a.atom_id JOIN bond b ON b.bond_id=c.bond_id WHERE a.element='o' AND b.bond_type='='",
+    "rows": [
+      {
+        "COUNT(DISTINCT a.molecule_id)": 205
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0338",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT DISTINCT a.atom_id FROM atom a JOIN connected c ON c.atom_id=a.atom_id JOIN bond b ON b.bond_id=c.bond_id WHERE a.molecule_id='TR012' AND a.element='c' AND b.bond_type='='",
+    "rows": [
+      {
+        "atom_id": "TR012_2"
+      },
+      {
+        "atom_id": "TR012_3"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0519",
+    "purpose": "Use declared set-code relationship",
+    "sql": "SELECT t.language FROM sets s JOIN set_translations t ON t.setCode=s.code WHERE s.name='Battlebond'",
+    "rows": [],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0741",
+    "purpose": "Rank unique hero IDs instead of merging same-named heroes",
+    "sql": "SELECT s.id,s.superhero_name,COUNT(*) n FROM superhero s JOIN hero_power p ON p.hero_id=s.id GROUP BY s.id ORDER BY n DESC LIMIT 5",
+    "rows": [
+      {
+        "id": 637,
+        "superhero_name": "Spectre",
+        "n": 49
+      },
+      {
+        "id": 21,
+        "superhero_name": "Amazo",
+        "n": 44
+      },
+      {
+        "id": 447,
+        "superhero_name": "Martian Manhunter",
+        "n": 35
+      },
+      {
+        "id": 424,
+        "superhero_name": "Living Tribunal",
+        "n": 35
+      },
+      {
+        "id": 441,
+        "superhero_name": "Man of Miracles",
+        "n": 34
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0732",
+    "purpose": "Enumerate all extremum ties; not a replacement projection",
+    "sql": "SELECT s.superhero_name,p.publisher_name,s.full_name,h.attribute_value FROM superhero s JOIN hero_attribute h ON h.hero_id=s.id JOIN attribute a ON a.id=h.attribute_id LEFT JOIN publisher p ON p.id=s.publisher_id WHERE a.attribute_name='Speed' AND h.attribute_value=(SELECT MIN(x.attribute_value) FROM hero_attribute x JOIN attribute a2 ON a2.id=x.attribute_id WHERE a2.attribute_name='Speed')",
+    "rows": [
+      {
+        "superhero_name": "Franklin Storm",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Dr. Franklin Storm",
+        "attribute_value": 5
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0736",
+    "purpose": "Enumerate all extremum ties; not a replacement projection",
+    "sql": "SELECT s.superhero_name,p.publisher_name,s.full_name,h.attribute_value FROM superhero s JOIN hero_attribute h ON h.hero_id=s.id JOIN attribute a ON a.id=h.attribute_id LEFT JOIN publisher p ON p.id=s.publisher_id WHERE a.attribute_name='Intelligence' AND h.attribute_value=(SELECT MIN(x.attribute_value) FROM hero_attribute x JOIN attribute a2 ON a2.id=x.attribute_id WHERE a2.attribute_name='Intelligence')",
+    "rows": [
+      {
+        "superhero_name": "Ammo",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 35
+      },
+      {
+        "superhero_name": "Ando Masahashi",
+        "publisher_name": "NBC - Heroes",
+        "full_name": "Ando Masahashi",
+        "attribute_value": 35
+      },
+      {
+        "superhero_name": "Jack-Jack",
+        "publisher_name": "Dark Horse Comics",
+        "full_name": "Jac-jack Parr",
+        "attribute_value": 35
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0766",
+    "purpose": "Enumerate all extremum ties; not a replacement projection",
+    "sql": "SELECT s.superhero_name,p.publisher_name,s.full_name,h.attribute_value FROM superhero s JOIN hero_attribute h ON h.hero_id=s.id JOIN attribute a ON a.id=h.attribute_id LEFT JOIN publisher p ON p.id=s.publisher_id WHERE a.attribute_name='Strength' AND h.attribute_value=(SELECT MAX(x.attribute_value) FROM hero_attribute x JOIN attribute a2 ON a2.id=x.attribute_id WHERE a2.attribute_name='Strength')",
+    "rows": [
+      {
+        "superhero_name": "A-Bomb",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Richard Milhouse Jones",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Abraxas",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Abraxas",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Amazo",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Angela",
+        "publisher_name": "Image Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Apocalypse",
+        "publisher_name": "Marvel Comics",
+        "full_name": "En Sabah Nur",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Ardina",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Ares",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Atlas",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Atlas",
+        "publisher_name": "DC Comics",
+        "full_name": "Erik Stephan Josten",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Ben 10",
+        "publisher_name": "DC Comics",
+        "full_name": "Benjamin Kirby Tennyson",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Beyonder",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Bi-Beast",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Big Barda",
+        "publisher_name": "DC Comics",
+        "full_name": "Barda Free",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Binary",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Carol Susan Jane Danvers",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Black Adam",
+        "publisher_name": "DC Comics",
+        "full_name": "Teth-Adam",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Cheetah III",
+        "publisher_name": "DC Comics",
+        "full_name": "Barbara Ann Minerva",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Cy-Gor",
+        "publisher_name": "Image Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Darkseid",
+        "publisher_name": "DC Comics",
+        "full_name": "Uxas",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Doomsday",
+        "publisher_name": "DC Comics",
+        "full_name": "Doomsday",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Dr Manhattan",
+        "publisher_name": "DC Comics",
+        "full_name": "Jonathan Osterman",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "General Zod",
+        "publisher_name": "DC Comics",
+        "full_name": "Dru-Zod",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Gladiator",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Kallark",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Godzilla",
+        "publisher_name": "",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Goku",
+        "publisher_name": "Shueisha",
+        "full_name": "Kakarot",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Granny Goodness",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Hela",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Hercules",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Heracles",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Hulk",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Robert Bruce Banner",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Hyperion",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Juggernaut",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Cain Marko",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "King Kong",
+        "publisher_name": "",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Living Tribunal",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Lobo",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Lucifer Morningstar",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Magus",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Man of Miracles",
+        "publisher_name": "Image Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Molecule Man",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Monarch",
+        "publisher_name": "DC Comics",
+        "full_name": "Nathaniel Christopher Adam",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "One Punch Man",
+        "publisher_name": "Shueisha",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "One-Above-All",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Onslaught",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Onslaught",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Phoenix",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Jean Grey-Summers",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Power Girl",
+        "publisher_name": "DC Comics",
+        "full_name": "Kara Zor-L",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Red Hulk",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Thaddeus E. Ross",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Sentry",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Robert Reynolds",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Shazam",
+        "publisher_name": "DC Comics",
+        "full_name": "William Joseph Batson",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "She-Hulk",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Jennifer Walters",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Silver Surfer",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Norrin Radd",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Spectre",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Steppenwolf",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Superboy-Prime",
+        "publisher_name": "DC Comics",
+        "full_name": "Kal-El",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Supergirl",
+        "publisher_name": "DC Comics",
+        "full_name": "Kara Zor-El",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Superman",
+        "publisher_name": "DC Comics",
+        "full_name": "Clark Joseph Kent (Kal-El)",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Surtur",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Thanos",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Thanos",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Thanos (Infinity Gauntlet)",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "The Presence",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Thor",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Thor Odinson",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Trigon",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Vegeta",
+        "publisher_name": "Shueisha",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Wonder Man",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Simon Williams",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Wonder Woman",
+        "publisher_name": "DC Comics",
+        "full_name": "Diana of Themyscira",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Ymir",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Ymir",
+        "attribute_value": 100
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0794",
+    "purpose": "Enumerate all extremum ties; not a replacement projection",
+    "sql": "SELECT s.superhero_name,p.publisher_name,s.full_name,h.attribute_value FROM superhero s JOIN hero_attribute h ON h.hero_id=s.id JOIN attribute a ON a.id=h.attribute_id LEFT JOIN publisher p ON p.id=s.publisher_id WHERE a.attribute_name='Speed' AND h.attribute_value=(SELECT MAX(x.attribute_value) FROM hero_attribute x JOIN attribute a2 ON a2.id=x.attribute_id WHERE a2.attribute_name='Speed')",
+    "rows": [
+      {
+        "superhero_name": "Air-Walker",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Gabriel Lan",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Angela",
+        "publisher_name": "Image Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Ardina",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Aurora",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Jeanne-Marie Beaubier",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Ben 10",
+        "publisher_name": "DC Comics",
+        "full_name": "Benjamin Kirby Tennyson",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Beyonder",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Binary",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Carol Susan Jane Danvers",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Bizarro",
+        "publisher_name": "DC Comics",
+        "full_name": "Bizarro",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Black Bolt",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Blackagar Boltagon",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Black Flash",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Flash",
+        "publisher_name": "DC Comics",
+        "full_name": "Jason Peter Garrick",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Flash II",
+        "publisher_name": "DC Comics",
+        "full_name": "Bartholomew Henry Allen",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Flash III",
+        "publisher_name": "DC Comics",
+        "full_name": "Wallace Rudolph West",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Flash IV",
+        "publisher_name": "DC Comics",
+        "full_name": "Bartholomew Allen II",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "General Zod",
+        "publisher_name": "DC Comics",
+        "full_name": "Dru-Zod",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Gladiator",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Kallark",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Hyperion",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Impulse",
+        "publisher_name": "DC Comics",
+        "full_name": "Bartholomew Allen II",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Jack of Hearts",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Jonathan Hart",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Jesse Quick",
+        "publisher_name": "DC Comics",
+        "full_name": "Jessica Belle Chambers",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Kid Flash II",
+        "publisher_name": "DC Comics",
+        "full_name": "Bartholomew Allen II",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Krypto",
+        "publisher_name": "DC Comics",
+        "full_name": "Krypto the Superdog",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Living Tribunal",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Man of Miracles",
+        "publisher_name": "Image Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Mister Mxyzptlk",
+        "publisher_name": "DC Comics",
+        "full_name": "Mr. Mxyzptlk",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Monarch",
+        "publisher_name": "DC Comics",
+        "full_name": "Nathaniel Christopher Adam",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "One-Above-All",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Peter Petrelli",
+        "publisher_name": "NBC - Heroes",
+        "full_name": "Peter Petrelli",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Power Girl",
+        "publisher_name": "DC Comics",
+        "full_name": "Kara Zor-L",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Professor Zoom",
+        "publisher_name": "DC Comics",
+        "full_name": "Eobard Thawne",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Quicksilver",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Pietro Django Maximoff",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Sentry",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Robert Reynolds",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Silver Surfer",
+        "publisher_name": "Marvel Comics",
+        "full_name": "Norrin Radd",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Spectre",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Stardust",
+        "publisher_name": "Marvel Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Superboy-Prime",
+        "publisher_name": "DC Comics",
+        "full_name": "Kal-El",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Supergirl",
+        "publisher_name": "DC Comics",
+        "full_name": "Kara Zor-El",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Superman",
+        "publisher_name": "DC Comics",
+        "full_name": "Clark Joseph Kent (Kal-El)",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "The Presence",
+        "publisher_name": "DC Comics",
+        "full_name": "-",
+        "attribute_value": 100
+      },
+      {
+        "superhero_name": "Zoom",
+        "publisher_name": "DC Comics",
+        "full_name": "Hunter Zolomon",
+        "attribute_value": 100
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0893",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT d.forename,d.surname,x.points FROM races r JOIN results x ON x.raceId=r.raceId JOIN drivers d ON d.driverId=x.driverId WHERE r.name='Chinese Grand Prix' AND r.year=2017 ORDER BY x.positionOrder LIMIT 3",
+    "rows": [
+      {
+        "forename": "Lewis",
+        "surname": "Hamilton",
+        "points": 25.0
+      },
+      {
+        "forename": "Sebastian",
+        "surname": "Vettel",
+        "points": 18.0
+      },
+      {
+        "forename": "Max",
+        "surname": "Verstappen",
+        "points": 15.0
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0903",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(*) FROM results x JOIN races r ON r.raceId=x.raceId JOIN circuits c ON c.circuitId=r.circuitId JOIN drivers d ON d.driverId=x.driverId WHERE c.name='Sepang International Circuit' AND d.forename='Michael' AND d.surname='Schumacher' AND x.positionOrder=1",
+    "rows": [
+      {
+        "COUNT(*)": 3
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0928",
+    "purpose": "Final race winner rather than fastest-lap rank",
+    "sql": "SELECT d.driverRef FROM races r JOIN results x ON x.raceId=r.raceId JOIN drivers d ON d.driverId=x.driverId WHERE r.name='Canadian Grand Prix' AND r.year=2007 AND x.positionOrder=1",
+    "rows": [
+      {
+        "driverRef": "hamilton"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0951",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(*) FROM (SELECT c.constructorId FROM constructorStandings s JOIN constructors c ON c.constructorId=s.constructorId WHERE s.points=0 AND c.nationality='Japanese' GROUP BY c.constructorId HAVING COUNT(s.raceId)=2)",
+    "rows": [
+      {
+        "COUNT(*)": 1
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0966",
+    "purpose": "Actual race participants instead of standings records",
+    "sql": "SELECT COUNT(DISTINCT driverId) FROM results WHERE raceId=18",
+    "rows": [
+      {
+        "COUNT(DISTINCT driverId)": 22
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-0979",
+    "purpose": "Correct finisher counts",
+    "sql": "SELECT raceId,COUNT(time) finishers,COUNT(*) starters FROM results GROUP BY raceId ORDER BY finishers DESC LIMIT 5",
+    "rows": [
+      {
+        "raceId": 855,
+        "finishers": 19,
+        "starters": 24
+      },
+      {
+        "raceId": 887,
+        "finishers": 18,
+        "starters": 22
+      },
+      {
+        "raceId": 894,
+        "finishers": 17,
+        "starters": 22
+      },
+      {
+        "raceId": 877,
+        "finishers": 17,
+        "starters": 24
+      },
+      {
+        "raceId": 862,
+        "finishers": 17,
+        "starters": 24
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1005",
+    "purpose": "Numeric elapsed duration rather than lexicographic text",
+    "sql": "SELECT duration,milliseconds FROM pitStops ORDER BY milliseconds DESC LIMIT 3",
+    "rows": [
+      {
+        "duration": "33:31.266",
+        "milliseconds": 2011266
+      },
+      {
+        "duration": "33:31.147",
+        "milliseconds": 2011147
+      },
+      {
+        "duration": "33:30.637",
+        "milliseconds": 2010637
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1029",
+    "purpose": "Isolate reversed sorting direction, retaining original row grain",
+    "sql": "SELECT t1.buildUpPlaySpeed FROM Team_Attributes AS t1 INNER JOIN Team AS t2 ON t1.team_api_id = t2.team_api_id ORDER BY t1.buildUpPlaySpeed DESC LIMIT 4",
+    "rows": [
+      {
+        "buildUpPlaySpeed": 80
+      },
+      {
+        "buildUpPlaySpeed": 78
+      },
+      {
+        "buildUpPlaySpeed": 78
+      },
+      {
+        "buildUpPlaySpeed": 77
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1041",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT t3.team_long_name FROM Team AS t3 INNER JOIN Team_Attributes AS t4 ON t3.team_api_id = t4.team_api_id WHERE SUBSTR(t4.date,1,4)='2014' AND t4.buildUpPlayDribblingClass = 'Normal' AND t4.chanceCreationPassing < ( SELECT CAST(SUM(t2.chanceCreationPassing) AS REAL) / COUNT(t1.id) FROM Team AS t1 INNER JOIN Team_Attributes AS t2 ON t1.team_api_id = t2.team_api_id WHERE t2.buildUpPlayDribblingClass = 'Normal' AND SUBSTR(t2.`date`, 1, 4) = '2014') ORDER BY t4.chanceCreationPassing DESC",
+    "rows": [
+      {
+        "team_long_name": "Athletic Club de Bilbao"
+      },
+      {
+        "team_long_name": "KSV Cercle Brugge"
+      },
+      {
+        "team_long_name": "Chievo Verona"
+      },
+      {
+        "team_long_name": "Dundee United"
+      },
+      {
+        "team_long_name": "FC Energie Cottbus"
+      },
+      {
+        "team_long_name": "RCD Espanyol"
+      },
+      {
+        "team_long_name": "Évian Thonon Gaillard FC"
+      },
+      {
+        "team_long_name": "Grasshopper Club Zürich"
+      },
+      {
+        "team_long_name": "FC Lausanne-Sports"
+      },
+      {
+        "team_long_name": "Legia Warszawa"
+      },
+      {
+        "team_long_name": "AS Nancy-Lorraine"
+      },
+      {
+        "team_long_name": "FC Nantes"
+      },
+      {
+        "team_long_name": "N.E.C."
+      },
+      {
+        "team_long_name": "FC Paços de Ferreira"
+      },
+      {
+        "team_long_name": "SC Paderborn 07"
+      },
+      {
+        "team_long_name": "Pogoń Szczecin"
+      },
+      {
+        "team_long_name": "Toulouse FC"
+      },
+      {
+        "team_long_name": "ES Troyes AC"
+      },
+      {
+        "team_long_name": "Wigan Athletic"
+      },
+      {
+        "team_long_name": "Ajax"
+      },
+      {
+        "team_long_name": "AJ Auxerre"
+      },
+      {
+        "team_long_name": "VfL Bochum"
+      },
+      {
+        "team_long_name": "Hertha BSC Berlin"
+      },
+      {
+        "team_long_name": "Pescara"
+      },
+      {
+        "team_long_name": "Valenciennes FC"
+      },
+      {
+        "team_long_name": "Inverness Caledonian Thistle"
+      },
+      {
+        "team_long_name": "Lechia Gdańsk"
+      },
+      {
+        "team_long_name": "Oud-Heverlee Leuven"
+      },
+      {
+        "team_long_name": "AC Arles-Avignon"
+      },
+      {
+        "team_long_name": "Girondins de Bordeaux"
+      },
+      {
+        "team_long_name": "Stade Brestois 29"
+      },
+      {
+        "team_long_name": "Dijon FCO"
+      },
+      {
+        "team_long_name": "Le Havre AC"
+      },
+      {
+        "team_long_name": "RC Lens"
+      },
+      {
+        "team_long_name": "Olympique Lyonnais"
+      },
+      {
+        "team_long_name": "Manchester United"
+      },
+      {
+        "team_long_name": "Olympique de Marseille"
+      },
+      {
+        "team_long_name": "FC Metz"
+      },
+      {
+        "team_long_name": "OGC Nice"
+      },
+      {
+        "team_long_name": "Partick Thistle F.C."
+      },
+      {
+        "team_long_name": "Stade Rennais FC"
+      },
+      {
+        "team_long_name": "Sampdoria"
+      },
+      {
+        "team_long_name": "AC Ajaccio"
+      },
+      {
+        "team_long_name": "SM Caen"
+      },
+      {
+        "team_long_name": "Feyenoord"
+      },
+      {
+        "team_long_name": "Heracles Almelo"
+      },
+      {
+        "team_long_name": "FC Lorient"
+      },
+      {
+        "team_long_name": "Montpellier Hérault SC"
+      },
+      {
+        "team_long_name": "Stade de Reims"
+      },
+      {
+        "team_long_name": "AS Saint-Étienne"
+      },
+      {
+        "team_long_name": "Sporting Charleroi"
+      },
+      {
+        "team_long_name": "Carpi"
+      },
+      {
+        "team_long_name": "Estoril Praia"
+      },
+      {
+        "team_long_name": "FC Zürich"
+      },
+      {
+        "team_long_name": "Hibernian"
+      },
+      {
+        "team_long_name": "KV Mechelen"
+      },
+      {
+        "team_long_name": "Leicester City"
+      },
+      {
+        "team_long_name": "St. Johnstone FC"
+      },
+      {
+        "team_long_name": "SV Zulte-Waregem"
+      },
+      {
+        "team_long_name": "Bournemouth"
+      },
+      {
+        "team_long_name": "SC Cambuur"
+      },
+      {
+        "team_long_name": "KV Oostende"
+      },
+      {
+        "team_long_name": "RC Recreativo"
+      },
+      {
+        "team_long_name": "Rayo Vallecano"
+      },
+      {
+        "team_long_name": "Ross County FC"
+      },
+      {
+        "team_long_name": "Villarreal CF"
+      },
+      {
+        "team_long_name": "Club Brugge KV"
+      },
+      {
+        "team_long_name": "Sporting Lokeren"
+      },
+      {
+        "team_long_name": "Motherwell"
+      },
+      {
+        "team_long_name": "FC Schalke 04"
+      },
+      {
+        "team_long_name": "Southampton"
+      },
+      {
+        "team_long_name": "Sporting CP"
+      },
+      {
+        "team_long_name": "FC Augsburg"
+      },
+      {
+        "team_long_name": "Chelsea"
+      },
+      {
+        "team_long_name": "Tottenham Hotspur"
+      },
+      {
+        "team_long_name": "Angers SCO"
+      },
+      {
+        "team_long_name": "CF Os Belenenses"
+      },
+      {
+        "team_long_name": "Córdoba CF"
+      },
+      {
+        "team_long_name": "Everton"
+      },
+      {
+        "team_long_name": "FC St. Gallen"
+      },
+      {
+        "team_long_name": "Hellas Verona"
+      },
+      {
+        "team_long_name": "BSC Young Boys"
+      },
+      {
+        "team_long_name": "Atalanta"
+      },
+      {
+        "team_long_name": "Borussia Mönchengladbach"
+      },
+      {
+        "team_long_name": "RC Deportivo de La Coruña"
+      },
+      {
+        "team_long_name": "Hannover 96"
+      },
+      {
+        "team_long_name": "Livorno"
+      },
+      {
+        "team_long_name": "Rangers"
+      },
+      {
+        "team_long_name": "Śląsk Wrocław"
+      },
+      {
+        "team_long_name": "Valencia CF"
+      },
+      {
+        "team_long_name": "Zagłębie Lubin"
+      },
+      {
+        "team_long_name": "FC Barcelona"
+      },
+      {
+        "team_long_name": "Go Ahead Eagles"
+      },
+      {
+        "team_long_name": "KV Kortrijk"
+      },
+      {
+        "team_long_name": "SV Werder Bremen"
+      },
+      {
+        "team_long_name": "Wisła Kraków"
+      },
+      {
+        "team_long_name": "Liverpool"
+      },
+      {
+        "team_long_name": "Swansea City"
+      },
+      {
+        "team_long_name": "Cagliari"
+      },
+      {
+        "team_long_name": "Bologna"
+      },
+      {
+        "team_long_name": "Manchester City"
+      },
+      {
+        "team_long_name": "NAC Breda"
+      },
+      {
+        "team_long_name": "Waasland-Beveren"
+      },
+      {
+        "team_long_name": "Arsenal"
+      },
+      {
+        "team_long_name": "KAA Gent"
+      },
+      {
+        "team_long_name": "FC Bayern Munich"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1113",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT t2.defenceAggressionClass FROM Team AS t1 INNER JOIN Team_Attributes AS t2 ON t1.team_api_id = t2.team_api_id WHERE t1.team_long_name = 'Hannover 96' AND t2.`date` LIKE '2015-09-10%'",
+    "rows": [
+      {
+        "defenceAggressionClass": "Press"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1222",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE T2.CRE >= 1.5 AND T1.SEX = 'M'",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 7
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1278",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE T2.IGG > 900 AND T2.IGG <2000 AND  T1.Admission = '+'",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 91
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1280",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE T2.GOT < 60 AND T1.SEX = 'M'",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 45
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1286",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE T2.ALP >= 300 AND T1.Admission = '+'",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 24
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1295",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID INNER JOIN Examination AS T3 ON T1.ID = T3.ID WHERE T2.`T-BIL` >= 2 AND T3.`ANA Pattern` LIKE '%P%'",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 1
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1297",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID INNER JOIN Examination AS T3 ON T1.ID = T3.ID WHERE T2.`T-CHO` >= 250 AND T3.KCT = '-'",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 2
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1299",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Examination AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE T2.TG < 200 AND T1.Symptoms IS NOT NULL",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 1
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1302",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID INNER JOIN Examination AS T3 ON T1.ID = T3.ID WHERE T2.CPK < 250 AND (T3.KCT = '+' OR T3.RVVT = '+' OR T3.LAC = '+')",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 1
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1305",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE T2.WBC BETWEEN 3.5 AND 9 AND T1.Admission = '+'",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 115
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1306",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE T1.Diagnosis = 'SLE' AND T2.WBC BETWEEN 3.5 AND 9",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 54
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1308",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE T2.PLT > 100 AND T2.PLT < 400 AND T1.Diagnosis IS NOT NULL",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 294
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1311",
+    "purpose": "Count patients once; preserve other source predicates to isolate fan-out",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID INNER JOIN Examination AS T3 ON T1.ID = T3.ID WHERE T2.PT < 14 AND T3.Thrombosis < 3 AND T3.Thrombosis > 0",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 1
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true
+  },
+  {
+    "caseId": "holdout-bird-dev-1247",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE (T2.FG <= 150 OR T2.FG >= 450) AND T2.WBC > 3.5 AND T2.WBC < 9.0 AND T1.SEX = 'M'",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 6
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1248",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(DISTINCT T1.ID) FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE (T2.FG <= 150 OR T2.FG >= 450) AND T1.Birthday > '1980-01-01'",
+    "rows": [
+      {
+        "COUNT(DISTINCT T1.ID)": 3
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1251",
+    "purpose": "Remove unrequested Examination existence restriction",
+    "sql": "SELECT COUNT(DISTINCT p.ID) FROM Patient p JOIN Laboratory l ON l.ID=p.ID WHERE l.IGG>=2000",
+    "rows": [
+      {
+        "COUNT(DISTINCT p.ID)": 136
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1268",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT DISTINCT T1.ID FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE T2.SM NOT IN ('negative','0') ORDER BY T1.Birthday DESC LIMIT 3",
+    "rows": [
+      {
+        "ID": 5302954
+      },
+      {
+        "ID": 3561717
+      },
+      {
+        "ID": 283032
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1274",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(DISTINCT e.ID) FROM Examination e JOIN Laboratory l ON l.ID=e.ID WHERE l.SSB IN ('negative','0') AND e.Symptoms IS NOT NULL",
+    "rows": [
+      {
+        "COUNT(DISTINCT e.ID)": 0
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1279",
+    "purpose": "Fix conditional count, percentage scale and patient grain; retain substring diagnosis meaning",
+    "sql": "SELECT COUNT(DISTINCT CASE WHEN p.Diagnosis LIKE '%SLE%' THEN p.ID END)*100.0/COUNT(DISTINCT p.ID) FROM Patient p JOIN Laboratory l ON l.ID=p.ID WHERE l.GOT>=60",
+    "rows": [
+      {
+        "COUNT(DISTINCT CASE WHEN p.Diagnosis LIKE '%SLE%' THEN p.ID END)*100.0/COUNT(DISTINCT p.ID)": 39.726027397260275
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1284",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT T1.`First Date` FROM Patient AS T1 INNER JOIN Laboratory AS T2 ON T1.ID = T2.ID WHERE T2.LDH < 500 ORDER BY T2.LDH DESC LIMIT 1",
+    "rows": [
+      {
+        "First Date": "1992-09-21"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1391",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT SUM(mj.major_name='Finance')*1.0/NULLIF(SUM(mj.major_name='Physics'),0) FROM member m JOIN major mj ON mj.major_id=m.link_to_major",
+    "rows": [
+      {
+        "SUM(mj.major_name='Finance')*1.0/NULLIF(SUM(mj.major_name='Physics'),0)": null
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1362",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT COUNT(DISTINCT city) FROM zip_code WHERE county='Orange County' AND state='Virginia'",
+    "rows": [
+      {
+        "COUNT(DISTINCT city)": 7
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true
+  },
+  {
+    "caseId": "holdout-bird-dev-1442",
+    "purpose": "Event-level net overspend; denominator all events. Alternative any-category policy requires clarification",
+    "sql": "WITH totals AS (SELECT e.event_id,SUM(b.remaining) remaining FROM event e LEFT JOIN budget b ON b.link_to_event=e.event_id GROUP BY e.event_id) SELECT SUM(remaining<0)*100.0/COUNT(*) FROM totals",
+    "rows": [
+      {
+        "SUM(remaining<0)*100.0/COUNT(*)": 11.904761904761905
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1491",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT Country,COUNT(*) AS station_count FROM gasstations WHERE Segment='Value for money' GROUP BY Country ORDER BY station_count DESC",
+    "rows": [
+      {
+        "Country": "CZE",
+        "station_count": 466
+      },
+      {
+        "Country": "SVK",
+        "station_count": 131
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-bird-dev-1513",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT g.Country,t.Time FROM transactions_1k t JOIN gasstations g ON g.GasStationID=t.GasStationID WHERE t.Date='2012-08-25' ORDER BY t.Time ASC LIMIT 1",
+    "rows": [
+      {
+        "Country": "CZE",
+        "Time": "00:07:00"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-spider2-local085",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT employeeid, SUM(shippeddate>=requireddate) late_orders, ROUND(100.0*SUM(shippeddate>=requireddate)/COUNT(*),6) percentage FROM orders GROUP BY employeeid HAVING COUNT(*)>50 ORDER BY percentage DESC LIMIT 3",
+    "rows": [
+      {
+        "employeeid": 4,
+        "late_orders": 10,
+        "percentage": 6.410256
+      },
+      {
+        "employeeid": 7,
+        "late_orders": 4,
+        "percentage": 5.555556
+      },
+      {
+        "employeeid": 8,
+        "late_orders": 5,
+        "percentage": 4.807692
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local085_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local081",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "WITH spend AS (SELECT o.customerid,SUM(d.unitprice*d.quantity) total FROM orders o JOIN order_details d ON d.orderid=o.orderid WHERE SUBSTR(o.orderdate,1,4)='1998' GROUP BY o.customerid) SELECT g.groupname,COUNT(*) n,ROUND(COUNT(*)*100.0/(SELECT COUNT(*) FROM spend),2) pct FROM spend s JOIN customergroupthreshold g ON s.total BETWEEN g.rangebottom AND g.rangetop GROUP BY g.groupname",
+    "rows": [
+      {
+        "groupname": "High",
+        "n": 12,
+        "pct": 14.81
+      },
+      {
+        "groupname": "Low",
+        "n": 20,
+        "pct": 24.69
+      },
+      {
+        "groupname": "Medium",
+        "n": 36,
+        "pct": 44.44
+      },
+      {
+        "groupname": "Very High",
+        "n": 13,
+        "pct": 16.05
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local081_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local131",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "SELECT s.StyleID,s.StyleName,SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END),SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END),SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END) FROM Musical_Styles s LEFT JOIN Musical_Preferences p ON p.StyleID=s.StyleID GROUP BY s.StyleID,s.StyleName",
+    "rows": [
+      {
+        "StyleID": 1,
+        "StyleName": "40's Ballroom Music",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 1
+      },
+      {
+        "StyleID": 2,
+        "StyleName": "50's Music",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 3,
+        "StyleName": "60's Music",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 4,
+        "StyleName": "70's Music",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 5,
+        "StyleName": "80's Music",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 1
+      },
+      {
+        "StyleID": 6,
+        "StyleName": "Country",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 7,
+        "StyleName": "Classical",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 1
+      },
+      {
+        "StyleID": 8,
+        "StyleName": "Classic Rock & Roll",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 9,
+        "StyleName": "Rap",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 10,
+        "StyleName": "Contemporary",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 2,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 11,
+        "StyleName": "Country Rock",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 12,
+        "StyleName": "Elvis",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 13,
+        "StyleName": "Folk",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 14,
+        "StyleName": "Chamber Music",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 15,
+        "StyleName": "Jazz",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 2,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 16,
+        "StyleName": "Karaoke",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 17,
+        "StyleName": "Motown",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 18,
+        "StyleName": "Modern Rock",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 1
+      },
+      {
+        "StyleID": 19,
+        "StyleName": "Rhythm and Blues",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 2,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 1
+      },
+      {
+        "StyleID": 20,
+        "StyleName": "Show Tunes",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 21,
+        "StyleName": "Standards",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 2,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 2,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 22,
+        "StyleName": "Top 40 Hits",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 2,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 23,
+        "StyleName": "Variety",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      },
+      {
+        "StyleID": 24,
+        "StyleName": "Salsa",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 1,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 1
+      },
+      {
+        "StyleID": 25,
+        "StyleName": "90's Music",
+        "SUM(CASE WHEN p.PreferenceSeq=1 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=2 THEN 1 ELSE 0 END)": 0,
+        "SUM(CASE WHEN p.PreferenceSeq=3 THEN 1 ELSE 0 END)": 0
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local131_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local133",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "WITH scores AS (SELECT s.StyleName,SUM(CASE p.PreferenceSeq WHEN 1 THEN 3 WHEN 2 THEN 2 WHEN 3 THEN 1 ELSE 0 END) score FROM Musical_Styles s JOIN Musical_Preferences p ON p.StyleID=s.StyleID WHERE p.PreferenceSeq IN (1,2,3) GROUP BY s.StyleID,s.StyleName) SELECT StyleName,ABS(score-(SELECT AVG(score) FROM scores)) FROM scores",
+    "rows": [
+      {
+        "StyleName": "40's Ballroom Music",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 1.0499999999999998
+      },
+      {
+        "StyleName": "60's Music",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 1.0499999999999998
+      },
+      {
+        "StyleName": "70's Music",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 2.05
+      },
+      {
+        "StyleName": "80's Music",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 3.05
+      },
+      {
+        "StyleName": "Country",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 2.05
+      },
+      {
+        "StyleName": "Classical",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 1.0499999999999998
+      },
+      {
+        "StyleName": "Classic Rock & Roll",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 0.9500000000000002
+      },
+      {
+        "StyleName": "Contemporary",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 2.95
+      },
+      {
+        "StyleName": "Country Rock",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 1.0499999999999998
+      },
+      {
+        "StyleName": "Folk",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 2.05
+      },
+      {
+        "StyleName": "Chamber Music",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 1.0499999999999998
+      },
+      {
+        "StyleName": "Jazz",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 3.95
+      },
+      {
+        "StyleName": "Motown",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 2.05
+      },
+      {
+        "StyleName": "Modern Rock",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 1.0499999999999998
+      },
+      {
+        "StyleName": "Rhythm and Blues",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 2.95
+      },
+      {
+        "StyleName": "Show Tunes",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 0.9500000000000002
+      },
+      {
+        "StyleName": "Standards",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 5.95
+      },
+      {
+        "StyleName": "Top 40 Hits",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 1.9500000000000002
+      },
+      {
+        "StyleName": "Variety",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 1.0499999999999998
+      },
+      {
+        "StyleName": "Salsa",
+        "ABS(score-(SELECT AVG(score) FROM scores))": 1.0499999999999998
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local133_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local193",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "WITH totals AS (SELECT customer_id,MIN(payment_date) first_date,SUM(amount) ltv FROM payment GROUP BY customer_id HAVING SUM(amount)>0), amounts AS (SELECT t.customer_id,t.ltv,SUM(CASE WHEN julianday(p.payment_date)<julianday(t.first_date)+7 THEN p.amount ELSE 0 END) a7,SUM(CASE WHEN julianday(p.payment_date)<julianday(t.first_date)+30 THEN p.amount ELSE 0 END) a30 FROM totals t JOIN payment p ON p.customer_id=t.customer_id GROUP BY t.customer_id,t.ltv) SELECT AVG(a7*100.0/ltv),AVG(a30*100.0/ltv),AVG(ltv) FROM amounts",
+    "rows": [
+      {
+        "AVG(a7*100.0/ltv)": 9.379642980279428,
+        "AVG(a30*100.0/ltv)": 24.75879625951153,
+        "AVG(ltv)": 112.54843071786313
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local193_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local198",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "WITH totals AS (SELECT c.Country,SUM(i.Total) v FROM Customer c JOIN Invoice i ON i.CustomerId=c.CustomerId WHERE c.Country IN (SELECT Country FROM Customer GROUP BY Country HAVING COUNT(*)>4) GROUP BY c.Country), numbered AS (SELECT v,ROW_NUMBER() OVER(ORDER BY v) rn,COUNT(*) OVER() n FROM totals) SELECT AVG(v) FROM numbered WHERE rn IN ((n+1)/2,(n+2)/2)",
+    "rows": null,
+    "error": "no such table: Customer",
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-spider2-local330",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "WITH r AS (SELECT session,path,ROW_NUMBER() OVER(PARTITION BY session ORDER BY stamp) first_rank,ROW_NUMBER() OVER(PARTITION BY session ORDER BY stamp DESC) last_rank FROM activity_log) SELECT path,COUNT(DISTINCT session) FROM r WHERE first_rank=1 OR last_rank=1 GROUP BY path ORDER BY COUNT(DISTINCT session) DESC",
+    "rows": [
+      {
+        "path": "/detail/",
+        "COUNT(DISTINCT session)": 9
+      },
+      {
+        "path": "/search_list/",
+        "COUNT(DISTINCT session)": 7
+      },
+      {
+        "path": "/search_input/",
+        "COUNT(DISTINCT session)": 2
+      },
+      {
+        "path": "/complete",
+        "COUNT(DISTINCT session)": 2
+      },
+      {
+        "path": "/",
+        "COUNT(DISTINCT session)": 2
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local330_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local331",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "WITH r AS (SELECT session,path,LAG(path,1) OVER(PARTITION BY session ORDER BY stamp) prev1,LAG(path,2) OVER(PARTITION BY session ORDER BY stamp) prev2 FROM activity_log) SELECT path,COUNT(*) FROM r WHERE RTRIM(prev1,'/')='/detail' AND RTRIM(prev2,'/')='/detail' GROUP BY path ORDER BY COUNT(*) DESC LIMIT 3",
+    "rows": [
+      {
+        "path": "/detail",
+        "COUNT(*)": 55
+      },
+      {
+        "path": "/detail/",
+        "COUNT(*)": 2
+      },
+      {
+        "path": "/",
+        "COUNT(*)": 2
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": []
+  },
+  {
+    "caseId": "holdout-spider2-local075",
+    "purpose": "Independent question-aligned interpretation; not a gold replacement",
+    "sql": "WITH purchases AS (SELECT DISTINCT visit_id FROM shopping_cart_events WHERE event_type=3) SELECT h.page_id,h.page_name,SUM(e.event_type=1) views,SUM(e.event_type=2) adds,SUM(e.event_type=2 AND p.visit_id IS NOT NULL) bought,SUM(e.event_type=2 AND p.visit_id IS NULL) abandoned FROM shopping_cart_page_hierarchy h LEFT JOIN shopping_cart_events e ON e.page_id=h.page_id LEFT JOIN purchases p ON p.visit_id=e.visit_id WHERE h.page_id NOT IN (1,2,12,13) GROUP BY h.page_id,h.page_name",
+    "rows": [
+      {
+        "page_id": 3,
+        "page_name": "Salmon",
+        "views": 1559,
+        "adds": 938,
+        "bought": 711,
+        "abandoned": 227
+      },
+      {
+        "page_id": 4,
+        "page_name": "Kingfish",
+        "views": 1559,
+        "adds": 920,
+        "bought": 707,
+        "abandoned": 213
+      },
+      {
+        "page_id": 5,
+        "page_name": "Tuna",
+        "views": 1515,
+        "adds": 931,
+        "bought": 697,
+        "abandoned": 234
+      },
+      {
+        "page_id": 6,
+        "page_name": "Russian Caviar",
+        "views": 1563,
+        "adds": 946,
+        "bought": 697,
+        "abandoned": 249
+      },
+      {
+        "page_id": 7,
+        "page_name": "Black Truffle",
+        "views": 1469,
+        "adds": 924,
+        "bought": 707,
+        "abandoned": 217
+      },
+      {
+        "page_id": 8,
+        "page_name": "Abalone",
+        "views": 1525,
+        "adds": 932,
+        "bought": 699,
+        "abandoned": 233
+      },
+      {
+        "page_id": 9,
+        "page_name": "Lobster",
+        "views": 1547,
+        "adds": 968,
+        "bought": 754,
+        "abandoned": 214
+      },
+      {
+        "page_id": 10,
+        "page_name": "Crab",
+        "views": 1564,
+        "adds": 949,
+        "bought": 719,
+        "abandoned": 230
+      },
+      {
+        "page_id": 11,
+        "page_name": "Oyster",
+        "views": 1568,
+        "adds": 943,
+        "bought": 726,
+        "abandoned": 217
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": []
+  },
+  {
+    "caseId": "holdout-spider2-local065",
+    "purpose": "Delivered pizzas only, per-pizza base price plus actual extra token count",
+    "method": "Native source rows; Python per-record accounting",
+    "rows": [
+      {
+        "total_income": 142
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local065_b.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local066",
+    "purpose": "Delivered pizzas only; per-pizza recipe minus exclusions plus extras",
+    "method": "Native source rows; multiset accounting",
+    "rows": [
+      {
+        "topping_name": "BBQ Sauce",
+        "quantity": 8
+      },
+      {
+        "topping_name": "Bacon",
+        "quantity": 12
+      },
+      {
+        "topping_name": "Beef",
+        "quantity": 9
+      },
+      {
+        "topping_name": "Cheese",
+        "quantity": 10
+      },
+      {
+        "topping_name": "Chicken",
+        "quantity": 9
+      },
+      {
+        "topping_name": "Mushrooms",
+        "quantity": 11
+      },
+      {
+        "topping_name": "Onions",
+        "quantity": 3
+      },
+      {
+        "topping_name": "Pepperoni",
+        "quantity": 9
+      },
+      {
+        "topping_name": "Peppers",
+        "quantity": 3
+      },
+      {
+        "topping_name": "Salami",
+        "quantity": 9
+      },
+      {
+        "topping_name": "Tomato Sauce",
+        "quantity": 3
+      },
+      {
+        "topping_name": "Tomatoes",
+        "quantity": 3
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local066_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local073",
+    "purpose": "Per-source-row ingredient string; compare source condition-column projection only",
+    "method": "Python per-pizza multiset accounting; source row order used for row_id",
+    "rows": [
+      {
+        "ROW_ID": 1,
+        "FINAL_INGREDIENTS": "Meatlovers: BBQ Sauce, Bacon, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami"
+      },
+      {
+        "ROW_ID": 2,
+        "FINAL_INGREDIENTS": "Meatlovers: BBQ Sauce, Bacon, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami"
+      },
+      {
+        "ROW_ID": 3,
+        "FINAL_INGREDIENTS": "Meatlovers: BBQ Sauce, Bacon, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami"
+      },
+      {
+        "ROW_ID": 4,
+        "FINAL_INGREDIENTS": "Vegetarian: Cheese, Mushrooms, Onions, Peppers, Tomato Sauce, Tomatoes"
+      },
+      {
+        "ROW_ID": 5,
+        "FINAL_INGREDIENTS": "Meatlovers: BBQ Sauce, Bacon, Beef, Chicken, Mushrooms, Pepperoni, Salami"
+      },
+      {
+        "ROW_ID": 6,
+        "FINAL_INGREDIENTS": "Meatlovers: BBQ Sauce, Bacon, Beef, Chicken, Mushrooms, Pepperoni, Salami"
+      },
+      {
+        "ROW_ID": 7,
+        "FINAL_INGREDIENTS": "Vegetarian: Mushrooms, Onions, Peppers, Tomato Sauce, Tomatoes"
+      },
+      {
+        "ROW_ID": 8,
+        "FINAL_INGREDIENTS": "Meatlovers: 2x Bacon, BBQ Sauce, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami"
+      },
+      {
+        "ROW_ID": 9,
+        "FINAL_INGREDIENTS": "Vegetarian: Cheese, Mushrooms, Onions, Peppers, Tomato Sauce, Tomatoes"
+      },
+      {
+        "ROW_ID": 10,
+        "FINAL_INGREDIENTS": "Vegetarian: Bacon, Cheese, Mushrooms, Onions, Peppers, Tomato Sauce, Tomatoes"
+      },
+      {
+        "ROW_ID": 11,
+        "FINAL_INGREDIENTS": "Meatlovers: BBQ Sauce, Bacon, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami"
+      },
+      {
+        "ROW_ID": 12,
+        "FINAL_INGREDIENTS": "Meatlovers: 2x Bacon, 2x Chicken, BBQ Sauce, Beef, Mushrooms, Pepperoni, Salami"
+      },
+      {
+        "ROW_ID": 13,
+        "FINAL_INGREDIENTS": "Meatlovers: BBQ Sauce, Bacon, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami"
+      },
+      {
+        "ROW_ID": 14,
+        "FINAL_INGREDIENTS": "Meatlovers: 2x Bacon, 2x Cheese, Beef, Chicken, Pepperoni, Salami"
+      }
+    ],
+    "error": null,
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local073_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local007",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local007_a.csv",
+    "originalColumns": [
+      "AVG_CAREER_SPAN_YEARS"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "AVG_CAREER_SPAN_YEARS": "4.85"
+      }
+    ],
+    "projectedColumns": [
+      "AVG_CAREER_SPAN_YEARS"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local007",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local007_b.csv",
+    "originalColumns": [
+      "AVG(\n        ROUND(ABS(YEARS), 2) +\n        ROUND(ABS(MONTHS) / 12.0, 2) +\n        ROUND(ABS(DAYS) / 365.0, 2)\n    )"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "AVG(\n        ROUND(ABS(YEARS), 2) +\n        ROUND(ABS(MONTHS) / 12.0, 2) +\n        ROUND(ABS(DAYS) / 365.0, 2)\n    )": "5.09966563"
+      }
+    ],
+    "projectedColumns": [
+      "AVG(\n        ROUND(ABS(YEARS), 2) +\n        ROUND(ABS(MONTHS) / 12.0, 2) +\n        ROUND(ABS(DAYS) / 365.0, 2)\n    )"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local007",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local007_c.csv",
+    "originalColumns": [
+      "AVERAGE_CAREER_SPAN_YEARS"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "AVERAGE_CAREER_SPAN_YEARS": "4.827581454940"
+      }
+    ],
+    "projectedColumns": [
+      "AVERAGE_CAREER_SPAN_YEARS"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local009",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local009_a.csv",
+    "originalColumns": [
+      "LONGEST_DISTANCE_KM"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "LONGEST_DISTANCE_KM": "3484.1504600096"
+      }
+    ],
+    "projectedColumns": [
+      "LONGEST_DISTANCE_KM"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local010",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local010.csv",
+    "originalColumns": [
+      "output"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "output": "6"
+      }
+    ],
+    "projectedColumns": [
+      "output"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local038",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local038_a.csv",
+    "originalColumns": [
+      "actor_full_name"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "actor_full_name": "HELEN VOIGHT"
+      }
+    ],
+    "projectedColumns": [
+      "actor_full_name"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local038",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local038_b.csv",
+    "originalColumns": [
+      "first_name",
+      "last_name",
+      "FILM_COUNT"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "first_name": "HELEN",
+        "last_name": "VOIGHT",
+        "FILM_COUNT": "3"
+      }
+    ],
+    "projectedColumns": [
+      "first_name",
+      "last_name",
+      "FILM_COUNT"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local039",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local039_a.csv",
+    "originalColumns": [
+      "category_name",
+      "total_rental_hours"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "category_name": "Sports",
+        "total_rental_hours": "16858.166667"
+      }
+    ],
+    "projectedColumns": [
+      "category_name",
+      "total_rental_hours"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local039",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local039_b.csv",
+    "originalColumns": [
+      "name"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "name": "Sports"
+      }
+    ],
+    "projectedColumns": [
+      "name"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local054",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local054_a.csv",
+    "originalColumns": [
+      "FirstName",
+      "TOTALSPENT"
+    ],
+    "originalRowCount": 5,
+    "firstRows": [
+      {
+        "FirstName": "Edward",
+        "TOTALSPENT": "0.99"
+      },
+      {
+        "FirstName": "Ladislav",
+        "TOTALSPENT": "0.99"
+      }
+    ],
+    "projectedColumns": [
+      "FirstName",
+      "TOTALSPENT"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local055",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local055_a.csv",
+    "originalColumns": [
+      "average_spending_difference"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "average_spending_difference": "5.133333333333334"
+      }
+    ],
+    "projectedColumns": [
+      "average_spending_difference"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local055",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local055_b.csv",
+    "originalColumns": [
+      "AbsoluteAverageDifference"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "AbsoluteAverageDifference": "4.143333333333333"
+      }
+    ],
+    "projectedColumns": [
+      "AbsoluteAverageDifference"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local065",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local065_a.csv",
+    "originalColumns": [
+      "TOTAL_INCOME"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "TOTAL_INCOME": "144"
+      }
+    ],
+    "projectedColumns": [
+      "TOTAL_INCOME"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local065",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local065_b.csv",
+    "originalColumns": [
+      "TOTAL_INCOME"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "TOTAL_INCOME": "142"
+      }
+    ],
+    "projectedColumns": [
+      "TOTAL_INCOME"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local066",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local066_a.csv",
+    "originalColumns": [
+      "topping_name",
+      "TOTAL_QUANTITY"
+    ],
+    "originalRowCount": 12,
+    "firstRows": [
+      {
+        "topping_name": "BBQ Sauce",
+        "TOTAL_QUANTITY": "8"
+      },
+      {
+        "topping_name": "Bacon",
+        "TOTAL_QUANTITY": "12"
+      }
+    ],
+    "projectedColumns": [
+      "topping_name",
+      "TOTAL_QUANTITY"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local066",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local066_b.csv",
+    "originalColumns": [
+      "name",
+      "quantity"
+    ],
+    "originalRowCount": 12,
+    "firstRows": [
+      {
+        "name": "Bacon",
+        "quantity": "13"
+      },
+      {
+        "name": "Cheese",
+        "quantity": "11"
+      }
+    ],
+    "projectedColumns": [
+      "name",
+      "quantity"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local066",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local066_c.csv",
+    "originalColumns": [
+      "ingredient",
+      "quantity"
+    ],
+    "originalRowCount": 12,
+    "firstRows": [
+      {
+        "ingredient": "BBQ Sauce",
+        "quantity": "9"
+      },
+      {
+        "ingredient": "Bacon",
+        "quantity": "13"
+      }
+    ],
+    "projectedColumns": [
+      "ingredient",
+      "quantity"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local068",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local068_a.csv",
+    "originalColumns": [
+      "year",
+      "month",
+      "monthly_total",
+      "running_total",
+      "monthly_total_yoy_growth",
+      "running_total_yoy_growth"
+    ],
+    "originalRowCount": 6,
+    "firstRows": [
+      {
+        "year": "2022",
+        "month": "4",
+        "monthly_total": "1437",
+        "running_total": "2945",
+        "monthly_total_yoy_growth": "-4.708223",
+        "running_total_yoy_growth": "95.291777"
+      },
+      {
+        "year": "2022",
+        "month": "5",
+        "monthly_total": "1459",
+        "running_total": "2968",
+        "monthly_total_yoy_growth": "-3.313453",
+        "running_total_yoy_growth": "96.686547"
+      }
+    ],
+    "projectedColumns": [
+      "monthly_total",
+      "running_total",
+      "monthly_total_yoy_growth",
+      "running_total_yoy_growth"
+    ],
+    "conditionColumns": [
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local068",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local068_b.csv",
+    "originalColumns": [
+      "year",
+      "month",
+      "monthly_total",
+      "running_total",
+      "monthly_yoy_growth_pct",
+      "running_yoy_growth_pct"
+    ],
+    "originalRowCount": 6,
+    "firstRows": [
+      {
+        "year": "2022",
+        "month": "April",
+        "monthly_total": "1437",
+        "running_total": "2945",
+        "monthly_yoy_growth_pct": "-4.71",
+        "running_yoy_growth_pct": "95.29"
+      },
+      {
+        "year": "2022",
+        "month": "May",
+        "monthly_total": "1459",
+        "running_total": "2968",
+        "monthly_yoy_growth_pct": "-3.31",
+        "running_yoy_growth_pct": "96.69"
+      }
+    ],
+    "projectedColumns": [
+      "monthly_total",
+      "running_total",
+      "monthly_yoy_growth_pct",
+      "running_yoy_growth_pct"
+    ],
+    "conditionColumns": [
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local068",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local068_c.csv",
+    "originalColumns": [
+      "year",
+      "month_name",
+      "cities_inserted",
+      "running_total",
+      "year_over_year",
+      "total_year_over_year"
+    ],
+    "originalRowCount": 6,
+    "firstRows": [
+      {
+        "year": "2022",
+        "month_name": "Apr",
+        "cities_inserted": "1437",
+        "running_total": "2945",
+        "year_over_year": "-4.71",
+        "total_year_over_year": "95.29"
+      },
+      {
+        "year": "2022",
+        "month_name": "May",
+        "cities_inserted": "1459",
+        "running_total": "2968",
+        "year_over_year": "-3.31",
+        "total_year_over_year": "96.69"
+      }
+    ],
+    "projectedColumns": [
+      "cities_inserted",
+      "running_total",
+      "year_over_year",
+      "total_year_over_year"
+    ],
+    "conditionColumns": [
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local071",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local071_a.csv",
+    "originalColumns": [
+      "country_code_2"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "country_code_2": "br"
+      },
+      {
+        "country_code_2": "in"
+      }
+    ],
+    "projectedColumns": [
+      "country_code_2"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local071",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local071_b.csv",
+    "originalColumns": [
+      "country_code_2"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "country_code_2": "BR"
+      },
+      {
+        "country_code_2": "IN"
+      }
+    ],
+    "projectedColumns": [
+      "country_code_2"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local072",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local072_a.csv",
+    "originalColumns": [
+      "country_code_2",
+      "distinct_insert_days",
+      "longest_streak_start_date",
+      "longest_streak_end_date",
+      "streak_length_days",
+      "total_rows_in_period",
+      "capital_rows_in_period",
+      "capital_percentage"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "country_code_2": "ir",
+        "distinct_insert_days": "9",
+        "longest_streak_start_date": "2022-01-20",
+        "longest_streak_end_date": "2022-01-22",
+        "streak_length_days": "3",
+        "total_rows_in_period": "5",
+        "capital_rows_in_period": "1",
+        "capital_percentage": "20.000000"
+      }
+    ],
+    "projectedColumns": [
+      "country_code_2",
+      "distinct_insert_days",
+      "longest_streak_start_date",
+      "longest_streak_end_date",
+      "streak_length_days",
+      "total_rows_in_period",
+      "capital_rows_in_period",
+      "capital_percentage"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local072",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local072_b.csv",
+    "originalColumns": [
+      "country_name",
+      "country_code_2",
+      "start_date",
+      "end_date",
+      "consecutive_days_length",
+      "capital_proportion"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "country_name": "iran",
+        "country_code_2": "ir",
+        "start_date": "2022-01-20",
+        "end_date": "2022-01-22",
+        "consecutive_days_length": "3",
+        "capital_proportion": "0.2"
+      }
+    ],
+    "projectedColumns": [
+      "country_name",
+      "country_code_2",
+      "start_date",
+      "end_date",
+      "consecutive_days_length",
+      "capital_proportion"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local072",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local072_c.csv",
+    "originalColumns": [
+      "COUNTRY",
+      "PERIOD_START",
+      "PERIOD_END",
+      "CONSECUTIVE_DAYS",
+      "TOTAL_ENTRIES",
+      "CAPITAL_ENTRIES",
+      "CAPITAL_PROPORTION"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "COUNTRY": "iran",
+        "PERIOD_START": "2022-01-20",
+        "PERIOD_END": "2022-01-22",
+        "CONSECUTIVE_DAYS": "3",
+        "TOTAL_ENTRIES": "5",
+        "CAPITAL_ENTRIES": "1",
+        "CAPITAL_PROPORTION": "20.00"
+      }
+    ],
+    "projectedColumns": [
+      "COUNTRY",
+      "PERIOD_START",
+      "PERIOD_END",
+      "CONSECUTIVE_DAYS",
+      "TOTAL_ENTRIES",
+      "CAPITAL_ENTRIES",
+      "CAPITAL_PROPORTION"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local072",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local072_d.csv",
+    "originalColumns": [
+      "CAST(SUM(CASE WHEN T1.\"CAPITAL\" = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(T1.\"CITY_ID\")"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "CAST(SUM(CASE WHEN T1.\"CAPITAL\" = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(T1.\"CITY_ID\")": "0.2"
+      }
+    ],
+    "projectedColumns": [
+      "CAST(SUM(CASE WHEN T1.\"CAPITAL\" = 1 THEN 1 ELSE 0 END) AS REAL) / COUNT(T1.\"CITY_ID\")"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local073",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local073_a.csv",
+    "originalColumns": [
+      "ROW_ID",
+      "order_id",
+      "customer_id",
+      "pizza_name",
+      "FINAL_INGREDIENTS"
+    ],
+    "originalRowCount": 14,
+    "firstRows": [
+      {
+        "ROW_ID": "1",
+        "order_id": "1",
+        "customer_id": "101",
+        "pizza_name": "Meatlovers",
+        "FINAL_INGREDIENTS": "Meatlovers: BBQ Sauce, Bacon, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami"
+      },
+      {
+        "ROW_ID": "2",
+        "order_id": "2",
+        "customer_id": "101",
+        "pizza_name": "Meatlovers",
+        "FINAL_INGREDIENTS": "Meatlovers: BBQ Sauce, Bacon, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami"
+      }
+    ],
+    "projectedColumns": [
+      "ROW_ID",
+      "FINAL_INGREDIENTS"
+    ],
+    "conditionColumns": [
+      0,
+      4
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local073",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local073_b.csv",
+    "originalColumns": [
+      "row_id",
+      "order_id",
+      "customer_id",
+      "pizza_name",
+      "FINAL_INGREDIENTS"
+    ],
+    "originalRowCount": 14,
+    "firstRows": [
+      {
+        "row_id": "1",
+        "order_id": "1",
+        "customer_id": "101",
+        "pizza_name": "Meatlovers",
+        "FINAL_INGREDIENTS": "Meatlovers: BBQ Sauce, Bacon, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami"
+      },
+      {
+        "row_id": "2",
+        "order_id": "2",
+        "customer_id": "101",
+        "pizza_name": "Meatlovers",
+        "FINAL_INGREDIENTS": "Meatlovers: BBQ Sauce, Bacon, Beef, Cheese, Chicken, Mushrooms, Pepperoni, Salami"
+      }
+    ],
+    "projectedColumns": [
+      "row_id",
+      "FINAL_INGREDIENTS"
+    ],
+    "conditionColumns": [
+      0,
+      4
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local075",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local075_a.csv",
+    "originalColumns": [
+      "product_id",
+      "page_name",
+      "PRODUCT_VIEWS",
+      "ADDED_TO_CART",
+      "PURCHASES",
+      "LEFT_IN_CART"
+    ],
+    "originalRowCount": 9,
+    "firstRows": [
+      {
+        "product_id": "1.0",
+        "page_name": "Salmon",
+        "PRODUCT_VIEWS": "1559",
+        "ADDED_TO_CART": "938",
+        "PURCHASES": "711",
+        "LEFT_IN_CART": "227"
+      },
+      {
+        "product_id": "2.0",
+        "page_name": "Kingfish",
+        "PRODUCT_VIEWS": "1559",
+        "ADDED_TO_CART": "920",
+        "PURCHASES": "707",
+        "LEFT_IN_CART": "213"
+      }
+    ],
+    "projectedColumns": [
+      "PRODUCT_VIEWS",
+      "ADDED_TO_CART",
+      "PURCHASES",
+      "LEFT_IN_CART"
+    ],
+    "conditionColumns": [
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local075",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local075_b.csv",
+    "originalColumns": [
+      "page_id",
+      "page_name",
+      "number of product being viewed",
+      "number added to the cart",
+      "without being purchased in cart",
+      "count of actual purchases"
+    ],
+    "originalRowCount": 9,
+    "firstRows": [
+      {
+        "page_id": "3",
+        "page_name": "Salmon",
+        "number of product being viewed": "1559",
+        "number added to the cart": "938",
+        "without being purchased in cart": "227",
+        "count of actual purchases": "711"
+      },
+      {
+        "page_id": "4",
+        "page_name": "Kingfish",
+        "number of product being viewed": "1559",
+        "number added to the cart": "920",
+        "without being purchased in cart": "213",
+        "count of actual purchases": "707"
+      }
+    ],
+    "projectedColumns": [
+      "number of product being viewed",
+      "number added to the cart",
+      "without being purchased in cart",
+      "count of actual purchases"
+    ],
+    "conditionColumns": [
+      2,
+      3,
+      4,
+      5
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local077",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local077_a.csv",
+    "originalColumns": [
+      "MONTH_DATE",
+      "interest_name",
+      "MAX_INDEX_COMPOSITION",
+      "ROLLING_AVG_3MONTH",
+      "PREV_MONTH_INTEREST_NAME",
+      "PREV_MONTH_MAX_COMPOSITION",
+      "PREV_2MONTH_INTEREST_NAME",
+      "PREV_2MONTH_MAX_COMPOSITION"
+    ],
+    "originalRowCount": 12,
+    "firstRows": [
+      {
+        "MONTH_DATE": "2018-09-01",
+        "interest_name": "Work Comes First Travelers",
+        "MAX_INDEX_COMPOSITION": "8.263636363636364",
+        "ROLLING_AVG_3MONTH": "8.263636363636364",
+        "PREV_MONTH_INTEREST_NAME": "",
+        "PREV_MONTH_MAX_COMPOSITION": "",
+        "PREV_2MONTH_INTEREST_NAME": "",
+        "PREV_2MONTH_MAX_COMPOSITION": ""
+      },
+      {
+        "MONTH_DATE": "2018-10-01",
+        "interest_name": "Work Comes First Travelers",
+        "MAX_INDEX_COMPOSITION": "9.135135135135135",
+        "ROLLING_AVG_3MONTH": "8.69938574938575",
+        "PREV_MONTH_INTEREST_NAME": "Work Comes First Travelers",
+        "PREV_MONTH_MAX_COMPOSITION": "8.263636363636364",
+        "PREV_2MONTH_INTEREST_NAME": "",
+        "PREV_2MONTH_MAX_COMPOSITION": ""
+      }
+    ],
+    "projectedColumns": [
+      "interest_name",
+      "MAX_INDEX_COMPOSITION",
+      "ROLLING_AVG_3MONTH",
+      "PREV_MONTH_INTEREST_NAME",
+      "PREV_MONTH_MAX_COMPOSITION",
+      "PREV_2MONTH_INTEREST_NAME",
+      "PREV_2MONTH_MAX_COMPOSITION"
+    ],
+    "conditionColumns": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local077",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local077_b.csv",
+    "originalColumns": [
+      "DATE",
+      "interest_name",
+      "MAX_INDEX_COMPOSITION",
+      "ROLLING_AVERAGE",
+      "PREV_MONTH_INTEREST_NAME",
+      "PREV_MONTH_MAX_COMPOSITION",
+      "PREV_2MONTH_INTEREST_NAME",
+      "PREV_2MONTH_MAX_COMPOSITION"
+    ],
+    "originalRowCount": 12,
+    "firstRows": [
+      {
+        "DATE": "09-2018",
+        "interest_name": "Work Comes First Travelers",
+        "MAX_INDEX_COMPOSITION": "8.263636363636364",
+        "ROLLING_AVERAGE": "8.263636363636364",
+        "PREV_MONTH_INTEREST_NAME": "",
+        "PREV_MONTH_MAX_COMPOSITION": "",
+        "PREV_2MONTH_INTEREST_NAME": "",
+        "PREV_2MONTH_MAX_COMPOSITION": ""
+      },
+      {
+        "DATE": "10-2018",
+        "interest_name": "Work Comes First Travelers",
+        "MAX_INDEX_COMPOSITION": "9.135135135135135",
+        "ROLLING_AVERAGE": "8.69938574938575",
+        "PREV_MONTH_INTEREST_NAME": "Work Comes First Travelers",
+        "PREV_MONTH_MAX_COMPOSITION": "8.263636363636364",
+        "PREV_2MONTH_INTEREST_NAME": "",
+        "PREV_2MONTH_MAX_COMPOSITION": ""
+      }
+    ],
+    "projectedColumns": [
+      "interest_name",
+      "MAX_INDEX_COMPOSITION",
+      "ROLLING_AVERAGE",
+      "PREV_MONTH_INTEREST_NAME",
+      "PREV_MONTH_MAX_COMPOSITION",
+      "PREV_2MONTH_INTEREST_NAME",
+      "PREV_2MONTH_MAX_COMPOSITION"
+    ],
+    "conditionColumns": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local077",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local077_c.csv",
+    "originalColumns": [
+      "month",
+      "interest_name",
+      "max_index_composition",
+      "rolling_avg_3mo",
+      "prev1_interest_name",
+      "prev1_max_index_composition",
+      "prev2_interest_name",
+      "prev2_max_index_composition"
+    ],
+    "originalRowCount": 12,
+    "firstRows": [
+      {
+        "month": "2018-09",
+        "interest_name": "Work Comes First Travelers",
+        "max_index_composition": "8.263636363636364",
+        "rolling_avg_3mo": "8.263636",
+        "prev1_interest_name": "",
+        "prev1_max_index_composition": "",
+        "prev2_interest_name": "",
+        "prev2_max_index_composition": ""
+      },
+      {
+        "month": "2018-10",
+        "interest_name": "Work Comes First Travelers",
+        "max_index_composition": "9.135135135135135",
+        "rolling_avg_3mo": "8.699386",
+        "prev1_interest_name": "Work Comes First Travelers",
+        "prev1_max_index_composition": "8.263636363636364",
+        "prev2_interest_name": "",
+        "prev2_max_index_composition": ""
+      }
+    ],
+    "projectedColumns": [
+      "interest_name",
+      "max_index_composition",
+      "rolling_avg_3mo",
+      "prev1_interest_name",
+      "prev1_max_index_composition",
+      "prev2_interest_name",
+      "prev2_max_index_composition"
+    ],
+    "conditionColumns": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local077",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local077_d.csv",
+    "originalColumns": [
+      "date",
+      "interest_name",
+      "max_index_composition",
+      "rolling_avg_3m",
+      "prev_month_interest_name",
+      "prev_month_max_index_composition",
+      "prev2_month_interest_name",
+      "prev2_month_max_index_composition"
+    ],
+    "originalRowCount": 12,
+    "firstRows": [
+      {
+        "date": "2018-09-01",
+        "interest_name": "Work Comes First Travelers",
+        "max_index_composition": "8.263636363636364",
+        "rolling_avg_3m": "",
+        "prev_month_interest_name": "",
+        "prev_month_max_index_composition": "",
+        "prev2_month_interest_name": "",
+        "prev2_month_max_index_composition": ""
+      },
+      {
+        "date": "2018-10-01",
+        "interest_name": "Work Comes First Travelers",
+        "max_index_composition": "9.135135135135135",
+        "rolling_avg_3m": "",
+        "prev_month_interest_name": "Work Comes First Travelers",
+        "prev_month_max_index_composition": "8.263636363636364",
+        "prev2_month_interest_name": "",
+        "prev2_month_max_index_composition": ""
+      }
+    ],
+    "projectedColumns": [
+      "interest_name",
+      "max_index_composition",
+      "rolling_avg_3m",
+      "prev_month_interest_name",
+      "prev_month_max_index_composition",
+      "prev2_month_interest_name",
+      "prev2_month_max_index_composition"
+    ],
+    "conditionColumns": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local081",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local081_a.csv",
+    "originalColumns": [
+      "groupname",
+      "CUSTOMER_COUNT",
+      "PERCENTAGE"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "groupname": "Low",
+        "CUSTOMER_COUNT": "20",
+        "PERCENTAGE": "24.69"
+      },
+      {
+        "groupname": "Medium",
+        "CUSTOMER_COUNT": "36",
+        "PERCENTAGE": "44.44"
+      }
+    ],
+    "projectedColumns": [
+      "groupname",
+      "CUSTOMER_COUNT",
+      "PERCENTAGE"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local085",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local085_a.csv",
+    "originalColumns": [
+      "EMPLOYEE_ID",
+      "LATE_ORDERS",
+      "LATE_ORDER_PERCENTAGE"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "EMPLOYEE_ID": "4",
+        "LATE_ORDERS": "10",
+        "LATE_ORDER_PERCENTAGE": "6.410256"
+      },
+      {
+        "EMPLOYEE_ID": "7",
+        "LATE_ORDERS": "4",
+        "LATE_ORDER_PERCENTAGE": "5.555556"
+      }
+    ],
+    "projectedColumns": [
+      "EMPLOYEE_ID",
+      "LATE_ORDERS",
+      "LATE_ORDER_PERCENTAGE"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local097",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local097_a.csv",
+    "originalColumns": [
+      "start_year",
+      "total_movies"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "start_year": "2008",
+        "total_movies": "1205"
+      }
+    ],
+    "projectedColumns": [
+      "total_movies"
+    ],
+    "conditionColumns": [
+      1
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local114",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local114_a.csv",
+    "originalColumns": [
+      "REGION_NAME",
+      "ORDER_COUNT",
+      "TOTAL_SALES",
+      "TOP_SALES_REPS"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "REGION_NAME": "Northeast",
+        "ORDER_COUNT": "2357",
+        "TOTAL_SALES": "7744405.359999999",
+        "TOP_SALES_REPS": "Tia Amato ($1010690.6)"
+      },
+      {
+        "REGION_NAME": "Southeast",
+        "ORDER_COUNT": "2024",
+        "TOTAL_SALES": "6458497.0",
+        "TOP_SALES_REPS": "Earlie Schleusner ($1098137.72)"
+      }
+    ],
+    "projectedColumns": [
+      "REGION_NAME",
+      "ORDER_COUNT",
+      "TOTAL_SALES",
+      "TOP_SALES_REPS"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local114",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local114_b.csv",
+    "originalColumns": [
+      "REGION_NAME",
+      "NUM_ORDERS",
+      "TOTAL_SALES_AMOUNT",
+      "TOP_SALES_REPS"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "REGION_NAME": "Midwest",
+        "NUM_ORDERS": "897",
+        "TOTAL_SALES_AMOUNT": "3013486.51",
+        "TOP_SALES_REPS": "Charles Bidwell (675637.19)"
+      },
+      {
+        "REGION_NAME": "Northeast",
+        "NUM_ORDERS": "2357",
+        "TOTAL_SALES_AMOUNT": "7744405.359999999",
+        "TOP_SALES_REPS": "Tia Amato (1010690.6)"
+      }
+    ],
+    "projectedColumns": [
+      "REGION_NAME",
+      "NUM_ORDERS",
+      "TOTAL_SALES_AMOUNT",
+      "TOP_SALES_REPS"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local114",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local114_c.csv",
+    "originalColumns": [
+      "REGION_NAME",
+      "NUM_ORDERS",
+      "TOTAL_SALES_AMOUNT",
+      "TOP_SALES_REPS_DETAILS"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "REGION_NAME": "Midwest",
+        "NUM_ORDERS": "897",
+        "TOTAL_SALES_AMOUNT": "3013486.51",
+        "TOP_SALES_REPS_DETAILS": "Charles Bidwell (675,637.19)"
+      },
+      {
+        "REGION_NAME": "Northeast",
+        "NUM_ORDERS": "2357",
+        "TOTAL_SALES_AMOUNT": "7744405.359999999",
+        "TOP_SALES_REPS_DETAILS": "Tia Amato (1,010,690.60)"
+      }
+    ],
+    "projectedColumns": [
+      "REGION_NAME",
+      "NUM_ORDERS",
+      "TOTAL_SALES_AMOUNT",
+      "TOP_SALES_REPS_DETAILS"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local114",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local114_d.csv",
+    "originalColumns": [
+      "REGION_NAME",
+      "TOTAL_REGION_ORDERS",
+      "TOTAL_REGION_SALES",
+      "TOP_SALES_REP_NAME",
+      "TOP_SALES_REP_SALES"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "REGION_NAME": "Midwest",
+        "TOTAL_REGION_ORDERS": "897",
+        "TOTAL_REGION_SALES": "3013486.51",
+        "TOP_SALES_REP_NAME": "Charles Bidwell",
+        "TOP_SALES_REP_SALES": "675637.19"
+      },
+      {
+        "REGION_NAME": "Northeast",
+        "TOTAL_REGION_ORDERS": "2357",
+        "TOTAL_REGION_SALES": "7744405.359999999",
+        "TOP_SALES_REP_NAME": "Tia Amato",
+        "TOP_SALES_REP_SALES": "1010690.6"
+      }
+    ],
+    "projectedColumns": [
+      "REGION_NAME",
+      "TOTAL_REGION_ORDERS",
+      "TOTAL_REGION_SALES",
+      "TOP_SALES_REP_NAME",
+      "TOP_SALES_REP_SALES"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local114",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local114_e.csv",
+    "originalColumns": [
+      "region_id",
+      "region_name",
+      "num_orders",
+      "total_sales_amount",
+      "top_sales_amount",
+      "top_sales_representatives"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "region_id": "1",
+        "region_name": "Northeast",
+        "num_orders": "2357",
+        "total_sales_amount": "7744405.36",
+        "top_sales_amount": "1010690.6",
+        "top_sales_representatives": "Tia Amato (1010690.60)"
+      },
+      {
+        "region_id": "2",
+        "region_name": "Midwest",
+        "num_orders": "897",
+        "total_sales_amount": "3013486.5100000002",
+        "top_sales_amount": "675637.19",
+        "top_sales_representatives": "Charles Bidwell (675637.19)"
+      }
+    ],
+    "projectedColumns": [
+      "region_id",
+      "region_name",
+      "num_orders",
+      "total_sales_amount",
+      "top_sales_amount",
+      "top_sales_representatives"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local128",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local128_a.csv",
+    "originalColumns": [
+      "BowlerID",
+      "BowlerFirstName",
+      "BowlerLastName",
+      "MatchID",
+      "GameNumber",
+      "HandiCapScore",
+      "TourneyDate",
+      "TourneyLocation"
+    ],
+    "originalRowCount": 11,
+    "firstRows": [
+      {
+        "BowlerID": "13",
+        "BowlerFirstName": "Elizabeth",
+        "BowlerLastName": "Hallmark",
+        "MatchID": "10",
+        "GameNumber": "1",
+        "HandiCapScore": "189",
+        "TourneyDate": "2017-09-18",
+        "TourneyLocation": "Bolero Lanes"
+      },
+      {
+        "BowlerID": "13",
+        "BowlerFirstName": "Elizabeth",
+        "BowlerLastName": "Hallmark",
+        "MatchID": "34",
+        "GameNumber": "1",
+        "HandiCapScore": "189",
+        "TourneyDate": "2017-10-30",
+        "TourneyLocation": "Thunderbird Lanes"
+      }
+    ],
+    "projectedColumns": [
+      "BowlerFirstName",
+      "BowlerLastName",
+      "MatchID",
+      "TourneyLocation"
+    ],
+    "conditionColumns": [
+      1,
+      2,
+      3,
+      7
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local130",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local130_a.csv",
+    "originalColumns": [
+      "StudLastName",
+      "Grade",
+      "QUINTILE"
+    ],
+    "originalRowCount": 18,
+    "firstRows": [
+      {
+        "StudLastName": "Bishop",
+        "Grade": "98.07",
+        "QUINTILE": "First"
+      },
+      {
+        "StudLastName": "Sheskey",
+        "Grade": "97.59",
+        "QUINTILE": "First"
+      }
+    ],
+    "projectedColumns": [
+      "StudLastName",
+      "Grade"
+    ],
+    "conditionColumns": [
+      0,
+      1
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local131",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local131_a.csv",
+    "originalColumns": [
+      "StyleID",
+      "StyleName",
+      "FirstPreferenceCount",
+      "SecondPreferenceCount",
+      "ThirdPreferenceCount"
+    ],
+    "originalRowCount": 25,
+    "firstRows": [
+      {
+        "StyleID": "1",
+        "StyleName": "40's Ballroom Music",
+        "FirstPreferenceCount": "0",
+        "SecondPreferenceCount": "1",
+        "ThirdPreferenceCount": "1"
+      },
+      {
+        "StyleID": "2",
+        "StyleName": "50's Music",
+        "FirstPreferenceCount": "0",
+        "SecondPreferenceCount": "0",
+        "ThirdPreferenceCount": "0"
+      }
+    ],
+    "projectedColumns": [
+      "StyleID",
+      "StyleName",
+      "FirstPreferenceCount",
+      "SecondPreferenceCount",
+      "ThirdPreferenceCount"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local132",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local132_a.csv",
+    "originalColumns": [
+      "EntStageName",
+      "CustLastName"
+    ],
+    "originalRowCount": 6,
+    "firstRows": [
+      {
+        "EntStageName": "JV & the Deep Six",
+        "CustLastName": "Waldal"
+      },
+      {
+        "EntStageName": "Topazz",
+        "CustLastName": "Brehm"
+      }
+    ],
+    "projectedColumns": [
+      "EntStageName",
+      "CustLastName"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local133",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local133_a.csv",
+    "originalColumns": [
+      "StyleName",
+      "AbsoluteDifference"
+    ],
+    "originalRowCount": 20,
+    "firstRows": [
+      {
+        "StyleName": "40's Ballroom Music",
+        "AbsoluteDifference": "1.050"
+      },
+      {
+        "StyleName": "60's Music",
+        "AbsoluteDifference": "1.050"
+      }
+    ],
+    "projectedColumns": [
+      "StyleName",
+      "AbsoluteDifference"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local133",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local133_b.csv",
+    "originalColumns": [
+      "StyleName",
+      "TOTAL_WEIGHTED_SCORE",
+      "AVERAGE_SCORE",
+      "ABSOLUTE_DIFFERENCE_FROM_AVERAGE"
+    ],
+    "originalRowCount": 20,
+    "firstRows": [
+      {
+        "StyleName": "Standards",
+        "TOTAL_WEIGHTED_SCORE": "10",
+        "AVERAGE_SCORE": "4.0500",
+        "ABSOLUTE_DIFFERENCE_FROM_AVERAGE": "5.9500"
+      },
+      {
+        "StyleName": "Jazz",
+        "TOTAL_WEIGHTED_SCORE": "8",
+        "AVERAGE_SCORE": "4.0500",
+        "ABSOLUTE_DIFFERENCE_FROM_AVERAGE": "3.9500"
+      }
+    ],
+    "projectedColumns": [
+      "StyleName",
+      "TOTAL_WEIGHTED_SCORE",
+      "AVERAGE_SCORE",
+      "ABSOLUTE_DIFFERENCE_FROM_AVERAGE"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local141",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local141_a.csv",
+    "originalColumns": [
+      "Salesperson",
+      "Year",
+      "Difference"
+    ],
+    "originalRowCount": 62,
+    "firstRows": [
+      {
+        "Salesperson": "274.0",
+        "Year": "2011",
+        "Difference": "-93432.0845"
+      },
+      {
+        "Salesperson": "274.0",
+        "Year": "2012",
+        "Difference": "45197.36800000002"
+      }
+    ],
+    "projectedColumns": [
+      "Year",
+      "Difference"
+    ],
+    "conditionColumns": [
+      1,
+      2
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local141",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local141_b.csv",
+    "originalColumns": [
+      "salespersonid",
+      "year",
+      "total_sales",
+      "annual_quota",
+      "difference"
+    ],
+    "originalRowCount": 58,
+    "firstRows": [
+      {
+        "salespersonid": "274",
+        "year": "2011",
+        "total_sales": "32567.9155",
+        "annual_quota": "126000.0",
+        "difference": "-93432.0845"
+      },
+      {
+        "salespersonid": "274",
+        "year": "2012",
+        "total_sales": "516197.368",
+        "annual_quota": "471000.0",
+        "difference": "45197.36800000002"
+      }
+    ],
+    "projectedColumns": [
+      "total_sales",
+      "annual_quota",
+      "difference"
+    ],
+    "conditionColumns": [
+      2,
+      3,
+      4
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local152",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local152_a.csv",
+    "originalColumns": [
+      "DIRECTOR_ID",
+      "DIRECTOR_NAME",
+      "MOVIE_COUNT",
+      "AVG_INTER_MOVIE_DURATION",
+      "AVG_RATING",
+      "TOTAL_VOTES",
+      "MIN_RATING",
+      "MAX_RATING",
+      "TOTAL_MOVIE_DURATION"
+    ],
+    "originalRowCount": 9,
+    "firstRows": [
+      {
+        "DIRECTOR_ID": "nm1777967",
+        "DIRECTOR_NAME": "A.L. Vijay",
+        "MOVIE_COUNT": "5",
+        "AVG_INTER_MOVIE_DURATION": "177",
+        "AVG_RATING": "5.42",
+        "TOTAL_VOTES": "1754",
+        "MIN_RATING": "3.7",
+        "MAX_RATING": "6.9",
+        "TOTAL_MOVIE_DURATION": "613"
+      },
+      {
+        "DIRECTOR_ID": "nm2096009",
+        "DIRECTOR_NAME": "Andrew Jones",
+        "MOVIE_COUNT": "5",
+        "AVG_INTER_MOVIE_DURATION": "191",
+        "AVG_RATING": "3.02",
+        "TOTAL_VOTES": "1989",
+        "MIN_RATING": "2.7",
+        "MAX_RATING": "3.2",
+        "TOTAL_MOVIE_DURATION": "432"
+      }
+    ],
+    "projectedColumns": [
+      "DIRECTOR_ID",
+      "DIRECTOR_NAME",
+      "MOVIE_COUNT",
+      "AVG_INTER_MOVIE_DURATION",
+      "AVG_RATING",
+      "TOTAL_VOTES",
+      "MIN_RATING",
+      "MAX_RATING",
+      "TOTAL_MOVIE_DURATION"
+    ],
+    "conditionColumns": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local163",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local163_a.csv",
+    "originalColumns": [
+      "FacRank",
+      "FacFirstName",
+      "FacLastName",
+      "FacSalary"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "FacRank": "ASSC",
+        "FacFirstName": "LEONARD",
+        "FacLastName": "FIBON",
+        "FacSalary": "70000"
+      },
+      {
+        "FacRank": "ASSC",
+        "FacFirstName": "JULIA",
+        "FacLastName": "MILLS",
+        "FacSalary": "75000"
+      }
+    ],
+    "projectedColumns": [
+      "FacRank",
+      "FacFirstName",
+      "FacLastName",
+      "FacSalary"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local193",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local193_a.csv",
+    "originalColumns": [
+      "avg_pct_ltv_7_days",
+      "avg_pct_ltv_30_days",
+      "avg_ltv"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "avg_pct_ltv_7_days": "9.37964298027943",
+        "avg_pct_ltv_30_days": "24.758796259511534",
+        "avg_ltv": "112.54843071786313"
+      }
+    ],
+    "projectedColumns": [
+      "avg_pct_ltv_7_days",
+      "avg_pct_ltv_30_days",
+      "avg_ltv"
+    ],
+    "conditionColumns": [
+      0,
+      1,
+      2
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local194",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local194_a.csv",
+    "originalColumns": [
+      "actor_id",
+      "first_name",
+      "last_name",
+      "film_title",
+      "total_revenue",
+      "actor_share_in_film",
+      "avg_revenue_per_actor_top3"
+    ],
+    "originalRowCount": 411,
+    "firstRows": [
+      {
+        "actor_id": "1",
+        "first_name": "PENELOPE",
+        "last_name": "GUINESS",
+        "film_title": "GLEAMING JAWBREAKER",
+        "total_revenue": "136.69999999999996",
+        "actor_share_in_film": "17.087499999999995",
+        "avg_revenue_per_actor_top3": "15.083379629629626"
+      },
+      {
+        "actor_id": "1",
+        "first_name": "PENELOPE",
+        "last_name": "GUINESS",
+        "film_title": "ANGELS LIFE",
+        "total_revenue": "119.77999999999997",
+        "actor_share_in_film": "13.308888888888886",
+        "avg_revenue_per_actor_top3": "15.083379629629626"
+      }
+    ],
+    "projectedColumns": [
+      "actor_id",
+      "first_name",
+      "last_name",
+      "film_title",
+      "total_revenue",
+      "actor_share_in_film",
+      "avg_revenue_per_actor_top3"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local195",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local195_a.csv",
+    "originalColumns": [
+      "CAST(COUNT(DISTINCT T3.\"CUSTOMER_ID\") AS REAL) * 100 / (\n    SELECT\n      COUNT(*)\n    FROM \"SQLITE_SAKILA\".\"SQLITE_SAKILA\".\"CUSTOMER\"\n  )"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "CAST(COUNT(DISTINCT T3.\"CUSTOMER_ID\") AS REAL) * 100 / (\n    SELECT\n      COUNT(*)\n    FROM \"SQLITE_SAKILA\".\"SQLITE_SAKILA\".\"CUSTOMER\"\n  )": "99.1652754590985"
+      }
+    ],
+    "projectedColumns": [
+      "CAST(COUNT(DISTINCT T3.\"CUSTOMER_ID\") AS REAL) * 100 / (\n    SELECT\n      COUNT(*)\n    FROM \"SQLITE_SAKILA\".\"SQLITE_SAKILA\".\"CUSTOMER\"\n  )"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local195",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local195_b.csv",
+    "originalColumns": [
+      "customers_reached",
+      "total_customers",
+      "top5_coverage_pct"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "customers_reached": "593",
+        "total_customers": "599",
+        "top5_coverage_pct": "98.998331"
+      }
+    ],
+    "projectedColumns": [
+      "customers_reached",
+      "total_customers",
+      "top5_coverage_pct"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local195",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local195_c.csv",
+    "originalColumns": [
+      "PERCENTAGE"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "PERCENTAGE": "99.33"
+      }
+    ],
+    "projectedColumns": [
+      "PERCENTAGE"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local197",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local197_a.csv",
+    "originalColumns": [
+      "customer_id",
+      "first_name",
+      "last_name",
+      "month",
+      "difference"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "customer_id": "148",
+        "first_name": "ELEANOR",
+        "last_name": "HUNT",
+        "month": "2005-07-01",
+        "difference": "77.83"
+      }
+    ],
+    "projectedColumns": [
+      "difference"
+    ],
+    "conditionColumns": [
+      4
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local197",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local197_b.csv",
+    "originalColumns": [
+      "CUSTOMER_NAME",
+      "PAYMENT_MONTH",
+      "MONTHLY_TOTAL",
+      "PREV_MONTH_TOTAL",
+      "MONTH_OVER_MONTH_DIFF"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "CUSTOMER_NAME": "ELEANOR HUNT",
+        "PAYMENT_MONTH": "2005-07-01",
+        "MONTHLY_TOTAL": "100.78",
+        "PREV_MONTH_TOTAL": "22.950000000000003",
+        "MONTH_OVER_MONTH_DIFF": "77.83"
+      }
+    ],
+    "projectedColumns": [
+      "MONTH_OVER_MONTH_DIFF"
+    ],
+    "conditionColumns": [
+      4
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local197",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local197_c.csv",
+    "originalColumns": [
+      "customer_id",
+      "customer_name",
+      "month",
+      "difference"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "customer_id": "148",
+        "customer_name": "ELEANOR HUNT",
+        "month": "2005-07",
+        "difference": "77.83"
+      }
+    ],
+    "projectedColumns": [
+      "difference"
+    ],
+    "conditionColumns": [
+      3
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local198",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local198_a.csv",
+    "originalColumns": [
+      "Median_total_sales"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "Median_total_sales": "249.53"
+      }
+    ],
+    "projectedColumns": [
+      "Median_total_sales"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local199",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local199_a.csv",
+    "originalColumns": [
+      "store_id",
+      "year",
+      "month",
+      "total_rentals"
+    ],
+    "originalRowCount": 2,
+    "firstRows": [
+      {
+        "store_id": "1",
+        "year": "2005",
+        "month": "7",
+        "total_rentals": "3342"
+      },
+      {
+        "store_id": "2",
+        "year": "2005",
+        "month": "7",
+        "total_rentals": "3367"
+      }
+    ],
+    "projectedColumns": [
+      "total_rentals"
+    ],
+    "conditionColumns": [
+      3
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local199",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local199_b.csv",
+    "originalColumns": [
+      "store_id",
+      "year",
+      "month",
+      "total_rentals"
+    ],
+    "originalRowCount": 2,
+    "firstRows": [
+      {
+        "store_id": "1",
+        "year": "2005",
+        "month": "July",
+        "total_rentals": "3342"
+      },
+      {
+        "store_id": "2",
+        "year": "2005",
+        "month": "July",
+        "total_rentals": "3367"
+      }
+    ],
+    "projectedColumns": [
+      "total_rentals"
+    ],
+    "conditionColumns": [
+      3
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local244",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local244_a.csv",
+    "originalColumns": [
+      "CATEGORY",
+      "MIN_DURATION_MINUTES",
+      "MAX_DURATION_MINUTES",
+      "TOTAL_REVENUE"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "CATEGORY": "long",
+        "MIN_DURATION_MINUTES": "47.726183",
+        "MAX_DURATION_MINUTES": "88.115883",
+        "TOTAL_REVENUE": "41.78999999999999"
+      },
+      {
+        "CATEGORY": "medium",
+        "MIN_DURATION_MINUTES": "3.289250",
+        "MAX_DURATION_MINUTES": "47.086100",
+        "TOTAL_REVENUE": "1817.5499999999997"
+      }
+    ],
+    "projectedColumns": [
+      "MAX_DURATION_MINUTES",
+      "TOTAL_REVENUE"
+    ],
+    "conditionColumns": [
+      2,
+      3
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local244",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local244_b.csv",
+    "originalColumns": [
+      "CATEGORY",
+      "MIN_DURATION_MINUTES",
+      "MAX_DURATION_MINUTES",
+      "TOTAL_REVENUE"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "CATEGORY": "Short",
+        "MIN_DURATION_MINUTES": "0.017850",
+        "MAX_DURATION_MINUTES": "3.288800",
+        "TOTAL_REVENUE": "469.2599999999999"
+      },
+      {
+        "CATEGORY": "Medium",
+        "MIN_DURATION_MINUTES": "3.289250",
+        "MAX_DURATION_MINUTES": "47.086100",
+        "TOTAL_REVENUE": "1817.5500000000002"
+      }
+    ],
+    "projectedColumns": [
+      "MAX_DURATION_MINUTES",
+      "TOTAL_REVENUE"
+    ],
+    "conditionColumns": [
+      2,
+      3
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local253",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local253_a.csv",
+    "originalColumns": [
+      "Location",
+      "Company Name",
+      "Average Salary in State",
+      "Average Salary in Country"
+    ],
+    "originalRowCount": 20,
+    "firstRows": [
+      {
+        "Location": "Hyderabad",
+        "Company Name": "Meta",
+        "Average Salary in State": "6275360.000000",
+        "Average Salary in Country": "915555.247007"
+      },
+      {
+        "Location": "Hyderabad",
+        "Company Name": "Qwerty Concepts",
+        "Average Salary in State": "5081882.000000",
+        "Average Salary in Country": "915555.247007"
+      }
+    ],
+    "projectedColumns": [
+      "Location",
+      "Company Name",
+      "Average Salary in State",
+      "Average Salary in Country"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local253",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local253_b.csv",
+    "originalColumns": [
+      "Location",
+      "Company Name",
+      "Average Salary in State",
+      "Average Salary in Country"
+    ],
+    "originalRowCount": 20,
+    "firstRows": [
+      {
+        "Location": "Hyderabad",
+        "Company Name": "Qwerty Concepts",
+        "Average Salary in State": "5081882.0",
+        "Average Salary in Country": "907524.49"
+      },
+      {
+        "Location": "Hyderabad",
+        "Company Name": "SetuServ",
+        "Average Salary in State": "4949704.0",
+        "Average Salary in Country": "907524.49"
+      }
+    ],
+    "projectedColumns": [
+      "Location",
+      "Company Name",
+      "Average Salary in State",
+      "Average Salary in Country"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local253",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local253_c.csv",
+    "originalColumns": [
+      "Location",
+      "Company Name",
+      "Average Salary in State",
+      "Average Salary in Country"
+    ],
+    "originalRowCount": 20,
+    "firstRows": [
+      {
+        "Location": "Hyderabad",
+        "Company Name": "Qwerty Concepts",
+        "Average Salary in State": "5081882.00",
+        "Average Salary in Country": "912140.12"
+      },
+      {
+        "Location": "Hyderabad",
+        "Company Name": "SetuServ",
+        "Average Salary in State": "4949704.00",
+        "Average Salary in Country": "912140.12"
+      }
+    ],
+    "projectedColumns": [
+      "Location",
+      "Company Name",
+      "Average Salary in State",
+      "Average Salary in Country"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local262",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local262_a.csv",
+    "originalColumns": [
+      "name"
+    ],
+    "originalRowCount": 7,
+    "firstRows": [
+      {
+        "name": "Critical Heat Flux"
+      },
+      {
+        "name": "Delaney solubility"
+      }
+    ],
+    "projectedColumns": [
+      "name"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local263",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local263_a.csv",
+    "originalColumns": [
+      "STATUS",
+      "L1_MODEL",
+      "OCCURRENCES"
+    ],
+    "originalRowCount": 2,
+    "firstRows": [
+      {
+        "STATUS": "soft",
+        "L1_MODEL": "regression",
+        "OCCURRENCES": "17"
+      },
+      {
+        "STATUS": "strong",
+        "L1_MODEL": "regression",
+        "OCCURRENCES": "37"
+      }
+    ],
+    "projectedColumns": [
+      "STATUS",
+      "L1_MODEL",
+      "OCCURRENCES"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local264",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local264_a.csv",
+    "originalColumns": [
+      "model_category",
+      "total_count"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "model_category": "regression",
+        "total_count": "213"
+      }
+    ],
+    "projectedColumns": [
+      "model_category",
+      "total_count"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local264",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local264_b.csv",
+    "originalColumns": [
+      "model_category",
+      "L1_model",
+      "total_count"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "model_category": "Traditional",
+        "L1_model": "regression",
+        "total_count": "213"
+      }
+    ],
+    "projectedColumns": [
+      "model_category",
+      "L1_model",
+      "total_count"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local264",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local264_c.csv",
+    "originalColumns": [
+      "L1_model_category",
+      "total_count"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "L1_model_category": "Traditional",
+        "total_count": "303"
+      }
+    ],
+    "projectedColumns": [
+      "L1_model_category",
+      "total_count"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local272",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local272_a.csv",
+    "originalColumns": [
+      "product_id",
+      "aisle",
+      "position",
+      "QUANTITY_TO_PICK"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "product_id": "6520",
+        "aisle": "A",
+        "position": "16",
+        "QUANTITY_TO_PICK": "22.0"
+      },
+      {
+        "product_id": "4280",
+        "aisle": "B",
+        "position": "3",
+        "QUANTITY_TO_PICK": "30.0"
+      }
+    ],
+    "projectedColumns": [
+      "product_id",
+      "aisle",
+      "position",
+      "QUANTITY_TO_PICK"
+    ],
+    "conditionColumns": [
+      0,
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local273",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local273_a.csv",
+    "originalColumns": [
+      "PRODUCT_NAME",
+      "AVG_PICK_PERCENTAGE"
+    ],
+    "originalRowCount": 2,
+    "firstRows": [
+      {
+        "PRODUCT_NAME": "4280",
+        "AVG_PICK_PERCENTAGE": "0.0"
+      },
+      {
+        "PRODUCT_NAME": "6520",
+        "AVG_PICK_PERCENTAGE": "0.0"
+      }
+    ],
+    "projectedColumns": [
+      "PRODUCT_NAME",
+      "AVG_PICK_PERCENTAGE"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local277",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local277_a.csv",
+    "originalColumns": [
+      "AVG_FORECASTED_ANNUAL_SALES_2018"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "AVG_FORECASTED_ANNUAL_SALES_2018": "277.3343"
+      }
+    ],
+    "projectedColumns": [
+      "AVG_FORECASTED_ANNUAL_SALES_2018"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local277",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local277_b.csv",
+    "originalColumns": [
+      "avg_forecast_2018"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "avg_forecast_2018": "266.2247324863794"
+      }
+    ],
+    "projectedColumns": [
+      "avg_forecast_2018"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local277",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local277_c.csv",
+    "originalColumns": [
+      "AVG(ANNUAL_SALES)"
+    ],
+    "originalRowCount": 1,
+    "firstRows": [
+      {
+        "AVG(ANNUAL_SALES)": "417.450560094757"
+      }
+    ],
+    "projectedColumns": [
+      "AVG(ANNUAL_SALES)"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local279",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local279_a.csv",
+    "originalColumns": [
+      "product_id",
+      "month",
+      "absolute_difference"
+    ],
+    "originalRowCount": 2,
+    "firstRows": [
+      {
+        "product_id": "6520",
+        "month": "2019-01-01",
+        "absolute_difference": "330.0"
+      },
+      {
+        "product_id": "6600",
+        "month": "2019-01-01",
+        "absolute_difference": "76.0"
+      }
+    ],
+    "projectedColumns": [
+      "product_id",
+      "absolute_difference"
+    ],
+    "conditionColumns": [
+      0,
+      2
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local298",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local298_a.csv",
+    "originalColumns": [
+      "month",
+      "total_balance_prev_month"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "month": "2020-02-01",
+        "total_balance_prev_month": "235595"
+      },
+      {
+        "month": "2020-03-01",
+        "total_balance_prev_month": "261508"
+      }
+    ],
+    "projectedColumns": [
+      "total_balance_prev_month"
+    ],
+    "conditionColumns": [
+      1
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local300",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local300_a.csv",
+    "originalColumns": [
+      "MONTH",
+      "TOTAL_MONTHLY_MAX_BALANCES"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "MONTH": "2020-01-01",
+        "TOTAL_MONTHLY_MAX_BALANCES": "356618"
+      },
+      {
+        "MONTH": "2020-02-01",
+        "TOTAL_MONTHLY_MAX_BALANCES": "409593"
+      }
+    ],
+    "projectedColumns": [
+      "MONTH"
+    ],
+    "conditionColumns": [
+      0
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local300",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local300_b.csv",
+    "originalColumns": [
+      "YEAR_NUM",
+      "MONTH_NUM",
+      "TOTAL_MONTHLY_MAX_BALANCES"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "YEAR_NUM": "2020",
+        "MONTH_NUM": "1",
+        "TOTAL_MONTHLY_MAX_BALANCES": "356618"
+      },
+      {
+        "YEAR_NUM": "2020",
+        "MONTH_NUM": "2",
+        "TOTAL_MONTHLY_MAX_BALANCES": "409593"
+      }
+    ],
+    "projectedColumns": [
+      "MONTH_NUM"
+    ],
+    "conditionColumns": [
+      1
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local300",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local300_c.csv",
+    "originalColumns": [
+      "MONTH",
+      "TOTAL_MAX_DAILY_BALANCE"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "MONTH": "2020-01",
+        "TOTAL_MAX_DAILY_BALANCE": "356618"
+      },
+      {
+        "MONTH": "2020-02",
+        "TOTAL_MAX_DAILY_BALANCE": "409593"
+      }
+    ],
+    "projectedColumns": [
+      "MONTH"
+    ],
+    "conditionColumns": [
+      0
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local300",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local300_d.csv",
+    "originalColumns": [
+      "month",
+      "monthly_total_max_balance"
+    ],
+    "originalRowCount": 4,
+    "firstRows": [
+      {
+        "month": "2020-01-01",
+        "monthly_total_max_balance": "371772"
+      },
+      {
+        "month": "2020-02-01",
+        "monthly_total_max_balance": "507066"
+      }
+    ],
+    "projectedColumns": [
+      "month"
+    ],
+    "conditionColumns": [
+      0
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local301",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local301_a.csv",
+    "originalColumns": [
+      "sale_year",
+      "percentage_change"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "sale_year": "2018",
+        "percentage_change": "0.193027"
+      },
+      {
+        "sale_year": "2019",
+        "percentage_change": "0.103849"
+      }
+    ],
+    "projectedColumns": [
+      "percentage_change"
+    ],
+    "conditionColumns": [
+      1
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local301",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local301_b.csv",
+    "originalColumns": [
+      "year",
+      "pre_sales",
+      "post_sales",
+      "pct_change"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "year": "2018",
+        "pre_sales": "2119669585",
+        "post_sales": "2129242914",
+        "pct_change": "0.45"
+      },
+      {
+        "year": "2019",
+        "pre_sales": "2257925201",
+        "post_sales": "2252326390",
+        "pct_change": "-0.25"
+      }
+    ],
+    "projectedColumns": [
+      "pct_change"
+    ],
+    "conditionColumns": [
+      3
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local301",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local301_c.csv",
+    "originalColumns": [
+      "year",
+      "pre_sales",
+      "post_sales",
+      "pct_change_after_vs_before"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "year": "2018",
+        "pre_sales": "2125140809",
+        "post_sales": "2129242914",
+        "pct_change_after_vs_before": "0.193000"
+      },
+      {
+        "year": "2019",
+        "pre_sales": "2249989796",
+        "post_sales": "2252326390",
+        "pct_change_after_vs_before": "0.103800"
+      }
+    ],
+    "projectedColumns": [
+      "pct_change_after_vs_before"
+    ],
+    "conditionColumns": [
+      3
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local309",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local309_a.csv",
+    "originalColumns": [
+      "year",
+      "driver_full_name",
+      "constructor_name"
+    ],
+    "originalRowCount": 75,
+    "firstRows": [
+      {
+        "year": "1950",
+        "driver_full_name": "Nino Farina",
+        "constructor_name": "Alfa Romeo"
+      },
+      {
+        "year": "1951",
+        "driver_full_name": "Juan Fangio",
+        "constructor_name": "Ferrari"
+      }
+    ],
+    "projectedColumns": [
+      "driver_full_name",
+      "constructor_name"
+    ],
+    "conditionColumns": [
+      1,
+      2
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local309",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local309_b.csv",
+    "originalColumns": [
+      "year",
+      "driver_full_name",
+      "driver_points",
+      "constructor_name",
+      "constructor_points"
+    ],
+    "originalRowCount": 74,
+    "firstRows": [
+      {
+        "year": "1950",
+        "driver_full_name": "Nino Farina",
+        "driver_points": "30.0",
+        "constructor_name": "",
+        "constructor_points": ""
+      },
+      {
+        "year": "1951",
+        "driver_full_name": "Juan Fangio",
+        "driver_points": "31.0",
+        "constructor_name": "",
+        "constructor_points": ""
+      }
+    ],
+    "projectedColumns": [
+      "driver_full_name",
+      "driver_points",
+      "constructor_name"
+    ],
+    "conditionColumns": [
+      1,
+      2,
+      3
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local309",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local309_c.csv",
+    "originalColumns": [
+      "year",
+      "driver_name",
+      "constructor_name"
+    ],
+    "originalRowCount": 74,
+    "firstRows": [
+      {
+        "year": "1950",
+        "driver_name": "Nino Farina",
+        "constructor_name": ""
+      },
+      {
+        "year": "1951",
+        "driver_name": "Juan Fangio",
+        "constructor_name": ""
+      }
+    ],
+    "projectedColumns": [
+      "driver_name",
+      "constructor_name"
+    ],
+    "conditionColumns": [
+      1,
+      2
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local310",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local310_a.csv",
+    "originalColumns": [
+      "year"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "year": "1966"
+      },
+      {
+        "year": "1964"
+      }
+    ],
+    "projectedColumns": [
+      "year"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local311",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local311_a.csv",
+    "originalColumns": [
+      "name",
+      "year"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "name": "Red Bull",
+        "year": "2023"
+      },
+      {
+        "name": "Red Bull",
+        "year": "2022"
+      }
+    ],
+    "projectedColumns": [
+      "name",
+      "year"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local311",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local311_b.csv",
+    "originalColumns": [
+      "constructor_name",
+      "constructor_ref",
+      "year",
+      "combined_points"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "constructor_name": "Red Bull",
+        "constructor_ref": "red_bull",
+        "year": "2023",
+        "combined_points": "1435.0"
+      },
+      {
+        "constructor_name": "Red Bull",
+        "constructor_ref": "red_bull",
+        "year": "2022",
+        "combined_points": "1213.0"
+      }
+    ],
+    "projectedColumns": [
+      "constructor_name",
+      "constructor_ref",
+      "year",
+      "combined_points"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local330",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local330_a.csv",
+    "originalColumns": [
+      "WEB_PAGE",
+      "UNIQUE_SESSIONS_COUNT"
+    ],
+    "originalRowCount": 5,
+    "firstRows": [
+      {
+        "WEB_PAGE": "/detail/",
+        "UNIQUE_SESSIONS_COUNT": "9"
+      },
+      {
+        "WEB_PAGE": "/search_list/",
+        "UNIQUE_SESSIONS_COUNT": "7"
+      }
+    ],
+    "projectedColumns": [
+      "WEB_PAGE",
+      "UNIQUE_SESSIONS_COUNT"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local330",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local330_b.csv",
+    "originalColumns": [
+      "path",
+      "session_count"
+    ],
+    "originalRowCount": 5,
+    "firstRows": [
+      {
+        "path": "/search_input",
+        "session_count": "2"
+      },
+      {
+        "path": "",
+        "session_count": "2"
+      }
+    ],
+    "projectedColumns": [
+      "path",
+      "session_count"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local330",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local330_c.csv",
+    "originalColumns": [
+      "path",
+      "session_count"
+    ],
+    "originalRowCount": 5,
+    "firstRows": [
+      {
+        "path": "/detail",
+        "session_count": "9"
+      },
+      {
+        "path": "/search_list",
+        "session_count": "7"
+      }
+    ],
+    "projectedColumns": [
+      "path",
+      "session_count"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local331",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local331_a.csv",
+    "originalColumns": [
+      "third_page",
+      "occurrences"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "third_page": "/detail",
+        "occurrences": "55"
+      },
+      {
+        "third_page": "/",
+        "occurrences": "2"
+      }
+    ],
+    "projectedColumns": [
+      "third_page",
+      "occurrences"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local331",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local331_b.csv",
+    "originalColumns": [
+      "third_page",
+      "occurrences"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "third_page": "/detail",
+        "occurrences": "55"
+      },
+      {
+        "third_page": "/",
+        "occurrences": "1"
+      }
+    ],
+    "projectedColumns": [
+      "third_page",
+      "occurrences"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-spider2-local331",
+    "purpose": "Complete original published CSV inspection",
+    "source": "spider2-lite/evaluation_suite/gold/exec_result/local331_c.csv",
+    "originalColumns": [
+      "THIRD_ACTION",
+      "OCCURRENCE_COUNT"
+    ],
+    "originalRowCount": 3,
+    "firstRows": [
+      {
+        "THIRD_ACTION": "/detail",
+        "OCCURRENCE_COUNT": "52"
+      },
+      {
+        "THIRD_ACTION": "/detail/",
+        "OCCURRENCE_COUNT": "3"
+      }
+    ],
+    "projectedColumns": [
+      "THIRD_ACTION",
+      "OCCURRENCE_COUNT"
+    ],
+    "conditionColumns": []
+  },
+  {
+    "caseId": "holdout-bird-dev-0311",
+    "purpose": "Set-based anti-existence equivalent avoids slow correlated scan; source keys are non-null",
+    "rows": [
+      {
+        "COUNT(*)": 50
+      }
+    ],
+    "error": null,
+    "sql": "SELECT COUNT(*) FROM molecule WHERE molecule_id NOT IN (SELECT molecule_id FROM atom WHERE element='s') AND molecule_id NOT IN (SELECT molecule_id FROM bond WHERE bond_type='=')",
+    "matchesOriginalFrozenByPositionalValues": false
+  },
+  {
+    "caseId": "holdout-spider2-local198",
+    "purpose": "Independent country revenue median, correct source plural table names",
+    "rows": [
+      {
+        "AVG(v)": 249.52999999999997
+      }
+    ],
+    "error": null,
+    "sql": "WITH totals AS (SELECT c.Country,SUM(i.Total) v FROM customers c JOIN invoices i ON i.CustomerId=c.CustomerId WHERE c.Country IN (SELECT Country FROM customers GROUP BY Country HAVING COUNT(*)>4) GROUP BY c.Country), numbered AS (SELECT v,ROW_NUMBER() OVER(ORDER BY v) rn,COUNT(*) OVER() n FROM totals) SELECT AVG(v) FROM numbered WHERE rn IN ((n+1)/2,(n+2)/2)",
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local198_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local054",
+    "purpose": "Independent best artist by total revenue; customers with positive purchases under1",
+    "rows": [
+      {
+        "FirstName": "Eduardo",
+        "spent": 0.99
+      },
+      {
+        "FirstName": "Edward",
+        "spent": 0.99
+      },
+      {
+        "FirstName": "Ladislav",
+        "spent": 0.99
+      },
+      {
+        "FirstName": "Hugh",
+        "spent": 0.99
+      },
+      {
+        "FirstName": "Stanisław",
+        "spent": 0.99
+      }
+    ],
+    "error": null,
+    "sql": "WITH sales AS (SELECT a.ArtistId,a.Name,i.CustomerId,SUM(x.UnitPrice*x.Quantity) spent FROM artists a JOIN albums b ON b.ArtistId=a.ArtistId JOIN tracks t ON t.AlbumId=b.AlbumId JOIN invoice_items x ON x.TrackId=t.TrackId JOIN invoices i ON i.InvoiceId=x.InvoiceId GROUP BY a.ArtistId,a.Name,i.CustomerId), best AS (SELECT ArtistId FROM sales GROUP BY ArtistId,Name ORDER BY SUM(spent) DESC,Name LIMIT 1) SELECT c.FirstName,s.spent FROM sales s JOIN customers c ON c.CustomerId=s.CustomerId WHERE s.ArtistId IN (SELECT ArtistId FROM best) AND s.spent<1",
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local054_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local055",
+    "purpose": "Independent top/bottom revenue-selling artists among artists with purchases; alphabetical ties",
+    "rows": [
+      {
+        "ABS((SELECT average FROM totals ORDER BY total DESC,Name LIMIT 1)-(SELECT average FROM totals ORDER BY total ASC,Name LIMIT 1))": 4.143333333333333
+      }
+    ],
+    "error": null,
+    "sql": "WITH sales AS (SELECT a.ArtistId,a.Name,i.CustomerId,SUM(x.UnitPrice*x.Quantity) spent FROM artists a JOIN albums b ON b.ArtistId=a.ArtistId JOIN tracks t ON t.AlbumId=b.AlbumId JOIN invoice_items x ON x.TrackId=t.TrackId JOIN invoices i ON i.InvoiceId=x.InvoiceId GROUP BY a.ArtistId,a.Name,i.CustomerId), totals AS (SELECT ArtistId,Name,SUM(spent) total,AVG(spent) average FROM sales GROUP BY ArtistId,Name) SELECT ABS((SELECT average FROM totals ORDER BY total DESC,Name LIMIT 1)-(SELECT average FROM totals ORDER BY total ASC,Name LIMIT 1))",
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local055_b.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local009",
+    "purpose": "Python Haversine r6371; mean flight distance per undirected city pair",
+    "rows": [
+      {
+        "km": 3484.150460009601
+      }
+    ],
+    "error": null,
+    "sql": null,
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local009_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local010",
+    "purpose": "Independent mean-route distance buckets; minimum among populated bins: {3: 20, 1: 93, 0: 92, 2: 37, 4: 6, 6: 7, 5: 3}",
+    "rows": [
+      {
+        "pairs": 3
+      }
+    ],
+    "error": null,
+    "sql": null,
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": []
+  },
+  {
+    "caseId": "holdout-spider2-local300",
+    "purpose": "Independent per-customer daily running balance over own earliest/latest dates; floor displayed daily balance then sum monthly maxima. Original projected gold checks only month.",
+    "rows": [
+      {
+        "month": "2020-01-01",
+        "total_monthly_max_balances": 356618
+      },
+      {
+        "month": "2020-02-01",
+        "total_monthly_max_balances": 409593
+      },
+      {
+        "month": "2020-03-01",
+        "total_monthly_max_balances": 386903
+      },
+      {
+        "month": "2020-04-01",
+        "total_monthly_max_balances": 206550
+      }
+    ],
+    "error": null,
+    "sql": null,
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": []
+  },
+  {
+    "caseId": "holdout-spider2-local197",
+    "purpose": "Independent exact consecutive-calendar-month comparison; retain required customer and month",
+    "rows": [
+      {
+        "customer_id": 148,
+        "ym": "2005-07",
+        "difference": 77.83
+      }
+    ],
+    "error": null,
+    "sql": "WITH monthly AS (SELECT customer_id,strftime('%Y-%m',payment_date) ym,SUM(amount) v FROM payment GROUP BY customer_id,ym), top10 AS (SELECT customer_id FROM payment GROUP BY customer_id ORDER BY SUM(amount) DESC LIMIT 10) SELECT a.customer_id,a.ym,ROUND(ABS(a.v-b.v),2) difference FROM monthly a JOIN monthly b ON a.customer_id=b.customer_id AND date(a.ym||'-01')=date(b.ym||'-01','+1 month') WHERE a.customer_id IN (SELECT customer_id FROM top10) ORDER BY ABS(a.v-b.v) DESC LIMIT 1",
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": []
+  },
+  {
+    "caseId": "holdout-spider2-local331",
+    "purpose": "Exact /detail paths, within session, stable alphabetical tie-break (tie rule not in question)",
+    "rows": [
+      {
+        "path": "/detail",
+        "n": 33
+      },
+      {
+        "path": "/",
+        "n": 2
+      },
+      {
+        "path": "/detail/",
+        "n": 1
+      }
+    ],
+    "error": null,
+    "sql": "WITH r AS (SELECT session,path,LAG(path,1) OVER(PARTITION BY session ORDER BY stamp) p1,LAG(path,2) OVER(PARTITION BY session ORDER BY stamp) p2 FROM activity_log) SELECT path,COUNT(*) n FROM r WHERE p1='/detail' AND p2='/detail' GROUP BY path ORDER BY n DESC,path LIMIT 3",
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": []
+  },
+  {
+    "caseId": "holdout-spider2-local309",
+    "purpose": "Confirmed importer field shift",
+    "alsoAffects": [
+      "holdout-spider2-local310",
+      "holdout-spider2-local311"
+    ],
+    "sourceRow": {
+      "driver_id": 1,
+      "driver_ref": "hamilton",
+      "number": 44,
+      "code": "HAM",
+      "forename": "Lewis",
+      "surname": "Hamilton",
+      "full_name": "Lewis Hamilton",
+      "dob": "1985-01-07",
+      "nationality": "British",
+      "url": "http://en.wikipedia.org/wiki/Lewis_Hamilton"
+    },
+    "fixtureRow": {
+      "code": "HAM",
+      "dob": "Lewis Hamilton",
+      "driver_id": 1,
+      "driver_ref": "hamilton",
+      "forename": "Lewis",
+      "nationality": "1985-01-07",
+      "number": 44,
+      "surname": "Hamilton",
+      "url": "British"
+    },
+    "pragmaTableInfoNames": [
+      "driver_id",
+      "driver_ref",
+      "number",
+      "code",
+      "forename",
+      "surname",
+      "dob",
+      "nationality",
+      "url"
+    ],
+    "selectStarNames": [
+      "driver_id",
+      "driver_ref",
+      "number",
+      "code",
+      "forename",
+      "surname",
+      "full_name",
+      "dob",
+      "nationality",
+      "url"
+    ],
+    "pragmaTableXinfo": [
+      {
+        "name": "driver_id",
+        "hidden": 0
+      },
+      {
+        "name": "driver_ref",
+        "hidden": 0
+      },
+      {
+        "name": "number",
+        "hidden": 0
+      },
+      {
+        "name": "code",
+        "hidden": 0
+      },
+      {
+        "name": "forename",
+        "hidden": 0
+      },
+      {
+        "name": "surname",
+        "hidden": 0
+      },
+      {
+        "name": "full_name",
+        "hidden": 2
+      },
+      {
+        "name": "dob",
+        "hidden": 0
+      },
+      {
+        "name": "nationality",
+        "hidden": 0
+      },
+      {
+        "name": "url",
+        "hidden": 0
+      }
+    ],
+    "cause": "build-research-benchmark-packs.py lines229-237 zips PRAGMA table_info names with SELECT* row positions. Generated columns are omitted from table_info but present in SELECT*."
+  },
+  {
+    "caseId": "holdout-spider2-local007",
+    "purpose": "Independent date-component year/month/day absolute differences; round each part2dp, average valid-date players, final2dp",
+    "sql": null,
+    "error": null,
+    "rows": [
+      {
+        "average": 4.92
+      }
+    ],
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": []
+  },
+  {
+    "caseId": "holdout-spider2-local071",
+    "purpose": "Independent unique-day streaks in June2022; longest streak=30",
+    "sql": null,
+    "error": null,
+    "rows": [
+      {
+        "country": "br"
+      },
+      {
+        "country": "in"
+      },
+      {
+        "country": "us"
+      }
+    ],
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local071_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local072",
+    "purpose": "Independent nine-day countries, longest January streak and capital share of entries",
+    "sql": null,
+    "error": null,
+    "rows": [
+      {
+        "country": "ir",
+        "days": 9,
+        "start": "2022-01-20",
+        "end": "2022-01-22",
+        "streak": 3,
+        "entries": 5,
+        "capital_entries": 1,
+        "percentage": 20.0
+      }
+    ],
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local072_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local114",
+    "purpose": "Independent single-pass order/rep/region aggregation; all maximum-revenue ties; serialization may differ harmlessly",
+    "sql": "WITH rep AS (SELECT r.id region_id,r.name region_name,s.id rep_id,s.name rep_name,COUNT(*) n,SUM(o.total_amt_usd) sales FROM web_orders o JOIN web_accounts a ON a.id=o.account_id JOIN web_sales_reps s ON s.id=a.sales_rep_id JOIN web_region r ON r.id=s.region_id GROUP BY r.id,r.name,s.id,s.name), totals AS (SELECT region_id,region_name,SUM(n) n,SUM(sales) sales,MAX(sales) top FROM rep GROUP BY region_id,region_name) SELECT t.region_name,t.n,t.sales,GROUP_CONCAT(r.rep_name||' ($'||ROUND(r.sales,2)||')',', ') top_reps FROM totals t JOIN rep r ON r.region_id=t.region_id AND r.sales=t.top GROUP BY t.region_id,t.region_name,t.n,t.sales",
+    "error": null,
+    "rows": [
+      {
+        "region_name": "Northeast",
+        "n": 2357,
+        "sales": 7744405.36,
+        "top_reps": "Tia Amato ($1010690.6)"
+      },
+      {
+        "region_name": "Midwest",
+        "n": 897,
+        "sales": 3013486.51,
+        "top_reps": "Charles Bidwell ($675637.19)"
+      },
+      {
+        "region_name": "Southeast",
+        "n": 2024,
+        "sales": 6458497.0,
+        "top_reps": "Earlie Schleusner ($1098137.72)"
+      },
+      {
+        "region_name": "West",
+        "n": 1634,
+        "sales": 5925122.96,
+        "top_reps": "Georgianna Chisholm ($886244.12)"
+      }
+    ],
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local114_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local132",
+    "purpose": "Independent first/second style pair equality or reversal, each entity with<=3 rows",
+    "sql": "WITH e AS (SELECT EntertainerID,MAX(CASE WHEN StyleStrength=1 THEN StyleID END) a,MAX(CASE WHEN StyleStrength=2 THEN StyleID END) b FROM Entertainer_Styles GROUP BY EntertainerID HAVING COUNT(*)<=3), c AS (SELECT CustomerID,MAX(CASE WHEN PreferenceSeq=1 THEN StyleID END) a,MAX(CASE WHEN PreferenceSeq=2 THEN StyleID END) b FROM Musical_Preferences GROUP BY CustomerID HAVING COUNT(*)<=3) SELECT x.EntStageName,y.CustLastName FROM e JOIN c ON (e.a=c.a AND e.b=c.b) OR (e.a=c.b AND e.b=c.a) JOIN Entertainers x ON x.EntertainerID=e.EntertainerID JOIN Customers y ON y.CustomerID=c.CustomerID",
+    "error": null,
+    "rows": [
+      {
+        "EntStageName": "Carol Peacock Trio",
+        "CustLastName": "Patterson"
+      },
+      {
+        "EntStageName": "Topazz",
+        "CustLastName": "Brehm"
+      },
+      {
+        "EntStageName": "JV & the Deep Six",
+        "CustLastName": "Waldal"
+      },
+      {
+        "EntStageName": "Coldwater Cattle Company",
+        "CustLastName": "Thompson"
+      },
+      {
+        "EntStageName": "Katherine Ehrlich",
+        "CustLastName": "Hallmark"
+      },
+      {
+        "EntStageName": "Julia Schnebly",
+        "CustLastName": "Hallmark"
+      }
+    ],
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local132_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local152",
+    "purpose": "Independent director aggregation and ordered consecutive-release gaps",
+    "sql": "WITH films AS (SELECT d.name_id,m.*,r.avg_rating,r.total_votes,LAG(m.date_published) OVER(PARTITION BY d.name_id ORDER BY m.date_published,m.id) previous FROM director_mapping d JOIN movies m ON m.id=d.movie_id JOIN ratings r ON r.movie_id=m.id) SELECT f.name_id,n.name,COUNT(*),ROUND(AVG(julianday(f.date_published)-julianday(f.previous))),ROUND(AVG(f.avg_rating),2),SUM(f.total_votes),MIN(f.avg_rating),MAX(f.avg_rating),SUM(f.duration) FROM films f JOIN names n ON n.id=f.name_id GROUP BY f.name_id,n.name ORDER BY COUNT(*) DESC,SUM(f.duration) DESC LIMIT 9",
+    "error": null,
+    "rows": [
+      {
+        "name_id": "nm1777967",
+        "name": "A.L. Vijay",
+        "COUNT(*)": 5,
+        "ROUND(AVG(julianday(f.date_published)-julianday(f.previous)))": 177.0,
+        "ROUND(AVG(f.avg_rating),2)": 5.42,
+        "SUM(f.total_votes)": 1754,
+        "MIN(f.avg_rating)": 3.7,
+        "MAX(f.avg_rating)": 6.9,
+        "SUM(f.duration)": 613
+      },
+      {
+        "name_id": "nm2096009",
+        "name": "Andrew Jones",
+        "COUNT(*)": 5,
+        "ROUND(AVG(julianday(f.date_published)-julianday(f.previous)))": 191.0,
+        "ROUND(AVG(f.avg_rating),2)": 3.02,
+        "SUM(f.total_votes)": 1989,
+        "MIN(f.avg_rating)": 2.7,
+        "MAX(f.avg_rating)": 3.2,
+        "SUM(f.duration)": 432
+      },
+      {
+        "name_id": "nm0814469",
+        "name": "Sion Sono",
+        "COUNT(*)": 4,
+        "ROUND(AVG(julianday(f.date_published)-julianday(f.previous)))": 331.0,
+        "ROUND(AVG(f.avg_rating),2)": 6.03,
+        "SUM(f.total_votes)": 2972,
+        "MIN(f.avg_rating)": 5.4,
+        "MAX(f.avg_rating)": 6.4,
+        "SUM(f.duration)": 502
+      },
+      {
+        "name_id": "nm0001752",
+        "name": "Steven Soderbergh",
+        "COUNT(*)": 4,
+        "ROUND(AVG(julianday(f.date_published)-julianday(f.previous)))": 254.0,
+        "ROUND(AVG(f.avg_rating),2)": 6.47,
+        "SUM(f.total_votes)": 171684,
+        "MIN(f.avg_rating)": 6.2,
+        "MAX(f.avg_rating)": 7.0,
+        "SUM(f.duration)": 401
+      },
+      {
+        "name_id": "nm0425364",
+        "name": "Jesse V. Johnson",
+        "COUNT(*)": 4,
+        "ROUND(AVG(julianday(f.date_published)-julianday(f.previous)))": 299.0,
+        "ROUND(AVG(f.avg_rating),2)": 5.45,
+        "SUM(f.total_votes)": 14778,
+        "MIN(f.avg_rating)": 4.2,
+        "MAX(f.avg_rating)": 6.5,
+        "SUM(f.duration)": 383
+      },
+      {
+        "name_id": "nm6356309",
+        "name": "Özgür Bakar",
+        "COUNT(*)": 4,
+        "ROUND(AVG(julianday(f.date_published)-julianday(f.previous)))": 112.0,
+        "ROUND(AVG(f.avg_rating),2)": 3.75,
+        "SUM(f.total_votes)": 1092,
+        "MIN(f.avg_rating)": 3.1,
+        "MAX(f.avg_rating)": 4.9,
+        "SUM(f.duration)": 374
+      },
+      {
+        "name_id": "nm0831321",
+        "name": "Chris Stokes",
+        "COUNT(*)": 4,
+        "ROUND(AVG(julianday(f.date_published)-julianday(f.previous)))": 198.0,
+        "ROUND(AVG(f.avg_rating),2)": 4.33,
+        "SUM(f.total_votes)": 3664,
+        "MIN(f.avg_rating)": 4.0,
+        "MAX(f.avg_rating)": 4.6,
+        "SUM(f.duration)": 352
+      },
+      {
+        "name_id": "nm2691863",
+        "name": "Justin Price",
+        "COUNT(*)": 4,
+        "ROUND(AVG(julianday(f.date_published)-julianday(f.previous)))": 315.0,
+        "ROUND(AVG(f.avg_rating),2)": 4.5,
+        "SUM(f.total_votes)": 5343,
+        "MIN(f.avg_rating)": 3.0,
+        "MAX(f.avg_rating)": 5.8,
+        "SUM(f.duration)": 346
+      },
+      {
+        "name_id": "nm0515005",
+        "name": "Sam Liu",
+        "COUNT(*)": 4,
+        "ROUND(AVG(julianday(f.date_published)-julianday(f.previous)))": 260.0,
+        "ROUND(AVG(f.avg_rating),2)": 6.22,
+        "SUM(f.total_votes)": 28557,
+        "MIN(f.avg_rating)": 5.8,
+        "MAX(f.avg_rating)": 6.7,
+        "SUM(f.duration)": 312
+      }
+    ],
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": []
+  },
+  {
+    "caseId": "holdout-spider2-local253",
+    "purpose": "Independent currency/comma/unit-text stripping preserving decimal point, record-weighted company-city means and national mean; no annualization specified",
+    "sql": null,
+    "error": null,
+    "rows": [
+      {
+        "location": "Mumbai",
+        "company": "Rahul Industries",
+        "city_salary": 6044006.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Mumbai",
+        "company": "NVIDIA",
+        "city_salary": 4187500.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Mumbai",
+        "company": "VINAYA KUMAR",
+        "city_salary": 4029337.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Mumbai",
+        "company": "Goldman Sachs",
+        "city_salary": 3977066.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Mumbai",
+        "company": "Zee Entertainment Enterprises Ltd.",
+        "city_salary": 3531413.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Pune",
+        "company": "Atos",
+        "city_salary": 5273205.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Pune",
+        "company": "Volkswagen",
+        "city_salary": 5184922.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Pune",
+        "company": "RAKESH GROUP",
+        "city_salary": 5016304.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Pune",
+        "company": "The City Bank",
+        "city_salary": 5000000.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Pune",
+        "company": "DasDas",
+        "city_salary": 4466071.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "New Delhi",
+        "company": "Super Highway Labs",
+        "city_salary": 3665141.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "New Delhi",
+        "company": "Greenlight Planet",
+        "city_salary": 2876666.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "New Delhi",
+        "company": "Boston Scientific",
+        "city_salary": 2707106.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "New Delhi",
+        "company": "DreamOrbit Softech",
+        "city_salary": 2612697.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "New Delhi",
+        "company": "OLX Group",
+        "city_salary": 2606510.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Hyderabad",
+        "company": "Qwerty Concepts",
+        "city_salary": 5081882.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Hyderabad",
+        "company": "SetuServ",
+        "city_salary": 4949704.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Hyderabad",
+        "company": "XYZ (Turkey)",
+        "city_salary": 3000000.0,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Hyderabad",
+        "company": "ABCDEF",
+        "city_salary": 2745265.5,
+        "national_salary": 767988.770718232
+      },
+      {
+        "location": "Hyderabad",
+        "company": "MarketLinc",
+        "city_salary": 2658491.0,
+        "national_salary": 767988.770718232
+      }
+    ],
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": []
+  },
+  {
+    "caseId": "holdout-spider2-local262",
+    "purpose": "Independent per-name/version/step maximum comparisons versus solution row counts",
+    "sql": "WITH compared AS (SELECT name,version,step,MAX(CASE WHEN model<>'Stack' THEN test_score END) other,MAX(CASE WHEN model='Stack' THEN test_score END) stack FROM model_score WHERE step IN(1,2,3) GROUP BY name,version,step), wins AS (SELECT name,COUNT(*) n FROM compared WHERE other<stack GROUP BY name) SELECT name FROM wins WHERE n>(SELECT COUNT(*) FROM solution s WHERE s.name=wins.name)",
+    "error": null,
+    "rows": [
+      {
+        "name": "Critical Heat Flux"
+      },
+      {
+        "name": "Delaney solubility"
+      },
+      {
+        "name": "Franck-Hertz"
+      },
+      {
+        "name": "PSS3E5"
+      },
+      {
+        "name": "Solar Power Generation"
+      },
+      {
+        "name": "Tunnel diode"
+      },
+      {
+        "name": "oil spill"
+      }
+    ],
+    "matchesOriginalFrozenByPositionalValues": true,
+    "matchingPublishedAlternatives": [
+      "spider2-lite/evaluation_suite/gold/exec_result/local262_a.csv"
+    ]
+  },
+  {
+    "caseId": "holdout-spider2-local263",
+    "purpose": "Independent step-level strong/soft comparisons and L1 frequency maxima, preserving ties",
+    "sql": "WITH compared AS (SELECT name,version,step,MAX(CASE WHEN model<>'Stack' THEN test_score END) other,MAX(CASE WHEN model='Stack' THEN test_score END) stack FROM model_score GROUP BY name,version,step), counts AS (SELECT CASE WHEN c.other<c.stack THEN 'strong' ELSE 'soft' END status,m.L1_model,COUNT(*) n FROM compared c JOIN model m ON m.name=c.name AND m.version=c.version AND m.step=c.step WHERE c.other<=c.stack GROUP BY status,m.L1_model), ranks AS (SELECT *,DENSE_RANK() OVER(PARTITION BY status ORDER BY n DESC) r FROM counts) SELECT status,L1_model,n FROM ranks WHERE r=1 ORDER BY status",
+    "error": null,
+    "rows": [
+      {
+        "status": "soft",
+        "L1_model": "regression",
+        "n": 36
+      },
+      {
+        "status": "strong",
+        "L1_model": "regression",
+        "n": 78
+      }
+    ],
+    "matchesOriginalFrozenByPositionalValues": false,
+    "matchingPublishedAlternatives": []
+  }
+]

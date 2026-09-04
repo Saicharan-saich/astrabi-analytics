@@ -4,7 +4,8 @@ import { gzipSync, gunzipSync } from 'node:zlib';
 import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
-  HOLDOUT_BENCHMARK_SUITES, LEGACY_BENCHMARK_SUITES,
+  AUDITED_HOLDOUT_BENCHMARK_SUITES, HOLDOUT_BENCHMARK_SUITES, HOLDOUT_ORACLE_AUDIT_SHA256,
+  HOLDOUT_QUARANTINED_CASES, LEGACY_BENCHMARK_SUITES,
   executeBenchmarkCase, getBenchmarkCorpusSuites, getRunCorpusId,
   runBenchmark, type BenchmarkCase, type BenchmarkRunnerDependencies,
 } from '../services/benchmark';
@@ -59,6 +60,23 @@ describe('new public-source benchmark corpus', () => {
     }
   });
 
+  it('keeps the original corpus untouched and quarantines uncertain new-corpus oracles before selection', () => {
+    expect(getBenchmarkCorpusSuites('legacy-550').flatMap(s => s.cases)).toHaveLength(550);
+    expect(HOLDOUT_BENCHMARK_SUITES.flatMap(s => s.cases)).toHaveLength(550);
+    expect(AUDITED_HOLDOUT_BENCHMARK_SUITES.map(s => [s.id, s.cases.length, s.quarantinedCaseCount])).toEqual([
+      ['bird-dev-holdout', 320, 180],
+      ['spider2-lite-holdout', 16, 34],
+    ]);
+    expect(HOLDOUT_QUARANTINED_CASES).toHaveLength(214);
+    expect(HOLDOUT_QUARANTINED_CASES.filter(c => c.oracleQuality === 'confirmed_defect')).toHaveLength(79);
+    expect(HOLDOUT_QUARANTINED_CASES.filter(c => c.oracleQuality === 'review_required')).toHaveLength(134);
+    expect(HOLDOUT_QUARANTINED_CASES.filter(c => c.oracleQuality === 'not_fully_verifiable')).toHaveLength(1);
+    expect(HOLDOUT_ORACLE_AUDIT_SHA256).toMatch(/^[a-f0-9]{64}$/);
+    expect(getBenchmarkCorpusSuites('holdout-550').flatMap(s => s.cases)).toHaveLength(336);
+    expect(getBenchmarkCorpusSuites('holdout-550').flatMap(s => s.cases).every(c => c.oracleQuality === 'no_issue_found')).toBe(true);
+    expect(getBenchmarkCorpusSuites('holdout-550').flatMap(s => s.cases).some(c => c.id === 'holdout-spider2-local309')).toBe(false);
+  });
+
   it('ships complete, checksum-locked fixtures and real published reference provenance', () => {
     const manifest = JSON.parse(readFileSync(resolve('public/benchmarks/holdout-v1/manifest.json'), 'utf8'));
     expect(manifest.count).toBe(550);
@@ -83,6 +101,23 @@ describe('new public-source benchmark corpus', () => {
       }
     }
   }, 60_000);
+
+  it('keeps generated SQLite columns aligned with their values in the repaired F1 fixture', () => {
+    const testCase = HOLDOUT_BENCHMARK_SUITES.flatMap(s => s.cases)
+      .find(item => item.id === 'holdout-spider2-local309');
+    expect(testCase).toBeDefined();
+    const bytes = gunzipSync(readFileSync(resolve('public', testCase!.datasetRef!.slice(1))));
+    const asset = JSON.parse(bytes.toString('utf8'));
+    const drivers = asset.relatedTables.find((table: any) => table.name === 'drivers');
+    expect(drivers).toBeDefined();
+    expect(asset.sourceSchema.tables.find((table: any) => table.name === 'drivers').columns.map((column: any) => column.name)).toContain('full_name');
+    expect(drivers.rows[0]).toMatchObject({
+      dob: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      full_name: expect.any(String),
+      nationality: expect.any(String),
+      url: expect.stringMatching(/^https?:\/\//),
+    });
+  });
 
   it('isolates old reports, rejects mixed corpora and requires new manifest identity', () => {
     expect(getRunCorpusId({ selectedSuiteIds: ['bird-dev-research'] })).toBe('legacy-550');

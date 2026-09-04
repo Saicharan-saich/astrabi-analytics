@@ -37,6 +37,13 @@ so these scores should not be described as identical to the official evaluator.
 Source SQLite SQL, when present, is displayed as provenance, not silently claimed
 to be DuckDB SQL. Reference outputs are not sent to the candidate model.
 
+An independent 2026-09-03 oracle-quality audit preserves the complete frozen
+550-question source set but quarantines cases with confirmed defects,
+under-specified interpretations, conflicting publisher alternatives, or
+insufficient verification. Only quality-cleared cases are selectable for scored
+runs. The audit decision hash is recorded separately from the source manifest;
+quarantined cases are never silently treated as model failures or successes.
+
 The new set is disjoint from the versioned old application manifests and retained
 local run evidence by source identity and normalized question text; BIRD gold SQL
 duplicates are also excluded. It is NOT a claim that a public question was absent

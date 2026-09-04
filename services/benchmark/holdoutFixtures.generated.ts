@@ -36961,8 +36961,8 @@ const CASES: BenchmarkCase[] = [
     "context": null,
     "category": "Multi-table reasoning",
     "difficulty": "hard",
-    "datasetRef": "/benchmarks/holdout-v1/datasets/spider2-lite--f1--7a296ff3aa-adcb53072684.json.gz",
-    "datasetSha256": "adcb530726840ce1a0193de7db9aa3264fa3267f67638ba5790bf2cb783cee58",
+    "datasetRef": "/benchmarks/holdout-v1/datasets/spider2-lite--f1--7a296ff3aa-066697d6331a.json.gz",
+    "datasetSha256": "066697d6331a977dfc9bf3092debf83948abcc4f4c7b9a5c5afc85ea8380a165",
     "goldSql": "",
     "expectedRows": [
       {
@@ -40751,8 +40751,8 @@ const CASES: BenchmarkCase[] = [
     "context": null,
     "category": "Multi-table reasoning",
     "difficulty": "hard",
-    "datasetRef": "/benchmarks/holdout-v1/datasets/spider2-lite--f1--7a296ff3aa-adcb53072684.json.gz",
-    "datasetSha256": "adcb530726840ce1a0193de7db9aa3264fa3267f67638ba5790bf2cb783cee58",
+    "datasetRef": "/benchmarks/holdout-v1/datasets/spider2-lite--f1--7a296ff3aa-066697d6331a.json.gz",
+    "datasetSha256": "066697d6331a977dfc9bf3092debf83948abcc4f4c7b9a5c5afc85ea8380a165",
     "goldSql": "with year_points as (\n    select races.year,\n           drivers.forename || ' ' || drivers.surname as driver,\n           constructors.name as constructor,\n           sum(results.points) as points\n    from results\n    left join races on results.race_id = races.race_id  -- Ensure these columns exist in your schema\n    left join drivers on results.driver_id = drivers.driver_id  -- Ensure these columns exist in your schema\n    left join constructors on results.constructor_id = constructors.constructor_id  -- Ensure these columns exist in your schema\n    group by races.year, driver\n    union\n    select races.year,\n           null as driver,\n           constructors.name as constructor,\n           sum(results.points) as points\n    from results\n    left join races on results.race_id = races.race_id  -- Ensure these columns exist in your schema\n    left join drivers on results.driver_id = drivers.driver_id  -- Ensure these columns exist in your schema\n    left join constructors on results.constructor_id = constructors.constructor_id  -- Ensure these columns exist in your schema\n    group by races.year, constructor\n),\nmax_points as (\n    select year,\n           max(case when driver is not null then points else null end) as max_driver_points,\n           max(case when constructor is not null then points else null end) as max_constructor_points\n    from year_points\n    group by year\n)\nselect max_points.year,\n       drivers_year_points.driver,\n       constructors_year_points.constructor\nfrom max_points\nleft join year_points as drivers_year_points on\n    max_points.year = drivers_year_points.year and\n    max_points.max_driver_points = drivers_year_points.points and\n    drivers_year_points.driver is not null\nleft join year_points as constructors_year_points on\n    max_points.year = constructors_year_points.year and\n    max_points.max_constructor_points = constructors_year_points.points and\n    constructors_year_points.constructor is not null\norder by max_points.year;",
     "expectedRows": [
       {
@@ -44423,8 +44423,8 @@ const CASES: BenchmarkCase[] = [
     "context": null,
     "category": "Multi-table reasoning",
     "difficulty": "hard",
-    "datasetRef": "/benchmarks/holdout-v1/datasets/spider2-lite--f1--7a296ff3aa-adcb53072684.json.gz",
-    "datasetSha256": "adcb530726840ce1a0193de7db9aa3264fa3267f67638ba5790bf2cb783cee58",
+    "datasetRef": "/benchmarks/holdout-v1/datasets/spider2-lite--f1--7a296ff3aa-066697d6331a.json.gz",
+    "datasetSha256": "066697d6331a977dfc9bf3092debf83948abcc4f4c7b9a5c5afc85ea8380a165",
     "goldSql": "",
     "expectedRows": [
       {
@@ -52883,8 +52883,8 @@ const CASES: BenchmarkCase[] = [
     ]
   }
 ];
-export const HOLDOUT_MANIFEST_SHA256 = 'a4fad5e205bc05f5479efe18a0dcda8f252ec83f8673251dfee289930b554b4b';
+export const HOLDOUT_MANIFEST_SHA256 = '0b44a50bea9f3cca18fd30bb428dbe993860fbc325bc39c95df47226f6647c89';
 export const HOLDOUT_BENCHMARK_SUITES: BenchmarkSuite[] = [
-{"id": "bird-dev-holdout", "name": "New BIRD Public Dev Subset", "shortName": "New BIRD", "version": "quickinsight-holdout-550-v1", "corpusId": "holdout-550", "manifestSha256": "a4fad5e205bc05f5479efe18a0dcda8f252ec83f8673251dfee289930b554b4b", "description": "500 original, previously unselected questions. Complete oracle-scoped tables; locally executed in DuckDB.", "methodology": "Disjoint public-source, oracle-table, DuckDB-adapted subset. Not an official leaderboard score or a guarantee of model-training novelty.", "accent": "cyan", "evaluationClass": "official-public-subset", "attribution": {"benchmark": "BIRD public dev", "homepage": "https://bird-bench.github.io/", "license": "CC BY-SA 4.0", "notice": "Original questions and source data; frozen reference outputs. See holdout-v1/manifest.json and NOTICE.md."}, cases: CASES.filter(c => c.suiteId === 'bird-dev-holdout')},
-{"id": "spider2-lite-holdout", "name": "New Spider 2.0 Lite SQLite Subset", "shortName": "Spider 2.0 Lite", "version": "quickinsight-holdout-550-v1", "corpusId": "holdout-550", "manifestSha256": "a4fad5e205bc05f5479efe18a0dcda8f252ec83f8673251dfee289930b554b4b", "description": "50 original, previously unselected questions. Complete oracle-scoped tables; locally executed in DuckDB.", "methodology": "Disjoint public-source, oracle-table, DuckDB-adapted subset. Not an official leaderboard score or a guarantee of model-training novelty.", "accent": "amber", "evaluationClass": "official-public-subset", "attribution": {"benchmark": "Spider 2.0 Lite", "homepage": "https://github.com/xlang-ai/Spider2", "license": "Upstream source terms; repository MIT", "notice": "Original questions and source data; frozen reference outputs. See holdout-v1/manifest.json and NOTICE.md."}, cases: CASES.filter(c => c.suiteId === 'spider2-lite-holdout')}
+{"id": "bird-dev-holdout", "name": "New BIRD Public Dev Subset", "shortName": "New BIRD", "version": "quickinsight-holdout-550-v1", "corpusId": "holdout-550", "manifestSha256": "0b44a50bea9f3cca18fd30bb428dbe993860fbc325bc39c95df47226f6647c89", "description": "500 original, previously unselected questions. Complete oracle-scoped tables; locally executed in DuckDB.", "methodology": "Disjoint public-source, oracle-table, DuckDB-adapted subset. Not an official leaderboard score or a guarantee of model-training novelty.", "accent": "cyan", "evaluationClass": "official-public-subset", "attribution": {"benchmark": "BIRD public dev", "homepage": "https://bird-bench.github.io/", "license": "CC BY-SA 4.0", "notice": "Original questions and source data; frozen reference outputs. See holdout-v1/manifest.json and NOTICE.md."}, cases: CASES.filter(c => c.suiteId === 'bird-dev-holdout')},
+{"id": "spider2-lite-holdout", "name": "New Spider 2.0 Lite SQLite Subset", "shortName": "Spider 2.0 Lite", "version": "quickinsight-holdout-550-v1", "corpusId": "holdout-550", "manifestSha256": "0b44a50bea9f3cca18fd30bb428dbe993860fbc325bc39c95df47226f6647c89", "description": "50 original, previously unselected questions. Complete oracle-scoped tables; locally executed in DuckDB.", "methodology": "Disjoint public-source, oracle-table, DuckDB-adapted subset. Not an official leaderboard score or a guarantee of model-training novelty.", "accent": "amber", "evaluationClass": "official-public-subset", "attribution": {"benchmark": "Spider 2.0 Lite", "homepage": "https://github.com/xlang-ai/Spider2", "license": "Upstream source terms; repository MIT", "notice": "Original questions and source data; frozen reference outputs. See holdout-v1/manifest.json and NOTICE.md."}, cases: CASES.filter(c => c.suiteId === 'spider2-lite-holdout')}
 ];

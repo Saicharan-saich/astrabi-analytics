@@ -32,6 +32,7 @@ SOURCE = ROOT / ".benchmark-source/spider2"
 COMMIT = "cafb867313aab4e674652054198f383cf4018943"
 VERSION = "quickinsight-holdout-550-v1"
 OUTPUT = ROOT / "public/benchmarks/holdout-v1"
+SELECTION_LOCK = OUTPUT / "selection-lock.json"
 
 _execute_native_gold = helper.execute_gold
 def bounded_native_gold(connection, sql, max_rows):
@@ -50,7 +51,10 @@ class CachedValidator(helper.DuckDBValidator):
         self.node = node
         os.environ["BENCHMARK_BULK_FIXTURES"] = "1"
         super().__init__(node)
-        self.cache_dir = SOURCE / "validation-cache-v1"
+        # v2 preserves SQL projection order. The previous canonical JSON cache
+        # sorted object keys, which made positional SQLite/DuckDB comparison
+        # depend on whether a result was freshly executed or read from cache.
+        self.cache_dir = SOURCE / "validation-cache-v2"
         self.cache_dir.mkdir(exist_ok=True)
         self.asset_hashes = {}
         self.calls = 0
@@ -78,7 +82,7 @@ class CachedValidator(helper.DuckDBValidator):
         finally:
             watchdog.cancel()
         if result is not None:
-            target.write_bytes(canonical(result))
+            target.write_text(json.dumps(result, ensure_ascii=False, separators=(",", ":"), allow_nan=False), encoding="utf-8")
         return result
 
 
@@ -207,10 +211,21 @@ def same_result_values(left, right):
         if isinstance(a, (float, int)) and isinstance(b, (float, int)):
             return math.isclose(a, b, rel_tol=1e-6, abs_tol=1e-6)
         return str(a) == str(b)
-    unmatched = [list(row.values()) for row in right]
+    def column_key(name):
+        return re.sub(r"\W+", "", str(name).casefold())
+    left_names = list(left[0]) if left else []
+    right_names = list(right[0]) if right else []
+    left_by_name = {column_key(name): name for name in left_names}
+    right_by_name = {column_key(name): name for name in right_names}
+    names_align = len(left_by_name) == len(left_names) and set(left_by_name) == set(right_by_name)
+    def values(row, names, by_name):
+        if names_align:
+            return [row[by_name[key]] for key in sorted(left_by_name)]
+        return [row[name] for name in names]
+    unmatched = [values(row, right_names, right_by_name) for row in right]
     for row in left:
-        values = list(row.values())
-        found = next((i for i, other in enumerate(unmatched) if len(values) == len(other) and all(scalar(a,b) for a,b in zip(values, other))), None)
+        row_values = values(row, left_names, left_by_name)
+        found = next((i for i, other in enumerate(unmatched) if len(row_values) == len(other) and all(scalar(a,b) for a,b in zip(row_values, other))), None)
         if found is None:
             return False
         unmatched.pop(found)
@@ -291,9 +306,10 @@ def spider_cases(folder, cases, assets, validator, max_rows, max_cells):
     return eligible, rejected
 
 
-def bird_cases(prior, assets, validator, args):
+def bird_cases(prior, assets, validator, args, preserved_source_ids=frozenset()):
     source_path = ROOT / ".benchmark-source/bird/dev_20240627/dev.json"
     source = helper.load_bird_cases(source_path)
+    prior = [c for c in prior if c.get("sourceId") not in preserved_source_ids]
     banned_ids = {c.get("sourceId") for c in prior}
     banned_questions = {normalized(c.get("question", "")) for c in prior}
     banned_sql = {normalized(c.get("goldSql", "")) for c in prior if c.get("goldSql")}
@@ -318,8 +334,13 @@ def bird_cases(prior, assets, validator, args):
         with sqlite3.connect(f"file:{path.as_posix()}?mode=ro", uri=True) as db:
             native = helper.execute_gold(db, item.source.gold_sql, args.max_result_rows)
         if not same_result_values(native, item.expected_rows):
-            rejected["sqlite_duckdb_result_difference"] += 1
-            continue
+            if item.source.source_id not in preserved_source_ids:
+                rejected["sqlite_duckdb_result_difference"] += 1
+                continue
+            # A frozen selection remains reproducible even if dialect tie
+            # ordering/coercion differs on a later rebuild. The oracle-quality
+            # audit quarantines such cases from scoring.
+            rejected["locked_sqlite_duckdb_result_difference"] += 1
         case = helper.typescript_case("bird-dev", "bird-dev-holdout", item)
         case["id"] = "holdout-" + case["id"]
         case.update(asset_ref(data[item.dataset_ref], assets))
@@ -329,16 +350,27 @@ def bird_cases(prior, assets, validator, args):
 
 
 def build(folder, cases, args):
+    selection_lock = json.loads(SELECTION_LOCK.read_text(encoding="utf-8")) if SELECTION_LOCK.exists() else None
+    locked_source_ids = selection_lock.get("sourceIds", []) if selection_lock else []
+    if selection_lock and (selection_lock.get("version") != VERSION or len(locked_source_ids) != 550):
+        raise ValueError("The holdout selection lock is invalid or belongs to a different corpus version")
     prior = prior_cases()
     assets = {}
     validator = CachedValidator(args.node)
     try:
         spider, spider_rejected = spider_cases(folder, cases, assets, validator, args.max_table_rows, args.max_table_cells)
         print(f"Spider 2.0: {len(spider)} eligible; exclusions {dict(spider_rejected)}", flush=True)
-        bird, bird_rejected, excluded = bird_cases(prior, assets, validator, args)
+        bird, bird_rejected, excluded = bird_cases(prior, assets, validator, args, frozenset(locked_source_ids))
     finally:
         validator.close()
-    selected = choose(bird, 500) + choose(spider, 50)
+    if locked_source_ids:
+        eligible_by_source = {case["sourceId"]: case for case in [*bird, *spider]}
+        missing = [source_id for source_id in locked_source_ids if source_id not in eligible_by_source]
+        if missing:
+            raise ValueError(f"Selection-lock cases are no longer eligible: {missing}")
+        selected = [eligible_by_source[source_id] for source_id in locked_source_ids]
+    else:
+        selected = choose(bird, 500) + choose(spider, 50)
     old_questions = {normalized(c.get("question", "")) for c in prior}
     assert len({normalized(c["question"]) for c in selected}) == 550
     assert not old_questions.intersection(normalized(c["question"]) for c in selected)

@@ -188,10 +188,26 @@ def referenced_tables(sql: str, available: dict[str, str]) -> list[str]:
     return found
 
 
+def table_column_info(connection: sqlite3.Connection, table: str) -> list[tuple[Any, ...]]:
+    """Return one authoritative, selectable SQLite column list.
+
+    ``PRAGMA table_info`` omits generated columns while ``SELECT *`` includes
+    them. Pairing those two shapes shifted every value after a generated
+    column into the wrong field in holdout fixtures. ``table_xinfo`` includes
+    generated columns; hidden virtual-table implementation columns (hidden=1)
+    are deliberately excluded because they are not part of the user schema.
+    """
+    quoted = table.replace('"', '""')
+    rows = connection.execute(f'PRAGMA table_xinfo("{quoted}")').fetchall()
+    if not rows:  # Compatibility with older SQLite builds.
+        rows = connection.execute(f'PRAGMA table_info("{quoted}")').fetchall()
+    return [row for row in rows if len(row) < 7 or int(row[6] or 0) != 1]
+
+
 def table_shape(connection: sqlite3.Connection, table: str) -> tuple[int, int]:
     quoted = table.replace('"', '""')
     row_count = int(connection.execute(f'SELECT COUNT(*) FROM "{quoted}"').fetchone()[0])
-    column_count = len(connection.execute(f'PRAGMA table_info("{quoted}")').fetchall())
+    column_count = len(table_column_info(connection, table))
     return row_count, column_count
 
 
@@ -226,10 +242,11 @@ def infer_column_type(name: str, declared: str, values: Iterable[Any]) -> str:
 
 def read_table(connection: sqlite3.Connection, table: str) -> tuple[list[dict[str, Any]], list[dict[str, str]]] | None:
     quoted = table.replace('"', '""')
-    info = connection.execute(f'PRAGMA table_info("{quoted}")').fetchall()
+    info = table_column_info(connection, table)
     names = [str(row[1]) for row in info]
+    projection = ", ".join(f'"{name.replace(chr(34), chr(34) * 2)}"' for name in names)
     try:
-        raw_rows = connection.execute(f'SELECT * FROM "{quoted}"').fetchall()
+        raw_rows = connection.execute(f'SELECT {projection} FROM "{quoted}"').fetchall()
     except sqlite3.Error:
         return None
     if any(isinstance(value, bytes) for row in raw_rows for value in row):
@@ -295,7 +312,7 @@ def read_source_schema(connection: sqlite3.Connection, tables: list[str]) -> dic
     join_edges: list[dict[str, str]] = []
     for table in tables:
         quoted = table.replace('"', '""')
-        info = connection.execute(f'PRAGMA table_info("{quoted}")').fetchall()
+        info = table_column_info(connection, table)
         row_count = int(connection.execute(f'SELECT COUNT(*) FROM "{quoted}"').fetchone()[0])
         schema_tables.append({
             "name": table,
@@ -305,6 +322,7 @@ def read_source_schema(connection: sqlite3.Connection, tables: list[str]) -> dic
                 "dataType": str(column[2] or "TEXT"),
                 "isPK": bool(column[5]),
                 "isNullable": not bool(column[3]) and not bool(column[5]),
+                **({"isGenerated": True} if len(column) >= 7 and int(column[6] or 0) in (2, 3) else {}),
             } for column in info],
         })
         for foreign_key in connection.execute(f'PRAGMA foreign_key_list("{quoted}")').fetchall():

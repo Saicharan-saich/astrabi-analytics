@@ -5,7 +5,7 @@ Benchmark Lab has two independent question-set tabs:
 | Tab | Questions | Sources |
 | --- | ---: | --- |
 | Original 550 | 550 | Existing 150 compatible, 200 Spider Dev, 200 BIRD Dev |
-| New 550 · BIRD + Spider 2.0 | 550 | 500 previously unselected BIRD Dev, 50 genuine Spider 2.0 Lite SQLite |
+| New 550 · BIRD + Spider 2.0 | 336 runnable; 214 quarantined | Frozen source set: 500 previously unselected BIRD Dev, 50 genuine Spider 2.0 Lite SQLite |
 
 The old fixture definitions and reference answers are unchanged. Both tabs
 support Private and Better modes, smoke runs, full runs, custom counts, shuffle,
@@ -13,6 +13,20 @@ pause/resume and exports. Switching tabs clears the current suite selection and
 selects that tab's suites; it does not delete reports. History/results are scoped
 to the selected corpus. The browser retains the existing overall 20-run history
 limit, not 20 per corpus. Configuration cannot switch during an active run.
+
+## Oracle-quality gate
+
+The 2026-09-03 case-by-case audit preserves all 550 new questions but permits
+only 336 `no_issue_found` cases to enter a scored run. It quarantines 79
+confirmed source/fixture/reference defects, 134 cases requiring human
+adjudication, and one case that could not be fully verified. Quarantined cases
+are not sent to the model and cannot change execution accuracy. `No issue found`
+is an engineering audit status, not a claim of formal human certification.
+
+The runnable suite manifest combines the frozen source-manifest identity with
+the oracle-audit hash. This makes resume fail safely if either the fixtures or
+quality decisions change. Raw automatic scores and later human-adjudicated
+scores must be reported separately.
 
 ## Meaning of new / unseen
 
@@ -74,6 +88,12 @@ fewer than 550 eligible disjoint cases are available. Native and DuckDB checks
 have time limits. Successful offline validation is cached under the ignored source
 directory. Rebuilding can change eligibility after a dependency change: review and
 version the manifest, never silently replace it during an existing study.
+
+`selection-lock.json` freezes the original 550 source IDs and order. A rebuild
+must reproduce that exact set; mutable local benchmark reports cannot replace
+questions. SQLite fixture extraction uses `PRAGMA table_xinfo` and an explicit
+column projection so generated columns cannot shift adjacent values. Cached
+DuckDB validation preserves projection order.
 
 See `public/benchmarks/holdout-v1/manifest.json` for selection, source and asset
 hashes, exclusions and budgets, and `NOTICE.md` beside it for attribution/terms.
