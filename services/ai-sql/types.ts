@@ -460,6 +460,21 @@ export interface PipelineTrace {
     steps: PipelineStepTrace[];
 }
 
+export interface TraceStoryStep {
+    kind: 'source' | 'relationship' | 'filter' | 'group' | 'calculate' | 'qualify' | 'set' | 'rank' | 'result';
+    title: string;
+    /** Concise business-readable account of a transformation verified in the executed SQL. */
+    description: string;
+    /** Exact SQL/operator evidence or result metadata supporting the statement. */
+    evidence: string;
+}
+
+export interface TraceStory {
+    version: 1;
+    verifiedFrom: 'executed_sql_and_result';
+    steps: TraceStoryStep[];
+}
+
 export interface AIQueryProvenance {
     /** Whether a deterministic compiler answered the question or an LLM fallback was needed. */
     strategy: 'deterministic' | 'llm-sql-fallback' | 'llm-plan' | 'hybrid-plan-llm-sql';
@@ -515,6 +530,8 @@ export interface AISQLPipelineResult {
     trust?: TrustVerification;
     /** Pipeline transparency trace — step-by-step engine telemetry */
     trace?: PipelineTrace;
+    /** Business-readable path from local source rows to the final visual. */
+    traceStory?: TraceStory;
     /** How this answer was produced, including any LLM fallback. */
     provenance?: AIQueryProvenance;
     /** Exact LLM token cost for this question. Metadata and user-approved safe

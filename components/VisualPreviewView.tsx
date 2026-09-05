@@ -15,6 +15,7 @@ import { useTheme } from './ThemeProvider';
 import TrustBadge from './TrustBadge';
 import { PipelineReport } from './PipelineReport';
 import { isDimensionOnlyResult } from '../services/ai-sql/resultPresentation';
+import { TraceStoryPanel } from './TraceStoryPanel';
 
 interface VisualPreviewViewProps {
   dataset: Dataset | null;
@@ -45,7 +46,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       : initialPipeline?.chart?.chartType === 'table' ? 'table' : 'chart'
   );
   const [workspaceMode, setWorkspaceMode] = useState<'result' | 'details'>('result');
-  const [detailsSection, setDetailsSection] = useState<'overview' | 'workspace'>('overview');
+  const [detailsSection, setDetailsSection] = useState<'overview' | 'workspace' | 'trace'>('overview');
   const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
   const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);
   const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
@@ -274,14 +275,26 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               </div>
             </div>
           </div>
-          <button
-            onClick={() => { setDetailsSection('overview'); setWorkspaceMode('details'); }}
-            aria-label="Open answer details"
-            aria-controls="ai-sql-details-workspace"
-            className="flex h-12 shrink-0 items-center gap-2.5 rounded-xl bg-indigo-600 px-5 text-sm font-extrabold text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-500 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2"
-          >
-            <Database className="h-5 w-5" /> <span className="hidden sm:inline">View </span>Details
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            {activePipeline?.traceStory && (
+              <button
+                onClick={() => { setDetailsSection('trace'); setWorkspaceMode('details'); }}
+                aria-label="Open calculation trace"
+                aria-controls="ai-sql-trace-story"
+                className={`flex h-12 items-center gap-2 rounded-xl border px-4 text-sm font-extrabold transition-all ${isDark ? 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20' : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'}`}
+              >
+                <ListChecks className="h-5 w-5" /> Trace
+              </button>
+            )}
+            <button
+              onClick={() => { setDetailsSection('overview'); setWorkspaceMode('details'); }}
+              aria-label="Open answer details"
+              aria-controls="ai-sql-details-workspace"
+              className="flex h-12 items-center gap-2.5 rounded-xl bg-indigo-600 px-5 text-sm font-extrabold text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-500 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2"
+            >
+              <Database className="h-5 w-5" /> <span className="hidden sm:inline">View </span>Details
+            </button>
+          </div>
         </div>
       )}
 
@@ -360,6 +373,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               <Microscope className="w-3.5 h-3.5" /> Pipeline
             </button>
           )}
+          {activePipeline?.traceStory && (
+            <button onClick={() => { setWorkspaceMode('details'); setDetailsSection('trace'); }} className="flex items-center gap-1.5 text-[12px] font-bold text-violet-600 dark:text-violet-300 bg-violet-50 dark:bg-violet-500/10 hover:bg-violet-100 dark:hover:bg-violet-500/20 px-3 py-1.5 rounded-lg transition-all border border-violet-200 dark:border-violet-500/20">
+              <ListChecks className="w-3.5 h-3.5" /> Trace
+            </button>
+          )}
         </div>
       </div>
 
@@ -394,6 +412,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         </button>
         <button role="tab" aria-selected={detailsSection === 'workspace' && activeTab === 'table'} aria-controls="ai-sql-result-workspace" onClick={() => { setActiveTab('table'); setDetailsSection('workspace'); }} className={tabBtnClass('table')}><Table2 className="w-3.5 h-3.5" /> Table</button>
         <button role="tab" aria-selected={detailsSection === 'workspace' && activeTab === 'sql'} aria-controls="ai-sql-result-workspace" onClick={() => { setActiveTab('sql'); setDetailsSection('workspace'); }} className={tabBtnClass('sql')}><Code className="w-3.5 h-3.5" /> SQL</button>
+        {activePipeline?.traceStory && (
+          <button role="tab" aria-selected={detailsSection === 'trace'} aria-controls="ai-sql-trace-story" onClick={() => setDetailsSection('trace')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${detailsSection === 'trace' ? 'bg-violet-50 dark:bg-violet-500/20 text-violet-600 dark:text-violet-300 ring-1 ring-violet-400/30' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}>
+            <ListChecks className="w-3.5 h-3.5" /> Trace
+          </button>
+        )}
         <div className="w-px h-5 bg-gray-200 dark:bg-white/10 mx-1" />
         {!activeDimensionOnly && (
           <>
@@ -739,6 +762,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                       <Microscope className="h-4 w-4" /> Open pipeline report
                     </button>
                   )}
+                  {activePipeline?.traceStory && (
+                    <button onClick={() => setDetailsSection('trace')} className="flex items-center justify-center gap-2 rounded-xl border border-violet-500/25 bg-violet-500/10 px-4 py-3 text-sm font-bold text-violet-500 transition-colors hover:bg-violet-500/20">
+                      <ListChecks className="h-4 w-4" /> View calculation story
+                    </button>
+                  )}
                   <button onClick={() => { setActiveTab('table'); setDetailsSection('workspace'); }} className={`flex items-center justify-center gap-2 rounded-xl border px-4 py-3 text-sm font-bold transition-colors ${isDark ? 'border-white/10 bg-white/[0.04] hover:bg-white/[0.08]' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}>
                     <Table2 className="h-4 w-4" /> Explore result data
                   </button>
@@ -749,6 +777,12 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {workspaceMode === 'details' && detailsSection === 'trace' && activePipeline?.traceStory && (
+        <div id="ai-sql-trace-story" role="tabpanel" aria-label="Calculation trace story" tabIndex={0} className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-7">
+          <TraceStoryPanel story={activePipeline.traceStory} question={activeQuery} />
         </div>
       )}
 

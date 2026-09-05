@@ -27,6 +27,7 @@ import { generateSQLFromPlan, repairSQL } from './sqlGenerator';
 import { correctSQL, normalizeFilterOp } from './sqlCorrectionEngine';
 import { validateSQL, validateResult } from './sqlValidator';
 import { AISQLPipelineError, type AISQLPipelineFailureKind } from './pipelineError';
+import { buildTraceStory } from './traceStory';
 import { executeSQLViaDuckDB } from '../duckdbEngine';
 import { profileResult } from './resultProfiler';
 import { recommendChart } from './chartRecommender';
@@ -2054,6 +2055,17 @@ export async function runAISQLPipeline(
         totalDurationMs: Math.round(executionTime),
         steps: traceSteps,
     };
+    const traceStory = buildTraceStory({
+        sql: currentSQL,
+        querySpec: directQuerySpec,
+        sourceTables: [
+            { name: 'data', rowCount: dataset.rows.length },
+            ...(dataset.relatedTables || []).map(table => ({ name: table.name, rowCount: table.rows.length })),
+        ],
+        resultRows: rawData.length,
+        resultColumns: Object.keys(rawData[0] || {}),
+        chart: reshaped.chart,
+    });
 
     const provenance = directSQL
         ? {
@@ -2094,6 +2106,7 @@ export async function runAISQLPipeline(
         repairAttempts,
         provenance,
         trace: pipelineTrace,
+        traceStory,
         // Surface the exact LLM token cost — the planner step plus the direct-SQL
         // step (0 if the deterministic knobs/correction engine answered). Only LLM
         // calls spend tokens; the deterministic steps are free.
