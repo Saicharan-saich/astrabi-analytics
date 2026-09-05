@@ -37,6 +37,7 @@ export type BenchmarkCaseStatus =
   | 'withheld'
   | 'invalid_sql'
   | 'llm_unavailable'
+  | 'clarification_required'
   | 'execution_error'
   | 'fixture_error';
 

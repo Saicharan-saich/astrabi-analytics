@@ -66,6 +66,37 @@ describe('findTablesForColumn', () => {
     });
 });
 
+describe('incomplete connector relationship metadata', () => {
+    it('supplements declared edges with exact PK/reference metadata links', () => {
+        const result = fromSourceSchema({
+            tables: [
+                { name: 'customers', rows: 10, columns: [{ name: 'CustomerID', isPK: true }, { name: 'Country', isPK: false }] },
+                { name: 'transactions', rows: 100, columns: [{ name: 'TransactionID', isPK: true }, { name: 'CustomerID', isPK: false }] },
+                { name: 'currencies', rows: 5, columns: [{ name: 'CurrencyID', isPK: true }] },
+            ],
+            joinEdges: [{ leftTable: 'customers', leftColumn: 'Country', rightTable: 'currencies', rightColumn: 'CurrencyID', type: 'name_match' }],
+        });
+        expect(result.links).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                leftTable: 'customers', leftColumn: 'CustomerID',
+                rightTable: 'transactions', rightColumn: 'CustomerID',
+                cardinality: 'one-to-many', confidence: 0.9,
+            }),
+        ]));
+    });
+
+    it('does not infer relationships from generic id columns', () => {
+        const result = fromSourceSchema({
+            tables: [
+                { name: 'left', rows: 2, columns: [{ name: 'id', isPK: true }] },
+                { name: 'right', rows: 2, columns: [{ name: 'id', isPK: false }] },
+            ],
+            joinEdges: [],
+        });
+        expect(result.links).toHaveLength(0);
+    });
+});
+
 describe('resolveRequiredTables', () => {
     it('maps unambiguous columns onto their tables', () => {
         const r = resolveRequiredTables(['total_price', 'customer_name'], TABLES);

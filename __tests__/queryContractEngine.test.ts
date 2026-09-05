@@ -44,6 +44,31 @@ function plan(overrides: Partial<AnalysisPlan> = {}): AnalysisPlan {
 }
 
 describe('production query-contract engine', () => {
+    it('handles schema concepts that collide with Object prototype keys', () => {
+        const formulaOneModel: SemanticModel = {
+            ...model,
+            datasetName: 'Formula 1',
+            fields: [
+                field('constructorId', 'dimension', 'identifier'),
+                field('constructor_name', 'dimension', 'category'),
+                field('points', 'metric', 'quantity'),
+            ],
+        };
+
+        expect(() => buildQueryContract(
+            'Which constructor has the highest total points?',
+            plan({
+                intent: 'ranking',
+                dimensions: [{ field: 'constructor_name' }],
+                metrics: [{ field: 'points', agg: 'sum' }],
+                limit: 1,
+                resultGrain: 'one row per constructor',
+            }),
+            [],
+            formulaOneModel,
+        )).not.toThrow();
+    });
+
     it('treats an aggregate used only to qualify entities as predicate evidence, not mandatory output', () => {
         const aggregateFilterModel: SemanticModel = {
             ...model,

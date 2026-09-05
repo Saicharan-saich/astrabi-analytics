@@ -26,6 +26,7 @@ import { generateLocalPlan } from './intentPlanner';
 import { generateSQLFromPlan, repairSQL } from './sqlGenerator';
 import { correctSQL, normalizeFilterOp } from './sqlCorrectionEngine';
 import { validateSQL, validateResult } from './sqlValidator';
+import { AISQLPipelineError, type AISQLPipelineFailureKind } from './pipelineError';
 import { executeSQLViaDuckDB } from '../duckdbEngine';
 import { profileResult } from './resultProfiler';
 import { recommendChart } from './chartRecommender';
@@ -239,7 +240,7 @@ export async function runAISQLPipeline(
     // receives dataset rows; local DuckDB remains the only execution engine.
     const runHybridSql = async (
         plannerIssues: Array<{ code?: string; severity?: string; message?: string }> = [],
-    ): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null; blocked?: boolean; querySpec?: DynamicQuerySpec }> => {
+    ): Promise<{ sql: string | null; tokens: number; model?: string; error: string | null; blocked?: boolean; failureKind?: AISQLPipelineFailureKind; querySpec?: DynamicQuerySpec }> => {
         try {
             if (!engineConfig.privacyGateway) {
                 return { sql: null, tokens: 0, error: 'AI SQL paused by admin: the privacy gateway is disabled.', blocked: true };
@@ -345,7 +346,15 @@ export async function runAISQLPipeline(
                 return { sql, tokens: ds.tokens || 0, model: ds.model, error: null, querySpec: ds.querySpec };
             }
             console.warn('[Pipeline] Direct-SQL not usable:', ds.error || 'empty SQL');
-            return { sql: null, tokens: ds.tokens || 0, model: ds.model, error: ds.error || 'empty SQL', blocked: ds.blocked, querySpec: ds.querySpec };
+            return {
+                sql: null,
+                tokens: ds.tokens || 0,
+                model: ds.model,
+                error: ds.error || 'empty SQL',
+                blocked: ds.blocked,
+                failureKind: ds.failureKind,
+                querySpec: ds.querySpec,
+            };
         } catch (dErr: any) {
             const msg = dErr?.message || String(dErr);
             console.warn('[Pipeline] Direct-SQL fallback failed:', msg);
@@ -829,6 +838,7 @@ export async function runAISQLPipeline(
     let directSqlModel: string | undefined;
     let directSqlError: string | null = null;
     let directSqlBlocked = false;
+    let directSqlFailureKind: AISQLPipelineFailureKind | undefined;
     let directQuerySpec: DynamicQuerySpec | undefined;
     if (!AI_SQL_MODEL_OWNS_SQL && (locallyOwnedCanonicalIR || locallyOwnedTotalComparison) && qbSQL) {
         directSqlError = locallyOwnedCanonicalIR
@@ -858,6 +868,7 @@ export async function runAISQLPipeline(
         directSqlModel = _ds.model;
         directSqlError = _ds.error;
         directSqlBlocked = !!_ds.blocked;
+        directSqlFailureKind = _ds.failureKind;
         directQuerySpec = _ds.querySpec;
         traceStep({
             stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
@@ -893,7 +904,9 @@ export async function runAISQLPipeline(
     // unavailable or uncertain. That would silently change the requested
     // reasoning while presenting the result as AI SQL.
     if (directSqlBlocked || !directSQL) {
-        throw new Error(directSqlError || 'AI SQL stopped before execution because it could not preserve the requested analytical shape.');
+        const message = directSqlError || 'AI SQL stopped before execution because it could not preserve the requested analytical shape.';
+        if (directSqlFailureKind) throw new AISQLPipelineError(directSqlFailureKind, message);
+        throw new Error(message);
     }
     if (directQuerySpec) {
         plan = applyQuerySpecToAnalysisPlan(plan, directQuerySpec, semanticModel);
@@ -1013,8 +1026,8 @@ export async function runAISQLPipeline(
     // delegated back to the model with the validator evidence below.
     _s1 = performance.now();
     let validation = validateSQL(currentSQL, plan, semanticModel);
-    const _failedChecks = validation.checks.filter(c => c.status === 'fail');
-    const _warnChecks = validation.checks.filter(c => c.status === 'warn');
+    let _failedChecks = validation.checks.filter(c => c.status === 'fail');
+    let _warnChecks = validation.checks.filter(c => c.status === 'warn');
     traceStep({
         stepNumber: 8, name: 'SQL Validator', engine: 'sqlValidator', icon: '✅',
         status: _failedChecks.length > 0 ? 'fail' : _warnChecks.length > 0 ? 'warn' : 'pass',
@@ -1024,6 +1037,48 @@ export async function runAISQLPipeline(
 
     if (!validation.valid) {
         console.warn('[Pipeline] SQL validation failed:', _failedChecks);
+    }
+
+    // Physical-type violations are guaranteed execution failures, not merely
+    // advisory plan disagreements. Repair them once using schema metadata only;
+    // never send a query to DuckDB when the physical cast is known to be invalid.
+    const physicalTypeFailures = _failedChecks.filter(check => check.name === 'Physical date compatibility');
+    if (physicalTypeFailures.length > 0 && directSQL && directSchemaText && engineConfig.semanticResultRepair) {
+        try {
+            const semanticRepair = await repairSemanticSQL(
+                question,
+                directSchemaText,
+                directQuerySpec,
+                currentSQL,
+                `Pre-execution physical type validation failed. ${physicalTypeFailures.map(check => check.message).join(' ')}`,
+                executionOptions?.requestPurpose,
+                undefined,
+            );
+            directSqlTokens += semanticRepair.tokens;
+            if (!semanticRepair.error && semanticRepair.sql) {
+                const repairedValidation = validateSQL(semanticRepair.sql, plan, semanticModel);
+                const stillInvalid = repairedValidation.checks.some(check =>
+                    check.name === 'Physical date compatibility' && check.status === 'fail'
+                );
+                if (!stillInvalid) {
+                    currentSQL = semanticRepair.sql;
+                    directSQL = semanticRepair.sql;
+                    validation = repairedValidation;
+                    _failedChecks = validation.checks.filter(check => check.status === 'fail');
+                    _warnChecks = validation.checks.filter(check => check.status === 'warn');
+                    repairAttempts++;
+                    sqlResult.explanation = semanticRepair.explanation;
+                }
+            }
+        } catch (physicalRepairError: any) {
+            console.warn('[Pipeline] Physical-type SQL repair failed:', physicalRepairError?.message || physicalRepairError);
+        }
+    }
+    if (validation.checks.some(check => check.name === 'Physical date compatibility' && check.status === 'fail')) {
+        throw new AISQLPipelineError(
+            'sql_validation_failed',
+            `SQL validation stopped a guaranteed DuckDB type error before execution: ${physicalTypeFailures.map(check => check.message).join(' ')}`,
+        );
     }
 
     // ─── Step 4b: Predicate Provenance Gate ─────────────────────

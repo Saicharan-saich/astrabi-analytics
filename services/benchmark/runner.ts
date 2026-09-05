@@ -5,6 +5,7 @@ import {
 } from './comparator';
 import { getRunCorpusId, getSuiteCorpus } from './corpus';
 import { BenchmarkFixtureIntegrityError } from './researchDatasetLoader';
+import { AISQLPipelineError } from '../ai-sql/pipelineError';
 import type {
   BenchmarkCase,
   BenchmarkCaseResult,
@@ -20,7 +21,7 @@ const EMPTY_TOKENS = { prompt: 0, completion: 0, total: 0 };
 const EVIDENCE_ROW_LIMIT = 50;
 const DEFAULT_LOCAL_STAGE_TIMEOUT_MS = 60_000;
 const DEFAULT_PIPELINE_TIMEOUT_MS = 240_000;
-const LLM_UNAVAILABLE_PATTERN = /rate.?limit|too many (?:ai )?requests|daily ai (?:quota|limit)|quota exceeded|credits exhausted|permission.?denied|forbidden|guardrail|provider (?:denied|.*unavailable)|model.*not available|service.*(?:down|unavailable)|network|fetch failed|timed?\s*out/i;
+const LLM_UNAVAILABLE_PATTERN = /rate.?limit|too many (?:ai )?requests|daily ai (?:quota|limit)|quota exceeded|credits exhausted|permission.?denied|forbidden|guardrail|provider (?:denied|.*unavailable)|model.*not available|service.*(?:down|unavailable)|authentication required|session (?:has )?expired|unauthori[sz]ed|\b401\b|network|fetch failed|timed?\s*out/i;
 const LOCAL_INFRASTRUCTURE_PATTERN = /benchmark (?:dataset load|duckdb reload|gold sql execution) timed out|duckdb-wasm|webassembly|failed to read from a readablestream|wasm engine|worker is not supported/i;
 
 function withStageTimeout<T>(operation: () => Promise<T>, timeoutMs: number, stage: string): Promise<T> {
@@ -73,7 +74,7 @@ export function summarizeBenchmarkResults(results: BenchmarkCaseResult[], total 
   const validSql = llmBackedResults.filter(result => result.validSql).length;
   const safe = llmBackedResults.filter(result => result.safeToDisplay).length;
   const executable = llmBackedResults.filter(result =>
-    result.status !== 'execution_error' && result.status !== 'fixture_error'
+    !['execution_error', 'fixture_error', 'invalid_sql', 'llm_unavailable', 'clarification_required'].includes(result.status)
   ).length;
   const confidenceValues = results.map(result => result.confidence).filter((value): value is number => typeof value === 'number');
   const latencies = results.map(result => result.pipelineLatencyMs || result.latencyMs).filter(value => value >= 0);
@@ -400,10 +401,20 @@ export async function executeBenchmarkCase(
   } catch (error) {
     const completedAt = now();
     const reason = error instanceof Error ? error.message : String(error);
+    const status: BenchmarkCaseStatus = error instanceof BenchmarkFixtureIntegrityError
+      ? 'fixture_error'
+      : error instanceof AISQLPipelineError && error.kind === 'clarification_required'
+        ? 'clarification_required'
+        : error instanceof AISQLPipelineError && (error.kind === 'sql_validation_failed' || error.kind === 'planner_invalid_spec')
+          ? 'invalid_sql'
+        : LOCAL_INFRASTRUCTURE_PATTERN.test(reason)
+          ? 'execution_error'
+        : /Benchmark AI SQL pipeline timed out/i.test(reason) || LLM_UNAVAILABLE_PATTERN.test(reason)
+          ? 'llm_unavailable'
+          : 'execution_error';
     return failureResult(
       testCase,
-      error instanceof BenchmarkFixtureIntegrityError ? 'fixture_error'
-        : /Benchmark AI SQL pipeline timed out/i.test(reason) ? 'llm_unavailable' : 'execution_error',
+      status,
       reason,
       startedAt,
       completedAt,

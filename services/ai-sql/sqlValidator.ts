@@ -155,6 +155,31 @@ export function validateSQL(
         });
     }
 
+    // 11. Prevent physical numeric fields (especially four-digit year
+    // columns) from being cast directly to DATE/TIMESTAMP. DuckDB correctly
+    // rejects DOUBLE -> DATE, so catch this before execution and return the
+    // schema-grounded diagnostic to the model repair stage.
+    const numericDateCasts = model.fields
+        .filter(field => field.physicalType === 'number')
+        .filter(field => {
+            const escaped = field.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const reference = `(?:[A-Za-z_][A-Za-z0-9_]*\\s*\\.\\s*)?(?:["\`]${escaped}["\`]|${escaped})`;
+            return new RegExp(`\\b(?:TRY_)?CAST\\s*\\(\\s*${reference}\\s+AS\\s+(?:DATE|TIMESTAMP)\\b`, 'i').test(sql);
+        });
+    if (numericDateCasts.length > 0) {
+        checks.push({
+            name: 'Physical date compatibility',
+            status: 'fail',
+            message: `Numeric field(s) ${numericDateCasts.map(field => `"${field.name}"`).join(', ')} cannot be cast directly to DATE/TIMESTAMP. Compare a numeric year as a number; for encoded dates, construct a date explicitly from validated components.`,
+        });
+    } else {
+        checks.push({
+            name: 'Physical date compatibility',
+            status: 'pass',
+            message: 'No invalid numeric-to-date casts detected',
+        });
+    }
+
     // Compute overall validity
     const hasFail = checks.some(c => c.status === 'fail');
     const hasWarn = checks.some(c => c.status === 'warn');

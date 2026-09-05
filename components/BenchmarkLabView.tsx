@@ -69,6 +69,7 @@ const STATUS_LABELS: Record<BenchmarkCaseStatus, string> = {
   withheld: 'Withheld',
   invalid_sql: 'Invalid SQL',
   llm_unavailable: 'LLM unavailable',
+  clarification_required: 'Clarification required',
   execution_error: 'Execution error',
   fixture_error: 'Fixture error',
 };
@@ -79,6 +80,7 @@ const STATUS_CLASSES: Record<BenchmarkCaseStatus, string> = {
   withheld: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
   invalid_sql: 'bg-orange-500/15 text-orange-400 border-orange-500/25',
   llm_unavailable: 'bg-sky-500/15 text-sky-400 border-sky-500/25',
+  clarification_required: 'bg-violet-500/15 text-violet-400 border-violet-500/25',
   execution_error: 'bg-red-500/15 text-red-400 border-red-500/25',
   fixture_error: 'bg-fuchsia-500/15 text-fuchsia-400 border-fuchsia-500/25',
 };

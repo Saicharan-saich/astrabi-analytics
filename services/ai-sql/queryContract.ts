@@ -289,7 +289,15 @@ function conceptVariants(token: string): Set<string> {
         mobile: ['phone', 'contact', 'telephone', 'cell'],
         cell: ['phone', 'contact', 'telephone', 'mobile'],
     };
-    for (const value of pairs[base] || []) variants.add(value);
+    // Do not read synonym entries through Object.prototype. Schema concepts are
+    // user/data supplied and may legitimately be named `constructor`,
+    // `toString`, or another inherited property. A normal property lookup would
+    // return the inherited function and attempting to iterate it crashes the
+    // pipeline before an LLM request is made.
+    const related = Object.prototype.hasOwnProperty.call(pairs, base)
+        ? pairs[base]
+        : [];
+    for (const value of related) variants.add(value);
     return variants;
 }
 

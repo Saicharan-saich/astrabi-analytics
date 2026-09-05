@@ -9,6 +9,7 @@ import {
   summarizeBenchmarkResults,
   type BenchmarkRunnerDependencies,
 } from '../services/benchmark';
+import { AISQLPipelineError } from '../services/ai-sql/pipelineError';
 
 const firstCase = BENCHMARK_SUITES[0].cases[0];
 
@@ -422,6 +423,25 @@ describe('benchmark runner', () => {
     expect(result.status).toBe('execution_error');
     expect(result.failureReason).toContain('LLM responded');
     expect(result.engine).toBe('contract-rejected');
+  });
+
+  it('records a deliberate model clarification separately from execution errors', async () => {
+    const result = await executeBenchmarkCase(firstCase, dependencies({
+      runPipeline: async () => {
+        throw new AISQLPipelineError('clarification_required', 'Two relationship paths are equally plausible.');
+      },
+    }));
+
+    expect(result.status).toBe('clarification_required');
+    expect(result.failureReason).toContain('equally plausible');
+  });
+
+  it('classifies an expired model session as retryable provider unavailability', async () => {
+    const result = await executeBenchmarkCase(firstCase, dependencies({
+      runPipeline: async () => { throw new Error('Authentication required: session expired.'); },
+    }));
+
+    expect(result.status).toBe('llm_unavailable');
   });
 
   it('times out a stalled local engine and pauses the run at the retryable case', async () => {

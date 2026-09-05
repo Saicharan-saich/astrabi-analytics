@@ -271,13 +271,12 @@ export function fromSourceSchema(source: {
     tables: { name: string; rows: number; columns: { name: string; isPK: boolean }[] }[];
     joinEdges: { leftTable: string; rightTable: string; leftColumn: string; rightColumn: string; type?: string }[];
 }): { tables: JoinTable[]; links: JoinLink[] } {
-    return {
-        tables: (source.tables || []).map(t => ({
+    const tables = (source.tables || []).map(t => ({
             name: t.name,
             rowCount: t.rows || 0,
             columns: (t.columns || []).map(c => ({ name: c.name, isPK: !!c.isPK })),
-        })),
-        links: (source.joinEdges || []).map(e => {
+        }));
+    const links: JoinLink[] = (source.joinEdges || []).map(e => {
             const left = source.tables.find(table => table.name === e.leftTable)
                 ?.columns.find(column => norm(column.name) === norm(e.leftColumn));
             const right = source.tables.find(table => table.name === e.rightTable)
@@ -298,8 +297,46 @@ export function fromSourceSchema(source: {
                 cardinality,
                 confidence: e.type === 'fk' ? 1 : 0.7,
             };
-        }),
-    };
+        });
+
+    // Connector metadata can be incomplete even when it contains some edges.
+    // Supplement it only with a high-confidence metadata relationship: the
+    // exact same non-generic key name appears as a PK on one table and as a
+    // non-PK reference on another. This recovers omitted CustomerID-style FKs
+    // without guessing from business nouns or inspecting/disclosing values.
+    const keyName = (name: string) => name.toLowerCase().replace(/[^a-z0-9]/g, '');
+    const isSpecificKey = (name: string) =>
+        /(?:id|key|code)$/.test(name) && !['id', 'key', 'code'].includes(name);
+    const alreadyLinked = (leftTable: string, rightTable: string, column: string) => links.some(link => {
+        const sameTables = (link.leftTable === leftTable && link.rightTable === rightTable)
+            || (link.leftTable === rightTable && link.rightTable === leftTable);
+        return sameTables && keyName(link.leftColumn) === column && keyName(link.rightColumn) === column;
+    });
+
+    for (let leftIndex = 0; leftIndex < tables.length; leftIndex++) {
+        for (let rightIndex = leftIndex + 1; rightIndex < tables.length; rightIndex++) {
+            const leftTable = tables[leftIndex];
+            const rightTable = tables[rightIndex];
+            for (const leftColumn of leftTable.columns) {
+                const normalized = keyName(leftColumn.name);
+                if (!isSpecificKey(normalized)) continue;
+                const rightColumn = rightTable.columns.find(column => keyName(column.name) === normalized);
+                if (!rightColumn || leftColumn.isPK === rightColumn.isPK) continue;
+                if (alreadyLinked(leftTable.name, rightTable.name, normalized)) continue;
+                links.push({
+                    leftTable: leftTable.name,
+                    leftColumn: leftColumn.name,
+                    rightTable: rightTable.name,
+                    rightColumn: rightColumn.name,
+                    type: 'name_match',
+                    cardinality: leftColumn.isPK ? 'one-to-many' : 'many-to-one',
+                    confidence: 0.9,
+                });
+            }
+        }
+    }
+
+    return { tables, links };
 }
 
 /**

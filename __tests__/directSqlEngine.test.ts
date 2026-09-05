@@ -5,9 +5,30 @@
 import { describe, it, expect } from 'vitest';
 import { serializeSchema, serializeSemanticModelSchema, collectSafeDomains, isSensitiveColumn, looksLikePersonalData } from '../services/ai-sql/schemaSerializer';
 import { validateReadOnlySQL } from '../services/ai-sql/sqlSafety';
-import { extractSQL, normalizeSimpleSQLToContract } from '../services/ai-sql/directSqlEngine';
+import { extractJSONObject, extractSQL, normalizeDynamicQuerySpec, normalizeSimpleSQLToContract } from '../services/ai-sql/directSqlEngine';
 import { buildQueryContract, validateSQLAgainstContract } from '../services/ai-sql/queryContract';
 import { buildValueCatalog, groundSqlLiterals } from '../services/ai-sql/valueGrounding';
+
+describe('query specification trust boundary', () => {
+    it('normalizes harmless planner JSON shape omissions', () => {
+        expect(normalizeDynamicQuerySpec({
+            goal: 'List categories',
+            expectedResult: { columns: [{ field: 'category' }] },
+            assumptions: ['  metadata only  ', 7, null],
+        })).toMatchObject({
+            goal: 'List categories',
+            operations: {},
+            expectedResult: { grain: 'unspecified', columns: ['category'] },
+            assumptions: ['metadata only'],
+        });
+    });
+
+    it('extracts and normalizes a fenced query specification', () => {
+        expect(extractJSONObject(
+            '```json\n{"goal":"Count rows","operations":{},"expectedResult":{"grain":"scalar","columns":["count"]},"assumptions":[]}\n```',
+        )?.expectedResult).toEqual({ grain: 'scalar', columns: ['count'], explanation: undefined });
+    });
+});
 
 describe('serializeSchema — metadata only, never rows', () => {
     const tables = [

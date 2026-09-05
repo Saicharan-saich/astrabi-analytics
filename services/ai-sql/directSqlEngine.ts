@@ -147,11 +147,41 @@ Treat dataset, database, workbook, club, organization, and domain names as sourc
 Return valid JSON only with: goal, operations, expectedResult, assumptions, clarification.
 If the schema genuinely cannot answer the question (no relevant table or column exists), set clarification instead of inventing a field.`;
 
-function extractJSONObject(content: string): DynamicQuerySpec | null {
+export function normalizeDynamicQuerySpec(value: unknown): DynamicQuerySpec | null {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const source = value as Record<string, unknown>;
+    const operations = source.operations && typeof source.operations === 'object' && !Array.isArray(source.operations)
+        ? source.operations as DynamicQuerySpec['operations']
+        : {};
+    const expected = source.expectedResult && typeof source.expectedResult === 'object' && !Array.isArray(source.expectedResult)
+        ? source.expectedResult as Record<string, unknown>
+        : {};
+    const clarification = typeof source.clarification === 'string' && source.clarification.trim()
+        ? source.clarification.trim()
+        : undefined;
+
+    return {
+        goal: typeof source.goal === 'string' ? source.goal.trim() : '',
+        operations,
+        expectedResult: {
+            grain: typeof expected.grain === 'string' && expected.grain.trim()
+                ? expected.grain.trim()
+                : 'unspecified',
+            columns: normalizeQuerySpecOutputFields(expected.columns),
+            explanation: typeof expected.explanation === 'string' ? expected.explanation.trim() : undefined,
+        },
+        assumptions: Array.isArray(source.assumptions)
+            ? source.assumptions.filter((item): item is string => typeof item === 'string').map(item => item.trim()).filter(Boolean)
+            : [],
+        clarification,
+    };
+}
+
+export function extractJSONObject(content: string): DynamicQuerySpec | null {
     const raw = (content || '').replace(/\`\`\`json|\`\`\`/gi, '').trim();
     const match = raw.match(/\{[\s\S]*\}/);
     if (!match) return null;
-    try { return JSON.parse(match[0]) as DynamicQuerySpec; } catch { return null; }
+    try { return normalizeDynamicQuerySpec(JSON.parse(match[0])); } catch { return null; }
 }
 
 const SUPPORTED_AGGREGATIONS = new Set(['sum', 'avg', 'count', 'count_distinct', 'min', 'max', 'median']);
@@ -495,6 +525,8 @@ export interface DirectSQLResult {
     tokens: number;
     model?: string;
     error?: string;
+    /** Machine-readable reason for a deliberate pre-execution stop. */
+    failureKind?: 'clarification_required' | 'planner_invalid_spec';
     /** True when the SQL failed an explicit question-to-SQL contract and must not fall back to a generic answer. */
     blocked?: boolean;
     /** Final semantic contract produced before SQL generation. */
@@ -880,10 +912,37 @@ export async function generateDirectSQL(
         { role: 'user', content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}${contractContext}${analyticalIRContext}\n\nQuestion: ${question}` },
     ] as any, { temperature: 0, max_tokens: 2200, model: PLANNER_MODEL, requestPurpose });
     const specContent = planner.data.choices?.[0]?.message?.content || '';
-    const draftSpec = extractJSONObject(specContent);
+    let draftSpec = extractJSONObject(specContent);
     const plannerUsage = planner.data.usage || {};
     let tokens = plannerUsage.total_tokens || ((plannerUsage.prompt_tokens || 0) + (plannerUsage.completion_tokens || 0)) || 0;
-    if (!draftSpec) return { sql: '', tokens, model: planner.model, error: 'AI planner returned an invalid query specification', blocked: true };
+    let plannerModelPath = planner.model;
+    if (!draftSpec) {
+        // A truncated or prose-wrapped planner response is a recoverable model
+        // formatting failure, not a database execution error. Give the planner
+        // one bounded, metadata-only repair attempt before stopping.
+        const repaired = await fetchWithFallback([
+            {
+                role: 'system',
+                content: `${SPEC_PROMPT}\n\nRepair the supplied planner response into the required Query Specification. Preserve the analytical meaning, use only the supplied schema, and return one valid JSON object only.`,
+            },
+            {
+                role: 'user',
+                content: `Schema:\n${schemaText}${presentationContext}\n\nQuestion: ${question}\n\nInvalid planner response:\n${specContent}\n\nRepaired JSON:`,
+            },
+        ] as any, { temperature: 0, max_tokens: 2200, model: PLANNER_MODEL, requestPurpose });
+        const repairedUsage = repaired.data.usage || {};
+        tokens += repairedUsage.total_tokens || ((repairedUsage.prompt_tokens || 0) + (repairedUsage.completion_tokens || 0)) || 0;
+        plannerModelPath = `${plannerModelPath} → ${repaired.model}`;
+        draftSpec = extractJSONObject(repaired.data.choices?.[0]?.message?.content || '');
+    }
+    if (!draftSpec) return {
+        sql: '',
+        tokens,
+        model: plannerModelPath,
+        error: 'AI planner returned an invalid query specification after one JSON repair attempt',
+        blocked: true,
+        failureKind: 'planner_invalid_spec',
+    };
     const canonicalIntent = queryContract ? buildCanonicalQueryIntent(queryContract) : undefined;
     // The model-authored specification remains authoritative. Deterministic
     // contracts are supplied in the prompt and validated afterwards; they do
@@ -894,7 +953,10 @@ export async function generateDirectSQL(
     }
     spec.expectedResult.columns = normalizeQuerySpecOutputFields(spec.expectedResult.columns);
     if (spec.clarification) {
-        return { sql: '', tokens, model: planner.model, error: spec.clarification, blocked: true, querySpec: spec, canonicalIntent };
+        return {
+            sql: '', tokens, model: plannerModelPath, error: spec.clarification,
+            blocked: true, failureKind: 'clarification_required', querySpec: spec, canonicalIntent,
+        };
     }
 
     const userContext = `Schema:\n${schemaText}${presentationContext}${contractContext}${analyticalIRContext}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
@@ -907,7 +969,7 @@ export async function generateDirectSQL(
     tokens += draftUsage.total_tokens || ((draftUsage.prompt_tokens || 0) + (draftUsage.completion_tokens || 0)) || 0;
 
     let reviewedSQL = draftSQL;
-    let modelUsedForSQL = `${planner.model} → ${drafted.model}`;
+    let modelUsedForSQL = `${plannerModelPath} → ${drafted.model}`;
     if (engineConfig.llmReviewer) {
         // Sol independently checks every request against the question, schema
         // and structured plan, then returns the final executable SQL.
