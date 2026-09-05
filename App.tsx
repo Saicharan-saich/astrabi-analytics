@@ -1763,6 +1763,16 @@ function App() {
                       onBack={() => setActiveTab(Tab.AI_SQL)}
                       onPin={(title, result) => handlePin({ ...result, insight: title })}
                       onFormatChange={setVisualPreviewFormatting}
+                      onOpenInBuilder={(handoff) => {
+                        setWorkbenchConfig(handoff.config);
+                        setWorkbenchResult(undefined);
+                        setEditingDashboardItemId(null);
+                        updateFormatting(handoff.formatting);
+                        setActiveTab(Tab.BUILDER);
+                        showToast(handoff.fidelity === 'full'
+                          ? 'AI SQL analysis opened as editable Question Builder controls.'
+                          : 'Editable base analysis opened. Review the compatibility note for advanced SQL logic.');
+                      }}
                     />
                   )}
                 </div>

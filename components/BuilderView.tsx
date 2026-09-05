@@ -53,6 +53,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [lastRunConfig, setLastRunConfig] = useState<any>(savedSession?.config || null);
     const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
     const [isBuilderCollapsed, setIsBuilderCollapsed] = useState(false);
+    const lastHandoffIdRef = useRef<string | null>(null);
 
     // Responsive chart libraries measure their parent. Notify them immediately
     // and once more after the layout settles when the Builder column changes.
@@ -143,6 +144,18 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         }
     }, [editingItemId]);
 
+    // AI SQL handoffs are explicit new analyses, not dashboard edits. Remount
+    // the controls from the transferred configuration and run the editable
+    // base query once when the handoff arrives.
+    React.useEffect(() => {
+        const handoffId = initialConfig?._handoffId;
+        if (!handoffId || lastHandoffIdRef.current === handoffId) return;
+        lastHandoffIdRef.current = handoffId;
+        if (initialConfig.chartType) setChartType(initialConfig.chartType);
+        const timer = setTimeout(() => handleRun(initialConfig), 120);
+        return () => clearTimeout(timer);
+    }, [initialConfig?._handoffId]);
+
     // Auto-re-run analysis when dataset refreshes (version changes)
     // This handles live refresh: worker updates dataset.rows → version increments → re-run query
     const prevVersionRef = useRef(dataset.version);
@@ -216,6 +229,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 chartType: chartType,
                 asOfDate: asOfDate,
                 comparison: ('comparison' in config) ? (config.comparison || '') : (result?.config?.comparison || ''),
+                comparisonMode: config.comparisonMode || result?.config?.comparisonMode,
                 comparisonGrain: ('comparisonGrain' in config) ? config.comparisonGrain : (result?.config?.comparisonGrain),
                 comparisonOffset: ('comparisonOffset' in config) ? config.comparisonOffset : (result?.config?.comparisonOffset),
                 ...(config.secondaryMetrics?.length > 0 ? { secondaryMetrics: config.secondaryMetrics, axisMode: config.axisMode || 'auto', secondaryMetricVisuals: config.secondaryMetricVisuals || {}, secondaryMetricAggregations: config.secondaryMetricAggregations || {} } : {}),
@@ -373,8 +387,19 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
             {/* â”€â”€â”€ COLLAPSIBLE BUILDER â”€â”€â”€ */}
             <div className={`qi-builder-panel qi-builder-dock relative bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isAnalyticsExplorer ? 'hidden' : (isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible')}`}>
+                {initialConfig?._source === 'ai-sql' && (
+                    <div className={`mx-3 mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${initialConfig._handoffWarnings?.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                        {initialConfig._handoffWarnings?.length ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                        <div>
+                            <div className="font-extrabold">Opened from AI SQL — the controls below are now editable.</div>
+                            {initialConfig._handoffWarnings?.length > 0 && (
+                                <div className="mt-0.5">{initialConfig._handoffWarnings.join(' ')}</div>
+                            )}
+                        </div>
+                    </div>
+                )}
                 <QuestionBuilder
-                    key={editingItemId || 'default'}
+                    key={editingItemId || initialConfig?._handoffId || 'default'}
                     dataset={dataset}
                     onRun={handleRun}
                     initialMetric={initialConfig?.metric || savedSession?.config?.metric || ''}
@@ -389,6 +414,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     initialSecondaryMetrics={initialConfig?.secondaryMetrics || savedSession?.config?.secondaryMetrics || []}
                     initialSecondaryMetricVisuals={initialConfig?.secondaryMetricVisuals || savedSession?.config?.secondaryMetricVisuals || {}}
                     initialSecondaryMetricAggregations={initialConfig?.secondaryMetricAggregations || savedSession?.config?.secondaryMetricAggregations || {}}
+                    initialSecondaryDimensions={initialConfig?.secondaryDimensions || savedSession?.config?.secondaryDimensions || []}
+                    initialFilters={initialConfig?.filters || savedSession?.config?.filters || {}}
+                    initialMeasureFilters={initialConfig?.measureFilters || savedSession?.config?.measureFilters || []}
+                    initialDateFilters={initialConfig?.dateFilters || savedSession?.config?.dateFilters || []}
                     asOfDate={asOfDate}
                     onDateChange={handleAsOfDateChange}
                     anchorColumn={anchorColumn}

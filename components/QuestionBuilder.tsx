@@ -23,6 +23,10 @@ interface QuestionBuilderProps {
     initialSecondaryMetrics?: string[];
     initialSecondaryMetricVisuals?: Record<string, string>;
     initialSecondaryMetricAggregations?: Record<string, string>;
+    initialSecondaryDimensions?: string[];
+    initialFilters?: Record<string, string[]>;
+    initialMeasureFilters?: Array<{ column: string; operator: string; value: number }>;
+    initialDateFilters?: Array<{ column: string; timeGrain: string; values: string[] }>;
     asOfDate: string;
     onDateChange: (date: string) => void;
     anchorColumn?: string;
@@ -74,6 +78,47 @@ interface DateFilter {
 
 type Filter = DimensionFilter | MeasureFilter | DateFilter;
 
+function hydrateInitialFilters(
+    dimensions: Record<string, string[]> = {},
+    measures: Array<{ column: string; operator: string; value: number }> = [],
+    dates: Array<{ column: string; timeGrain: string; values: string[] }> = [],
+): Filter[] {
+    let id = 1;
+    const restored: Filter[] = [];
+    for (const [column, values] of Object.entries(dimensions)) {
+        if (!column || !values?.length) continue;
+        restored.push({ id: id++, type: 'dimension', column, value: [...values] });
+    }
+    for (const filter of measures) {
+        if (!filter?.column || !Number.isFinite(Number(filter.value))) continue;
+        restored.push({
+            id: id++, type: 'measure', column: filter.column,
+            operator: filter.operator as MeasureFilter['operator'], value: Number(filter.value),
+        });
+    }
+    for (const filter of dates) {
+        if (!filter?.column || !filter.values?.length) continue;
+        const range = String(filter.values[0]).split('__');
+        if (range.length === 2 && range[0] && range[1]) {
+            restored.push({
+                id: id++, type: 'date', column: filter.column, mode: 'range',
+                rangeStart: range[0], rangeEnd: range[1], timeGrain: 'day', values: [...filter.values],
+            });
+        } else {
+            const grain = ['year', 'quarter', 'month', 'day'].includes(filter.timeGrain) ? filter.timeGrain : 'year';
+            restored.push({
+                id: id++, type: 'date', column: filter.column, mode: 'hierarchy',
+                year: grain === 'year' ? [...filter.values] : [],
+                quarter: grain === 'quarter' ? [...filter.values] : [],
+                month: grain === 'month' ? [...filter.values] : [],
+                day: grain === 'day' ? [...filter.values] : [],
+                timeGrain: grain, values: [...filter.values],
+            });
+        }
+    }
+    return restored;
+}
+
 export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     dataset,
     onRun,
@@ -89,6 +134,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     initialSecondaryMetrics = [],
     initialSecondaryMetricVisuals = {},
     initialSecondaryMetricAggregations = {},
+    initialSecondaryDimensions = [],
+    initialFilters = {},
+    initialMeasureFilters = [],
+    initialDateFilters = [],
     asOfDate,
     onDateChange,
     anchorColumn,
@@ -111,8 +160,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const [sort, setSort] = useState<'desc' | 'asc' | 'oldest' | 'newest'>(initialSort as any || 'desc');
     const [limit, setLimit] = useState<number>(initialLimit);
 
-    const [filters, setFilters] = useState<Filter[]>([]);
-    const [nextFilterId, setNextFilterId] = useState(1);
+    const [filters, setFilters] = useState<Filter[]>(() => hydrateInitialFilters(initialFilters, initialMeasureFilters, initialDateFilters));
+    const [nextFilterId, setNextFilterId] = useState(() => hydrateInitialFilters(initialFilters, initialMeasureFilters, initialDateFilters).length + 1);
 
     // Secondary metrics for combo/dual-axis charts
     const [secondaryMetrics, setSecondaryMetrics] = useState<string[]>(initialSecondaryMetrics);
@@ -120,7 +169,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const [secondaryMetricAggregations, setSecondaryMetricAggregations] = useState<Record<string, string>>(initialSecondaryMetricAggregations);
 
     // Secondary dimensions for multi-dimension grouping
-    const [secondaryDimensions, setSecondaryDimensions] = useState<string[]>([]);
+    const [secondaryDimensions, setSecondaryDimensions] = useState<string[]>(initialSecondaryDimensions);
 
     // Comparison state
     const [comparison, setComparison] = useState<string>(initialComparison);
@@ -340,11 +389,26 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         if (initialTimeFilter) setTimeFilter(initialTimeFilter);
         setLimit(initialLimit);
         if (initialSort) setSort(initialSort);
+        setComparison(initialComparison);
+        setComparisonGrain(initialComparisonGrain);
+        setComparisonOffset(initialComparisonOffset);
+        setSecondaryMetrics([...initialSecondaryMetrics]);
+        setSecondaryMetricVisuals({ ...initialSecondaryMetricVisuals });
+        setSecondaryMetricAggregations({ ...initialSecondaryMetricAggregations });
+        setSecondaryDimensions([...initialSecondaryDimensions]);
+        const restoredFilters = hydrateInitialFilters(initialFilters, initialMeasureFilters, initialDateFilters);
+        setFilters(restoredFilters);
+        setNextFilterId(restoredFilters.length + 1);
 
         // Prevent the auto-run effect from firing immediately after this sync
         // because the parent (Workbench) has already run the correct analysis.
         ignoreNextRun.current = true;
-    }, [initialMetric, initialDimension, initialTimeFilter, initialLimit, initialSort]);
+    }, [
+        initialMetric, initialAggregation, initialDimension, initialTimeFilter, initialLimit, initialSort,
+        initialComparison, initialComparisonGrain, initialComparisonOffset,
+        initialSecondaryMetrics, initialSecondaryMetricVisuals, initialSecondaryMetricAggregations,
+        initialSecondaryDimensions, initialFilters, initialMeasureFilters, initialDateFilters,
+    ]);
 
     // Extract columns — filter out AI-hidden junk columns
     const visibleColumns = dataset.columns.filter(c => {

@@ -2096,6 +2096,7 @@ export async function runAISQLPipeline(
 
     const pipelineResult: AISQLPipelineResult = {
         plan,
+        querySpec: directQuerySpec,
         analyticalIR: activeAnalyticalIR,
         analyticalValidation: {
             passed: analyticalIRIssues.every(issue => issue.severity !== 'error')

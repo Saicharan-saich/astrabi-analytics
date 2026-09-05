@@ -505,6 +505,9 @@ export interface AIQueryProvenance {
 export interface AISQLPipelineResult {
     /** The structured analysis plan */
     plan: AnalysisPlan;
+    /** Model-authored analytical specification retained for editable handoff
+     * to the Question Builder and traceable presentation controls. */
+    querySpec?: import('./directSqlEngine').DynamicQuerySpec;
     /** Frozen compositional analytical meaning shared by every downstream engine. */
     analyticalIR?: import('./analyticalIR').AnalyticalIR;
     /** Structural and post-execution invariant evidence for the analytical IR. */

@@ -20,6 +20,8 @@ export { resolveTimeContext, augmentQuestionWithTime } from './timeResolver';
 export { storeUserOverride } from './classificationFeedback';
 export { getClassificationTelemetry } from './arbitrationEngine';
 export { generateTrustVerification } from './trustEngine';
+export { createAISQLBuilderHandoff } from './builderHandoff';
+export type { AISQLBuilderHandoff } from './builderHandoff';
 export {
     buildCanonicalQueryIntent,
     reconcilePlanWithCanonicalIntent,

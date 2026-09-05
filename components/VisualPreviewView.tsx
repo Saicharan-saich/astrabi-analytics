@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ArrowLeft, Pin, Code, Table2, BarChart2, Palette, Activity, Sparkles,
   Copy, Check, X, RefreshCw, Play, Database, Loader2, Microscope,
-  MessageSquare, Send, MousePointerClick, ChevronDown, ListChecks
+  MessageSquare, Send, MousePointerClick, ChevronDown, ListChecks, SlidersHorizontal
 } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { ChartVisualization } from './ChartVisualization';
@@ -10,7 +10,7 @@ import { DimensionResultView } from './DimensionResultView';
 import { FormatPanel } from './FormatPanel';
 import { AIInsightPanel } from './AIInsightPanel';
 import { getCalculationDisplayName, type TableCalculation } from '../utils/tableCalculations';
-import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
+import { createAISQLBuilderHandoff, runAISQLPipeline, AISQLPipelineResult, type AISQLBuilderHandoff } from '../services/ai-sql';
 import { useTheme } from './ThemeProvider';
 import TrustBadge from './TrustBadge';
 import { PipelineReport } from './PipelineReport';
@@ -26,6 +26,7 @@ interface VisualPreviewViewProps {
   onBack: () => void;
   onPin?: (title: string, result: AnalysisResult) => void;
   onFormatChange?: (formatting: FormattingConfig) => void;
+  onOpenInBuilder?: (handoff: AISQLBuilderHandoff) => void;
 }
 
 interface DrillDownResult {
@@ -36,7 +37,7 @@ interface DrillDownResult {
 
 export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   dataset, result: initialResult, pipelineResult: initialPipeline, query,
-  formatting, onBack, onPin, onFormatChange,
+  formatting, onBack, onPin, onFormatChange, onOpenInBuilder,
 }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -134,6 +135,12 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         : sqlEngine === 'llm'
           ? { label: 'LLM', cls: 'bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300' }
           : null;
+
+  const handleOpenInBuilder = useCallback(() => {
+    if (!dataset || !activePipeline || !onOpenInBuilder) return;
+    const handoff = createAISQLBuilderHandoff(dataset, activePipeline, activeQuery, localFormatting);
+    if (handoff) onOpenInBuilder(handoff);
+  }, [dataset, activePipeline, activeQuery, localFormatting, onOpenInBuilder]);
 
   // ── Drill-Down Handler ──
   const handleDrillDown = useCallback(async (dimensionValue: string) => {
@@ -276,6 +283,16 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            {onOpenInBuilder && activePipeline && (
+              <button
+                onClick={handleOpenInBuilder}
+                aria-label="Continue this analysis in Question Builder"
+                className={`flex h-12 items-center gap-2 rounded-xl border px-4 text-sm font-extrabold transition-all ${isDark ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                title="Open editable measures, dimensions, filters and calculations in Question Builder"
+              >
+                <SlidersHorizontal className="h-5 w-5" /> <span className="hidden md:inline">Edit in </span>Builder
+              </button>
+            )}
             {activePipeline?.traceStory && (
               <button
                 onClick={() => { setDetailsSection('trace'); setWorkspaceMode('details'); }}
@@ -362,6 +379,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
             </span>
           )}
           <TrustBadge trust={pipeline?.trust} isDark={isDark} />
+          {onOpenInBuilder && activePipeline && (
+            <button onClick={handleOpenInBuilder} className="flex items-center gap-1.5 text-[12px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 px-3 py-1.5 rounded-lg transition-all border border-emerald-200 dark:border-emerald-500/20">
+              <SlidersHorizontal className="w-3.5 h-3.5" /> Builder
+            </button>
+          )}
           <button onClick={handleRegenerate} disabled={isReloading} className="flex items-center gap-1 text-[12px] font-bold text-cyan-600 dark:text-cyan-300 bg-cyan-50 dark:bg-cyan-500/10 hover:bg-cyan-100 dark:hover:bg-cyan-500/20 px-2.5 py-1.5 rounded-lg transition-all border border-cyan-200 dark:border-cyan-500/20 disabled:opacity-50">
             {isReloading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Regen
           </button>
