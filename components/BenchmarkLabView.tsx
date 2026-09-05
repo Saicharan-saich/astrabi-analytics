@@ -416,7 +416,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
       console.info(`[Benchmark] Finished ${run.scope} run: ${run.metrics.completed}/${run.metrics.total} completed${run.cancelled ? ' (cancelled)' : ''}`);
       setLatestRun(run);
       saveBenchmarkRun(run);
-      setRunHistory(current => [run, ...current.filter(saved => saved.id !== run.id)].slice(0, 20));
+      setRunHistory(current => [run, ...current.filter(saved => saved.id !== run.id)]);
     } catch (error) {
       setRunError(error instanceof Error ? error.message : String(error));
     } finally {
@@ -1003,7 +1003,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                   <div className="w-10 h-10 rounded-xl bg-cyan-500/12 text-cyan-400 flex items-center justify-center"><History className="w-5 h-5" /></div>
                   <div>
                     <h2 className={`text-base font-black ${strong}`}>Benchmark history</h2>
-                    <p className={`mt-1 text-xs ${muted}`}>The 20 most recent reports are stored privately in this browser using IndexedDB.</p>
+                    <p className={`mt-1 text-xs ${muted}`}>Complete reports are archived in the application database and cached privately in this browser for resilience.</p>
                   </div>
                 </div>
                 <span className={`rounded-xl border px-3 py-2 text-xs font-black ${softSurface} ${strong}`}>{BENCHMARK_CORPUS_LABELS[selectedCorpus]} · {corpusHistory.length} saved runs</span>
@@ -1011,7 +1011,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             </div>
 
             {historyLoading ? (
-              <div className={`rounded-2xl border p-10 text-center ${panel}`}><Loader2 className="w-6 h-6 mx-auto animate-spin text-violet-400" /><div className={`mt-3 text-xs ${muted}`}>Loading local benchmark history…</div></div>
+              <div className={`rounded-2xl border p-10 text-center ${panel}`}><Loader2 className="w-6 h-6 mx-auto animate-spin text-violet-400" /><div className={`mt-3 text-xs ${muted}`}>Loading database-backed benchmark history…</div></div>
             ) : corpusHistory.length === 0 ? (
               <div className={`rounded-2xl border p-10 text-center ${panel}`}>
                 <History className={`w-8 h-8 mx-auto ${muted}`} />
@@ -1043,7 +1043,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                           <button onClick={() => { setSelectedHistoryRun(latestRun?.id === run.id ? null : run); setStatusFilter('all'); setSuiteFilter('all'); setExpandedCase(null); setActiveView('results'); }} className="rounded-xl bg-violet-600 px-3 py-2 text-xs font-black text-white hover:brightness-110"><BarChart3 className="w-4 h-4 inline mr-1.5" />View results</button>
                           <button onClick={() => downloadFile(`${run.id}.json`, benchmarkRunToJson(run), 'application/json')} className={`rounded-xl border px-3 py-2 text-xs font-black ${softSurface} ${strong}`}><FileJson className="w-4 h-4 inline mr-1.5" />JSON</button>
                           <button onClick={() => downloadFile(`${run.id}.csv`, benchmarkRunToCsv(run), 'text/csv')} className={`rounded-xl border px-3 py-2 text-xs font-black ${softSurface} ${strong}`}><Download className="w-4 h-4 inline mr-1.5" />CSV</button>
-                          <button onClick={() => void handleDeleteHistoryRun(run)} className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs font-black text-rose-400" title="Delete this local history record"><Trash2 className="w-4 h-4" /></button>
+                          <button onClick={() => void handleDeleteHistoryRun(run)} className="rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs font-black text-rose-400" title="Delete this archived history record"><Trash2 className="w-4 h-4" /></button>
                         </div>
                       </div>
                     </div>

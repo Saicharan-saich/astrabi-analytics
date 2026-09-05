@@ -4,6 +4,7 @@ import {
   loadBenchmarkRun,
   loadBenchmarkRunHistory,
   saveBenchmarkRun,
+  saveBenchmarkRunToHistory,
 } from '../services/benchmark/storage';
 import type { BenchmarkRun } from '../services/benchmark/types';
 
@@ -58,5 +59,28 @@ describe('benchmark history storage fallback', () => {
     saveBenchmarkRun(runFixture());
     clearBenchmarkRun();
     expect(loadBenchmarkRun()).toBeNull();
+  });
+
+  it('loads and saves complete history through the authenticated database API', async () => {
+    const cloudRun = { ...runFixture(), id: 'database-history-run' };
+    values.set('qi_token', 'admin-token');
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return { ok: true, status: 200, json: async () => ({ success: true }) } as Response;
+      }
+      return { ok: true, status: 200, json: async () => ({ runs: [cloudRun] }) } as Response;
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(loadBenchmarkRunHistory()).resolves.toEqual([cloudRun]);
+    await expect(saveBenchmarkRunToHistory(cloudRun)).resolves.toBe(true);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/admin/benchmark-runs'),
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({ Authorization: 'Bearer admin-token' }),
+      }),
+    );
   });
 });

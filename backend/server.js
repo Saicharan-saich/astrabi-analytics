@@ -20,6 +20,11 @@ const {
     validatePort,
 } = require('./security');
 const { parseProviderError } = require('./llmProviderError');
+const {
+    seedBundledBenchmarkHistory,
+    upsertBenchmarkRun,
+    validateBenchmarkRun,
+} = require('./benchmarkHistory');
 
 // JWT_SECRET must come from the environment in production. A hard-coded fallback
 // would be published the moment this repository goes public, and anyone holding it
@@ -139,6 +144,35 @@ async function initAuthDatabase() {
         try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_dashboards_user ON dashboards (user_id)`); } catch {}
         console.log('[Auth] Dashboards table ready');
 
+        // Benchmark evidence must survive browser storage cleanup, origin
+        // changes, and IndexedDB pruning. The complete exported run remains in
+        // JSONB while frequently queried provenance and summary fields are
+        // indexed as ordinary columns.
+        await authPool.query(`
+            CREATE TABLE IF NOT EXISTS benchmark_runs (
+                id TEXT PRIMARY KEY,
+                created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+                schema_version INTEGER NOT NULL,
+                corpus_id TEXT NOT NULL DEFAULT 'legacy-550',
+                privacy_mode TEXT NOT NULL DEFAULT 'strict',
+                scope TEXT NOT NULL,
+                started_at TIMESTAMPTZ NOT NULL,
+                completed_at TIMESTAMPTZ,
+                cancelled BOOLEAN NOT NULL DEFAULT false,
+                app_version TEXT,
+                methodology_label TEXT NOT NULL,
+                metrics JSONB NOT NULL DEFAULT '{}',
+                run_data JSONB NOT NULL,
+                archive_source TEXT NOT NULL DEFAULT 'application',
+                source_sha256 TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+            )
+        `);
+        try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_benchmark_runs_started ON benchmark_runs (started_at DESC)`); } catch {}
+        try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_benchmark_runs_corpus ON benchmark_runs (corpus_id, started_at DESC)`); } catch {}
+        console.log('[Auth] Benchmark history table ready');
+
         // Global app settings (key → JSON value). Used by admin-controlled
         // features that must apply to ALL users, e.g. tab visibility.
         await authPool.query(`
@@ -193,6 +227,19 @@ async function initAuthDatabase() {
             console.log(upsertResult.rowCount > 0
                 ? `[Auth] Seeded admin user: ${adminEmail}`
                 : '[Auth] Admin user already exists — left unchanged.');
+        }
+
+        // Restore the retained August/September research evidence exactly once.
+        // Each archived export carries its original run ID and source checksum.
+        try {
+            const seedResult = await seedBundledBenchmarkHistory(authPool);
+            if (!seedResult.skipped) {
+                console.log(`[Benchmark History] Restored ${seedResult.imported}/${seedResult.archivedRuns} archived run(s)`);
+            } else if (seedResult.reason === 'admin_missing') {
+                console.warn('[Benchmark History] Archive retained but no active admin exists yet; import will retry on the next deployment');
+            }
+        } catch (seedError) {
+            console.error('[Benchmark History] Archived-run import failed:', seedError.message);
         }
 
         const { rows } = await authPool.query('SELECT COUNT(*) as count FROM users');
@@ -2207,6 +2254,64 @@ app.post('/api/ai/profile-dataset', aiProfileLimiter, requireAuthenticatedUser, 
     } catch (error) {
         console.error('[AI Profile] Unexpected error:', error.message);
         res.status(500).json({ error: 'Internal profiling error' });
+    }
+});
+
+// ═══════════════════════════════════════════
+// DATABASE-BACKED BENCHMARK HISTORY
+// ═══════════════════════════════════════════
+
+/** GET /api/admin/benchmark-runs — Complete research evidence, newest first. */
+app.get('/api/admin/benchmark-runs', async (req, res) => {
+    const admin = await extractCurrentAdmin(req);
+    if (!admin) return res.status(403).json({ error: 'Admin access required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    try {
+        const { rows } = await authPool.query(
+            `SELECT run_data
+             FROM benchmark_runs
+             ORDER BY started_at DESC
+             LIMIT 500`,
+        );
+        res.json({ runs: rows.map(row => row.run_data) });
+    } catch (error) {
+        console.error('[Benchmark History] List error:', error.message);
+        res.status(500).json({ error: 'Failed to load benchmark history' });
+    }
+});
+
+/** POST /api/admin/benchmark-runs — Upsert one complete Benchmark Lab export. */
+app.post('/api/admin/benchmark-runs', async (req, res) => {
+    const admin = await extractCurrentAdmin(req);
+    if (!admin) return res.status(403).json({ error: 'Admin access required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    const run = req.body?.run;
+    const validation = validateBenchmarkRun(run);
+    if (!validation.valid) return res.status(400).json({ error: validation.error });
+
+    try {
+        await upsertBenchmarkRun(authPool, admin.userId, run, 'application');
+        res.json({ success: true, id: run.id });
+    } catch (error) {
+        console.error('[Benchmark History] Save error:', error.message);
+        res.status(500).json({ error: 'Failed to save benchmark history' });
+    }
+});
+
+/** DELETE /api/admin/benchmark-runs/:id — Explicitly remove one archived run. */
+app.delete('/api/admin/benchmark-runs/:id', async (req, res) => {
+    const admin = await extractCurrentAdmin(req);
+    if (!admin) return res.status(403).json({ error: 'Admin access required' });
+    if (!authPool) return res.status(503).json({ error: 'Database not available' });
+
+    try {
+        const result = await authPool.query('DELETE FROM benchmark_runs WHERE id = $1', [req.params.id]);
+        res.json({ success: true, deleted: result.rowCount > 0 });
+    } catch (error) {
+        console.error('[Benchmark History] Delete error:', error.message);
+        res.status(500).json({ error: 'Failed to delete benchmark history' });
     }
 });
 

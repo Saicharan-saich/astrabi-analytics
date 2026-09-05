@@ -1,4 +1,10 @@
 import type { BenchmarkRun } from './types';
+import {
+  deleteBenchmarkRunFromCloud,
+  isValidBenchmarkRun,
+  loadBenchmarkRunsFromCloud,
+  saveBenchmarkRunToCloud,
+} from './cloudHistory';
 
 const STORAGE_KEY = 'QuickInsight_ai_sql_benchmark_latest_v1';
 const HISTORY_DB_NAME = 'QuickInsightBenchmarkHistory';
@@ -26,11 +32,6 @@ function sanitizeBigInts<T>(value: T): T {
   return value;
 }
 
-function isValidRun(value: unknown): value is BenchmarkRun {
-  const run = value as BenchmarkRun | null;
-  return run?.schemaVersion === 1 && Array.isArray(run.results);
-}
-
 function openHistoryDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') {
@@ -54,7 +55,7 @@ async function readHistoryRecords(): Promise<BenchmarkRun[]> {
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(HISTORY_STORE, 'readonly');
     const request = transaction.objectStore(HISTORY_STORE).getAll();
-    request.onsuccess = () => resolve((request.result || []).filter(isValidRun));
+    request.onsuccess = () => resolve((request.result || []).filter(isValidBenchmarkRun));
     request.onerror = () => reject(request.error || new Error('Could not read benchmark history'));
     transaction.oncomplete = () => database.close();
   });
@@ -77,6 +78,7 @@ async function pruneHistory(records: BenchmarkRun[]): Promise<void> {
 
 /** Upsert one complete run in the local, browser-only history archive. */
 export async function saveBenchmarkRunToHistory(run: BenchmarkRun): Promise<boolean> {
+  let localSaved = false;
   try {
     const database = await openHistoryDatabase();
     await new Promise<void>((resolve, reject) => {
@@ -86,26 +88,54 @@ export async function saveBenchmarkRunToHistory(run: BenchmarkRun): Promise<bool
       transaction.onerror = () => { database.close(); reject(transaction.error || new Error('Could not save benchmark history')); };
     });
     await pruneHistory(await readHistoryRecords());
-    return true;
+    localSaved = true;
   } catch (error) {
     console.warn('[Benchmark] Could not persist benchmark history:', error);
-    return false;
   }
+  const cloudSaved = await saveBenchmarkRunToCloud(sanitizeBigInts(run));
+  return localSaved || cloudSaved;
 }
 
-/** Load newest first and migrate the legacy latest-run record automatically. */
+function evidenceScore(run: BenchmarkRun): [number, number, number] {
+  const reviewed = run.results.reduce((total, result) => {
+    const evidence = result as typeof result & { humanVerification?: unknown };
+    return total + (result.adjudication || evidence.humanVerification ? 1 : 0);
+  }, 0);
+  return [reviewed, run.results.length, run.completedAt || 0];
+}
+
+function richerRun(left: BenchmarkRun, right: BenchmarkRun): BenchmarkRun {
+  const a = evidenceScore(left);
+  const b = evidenceScore(right);
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) return a[index] > b[index] ? left : right;
+  }
+  return right;
+}
+
+/** Load newest first from PostgreSQL plus the private browser cache. */
 export async function loadBenchmarkRunHistory(): Promise<BenchmarkRun[]> {
   const latest = loadBenchmarkRun();
-  try {
-    if (latest) await saveBenchmarkRunToHistory(latest);
-    return (await readHistoryRecords()).sort((left, right) => right.startedAt - left.startedAt);
-  } catch (error) {
-    console.warn('[Benchmark] Could not load benchmark history:', error);
-    return latest ? [latest] : [];
+  if (latest) await saveBenchmarkRunToHistory(latest);
+
+  const [localRuns, cloudRuns] = await Promise.all([
+    readHistoryRecords().catch(error => {
+      console.warn('[Benchmark] Could not load local benchmark history:', error);
+      return [] as BenchmarkRun[];
+    }),
+    loadBenchmarkRunsFromCloud(),
+  ]);
+
+  const merged = new Map<string, BenchmarkRun>();
+  for (const run of [...localRuns, ...cloudRuns, ...(latest ? [latest] : [])]) {
+    const existing = merged.get(run.id);
+    merged.set(run.id, existing ? richerRun(existing, run) : run);
   }
+  return [...merged.values()].sort((left, right) => right.startedAt - left.startedAt);
 }
 
 export async function deleteBenchmarkRunFromHistory(runId: string): Promise<boolean> {
+  let localDeleted = false;
   try {
     const database = await openHistoryDatabase();
     await new Promise<void>((resolve, reject) => {
@@ -114,11 +144,12 @@ export async function deleteBenchmarkRunFromHistory(runId: string): Promise<bool
       transaction.oncomplete = () => { database.close(); resolve(); };
       transaction.onerror = () => { database.close(); reject(transaction.error || new Error('Could not delete benchmark history')); };
     });
-    return true;
+    localDeleted = true;
   } catch (error) {
     console.warn('[Benchmark] Could not delete benchmark history:', error);
-    return false;
   }
+  const cloudDeleted = await deleteBenchmarkRunFromCloud(runId);
+  return localDeleted || cloudDeleted;
 }
 
 export function saveBenchmarkRun(run: BenchmarkRun): boolean {
@@ -139,7 +170,7 @@ export function loadBenchmarkRun(): BenchmarkRun | null {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as BenchmarkRun;
-    if (!isValidRun(parsed)) return null;
+    if (!isValidBenchmarkRun(parsed)) return null;
     return parsed;
   } catch {
     return null;
