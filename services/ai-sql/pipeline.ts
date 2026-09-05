@@ -28,6 +28,7 @@ import { correctSQL, normalizeFilterOp } from './sqlCorrectionEngine';
 import { validateSQL, validateResult } from './sqlValidator';
 import { AISQLPipelineError, type AISQLPipelineFailureKind } from './pipelineError';
 import { buildTraceStory } from './traceStory';
+import { buildResultNarrative } from './resultNarrative';
 import { executeSQLViaDuckDB } from '../duckdbEngine';
 import { profileResult } from './resultProfiler';
 import { recommendChart } from './chartRecommender';
@@ -2039,7 +2040,16 @@ export async function runAISQLPipeline(
     // ─── Step 10b: Generate Data-Driven Answer ───────────────────
     // Build the explanation from ACTUAL RESULTS, not the plan
     const chartDataForAnswer = reshaped.data.length > 0 ? reshaped.data : rawData;
-    const dataAnswer = generateDataDrivenAnswer(question, plan, chartDataForAnswer, semanticModel);
+    const narrative = buildResultNarrative({
+        question,
+        data: rawData,
+        profile,
+        chart: reshaped.chart,
+        plan,
+        model: semanticModel,
+        sourceRows: dataset.rows,
+    });
+    const dataAnswer = narrative?.summary || generateDataDrivenAnswer(question, plan, chartDataForAnswer, semanticModel);
     // Surface ERROR-level faithfulness issues to the user rather than answering
     // silently — the "never a silent wrong answer" guarantee.
     const _vErrors = _verification.issues.filter(i => i.severity === 'error');
@@ -2107,6 +2117,7 @@ export async function runAISQLPipeline(
         provenance,
         trace: pipelineTrace,
         traceStory,
+        narrative: narrative || undefined,
         // Surface the exact LLM token cost — the planner step plus the direct-SQL
         // step (0 if the deterministic knobs/correction engine answered). Only LLM
         // calls spend tokens; the deterministic steps are free.

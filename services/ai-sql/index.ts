@@ -35,5 +35,5 @@ export type {
     ValidationResult, ValidationCheck,
     FieldClassificationSignals,
     TrustVerification, TrustCheck,
-    PipelineTrace, PipelineStepTrace, TraceStory, TraceStoryStep,
+    PipelineTrace, PipelineStepTrace, TraceStory, TraceStoryStep, ResultNarrative,
 } from './types';

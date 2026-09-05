@@ -441,10 +441,25 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* Chart Tab */}
           {activeTab === 'chart' && (
-            <div className={activeDimensionOnly
-              ? `relative overflow-hidden ${workspaceMode === 'result' ? 'm-3 h-[calc(100%_-_1.5rem)] sm:m-5 sm:h-[calc(100%_-_2.5rem)]' : 'h-full p-4'}`
-              : `relative overflow-hidden border border-slate-200 bg-white shadow-xl ${workspaceMode === 'result' ? 'm-3 h-[calc(100%_-_1.5rem)] rounded-[24px] p-4 sm:m-5 sm:h-[calc(100%_-_2.5rem)] sm:p-5' : 'h-full rounded-2xl p-6'}`
-            } ref={chartContainerRef}>
+            <div className="flex h-full min-h-0 flex-col overflow-hidden">
+              {activePipeline?.narrative && (
+                <section
+                  aria-label="Answer in words"
+                  className={`mx-3 mt-3 shrink-0 rounded-2xl border px-4 py-3 sm:mx-5 sm:mt-4 ${isDark ? 'border-indigo-500/20 bg-indigo-500/[0.07]' : 'border-indigo-100 bg-indigo-50/80'}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
+                    <div className="min-w-0">
+                      <div className={`text-[10px] font-black uppercase tracking-wider ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`}>Answer in words</div>
+                      <p className={`mt-1 text-sm leading-5 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{activePipeline.narrative.summary}</p>
+                    </div>
+                  </div>
+                </section>
+              )}
+              <div className={activeDimensionOnly
+                ? `relative min-h-0 flex-1 overflow-hidden ${workspaceMode === 'result' ? 'mx-3 mb-3 mt-2 sm:mx-5 sm:mb-5' : 'p-4'}`
+                : `relative min-h-0 flex-1 overflow-hidden border border-slate-200 bg-white shadow-xl ${workspaceMode === 'result' ? 'mx-3 mb-3 mt-2 rounded-[24px] p-4 sm:mx-5 sm:mb-5 sm:p-5' : 'm-4 mt-2 rounded-2xl p-6'}`
+              } ref={chartContainerRef}>
               {activeDimensionOnly ? (
                 <DimensionResultView
                   rows={activeTableData}
@@ -493,6 +508,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 </div>
               )}
               {!activeDimensionOnly && (workspaceMode === 'result' || detailsSection === 'workspace') && <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={activeResult.yLabel} chartContext={{ chartType: activeResult.vis, xKey: activeResult.xKey, yKey: activeResult.yKey, comparisonMode: (activeResult.config as any)?.comparison || undefined }} />}
+              </div>
             </div>
           )}
 

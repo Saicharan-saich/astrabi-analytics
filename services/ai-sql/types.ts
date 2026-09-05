@@ -475,6 +475,18 @@ export interface TraceStory {
     steps: TraceStoryStep[];
 }
 
+export interface ResultNarrative {
+    version: 1;
+    /** The narrative is derived from values DuckDB actually returned. Optional
+     * comparison context is calculated locally from the same cleaned dataset. */
+    verifiedFrom: 'executed_result' | 'executed_result_and_local_context';
+    kind: 'kpi' | 'comparison' | 'ranking' | 'trend' | 'breakdown' | 'list' | 'result';
+    /** Short lead-in suitable for a chart-side answer card. */
+    headline: string;
+    /** One concise, non-technical paragraph answering the question in words. */
+    summary: string;
+}
+
 export interface AIQueryProvenance {
     /** Whether a deterministic compiler answered the question or an LLM fallback was needed. */
     strategy: 'deterministic' | 'llm-sql-fallback' | 'llm-plan' | 'hybrid-plan-llm-sql';
@@ -532,6 +544,8 @@ export interface AISQLPipelineResult {
     trace?: PipelineTrace;
     /** Business-readable path from local source rows to the final visual. */
     traceStory?: TraceStory;
+    /** Automatic plain-English answer shown with every visual. */
+    narrative?: ResultNarrative;
     /** How this answer was produced, including any LLM fallback. */
     provenance?: AIQueryProvenance;
     /** Exact LLM token cost for this question. Metadata and user-approved safe
