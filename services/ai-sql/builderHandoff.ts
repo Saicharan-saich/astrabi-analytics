@@ -57,11 +57,19 @@ function projectionFallback(plan: AnalysisPlan, dataset: Dataset): Record<string
     const field = plan.projectionFields?.[0] || plan.dimensions[0]?.field;
     if (!field || !dataset.columns.some(column => column.name.toLowerCase() === field.toLowerCase())) return null;
     const physical = dataset.columns.find(column => column.name.toLowerCase() === field.toLowerCase())!.name;
+
+    // The visual builder needs a numeric Y value. Passing a dimension as both
+    // metric and dimension with NONE aggregation produces a categorical value
+    // on the Y axis (and Chart.js quite correctly renders an empty zero-scale
+    // chart). A dimension-only AI SQL list therefore becomes an editable
+    // frequency view: one bar per returned value and a local row count. This is
+    // a faithful, useful base for slice-and-dice while the original AI SQL
+    // result remains available on the result page.
     return {
         metric: physical,
-        aggregation: 'NONE',
+        aggregation: 'COUNT',
         dimension: physical,
-        sort: plan.sort[0]?.dir || 'asc',
+        sort: 'desc',
         limit: plan.limit || 0,
     };
 }
@@ -85,11 +93,19 @@ export function createAISQLBuilderHandoff(
     };
     const mapped = mapPlanToQBConfig(normalizedPlan, model);
     const fallback = projectionFallback(pipeline.plan, dataset);
-    if (!mapped.fits && !fallback) return null;
-
     const warnings: string[] = [];
-    const source = mapped.fits ? mapped.config : fallback!;
-    if (!mapped.fits) warnings.push(`The base fields were transferred, but the builder cannot directly represent the complete AI SQL operation: ${mapped.reason}`);
+    let source: Record<string, any>;
+    if (mapped.fits) {
+        source = mapped.config;
+    } else {
+        if (!fallback) return null;
+        source = fallback;
+        const noFitReason = 'reason' in mapped ? mapped.reason : 'the analytical shape has no direct builder control';
+        warnings.push(`The base fields were transferred, but the builder cannot directly represent the complete AI SQL operation: ${noFitReason}`);
+        if (pipeline.plan.metrics.length === 0) {
+            warnings.push('This dimension-only result is shown as a row-count distribution so it has a valid editable visual; the original AI SQL list is unchanged.');
+        }
+    }
 
     // Only controls that the current Question Builder visibly exposes are
     // carried forward. Never hide an active predicate inside an editable view.

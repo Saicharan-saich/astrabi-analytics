@@ -64,10 +64,10 @@ interface DateFilter {
     column: string;
     mode: 'hierarchy' | 'range';
     // Hierarchy mode selections
-    year?: string;
-    quarter?: string;
-    month?: string;
-    day?: string;
+    year?: string | string[];
+    quarter?: string | string[];
+    month?: string | string[];
+    day?: string | string[];
     // Range mode selections
     rangeStart?: string;
     rangeEnd?: string;
@@ -159,6 +159,11 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const [timeFilter, setTimeFilter] = useState(initialTimeFilter);
     const [sort, setSort] = useState<'desc' | 'asc' | 'oldest' | 'newest'>(initialSort as any || 'desc');
     const [limit, setLimit] = useState<number>(initialLimit);
+    // Keep an editable text draft so users can clear/replace a custom limit.
+    // Binding the input directly to `limit` and coercing an empty value to 1
+    // makes backspace immediately snap to 1, which feels like the control is
+    // refusing to change.
+    const [customLimitDraft, setCustomLimitDraft] = useState<string>(String(initialLimit > 0 ? initialLimit : 15));
 
     const [filters, setFilters] = useState<Filter[]>(() => hydrateInitialFilters(initialFilters, initialMeasureFilters, initialDateFilters));
     const [nextFilterId, setNextFilterId] = useState(() => hydrateInitialFilters(initialFilters, initialMeasureFilters, initialDateFilters).length + 1);
@@ -388,6 +393,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         }
         if (initialTimeFilter) setTimeFilter(initialTimeFilter);
         setLimit(initialLimit);
+        setCustomLimitDraft(String(initialLimit > 0 ? initialLimit : 15));
         if (initialSort) setSort(initialSort);
         setComparison(initialComparison);
         setComparisonGrain(initialComparisonGrain);
@@ -409,6 +415,13 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         initialSecondaryMetrics, initialSecondaryMetricVisuals, initialSecondaryMetricAggregations,
         initialSecondaryDimensions, initialFilters, initialMeasureFilters, initialDateFilters,
     ]);
+
+    const commitCustomLimit = (raw: string) => {
+        const parsed = Number.parseInt(raw, 10);
+        const next = Number.isFinite(parsed) ? Math.max(1, Math.min(10_000, parsed)) : 1;
+        setCustomLimitDraft(String(next));
+        setLimit(next);
+    };
 
     // Extract columns — filter out AI-hidden junk columns
     const visibleColumns = dataset.columns.filter(c => {
@@ -1326,7 +1339,11 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     return 'custom';
                                 })()}
                                 onChange={val => {
-                                    if (val === 'custom') { setLimit(15); setSort('desc'); }
+                                    if (val === 'custom') {
+                                        setCustomLimitDraft('15');
+                                        setLimit(15);
+                                        setSort('desc');
+                                    }
                                     else {
                                         const n = Number(val);
                                         if (n === 0) { setLimit(0); }
@@ -1355,8 +1372,25 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 <input
                                     type="number"
                                     min="1"
-                                    value={limit}
-                                    onChange={e => setLimit(parseInt(e.target.value) || 1)}
+                                    max="10000"
+                                    step="1"
+                                    value={customLimitDraft}
+                                    onChange={e => {
+                                        const raw = e.target.value;
+                                        setCustomLimitDraft(raw);
+                                        if (/^\d+$/.test(raw)) {
+                                            const parsed = Number.parseInt(raw, 10);
+                                            if (parsed >= 1 && parsed <= 10_000) setLimit(parsed);
+                                        }
+                                    }}
+                                    onBlur={e => commitCustomLimit(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') {
+                                            commitCustomLimit(e.currentTarget.value);
+                                            e.currentTarget.blur();
+                                        }
+                                    }}
+                                    aria-label="Custom result limit"
                                     className="w-16 bg-white/5 border border-white/10 rounded-xl px-2 py-1.5 text-center font-semibold text-white focus:outline-none focus:ring-2 focus:ring-white/20 text-sm"
                                 />
                             )}

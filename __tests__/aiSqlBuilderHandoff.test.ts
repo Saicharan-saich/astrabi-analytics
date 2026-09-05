@@ -88,7 +88,7 @@ describe('AI SQL to Question Builder handoff', () => {
         expect(handoff?.formatting.tableCalculations).toEqual(['percent_of_total', 'rank_desc']);
     });
 
-    it('opens dimension-only AI SQL lists as editable raw-value builder analyses', () => {
+    it('opens dimension-only AI SQL lists as editable count distributions with a numeric chart measure', () => {
         const result = pipeline({
             plan: {
                 intent: 'projection', dimensions: [{ field: 'category' }], metrics: [], filters: [], sort: [],
@@ -97,6 +97,9 @@ describe('AI SQL to Question Builder handoff', () => {
             },
         });
         const handoff = createAISQLBuilderHandoff(dataset, result, 'Which categories are present?', formatting);
-        expect(handoff?.config).toMatchObject({ metric: 'category', aggregation: 'NONE', dimension: 'category' });
+        expect(handoff?.config).toMatchObject({
+            metric: 'category', aggregation: 'COUNT', dimension: 'category', sort: 'desc',
+        });
+        expect(handoff?.warnings.join(' ')).toContain('row-count distribution');
     });
 });

@@ -54,6 +54,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
     const [isBuilderCollapsed, setIsBuilderCollapsed] = useState(false);
     const lastHandoffIdRef = useRef<string | null>(null);
+    // Builder controls can fire rapidly (typing a limit, swapping fields,
+    // toggling filters). Only the newest requested analysis is allowed to
+    // update the visible result; a slower older run must never overwrite it.
+    const runSequenceRef = useRef(0);
 
     // Responsive chart libraries measure their parent. Notify them immediately
     // and once more after the layout settles when the Builder column changes.
@@ -208,6 +212,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     };
 
     const handleRun = async (config: any) => {
+        const runSequence = ++runSequenceRef.current;
         try {
             setError(null);
             setIsLoading(true);
@@ -238,6 +243,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             };
 
             const res = await runAnalysis(dataset, query);
+
+            if (runSequence !== runSequenceRef.current) return;
 
             // Apply the recommended chart type from the question/registry
             // Override: when comparison is active with few data points, force bar chart
@@ -270,6 +277,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             setIsLoading(false);
 
         } catch (err: any) {
+            if (runSequence !== runSequenceRef.current) return;
             console.error(err);
             setError(err.message || 'An error occurred during analysis');
             setResult(undefined);
@@ -848,6 +856,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
                                     return (
                                         <ChartVisualization
+                                            key={`result-${result.xKey}-${result.yKey}-${chartType}`}
                                             data={result.data}
                                             config={result.config}
                                             xKey={result.xKey}
