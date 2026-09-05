@@ -125,6 +125,8 @@ When a question compares membership in independently ranked populations (for exa
 Define expectedResult from the words that describe what the user wants returned, before planning filters. Aggregates used only as comparison thresholds belong in filters/subqueries and must not replace those requested result fields. Never invent COUNT, collection aggregates, GROUP BY, or LIMIT from a column name or from a filter's aggregate.
 Explicit grouping language is authoritative: "each X's", "for every X", "per X", and "by X" make X the GROUP BY and expected-result grain. Never substitute a row identifier merely because it is unique. If multiple calculations refer to the same measure, calculate one grouped base measure and derive share, rank, running/cumulative percentage, and related outputs from that base; do not change a measure-share request into row-count share.
 Relative analytical language is answerable without a user-supplied literal threshold. Interpret "high/strong" and "low/weak/negative" from the complete question and schema, explicitly record the chosen reference population and comparison in the Query Specification, and ask only when genuinely competing interpretations would materially change the answer.
+Business language does not need to match a physical column name. For colloquial, operational or executive questions, infer the most defensible analytical meaning from the complete question, field semantics, descriptions, relationships and domain context. Prefer a useful schema-grounded interpretation and record it explicitly in assumptions. Do not set clarification merely because another interpretation is possible or because there is no column whose name repeats the user's phrase.
+When the wording asks "who" or "which", preserve the requested readable entity in expectedResult and express the inferred business condition using relevant fields, aggregates or comparisons. Never replace the requested entity with the condition field.
 ${SIGNED_OUTCOME_SEMANTICS} Record this as an aggregate HAVING condition when the question asks which grouped entities qualify.
 For a filtered population compared with an average, explicitly identify the reference population. Unless the wording says overall/global/all records, phrases such as "patients with X ... higher than average" use the same X-filtered cohort for both the outer population and the AVG reference. Preserve strict boundaries: "higher than" is >; "at least ... higher" is >=.
 Represent negative existence explicitly as an anti-join/set operation (NOT EXISTS, LEFT JOIN ... IS NULL, or EXCEPT). Preserve the requested entity as expectedResult grain and columns; never substitute a related table or a higher-level grouping.
@@ -145,7 +147,20 @@ SEMANTIC RULES:
 Across multiple tables, identify which table owns every output, filter and measure. Follow only declared relationship edges, and plan pre-aggregation whenever joining would otherwise multiply the measure's native grain.
 Treat dataset, database, workbook, club, organization, and domain names as source context, not row predicates. Add a categorical filter only when the wording explicitly binds a value to a field or supplied grounded evidence proves that binding; never infer status/position/type/category merely from the source name.
 Return valid JSON only with: goal, operations, expectedResult, assumptions, clarification.
-If the schema genuinely cannot answer the question (no relevant table or column exists), set clarification instead of inventing a field.`;
+Set clarification only when no executable, schema-grounded interpretation exists. If one reasonable interpretation exists, choose it and disclose the assumption; if several exist, choose the most natural interpretation supported by the metadata and disclose that choice. Never ask merely because the business wording is broad.`;
+
+const CLARIFICATION_ADJUDICATOR_PROMPT = `${SPEC_PROMPT}
+
+You are the final semantic adjudicator. A first planning model requested clarification. Re-read the complete question independently and decide whether the available schema can support any reasonable analytical interpretation.
+
+Your default is to resolve, not defer:
+- Infer business concepts from combinations of schema fields, relationships, calculations and ordinary domain meaning; a same-named physical column is not required.
+- Choose the most natural schema-grounded interpretation and put the decision in assumptions.
+- Preserve the requested entity, metric, grain and time language.
+- Do not invent a physical field or table. Any inferred categorical literal must be a conventional interpretation that can be checked by the application's local value-provenance validator.
+- Return clarification only when producing SQL would require an absent field/table or an unsupported fact, not simply because multiple interpretations are conceivable.
+
+Return one complete replacement Query Specification as JSON only.`;
 
 export function normalizeDynamicQuerySpec(value: unknown): DynamicQuerySpec | null {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -943,6 +958,42 @@ export async function generateDirectSQL(
         blocked: true,
         failureKind: 'planner_invalid_spec',
     };
+
+    // A cautious first planner must not become a deterministic veto. Give a
+    // stronger model one independent, metadata-only adjudication pass. The
+    // adjudicator either owns a concrete schema-grounded interpretation (with
+    // its assumption disclosed) or confirms that the question truly cannot be
+    // answered from the available schema. No local keyword rule selects the
+    // business meaning here.
+    if (draftSpec.clarification) {
+        try {
+            const adjudicated = await fetchWithFallback([
+                { role: 'system', content: CLARIFICATION_ADJUDICATOR_PROMPT },
+                {
+                    role: 'user',
+                    content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}${contractContext}${analyticalIRContext}\n\nQuestion: ${question}\n\nFirst planner specification:\n${JSON.stringify(draftSpec, null, 2)}\n\nReturn the final replacement Query Specification:`,
+                },
+            ] as any, { temperature: 0, max_tokens: 2200, model: SOL_MODEL, requestPurpose });
+            const adjudicatedUsage = adjudicated.data.usage || {};
+            tokens += adjudicatedUsage.total_tokens
+                || ((adjudicatedUsage.prompt_tokens || 0) + (adjudicatedUsage.completion_tokens || 0))
+                || 0;
+            plannerModelPath = `${plannerModelPath} → ${adjudicated.model}`;
+            const adjudicatedSpec = extractJSONObject(adjudicated.data.choices?.[0]?.message?.content || '');
+            if (adjudicatedSpec) {
+                draftSpec = adjudicatedSpec;
+                if (!draftSpec.clarification) {
+                    draftSpec.assumptions = [
+                        ...draftSpec.assumptions,
+                        'An initial ambiguity was resolved by independent model adjudication; the selected interpretation is recorded above.',
+                    ];
+                }
+            }
+        } catch (adjudicationError: any) {
+            console.warn('[AI SQL] Semantic clarification adjudication unavailable:', adjudicationError?.message || adjudicationError);
+        }
+    }
+
     const canonicalIntent = queryContract ? buildCanonicalQueryIntent(queryContract) : undefined;
     // The model-authored specification remains authoritative. Deterministic
     // contracts are supplied in the prompt and validated afterwards; they do

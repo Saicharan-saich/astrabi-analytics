@@ -176,4 +176,71 @@ describe('direct SQL query-contract repair', () => {
     expect(result.querySpec?.operations.rankedSets?.branches).toHaveLength(2);
     expect(mockedFetch).toHaveBeenCalledTimes(3);
   });
+
+  it('uses independent model adjudication instead of treating a cautious planner as a deterministic veto', async () => {
+    const cautiousSpec = {
+      goal: 'Identify patients needing attention today',
+      operations: {},
+      expectedResult: { grain: 'one row per patient', columns: ['Name'] },
+      assumptions: [],
+      clarification: 'The schema does not define what needs attention means.',
+    };
+    const resolvedSpec = {
+      goal: 'List patients admitted today whose test result is not normal',
+      operations: {
+        filters: [
+          { field: 'Date of Admission', operator: '=', value: '2024-05-07' },
+          { field: 'Test Results', operator: '!=', value: 'Normal' },
+        ],
+      },
+      expectedResult: { grain: 'one row per patient', columns: ['Name'] },
+      assumptions: ['Needs attention means a non-normal test result for a patient admitted on the reporting day.'],
+    };
+    const sql = `SELECT "Name" FROM data WHERE CAST("Date of Admission" AS DATE) = DATE '2024-05-07' AND "Test Results" <> 'Normal'`;
+    mockedFetch
+      .mockResolvedValueOnce(response(JSON.stringify(cautiousSpec), 'terra'))
+      .mockResolvedValueOnce(response(JSON.stringify(resolvedSpec), 'sol'))
+      .mockResolvedValueOnce(response(sql, 'luna'))
+      .mockResolvedValueOnce(response(sql, 'sol'));
+
+    const result = await generateDirectSQL(
+      'Who needs attention today?',
+      'Table data: Name VARCHAR; Date of Admission DATE; Test Results VARCHAR; Dataset reporting anchor: 2024-05-07',
+    );
+
+    expect(result.blocked).toBeUndefined();
+    expect(result.error).toBeUndefined();
+    expect(result.sql).toBe(sql);
+    expect(result.querySpec?.clarification).toBeUndefined();
+    expect(result.querySpec?.assumptions).toEqual(expect.arrayContaining([
+      expect.stringContaining('non-normal test result'),
+    ]));
+    expect(result.model).toContain('terra → sol');
+    expect(mockedFetch).toHaveBeenCalledTimes(4);
+  });
+
+  it('still requests clarification when two independent models confirm no schema-grounded interpretation', async () => {
+    const first = {
+      goal: 'Answer an unrelated question', operations: {},
+      expectedResult: { grain: 'unspecified', columns: [] }, assumptions: [],
+      clarification: 'The sales schema contains no weather information.',
+    };
+    const confirmed = {
+      ...first,
+      clarification: 'This cannot be answered because the schema contains no weather field or related table.',
+    };
+    mockedFetch
+      .mockResolvedValueOnce(response(JSON.stringify(first), 'terra'))
+      .mockResolvedValueOnce(response(JSON.stringify(confirmed), 'sol'));
+
+    const result = await generateDirectSQL(
+      'Will it rain tomorrow?',
+      'Table data: order_id VARCHAR; amount DOUBLE',
+    );
+
+    expect(result.blocked).toBe(true);
+    expect(result.failureKind).toBe('clarification_required');
+    expect(result.error).toContain('no weather field');
+    expect(mockedFetch).toHaveBeenCalledTimes(2);
+  });
 });

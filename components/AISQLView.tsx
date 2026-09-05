@@ -275,7 +275,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         } catch (err: any) {
             console.error('[AI SQL Pipeline] Error:', err);
             const message = err.message || 'An unexpected error occurred.';
-            if (/timed out|timeout/i.test(message)) setErrorTitle('Query timed out');
+            if (err?.kind === 'clarification_required') setErrorTitle('Clarification needed');
+            else if (/timed out|timeout/i.test(message)) setErrorTitle('Query timed out');
             else if (/network|failed to fetch|connect|offline/i.test(message)) setErrorTitle('Connection problem');
             else setErrorTitle('Query could not be completed');
             setError(message);
@@ -441,7 +442,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         <div className="flex items-center justify-between px-4 pb-3">
                             <div id="ai-sql-input-help" className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
                                 <img src="/ai-sql-logo.png" alt="" className="w-3.5 h-3.5 rounded-sm" />
-                                <span>Local plan → validate → visualise &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[10px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
+                                <span>AI reasoning → validate → local DuckDB → visualise &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[10px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
                             </div>
                             <button
                                 onClick={handleSubmit}
