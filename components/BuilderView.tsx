@@ -53,6 +53,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [lastRunConfig, setLastRunConfig] = useState<any>(savedSession?.config || null);
     const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
     const [isBuilderCollapsed, setIsBuilderCollapsed] = useState(false);
+    const [showHandoffNotice, setShowHandoffNotice] = useState(true);
     const lastHandoffIdRef = useRef<string | null>(null);
     // Builder controls can fire rapidly (typing a limit, swapping fields,
     // toggling filters). Only the newest requested analysis is allowed to
@@ -155,6 +156,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         const handoffId = initialConfig?._handoffId;
         if (!handoffId || lastHandoffIdRef.current === handoffId) return;
         lastHandoffIdRef.current = handoffId;
+        setShowHandoffNotice(true);
         if (initialConfig.chartType) setChartType(initialConfig.chartType);
         const timer = setTimeout(() => handleRun(initialConfig), 120);
         return () => clearTimeout(timer);
@@ -395,15 +397,24 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
             {/* â”€â”€â”€ COLLAPSIBLE BUILDER â”€â”€â”€ */}
             <div className={`qi-builder-panel qi-builder-dock relative bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isAnalyticsExplorer ? 'hidden' : (isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible')}`}>
-                {initialConfig?._source === 'ai-sql' && (
-                    <div className={`mx-3 mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${initialConfig._handoffWarnings?.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`}>
+                {initialConfig?._source === 'ai-sql' && showHandoffNotice && (
+                    <div className={`mx-3 mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${initialConfig._handoffWarnings?.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">
                         {initialConfig._handoffWarnings?.length ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
-                        <div>
+                        <div className="min-w-0 flex-1">
                             <div className="font-extrabold">Opened from AI SQL — the controls below are now editable.</div>
                             {initialConfig._handoffWarnings?.length > 0 && (
                                 <div className="mt-0.5">{initialConfig._handoffWarnings.join(' ')}</div>
                             )}
                         </div>
+                        <button
+                            type="button"
+                            onClick={() => setShowHandoffNotice(false)}
+                            className="-mr-1 -mt-1 shrink-0 rounded-md p-1.5 text-current opacity-70 transition hover:bg-black/10 hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-current/30"
+                            aria-label="Dismiss AI SQL handoff notice"
+                            title="Dismiss"
+                        >
+                            <X className="h-4 w-4" />
+                        </button>
                     </div>
                 )}
                 <QuestionBuilder
