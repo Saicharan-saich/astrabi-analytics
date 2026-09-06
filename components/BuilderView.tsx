@@ -461,7 +461,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     <div className={`mx-3 mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${effectiveInitialConfig._handoffWarnings?.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">
                         {effectiveInitialConfig._handoffWarnings?.length ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
                         <div className="min-w-0 flex-1">
-                            <div className="font-extrabold">Opened from AI SQL — the controls below are now editable.</div>
+                            <div className="font-extrabold">Opened from AI SQL — GAFS edit mode.</div>
+                            <div className="mt-0.5">Edit grouping, aggregation, filtering, sorting and the result limit. Reset starts a new full Question Builder session.</div>
                             {effectiveInitialConfig._handoffWarnings?.length > 0 && (
                                 <div className="mt-0.5">{effectiveInitialConfig._handoffWarnings.join(' ')}</div>
                             )}
@@ -480,6 +481,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 <QuestionBuilder
                     key={`${editingItemId || effectiveInitialConfig?._handoffId || 'default'}:${builderResetVersion}`}
                     dataset={dataset}
+                    mode={effectiveInitialConfig?._source === 'ai-sql' ? 'gafs' : 'full'}
                     onRun={handleRun}
                     initialMetric={effectiveInitialConfig?.metric || effectiveSavedSession?.config?.metric || ''}
                     initialAggregation={effectiveInitialConfig?.aggregation || effectiveSavedSession?.config?.aggregation || 'SUM'}

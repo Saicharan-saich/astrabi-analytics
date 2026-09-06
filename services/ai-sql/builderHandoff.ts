@@ -1,5 +1,4 @@
 import type { Dataset, FormattingConfig, QueryConfig } from '../../types';
-import type { TableCalculation } from '../../utils/tableCalculations';
 import type { AISQLPipelineResult, AnalysisIntent, AnalysisPlan } from './types';
 import { resolveAISQLSemanticModel } from './semanticLayer';
 import { mapPlanToQBConfig } from './qbMapper';
@@ -35,22 +34,6 @@ function chartType(value: string | undefined): QueryConfig['chartType'] {
         horizontalBar: 'bar', groupedBar: 'bar', stackedBar: 'bar', heatmap: 'table',
     };
     return map[value || ''] || value as QueryConfig['chartType'] || 'bar';
-}
-
-function mapTableCalculation(type: string, direction?: string): TableCalculation | null {
-    const value = String(type || '').toLowerCase().replace(/[\s-]+/g, '_');
-    if (/percent.*total|share.*total/.test(value) && !/cumulative/.test(value)) return 'percent_of_total';
-    if (/running.*total/.test(value)) return 'running_total';
-    if (/moving.*(?:avg|average)/.test(value)) return 'moving_avg';
-    if (/percent.*(?:difference|change)|growth|pct_diff/.test(value)) return 'pct_diff_from_prev';
-    if (/(?:difference|change).*previous|diff_from_prev/.test(value)) return 'diff_from_prev';
-    if (/rank/.test(value)) return String(direction || '').toLowerCase() === 'asc' ? 'rank_asc' : 'rank_desc';
-    if (/percentile/.test(value)) return 'percentile';
-    if (/standard.*deviation|std_dev/.test(value)) return 'std_dev';
-    if (/z_?score/.test(value)) return 'z_score';
-    if (/variance/.test(value)) return 'variance';
-    if (/forecast/.test(value)) return 'linear_forecast';
-    return null;
 }
 
 function projectionFallback(plan: AnalysisPlan, dataset: Dataset): Record<string, any> | null {
@@ -107,21 +90,45 @@ export function createAISQLBuilderHandoff(
         }
     }
 
-    // Only controls that the current Question Builder visibly exposes are
-    // carried forward. Never hide an active predicate inside an editable view.
+    const physicalFields = new Set(dataset.columns.map(column => column.name.toLowerCase()));
+    const editableDimensions = new Set(model.fields
+        .filter(field => field.role === 'dimension' && field.physicalType !== 'date')
+        .map(field => field.name.toLowerCase()));
+    const editableMeasureFilters = new Set(model.fields
+        .filter(field => field.physicalType === 'number')
+        .map(field => field.name.toLowerCase()));
+    const physicalMetric = physicalFields.has(String(source.metric || '').toLowerCase()) ? source.metric : fallback?.metric;
+    const editableDimension = editableDimensions.has(String(source.dimension || '').toLowerCase()) ? source.dimension : '';
+    const editableFilters = Object.fromEntries(Object.entries(source.filters || {})
+        .filter(([field]) => editableDimensions.has(field.toLowerCase())));
+    const editableMeasures = (source.measureFilters || [])
+        .filter((filter: { column?: string }) => editableMeasureFilters.has(String(filter.column || '').toLowerCase()));
+
+    if (source.dimension && !editableDimension) {
+        warnings.push(`The “${source.dimension}” grouping uses a time or generated field, so the GAFS edit starts without that hidden grouping.`);
+    }
+    if (Object.keys(editableFilters).length !== Object.keys(source.filters || {}).length
+        || editableMeasures.length !== (source.measureFilters || []).length) {
+        warnings.push('Filters that require time or non-GAFS controls remain in the original AI SQL result and are not active in this edit.');
+    }
+
+    // AI SQL opens a deliberately narrow editing surface: Group, Aggregate,
+    // Filter and Sort (plus Top/Bottom limit). Hidden analytical operations
+    // must also be absent from the executable config so they cannot silently
+    // influence an edited result.
     const config: Record<string, any> = {
-        metric: source.metric,
+        metric: physicalMetric,
         aggregation: source.aggregation || AGGREGATIONS[pipeline.plan.metrics[0]?.agg || 'sum'] || 'SUM',
-        dimension: source.dimension || '',
-        timeFilter: source.timeFilter || 'all_time',
-        filters: source.filters || {},
-        measureFilters: source.measureFilters || [],
-        dateFilters: source.dateFilters || [],
+        dimension: editableDimension,
+        timeFilter: 'all_time',
+        filters: editableFilters,
+        measureFilters: editableMeasures,
+        dateFilters: [],
         sort: source.sort || pipeline.plan.sort[0]?.dir || 'desc',
         limit: source.limit || pipeline.plan.limit || 0,
-        secondaryMetrics: source.secondaryMetrics || [],
-        secondaryMetricAggregations: source.secondaryMetricAggregations || {},
-        secondaryDimensions: source.secondaryDimensions || [],
+        secondaryMetrics: [],
+        secondaryMetricAggregations: {},
+        secondaryDimensions: [],
         chartType: chartType(pipeline.chart.chartType),
         questionLabel: question,
         questionId: `ai_sql_handoff_${Date.now()}`,
@@ -141,21 +148,17 @@ export function createAISQLBuilderHandoff(
         }
     }
 
-    if (pipeline.plan.comparison) {
-        config.comparison = pipeline.plan.comparison.type;
-        config.comparisonMode = pipeline.plan.comparison.mode;
-        config.comparisonGrain = pipeline.plan.comparison.grain;
-        config.comparisonOffset = pipeline.plan.comparison.offset || 1;
-    }
-
-    const calculations: TableCalculation[] = [];
-    for (const calculation of pipeline.querySpec?.operations?.tableCalculations || []) {
-        const mappedCalculation = mapTableCalculation(calculation.type, calculation.orderBy?.[0]);
-        if (mappedCalculation && !calculations.includes(mappedCalculation)) calculations.push(mappedCalculation);
-        else if (!mappedCalculation) warnings.push(`The “${calculation.type}” calculation remains available in AI SQL but has no equivalent builder control.`);
-    }
-    if (pipeline.plan.intent === 'share_of_total' && !calculations.includes('percent_of_total')) {
-        calculations.push('percent_of_total');
+    const hasNonGafsOperations = Boolean(
+        pipeline.plan.comparison
+        || source.timeFilter && source.timeFilter !== 'all_time'
+        || source.dateFilters?.length
+        || source.secondaryMetrics?.length
+        || source.secondaryDimensions?.length
+        || pipeline.querySpec?.operations?.tableCalculations?.length
+        || formatting.tableCalculations?.some(calculation => calculation !== 'none')
+    );
+    if (hasNonGafsOperations) {
+        warnings.push('This edit view intentionally exposes only grouping, aggregation, filtering, sorting and limit controls. Time intelligence, comparisons, table calculations and additional series remain available in the original AI SQL result but are not active here.');
     }
 
     if (pipeline.querySpec?.operations?.joins?.length) {
@@ -173,7 +176,7 @@ export function createAISQLBuilderHandoff(
 
     return {
         config: config as AISQLBuilderHandoff['config'],
-        formatting: { ...formatting, tableCalculations: calculations.length ? calculations : formatting.tableCalculations },
+        formatting: { ...formatting, tableCalculations: [] },
         fidelity: uniqueWarnings.length ? 'partial' : 'full',
         warnings: uniqueWarnings,
     };

@@ -54,18 +54,28 @@ function pipeline(overrides: Partial<AISQLPipelineResult> = {}): AISQLPipelineRe
 }
 
 describe('AI SQL to Question Builder handoff', () => {
-    it('transfers editable measures, dimensions, filters, sorting and limits', () => {
+    it('creates a fresh handoff identity every time the AI result is opened for editing', () => {
+        const first = createAISQLBuilderHandoff(dataset, pipeline(), 'Sales by category', formatting);
+        const second = createAISQLBuilderHandoff(dataset, pipeline(), 'Sales by category', formatting);
+
+        expect(first?.config._handoffId).toBeTruthy();
+        expect(second?.config._handoffId).toBeTruthy();
+        expect(second?.config._handoffId).not.toBe(first?.config._handoffId);
+    });
+
+    it('transfers only the primary GAFS controls from an AI SQL result', () => {
         const handoff = createAISQLBuilderHandoff(dataset, pipeline(), 'Sales and profit by category in CA', formatting);
         expect(handoff?.config).toMatchObject({
             metric: 'amount', aggregation: 'SUM', dimension: 'category',
             filters: { state: ['CA'] }, limit: 10, sort: 'desc',
-            secondaryMetrics: ['profit'], secondaryMetricAggregations: { profit: 'SUM' },
+            secondaryMetrics: [], secondaryMetricAggregations: {}, secondaryDimensions: [],
             _source: 'ai-sql',
         });
-        expect(handoff?.fidelity).toBe('full');
+        expect(handoff?.fidelity).toBe('partial');
+        expect(handoff?.warnings.join(' ')).toContain('only grouping, aggregation, filtering, sorting and limit');
     });
 
-    it('transfers period comparison and compatible table calculations', () => {
+    it('does not leave hidden period comparison or table calculations active', () => {
         const result = pipeline({
             plan: {
                 ...pipeline().plan,
@@ -82,10 +92,11 @@ describe('AI SQL to Question Builder handoff', () => {
         });
         const handoff = createAISQLBuilderHandoff(dataset, result, 'Compare monthly sales', formatting);
         expect(handoff?.config).toMatchObject({
-            metric: 'amount', dimension: 'month', comparison: 'previous_period',
-            comparisonMode: 'trend', comparisonGrain: 'month', comparisonOffset: 1,
+            metric: 'amount', dimension: '', timeFilter: 'all_time', dateFilters: [],
         });
-        expect(handoff?.formatting.tableCalculations).toEqual(['percent_of_total', 'rank_desc']);
+        expect(handoff?.config.comparison).toBeUndefined();
+        expect(handoff?.formatting.tableCalculations).toEqual([]);
+        expect(handoff?.warnings.join(' ')).toContain('only grouping, aggregation, filtering, sorting and limit');
     });
 
     it('opens dimension-only AI SQL lists as editable count distributions with a numeric chart measure', () => {

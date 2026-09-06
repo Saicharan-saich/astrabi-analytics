@@ -38,6 +38,8 @@ interface QuestionBuilderProps {
     movingAvgWindow?: number;
     onTableCalculationsChange?: (calculations: TableCalculation[]) => void;
     onMovingAvgWindowChange?: (windowSize: number) => void;
+    /** Restrict an AI SQL handoff to the editable GAFS surface. */
+    mode?: 'full' | 'gafs';
 }
 
 type BuilderTab = 'build' | 'time' | 'compare' | 'calculations';
@@ -148,7 +150,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     movingAvgWindow = 3,
     onTableCalculationsChange,
     onMovingAvgWindowChange,
+    mode = 'full',
 }) => {
+    const gafsOnly = mode === 'gafs';
     const [metric, setMetric] = useState<string>(initialMetric);
     const [aggregation, setAggregation] = useState<string>(initialAggregation);
     const [dimension, setDimension] = useState<string>(
@@ -610,7 +614,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                 }
             } else if (f.type === 'measure' && f.column) {
                 measureFilters.push({ column: f.column, operator: f.operator, value: f.value });
-            } else if (f.type === 'date' && f.column) {
+            } else if (!gafsOnly && f.type === 'date' && f.column) {
                 const df = f as DateFilter;
                 if (df.mode === 'range' && df.rangeStart && df.rangeEnd) {
                     // Range mode: pass as day-grain BETWEEN filter
@@ -623,9 +627,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         });
 
         // When both timeGrain and dimension are set, timeGrain is primary and column becomes secondary
-        const allSecondaryDims = [...secondaryDimensions];
-        let activeDimension = timeGrain || dimension;
-        if (timeGrain && dimension && !allSecondaryDims.includes(dimension)) {
+        const allSecondaryDims = gafsOnly ? [] : [...secondaryDimensions];
+        let activeDimension = gafsOnly ? dimension : (timeGrain || dimension);
+        if (!gafsOnly && timeGrain && dimension && !allSecondaryDims.includes(dimension)) {
             allSecondaryDims.push(dimension);
         }
 
@@ -635,7 +639,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         const resolvedFields = resolvePhysicalBuilderFields(dataset, {
             metric,
             dimension: activeDimension,
-            secondaryMetrics,
+            secondaryMetrics: gafsOnly ? [] : secondaryMetrics,
             secondaryDimensions: allSecondaryDims,
         });
         if (!resolvedFields) return;
@@ -644,16 +648,16 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             metric: resolvedFields.metric,
             aggregation,
             dimension: resolvedFields.dimension,
-            timeFilter,
+            timeFilter: gafsOnly ? 'all_time' : timeFilter,
             filters: dimensionFilters,
             measureFilters,
             dateFilters,
             sort,
             limit,
-            comparison: comparison,
-            comparisonGrain: comparison ? comparisonGrain : undefined,
-            comparisonOffset: comparison ? comparisonOffset : undefined,
-            ...(resolvedFields.secondaryMetrics.length > 0 ? { secondaryMetrics: resolvedFields.secondaryMetrics, axisMode: 'auto', secondaryMetricVisuals, secondaryMetricAggregations } : {}),
+            comparison: gafsOnly ? '' : comparison,
+            comparisonGrain: !gafsOnly && comparison ? comparisonGrain : undefined,
+            comparisonOffset: !gafsOnly && comparison ? comparisonOffset : undefined,
+            ...(!gafsOnly && resolvedFields.secondaryMetrics.length > 0 ? { secondaryMetrics: resolvedFields.secondaryMetrics, axisMode: 'auto', secondaryMetricVisuals, secondaryMetricAggregations } : {}),
             ...(resolvedFields.secondaryDimensions.length > 0 ? { secondaryDimensions: resolvedFields.secondaryDimensions } : {})
         };
 
@@ -747,7 +751,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
                 <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-slate-950/35 p-1">
-                    {([
+                    {(gafsOnly ? [
+                        { id: 'build', label: 'GAFS Edit', icon: Blocks },
+                    ] : [
                         { id: 'build', label: 'Build', icon: Blocks },
                         { id: 'time', label: 'Time', icon: Clock },
                         { id: 'compare', label: 'Compare', icon: GitCompareArrows },
@@ -846,7 +852,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     </div>
 
                     {/* Secondary Metric Chips (display only — add button moved to Options row) */}
-                    {secondaryMetrics.map((sm, i) => (
+                    {!gafsOnly && secondaryMetrics.map((sm, i) => (
                         <span key={sm} className="inline-flex items-center gap-1.5 bg-teal-500/20 text-teal-300 font-bold text-xs border border-teal-400/30 rounded-lg px-2.5 py-1.5 shadow-sm hover:scale-[1.02] transition-all relative overflow-visible">
                             <span className="text-teal-500 font-normal text-xs">+</span>
                             <span>{sm.replace(/_/g, ' ')}</span>
@@ -894,7 +900,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     ))}
 
                     {/* Secondary Dimension Chips */}
-                    {secondaryDimensions.map((sd, i) => (
+                    {!gafsOnly && secondaryDimensions.map((sd, i) => (
                         <span key={sd} className="inline-flex items-center gap-1 bg-violet-500/20 text-violet-300 font-bold text-xs border border-violet-400/30 rounded-lg px-2 py-1 shadow-sm hover:scale-[1.02] transition-all">
                             <Layers className="w-3 h-3 text-violet-400" />
                             <span>{sd.replace(/_/g, ' ')}</span>
@@ -1265,7 +1271,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                         <span className="text-base">📊</span> By Metric Value
                                         <span className="text-[10px] text-slate-500 ml-auto">sales &gt; 1000...</span>
                                     </button>
-                                    {dateColumns.length > 0 && (
+                                    {!gafsOnly && dateColumns.length > 0 && (
                                         <button
                                             onClick={() => { addFilter('date'); setShowFilterMenu(false); }}
                                             className="w-full text-left px-3 py-2.5 text-sm font-medium text-slate-300 hover:bg-teal-500/20 hover:text-teal-300 flex items-center gap-2 transition-colors rounded-lg mx-0.5"
@@ -1298,7 +1304,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     }}
                 >
                     {/* METRIC */}
-                    {metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).length > 0 && (
+                    {!gafsOnly && metrics.filter(m => m !== metric && !secondaryMetrics.includes(m)).length > 0 && (
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-purple-400 uppercase tracking-wider font-bold">Metric</span>
                             <QuerySelect
@@ -1318,7 +1324,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     )}
 
                     {/* DIMENSION */}
-                    {dims.filter(d => d !== dimension && !secondaryDimensions.includes(d)).length > 0 && (
+                    {!gafsOnly && dims.filter(d => d !== dimension && !secondaryDimensions.includes(d)).length > 0 && (
                         <div className="flex items-center gap-2">
                             <span className="text-xs text-blue-400 uppercase tracking-wider font-bold">Dimension</span>
                             <QuerySelect
@@ -1437,7 +1443,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             {filters.length > 0 && (
                 <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-white/10">
                     {filters.map(filter => {
-                        if (filter.type === 'date') {
+                        if (!gafsOnly && filter.type === 'date') {
                             return (
                                 <DateFilterItem
                                     key={filter.id}
