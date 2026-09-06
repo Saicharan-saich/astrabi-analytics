@@ -1,6 +1,6 @@
 'use strict';
 
-const privacy = import('../shared/dashboardPrivacy.mjs');
+const privacy = import('./dashboardPrivacy.mjs');
 
 // The ownership predicate is part of the atomic UPSERT: a preflight SELECT
 // alone would leave a race between checking and saving.

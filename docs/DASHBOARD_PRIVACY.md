@@ -7,7 +7,9 @@ SQL, titles and chosen filters are settings and may contain user-supplied values
 They are not advertised as containing no business information.
 
 The browser and API use the same recursive allowlist in
-`shared/dashboardPrivacy.mjs`. Cached results never enter the outgoing retry
+`backend/dashboardPrivacy.mjs` (re-exported by `shared/dashboardPrivacy.mjs`
+for the browser). Keeping the implementation inside `backend/` supports Railway's
+standalone backend deployment root. Cached results never enter the outgoing retry
 queue. The API also applies the allowlist to incoming and historical records.
 On backend startup, existing dashboard payloads are scrubbed without deleting
 the dashboard definitions. This does not remove historical database backups or
