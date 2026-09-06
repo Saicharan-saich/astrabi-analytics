@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { sanitizeDashboard } from '../shared/dashboardPrivacy.mjs';
 import { createPinnedAISQLResult, ensurePinnedAISQLRefreshContext, rebuildPinnedAISQLPresentation } from '../services/ai-sql/pinnedResult';
 import type { AnalysisResult, FormattingConfig } from '../types';
 import type { AISQLPipelineResult, AnalysisPlan, SemanticModel } from '../services/ai-sql/types';
@@ -72,6 +73,22 @@ const semanticModel: SemanticModel = {
 };
 
 describe('AI SQL pinned visual lifecycle', () => {
+    it('rebuilds the same four-measure visual after a cloud round trip containing no answers', () => {
+        const pinned = createPinnedAISQLResult({
+            result: baseResult, pipeline, question: plan.originalQuestion, formatting, chartType: 'groupedBar',
+        });
+        const cloud = sanitizeDashboard({ items: [{ id: 'comparison', result: pinned }] }).items[0].result;
+        expect(cloud.data).toEqual([]);
+        expect(cloud.kpi).toBeUndefined();
+        const rebuilt = rebuildPinnedAISQLPresentation(cloud, [{
+            this_month_admissions: 300, last_month_admissions: 600,
+            admission_count_difference: -300, admission_percentage_change: -50,
+        }], semanticModel);
+        expect(rebuilt.data.map(row => row.Value)).toEqual([300, 600, -300, -50]);
+        expect(rebuilt.vis).toBe('groupedBar');
+        expect(rebuilt.formatting?.dataLabelMode).toBe('all');
+        expect(rebuilt.queryConfig.aiSql).toBe(pipeline.sql);
+    });
     it('pins the visual currently shown with SQL refresh metadata and label settings', () => {
         const pinned = createPinnedAISQLResult({
             result: baseResult,

@@ -15,7 +15,8 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { DashboardItem, FormattingConfig, AnalysisResult } from '../types';
 import { indexedDBStorage } from '../services/indexedDBStorage';
-import { pushDashboardToCloud, pullDashboardFromCloud, deleteCloudDashboard } from '../services/dashboardCloudSync';
+import { pushDashboardToCloud, pullDashboardFromCloud, deleteCloudDashboard, getDashboardSession, isDashboardSessionCurrent } from '../services/dashboardCloudSync';
+import { restoreDashboardItems } from '../services/dashboardRestore';
 
 export interface DashboardFilter {
     column: string;
@@ -81,11 +82,14 @@ interface HistoryEntry {
 /** Debounce cloud push — avoid flooding on rapid changes */
 let pushTimer: ReturnType<typeof setTimeout> | null = null;
 function debouncedCloudPush(state: DashboardState) {
+    const session = getDashboardSession();
+    if (!session) return;
     const itemCount = state.items?.length || 0;
     const hasToken = !!localStorage.getItem('qi_token');
     console.log(`[Dashboard] 📤 Scheduling cloud push (${itemCount} items, token=${hasToken})`);
     if (pushTimer) clearTimeout(pushTimer);
     pushTimer = setTimeout(() => {
+        if (!isDashboardSessionCurrent(session)) return;
         console.log(`[Dashboard] 📤 Executing cloud push NOW...`);
         pushDashboardToCloud({
             items: state.items,
@@ -93,7 +97,7 @@ function debouncedCloudPush(state: DashboardState) {
             filters: state.dashboardFilters as any[],
             formatting: state.formatting as any,
             datasetId: state.selectedDatasetId,
-        }).then(ok => {
+        }, session).then(ok => {
             if (ok) {
                 console.log('[Dashboard] ✅ Cloud push succeeded!');
             } else {
@@ -205,13 +209,16 @@ export const useDashboardStore = create<DashboardState>()(
             cloudSyncStatus: 'idle',
 
             syncFromCloud: async (datasetId?: string) => {
+                const session = getDashboardSession();
+                if (!session) return;
                 set({ cloudSyncStatus: 'syncing' });
                 try {
-                    const cloud = await pullDashboardFromCloud(datasetId);
+                    const cloud = await pullDashboardFromCloud(datasetId, session);
+                    if (!isDashboardSessionCurrent(session)) return;
                     if (cloud && (cloud.items || []).length > 0) {
                         // Cloud has data — use it as source of truth
                         set({
-                            items: cloud.items || [],
+                            items: restoreDashboardItems(cloud.items || [], get().items),
                             dashboardLayout: cloud.layout || get().dashboardLayout,
                             dashboardFilters: (cloud.filters || []) as DashboardFilter[],
                             formatting: { ...get().formatting, ...(cloud.formatting || {}) },

@@ -85,23 +85,23 @@ const PrivacyPolicy: React.FC = () => (
         </SubSection>
         <SubSection title="2.2 Your Uploaded Data (Client-Side Processing)">
             <Paragraph>
-                QuickInsight processes your uploaded CSV and Excel files <strong>entirely within your web browser</strong> using DuckDB-WASM technology. Your datasets are stored in your browser's IndexedDB and are <strong>never transmitted to our servers</strong>. We have no access to, and do not collect, your uploaded business data.
+                QuickInsight reads and queries uploaded CSV and Excel files <strong>within your web browser</strong>. The files and complete datasets are kept in browser storage, not uploaded for dashboard sync. Dashboard settings and optional AI features have the separate sharing boundaries described below.
             </Paragraph>
         </SubSection>
         <SubSection title="2.3 AI Feature Data">
             <Paragraph>When you use AI-powered features (Smart Insight, AI SQL), the following limited data may be sent to our backend proxy, which forwards requests to the OpenRouter LLM API:</Paragraph>
             <BulletList items={[
-                'Chart images (rendered visualisations) for AI analysis',
-                'SQL queries for AI-assisted query generation',
-                'Table schema metadata (column names and types — not row-level data)',
+                'Smart Insight sends a rendered chart image, its title and chart context. Images can contain visible values, labels and personal information.',
+                'AI SQL sends your question, query text and schema information. Values you include in questions or query filters can be present in this text.',
+                'The AI SQL enhanced mode can additionally share selected category values after its privacy consent step. Private mode does not share these category catalogues.',
             ]} />
-            <Paragraph><strong>Important:</strong> Raw row-level data from your datasets is never sent to AI services. Only chart images and structural metadata are transmitted.</Paragraph>
+            <Paragraph>AI SQL privacy settings apply to AI SQL requests; they do not make the separate Smart Insight image feature local-only.</Paragraph>
         </SubSection>
         <SubSection title="2.4 PostgreSQL Connections">
-            <Paragraph>If you connect to an external PostgreSQL database, connection credentials are used to establish a direct connection to your specified database. We do not store your database credentials beyond the active session.</Paragraph>
+            <Paragraph>PostgreSQL and SQL Server connectors operate through our backend. Connection credentials and query results pass through that backend during the active connection. These connectors have a different data path from local CSV and Excel analysis.</Paragraph>
         </SubSection>
         <SubSection title="2.5 Dashboard Sync Data">
-            <Paragraph>Dashboard configurations (layout, chart settings, filters) are synced to our cloud PostgreSQL backend to enable persistence across sessions. This includes dashboard structure only — not the underlying dataset content.</Paragraph>
+            <Paragraph>Dashboard sync stores names, layouts, formatting, source references and saved query settings, including SQL and selected filters. Query text, titles and filters can contain values you chose. Sync excludes chart-result rows, KPI values, growth statistics, generated narratives, validation output and chart images. Complete results stay in browser storage. On another device, reopen the source file or reconnect the data source to rebuild the visuals.</Paragraph>
         </SubSection>
 
         <SectionTitle emoji="🎯" title="3. How We Use Your Data" />
@@ -232,7 +232,7 @@ const CookiesPolicy: React.FC = () => (
                 </tbody>
             </table>
         </div>
-        <Paragraph>This data never leaves your browser and is not transmitted to any server.</Paragraph>
+        <Paragraph>Preferences and local result caches are stored in your browser. Authentication tokens accompany authenticated API requests, and dashboard settings are synced as described in the Privacy Policy.</Paragraph>
 
         <SectionTitle emoji="🗄️" title="4. IndexedDB (Dataset Storage)" />
         <Paragraph>
@@ -241,7 +241,7 @@ const CookiesPolicy: React.FC = () => (
         <BulletList items={[
             'Datasets are stored entirely on your device',
             'Data persists until you manually delete it or clear your browser data',
-            'No dataset content is transmitted to Astrabi Analytics servers',
+            'Dashboard sync does not upload files or chart-result rows; separate AI features may share chart images or selected values as described in the Privacy Policy',
         ]} />
 
         <SectionTitle emoji="🚫" title="5. What We Do NOT Use" />

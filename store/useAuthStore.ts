@@ -253,6 +253,7 @@ export const useAuthStore = create<AuthState>()(
                 saveUserAppData(get().currentUser?.id || '__anonymous__');
                 resetUserData();
                 clearSharedAppData();
+                localStorage.removeItem('qi_token');
                 set({ currentUser: guestUser, isAuthenticated: true });
             },
 

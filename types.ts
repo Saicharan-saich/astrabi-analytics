@@ -378,6 +378,8 @@ export interface QueryConfig {
 }
 
 export interface AnalysisResult {
+  /** Cloud definitions have no cached answers; rebuild from a local dataset. */
+  needsLocalData?: boolean;
   data: any[];
   xKey: string;
   yKey: string;

@@ -2,7 +2,8 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { Dataset, DashboardItem, DashboardDefinition, AnalysisResult, QueryConfig, FormattingConfig, Tab } from '../types';
-import { saveCloudDashboard, fetchCloudDashboards, deleteCloudDashboard as deleteCloudDb } from '../services/dashboardCloudSync';
+import { saveCloudDashboard, fetchCloudDashboards, deleteCloudDashboard as deleteCloudDb, getDashboardSession, isDashboardSessionCurrent, cancelDashboardSync } from '../services/dashboardCloudSync';
+import { restoreDashboardItems } from '../services/dashboardRestore';
 
 // ── Helpers ──────────────────────────────────────────────────────
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -11,9 +12,10 @@ const generateId = () => Math.random().toString(36).substring(2, 15) + Math.rand
 let dashPushTimer: ReturnType<typeof setTimeout> | null = null;
 function debouncedDashboardPush(dashboards: DashboardDefinition[]) {
     if (dashPushTimer) clearTimeout(dashPushTimer);
+    const session = getDashboardSession();
+    if (!session) return;
     dashPushTimer = setTimeout(() => {
-        const token = localStorage.getItem('qi_token');
-        if (!token) { console.warn('[DashSync] No token — skip push'); return; }
+        if (!isDashboardSessionCurrent(session)) return;
         console.log(`[DashSync] 📤 Pushing ${dashboards.length} dashboards to cloud...`);
         // Push each dashboard as a separate cloud record
         Promise.all(dashboards.map(d => saveCloudDashboard({
@@ -24,7 +26,7 @@ function debouncedDashboardPush(dashboards: DashboardDefinition[]) {
             layout: d.layout as any[] | null,
             filters: d.filters || [],
             formatting: {},
-        }))).then(results => {
+        }, session))).then(results => {
             const ok = results.filter(Boolean).length;
             console.log(`[DashSync] ✅ ${ok}/${dashboards.length} dashboards pushed to cloud`);
         }).catch(err => {
@@ -36,8 +38,8 @@ function debouncedDashboardPush(dashboards: DashboardDefinition[]) {
 /** Immediately push dashboards (for logout). Returns a promise. */
 export async function flushDashboardsToCloud(): Promise<boolean> {
     if (dashPushTimer) { clearTimeout(dashPushTimer); dashPushTimer = null; }
-    const token = localStorage.getItem('qi_token');
-    if (!token) return false;
+    const session = getDashboardSession();
+    if (!session) return false;
     const dashboards = useAppStore.getState().dashboards;
     if (!dashboards || dashboards.length === 0) return true;
     console.log(`[DashSync] 📤 Flushing ${dashboards.length} dashboards to cloud (logout)...`);
@@ -50,10 +52,10 @@ export async function flushDashboardsToCloud(): Promise<boolean> {
             layout: d.layout as any[] | null,
             filters: d.filters || [],
             formatting: {},
-        })));
+        }, session)));
         const ok = results.filter(Boolean).length;
         console.log(`[DashSync] ✅ Flushed ${ok}/${dashboards.length} dashboards`);
-        return ok > 0;
+        return ok === dashboards.length;
     } catch (err) {
         console.error('[DashSync] ❌ Flush failed:', err);
         return false;
@@ -62,43 +64,17 @@ export async function flushDashboardsToCloud(): Promise<boolean> {
 
 /** Pull dashboards from cloud and merge into local state. Call on login. */
 export async function syncDashboardsFromCloud(): Promise<void> {
-    const token = localStorage.getItem('qi_token');
-    if (!token) return;
+    const session = getDashboardSession();
+    if (!session) return;
     try {
         console.log('[DashSync] 📥 Pulling dashboards from cloud...');
-        const fetched = await fetchCloudDashboards();
+        const fetched = await fetchCloudDashboards(session);
+        if (!isDashboardSessionCurrent(session)) return;
 
-        // Product reset: dashboards created before this release were legacy/demo
-        // content. Purge them once from both browser storage and the cloud so a
-        // refresh cannot restore them. Dashboards created after this reset use
-        // the normal CRUD flow and are never touched here.
+        // Older releases left a reset flag that could erase valid cloud
+        // dashboards at login. Retain definitions and retire the flag.
         if (useAppStore.getState().resetLegacyDashboards) {
-            const legacyIds = [...new Set([
-                ...fetched.map((dashboard: any) => dashboard.id),
-                ...(useAppStore.getState().deletedDashboardIds || []),
-            ])];
-            useAppStore.setState({
-                dashboards: [],
-                activeDashboardId: null,
-                deletedDashboardIds: legacyIds,
-                // Start true for a new browser too: any dashboards from before this
-            // product reset are removed on the first authenticated cloud sync.
-            resetLegacyDashboards: true,
-                ...syncFromActive([], null),
-            });
-            console.log(`[DashSync] Removing ${legacyIds.length} legacy dashboard(s) from cloud and local storage`);
-            for (const id of legacyIds) {
-                deleteCloudDb(id)
-                    .then(ok => {
-                        if (ok) {
-                            useAppStore.setState(state => ({
-                                deletedDashboardIds: (state.deletedDashboardIds || []).filter(x => x !== id),
-                            }));
-                        }
-                    })
-                    .catch(() => { /* retain the tombstone and retry on the next sync */ });
-            }
-            return;
+            useAppStore.setState({ resetLegacyDashboards: false });
         }
 
         // Drop anything the user deleted locally. Without this the pull hands
@@ -114,8 +90,8 @@ export async function syncDashboardsFromCloud(): Promise<void> {
             if (stillThere.length) {
                 console.log(`[DashSync] Re-deleting ${stillThere.length} dashboard(s) the cloud still holds`);
                 for (const id of stillThere) {
-                    deleteCloudDb(id)
-                        .then(ok => { if (ok) useAppStore.setState(st => ({ deletedDashboardIds: (st.deletedDashboardIds || []).filter(x => x !== id) })); })
+                    deleteCloudDb(id, session)
+                        .then(ok => { if (ok && isDashboardSessionCurrent(session)) useAppStore.setState(st => ({ deletedDashboardIds: (st.deletedDashboardIds || []).filter(x => x !== id) })); })
                         .catch(() => { /* keep the tombstone and try again next sync */ });
                 }
             } else {
@@ -151,17 +127,17 @@ export async function syncDashboardsFromCloud(): Promise<void> {
             const restored: DashboardDefinition[] = cloudDashboards.map(cd => ({
                 id: cd.id,
                 name: cd.name,
-                items: cd.items || [],
+                items: restoreDashboardItems(cd.items || [],
+                    useAppStore.getState().dashboards.find(d => d.id === cd.id)?.items || []),
                 layout: sanitizeLayout(cd.layout, cd.items || []),
                 filters: cd.filters || [],
                 createdAt: cd.created_at ? new Date(cd.created_at).getTime() : Date.now(),
             }));
+            const active = restored.find(d => d.id === useAppStore.getState().activeDashboardId) || restored[0];
             useAppStore.setState({
                 dashboards: restored,
-                activeDashboardId: restored[0].id,
-                items: restored[0].items,
-                dashboardLayout: restored[0].layout,
-                dashboardFilters: restored[0].filters || [],
+                activeDashboardId: active.id,
+                ...syncFromActive(restored, active.id),
             });
             console.log(`[DashSync] ✅ Restored ${restored.length} dashboards (${restored.reduce((s, d) => s + d.items.length, 0)} total items) from cloud`);
         } else {
@@ -442,15 +418,21 @@ export const useAppStore = create<AppStore>()(
                 return id;
             },
 
-            renameDashboard: (id, name) => set((state) => {
+            renameDashboard: (id, name) => {
+                set((state) => {
                 const newDashboards = updateDashboard(state.dashboards, id, d => ({ ...d, name }));
                 return { dashboards: newDashboards };
-            }),
+                });
+                debouncedDashboardPush(get().dashboards);
+            },
 
-            setDashboardMeta: (id, meta) => set((state) => {
+            setDashboardMeta: (id, meta) => {
+                set((state) => {
                 const newDashboards = updateDashboard(state.dashboards, id, d => ({ ...d, ...meta }));
                 return { dashboards: newDashboards };
-            }),
+                });
+                debouncedDashboardPush(get().dashboards);
+            },
 
             // Collapse duplicate auto-built "— Overview" dashboards, keeping the
             // newest of each name group. Only touches auto-generated Overviews so a
@@ -488,6 +470,7 @@ export const useAppStore = create<AppStore>()(
             },
 
             deleteDashboard: (id) => {
+                const session = getDashboardSession();
                 // Deleting used to be local only, so the cloud copy survived and
                 // the next login pulled it straight back. Record a tombstone
                 // first — that way the deletion sticks even if the network call
@@ -504,9 +487,10 @@ export const useAppStore = create<AppStore>()(
                         ...syncFromActive(remaining, newActiveId),
                     };
                 });
-                deleteCloudDb(id)
+                debouncedDashboardPush(get().dashboards);
+                deleteCloudDb(id, session)
                     .then(ok => {
-                        if (ok) {
+                        if (ok && isDashboardSessionCurrent(session)) {
                             // Confirmed gone server-side — the tombstone has done its job.
                             set((state) => ({
                                 deletedDashboardIds: (state.deletedDashboardIds || []).filter(x => x !== id),
@@ -537,6 +521,7 @@ export const useAppStore = create<AppStore>()(
                         ...syncFromActive(newDashboards, newId),
                     };
                 });
+                debouncedDashboardPush(get().dashboards);
                 return newId;
             },
 
@@ -574,7 +559,8 @@ export const useAppStore = create<AppStore>()(
                 debouncedDashboardPush(get().dashboards);
             },
 
-            updateItemInDashboard: (dashboardId, item) => set((state) => {
+            updateItemInDashboard: (dashboardId, item) => {
+                set((state) => {
                 const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
                     ...d,
                     items: d.items.map(i => i.id === item.id ? item : i),
@@ -583,9 +569,12 @@ export const useAppStore = create<AppStore>()(
                     dashboards: newDashboards,
                     ...syncFromActive(newDashboards, state.activeDashboardId),
                 };
-            }),
+                });
+                debouncedDashboardPush(get().dashboards);
+            },
 
-            setDashboardLayout: (dashboardId, layout) => set((state) => {
+            setDashboardLayout: (dashboardId, layout) => {
+                set((state) => {
                 const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
                     ...d,
                     layout,
@@ -594,9 +583,12 @@ export const useAppStore = create<AppStore>()(
                     dashboards: newDashboards,
                     ...syncFromActive(newDashboards, state.activeDashboardId),
                 };
-            }),
+                });
+                debouncedDashboardPush(get().dashboards);
+            },
 
-            setDashboardFilters: (dashboardId, filters) => set((state) => {
+            setDashboardFilters: (dashboardId, filters) => {
+                set((state) => {
                 const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
                     ...d,
                     filters,
@@ -605,7 +597,9 @@ export const useAppStore = create<AppStore>()(
                     dashboards: newDashboards,
                     ...syncFromActive(newDashboards, state.activeDashboardId),
                 };
-            }),
+                });
+                debouncedDashboardPush(get().dashboards);
+            },
 
             // ── Backward-Compat Convenience (operates on active dashboard) ──
             addItem: (item) => {
@@ -642,6 +636,7 @@ export const useAppStore = create<AppStore>()(
                         items,
                     });
                 }
+                debouncedDashboardPush(get().dashboards);
             },
 
             clearAllItems: () => {
@@ -654,6 +649,7 @@ export const useAppStore = create<AppStore>()(
                         items: [],
                     });
                 }
+                debouncedDashboardPush(get().dashboards);
             },
 
             setDashboardLayout_legacy: (layout) => {
@@ -711,18 +707,11 @@ export const useAppStore = create<AppStore>()(
             }),
             // ── Migration: v3 (single dashboard) → v4 (multi-dashboard) ──
             migrate: (persisted: any, version: number) => {
-                // v5 is intentionally a clean start for dashboards. The previous
-                // versions may contain seeded/demo dashboards in local storage;
-                // mark them for one-time cloud removal during the first sync.
+                // Preserve dashboard definitions during upgrades. Legacy reset
+                // flags must not delete the user's saved work at cloud sync.
                 if (persisted && version < 5) {
-                    persisted.dashboards = [];
-                    persisted.activeDashboardId = null;
-                    persisted.items = [];
-                    persisted.dashboardLayout = null;
-                    persisted.dashboardFilters = [];
                     persisted.deletedDashboardIds = persisted.deletedDashboardIds || [];
-                    persisted.resetLegacyDashboards = true;
-                    console.log('[Store] Dashboard reset v5: legacy dashboards scheduled for removal.');
+                    persisted.resetLegacyDashboards = false;
                 }
 
                 if (persisted && !persisted.dashboards) {
@@ -802,6 +791,8 @@ export const useAppStore = create<AppStore>()(
 
 /** Reset all user-specific data in the app store. Call on login/logout. */
 export function resetUserData(): void {
+    if (dashPushTimer) { clearTimeout(dashPushTimer); dashPushTimer = null; }
+    cancelDashboardSync();
     useAppStore.setState({
         dataset: null,
         datasets: [],
@@ -815,6 +806,8 @@ export function resetUserData(): void {
         config: undefined,
         result: undefined,
         selectedDatasetId: null,
+        deletedDashboardIds: [],
+        resetLegacyDashboards: false,
         activeTab: 'upload' as any,
     });
 }

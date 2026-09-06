@@ -1,5 +1,7 @@
 require('dotenv').config();
 const express = require('express');
+const { saveDashboard, sanitizeStoredDashboards, scrubStoredDashboardResults } = require('./dashboardPersistence');
+let dashboardStorageReady = false;
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
@@ -143,6 +145,8 @@ async function initAuthDatabase() {
         `);
         try { await authPool.query(`CREATE INDEX IF NOT EXISTS idx_dashboards_user ON dashboards (user_id)`); } catch {}
         console.log('[Auth] Dashboards table ready');
+        await scrubStoredDashboardResults(authPool);
+        dashboardStorageReady = true;
 
         // Benchmark evidence must survive browser storage cleanup, origin
         // changes, and IndexedDB pruning. The complete exported run remains in
@@ -2319,6 +2323,11 @@ app.delete('/api/admin/benchmark-runs/:id', async (req, res) => {
 // DASHBOARD CLOUD PERSISTENCE
 // ═══════════════════════════════════════════
 
+app.use('/api/dashboards', (_req, res, next) => {
+    if (!dashboardStorageReady) return res.status(503).json({ error: 'Dashboard storage is initializing' });
+    next();
+});
+
 /** GET /api/dashboards — List all dashboards for the authenticated user */
 app.get('/api/dashboards', requireAuthenticatedUser, async (req, res) => {
     const user = req.authUser;
@@ -2329,7 +2338,7 @@ app.get('/api/dashboards', requireAuthenticatedUser, async (req, res) => {
             'SELECT id, name, dataset_id, items, layout, filters, formatting, created_at, updated_at FROM dashboards WHERE user_id = $1 ORDER BY updated_at DESC',
             [user.userId]
         );
-        res.json({ dashboards: rows });
+        res.json({ dashboards: await sanitizeStoredDashboards(rows) });
     } catch (err) {
         console.error('[Dashboards] List error:', err.message);
         res.status(500).json({ error: 'Failed to load dashboards' });
@@ -2347,7 +2356,7 @@ app.get('/api/dashboards/:id', requireAuthenticatedUser, async (req, res) => {
             [req.params.id, user.userId]
         );
         if (rows.length === 0) return res.status(404).json({ error: 'Dashboard not found' });
-        res.json(rows[0]);
+        res.json((await sanitizeStoredDashboards(rows))[0]);
     } catch (err) {
         console.error('[Dashboards] Get error:', err.message);
         res.status(500).json({ error: 'Failed to load dashboard' });
@@ -2359,37 +2368,12 @@ app.post('/api/dashboards', requireAuthenticatedUser, async (req, res) => {
     const user = req.authUser;
     if (!authPool) return res.status(503).json({ error: 'Database not available' });
 
-    const { id, name, dataset_id, items, layout, filters, formatting } = req.body;
-    if (!id) return res.status(400).json({ error: 'Dashboard ID is required' });
-
     try {
-        await authPool.query(
-            `INSERT INTO dashboards (id, user_id, name, dataset_id, items, layout, filters, formatting, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
-             ON CONFLICT (id) DO UPDATE SET
-                name = EXCLUDED.name,
-                dataset_id = EXCLUDED.dataset_id,
-                items = EXCLUDED.items,
-                layout = EXCLUDED.layout,
-                filters = EXCLUDED.filters,
-                formatting = EXCLUDED.formatting,
-                updated_at = NOW()`,
-            [
-                id,
-                user.userId,
-                name || 'My Dashboard',
-                dataset_id || null,
-                JSON.stringify(items || []),
-                JSON.stringify(layout || null),
-                JSON.stringify(filters || []),
-                JSON.stringify(formatting || {})
-            ]
-        );
-        console.log(`[Dashboards] Saved dashboard "${name || id}" for user ${user.email}`);
-        res.json({ success: true, id });
+        const result = await saveDashboard(authPool, user.userId, req.body);
+        res.status(result.status).json(result.body);
     } catch (err) {
         console.error('[Dashboards] Save error:', err.message);
-        res.status(500).json({ error: 'Failed to save dashboard', detail: err.message });
+        res.status(500).json({ error: 'Failed to save dashboard' });
     }
 });
 

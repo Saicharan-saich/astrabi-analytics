@@ -343,54 +343,76 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     return rawData.length > maxRows ? rawData.slice(0, maxRows) : rawData;
   }, [dashboardFilters, dataset]);
 
-  // Fix #8: Re-evaluate a dashboard card by re-running its stored query config
-  const handleRefreshCard = useCallback(async (item: DashboardItem) => {
-    if (!dataset || !item.result?.queryConfig) return;
+  // Cards restored from cloud contain definitions only. Rebuild against their
+  // original local dataset, or an explicitly selected replacement.
+  const restoreAttempts = useRef(new Set<string>());
+  const [restoreErrors, setRestoreErrors] = useState<Record<string, string>>({});
+  const handleRefreshCard = useCallback(async (item: DashboardItem, replacement?: Dataset) => {
+    const source = replacement || useAppStore.getState().datasets.find(d => d.id === item.datasetId)
+      || ((!item.datasetId || item.datasetId === dataset?.id) ? dataset : undefined);
+    if (!source) return;
+    const dashboardId = activeDashboardId;
     setRefreshingCards(prev => new Set(prev).add(item.id));
+    setRestoreErrors(prev => ({ ...prev, [item.id]: '' }));
     try {
-      if (item.result.aiSqlRefresh || item.result.queryConfig?.aiSql) {
-        const { refreshPinnedAISQLResult } = await import('../services/ai-sql/pinnedResult');
-        const refreshed = await refreshPinnedAISQLResult(dataset, item.result);
-        updateItem({ ...item, result: refreshed, pinnedAt: Date.now(), datasetVersion: dataset.version });
-        return;
+      const { rebuildDashboardItem } = await import('../services/dashboardRestore');
+      const refreshed = await rebuildDashboardItem(item, source);
+      const current = useAppStore.getState();
+      // A logout, edit or dashboard switch invalidates this pending result.
+      if (current.activeDashboardId === dashboardId && current.items.find(i => i.id === item.id) === item) {
+        updateItem(refreshed);
       }
-      // Dynamically import the analysis engine to avoid circular deps
-      const { runAnalysis } = await import('../services/analysisEngine');
-      const config = item.result.queryConfig;
-      const freshResult = await runAnalysis(dataset, {
-        ...config,
-        asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || '',
-      });
-      updateItem({
-        ...item,
-        result: {
-          ...freshResult,
-          vis: item.result.vis || freshResult.vis,
-          formatting: item.result.formatting,
-          queryConfig: config,
-        },
-        pinnedAt: Date.now(),
-        datasetVersion: dataset.version,
-      });
     } catch (err) {
-      console.warn('[Dashboard] Refresh failed for card:', item.id, err);
+      setRestoreErrors(prev => ({ ...prev, [item.id]: err instanceof Error ? err.message : 'Could not rebuild this visual.' }));
     } finally {
       setRefreshingCards(prev => { const next = new Set(prev); next.delete(item.id); return next; });
     }
-  }, [dataset, updateItem]);
+  }, [dataset, activeDashboardId, updateItem]);
 
-  // ── Auto-refresh ALL dashboard cards when dataset.version changes ──
-  const prevDashVersionRef = useRef(dataset?.version);
+  const availableDatasets = useAppStore(state => state.datasets);
+  useEffect(() => { restoreAttempts.current.clear(); }, [activeDashboardId]);
   useEffect(() => {
-    if (!dataset || dataset.version === prevDashVersionRef.current) return;
-    prevDashVersionRef.current = dataset.version;
-    console.log(`[Dashboard] Dataset v${dataset.version} — refreshing all cards`);
+    for (const item of items) {
+      const source = availableDatasets.find(d => d.id === item.datasetId)
+        || (item.datasetId === dataset?.id ? dataset : undefined);
+      if (!source || !item.result.needsLocalData) continue;
+      const key = `${activeDashboardId}:${item.id}:${source.id}:${source.version}`;
+      if (restoreAttempts.current.has(key)) continue;
+      restoreAttempts.current.add(key);
+      void handleRefreshCard(item, source);
+    }
+  }, [items, availableDatasets, dataset, activeDashboardId, handleRefreshCard]);
+
+  const prevDashVersionRef = useRef(`${dataset?.id}:${dataset?.version}`);
+  useEffect(() => {
+    const version = `${dataset?.id}:${dataset?.version}`;
+    if (!dataset || version === prevDashVersionRef.current) return;
+    prevDashVersionRef.current = version;
     items.forEach(item => {
-      if (item.datasetId === dataset.id && item.result?.queryConfig) {
-        handleRefreshCard(item);
-      }
+      if (item.datasetId === dataset.id && !item.result.needsLocalData
+          && (item.result.queryConfig || item.result.aiSqlRefresh)) void handleRefreshCard(item);
     });
-  }, [dataset?.version]);
+  }, [dataset?.id, dataset?.version]);
+
+  const missingDataView = (item: DashboardItem) => (
+    <div className="h-full flex flex-col items-center justify-center gap-3 p-5 text-center text-slate-600">
+      <Database className="w-7 h-7 text-indigo-500" />
+      <p className="text-sm font-semibold">
+        {refreshingCards.has(item.id) ? 'Rebuilding your visual locally…' : 'Open the source data to display this visual'}
+      </p>
+      <p className="text-xs max-w-sm">
+        Your layout and settings are saved. Chart results stay on your device.
+        Reopen {item.datasetName || 'the original dataset'} or reconnect its source.
+      </p>
+      {restoreErrors[item.id] && <p role="alert" className="text-xs text-amber-700">{restoreErrors[item.id]}</p>}
+      {dataset && (
+        <button onClick={() => void handleRefreshCard(item, dataset)} disabled={refreshingCards.has(item.id)}
+          className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white disabled:opacity-50">
+          Use current dataset: {dataset.name}
+        </button>
+      )}
+    </div>
+  );
 
   // Measure container width for ResponsiveGridLayout
   const containerRef = useRef<HTMLDivElement>(null);
@@ -594,7 +616,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               </h3>
             </div>
             <div className="h-[calc(100%-52px)]">
-              <ChartVisualization
+              {item.result.needsLocalData ? missingDataView(item) : <ChartVisualization
                 config={item.result.config}
                 data={getFilteredData(item)}
                 xKey={item.result.xKey}
@@ -604,7 +626,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                 onChartTypeChange={() => { }}
                 formatting={item.result.formatting || formatting}
                 hideControls={true}
-              />
+              />}
             </div>
           </div>
         </div>
@@ -1445,7 +1467,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                         <Edit className="w-3.5 h-3.5" />
                       </button>
                       {/* Fix #8: Refresh card with current dataset */}
-                      {dataset && item.result?.queryConfig && (
+                      {dataset && (!item.datasetId || item.datasetId === dataset.id) && item.result?.queryConfig && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleRefreshCard(item); }}
                           className={`p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-300 transition-all ${refreshingCards.has(item.id) ? 'animate-spin' : ''}`}
@@ -1472,7 +1494,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                   <div className="flex-1 p-2 min-h-0 overflow-hidden flex items-center justify-center bg-white">
                     <div className="w-full h-full min-h-0 overflow-hidden rounded-xl bg-white">
                       <ErrorBoundary compact label={item.title || 'Chart'}>
-                        <ChartVisualization
+                        {item.result.needsLocalData ? missingDataView(item) : <ChartVisualization
                           config={item.result.config}
                           data={getFilteredData(item)}
                           xKey={item.result.xKey}
@@ -1482,7 +1504,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                           onChartTypeChange={() => { }}
                           formatting={item.result.formatting || formatting}
                           hideControls={true}
-                        />
+                        />}
                       </ErrorBoundary>
                     </div>
                   </div>
@@ -1493,7 +1515,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       {item.result.yLabel || item.result.yKey}
                     </span>
                     <span className="text-gray-400 dark:text-gray-500 font-mono">
-                      {item.result.data?.length || 0} rows
+                      {item.result.needsLocalData ? 'Data stays local' : `${item.result.data?.length || 0} rows`}
                     </span>
                   </div>
                 </div>

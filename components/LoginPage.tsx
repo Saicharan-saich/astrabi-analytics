@@ -68,7 +68,18 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                 return;
             }
 
-            // Persist JWT token
+            // Restore this account's local chart cache before cloud definitions
+            // are merged. Never upload the previous account's shared workspace.
+            const { saveUserAppData, restoreUserAppData, clearSharedAppData } = await import('../store/useAuthStore');
+            const { resetUserData, useAppStore } = await import('../store/useAppStore');
+            const previousUser = useAuthStore.getState().currentUser;
+            if (previousUser) saveUserAppData(previousUser.id);
+            resetUserData();
+            clearSharedAppData();
+            restoreUserAppData(data.user.id);
+            await useAppStore.persist.rehydrate();
+
+            // Persist JWT token only after cancelling the previous session's work.
             if (data.token) {
                 localStorage.setItem('qi_token', data.token);
             }

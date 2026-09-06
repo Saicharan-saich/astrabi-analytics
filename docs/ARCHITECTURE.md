@@ -30,7 +30,7 @@ The problem it solves: a small business owner has a spreadsheet of orders, and a
 
 | | What it means |
 |---|---|
-| **Your data never leaves your computer** | The spreadsheet is loaded into a database that runs *inside your web browser*. Queries run on your own machine. Nothing is uploaded to a server. |
+| **Local spreadsheet analysis** | Uploaded files are queried in the browser. Dashboard sync stores replay settings, not result rows. Optional AI features and live database connectors have separate sharing boundaries described below. |
 | **It teaches you, it doesn't just answer** | The GAFS game teaches the four moves behind every data question. The Question Builder is those same four moves as buttons. You learn once and use it forever. |
 | **Answers are checked, not just generated** | Every answer goes through validation and confidence scoring, and you can always see the exact query that produced it. |
 
@@ -323,7 +323,7 @@ Each engine below has: **what it does** in plain English, a **worked example**, 
 `services/duckdbEngine.ts`
 
 **What it does:** runs the SQL against your data — **in your browser tab**.
-**Why:** this is what makes "your data never leaves your device" true by architecture rather than by promise.
+**Why:** uploaded spreadsheet queries can run locally. This does not describe cloud dashboard settings, optional AI requests, or live database connectors.
 
 ### 5.13 Result Profiler
 `services/ai-sql/resultProfiler.ts`

@@ -330,8 +330,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         <Tooltip
                             position="left"
                             text={!enhancedActive
-                                ? "Private mode: the AI only sees your column names — never your actual data. Nothing about your customers or records leaves your browser. Tap to see exactly what Better answers would send, and decide."
-                                : "Better answers: the AI can see a few example values (like product or region names) so it answers more accurately. It never sees customer names, emails, sensitive details, or your records. Tap to review exactly what is sent, or turn it back off."}
+                                ? "Private mode: AI SQL uses your question, query text and schema information without sharing category catalogues or dataset rows. Text you type can include values. Tap to review what Better answers would additionally share."
+                                : "Better answers: AI SQL can additionally see selected category values, such as products or regions. Automated checks exclude likely personal and sensitive fields. Tap to review the exact selection or turn sharing off."}
                         >
                             <button
                                 onClick={togglePrivacyMode}
