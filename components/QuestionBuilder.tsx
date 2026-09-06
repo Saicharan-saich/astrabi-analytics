@@ -7,6 +7,7 @@ import { FilterItem } from './FilterItem';
 import { DateFilterItem } from './DateFilterItem';
 import { Tooltip } from './Tooltip';
 import { QuerySelect } from './QuerySelect';
+import { resolvePhysicalBuilderFields } from '../services/questionBuilderFieldGuard';
 
 interface QuestionBuilderProps {
     dataset: Dataset;
@@ -628,10 +629,21 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             allSecondaryDims.push(dimension);
         }
 
-        const config: any = {
+        // Presentation-only keys created by an AI SQL pivot (for example
+        // "Metric" and "Value") are not physical dataset columns. A stale
+        // handoff must never be allowed to compile them into DuckDB SQL.
+        const resolvedFields = resolvePhysicalBuilderFields(dataset, {
             metric,
-            aggregation,
             dimension: activeDimension,
+            secondaryMetrics,
+            secondaryDimensions: allSecondaryDims,
+        });
+        if (!resolvedFields) return;
+
+        const config: any = {
+            metric: resolvedFields.metric,
+            aggregation,
+            dimension: resolvedFields.dimension,
             timeFilter,
             filters: dimensionFilters,
             measureFilters,
@@ -641,8 +653,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             comparison: comparison,
             comparisonGrain: comparison ? comparisonGrain : undefined,
             comparisonOffset: comparison ? comparisonOffset : undefined,
-            ...(secondaryMetrics.length > 0 ? { secondaryMetrics, axisMode: 'auto', secondaryMetricVisuals, secondaryMetricAggregations } : {}),
-            ...(allSecondaryDims.length > 0 ? { secondaryDimensions: allSecondaryDims } : {})
+            ...(resolvedFields.secondaryMetrics.length > 0 ? { secondaryMetrics: resolvedFields.secondaryMetrics, axisMode: 'auto', secondaryMetricVisuals, secondaryMetricAggregations } : {}),
+            ...(resolvedFields.secondaryDimensions.length > 0 ? { secondaryDimensions: resolvedFields.secondaryDimensions } : {})
         };
 
         onRunRef.current(config);

@@ -31,17 +31,19 @@ interface BuilderViewProps {
     onScheduleChange?: (schedule: RefreshSchedule) => void;
     /** True only while the Question Builder page is visible. Keeps document-level portals scoped to this page. */
     isActive?: boolean;
+    /** Clears any parent-owned dashboard/AI SQL handoff when Reset starts a new builder session. */
+    onReset?: () => void;
 }
 
-export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange, isActive = true }) => {
+export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange, isActive = true, onReset }) => {
     // ── Session persistence key (scoped to dataset) ──
     const storageKey = `qi_builder_${dataset.id}`;
-    const savedSession = useMemo(() => {
+    const [savedSession, setSavedSession] = useState<any>(() => {
         try {
             const raw = sessionStorage.getItem(storageKey);
             return raw ? JSON.parse(raw) : null;
         } catch { return null; }
-    }, []);
+    });
 
     const [result, setResult] = useState<AnalysisResult | undefined>(undefined);
     const [error, setError] = useState<string | null>(null);
@@ -54,7 +56,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
     const [isBuilderCollapsed, setIsBuilderCollapsed] = useState(false);
     const [showHandoffNotice, setShowHandoffNotice] = useState(true);
+    const [freshSession, setFreshSession] = useState(false);
+    const [builderResetVersion, setBuilderResetVersion] = useState(0);
     const lastHandoffIdRef = useRef<string | null>(null);
+    const lastIncomingConfigRef = useRef<any>(initialConfig);
     // Builder controls can fire rapidly (typing a limit, swapping fields,
     // toggling filters). Only the newest requested analysis is allowed to
     // update the visible result; a slower older run must never overwrite it.
@@ -138,9 +143,24 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         }
     }, [dataset.timeContext]);
 
+    // Reset ignores the configuration that was active at that moment. Any
+    // later navigation into Builder (AI SQL, Quick Insights or dashboard edit)
+    // is a new explicit handoff and may initialize the controls again.
+    React.useEffect(() => {
+        if (!initialConfig) {
+            lastIncomingConfigRef.current = undefined;
+            return;
+        }
+        if (initialConfig !== lastIncomingConfigRef.current) {
+            lastIncomingConfigRef.current = initialConfig;
+            setFreshSession(false);
+        }
+    }, [initialConfig]);
+
     // Auto-run when editing from dashboard (initialConfig changes)
     React.useEffect(() => {
         if (initialConfig && editingItemId) {
+            setFreshSession(false);
             // Small delay to let QuestionBuilder remount with new initial values
             const timer = setTimeout(() => {
                 handleRun(initialConfig);
@@ -156,6 +176,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         const handoffId = initialConfig?._handoffId;
         if (!handoffId || lastHandoffIdRef.current === handoffId) return;
         lastHandoffIdRef.current = handoffId;
+        setFreshSession(false);
         setShowHandoffNotice(true);
         if (initialConfig.chartType) setChartType(initialConfig.chartType);
         const timer = setTimeout(() => handleRun(initialConfig), 120);
@@ -378,6 +399,45 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         }
     }, [formatting, onUpdateFormatting, result]);
 
+    const handleReset = useCallback(() => {
+        // Invalidate an analysis already in flight before clearing the result.
+        // Otherwise its late response can repopulate the supposedly fresh page.
+        runSequenceRef.current += 1;
+        setResult(undefined);
+        setError(null);
+        setIsLoading(false);
+        setLastRunConfig(null);
+        setPreDrillConfig(null);
+        setPreDrillResult(null);
+        setShowGrowthChart(false);
+        setIsAnalyticsExplorer(false);
+        setIsAIInsightOpen(false);
+        setIsFormatPanelOpen(false);
+        setIsAnalyticsPanelOpen(false);
+        setContentTab('visual');
+        setForceGridMode('auto');
+        setChartType('bar');
+        setShowHandoffNotice(false);
+
+        // A transferred AI SQL config and the persisted builder config are two
+        // independent sources. Both must be ignored/removed or the synthetic
+        // result fields (for example Metric and Value) return on the next edit.
+        setFreshSession(true);
+        setSavedSession(null);
+        setBuilderResetVersion(version => version + 1);
+        try { sessionStorage.removeItem(storageKey); } catch { /* unavailable storage */ }
+
+        // AI SQL can transfer table calculations into the global formatting
+        // state. They belong to the old analysis and must not affect the new one.
+        if (formatting?.tableCalculations?.length) {
+            onUpdateFormatting?.({ ...formatting, tableCalculations: [] });
+        }
+        onReset?.();
+    }, [formatting, onReset, onUpdateFormatting, storageKey]);
+
+    const effectiveInitialConfig = freshSession ? undefined : initialConfig;
+    const effectiveSavedSession = freshSession ? null : savedSession;
+
     return (
         <div className={`qi-builder-workspace qi-builder-layout ${isBuilderCollapsed ? 'qi-builder-layout--builder-collapsed' : ''} ${isAnalyticsExplorer ? 'qi-builder-layout--explorer' : ''} flex flex-col h-full bg-slate-50`}>
             {isAnalyticsExplorer && (
@@ -397,13 +457,13 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
             {/* â”€â”€â”€ COLLAPSIBLE BUILDER â”€â”€â”€ */}
             <div className={`qi-builder-panel qi-builder-dock relative bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isAnalyticsExplorer ? 'hidden' : (isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible')}`}>
-                {initialConfig?._source === 'ai-sql' && showHandoffNotice && (
-                    <div className={`mx-3 mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${initialConfig._handoffWarnings?.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">
-                        {initialConfig._handoffWarnings?.length ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
+                {effectiveInitialConfig?._source === 'ai-sql' && showHandoffNotice && (
+                    <div className={`mx-3 mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${effectiveInitialConfig._handoffWarnings?.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">
+                        {effectiveInitialConfig._handoffWarnings?.length ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
                         <div className="min-w-0 flex-1">
                             <div className="font-extrabold">Opened from AI SQL — the controls below are now editable.</div>
-                            {initialConfig._handoffWarnings?.length > 0 && (
-                                <div className="mt-0.5">{initialConfig._handoffWarnings.join(' ')}</div>
+                            {effectiveInitialConfig._handoffWarnings?.length > 0 && (
+                                <div className="mt-0.5">{effectiveInitialConfig._handoffWarnings.join(' ')}</div>
                             )}
                         </div>
                         <button
@@ -418,25 +478,25 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     </div>
                 )}
                 <QuestionBuilder
-                    key={editingItemId || initialConfig?._handoffId || 'default'}
+                    key={`${editingItemId || effectiveInitialConfig?._handoffId || 'default'}:${builderResetVersion}`}
                     dataset={dataset}
                     onRun={handleRun}
-                    initialMetric={initialConfig?.metric || savedSession?.config?.metric || ''}
-                    initialAggregation={initialConfig?.aggregation || savedSession?.config?.aggregation || 'SUM'}
-                    initialDimension={initialConfig?.dimension || savedSession?.config?.dimension || ''}
-                    initialTimeFilter={initialConfig?.timeFilter || savedSession?.config?.timeFilter || 'all_time'}
-                    initialLimit={initialConfig?.limit ?? savedSession?.config?.limit ?? 0}
-                    initialSort={initialConfig?.sort || savedSession?.config?.sort || 'desc'}
-                    initialComparison={initialConfig?.comparison || savedSession?.config?.comparison || ''}
-                    initialComparisonGrain={initialConfig?.comparisonGrain || savedSession?.config?.comparisonGrain || 'month'}
-                    initialComparisonOffset={initialConfig?.comparisonOffset ?? savedSession?.config?.comparisonOffset ?? 1}
-                    initialSecondaryMetrics={initialConfig?.secondaryMetrics || savedSession?.config?.secondaryMetrics || []}
-                    initialSecondaryMetricVisuals={initialConfig?.secondaryMetricVisuals || savedSession?.config?.secondaryMetricVisuals || {}}
-                    initialSecondaryMetricAggregations={initialConfig?.secondaryMetricAggregations || savedSession?.config?.secondaryMetricAggregations || {}}
-                    initialSecondaryDimensions={initialConfig?.secondaryDimensions || savedSession?.config?.secondaryDimensions || []}
-                    initialFilters={initialConfig?.filters || savedSession?.config?.filters || {}}
-                    initialMeasureFilters={initialConfig?.measureFilters || savedSession?.config?.measureFilters || []}
-                    initialDateFilters={initialConfig?.dateFilters || savedSession?.config?.dateFilters || []}
+                    initialMetric={effectiveInitialConfig?.metric || effectiveSavedSession?.config?.metric || ''}
+                    initialAggregation={effectiveInitialConfig?.aggregation || effectiveSavedSession?.config?.aggregation || 'SUM'}
+                    initialDimension={effectiveInitialConfig?.dimension || effectiveSavedSession?.config?.dimension || ''}
+                    initialTimeFilter={effectiveInitialConfig?.timeFilter || effectiveSavedSession?.config?.timeFilter || 'all_time'}
+                    initialLimit={effectiveInitialConfig?.limit ?? effectiveSavedSession?.config?.limit ?? 0}
+                    initialSort={effectiveInitialConfig?.sort || effectiveSavedSession?.config?.sort || 'desc'}
+                    initialComparison={effectiveInitialConfig?.comparison || effectiveSavedSession?.config?.comparison || ''}
+                    initialComparisonGrain={effectiveInitialConfig?.comparisonGrain || effectiveSavedSession?.config?.comparisonGrain || 'month'}
+                    initialComparisonOffset={effectiveInitialConfig?.comparisonOffset ?? effectiveSavedSession?.config?.comparisonOffset ?? 1}
+                    initialSecondaryMetrics={effectiveInitialConfig?.secondaryMetrics || effectiveSavedSession?.config?.secondaryMetrics || []}
+                    initialSecondaryMetricVisuals={effectiveInitialConfig?.secondaryMetricVisuals || effectiveSavedSession?.config?.secondaryMetricVisuals || {}}
+                    initialSecondaryMetricAggregations={effectiveInitialConfig?.secondaryMetricAggregations || effectiveSavedSession?.config?.secondaryMetricAggregations || {}}
+                    initialSecondaryDimensions={effectiveInitialConfig?.secondaryDimensions || effectiveSavedSession?.config?.secondaryDimensions || []}
+                    initialFilters={effectiveInitialConfig?.filters || effectiveSavedSession?.config?.filters || {}}
+                    initialMeasureFilters={effectiveInitialConfig?.measureFilters || effectiveSavedSession?.config?.measureFilters || []}
+                    initialDateFilters={effectiveInitialConfig?.dateFilters || effectiveSavedSession?.config?.dateFilters || []}
                     asOfDate={asOfDate}
                     onDateChange={handleAsOfDateChange}
                     anchorColumn={anchorColumn}
@@ -711,7 +771,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                             />
                         )}
                         <button
-                            onClick={() => { setResult(null); setError(null); setLastRunConfig(null); }}
+                            onClick={handleReset}
                             className="flex items-center text-sm font-bold text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap"
                             title="Reset — clear all results and start fresh"
                         >

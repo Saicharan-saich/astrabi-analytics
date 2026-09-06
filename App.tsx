@@ -1804,6 +1804,11 @@ function App() {
                       refreshSchedule={dataset?.refreshSchedule}
                       onScheduleChange={updateRefreshSchedule}
                       isActive={activeTab === Tab.BUILDER}
+                      onReset={() => {
+                        setWorkbenchConfig(undefined);
+                        setWorkbenchResult(undefined);
+                        setEditingDashboardItemId(null);
+                      }}
                     />
                   )}
                 </div>
