@@ -16,6 +16,7 @@ import TrustBadge from './TrustBadge';
 import { PipelineReport } from './PipelineReport';
 import { isDimensionOnlyResult } from '../services/ai-sql/resultPresentation';
 import { TraceStoryPanel } from './TraceStoryPanel';
+import { createPinnedAISQLResult } from '../services/ai-sql/pinnedResult';
 
 interface VisualPreviewViewProps {
   dataset: Dataset | null;
@@ -164,6 +165,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           secondaryYKeys: res.chart.secondaryYKeys,
         },
       });
+      setChartType(chartMap[res.chart.chartType] || 'bar');
       setActiveTab(isDimensionOnlyResult(res.profile, res.rawData) ? 'chart' : res.chart.chartType === 'table' ? 'table' : 'chart');
     } catch { /* ignore */ } finally { setIsDrilling(false); }
   }, [dataset, isDrilling, pipeline, query]);
@@ -229,7 +231,23 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   };
 
   const handlePin = () => {
-    if (onPin) { onPin(query, result); setIsPinned(true); setTimeout(() => setIsPinned(false), 2000); }
+    if (!onPin) return;
+    const pinnedResult = activePipeline
+      ? createPinnedAISQLResult({
+          result: activeResult,
+          pipeline: activePipeline,
+          question: activeQuery,
+          formatting: localFormatting,
+          chartType,
+        })
+      : {
+          ...activeResult,
+          vis: chartType as any,
+          formatting: { ...localFormatting, tableCalculations: [...(localFormatting.tableCalculations || [])] },
+        };
+    onPin(activeQuery, pinnedResult);
+    setIsPinned(true);
+    setTimeout(() => setIsPinned(false), 2000);
   };
 
   const handleRegenerate = async () => {
@@ -301,6 +319,16 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 className={`flex h-12 items-center gap-2 rounded-xl border px-4 text-sm font-extrabold transition-all ${isDark ? 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20' : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'}`}
               >
                 <ListChecks className="h-5 w-5" /> Trace
+              </button>
+            )}
+            {onPin && (
+              <button
+                onClick={handlePin}
+                aria-label="Pin this visual to a dashboard"
+                className={`flex h-12 items-center gap-2 rounded-xl border px-4 text-sm font-extrabold transition-all ${isDark ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+                title="Pin this visual with its chart type, series and label settings"
+              >
+                <Pin className="h-5 w-5" /> <span className="hidden sm:inline">{isPinned ? 'Pinned!' : 'Pin'}</span>
               </button>
             )}
             <button

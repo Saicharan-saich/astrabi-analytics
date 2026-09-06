@@ -399,6 +399,20 @@ export interface AnalysisResult {
     post: { status: 'valid' | 'warning' | 'error'; summary: string; checks: { name: string; status: 'pass' | 'warn' | 'fail'; message: string }[] };
   };
   queryConfig?: any; // Fix #8: Original query config for dashboard re-evaluation
+  /**
+   * Stable, local refresh recipe for a visual produced by AI SQL. Dashboard
+   * refresh must re-execute the verified SQL and rebuild its chart-shaped
+   * result; treating it as a one-metric Question Builder query loses
+   * multi-measure comparisons, calculated columns and series metadata.
+   */
+  aiSqlRefresh?: {
+    version: 1;
+    source: 'ai-sql';
+    question: string;
+    sql: string;
+    plan: import('./services/ai-sql/types').AnalysisPlan;
+    chart: import('./services/ai-sql/types').ChartRecommendation;
+  };
   // ── System Correction Directive additions ──
   confidence?: number;         // 0-1 confidence score (reduced for inferred joins, high nulls, etc.)
   warnings?: string[];         // Human-readable warnings ("Join inferred", "Aggregation defaulted", etc.)

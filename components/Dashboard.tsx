@@ -234,6 +234,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
       return item.result.data;
     }
 
+    // AI SQL cards can contain CTEs, window calculations, conditional
+    // aggregates and several result measures. Re-aggregating them through the
+    // single-metric dashboard filter helper destroys that result grain (often
+    // collapsing a comparison to one bar). Until filters can be compiled into
+    // the stored SQL AST, preserve the verified AI SQL result as-is.
+    if (item.result.aiSqlRefresh || item.result.queryConfig?.aiSql) return item.result.data;
+
     const isDateStr = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
     const xKey = item.result.xKey;
     const yKey = item.result.yKey;
@@ -341,6 +348,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     if (!dataset || !item.result?.queryConfig) return;
     setRefreshingCards(prev => new Set(prev).add(item.id));
     try {
+      if (item.result.aiSqlRefresh || item.result.queryConfig?.aiSql) {
+        const { refreshPinnedAISQLResult } = await import('../services/ai-sql/pinnedResult');
+        const refreshed = await refreshPinnedAISQLResult(dataset, item.result);
+        updateItem({ ...item, result: refreshed, pinnedAt: Date.now(), datasetVersion: dataset.version });
+        return;
+      }
       // Dynamically import the analysis engine to avoid circular deps
       const { runAnalysis } = await import('../services/analysisEngine');
       const config = item.result.queryConfig;
@@ -348,7 +361,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
         ...config,
         asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || '',
       });
-      updateItem({ ...item, result: { ...freshResult, queryConfig: config } });
+      updateItem({
+        ...item,
+        result: {
+          ...freshResult,
+          vis: item.result.vis || freshResult.vis,
+          formatting: item.result.formatting,
+          queryConfig: config,
+        },
+        pinnedAt: Date.now(),
+        datasetVersion: dataset.version,
+      });
     } catch (err) {
       console.warn('[Dashboard] Refresh failed for card:', item.id, err);
     } finally {
