@@ -383,8 +383,22 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         return () => window.removeEventListener('keydown', handler);
     }, []);
 
-    // Initial Syncer
+    // Parents and default props can allocate fresh arrays/objects on every
+    // render. Their identity is not a new configuration: rehydrating from it
+    // would erase an unfinished filter whenever the user opens a picker.
+    const initialConfigSignature = JSON.stringify([
+        dataset.id,
+        initialMetric, initialAggregation, initialDimension, initialTimeFilter, initialLimit, initialSort,
+        initialComparison, initialComparisonGrain, initialComparisonOffset,
+        initialSecondaryMetrics, initialSecondaryMetricVisuals, initialSecondaryMetricAggregations,
+        initialSecondaryDimensions, initialFilters, initialMeasureFilters, initialDateFilters,
+    ]);
+    const lastSyncedInitialConfig = useRef<string>();
+
+    // Sync actual incoming changes, preserving local edits across ordinary renders.
     useEffect(() => {
+        if (lastSyncedInitialConfig.current === initialConfigSignature) return;
+        lastSyncedInitialConfig.current = initialConfigSignature;
         if (initialMetric) setMetric(initialMetric);
         if (initialAggregation) setAggregation(initialAggregation);
         if (initialDimension) {
@@ -415,6 +429,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         // because the parent (Workbench) has already run the correct analysis.
         ignoreNextRun.current = true;
     }, [
+        initialConfigSignature,
         initialMetric, initialAggregation, initialDimension, initialTimeFilter, initialLimit, initialSort,
         initialComparison, initialComparisonGrain, initialComparisonOffset,
         initialSecondaryMetrics, initialSecondaryMetricVisuals, initialSecondaryMetricAggregations,
