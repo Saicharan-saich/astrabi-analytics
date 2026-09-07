@@ -36,6 +36,25 @@ export const Tooltip: React.FC<TooltipProps> = ({
         setVisible(false);
     }, []);
 
+    // Help text must yield as soon as the user starts interacting with any
+    // control. This also covers portalled dropdowns that sit outside the
+    // tooltip trigger in the DOM.
+    useEffect(() => {
+        if (!visible) return;
+        const dismissOnInteraction = () => hide();
+        const dismissOnEscape = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') hide();
+        };
+        document.addEventListener('pointerdown', dismissOnInteraction, true);
+        document.addEventListener('keydown', dismissOnEscape, true);
+        window.addEventListener('blur', dismissOnInteraction);
+        return () => {
+            document.removeEventListener('pointerdown', dismissOnInteraction, true);
+            document.removeEventListener('keydown', dismissOnEscape, true);
+            window.removeEventListener('blur', dismissOnInteraction);
+        };
+    }, [visible, hide]);
+
     // Recalculate position after the tooltip renders and its size is known
     useLayoutEffect(() => {
         if (!visible || !triggerRef.current || !tooltipRef.current) return;
@@ -87,21 +106,25 @@ export const Tooltip: React.FC<TooltipProps> = ({
     if (!text) return <>{children}</>;
 
     return (
-        <span ref={triggerRef} className="relative inline-flex" onMouseEnter={show} onMouseLeave={hide} onMouseDown={hide}>
+        <span ref={triggerRef} className="relative inline-flex" onMouseEnter={show} onMouseLeave={hide} onPointerDown={hide}>
             {children}
             {visible &&
                 ReactDOM.createPortal(
                     <div
                         ref={tooltipRef}
+                        className="qi-tooltip"
                         style={{
                             position: 'fixed',
-                            zIndex: 99999,
+                            // Interactive menus use 9999. Keeping passive help
+                            // below them guarantees it can never obscure a menu.
+                            zIndex: 9000,
                             top: coords.top,
                             left: coords.left,
                             width: maxWidth,
                             maxWidth: maxWidth,
                             pointerEvents: 'none',
                         }}
+                        role="tooltip"
                     >
                         <div
                             style={{

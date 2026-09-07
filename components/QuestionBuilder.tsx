@@ -393,7 +393,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         initialSecondaryMetrics, initialSecondaryMetricVisuals, initialSecondaryMetricAggregations,
         initialSecondaryDimensions, initialFilters, initialMeasureFilters, initialDateFilters,
     ]);
-    const lastSyncedInitialConfig = useRef<string>();
+    const lastSyncedInitialConfig = useRef<string | null>(null);
 
     // Sync actual incoming changes, preserving local edits across ordinary renders.
     useEffect(() => {
