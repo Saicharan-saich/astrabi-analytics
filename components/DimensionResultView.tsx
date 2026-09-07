@@ -47,7 +47,7 @@ export const DimensionResultView: React.FC<DimensionResultViewProps> = ({ rows, 
   };
 
   return (
-    <div className={`flex h-full flex-col overflow-hidden rounded-[24px] border shadow-xl ${isDark ? 'border-white/10 bg-[#111827]' : 'border-slate-200 bg-white'}`}>
+    <div data-appearance={isDark ? 'dark' : 'light'} className={`qi-dimension-result flex h-full flex-col overflow-hidden rounded-[24px] border shadow-xl ${isDark ? 'border-white/10 bg-[#111827]' : 'border-slate-200 bg-white'}`}>
       <div className={`flex shrink-0 items-center justify-between gap-4 border-b px-5 py-4 sm:px-7 ${isDark ? 'border-white/[0.07] bg-white/[0.025]' : 'border-slate-100 bg-gradient-to-r from-indigo-50/70 to-cyan-50/50'}`}>
         <div className="flex min-w-0 items-center gap-3.5">
           <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${isDark ? 'bg-indigo-500/15 text-indigo-300' : 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'}`}>
@@ -56,7 +56,7 @@ export const DimensionResultView: React.FC<DimensionResultViewProps> = ({ rows, 
           <div className="min-w-0">
             <h3 className={`truncate text-base font-extrabold ${isDark ? 'text-white' : 'text-slate-900'}`}>{entityLabel}</h3>
             <p className={`text-xs ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>
-              {rows.length.toLocaleString()} {rows.length === 1 ? 'result' : 'results'} · shown as a list because no numeric measure was requested
+              {rows.length.toLocaleString()} {rows.length === 1 ? 'result' : 'results'}
             </p>
           </div>
         </div>
@@ -76,7 +76,7 @@ export const DimensionResultView: React.FC<DimensionResultViewProps> = ({ rows, 
             {rows.map((row, index) => (
               <div
                 key={`${displayValue(row[columns[0]])}-${index}`}
-                className={`flex min-h-16 items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${isDark ? 'border-white/[0.07] bg-white/[0.035] hover:bg-white/[0.065]' : 'border-slate-200 bg-slate-50/70 hover:border-indigo-200 hover:bg-indigo-50/40'}`}
+                className={`qi-entity-card flex min-h-16 items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${isDark ? 'border-white/[0.07] bg-white/[0.035] hover:bg-white/[0.065]' : 'border-slate-200 bg-slate-50/70 hover:border-indigo-200 hover:bg-indigo-50/40'}`}
               >
                 <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-black tabular-nums ${ranked && index < 3 ? 'bg-indigo-600 text-white' : isDark ? 'bg-slate-700 text-slate-300' : 'bg-white text-slate-400 shadow-sm ring-1 ring-slate-200'}`}>
                   {index + 1}
@@ -89,7 +89,7 @@ export const DimensionResultView: React.FC<DimensionResultViewProps> = ({ rows, 
           </div>
         ) : (
           <div className={`overflow-hidden rounded-xl border ${isDark ? 'border-white/[0.08]' : 'border-slate-200'}`}>
-            <table className="w-full border-collapse text-sm">
+            <table className="qi-result-table w-full border-collapse text-sm">
               <thead>
                 <tr className={isDark ? 'bg-slate-800/95' : 'bg-slate-50'}>
                   <th className={`w-16 px-4 py-3 text-center text-[11px] font-black uppercase tracking-wider ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>#</th>

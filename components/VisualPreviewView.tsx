@@ -279,10 +279,10 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const confScore = pipeline?.confidence?.score;
 
   return (
-    <div className={`relative flex flex-col h-full ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
+    <div data-appearance={isDark ? 'dark' : 'light'} className={`qi-answer-workspace relative flex flex-col h-full ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
       {/* ── Result navigation stays visible above the chart ── */}
       {workspaceMode === 'result' && (
-        <div className={`flex min-h-16 shrink-0 items-center justify-between gap-4 border-b px-4 py-2.5 sm:px-6 ${isDark ? 'border-white/[0.08] bg-[#0d1117]' : 'border-slate-200 bg-white'}`}>
+        <div className={`qi-answer-navigation flex min-h-16 shrink-0 items-center justify-between gap-4 border-b px-4 py-2.5 sm:px-6 ${isDark ? 'border-white/[0.08] bg-[#0d1117]' : 'border-slate-200 bg-white'}`}>
           <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={() => { if (drillDown) { setDrillDown(null); } else { onBack(); } }}
@@ -293,7 +293,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               <ArrowLeft className="h-5 w-5" />
             </button>
             <div className="min-w-0">
-              <div className="truncate text-sm font-extrabold sm:text-base">{activeQuery}</div>
+              <div className="qi-answer-title text-sm font-extrabold sm:text-base">{activeQuery}</div>
               <div className="mt-0.5 text-[11px] font-medium text-slate-400">
                 {activeTableData.length.toLocaleString()} rows
                 {activePipeline?.executionTimeMs ? ` · ${activePipeline.executionTimeMs.toLocaleString()}ms` : ''}
@@ -495,7 +495,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               {activePipeline?.narrative && (
                 <section
                   aria-label="Answer in words"
-                  className={`mx-3 mt-3 shrink-0 rounded-2xl border px-4 py-3 sm:mx-5 sm:mt-4 ${isDark ? 'border-indigo-500/20 bg-indigo-500/[0.07]' : 'border-indigo-100 bg-indigo-50/80'}`}
+                  className={`qi-answer-narrative mx-3 mt-3 shrink-0 rounded-2xl border px-4 py-3 sm:mx-5 sm:mt-4 ${isDark ? 'border-indigo-500/20 bg-indigo-500/[0.07]' : 'border-indigo-100 bg-indigo-50/80'}`}
                 >
                   <div className="flex items-start gap-3">
                     <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
@@ -508,7 +508,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               )}
               <div className={activeDimensionOnly
                 ? `relative min-h-0 flex-1 overflow-hidden ${workspaceMode === 'result' ? 'mx-3 mb-3 mt-2 sm:mx-5 sm:mb-5' : 'p-4'}`
-                : `relative min-h-0 flex-1 overflow-hidden border border-slate-200 bg-white shadow-xl ${workspaceMode === 'result' ? 'mx-3 mb-3 mt-2 rounded-[24px] p-4 sm:mx-5 sm:mb-5 sm:p-5' : 'm-4 mt-2 rounded-2xl p-6'}`
+                : `qi-answer-canvas relative min-h-0 flex-1 overflow-hidden border border-slate-200 bg-white shadow-xl ${workspaceMode === 'result' ? 'mx-3 mb-3 mt-2 rounded-[24px] p-4 sm:mx-5 sm:mb-5 sm:p-5' : 'm-4 mt-2 rounded-2xl p-6'}`
               } ref={chartContainerRef}>
               {activeDimensionOnly ? (
                 <DimensionResultView
@@ -566,7 +566,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           {activeTab === 'table' && (
             <div className="h-full overflow-auto p-4">
               <div className={`rounded-xl border overflow-hidden shadow-sm ${isDark ? 'border-white/[0.08] bg-slate-900/40' : 'border-gray-200 bg-white'}`}>
-                <table className="w-full text-sm border-collapse">
+                <table className="qi-result-table w-full text-sm border-collapse">
                   <thead><tr className={isDark ? 'bg-slate-800/95' : 'bg-slate-50'}>
                     {activePipeline?.plan?.intent === 'ranking' && (
                       <th className={`w-14 text-center text-[11px] uppercase tracking-wider px-3 py-3 font-bold sticky top-0 ${isDark ? 'text-slate-400 bg-slate-800/95' : 'text-slate-500 bg-slate-50'}`}>#</th>

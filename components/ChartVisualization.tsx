@@ -1867,7 +1867,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     : config?.comparison === 'same_period_last_year' ? 'Last Year' : 'Previous Period';
 
                 return (
-                    <div className="flex flex-col items-center justify-center h-full gap-5 p-6">
+                    <div className="qi-kpi qi-kpi-comparison flex flex-col items-center justify-center h-full gap-5 p-6">
                         {/* Growth Badge */}
                         <div className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold ${isPositive ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
                             <span>{isPositive ? '▲' : '▼'}</span>
@@ -1909,10 +1909,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             const avg = count > 0 ? total / count : 0;
             const max = Math.max(...(transformedData?.map((d: any) => Number(d[yKey]) || 0) ?? [0]));
             return (
-                <div className="flex flex-col items-center justify-center h-full gap-4 p-6">
-                    <div className="text-5xl font-black text-indigo-600">{formatNumber(total)}</div>
-                    <div className="text-sm font-medium text-slate-500 uppercase tracking-wider">{calculatedYLabel || 'Total'}</div>
-                    <div className="flex gap-6 mt-2">
+                <div className="qi-kpi flex flex-col items-center justify-center h-full gap-4 p-6">
+                    <div className="qi-kpi-value text-5xl font-black text-indigo-600">{formatNumber(total)}</div>
+                    <div className="qi-kpi-label text-sm font-medium text-slate-500 uppercase tracking-wider">{calculatedYLabel || 'Total'}</div>
+                    <div className="qi-kpi-context flex gap-6 mt-2">
                         <div className="text-center"><div className="text-lg font-bold text-slate-700">{count}</div><div className="text-[10px] text-slate-400">Records</div></div>
                         <div className="text-center"><div className="text-lg font-bold text-slate-700">{formatNumber(avg)}</div><div className="text-[10px] text-slate-400">Average</div></div>
                         <div className="text-center"><div className="text-lg font-bold text-slate-700">{formatNumber(max)}</div><div className="text-[10px] text-slate-400">Max</div></div>
@@ -1989,10 +1989,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     };
 
     return (
-        <div className="h-full w-full flex flex-col overflow-hidden bg-transparent">
+        <div data-appearance={isDark ? 'dark' : 'light'} className="qi-visual h-full w-full flex flex-col overflow-hidden bg-transparent">
             {/* Controls - Hidden on Dashboard */}
             {!hideControls && (
-                <div className={`flex items-center gap-3 border-b px-4 py-2.5 shrink-0 ${isDark ? 'border-white/10' : 'border-slate-100'}`}>
+                <div className={`qi-visual-toolbar flex items-center gap-3 border-b px-4 py-2.5 shrink-0 ${isDark ? 'border-white/10' : 'border-slate-100'}`}>
                     {/* Chart Type Dropdown */}
                     <div className="relative">
                         <button
@@ -2012,7 +2012,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         {chartSelectorOpen && (
                             <>
                                 <div className="fixed inset-0 z-40" onClick={() => setChartSelectorOpen(false)} />
-                                <div className="absolute top-full left-0 mt-1 z-50 bg-white rounded-xl shadow-2xl border border-slate-200 p-3 w-[420px] max-h-[500px] overflow-y-auto">
+                                <div className="qi-chart-menu absolute top-full left-0 mt-1 z-50 bg-white rounded-xl shadow-2xl border border-slate-200 p-3 w-[420px] max-h-[500px] overflow-y-auto">
                                     {CHART_TYPE_OPTIONS.map(group => (
                                         <div key={group.category} className="mb-3 last:mb-0">
                                             <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5">{group.category}</div>
