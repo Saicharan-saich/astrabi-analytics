@@ -245,14 +245,14 @@ export const PreLoginTour: React.FC<PreLoginTourProps> = ({ onComplete }) => {
     };
 
     return (
-        <div className="min-h-screen overflow-hidden bg-[#080b14] text-white">
+        <div className="qi-prelogin-tour relative flex h-[100dvh] min-h-0 flex-col overflow-hidden bg-[#080b14] text-white">
             <div className="pointer-events-none absolute inset-0 overflow-hidden">
                 <div className="absolute -left-40 -top-32 h-[34rem] w-[34rem] rounded-full bg-indigo-600/20 blur-[120px]" />
                 <div className="absolute -bottom-36 -right-24 h-[30rem] w-[30rem] rounded-full bg-cyan-500/15 blur-[120px]" />
                 <div className="absolute inset-0 bg-dot-grid opacity-40" />
             </div>
 
-            <header className="relative z-10 mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-6">
+            <header className="relative z-10 mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between px-6 py-4">
                 <div className="flex items-center gap-3">
                     <img src="/logo.jpg" alt="QuickInsight" className="h-10 w-10 rounded-xl object-cover ring-1 ring-white/15" />
                     <div>
@@ -265,7 +265,7 @@ export const PreLoginTour: React.FC<PreLoginTourProps> = ({ onComplete }) => {
                 </button>
             </header>
 
-            <main className="relative z-10 mx-auto grid w-full max-w-6xl items-center gap-10 px-6 pb-10 pt-6 lg:grid-cols-[0.95fr_1.05fr] lg:gap-16 lg:pb-20 lg:pt-14">
+            <main className="relative z-10 mx-auto grid min-h-0 w-full max-w-6xl flex-1 items-start gap-8 overflow-y-auto px-6 py-6 lg:grid-cols-[0.95fr_1.05fr] lg:gap-12" aria-label="Tour step content" tabIndex={0}>
                 <section className="max-w-xl">
                     <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold text-slate-300">
                         <span className={`flex h-5 w-5 items-center justify-center rounded-md bg-gradient-to-br ${step.accent}`}>
@@ -293,7 +293,17 @@ export const PreLoginTour: React.FC<PreLoginTourProps> = ({ onComplete }) => {
                         ))}
                     </div>
 
-                    <div className="mt-9 flex items-center gap-3">
+                </section>
+
+                <section key={activeStep} className="relative mx-auto w-full max-w-xl animate-fadeIn">
+                    <div className="absolute -inset-5 rounded-[36px] bg-gradient-to-br from-indigo-500/15 via-transparent to-cyan-400/15 blur-2xl" />
+                    <VisualStage step={activeStep} />
+                </section>
+            </main>
+
+            <footer className="relative z-10 shrink-0 border-t border-white/10 bg-[#080b14] px-6 py-4" aria-label="Tour navigation">
+                <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
                         <button
                             onClick={() => setActiveStep(current => Math.max(0, current - 1))}
                             disabled={activeStep === 0}
@@ -312,7 +322,7 @@ export const PreLoginTour: React.FC<PreLoginTourProps> = ({ onComplete }) => {
                         <span className="ml-1 text-xs text-slate-500">{activeStep + 1} / {TOUR_STEPS.length}</span>
                     </div>
 
-                    <div className="mt-6 flex gap-2" aria-label="Tour progress">
+                    <div className="flex gap-2" aria-label="Tour progress">
                         {TOUR_STEPS.map((tourStep, index) => (
                             <button
                                 key={tourStep.eyebrow}
@@ -322,13 +332,8 @@ export const PreLoginTour: React.FC<PreLoginTourProps> = ({ onComplete }) => {
                             />
                         ))}
                     </div>
-                </section>
-
-                <section key={activeStep} className="relative mx-auto w-full max-w-xl animate-fadeIn">
-                    <div className="absolute -inset-5 rounded-[36px] bg-gradient-to-br from-indigo-500/15 via-transparent to-cyan-400/15 blur-2xl" />
-                    <VisualStage step={activeStep} />
-                </section>
-            </main>
+                </div>
+            </footer>
         </div>
     );
 };
