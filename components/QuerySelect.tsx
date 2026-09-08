@@ -82,17 +82,16 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         const gap = 6;
         const availableAbove = Math.max(0, rect.top - viewportPadding - gap);
         const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding - gap);
-        // Calculate the menu's natural requirement from its content. Reading
-        // the rendered height here creates a shrinking loop because a menu
-        // that was clipped once reports only its already-clipped height.
+        // Calculate a stable natural requirement from the option model. The
+        // rendered menu contains an inner scrolling flex child, so the root's
+        // scrollHeight may itself reflect an earlier maxHeight constraint.
+        // Never let that constrained measurement reduce the model estimate.
         const estimatedHeight = Math.min(
             480,
             Math.max(96, (searchable ? 58 : 8) + Math.max(1, options.length) * 39 + groupHeaderCount * 25)
         );
-        // scrollHeight describes the full menu content even when maxHeight is
-        // currently clipping the visible box, so it cannot feed the clipped
-        // size back into the next positioning calculation.
-        const desiredHeight = Math.min(480, Math.max(96, menuRef.current?.scrollHeight || estimatedHeight));
+        const measuredContentHeight = menuRef.current?.scrollHeight ?? 0;
+        const desiredHeight = Math.min(480, Math.max(estimatedHeight, measuredContentHeight));
 
         let placement: 'up' | 'down';
         if (menuPlacement === 'auto') {
