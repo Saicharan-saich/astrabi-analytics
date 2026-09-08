@@ -28,6 +28,7 @@ interface MenuPosition {
     width: number;
     maxHeight: number;
     placement: 'up' | 'down';
+    detached: boolean;
 }
 
 export const QuerySelect: React.FC<QuerySelectProps> = ({
@@ -51,6 +52,7 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         width: 240,
         maxHeight: 300,
         placement: 'down',
+        detached: false,
     });
     const containerRef = useRef<HTMLDivElement>(null);
     const buttonRef = useRef<HTMLButtonElement>(null);
@@ -63,6 +65,7 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         acc[group].push(opt);
         return acc;
     }, {} as Record<string, SelectOption[]>);
+    const groupHeaderCount = Object.keys(groupedOptions).filter(group => group !== 'default').length;
 
     const filteredGroups = Object.entries(groupedOptions).reduce((acc, [group, opts]) => {
         const filtered = opts.filter(o => o.label.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -79,12 +82,17 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         const gap = 6;
         const availableAbove = Math.max(0, rect.top - viewportPadding - gap);
         const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding - gap);
+        // Calculate the menu's natural requirement from its content. Reading
+        // the rendered height here creates a shrinking loop because a menu
+        // that was clipped once reports only its already-clipped height.
         const estimatedHeight = Math.min(
-            360,
-            (searchable ? 58 : 8) + Math.max(1, options.length) * 39
+            480,
+            Math.max(96, (searchable ? 58 : 8) + Math.max(1, options.length) * 39 + groupHeaderCount * 25)
         );
-        const measuredHeight = menuRef.current?.getBoundingClientRect().height || estimatedHeight;
-        const desiredHeight = Math.min(360, Math.max(96, measuredHeight));
+        // scrollHeight describes the full menu content even when maxHeight is
+        // currently clipping the visible box, so it cannot feed the clipped
+        // size back into the next positioning calculation.
+        const desiredHeight = Math.min(480, Math.max(96, menuRef.current?.scrollHeight || estimatedHeight));
 
         let placement: 'up' | 'down';
         if (menuPlacement === 'auto') {
@@ -98,6 +106,11 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         }
 
         const availableHeight = placement === 'up' ? availableAbove : availableBelow;
+        const viewportHeight = Math.max(96, window.innerHeight - viewportPadding * 2);
+        const targetHeight = Math.min(desiredHeight, viewportHeight);
+        // When both anchored sides are cramped, use a viewport-contained
+        // popover instead of reducing the choices to a tiny scroll window.
+        const detached = Math.max(availableAbove, availableBelow) < targetHeight;
         const minMenuWidth = Math.min(240, Math.max(160, window.innerWidth - viewportPadding * 2));
         const width = Math.min(320, Math.max(rect.width, minMenuWidth));
         const left = Math.max(
@@ -106,13 +119,19 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         );
 
         setMenuPosition({
-            top: placement === 'up' ? rect.top - gap : rect.bottom + gap,
+            top: detached
+                ? Math.max(viewportPadding, Math.min(
+                    rect.top + rect.height / 2 - targetHeight / 2,
+                    window.innerHeight - targetHeight - viewportPadding
+                ))
+                : placement === 'up' ? rect.top - gap : rect.bottom + gap,
             left,
             width,
-            maxHeight: Math.max(96, Math.min(desiredHeight, availableHeight)),
+            maxHeight: detached ? targetHeight : Math.max(96, Math.min(targetHeight, availableHeight)),
             placement,
+            detached,
         });
-    }, [menuPlacement, options.length, searchable]);
+    }, [groupHeaderCount, menuPlacement, options.length, searchable]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -184,6 +203,7 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
                     role="listbox"
                     className={`qi-dropdown-surface qi-query-select-menu fixed z-[9999] flex flex-col rounded-2xl overflow-hidden shadow-2xl animate-in fade-in duration-150 ${menuPosition.placement === 'up' ? 'slide-in-from-bottom-2' : 'slide-in-from-top-2'}`}
                     data-placement={menuPosition.placement}
+                    data-detached={menuPosition.detached ? 'true' : 'false'}
                     style={{
                         position: 'fixed',
                         top: menuPosition.top,
@@ -192,8 +212,8 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
                         width: menuPosition.width,
                         maxWidth: 'calc(100vw - 16px)',
                         maxHeight: menuPosition.maxHeight,
-                        transform: menuPosition.placement === 'up' ? 'translateY(-100%)' : 'none',
-                        transformOrigin: menuPosition.placement === 'up' ? 'bottom left' : 'top left',
+                        transform: !menuPosition.detached && menuPosition.placement === 'up' ? 'translateY(-100%)' : 'none',
+                        transformOrigin: menuPosition.detached ? 'center' : menuPosition.placement === 'up' ? 'bottom left' : 'top left',
                         backgroundColor: '#0f172a',
                         border: '1px solid #475569',
                     }}
