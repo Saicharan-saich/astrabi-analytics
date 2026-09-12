@@ -177,6 +177,7 @@ interface UIState {
 
 interface DataState {
     dataset: Dataset | null;
+    lastActiveDatasetId: string | null;
     datasets: Dataset[];
     isProcessing: boolean;
     error: string | null;
@@ -335,6 +336,7 @@ export const useAppStore = create<AppStore>()(
 
             // Data Slice
             dataset: null,
+            lastActiveDatasetId: null,
             datasets: [],
             isProcessing: false,
             error: null,
@@ -343,6 +345,7 @@ export const useAppStore = create<AppStore>()(
                 const exists = state.datasets.some(d => d.id === dataset.id);
                 return {
                     dataset,
+                    lastActiveDatasetId: dataset.id,
                     datasets: exists ? state.datasets.map(d => d.id === dataset.id ? dataset : d) : [...state.datasets, dataset]
                 };
             }),
@@ -355,7 +358,8 @@ export const useAppStore = create<AppStore>()(
                 dataset: state.dataset?.id === id ? (state.datasets.filter(d => d.id !== id)[0] || null) : state.dataset
             })),
             setActiveDatasetById: (id) => set((state) => ({
-                dataset: state.datasets.find(d => d.id === id) || state.dataset
+                dataset: state.datasets.find(d => d.id === id) || state.dataset,
+                lastActiveDatasetId: state.datasets.some(d => d.id === id) ? id : state.lastActiveDatasetId,
             })),
             setProcessing: (isProcessing) => set({ isProcessing }),
             setError: (error) => set({ error }),
@@ -695,6 +699,7 @@ export const useAppStore = create<AppStore>()(
                 // Preserve the user's current workspace across a browser refresh.
                 // Dataset payloads remain in IndexedDB; this stores only the Tab enum value.
                 activeTab: state.activeTab,
+                lastActiveDatasetId: state.lastActiveDatasetId,
                 dashboards: state.dashboards,
                 activeDashboardId: state.activeDashboardId,
                 deletedDashboardIds: state.deletedDashboardIds,
@@ -795,6 +800,7 @@ export function resetUserData(): void {
     cancelDashboardSync();
     useAppStore.setState({
         dataset: null,
+        lastActiveDatasetId: null,
         datasets: [],
         dashboards: [],
         activeDashboardId: null,

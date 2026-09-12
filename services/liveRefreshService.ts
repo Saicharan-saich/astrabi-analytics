@@ -7,7 +7,7 @@
  * table data from the source RDBMS and re-joins if multi-table.
  */
 
-import { LiveConnectionInfo } from '../types';
+import { LiveConnectionInfo, type RelatedTable } from '../types';
 import { autoJoinDatasets } from './analysisEngine';
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.quickinsight.co.uk';
@@ -29,8 +29,9 @@ function authenticatedHeaders(): Record<string, string> {
  * @returns Fresh merged rows from the live database
  */
 export async function refreshLiveDataset(
-  liveConnection: LiveConnectionInfo
-): Promise<{ rows: Record<string, any>[]; executionTimeMs: number }> {
+  liveConnection: LiveConnectionInfo,
+  options?: { preserveTables?: boolean },
+): Promise<{ rows: Record<string, any>[]; executionTimeMs: number; sourceTables?: RelatedTable[] }> {
   const { connectionId, tables, joinEdges } = liveConnection;
 
   console.log(`[LiveRefresh] Refreshing ${tables.length} tables from live connection ${connectionId}`);
@@ -45,6 +46,10 @@ export async function refreshLiveDataset(
 
   if (!data.success) {
     throw new Error(data.error || 'Failed to refresh data from database');
+  }
+  if (options?.preserveTables) {
+    const sourceTables = tables.map(name => ({ name, rows: data.data[name] || [] }));
+    return { rows: sourceTables[0]?.rows || [], sourceTables, executionTimeMs: data.executionTimeMs };
   }
 
   // If single table, return directly

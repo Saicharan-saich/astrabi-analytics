@@ -5,6 +5,7 @@ import {
     ChevronDown, ChevronRight, Layers, Zap, CheckCircle2
 } from 'lucide-react';
 import { Dataset, SourceSchema, SourceTableInfo, SourceJoinEdge, SourceColumnInfo } from '../types';
+import { RelationshipEditor } from './RelationshipEditor';
 
 interface SchemaViewProps {
     dataset: Dataset | null;
@@ -88,6 +89,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                 </div>
             </div>
 
+            <RelationshipEditor dataset={dataset} />
             {/* ─── Summary Cards ──────────────────────── */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 {[
@@ -144,7 +146,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                                             ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                                             : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
                                         }`}>
-                                        {edge.type === 'fk' ? 'FOREIGN KEY' : 'NAME MATCH'}
+                                        {edge.provenance === 'inferred' ? 'VALIDATED INFERENCE' : edge.provenance === 'user' ? 'USER CONFIRMED' : edge.type === 'fk' ? 'FOREIGN KEY' : 'NAME MATCH'}
                                     </div>
                                     <div className="w-10 h-[2px] bg-gradient-to-l from-slate-500 to-transparent group-hover:from-purple-500 transition-colors" />
                                     <ArrowRight className="w-3.5 h-3.5 text-slate-400 group-hover:text-indigo-400 transition-colors" />
@@ -218,7 +220,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                                     <div className="flex items-center gap-2">
                                         {joins.length > 0 && (
                                             <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full font-semibold border border-emerald-500/20">
-                                                JOINED
+                                                RELATIONSHIPS AVAILABLE
                                             </span>
                                         )}
                                     </div>

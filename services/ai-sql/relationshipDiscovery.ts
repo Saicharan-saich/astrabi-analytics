@@ -1,5 +1,5 @@
 /**
- * Relationship Discovery — infer keys and joins from the DATA, not the names.
+ * Relationship Discovery — combine identifier semantics and full-data evidence.
  * ─────────────────────────────────────────────────────────────────────
  * A database connector hands us real foreign keys. An uploaded workbook does
  * not: several sheets arrive with no declared relationships at all, so they have
@@ -16,13 +16,11 @@
  *      to be an identifier rather than a flag.
  *
  * Anything that fails is reported with its reason rather than silently dropped
- * or silently accepted. Name similarity is used only to break ties between
- * candidates that already passed on evidence — never as evidence itself.
+ * or silently accepted. Compatible identifier names support, but never replace,
+ * uniqueness and containment checks. Ambiguous targets require confirmation.
  *
- * Honest limit: inference over a sample can never be *proven* correct, so every
- * relationship carries a confidence and its supporting numbers. Callers should
- * surface low-confidence joins for confirmation rather than applying them
- * silently.
+ * Honest limit: even full containment cannot prove business meaning. Confidence
+ * is a heuristic ranking, not a calibrated probability; users can override it.
  */
 
 export interface DiscoveryTable {
@@ -71,14 +69,19 @@ export interface DiscoveryResult {
     rejected: RejectedRelationship[];
 }
 
-/** Values below this are flags/categories, not identifiers. */
-const MIN_KEY_DISTINCT = 3;
+/** Even a one-member dimension may have a legitimate identifier. */
+const MIN_KEY_DISTINCT = 1;
 /** Share of non-null child values that must exist in the parent key. */
-const MIN_COVERAGE = 0.85;
-/** Cap rows scanned per column so discovery stays fast on large files. */
-const SAMPLE_LIMIT = 20_000;
+const MIN_COVERAGE = 1;
+/** Executable inferred relationships require full-column validation. */
+const SAMPLE_LIMIT = Number.MAX_SAFE_INTEGER;
 
-const isBlank = (v: any) => v === null || v === undefined || v === '';
+const isBlank = (v: any) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
+
+export function identifierColumn(name: string): boolean {
+    return (/(^|_)(id|key|code)$/i.test(name) || /[a-z](Id|ID|Key|Code)$/.test(name))
+        && !/(amount|price|revenue|value|percent|share|rank)/i.test(name);
+}
 
 /** Compare by normalised string so 1 and "1" match across sheets. */
 const key = (v: any) => (typeof v === 'string' ? v.trim() : String(v));
@@ -112,7 +115,7 @@ function typeOf(values: string[]): 'number' | 'text' | 'mixed' {
 export function detectCandidateKeys(table: DiscoveryTable): CandidateKey[] {
     const rows = table.rows || [];
     if (rows.length === 0) return [];
-    const cols = Object.keys(rows[0] || {});
+    const cols = [...new Set(rows.flatMap(row => Object.keys(row)))];
     const out: CandidateKey[] = [];
 
     for (const col of cols) {
@@ -125,6 +128,9 @@ export function detectCandidateKeys(table: DiscoveryTable): CandidateKey[] {
         if (nullCount > 0) { isKey = false; reason = 'contains blanks, so it cannot identify every row'; }
         else if (distinct.size !== values.length) { isKey = false; reason = 'values repeat, so it is not unique'; }
         else if (distinct.size < MIN_KEY_DISTINCT) { isKey = false; reason = 'too few distinct values to be an identifier'; }
+        else if (!identifierColumn(col) && !(/date/i.test(table.name) && /^(date|date_key)$/i.test(col))) {
+            isKey = false; reason = 'unique values alone do not establish identifier semantics';
+        }
 
         out.push({
             table: table.name, column: col,
@@ -188,6 +194,14 @@ export function discoverRelationships(tables: DiscoveryTable[]): DiscoveryResult
     for (const k of keys) {
         if (!k.isKey) continue;
         const t = usable.find(x => x.name === k.table)!;
+        const tableColumns = Object.keys(t.rows[0] || {});
+        const looksFact = /^fact[_ ]/i.test(t.name) || tableColumns.some(c => /^(value|amount|revenue|sales|quantity|price)(_|$)/i.test(c));
+        const tableKeys = keys.filter(candidate => candidate.table === t.name && candidate.isKey);
+        const stem = t.name.replace(/^(fact|dim)[_ ]/i, '').replace(/s$/i, '').toLowerCase();
+        const ownKey = tableKeys.find(candidate => candidate.column.toLowerCase() === `${stem}_id`)
+            || tableKeys.find(candidate => /^id$/i.test(candidate.column))
+            || tableKeys[0];
+        if (looksFact && ownKey?.column !== k.column) continue;
         const { values } = columnValues(t.rows, k.column);
         const set = new Set(values);
         keyIndex.set(`${k.table}.${k.column}`, {
@@ -201,8 +215,9 @@ export function discoverRelationships(tables: DiscoveryTable[]): DiscoveryResult
     const rejected: RejectedRelationship[] = [];
 
     for (const child of usable) {
-        const childCols = Object.keys(child.rows[0] || {});
+        const childCols = [...new Set(child.rows.flatMap(row => Object.keys(row)))];
         for (const childCol of childCols) {
+            if (!identifierColumn(childCol)) continue;
             const { values: childValues } = columnValues(child.rows, childCol);
             if (childValues.length === 0) continue;
             const childDistinct = new Set(childValues);
@@ -210,6 +225,11 @@ export function discoverRelationships(tables: DiscoveryTable[]): DiscoveryResult
 
             for (const parent of keyIndex.values()) {
                 if (parent.table === child.name) continue;   // never self-join a sheet
+                if (/^(id|key|code)$/i.test(childCol) && /^(id|key|code)$/i.test(parent.column)) {
+                    rejected.push({ fromTable: child.name, fromColumn: childCol, toTable: parent.table, toColumn: parent.column,
+                        reason: 'generic key names do not establish a relationship; choose the target explicitly' });
+                    continue;
+                }
 
                 // Type must agree — matching a number column to text is spurious.
                 if (childType === 'mixed' || parent.type === 'mixed' || childType !== parent.type) {
@@ -244,7 +264,9 @@ export function discoverRelationships(tables: DiscoveryTable[]): DiscoveryResult
                 // Two surrogate key sequences overlap by construction, so
                 // containment is not evidence. Require the names to agree too.
                 const affinity = nameAffinity(child.name, childCol, parent.table, parent.column);
-                if (affinity === 0 && parent.dense && isDenseIntegerSequence(childDistinct)) {
+                const roleMatch = !/^(id|key|code)$/i.test(parent.column)
+                    && childCol.toLowerCase().endsWith(`_${parent.column.toLowerCase()}`);
+                if (affinity === 0 && !roleMatch && parent.dense && isDenseIntegerSequence(childDistinct)) {
                     rejected.push({
                         fromTable: child.name, fromColumn: childCol,
                         toTable: parent.table, toColumn: parent.column,
@@ -253,6 +275,8 @@ export function discoverRelationships(tables: DiscoveryTable[]): DiscoveryResult
                     continue;
                 }
 
+                // Role-prefixed identifiers (reporter_geo_id -> geo_id) are valid.
+                if (affinity === 0 && !roleMatch) continue;
                 const oneToOne = childDistinct.size === childValues.length;
                 const evidence = [
                     `${Math.round(coverage * 100)}% of ${child.name}.${childCol} values found in ${parent.table}.${parent.column}`,
@@ -268,7 +292,7 @@ export function discoverRelationships(tables: DiscoveryTable[]): DiscoveryResult
                     distinctFrom: childDistinct.size,
                     cardinality: oneToOne ? 'one-to-one' : 'many-to-one',
                     // Evidence first; the name only nudges between equals.
-                    confidence: Math.min(1, coverage * 0.9 + affinity),
+                    confidence: Math.min(1, coverage * 0.9 + affinity + (roleMatch ? 0.05 : 0)),
                     evidence,
                 });
             }
@@ -298,6 +322,14 @@ export function discoverRelationships(tables: DiscoveryTable[]): DiscoveryResult
         }
     }
 
+    // Equally supported targets are ambiguous, never resolved by table order.
+    for (const [id, winner] of best) {
+        const ties = relationships.filter(r => r.fromTable === winner.fromTable && r.fromColumn === winner.fromColumn && r.confidence === winner.confidence);
+        if (ties.length > 1) {
+            best.delete(id);
+            for (const r of ties) rejected.push({ ...r, reason: 'ambiguous target: multiple relationships have equal evidence; choose a target explicitly' });
+        }
+    }
     return {
         keys,
         relationships: [...best.values()].sort((a, b) => b.confidence - a.confidence),

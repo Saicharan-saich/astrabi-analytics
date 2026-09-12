@@ -4,7 +4,7 @@
  * RULES:
  *   - MANY_TO_MANY → THROW ERROR (never allowed)
  *   - Unknown relationship → THROW ERROR
- *   - Fan-out detection: if joined row count > 120% of left table → THROW
+ *   - Enrichment requires exact left-row preservation and unique lookup keys
  *   - Every join must be validated for cardinality BEFORE results are used
  *
  * PRINCIPLE: System MUST FAIL instead of producing silently duplicated data.
@@ -42,10 +42,10 @@ export interface CardinalityReport {
 // ═══════════════════════════════════════════════════════════════════
 
 /** Maximum allowed fan-out ratio before a join is rejected */
-const MAX_FANOUT_RATIO = 1.2; // 120% — joined rows can be at most 120% of left table
+const MAX_FANOUT_RATIO = 1; // Exact row preservation for enrichment.
 
 /** Uniqueness threshold for a key to be considered "unique" in a table */
-const UNIQUENESS_THRESHOLD = 0.95; // 95% distinct = effectively unique
+const UNIQUENESS_THRESHOLD = 1; // A duplicate lookup key is never effectively unique.
 
 // ═══════════════════════════════════════════════════════════════════
 // CARDINALITY DETECTION
@@ -137,9 +137,10 @@ export function validateJoin(
 
     const warnings: string[] = [];
 
-    // Check for fan-out
-    if (joinedCount > leftCount * MAX_FANOUT_RATIO) {
-        const error = `Join duplication detected: "${leftTable}" (${leftCount} rows) LEFT JOIN "${rightTable}" (${rightCount} rows) ` +
+    const cardinality = detectCardinality(leftRows, rightRows, leftKey, rightKey);
+    // A lookup can silently discard duplicate target rows without changing size.
+    if (joinedCount !== leftCount || cardinality.rightDuplicateRate > 0) {
+        const error = `Unsafe enrichment: "${leftTable}" (${leftCount} rows) LEFT JOIN "${rightTable}" (${rightCount} rows) ` +
             `produced ${joinedCount} rows (${Math.round(fanOutRatio * 100)}% fan-out). ` +
             `Expected ≤ ${Math.round(leftCount * MAX_FANOUT_RATIO)} rows. ` +
             `Check for MANY_TO_MANY relationship on keys "${leftKey}" ↔ "${rightKey}".`;
@@ -175,18 +176,9 @@ export function validateJoin(
         warnings.push(`${nullRightKeys} rows in "${rightTable}" have NULL values for join key "${rightKey}".`);
     }
 
-    // Determine relationship from actual data
+    // Determine relationship from actual keys, not the output row count.
     let relationship: RelationshipType | 'MANY_TO_MANY' | 'UNKNOWN';
-    if (joinedCount === leftCount && joinedCount <= rightCount) {
-        relationship = 'MANY_TO_ONE';
-    } else if (joinedCount === leftCount && joinedCount === rightCount) {
-        relationship = 'ONE_TO_ONE';
-    } else if (joinedCount > leftCount) {
-        relationship = 'ONE_TO_MANY';
-    } else {
-        relationship = 'UNKNOWN';
-        warnings.push('Unable to determine relationship type from join result.');
-    }
+    relationship = cardinality.relationship;
 
     return {
         valid: true,

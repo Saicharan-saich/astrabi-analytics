@@ -42,6 +42,7 @@ import { ThemeProvider } from './components/ThemeProvider';
 import { OnboardingTour } from './components/OnboardingTour';
 import { DatasetSwitcher } from './components/DatasetSwitcher';
 import { saveDatasetToDB, loadAllDatasetsFromDB, deleteDatasetFromDB } from './services/datasetDB';
+import { buildRelationalCatalog, createSubjectDataset } from './services/relationalCatalog';
 import { inferDefaultAggregation } from './services/smartAggregation';
 import { DomainReviewModal } from './components/DomainReviewModal';
 import { SplashScreen } from './components/SplashScreen';
@@ -378,12 +379,12 @@ function App() {
     }
 
     loadAllDatasetsFromDB(userId).then(saved => {
+      if (useAuthStore.getState().currentUser?.id !== userId) return;
       console.log(`[App] Loaded ${saved.length} datasets from IndexedDB for user: ${userId}`);
       if (saved.length > 0) {
-        saved.forEach(ds => useAppStore.getState().setDataset(ds));
-        if (!useAppStore.getState().dataset) {
-          useAppStore.getState().setDataset(saved[saved.length - 1]);
-        }
+        const selected = saved.find(ds => ds.id === store.lastActiveDatasetId) || saved[saved.length - 1];
+        useAppStore.setState({ datasets: saved });
+        useAppStore.getState().setDataset(selected);
       }
     });
   }, [currentUser?.id]);
@@ -433,6 +434,31 @@ function App() {
     }
   }, [dataset?.id]);
 
+  const relationalCatalog = React.useMemo(() => (dataset?.sourceTables || dataset?.relatedTables)?.length
+    ? dataset!.relationalCatalog || buildRelationalCatalog(dataset!.sourceTables || dataset!.relatedTables!) : null,
+    [dataset?.sourceTables, dataset?.relatedTables, dataset?.relationalCatalog]);
+
+  const handleSubjectChange = (value: string) => {
+    if (!dataset || !value) return;
+    try {
+      const { table, standalone } = JSON.parse(value);
+      const parent = datasets.find(d => d.id === (dataset.sourceDatasetId || dataset.id)) || dataset;
+      const subject = createSubjectDataset(parent, table, standalone);
+      const existing = parent.subjectTable === table && !!parent.standaloneSubject === standalone
+        ? parent : datasets.find(d => d.id === subject.id);
+      if (existing) {
+        setActiveDatasetById(existing.id);
+        return;
+      }
+      subject.semanticModel = buildSemanticModel(subject);
+      refreshAISQLSemanticSnapshot(subject, 'subject area selected');
+      setDataset(subject);
+      saveDatasetToDB(subject);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not open subject area');
+    }
+  };
+
   const handleDeleteDataset = (id: string) => {
     // Reset processing/profiling state to prevent blocking overlay from persisting
     // when the user deletes a dataset that was still being profiled
@@ -480,9 +506,14 @@ function App() {
           timeContext,
           dimDate,
           sourceSchema,
-          // The unjoined source tables, when the upload had several. AI SQL can
-          // query these directly instead of the flattened join.
-          relatedTables,
+          // Preserve originals separately; relational AI SQL uses the same
+          // selected subject rows and field names as the other application views.
+          relatedTables: result.relationalCatalog ? undefined : relatedTables,
+          sourceTables: result.relationalCatalog ? relatedTables : undefined,
+          relationalCatalog: result.relationalCatalog,
+          subjectTable: result.subjectTable,
+          fieldLineage: result.fieldLineage,
+          fieldOrigins: result.fieldOrigins,
           version: 1,
           createdAt: Date.now(),
         };
@@ -497,6 +528,10 @@ function App() {
         }
         refreshAISQLSemanticSnapshot(newDataset, 'upload ETL complete');
 
+        if (relatedTables?.length > 1) {
+          newDataset.relationalCatalog = result.relationalCatalog || buildRelationalCatalog(relatedTables);
+          newDataset.sourceSchema = newDataset.relationalCatalog.schema;
+        }
         setDataset(newDataset);
         saveDatasetToDB(newDataset);
         setProcessing(false);
@@ -624,6 +659,15 @@ function App() {
 
   const handleSchemaOverride = (columnName: string, newType: ColumnType) => {
     if (!dataset) return;
+    if (dataset.relationalCatalog) {
+      // A role change must not rerun flat-table cleaning over a relational view.
+      const updated = { ...dataset, columns: dataset.columns.map(c => c.name === columnName ? { ...c, type: newType } : c), version: (dataset.version || 1) + 1 };
+      updated.semanticModel = buildSemanticModel(updated);
+      refreshAISQLSemanticSnapshot(updated, `subject field role: ${columnName}`);
+      setDataset(updated);
+      saveDatasetToDB(updated);
+      return;
+    }
 
     // Re-run the ETL pipeline with the type override so all downstream
     // cleaning steps (casting, imputation, etc.) reflect the new type.
@@ -845,6 +889,11 @@ function App() {
           timeContext,
           dimDate,
           sourceSchema: resultSchema,
+          sourceTables: event.data.result.relatedTables,
+          relationalCatalog: event.data.result.relationalCatalog,
+          subjectTable: event.data.result.subjectTable,
+          fieldLineage: event.data.result.fieldLineage,
+          fieldOrigins: event.data.result.fieldOrigins,
           domainProfile: connProfile,
           connectionMode: liveInfo?.connectionMode || (liveInfo ? 'import' : undefined),
           liveConnection: liveInfo ? { connectionId: liveInfo.connectionId, dbType: liveInfo.dbType, tables: liveInfo.tables, joinEdges: liveInfo.joinEdges } : undefined,
@@ -923,7 +972,7 @@ function App() {
     isRefreshingRef.current = true;
     setIsLiveRefreshing(true);
     try {
-      const { rows: freshRows, executionTimeMs } = await refreshLiveDataset(ds.liveConnection);
+      const { rows: freshRows, executionTimeMs, sourceTables: freshSources } = await refreshLiveDataset(ds.liveConnection, { preserveTables: !!ds.relationalCatalog });
       console.log(`[App] Live refresh complete: ${freshRows.length} rows in ${executionTimeMs}ms`);
 
       // Re-run ETL on fresh data via worker
@@ -942,7 +991,7 @@ function App() {
         if (event.data.type === 'SUCCESS') {
           // BUG 1 FIX: Use datasetRef.current (not closure 'ds') for the spread
           // so we don't revert any state changes that happened during the async refresh
-          const latestDs = datasetRef.current || ds;
+          const latestDs = datasetRef.current?.id === ds.id ? datasetRef.current : ds;
           const { rows, columns, timeContext, dimDate, rawRows, logs } = event.data.result;
           const refreshedDs: Dataset = {
             ...latestDs,
@@ -954,6 +1003,14 @@ function App() {
             timeContext,
             dimDate,
             version: (latestDs.version || 1) + 1,
+            ...(event.data.result.relationalCatalog ? {
+              relationalCatalog: event.data.result.relationalCatalog,
+              sourceSchema: event.data.result.sourceSchema,
+              sourceTables: event.data.result.relatedTables,
+              subjectTable: event.data.result.subjectTable,
+              fieldLineage: event.data.result.fieldLineage,
+              fieldOrigins: event.data.result.fieldOrigins,
+            } : {}),
           };
           // Rebuild semantic model
           try {
@@ -963,6 +1020,30 @@ function App() {
             console.warn('[App] Semantic model rebuild failed on refresh:', err);
           }
           refreshAISQLSemanticSnapshot(refreshedDs, 'live refresh ETL complete');
+          const root = refreshedDs.sourceDatasetId
+            ? useAppStore.getState().datasets.find(d => d.id === refreshedDs.sourceDatasetId)
+            : undefined;
+          let refreshedRoot: Dataset | undefined;
+          if (root && freshSources && event.data.result.relationalCatalog) {
+            try {
+              const catalog = event.data.result.relationalCatalog;
+              const nextRoot = { ...root, sourceTables: freshSources, relationalCatalog: catalog,
+                sourceSchema: catalog.schema, version: (root.version || 1) + 1 };
+              const view = createSubjectDataset(nextRoot, root.subjectTable || freshSources[0].name, !!root.standaloneSubject);
+              refreshedRoot = { ...nextRoot, rows: view.rows, rawRows: view.rawRows,
+                columns: view.columns, totalRows: view.totalRows, timeContext: view.timeContext,
+                fieldLineage: view.fieldLineage, fieldOrigins: view.fieldOrigins,
+                aiSqlSemanticModel: undefined };
+              refreshedRoot.semanticModel = buildSemanticModel(refreshedRoot);
+              refreshAISQLSemanticSnapshot(refreshedRoot, 'live source tables refreshed');
+            } catch (error) {
+              showToast(`❌ Refresh rejected: ${error instanceof Error ? error.message : 'source relationships changed'}`);
+              isRefreshingRef.current = false;
+              setIsLiveRefreshing(false);
+              worker.terminate();
+              return;
+            }
+          }
           // Update schedule: record success + reset failure counter
           if (refreshedDs.refreshSchedule?.enabled) {
             refreshedDs.refreshSchedule = {
@@ -971,7 +1052,14 @@ function App() {
               consecutiveFailures: 0,
             };
           }
-          setDataset(refreshedDs);
+          if (refreshedRoot) {
+            useAppStore.setState(state => ({
+              dataset: state.dataset?.id === ds.id ? refreshedDs : state.dataset,
+              datasets: state.datasets.map(d => d.id === ds.id ? refreshedDs : d.id === refreshedRoot!.id ? refreshedRoot! : d),
+            }));
+            saveDatasetToDB(refreshedRoot);
+          } else if (datasetRef.current?.id === ds.id) setDataset(refreshedDs);
+          else useAppStore.setState(state => ({ datasets: state.datasets.map(d => d.id === ds.id ? refreshedDs : d) }));
           saveDatasetToDB(refreshedDs);
           showToast(`⚡ Live data refreshed — ${rows.length} rows (${executionTimeMs}ms)`);
           isRefreshingRef.current = false;
@@ -989,10 +1077,11 @@ function App() {
       };
       worker.postMessage({
         type: 'PROCESS_FILE',
-        rawData: freshRows,
+        rawData: freshSources ? Object.fromEntries(freshSources.map(t => [t.name, t.rows])) : freshRows,
         fileName: ds.name,
         isConnector: true,
         sourceSchema: ds.sourceSchema,
+        subjectTable: ds.subjectTable,
       });
     } catch (err: any) {
       console.error('[App] Live refresh failed:', err);
@@ -1386,6 +1475,7 @@ function App() {
                 <div className="flex items-center gap-2 md:gap-3 min-w-0">
                   {(!isSidebarOpen || isMobile) && (
                     <button
+                      aria-label="Open navigation"
                       onClick={() => isMobile ? setSidebarOpen(true) : toggleSidebar()}
                       className={`p-2 -ml-1 rounded-lg transition-all duration-200 shrink-0 ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/[0.06]' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
                         }`}
@@ -1505,6 +1595,24 @@ function App() {
                     )}
                   </div>
 
+                  {relationalCatalog && (
+                    <label className="flex flex-col text-xs max-w-[240px]">
+                      <span>Analysis subject / source table</span>
+                      <select aria-label="Analysis subject or source table" disabled={isProcessing || isAIProfiling} className="bg-slate-800 text-white border border-slate-600 rounded px-2 py-1 max-w-full"
+                        value={dataset?.subjectTable ? JSON.stringify({ table: dataset.subjectTable, standalone: !!dataset.standaloneSubject }) : ''}
+                        onChange={e => handleSubjectChange(e.target.value)}>
+                        <option value="" disabled>Select a subject or source</option>
+                        <optgroup label="Analysis subjects">
+                          {relationalCatalog.subjects.filter(s => s.kind !== 'metadata' && s.kind !== 'dimension').map(s => (
+                            <option key={s.id} value={JSON.stringify({ table: s.table, standalone: false })}>{s.table}</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="All source tables (standalone)">
+                          {relationalCatalog.subjects.map(s => <option key={s.id} value={JSON.stringify({ table: s.table, standalone: true })}>{s.table}{s.kind === 'metadata' ? ' (metadata)' : ''}</option>)}
+                        </optgroup>
+                      </select>
+                    </label>
+                  )}
                   <div className="hidden md:block">
                     <DatasetSwitcher
                       datasets={datasets}

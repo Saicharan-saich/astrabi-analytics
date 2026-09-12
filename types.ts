@@ -109,6 +109,13 @@ export interface DatasetDomainProfile {
 }
 
 export interface Dataset {
+  relationalCatalog?: import('./services/relationalCatalog').RelationalCatalog;
+  sourceTables?: RelatedTable[];
+  sourceDatasetId?: string;
+  subjectTable?: string;
+  standaloneSubject?: boolean;
+  fieldLineage?: Record<string, string>;
+  fieldOrigins?: Record<string, { table: string; column: string }>;
   id: string;
   name: string;
   rows: Record<string, any>[];
@@ -156,6 +163,7 @@ export interface RefreshSchedule {
 export interface RelatedTable {
   name: string;
   rows: Record<string, any>[];
+  columns?: string[];
 }
 
 export interface SourceSchema {
@@ -178,6 +186,12 @@ export interface SourceColumnInfo {
 }
 
 export interface SourceJoinEdge {
+  leftColumns?: string[];
+  rightColumns?: string[];
+  provenance?: 'inferred' | 'user' | 'declared';
+  cardinality?: 'many-to-one' | 'one-to-one' | 'one-to-many' | 'many-to-many' | 'unknown';
+  confidence?: number;
+  evidence?: string[];
   leftTable: string;
   rightTable: string;
   leftColumn: string;

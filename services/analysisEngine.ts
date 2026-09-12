@@ -1448,6 +1448,10 @@ export const autoJoinDatasets = (
     // ── Detect the fact table — this is always the LEFT/base of the join ──
     const factTable = detectFactTableFromData(tables);
 
+    if (joinEdges && joinEdges.length === 0) {
+        return { mergedRows: [...(tables[factTable] || [])], joinLogs: [`No validated joins. Selected ${factTable}; other tables remain separate.`] };
+    }
+
     // ── No join edges provided: use fact-first name-match fallback ──
     if (!joinEdges || joinEdges.length === 0) {
         const remainingTables = keys.filter(k => k !== factTable);
@@ -1488,7 +1492,12 @@ export const autoJoinDatasets = (
 
                 // Build a lookup map from the dimension table (1:1 or many:1)
                 const rightMap = new Map<string, any>();
-                rightRows.forEach(r => rightMap.set(String(r[sharedCol!]), r));
+                rightRows.forEach(r => {
+                    if (r[sharedCol!] == null) return;
+                    const value = String(r[sharedCol!]);
+                    if (rightMap.has(value)) throw new Error(`Duplicate lookup key in ${rightTable}.${sharedCol}`);
+                    rightMap.set(value, r);
+                });
 
                 const beforeCount = merged.length;
                 merged = merged.map(row => {
@@ -1575,7 +1584,12 @@ export const autoJoinDatasets = (
 
             // Build a 1-to-1 lookup map from the dimension/right table
             const rightMap = new Map<string, any>();
-            rightRows.forEach(r => rightMap.set(String(r[actualRightCol]), r));
+            rightRows.forEach(r => {
+                if (r[actualRightCol] == null) return;
+                const value = String(r[actualRightCol]);
+                if (rightMap.has(value)) throw new Error(`Duplicate lookup key in ${rightName}.${actualRightCol}`);
+                rightMap.set(value, r);
+            });
 
             const beforeCount = merged.length;
             merged = merged.map(row => {
@@ -1684,6 +1698,7 @@ function findHeaderRow(sheet: any, XLSX: XLSXModule): number {
     for (let r = 0; r <= maxScan; r++) {
         let filled = 0;
         let total = 0;
+        let headerHints = 0;
         const seen = new Set<string>();
         for (let c = range.s.c; c <= range.e.c; c++) {
             total++;
@@ -1698,12 +1713,14 @@ function findHeaderRow(sheet: any, XLSX: XLSXModule): number {
                 if (!seen.has(val.toLowerCase())) {
                     filled++;
                     seen.add(val.toLowerCase());
+                    if (/(^|[_ ])(id|key|code|name|date|description|amount|value|quantity|revenue|sales)$/i.test(val)) headerHints++;
                 }
             }
         }
         // Score: filled ratio × unique count — prefer rows with many unique text cells
         const ratio = total > 0 ? filled / total : 0;
-        const score = filled * (1 + ratio);
+        // A dense text data row must not outrank a sparse but explicit header.
+        const score = filled * (1 + ratio) + headerHints * 4;
         if (score > bestScore) {
             bestScore = score;
             bestRow = r;
@@ -1712,48 +1729,48 @@ function findHeaderRow(sheet: any, XLSX: XLSXModule): number {
     return bestRow;
 }
 
-export const parseExcelMultiSheet = async (file: File): Promise<{ sheetCount: number; sheets: Record<string, any[]> }> => {
+export const parseExcelMultiSheet = async (file: File): Promise<{ sheetCount: number; sheets: Record<string, any[]>; columns: Record<string, string[]> }> => {
     const XLSX = await getXLSX();
-    return new Promise(resolve => {
+    return new Promise((resolve, reject) => {
         const reader = new FileReader();
+        reader.onerror = () => reject(reader.error || new Error('Unable to read workbook'));
         reader.onload = (e) => {
+            try {
             // cellDates: true → dates arrive as JS Date objects instead of serial numbers
             const wb = XLSX.read(e.target?.result, { type: 'binary', cellDates: true });
             const sheets: Record<string, any[]> = {};
+            const columns: Record<string, string[]> = {};
             for (const name of wb.SheetNames) {
                 const ws = wb.Sheets[name];
                 const headerRow = findHeaderRow(ws, XLSX);
 
                 // Parse using the detected header row
-                const rows = XLSX.utils.sheet_to_json(ws, { range: headerRow });
+                const rows = XLSX.utils.sheet_to_json(ws, { range: headerRow, defval: null });
+                sheets[name] = [];
+                const bounds = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+                const headerRange = XLSX.utils.encode_range({ s: { r: headerRow, c: bounds.s.c }, e: { r: headerRow, c: bounds.e.c } });
+                const headers = XLSX.utils.sheet_to_json<any[]>(ws, { range: headerRange, header: 1 })[0] || [];
+                columns[name] = rows.length ? Object.keys(rows[0]) : headers.filter(v => v != null && String(v).trim()).map(String);
 
-                // Filter out rows that are mostly empty (spacer rows between headers and data)
+                // Only remove completely empty spacer rows; sparse records are data.
                 const filtered = (rows as any[]).filter(row => {
                     const vals = Object.values(row);
                     const nonEmpty = vals.filter(v => v !== undefined && v !== null && String(v).trim() !== '');
-                    return nonEmpty.length >= Math.max(2, vals.length * 0.3);
+                    return nonEmpty.length > 0;
                 });
 
                 if (filtered.length > 0) {
-                    // Remove any columns that start with __EMPTY (leftover from merged cells)
-                    const cleanedRows = filtered.map(row => {
-                        const clean: any = {};
-                        for (const [k, v] of Object.entries(row)) {
-                            if (!k.startsWith('__EMPTY')) {
-                                clean[k] = v;
-                            }
-                        }
-                        return clean;
-                    });
-                    // Only include if we still have columns after cleaning
-                    const finalRows = cleanedRows.filter(r => Object.keys(r).length > 0);
+                    // SheetJS assigns __EMPTY names to unnamed columns. Keep them:
+                    // an absent header is not evidence that their values are disposable.
+                    const finalRows = filtered;
                     if (finalRows.length > 0) {
                         sheets[name] = finalRows;
                         console.log(`[Excel] Sheet "${name}": header detected at row ${headerRow + 1}, ${finalRows.length} data rows, ${Object.keys(finalRows[0]).length} columns`);
                     }
                 }
             }
-            resolve({ sheetCount: wb.SheetNames.length, sheets });
+            resolve({ sheetCount: wb.SheetNames.length, sheets, columns });
+            } catch (error) { reject(error); }
         };
         reader.readAsBinaryString(file);
     });

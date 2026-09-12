@@ -1,5 +1,5 @@
 
-import { sanitizeIdentifier, escapeStringValue } from './analysisValidator';
+import { escapeStringValue } from './analysisValidator';
 
 export interface SqlQueryConfig {
     metric: string;
@@ -36,13 +36,12 @@ const MAX_LIMIT = 10000;
 
 /**
  * Safely quote an identifier (column/table name) for SQL.
- * Strips dangerous characters and wraps in double-quotes.
+ * Preserve field identity; escape embedded quotes instead of deleting characters.
  */
 function safeId(name: string): string {
     if (!name) return '"unnamed"';
-    const sanitized = sanitizeIdentifier(name);
-    // Double-quote identifiers to allow spaces and reserved words
-    return `"${sanitized.replace(/"/g, '""')}"`;
+    if (name.includes('\0')) throw new Error('SQL identifiers cannot contain a null character');
+    return `"${name.replace(/"/g, '""')}"`;
 }
 
 /**
@@ -70,7 +69,7 @@ export class SqlGenerator {
         const orderBy = this.buildOrderBy();
         const limit = this.buildLimit();
 
-        return `${select} ${from} ${where} ${groupBy} ${orderBy} ${limit}`.trim().replace(/\s+/g, ' ');
+        return [select, from, where, groupBy, orderBy, limit].filter(Boolean).join(' ').trim();
     }
 
     private buildSelect(): string {

@@ -44,6 +44,28 @@ export async function saveDatasetToDB(dataset: any): Promise<void> {
     }
 }
 
+/** Commit related model versions together; callers must surface persistence failures. */
+export async function saveDatasetsAtomically(datasets: any[]): Promise<void> {
+    const db = await openDB();
+    try {
+        await new Promise<void>((resolve, reject) => {
+            const tx = db.transaction(STORE_NAME, 'readwrite');
+            tx.oncomplete = () => resolve();
+            tx.onabort = () => reject(tx.error || new Error('Dataset save was aborted.'));
+            tx.onerror = () => reject(tx.error || new Error('Unable to persist datasets.'));
+            try {
+                const ownerId = useAuthStore.getState().currentUser?.id;
+                for (const dataset of datasets) {
+                    tx.objectStore(STORE_NAME).put(dataset.ownerId || !ownerId ? dataset : { ...dataset, ownerId });
+                }
+            } catch (error) {
+                tx.abort();
+                reject(error);
+            }
+        });
+    } finally { db.close(); }
+}
+
 export async function loadAllDatasetsFromDB(userId?: string): Promise<any[]> {
     try {
         const db = await openDB();

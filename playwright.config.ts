@@ -6,6 +6,9 @@ import path from 'path';
 // PLAYWRIGHT_BROWSERS_PATH; we do not download at install time). Falls back to
 // Playwright's own resolution if the glob finds nothing.
 function resolveChromium(): string | undefined {
+    // Allow CI and Windows developers to use an already installed Chromium browser.
+    const executable = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE;
+    if (executable && fs.existsSync(executable)) return executable;
     const base = process.env.PLAYWRIGHT_BROWSERS_PATH || '/opt/pw-browsers';
     try {
         const dir = fs.readdirSync(base).find(d => d.startsWith('chromium-'));

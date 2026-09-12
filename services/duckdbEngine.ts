@@ -259,6 +259,8 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
                 if (typeof val === 'number') { hasNumber = true; continue; }
 
                 const strVal = String(val);
+                // Numeric-looking codes with significant zeros must remain text.
+                if (/^[+-]?0\d/.test(strVal.trim())) { hasString = true; break; }
                 // Check if it's a date
                 if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(strVal)) {
                     hasDate = true;

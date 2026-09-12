@@ -9,7 +9,7 @@ import {
     GroupFilter, OrderBy, AggregationType, dimensionId,
     EnrichedQuery, ComparisonConfig, TableCalculation
 } from './types';
-import { sanitizeIdentifier, escapeStringValue } from '../analysisValidator';
+import { escapeStringValue } from '../analysisValidator';
 import { dateRangePredicate } from './sqlPrimitives';
 import { previousComparisonPeriod } from '../comparisonPeriod';
 
@@ -18,8 +18,8 @@ import { previousComparisonPeriod } from '../comparisonPeriod';
 /** Safely quote an identifier for SQL */
 function safeId(name: string): string {
     if (!name) return '"unnamed"';
-    const sanitized = sanitizeIdentifier(name);
-    return `"${sanitized.replace(/"/g, '""')}"`;
+    if (name.includes('\0')) throw new Error('SQL identifiers cannot contain a null character');
+    return `"${name.replace(/"/g, '""')}"`;
 }
 
 /** Safely format a date string for SQL */

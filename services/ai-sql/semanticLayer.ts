@@ -501,23 +501,26 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
         const role = arbResult.role;
         const defaultAgg = inferDefaultAgg(semanticType, role);
         const formatHint = deriveFormatHint(semanticType);
+        const fieldOrigin = dataset.fieldOrigins?.[col.name];
+        const sourceColumnName = fieldOrigin?.column || col.name;
         const ownerCandidates = (dataset.sourceSchema?.tables || []).filter(table =>
-            table.columns.some(column => column.name.toLowerCase() === col.name.toLowerCase())
+            (!fieldOrigin || table.name === fieldOrigin.table) &&
+            table.columns.some(column => column.name.toLowerCase() === sourceColumnName.toLowerCase())
         );
         const ownerTable = ownerCandidates.length === 1 ? ownerCandidates[0].name : undefined;
         const ownerColumn = ownerCandidates.length === 1
-            ? ownerCandidates[0].columns.find(column => column.name.toLowerCase() === col.name.toLowerCase())
+            ? ownerCandidates[0].columns.find(column => column.name.toLowerCase() === sourceColumnName.toLowerCase())
             : undefined;
         const participatesAsForeignKey = (dataset.sourceSchema?.joinEdges || []).some(edge =>
-            (edge.leftTable === ownerTable && edge.leftColumn.toLowerCase() === col.name.toLowerCase())
-            || (edge.rightTable === ownerTable && edge.rightColumn.toLowerCase() === col.name.toLowerCase())
+            (edge.leftTable === ownerTable && (edge.leftColumns || [edge.leftColumn]).some(c => c.toLowerCase() === sourceColumnName.toLowerCase()))
+            || (edge.rightTable === ownerTable && (edge.rightColumns || [edge.rightColumn]).some(c => c.toLowerCase() === sourceColumnName.toLowerCase()))
         );
         const uniquenessRatio = totalRows > 0 ? statProfile.distinctCount / totalRows : 0;
-        const keyRole: NonNullable<SemanticField['keyRole']> = ownerColumn?.isPK
+        const keyRole: NonNullable<SemanticField['keyRole']> = ownerColumn?.isPK && (!dataset.subjectTable || dataset.subjectTable === ownerTable)
             ? 'primary_key'
             : participatesAsForeignKey
                 ? 'foreign_key'
-                : semanticType === 'identifier' || uniquenessRatio >= 0.98
+                : semanticType === 'identifier'
                     ? 'identifier'
                     : 'none';
 
