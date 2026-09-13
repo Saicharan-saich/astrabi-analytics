@@ -1206,7 +1206,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     },
                     primaryLabel: yLabel || yKey || '',
                     // Default to true black on light backgrounds — slate grey read as faint over the chart.
-                    color: formatting?.dataLabelColor || (isDark ? '#f8fafc' : '#000000'),
+                    // Charts use a light canvas in both app themes. Keep every
+                    // value label black by default, independent of series color.
+                    color: formatting?.dataLabelColor || '#000000',
                     font: {
                         weight: formatting?.dataLabelBold !== false ? 'bold' : 'normal',
                         size: dataLabelFontSize
@@ -1644,7 +1646,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     const labelX = elbowX + (side === 'right' ? 5 : -5);
 
                     ctx.font = 'bold 11px "Inter", sans-serif';
-                    ctx.fillStyle = '#334155';
+                    ctx.fillStyle = options.color || '#000000';
                     ctx.fillText(labelText, labelX, outerY);
                 });
             } else {
@@ -1681,17 +1683,17 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             text = String(value);
                         }
 
-                        // Style per dataset: primary = bold, comparison = italic, secondary = colored
+                        // Preserve font emphasis, but never inherit series colors
+                        // for value labels: a single selected label color applies
+                        // consistently to all datasets.
                         if (isComparisonDs) {
                             ctx.font = `italic ${options.font.size - 1}px "Inter", sans-serif`;
-                            ctx.fillStyle = '#64748b'; // slate-500 for comparison
                         } else if (isSecondaryDs) {
                             ctx.font = `bold ${options.font.size - 1}px "Inter", sans-serif`;
-                            ctx.fillStyle = dataset.borderColor || options.color;
                         } else {
                             ctx.font = `${options.font.weight} ${options.font.size}px "Inter", sans-serif`;
-                            ctx.fillStyle = options.color;
                         }
+                        ctx.fillStyle = options.color || '#000000';
                         ctx.textAlign = 'center';
 
                         const area = chart.chartArea;

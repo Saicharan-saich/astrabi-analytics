@@ -12,6 +12,16 @@ test('adding a third grouping dimension automatically shows facet panels', async
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: { 'Access-Control-Allow-Origin': '*' } });
     });
     await page.addInitScript(() => localStorage.setItem('QuickInsight-onboarding-complete', 'true'));
+    await page.addInitScript(() => {
+        const original = CanvasRenderingContext2D.prototype.fillText;
+        (window as any).__qiValueLabelInks = [];
+        CanvasRenderingContext2D.prototype.fillText = function (this: CanvasRenderingContext2D, ...args: Parameters<typeof original>) {
+            if (String(args[0]) === '100' || String(args[0]) === '50') {
+                (window as any).__qiValueLabelInks.push(String(this.fillStyle));
+            }
+            return original.apply(this, args);
+        };
+    });
     await page.goto('/');
     await page.getByRole('button', { name: /skip tour/i }).click();
     await page.getByLabel('Email Address').fill(user.email);
@@ -51,4 +61,14 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await expect(page.getByRole('button', { name: 'Labels Off', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Labels Off', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Labels All', exact: true })).toBeVisible();
+
+    // Combined creates four color series. Value labels for the third and
+    // fourth series must remain black, not inherit pink/orange bar colors.
+    await page.getByRole('button', { name: 'Combined', exact: true }).click();
+    await page.locator('.qi-visual-stage button[title="Hide labels"]').click();
+    await page.evaluate(() => { (window as any).__qiValueLabelInks = []; });
+    await page.locator('.qi-visual-stage button[title="Show labels for all series"]').click();
+    await expect.poll(() => page.evaluate(() => (window as any).__qiValueLabelInks.length)).toBeGreaterThanOrEqual(8);
+    const inks = await page.evaluate(() => (window as any).__qiValueLabelInks as string[]);
+    expect(inks.every(color => color === '#000000' || color === 'rgb(0, 0, 0)')).toBe(true);
 });
