@@ -11,6 +11,7 @@ import { Dataset, ColumnType, AggregationType, QueryConfig, AnalysisResult, Time
 import { runAnalysis, QUESTION_BANK, autoPickConfig, resolveMapping, QUESTION_REGISTRY, getFullQuestionBank, getFullRegistry, getFullQuestionBankForDomain } from '../services/analysisEngine';
 import { QuestionBuilder } from './QuestionBuilder';
 import { ChartVisualization } from './ChartVisualization';
+import { toggleDataLabels } from '../utils/dataLabelVisibility';
 import { QuestionCustomizer } from './QuestionCustomizer';
 import { ResultsTable } from './ResultsTable';
 import { Tooltip as InfoTooltip } from './Tooltip';
@@ -1251,14 +1252,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                 onToggleAnalytics={() => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen)}
                                                 isAnalyticsOpen={isAnalyticsPanelOpen}
                                                 onToggleLabels={formatting && onUpdateFormatting ? () => {
-                                                  const mode = formatting.dataLabelMode || 'off';
-                                                  if (!formatting.showDataLabels || mode === 'off') {
-                                                    onUpdateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'primary' });
-                                                  } else if (mode === 'primary') {
-                                                    onUpdateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'all' });
-                                                  } else {
-                                                    onUpdateFormatting({ ...formatting, showDataLabels: false, dataLabelMode: 'off' });
-                                                  }
+                                                  onUpdateFormatting(toggleDataLabels(formatting));
                                                 } : undefined}
                                                 onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)}
                                                 isAIInsightOpen={isAIInsightOpen}

@@ -4,6 +4,8 @@ import { QuestionBuilder } from './QuestionBuilder';
 import { QuerySelect } from './QuerySelect';
 import { ChartVisualization } from './ChartVisualization';
 import { SmallMultiplesGrid } from './SmallMultiplesGrid';
+import { resolveDimensionVisualization } from '../utils/dimensionVisualization';
+import { effectiveDataLabelMode, toggleDataLabels } from '../utils/dataLabelVisibility';
 import { AnalysisResult, Dataset, QueryConfig, FormattingConfig, AggregationType, TimeGrain, AnalysisType, ColumnType, RefreshSchedule } from '../types';
 import { runAnalysis } from '../services/analysisEngine';
 import { getCalculationDisplayName, applyMultipleCalculations, type TableCalculation, type CalculatedColumn } from '../utils/tableCalculations';
@@ -297,6 +299,12 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
             setResult(res);
             setLastRunConfig(config);
+            const previousGrouping = JSON.stringify([lastRunConfig?.dimension, ...(lastRunConfig?.secondaryDimensions || [])]);
+            const nextGrouping = JSON.stringify([config.dimension, ...(config.secondaryDimensions || [])]);
+            if (previousGrouping !== nextGrouping) {
+                setForceGridMode('auto');
+                setContentTab('visual');
+            }
             setIsLoading(false);
 
         } catch (err: any) {
@@ -437,6 +445,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
     const effectiveInitialConfig = freshSession ? undefined : initialConfig;
     const effectiveSavedSession = freshSession ? null : savedSession;
+    const dimensionLayout = useMemo(() => result
+        ? resolveDimensionVisualization(result.data, result.xKey, result.yKey, result.config, forceGridMode)
+        : null,
+    [result, forceGridMode]);
 
     return (
         <div className={`qi-builder-workspace qi-builder-layout ${isBuilderCollapsed ? 'qi-builder-layout--builder-collapsed' : ''} ${isAnalyticsExplorer ? 'qi-builder-layout--explorer' : ''} flex flex-col h-full bg-slate-50`}>
@@ -595,25 +607,14 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
                 {/* Small Multiples Toggle */}
                 {result && !error && contentTab === 'visual' && (() => {
-                    const xk = result.xKey;
-                    const yk = result.yKey;
-                    const candidateCols = Object.keys(result.data[0] || {}).filter(k =>
-                        k !== xk && k !== yk && typeof result.data[0]?.[k] === 'string'
-                    );
-                    const splitCol = candidateCols.find(col => {
-                        const unique = new Set(result.data.map((r: any) => r[col]));
-                        return unique.size > 1 && unique.size <= 50;
-                    });
-                    if (!splitCol) return null;
-                    const seriesCount = new Set(result.data.map((r: any) => r[splitCol])).size;
-                    if (seriesCount < 2) return null;
-                    const isGridActive = forceGridMode === 'grid' || (forceGridMode === 'auto' && seriesCount > 4);
+                    if (!dimensionLayout?.facetKey) return null;
+                    const isGridActive = dimensionLayout.useGrid;
                     return (
                         <>
                             <div className="w-px h-5 bg-slate-200 mx-1" />
                             <div className="flex items-center gap-0.5 border border-slate-200 rounded-lg overflow-hidden">
                                 <button
-                                    onClick={() => setForceGridMode(isGridActive ? 'combined' : 'grid')}
+                                    onClick={() => setForceGridMode('grid')}
                                     className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold transition-all ${
                                         isGridActive
                                             ? 'bg-indigo-100 text-indigo-700'
@@ -625,7 +626,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                     Grid
                                 </button>
                                 <button
-                                    onClick={() => setForceGridMode(isGridActive ? 'combined' : 'grid')}
+                                    onClick={() => setForceGridMode('combined')}
                                     className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold transition-all ${
                                         !isGridActive
                                             ? 'bg-indigo-100 text-indigo-700'
@@ -640,6 +641,16 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         </>
                     );
                 })()}
+
+                {result && !error && contentTab === 'visual' && dimensionLayout?.useGrid && formatting && onUpdateFormatting && (
+                    <button
+                        onClick={() => onUpdateFormatting(toggleDataLabels(formatting))}
+                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border ${effectiveDataLabelMode(formatting) === 'all'
+                            ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
+                            : 'bg-white text-slate-600 border-slate-300 hover:bg-indigo-50'}`}
+                        title={effectiveDataLabelMode(formatting) === 'all' ? 'Hide labels in every panel' : 'Show labels for all series in every panel'}
+                    >Labels {effectiveDataLabelMode(formatting) === 'off' ? 'Off' : effectiveDataLabelMode(formatting) === 'all' ? 'All' : '1st'}</button>
+                )}
 
                 {/* X/Y Axis Toggles */}
                 {result && !error && contentTab === 'visual' && formatting && onUpdateFormatting && (
@@ -705,6 +716,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                         yKey: firstCol.key,
                                         yLabel: firstCol.label,
                                         vis: calcChartType,
+                                        visualizationMode: forceGridMode,
                                         formatting: calcFormatting,
                                         config: lastRunConfig ? { ...lastRunConfig, comparison: 'none' } : undefined,
                                         queryConfig: lastRunConfig ? { ...lastRunConfig, comparison: 'none' } : undefined,
@@ -715,6 +727,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                     pinResult = {
                                         ...result,
                                         vis: chartType,
+                                        visualizationMode: forceGridMode,
                                         formatting: { ...formatting, tableCalculations: [] } as any,
                                         config: lastRunConfig || undefined,
                                         queryConfig: lastRunConfig || undefined,
@@ -860,15 +873,35 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                             return clean;
                                         });
                                         const calcConfig = result.config ? { ...result.config, comparison: 'none' as const } : undefined;
+                                        const calcLayout = resolveDimensionVisualization(
+                                            calcCleanData, result.xKey, firstCol.key, result.config, forceGridMode,
+                                        );
+                                        if (calcLayout.useGrid && calcLayout.facetKey) {
+                                            return (
+                                                <SmallMultiplesGrid
+                                                    data={calcLayout.rows}
+                                                    config={calcConfig}
+                                                    xKey={result.xKey}
+                                                    yKey={firstCol.key}
+                                                    yLabel={firstCol.label}
+                                                    splitKey={calcLayout.facetKey}
+                                                    seriesKey={calcLayout.seriesKey}
+                                                    chartType={firstCol.calculation === 'percent_of_total' ? 'bar' : chartType}
+                                                    formatting={{ ...formatting, tableCalculations: [], numberFormat: (firstCol.format || formatting?.numberFormat) as FormattingConfig['numberFormat'] }}
+                                                />
+                                            );
+                                        }
                                         return (
                                             <ChartVisualization
                                                 key={`growth-${firstCol.key}`}
-                                                data={calcCleanData}
+                                                data={calcLayout.rows}
                                                 config={calcConfig}
                                                 xKey={result.xKey}
                                                 yKey={firstCol.key}
                                                 yLabel={firstCol.label}
                                                 chartType={firstCol.calculation === 'percent_of_total' ? 'pie' : chartType}
+                                                seriesKey={calcLayout.seriesKey}
+                                                disableAutoSeries={calcLayout.groupedDimensions.length > 1 && !calcLayout.seriesKey}
                                                 onChartTypeChange={setChartType}
                                                 formatting={{ ...formatting, tableCalculations: [], numberFormat: (firstCol.format || formatting?.numberFormat) as FormattingConfig['numberFormat'], showDataLabels: true }}
                                                 onToggleFormat={onUpdateFormatting ? () => setIsFormatPanelOpen(!isFormatPanelOpen) : undefined}
@@ -884,42 +917,15 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                             />
                                         );
                                     }
-                                    // ── Small Multiples Detection ──
-                                    const xk = result.xKey;
-                                    const yk = result.yKey;
-                                    // A grid of small charts stays readable up to ~12 panels;
-                                    // beyond that the panels are too small to compare.
-                                    const IDEAL_MAX_FACETS = 12;
-                                    const candidateCols = Object.keys(result.data[0] || {}).filter(k =>
-                                        k !== xk && k !== yk && typeof result.data[0]?.[k] === 'string'
-                                    );
-                                    // Score candidates by distinct-value count and pick the best
-                                    // faceting column — preferring the richest breakdown that still
-                                    // fits a readable grid — instead of blindly taking the first.
-                                    const scored = candidateCols
-                                        .map(col => ({ col, n: new Set(result.data.map((r: any) => r[col])).size }))
-                                        .filter(c => c.n > 1 && c.n <= 50);
-                                    const idealCandidates = scored.filter(c => c.n <= IDEAL_MAX_FACETS);
-                                    const splitCol = (idealCandidates.length > 0
-                                        ? [...idealCandidates].sort((a, b) => b.n - a.n)[0]
-                                        : scored[0]
-                                    )?.col;
-                                    const seriesCount = splitCol ? new Set(result.data.map((r: any) => r[splitCol])).size : 0;
-                                    // Auto-grid only when the facet count is both meaningful (>4) and
-                                    // readable (<=12). An explicit "grid" choice is always honoured.
-                                    const shouldUseGrid = !!splitCol && (
-                                        forceGridMode === 'grid' ||
-                                        (forceGridMode === 'auto' && seriesCount > 4 && seriesCount <= IDEAL_MAX_FACETS)
-                                    );
-
-                                    if (shouldUseGrid && splitCol) {
+                                    if (dimensionLayout?.useGrid && dimensionLayout.facetKey) {
                                         return (
                                             <SmallMultiplesGrid
-                                                data={result.data}
+                                                data={dimensionLayout.rows}
                                                 xKey={result.xKey}
                                                 yKey={result.yKey}
                                                 yLabel={result.yLabel}
-                                                splitKey={splitCol}
+                                                splitKey={dimensionLayout.facetKey}
+                                                seriesKey={dimensionLayout.seriesKey}
                                                 chartType={chartType}
                                                 formatting={{ ...formatting, tableCalculations: [] }}
                                                 config={result.config}
@@ -930,12 +936,14 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                     return (
                                         <ChartVisualization
                                             key={`result-${result.xKey}-${result.yKey}-${chartType}`}
-                                            data={result.data}
+                                            data={dimensionLayout?.rows || result.data}
                                             config={result.config}
                                             xKey={result.xKey}
                                             yKey={result.yKey}
                                             yLabel={result.yLabel}
                                             chartType={chartType}
+                                            seriesKey={dimensionLayout?.seriesKey}
+                                            disableAutoSeries={!!dimensionLayout && dimensionLayout.groupedDimensions.length > 1 && !dimensionLayout.seriesKey}
                                             onChartTypeChange={setChartType}
                                             formatting={{ ...formatting, tableCalculations: [] }}
                                             onToggleFormat={onUpdateFormatting ? () => setIsFormatPanelOpen(!isFormatPanelOpen) : undefined}
@@ -943,14 +951,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                             onToggleAnalytics={onUpdateFormatting ? () => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen) : undefined}
                                             isAnalyticsOpen={isAnalyticsPanelOpen}
                                             onToggleLabels={onUpdateFormatting && formatting ? () => {
-                                              const mode = formatting.dataLabelMode || 'off';
-                                              if (!formatting.showDataLabels || mode === 'off') {
-                                                onUpdateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'primary' });
-                                              } else if (mode === 'primary') {
-                                                onUpdateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'all' });
-                                              } else {
-                                                onUpdateFormatting({ ...formatting, showDataLabels: false, dataLabelMode: 'off' });
-                                              }
+                                              onUpdateFormatting(toggleDataLabels(formatting));
                                             } : undefined}
                                             onDrillDown={handleDrillDown}
                                             onGoBack={preDrillConfig ? handleGoBack : undefined}

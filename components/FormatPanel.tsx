@@ -366,7 +366,7 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
           />
           <FormatCheckbox
             checked={formatting.showDataLabels}
-            onChange={v => update({ showDataLabels: v })}
+            onChange={v => update({ showDataLabels: v, dataLabelMode: v ? 'all' : 'off' })}
             label="Show Data Labels"
           />
 

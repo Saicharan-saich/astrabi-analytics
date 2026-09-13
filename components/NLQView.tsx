@@ -6,6 +6,7 @@ import { matchQuestion, isGibberish, QuestionMatch, NLQMatchResult } from '../se
 import { QUESTION_REGISTRY } from '../services/questionRegistry';
 import { runAnalysis } from '../services/analysisEngine';
 import { ChartVisualization } from './ChartVisualization';
+import { toggleDataLabels } from '../utils/dataLabelVisibility';
 import { Tooltip } from './Tooltip';
 import { AIInsightPanel } from './AIInsightPanel';
 import { getCalculationDisplayName, type TableCalculation } from '../utils/tableCalculations';
@@ -690,14 +691,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                                                     onToggleAnalytics={() => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen)}
                                                     isAnalyticsOpen={isAnalyticsPanelOpen}
                                                     onToggleLabels={() => {
-                                                      const mode = formatting.dataLabelMode || 'off';
-                                                      if (!formatting.showDataLabels || mode === 'off') {
-                                                        updateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'primary' });
-                                                      } else if (mode === 'primary') {
-                                                        updateFormatting({ ...formatting, showDataLabels: true, dataLabelMode: 'all' });
-                                                      } else {
-                                                        updateFormatting({ ...formatting, showDataLabels: false, dataLabelMode: 'off' });
-                                                      }
+                                                      updateFormatting(toggleDataLabels(formatting));
                                                     }}
                                                     onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)}
                                                     isAIInsightOpen={isAIInsightOpen}

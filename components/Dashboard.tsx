@@ -3,7 +3,8 @@ import { Responsive, WidthProvider } from 'react-grid-layout';
 const ResponsiveGridLayout = WidthProvider(Responsive) as any;
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
-import { ChartVisualization } from './ChartVisualization';
+import { DashboardResultVisualization } from './DashboardResultVisualization';
+import { effectiveDataLabelMode, toggleDataLabels } from '../utils/dataLabelVisibility';
 import { ErrorBoundary } from './ErrorBoundary';
 import {
   Trash2, Edit, AlertTriangle, X, FileDown, Presentation,
@@ -616,16 +617,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               </h3>
             </div>
             <div className="h-[calc(100%-52px)]">
-              {item.result.needsLocalData ? missingDataView(item) : <ChartVisualization
-                config={item.result.config}
+              {item.result.needsLocalData ? missingDataView(item) : <DashboardResultVisualization
+                result={item.result}
                 data={getFilteredData(item)}
-                xKey={item.result.xKey}
-                yKey={item.result.yKey}
-                yLabel={item.result.yLabel}
-                chartType={(item.result.vis as any) || 'bar'}
-                onChartTypeChange={() => { }}
                 formatting={item.result.formatting || formatting}
-                hideControls={true}
               />}
             </div>
           </div>
@@ -1432,30 +1427,23 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                           <Filter className="w-3.5 h-3.5" />
                         </button>
                       )}
-                      {/* Labels toggle — cycle Off → Primary → All */}
+                      {/* Labels toggle — Off/legacy Primary → All → Off */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           const fmt = item.result.formatting || formatting;
-                          const mode = fmt?.dataLabelMode || 'off';
-                          let newFmt;
-                          if (!fmt?.showDataLabels || mode === 'off') {
-                            newFmt = { ...fmt, showDataLabels: true, dataLabelMode: 'primary' as const };
-                          } else if (mode === 'primary') {
-                            newFmt = { ...fmt, showDataLabels: true, dataLabelMode: 'all' as const };
-                          } else {
-                            newFmt = { ...fmt, showDataLabels: false, dataLabelMode: 'off' as const };
-                          }
+                          if (!fmt) return;
+                          const newFmt = toggleDataLabels(fmt);
                           updateItem({ ...item, result: { ...item.result, formatting: newFmt } });
                         }}
                         className={`p-1.5 rounded-lg transition-all ${
                           (item.result.formatting || formatting)?.showDataLabels
-                            ? (item.result.formatting || formatting)?.dataLabelMode === 'all'
+                            ? effectiveDataLabelMode(item.result.formatting || formatting) === 'all'
                               ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-200'
                               : 'bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-300 hover:bg-sky-100'
                             : 'bg-gray-50 dark:bg-gray-700 text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-600'
                         }`}
-                        title={`Labels: ${!(item.result.formatting || formatting)?.showDataLabels ? 'Off — click for Primary' : (item.result.formatting || formatting)?.dataLabelMode === 'all' ? 'All — click to turn Off' : 'Primary — click for All'}`}
+                        title={`Labels: ${effectiveDataLabelMode(item.result.formatting || formatting) === 'off' ? 'Off — click to show all' : effectiveDataLabelMode(item.result.formatting || formatting) === 'all' ? 'All — click to turn off' : 'First series only — click to show all'}`}
                       >
                         <Tag className="w-3.5 h-3.5" />
                       </button>
@@ -1494,16 +1482,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                   <div className="flex-1 p-2 min-h-0 overflow-hidden flex items-center justify-center bg-white">
                     <div className="w-full h-full min-h-0 overflow-hidden rounded-xl bg-white">
                       <ErrorBoundary compact label={item.title || 'Chart'}>
-                        {item.result.needsLocalData ? missingDataView(item) : <ChartVisualization
-                          config={item.result.config}
+                        {item.result.needsLocalData ? missingDataView(item) : <DashboardResultVisualization
+                          result={item.result}
                           data={getFilteredData(item)}
-                          xKey={item.result.xKey}
-                          yKey={item.result.yKey}
-                          yLabel={item.result.yLabel}
-                          chartType={(item.result.vis as any) || 'bar'}
-                          onChartTypeChange={() => { }}
                           formatting={item.result.formatting || formatting}
-                          hideControls={true}
                         />}
                       </ErrorBoundary>
                     </div>

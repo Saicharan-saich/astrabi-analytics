@@ -54,6 +54,7 @@ import {
     formatNumber as formatNum, formatDateLabel
 } from '../utils/chartUtils';
 import { sanitizeRows } from '../utils/numberSafety';
+import { effectiveDataLabelMode, shouldRenderDataLabel } from '../utils/dataLabelVisibility';
 import { MapChart } from './MapChart';
 import { CHART_TYPE_OPTIONS } from './charts/chartRegistry';
 
@@ -80,6 +81,10 @@ interface ChartVisualizationProps {
     chartContainerRef?: React.RefObject<HTMLDivElement | null>;
     /** Concise legend/axis label; yLabel may remain the full question elsewhere. */
     seriesLabel?: string;
+    /** Explicit grouping field; prevents another string column from stealing the legend. */
+    seriesKey?: string;
+    /** Shared numeric scale for comparable small-multiple panels. */
+    axisRange?: { min: number; max: number };
     /** Prevent incidental string columns (such as paired IDs) becoming chart series. */
     disableAutoSeries?: boolean;
 }
@@ -184,6 +189,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     isAIInsightOpen,
     chartContainerRef,
     seriesLabel,
+    seriesKey,
+    axisRange,
     disableAutoSeries = false
 }) => {
     // Chart ref for PNG export
@@ -811,6 +818,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // This enables multi-line charts for "Sales by Hour, split by Product".
         const seriesCol = (() => {
             if (disableAutoSeries || transformedData.length === 0 || isPieChart) return null;
+            if (seriesKey) {
+                const unique = new Set(transformedData.map(d => String(d[seriesKey] ?? 'Unknown')));
+                return seriesKey in transformedData[0] && unique.size > 1 ? seriesKey : null;
+            }
             const candidateCols = Object.keys(transformedData[0]).filter(k =>
                 k !== xKey && k !== yKey &&
                 typeof transformedData[0][k] === 'string' &&
@@ -1154,7 +1165,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             labels,
             datasets
         };
-    }, [transformedData, xKey, yKey, chartType, calculatedYLabel, formatting, data, config]);
+    }, [transformedData, xKey, yKey, chartType, calculatedYLabel, formatting, data, config, seriesKey, disableAutoSeries]);
 
     const options = useMemo(() => {
         const isPieChart = chartType === 'pie' || chartType === 'doughnut' || chartType === 'gauge';
@@ -1186,7 +1197,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 // Custom Data Labels Plugin
                 customDataLabels: { // Namespace for our custom plugin
                     display: formatting ? formatting.showDataLabels : false,
-                    labelMode: formatting?.dataLabelMode || 'primary', // 'primary' = main metric only, 'all' = every dataset
+                    labelMode: effectiveDataLabelMode(formatting),
                     formatter: (val: number) => {
                         return formatCompactLabel(val);
                     },
@@ -1426,6 +1437,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 y: {
                     display: yVisible ?? true,
                     ...(isHorizontal || hasNegativeValues ? {} : { min: 0, beginAtZero: true }),
+                    ...(axisRange ? { min: axisRange.min, max: axisRange.max } : {}),
                     stacked: isStacked,
                     grid: {
                         display: formatting?.showGridLines ?? true,
@@ -1513,7 +1525,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 intersect: (chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea' || chartType === 'gauge') ? true : false,
             },
         } as any; // Cast to any to allow custom scale ID 'y1'
-    }, [chartType, formatting, transformedData, chartData, calculatedYLabel, xKey, yKey]);
+    }, [chartType, formatting, transformedData, chartData, calculatedYLabel, xKey, yKey, axisRange?.min, axisRange?.max]);
 
 
 
@@ -1530,11 +1542,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             if (isPie) {
                 // ── OUTSIDE LABELS WITH LEADER LINES ──
                 const meta = chart.getDatasetMeta(0);
-                if (!meta || meta.hidden) return;
+                if (!meta || meta.hidden) { ctx.restore(); return; }
 
                 const dataset = chart.data.datasets[0];
                 const total = dataset.data.reduce((sum: number, v: number) => sum + (v || 0), 0);
-                if (total === 0) return;
+                if (total === 0) { ctx.restore(); return; }
 
                 const chartArea = chart.chartArea;
                 const centerX = (chartArea.left + chartArea.right) / 2;
@@ -1645,7 +1657,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
                     // Label mode filtering: 'primary' = only dataset 0, 'all' = all datasets
                     const mode = options.labelMode || 'all';
-                    if (mode === 'primary' && i > 0) return;
+                    if (!shouldRenderDataLabel(mode, i)) return;
 
                     meta.data.forEach((element: any, index: number) => {
                         const value = dataset.data[index];
@@ -1682,18 +1694,39 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         }
                         ctx.textAlign = 'center';
 
-                        let x = element.x;
-                        let y = element.y;
-
-                        if (value < 0) {
-                            y = element.y + 10;
-                            ctx.textBaseline = 'top';
+                        const area = chart.chartArea;
+                        const labelWidth = ctx.measureText(text).width;
+                        const fontHeight = options.font.size || 12;
+                        if (chart.options.indexAxis === 'y') {
+                            const positive = Number(value) >= 0;
+                            let x = element.x + (positive ? 8 : -8);
+                            ctx.textAlign = positive ? 'left' : 'right';
+                            ctx.textBaseline = 'middle';
+                            if (positive && x + labelWidth > area.right - 2) {
+                                x = element.x - 8;
+                                ctx.textAlign = 'right';
+                            } else if (!positive && x - labelWidth < area.left + 2) {
+                                x = element.x + 8;
+                                ctx.textAlign = 'left';
+                            }
+                            x = Math.max(area.left + 2, Math.min(area.right - 2, x));
+                            ctx.fillText(text, x, element.y);
                         } else {
-                            y = element.y - 10;
-                            ctx.textBaseline = 'bottom';
-                        }
-
-                        if (y > 10) {
+                            const positive = Number(value) >= 0;
+                            let y = element.y + (positive ? -10 : 10);
+                            ctx.textBaseline = positive ? 'bottom' : 'top';
+                            // Never discard a label merely because the mark is
+                            // close to the chart's top or bottom edge.
+                            if (positive && y - fontHeight < area.top + 2) {
+                                y = element.y + 5;
+                                ctx.textBaseline = 'top';
+                            } else if (!positive && y + fontHeight > area.bottom - 2) {
+                                y = element.y - 5;
+                                ctx.textBaseline = 'bottom';
+                            }
+                            y = Math.max(area.top + fontHeight + 2, Math.min(area.bottom - 2, y));
+                            const x = Math.max(area.left + labelWidth / 2 + 2,
+                                Math.min(area.right - labelWidth / 2 - 2, element.x));
                             ctx.fillText(text, x, y);
                         }
                     });
@@ -2126,22 +2159,22 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             onClick={onToggleLabels}
                             className={`px-3.5 py-2 rounded-lg flex items-center gap-2 text-[13px] font-bold transition-all shadow-sm ${
                                 formatting?.showDataLabels
-                                    ? formatting?.dataLabelMode === 'all'
+                                    ? effectiveDataLabelMode(formatting) === 'all'
                                         ? 'bg-indigo-600 text-white ring-2 ring-indigo-300'
                                         : 'bg-slate-700 text-white ring-2 ring-slate-400'
                                     : 'text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 hover:border-slate-300'
                             }`}
-                            title={!formatting?.showDataLabels ? 'Show labels (primary metric)' : formatting?.dataLabelMode === 'all' ? 'Hide labels' : 'Show all labels'}
+                            title={!formatting?.showDataLabels ? 'Show labels for all series' : effectiveDataLabelMode(formatting) === 'all' ? 'Hide labels' : 'Show all labels'}
                         >
                             <div className="flex items-center justify-center w-4.5 h-4.5 border border-current rounded text-xs font-mono">12</div>
                             <span>Labels</span>
                             {formatting?.showDataLabels && (
                                 <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                                    formatting?.dataLabelMode === 'all'
+                                    effectiveDataLabelMode(formatting) === 'all'
                                         ? 'bg-indigo-400/30 text-indigo-100'
                                         : 'bg-slate-500/30 text-slate-200'
                                 }`}>
-                                    {formatting?.dataLabelMode === 'all' ? 'All' : '1st'}
+                                    {effectiveDataLabelMode(formatting) === 'all' ? 'All' : '1st'}
                                 </span>
                             )}
                         </button>

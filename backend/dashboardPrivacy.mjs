@@ -41,7 +41,7 @@ const chart = {
     // reason and growth are derived answers, not required to replay the query.
 };
 const result = {
-    ...fields('xKey yKey yLabel sql calculatedSql vis axisMode'),
+    ...fields('xKey yKey yLabel sql calculatedSql vis axisMode visualizationMode'),
     config: query, queryConfig: query, formatting,
     secondaryYKeys: list(scalar),
     aiSqlRefresh: { ...fields('version source question sql'), plan, chart },

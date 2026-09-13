@@ -406,6 +406,7 @@ export interface AnalysisResult {
   kpi?: number | string; // Optional override for the main KPI number
   vis?: ChartConfig['type']; // Recommended visualization
   formatting?: FormattingConfig; // Per-item formatting (preserved when pinning)
+  visualizationMode?: 'auto' | 'grid' | 'combined'; // Preserves a Builder facet/combined choice when pinned
   growth?: { diff: number; pct: number }; // Metadata for toggle
   secondaryYKeys?: string[]; // Additional metric keys in data rows (e.g., ['profit', 'quantity'])
   axisMode?: 'single' | 'dual' | 'blended'; // Recommended axis mode for multi-metric

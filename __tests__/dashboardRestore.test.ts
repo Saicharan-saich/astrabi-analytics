@@ -36,7 +36,9 @@ describe('restoring dashboards without cloud result rows', () => {
     });
     it('rebuilds a cloud-only builder card from the full local dataset', async () => {
         const input = dashboardFixture();
+        input.items[0].result.visualizationMode = 'grid';
         const card = sanitizeDashboard(input).items[0];
+        expect(card.result.visualizationMode).toBe('grid');
         const rows = [
             { region: 'North', sales: 10 }, { region: 'North', sales: 20 }, { region: 'South', sales: 40 },
         ];
@@ -50,6 +52,7 @@ describe('restoring dashboards without cloud result rows', () => {
         const north = result.data.find(row => row[result.xKey] === 'North');
         expect(north[result.yKey]).toBe(30);
         expect(result.vis).toBe('bar');
+        expect(result.visualizationMode).toBe('grid');
         expect(result.formatting).toEqual(input.items[0].result.formatting);
     });
 });

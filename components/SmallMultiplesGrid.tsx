@@ -8,6 +8,7 @@ interface SmallMultiplesGridProps {
     yKey: string;
     yLabel: string;
     splitKey: string;        // dimension column to facet by
+    seriesKey?: string;
     chartType: string;
     formatting?: FormattingConfig;
     config?: any;
@@ -19,7 +20,7 @@ interface SmallMultiplesGridProps {
  * Works generically with any dimension + any measure + any time grain.
  */
 export const SmallMultiplesGrid: React.FC<SmallMultiplesGridProps> = ({
-    data, xKey, yKey, yLabel, splitKey, chartType, formatting, config
+    data, xKey, yKey, yLabel, splitKey, seriesKey, chartType, formatting, config
 }) => {
     // 1) Group data by the split dimension
     const { groups, globalMin, globalMax, sortedKeys } = useMemo(() => {
@@ -37,9 +38,12 @@ export const SmallMultiplesGrid: React.FC<SmallMultiplesGridProps> = ({
             if (val > max) max = val;
         }
 
-        // Sort groups by total metric value (descending) for meaningful ordering
+        // Keep time facets chronological; rank other facets by measure size.
+        const isTimeFacet = /period|date|year|month|quarter/i.test(splitKey);
+        const chronological = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
         const sorted = Array.from(map.entries())
             .sort((a, b) => {
+                if (isTimeFacet) return chronological.compare(a[0], b[0]);
                 const totalA = a[1].reduce((s: number, r: any) => s + (Number(r[yKey]) || 0), 0);
                 const totalB = b[1].reduce((s: number, r: any) => s + (Number(r[yKey]) || 0), 0);
                 return totalB - totalA;
@@ -48,8 +52,8 @@ export const SmallMultiplesGrid: React.FC<SmallMultiplesGridProps> = ({
 
         return {
             groups: map,
-            globalMin: min === Infinity ? 0 : 0, // Always start from 0 for bar/line
-            globalMax: max === -Infinity ? 100 : max * 1.1, // 10% headroom
+            globalMin: min === Infinity ? 0 : Math.min(0, min * 1.1),
+            globalMax: max === -Infinity || max <= 0 ? 1 : max * 1.1,
             sortedKeys: sorted
         };
     }, [data, splitKey, yKey]);
@@ -64,15 +68,16 @@ export const SmallMultiplesGrid: React.FC<SmallMultiplesGridProps> = ({
     }, [groups, yKey]);
 
     // Effective chart type for facets (force line/area for time-series small multiples)
-    const facetChartType = ['bar', 'horizontalBar', 'stackedBar'].includes(chartType) ? 'bar' : 'line';
+    const facetChartType = ['line', 'area', 'stackedArea', 'steppedLine', 'curvedLine'].includes(chartType) ? 'line' : 'bar';
 
     // Strip comparison from config for facets
     const facetConfig = config ? { ...config, comparison: 'none' as const } : undefined;
 
-    // Formatting: force data labels off for small multiples (too cluttered)
+    // Honor an explicit label setting in every panel; a compact view must not
+    // silently ignore the user's Labels control.
     const facetFormatting: FormattingConfig = {
         ...formatting,
-        showDataLabels: false,
+        showDataLabels: formatting?.showDataLabels ?? false,
         tableCalculations: [],
     } as FormattingConfig;
 
@@ -98,7 +103,9 @@ export const SmallMultiplesGrid: React.FC<SmallMultiplesGridProps> = ({
             <div
                 className="grid gap-3"
                 style={{
-                    gridTemplateColumns: sortedKeys.length <= 2
+                    gridTemplateColumns: sortedKeys.length === 1
+                        ? '1fr'
+                        : sortedKeys.length <= 2
                         ? 'repeat(2, 1fr)'
                         : sortedKeys.length <= 6
                             ? 'repeat(3, 1fr)'
@@ -133,6 +140,9 @@ export const SmallMultiplesGrid: React.FC<SmallMultiplesGridProps> = ({
                                     yKey={yKey}
                                     yLabel={yLabel}
                                     chartType={facetChartType as any}
+                                    seriesKey={seriesKey}
+                                    axisRange={{ min: globalMin, max: globalMax }}
+                                    disableAutoSeries={!seriesKey}
                                     onChartTypeChange={() => { }}
                                     formatting={facetFormatting}
                                     hideControls={true}

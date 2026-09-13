@@ -56,7 +56,7 @@ export async function rebuildDashboardItem(item: DashboardItem, dataset: Dataset
             ...config, asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || '',
         });
         if (fresh.error) throw new Error(fresh.error);
-        fresh = { ...fresh, vis: previous.vis || fresh.vis, formatting: previous.formatting, queryConfig: config };
+        fresh = { ...fresh, vis: previous.vis || fresh.vis, formatting: previous.formatting, visualizationMode: previous.visualizationMode, queryConfig: config };
     }
     return {
         ...item, result: { ...fresh, needsLocalData: false },

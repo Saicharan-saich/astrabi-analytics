@@ -231,7 +231,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 ...defaultFormatting,
                 numberFormat: detectedFormat,
                 showDataLabels: showRecommendedLabels,
-                dataLabelMode: showRecommendedLabels ? 'primary' : 'off',
+                dataLabelMode: showRecommendedLabels ? 'all' : 'off',
                 axisLabelSize: result.chart.chartType === 'horizontalBar' ? 'sm' : defaultFormatting.axisLabelSize,
             };
 

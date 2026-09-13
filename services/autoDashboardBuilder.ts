@@ -111,7 +111,7 @@ export async function buildAutoDashboard(
             headerBold: true,
             showLabels: true,
             showDataLabels: showLabels,
-            dataLabelMode: showLabels ? 'primary' : 'off',
+            dataLabelMode: showLabels ? 'all' : 'off',
             showAxis: true,
             showXAxis: true,
             showYAxis: true,

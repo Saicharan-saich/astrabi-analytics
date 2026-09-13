@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { ChartVisualization } from './ChartVisualization';
+import { toggleDataLabels } from '../utils/dataLabelVisibility';
 import { DimensionResultView } from './DimensionResultView';
 import { FormatPanel } from './FormatPanel';
 import { AIInsightPanel } from './AIInsightPanel';
@@ -533,17 +534,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                   setIsAnalyticsPanelOpen(open => !open);
                 }} isAnalyticsOpen={isAnalyticsPanelOpen}
                 onToggleLabels={() => {
-                  const mode = localFormatting.dataLabelMode || 'off';
-                  if (!localFormatting.showDataLabels || mode === 'off') {
-                    // Off → Primary
-                    updateFormatting({ ...localFormatting, showDataLabels: true, dataLabelMode: 'primary' });
-                  } else if (mode === 'primary') {
-                    // Primary → All
-                    updateFormatting({ ...localFormatting, showDataLabels: true, dataLabelMode: 'all' });
-                  } else {
-                    // All → Off
-                    updateFormatting({ ...localFormatting, showDataLabels: false, dataLabelMode: 'off' });
-                  }
+                  updateFormatting(toggleDataLabels(localFormatting));
                 }}
                 onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)} isAIInsightOpen={isAIInsightOpen}
                 chartContainerRef={chartContainerRef}
