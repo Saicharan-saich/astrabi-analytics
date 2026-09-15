@@ -106,6 +106,24 @@ export function recommendChart(
     let topN: number | undefined;
     let growth: ChartRecommendation['growth'];
 
+    // ─── Safety Rule: row-level and wide detail results → Table ─────
+    // A projection is evidence, not an aggregate visual. Plotting one numeric
+    // field from a 20-column record set hides most of the requested answer and
+    // can imply aggregation that never happened. A wide result is likewise too
+    // information-dense for one honest chart, even if the model plan was weak.
+    const isRowLevelProjection = plan.intent === 'projection'
+        || (Boolean(plan.projectionFields?.length) && plan.metrics.length === 0);
+    const isWideDetailResult = profile.columnCount >= 6 && dimensionCount >= 3;
+    if (isRowLevelProjection || isWideDetailResult) {
+        chartType = 'table';
+        xKey = presentationDimensionColumns[0] || dimensionColumns[0] || '';
+        yKey = visualMetricColumns[0] || metricColumns[0] || '';
+        reason = isRowLevelProjection
+            ? 'Row-level fields requested → Data Table preserves every returned column'
+            : `${profile.columnCount}-column detailed result → Data Table prevents hidden fields and misleading aggregation`;
+        return { chartType, xKey, yKey, useDualAxis, reason };
+    }
+
     // ─── Rule 1: Single Value → KPI Card ─────────────────────────
     if (isSingleValue || (rowCount === 1 && metricCount === 1 && dimensionCount === 0)) {
         chartType = 'kpiCard';
@@ -136,15 +154,6 @@ export function recommendChart(
         leftAxisFormat = deriveAxisFormat(metricColumns[0], metricSemanticTypes);
         reason = 'Distribution intent with 1 continuous metric → Box Plot';
         return { chartType, xKey, yKey, useDualAxis, leftAxisFormat, reason };
-    }
-
-    if (dimensionCount >= 2 && metricCount === 1) {
-        chartType = 'heatmap' as RecommendedChart;
-        xKey = presentationDimensionColumns[0];
-        yKey = presentationDimensionColumns[1];
-        secondaryYKeys = [metricColumns[0]];
-        reason = '2+ dimensions and 1 metric → Heatmap';
-        return { chartType, xKey, yKey, secondaryYKeys, useDualAxis, reason };
     }
 
     // ─── Rule 2: Pivoted Comparison → Grouped Bar + Growth ───────

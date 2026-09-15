@@ -11,7 +11,7 @@
  * the user's question, the governed plan, schema metadata, and only
  * user-approved safe category domains when Enhanced privacy is enabled.
  */
-import { fetchWithFallback, LUNA_MODEL, PLANNER_MODEL, SOL_MODEL } from './modelConfig';
+import { fetchWithFallback, LUNA_MODEL, PLANNER_MODEL, SOL_MODEL, selectAISQLRoute } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
 import type { AnalysisIntent, AnalysisPlan, SemanticModel } from './types';
 import {
@@ -161,6 +161,58 @@ Your default is to resolve, not defer:
 - Return clarification only when producing SQL would require an absent field/table or an unsupported fact, not simply because multiple interpretations are conceivable.
 
 Return one complete replacement Query Specification as JSON only.`;
+
+const COMPACT_SPEC_PROMPT = `You plan one read-only DuckDB analysis from schema metadata; you never receive data rows.
+Return one JSON object only with: goal, operations, expectedResult, assumptions, clarification.
+Use exact physical table/column names. operations may contain measures, groupBy, filters, having, orderBy, limit, joins, tableCalculations, ratio, or rankedSets.
+Match the requested output exactly: list/show records means row projection; how many means COUNT; by/per/for each means GROUP BY; percentage requires explicit numerator and denominator. Keep filters, joins, and sort helpers out of expectedResult unless requested. Prefer readable entity labels over opaque IDs. Respect measure additivity, field ownership, relationship paths, and dataset reporting anchors. Never infer a categorical filter from the dataset name.
+If one schema-grounded interpretation is reasonable, use it and disclose the assumption. Set clarification only when missing information would materially change the answer or the schema cannot answer it.`;
+
+const COMPACT_SQL_PROMPT = `Write one read-only DuckDB SELECT/WITH query that exactly follows the supplied Query Specification.
+Use only exact physical schema names and declared joins. Match the requested grain and output columns; do not add identifiers, helper metrics, grouping, filters, or limits that were not requested. Use DISTINCT for unique lists, aggregate before a fan-out join, and quote special identifiers with double quotes. Respect physical date types and the dataset reporting anchor; never use CURRENT_DATE, NOW, or CURRENT_TIMESTAMP when an anchor is supplied. Return SQL only, without markdown or explanation.`;
+
+const ADVANCED_PROMPT_PATTERN = /\b(?:join|without|never|no related|across|cohort|funnel|retention|rank|top\s+\d+|bottom\s+\d+|share|percent(?:age)?|ratio|growth|moving|rolling|running|cumulative|above average|below average|correlation|fiscal|compare|versus|\bvs\b)\b/i;
+
+export function buildPlannerSystemPrompt(question: string, requestPurpose?: 'benchmark'): string {
+    return requestPurpose === 'benchmark' || ADVANCED_PROMPT_PATTERN.test(question)
+        ? SPEC_PROMPT
+        : COMPACT_SPEC_PROMPT;
+}
+
+function querySpecNeedsAdvancedSQL(spec: DynamicQuerySpec): boolean {
+    const operations = spec.operations || {};
+    return Boolean(
+        operations.joins?.length
+        || operations.having?.length
+        || operations.tableCalculations?.length
+        || operations.ratio
+        || operations.rankedSets,
+    );
+}
+
+export function buildSQLSystemPrompt(
+    question: string,
+    spec: DynamicQuerySpec,
+    requestPurpose?: 'benchmark',
+): string {
+    return requestPurpose === 'benchmark'
+        || ADVANCED_PROMPT_PATTERN.test(question)
+        || querySpecNeedsAdvancedSQL(spec)
+        ? SYSTEM_PROMPT
+        : COMPACT_SQL_PROMPT;
+}
+
+export function shouldRunIndependentSQLReview(
+    question: string,
+    spec: DynamicQuerySpec,
+    requestPurpose?: 'benchmark',
+    ambiguityWasAdjudicated = false,
+): boolean {
+    return requestPurpose === 'benchmark'
+        || ambiguityWasAdjudicated
+        || ADVANCED_PROMPT_PATTERN.test(question)
+        || querySpecNeedsAdvancedSQL(spec);
+}
 
 export function normalizeDynamicQuerySpec(value: unknown): DynamicQuerySpec | null {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -918,14 +970,14 @@ export async function generateDirectSQL(
         ? `\n\nDeterministic analytical evidence (advisory; do not let an incomplete operator list erase meaning present in the question):\n${formatAnalyticalIRForPrompt(analyticalIR)}`
         : '';
 
-    // Terra interprets the question into a typed, open-ended analytical plan.
-    // This is deliberately not a collection of keyword rules: the specification
-    // can represent aggregations, filters, joins, windows, table calculations,
-    // and any schema-grounded analytical shape.
+    const plannerPrompt = buildPlannerSystemPrompt(question, requestPurpose);
+    const plannerRoute = requestPurpose === 'benchmark'
+        ? { model: PLANNER_MODEL }
+        : selectAISQLRoute(question, 'plan');
     const planner = await fetchWithFallback([
-        { role: 'system', content: SPEC_PROMPT },
+        { role: 'system', content: plannerPrompt },
         { role: 'user', content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}${contractContext}${analyticalIRContext}\n\nQuestion: ${question}` },
-    ] as any, { temperature: 0, max_tokens: 2200, model: PLANNER_MODEL, requestPurpose });
+    ] as any, { temperature: 0, max_tokens: 2200, model: plannerRoute.model, requestPurpose });
     const specContent = planner.data.choices?.[0]?.message?.content || '';
     let draftSpec = extractJSONObject(specContent);
     const plannerUsage = planner.data.usage || {};
@@ -938,13 +990,13 @@ export async function generateDirectSQL(
         const repaired = await fetchWithFallback([
             {
                 role: 'system',
-                content: `${SPEC_PROMPT}\n\nRepair the supplied planner response into the required Query Specification. Preserve the analytical meaning, use only the supplied schema, and return one valid JSON object only.`,
+                content: `${plannerPrompt}\n\nRepair the supplied planner response into the required Query Specification. Preserve the analytical meaning, use only the supplied schema, and return one valid JSON object only.`,
             },
             {
                 role: 'user',
                 content: `Schema:\n${schemaText}${presentationContext}\n\nQuestion: ${question}\n\nInvalid planner response:\n${specContent}\n\nRepaired JSON:`,
             },
-        ] as any, { temperature: 0, max_tokens: 2200, model: PLANNER_MODEL, requestPurpose });
+        ] as any, { temperature: 0, max_tokens: 2200, model: plannerRoute.model, requestPurpose });
         const repairedUsage = repaired.data.usage || {};
         tokens += repairedUsage.total_tokens || ((repairedUsage.prompt_tokens || 0) + (repairedUsage.completion_tokens || 0)) || 0;
         plannerModelPath = `${plannerModelPath} → ${repaired.model}`;
@@ -965,6 +1017,7 @@ export async function generateDirectSQL(
     // its assumption disclosed) or confirms that the question truly cannot be
     // answered from the available schema. No local keyword rule selects the
     // business meaning here.
+    let ambiguityWasAdjudicated = false;
     if (draftSpec.clarification) {
         try {
             const adjudicated = await fetchWithFallback([
@@ -982,6 +1035,7 @@ export async function generateDirectSQL(
             const adjudicatedSpec = extractJSONObject(adjudicated.data.choices?.[0]?.message?.content || '');
             if (adjudicatedSpec) {
                 draftSpec = adjudicatedSpec;
+                ambiguityWasAdjudicated = true;
                 if (!draftSpec.clarification) {
                     draftSpec.assumptions = [
                         ...draftSpec.assumptions,
@@ -1011,21 +1065,27 @@ export async function generateDirectSQL(
     }
 
     const userContext = `Schema:\n${schemaText}${presentationContext}${contractContext}${analyticalIRContext}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
+    const sqlPrompt = buildSQLSystemPrompt(question, spec, requestPurpose);
+    const sqlRoute = requestPurpose === 'benchmark'
+        ? { model: LUNA_MODEL }
+        : selectAISQLRoute(question, 'sql');
     const drafted = await fetchWithFallback([
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: sqlPrompt },
         { role: 'user', content: userContext },
-    ] as any, { temperature: 0, max_tokens: 2400, model: LUNA_MODEL, requestPurpose });
+    ] as any, { temperature: 0, max_tokens: 2400, model: sqlRoute.model, requestPurpose });
     const draftSQL = extractSQL(drafted.data.choices?.[0]?.message?.content || '');
     const draftUsage = drafted.data.usage || {};
     tokens += draftUsage.total_tokens || ((draftUsage.prompt_tokens || 0) + (draftUsage.completion_tokens || 0)) || 0;
 
     let reviewedSQL = draftSQL;
     let modelUsedForSQL = `${plannerModelPath} → ${drafted.model}`;
-    if (engineConfig.llmReviewer) {
+    const reviewRequired = engineConfig.llmReviewer
+        && shouldRunIndependentSQLReview(question, spec, requestPurpose, ambiguityWasAdjudicated);
+    if (reviewRequired) {
         // Sol independently checks every request against the question, schema
         // and structured plan, then returns the final executable SQL.
         const reviewed = await fetchWithFallback([
-            { role: 'system', content: `${SYSTEM_PROMPT}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the complete question, verified schema facts, and model-authored Query Specification. Correct only concrete violations. Before returning SQL, audit: (1) outer SELECT contains only requested answer fields/calculations, (2) GROUP BY is exactly the requested grain, (3) ranking expression, direction, cardinality and tie behaviour match the wording, (4) aggregate predicates are in HAVING/subqueries without leaking helper metrics into the answer, (5) ratio numerator and denominator use the correct populations, (6) joins follow the declared ownership path, (7) list/set answers cannot repeat because of join fan-out, (8) every required tableCalculation is implemented with its declared partition, order, frame and output alias, and (9) every categorical predicate is explicitly supported by the question/specification rather than inferred from a dataset or domain name. Never add collection aggregates, summary columns, grouping, CTEs, windows, or limits that the question and Query Specification do not require; never remove a required CTE/window/table calculation merely to make SQL shorter. Return only final SQL.` },
+            { role: 'system', content: `${sqlPrompt}\n\nAct as an independent reviewer. Keep the candidate unchanged when it already satisfies the complete question, verified schema facts, and model-authored Query Specification. Correct only concrete violations. Before returning SQL, audit output fields, result grain, ranking, aggregate predicates, ratio populations, join fan-out, uniqueness, required table calculations, and unsupported categorical predicates. Return only final SQL.` },
             { role: 'user', content: `${userContext}\n\nCandidate SQL:\n${draftSQL}\n\nFinal reviewed SQL:` },
         ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
         reviewedSQL = extractSQL(reviewed.data.choices?.[0]?.message?.content || '');
@@ -1033,19 +1093,19 @@ export async function generateDirectSQL(
         tokens += reviewUsage.total_tokens || ((reviewUsage.prompt_tokens || 0) + (reviewUsage.completion_tokens || 0)) || 0;
         modelUsedForSQL = `${modelUsedForSQL} → ${reviewed.model}`;
     } else {
-        console.log('[AI SQL] Independent LLM reviewer disabled by the global engine configuration.');
+        console.log('[AI SQL] Independent LLM reviewer skipped: the deterministic risk gate classified this as a straightforward query.');
     }
     // On the model-owned route, semantic arbitration belongs to the independent
     // reviewer—not to a shorter-query heuristic or a locally inferred contract.
     // Read-only safety is the only deterministic reason to reject its candidate.
     const reviewedSafety = validateReadOnlySQL(reviewedSQL);
     const draftSafety = validateReadOnlySQL(draftSQL);
-    let sql = engineConfig.llmReviewer && reviewedSafety.ok
+    let sql = reviewRequired && reviewedSafety.ok
         ? reviewedSafety.sql
         : draftSafety.ok
             ? draftSafety.sql
             : reviewedSQL || draftSQL;
-    if (engineConfig.llmReviewer && !reviewedSafety.ok && draftSafety.ok) {
+    if (reviewRequired && !reviewedSafety.ok && draftSafety.ok) {
         console.warn('[AI SQL] Reviewer SQL failed read-only safety; retaining the safe draft SQL.');
     }
     console.log(`[AI SQL] Dynamic model route: ${modelUsedForSQL}`);

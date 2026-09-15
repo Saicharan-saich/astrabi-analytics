@@ -76,6 +76,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   // ── Ask another question (standalone — no memory of the previous one) ──
   const [followUpQuery, setFollowUpQuery] = useState('');
   const [isFollowUpLoading, setIsFollowUpLoading] = useState(false);
+  const [followUpError, setFollowUpError] = useState<string | null>(null);
   const followUpRef = useRef<HTMLInputElement>(null);
 
   // ── Sync internal state when new query results arrive ──
@@ -176,7 +177,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
     if (!dataset || !followUpQuery.trim() || isFollowUpLoading) return;
     setIsFollowUpLoading(true);
     const q = followUpQuery.trim();
-    setFollowUpQuery('');
+    setFollowUpError(null);
     try {
       // Standalone: a follow-up is treated as a brand-new question, with no
       // memory of earlier ones.
@@ -198,7 +199,12 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       setChartType(chartMap[res.chart.chartType] || 'bar');
       setActiveTab(isDimensionOnlyResult(res.profile, res.rawData) ? 'chart' : res.chart.chartType === 'table' ? 'table' : 'chart');
       setWorkspaceMode('result');
-    } catch { /* ignore */ } finally { setIsFollowUpLoading(false); }
+      setFollowUpQuery('');
+    } catch (error: any) {
+      setFollowUpError(error?.kind === 'clarification_required'
+        ? `Please make this question more specific. ${error.message}`
+        : (error?.message || 'This question could not be completed. Please edit it and try again.'));
+    } finally { setIsFollowUpLoading(false); }
   }, [dataset, followUpQuery, isFollowUpLoading, activeQuery, activePipeline]);
 
   const updateFormatting = useCallback((f: FormattingConfig) => {
@@ -870,6 +876,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         )}
       </div>
 
+      )}
+      {workspaceMode === 'details' && detailsSection === 'overview' && followUpError && (
+        <div role="status" className={`shrink-0 border-t px-4 py-2 text-xs ${isDark ? 'border-violet-500/20 bg-violet-500/10 text-violet-200' : 'border-violet-200 bg-violet-50 text-violet-700'}`}>
+          {followUpError}
+        </div>
       )}
       
       {/* ── Suggested Follow-ups ──────────────────────────── */}

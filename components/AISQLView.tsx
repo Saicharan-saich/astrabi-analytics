@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, Shield, ShieldCheck } from 'lucide-react';
+import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, Shield, ShieldCheck, LayoutDashboard, Table2, Target } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { MODEL_LADDER_LABEL } from '../services/ai-sql/modelConfig';
@@ -18,15 +18,20 @@ import { collectSafeDomains } from '../services/ai-sql/schemaSerializer';
 import { Tooltip } from './Tooltip';
 import { checkAiSqlLimit, formatResetTime, AI_SQL_LIMITS } from '../services/aiSqlRateLimiter';
 import { useAuthStore } from '../store/useAuthStore';
+import { buildFocusedQuestionSuggestion, detectBroadScopeQuestion } from '../services/ai-sql/scopeIntent';
 
 interface AISQLViewProps {
     dataset: Dataset | null;
     onPin?: (title: string, result: AnalysisResult) => void;
     initialQuery?: string | null;
     onViewFullPage?: (result: AnalysisResult, pipelineResult: AISQLPipelineResult, query: string, formatting: FormattingConfig) => void;
+    onOpenDatasetOverview?: () => void;
+    onOpenAllRecords?: () => void;
 }
 
-export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQuery, onViewFullPage }) => {
+export const AISQLView: React.FC<AISQLViewProps> = ({
+    dataset, onPin, initialQuery, onViewFullPage, onOpenDatasetOverview, onOpenAllRecords,
+}) => {
     const [query, setQuery] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
@@ -35,6 +40,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const errorRef = React.useRef<HTMLDivElement>(null);
     const [noDataMsg, setNoDataMsg] = useState<string | null>(null);
     const [noDataSQL, setNoDataSQL] = useState<string | null>(null);
+    const [scopeClarification, setScopeClarification] = useState<string | null>(null);
+    const [clarificationMessage, setClarificationMessage] = useState<string | null>(null);
 
     // ── AI SQL Privacy Mode ──
     // "Better answers" sends values from the user's data, so it is gated on
@@ -164,6 +171,20 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const handleSubmit = async () => {
         if (!query.trim() || !dataset || isLoading) return;
 
+        // A dataset-wide request is not one well-defined SQL answer. Resolve it
+        // locally before rate limiting or model invocation so non-technical
+        // users choose the result they actually intended without spending AI
+        // tokens on a guess.
+        const scope = detectBroadScopeQuestion(query);
+        if (scope.needsClarification) {
+            setScopeClarification(scope.reason || 'Please choose the kind of result you want.');
+            setClarificationMessage(null);
+            setError(null);
+            setNoDataMsg(null);
+            setNoDataSQL(null);
+            return;
+        }
+
         // ── Rate limit check ──
         const currentStatus = checkAiSqlLimit(currentUser);
         if (!currentStatus.allowed) {
@@ -178,6 +199,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
         setIsLoading(true);
         setError(null);
+        setScopeClarification(null);
+        setClarificationMessage(null);
         setErrorTitle('Query could not be completed');
         setNoDataMsg(null);
         setNoDataSQL(null);
@@ -262,6 +285,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 growth: result.chart.growth
                     ? { diff: result.chart.growth.diff, pct: result.chart.growth.pct } : undefined,
                 secondaryYKeys: result.chart.secondaryYKeys,
+                visualizationMode: result.chart.chartType === 'table' ? 'grid' : 'auto',
             };
 
             // Navigate to Visual Preview immediately
@@ -275,8 +299,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         } catch (err: any) {
             console.error('[AI SQL Pipeline] Error:', err);
             const message = err.message || 'An unexpected error occurred.';
-            if (err?.kind === 'clarification_required') setErrorTitle('Clarification needed');
-            else if (/timed out|timeout/i.test(message)) setErrorTitle('Query timed out');
+            if (err?.kind === 'clarification_required') {
+                setClarificationMessage(message);
+                setError(null);
+                return;
+            } else if (/timed out|timeout/i.test(message)) setErrorTitle('Query timed out');
             else if (/network|failed to fetch|connect|offline/i.test(message)) setErrorTitle('Connection problem');
             else setErrorTitle('Query could not be completed');
             setError(message);
@@ -309,7 +336,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
                 {/* Header */}
                 <div className="flex flex-col gap-1 shrink-0">
-                    <Tooltip text="Ask in plain English. Astrabi builds a local semantic plan and a deterministic, read-only query first. If a question needs escalation, it uses the appropriate GPT-5.6 route and clearly shows that in the result." position="right">
+                    <Tooltip text="Ask a focused question. QuickInsight builds a local semantic plan and a deterministic, read-only query first. If a question needs escalation, it uses the appropriate GPT-5.6 route and clearly shows that in the result." position="right">
                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                             <img src="/ai-sql-logo.png" alt="AI SQL" className="w-7 h-7 rounded-lg object-cover" />
                             AI SQL
@@ -324,8 +351,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     </Tooltip>
                     <div className="flex items-center gap-2">
                         <p className="text-gray-500 dark:text-slate-400 text-sm flex-1">
-                            Ask a business question in plain English. Astrabi calculates supported answers locally, validates every read-only query, and creates a visual result.
-                            Each answer shows its calculation path; questions are independent, with no conversational memory.
+                            Ask a focused question about a metric, category, comparison, or time period. QuickInsight calculates supported answers locally, validates every read-only query, and chooses a suitable visual or data table.
+                            Broad requests such as “summarize everything” are clarified first. Each answer shows its calculation path; questions are independent, with no conversational memory.
                         </p>
                         <Tooltip
                             position="left"
@@ -346,6 +373,48 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         </Tooltip>
                     </div>
                 </div>
+
+                {/* Dataset-wide requests need an output choice, not a guessed SQL query. */}
+                {scopeClarification && !isLoading && (
+                    <div role="dialog" aria-labelledby="scope-clarification-title" className="shrink-0 rounded-xl border border-violet-200 bg-violet-50 p-5 dark:border-violet-500/30 dark:bg-violet-500/10">
+                        <div className="flex items-start gap-3">
+                            <Target className="mt-0.5 h-5 w-5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
+                            <div className="min-w-0 flex-1">
+                                <div id="scope-clarification-title" className="font-bold text-violet-900 dark:text-violet-200">What kind of complete view do you need?</div>
+                                <p className="mt-1 text-sm leading-relaxed text-violet-700 dark:text-violet-200/80">{scopeClarification}</p>
+                                <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                                    <button type="button" onClick={() => { setScopeClarification(null); onOpenDatasetOverview?.(); }} className="rounded-xl border border-violet-300 bg-white p-3 text-left transition hover:border-violet-500 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-slate-900/60 dark:hover:bg-violet-500/15">
+                                        <span className="flex items-center gap-2 font-semibold text-violet-900 dark:text-violet-100"><LayoutDashboard className="h-4 w-4" /> Dataset overview</span>
+                                        <span className="mt-1 block text-xs text-violet-600 dark:text-violet-300/80">Recommended · tables, fields, quality, and coverage</span>
+                                    </button>
+                                    <button type="button" onClick={() => { setScopeClarification(null); onOpenAllRecords?.(); }} className="rounded-xl border border-violet-300 bg-white p-3 text-left transition hover:border-violet-500 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-slate-900/60 dark:hover:bg-violet-500/15">
+                                        <span className="flex items-center gap-2 font-semibold text-violet-900 dark:text-violet-100"><Table2 className="h-4 w-4" /> Browse records</span>
+                                        <span className="mt-1 block text-xs text-violet-600 dark:text-violet-300/80">Open the current table with all available columns</span>
+                                    </button>
+                                    <button type="button" onClick={() => { setQuery(buildFocusedQuestionSuggestion(dataset)); setScopeClarification(null); requestAnimationFrame(() => inputRef.current?.focus()); }} className="rounded-xl border border-violet-300 bg-white p-3 text-left transition hover:border-violet-500 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-slate-900/60 dark:hover:bg-violet-500/15">
+                                        <span className="flex items-center gap-2 font-semibold text-violet-900 dark:text-violet-100"><Sparkles className="h-4 w-4" /> Focus the analysis</span>
+                                        <span className="mt-1 block text-xs text-violet-600 dark:text-violet-300/80">Start from a dataset-specific example you can edit</span>
+                                    </button>
+                                </div>
+                            </div>
+                            <button aria-label="Dismiss clarification" onClick={() => { setScopeClarification(null); inputRef.current?.focus(); }} className="shrink-0 text-violet-400 hover:text-violet-700 dark:hover:text-violet-200"><X className="h-4 w-4" /></button>
+                        </div>
+                    </div>
+                )}
+
+                {clarificationMessage && !isLoading && (
+                    <div role="status" aria-live="polite" className="shrink-0 rounded-xl border border-violet-200 bg-violet-50 p-5 text-sm dark:border-violet-500/30 dark:bg-violet-500/10">
+                        <div className="flex items-start gap-3">
+                            <Target className="mt-0.5 h-5 w-5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
+                            <div className="flex-1">
+                                <div className="font-bold text-violet-900 dark:text-violet-200">One detail is needed before calculating</div>
+                                <p className="mt-1 leading-relaxed text-violet-700 dark:text-violet-200/80">{clarificationMessage}</p>
+                                <button type="button" onClick={() => { setClarificationMessage(null); inputRef.current?.focus(); }} className="mt-3 rounded-lg bg-violet-600 px-3 py-1.5 font-semibold text-white hover:bg-violet-500">Edit question</button>
+                            </div>
+                            <button aria-label="Dismiss clarification" onClick={() => setClarificationMessage(null)} className="shrink-0 text-violet-400 hover:text-violet-700 dark:hover:text-violet-200"><X className="h-4 w-4" /></button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Always visible: what the AI is being sent from this file, and a way in. */}
                 {dataset && (
@@ -554,7 +623,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
 
                 {/* Example Suggestions */}
-                {!isLoading && !error && !noDataMsg && (
+                {!isLoading && !error && !noDataMsg && !scopeClarification && !clarificationMessage && (
                     <div className="flex-1 flex flex-col items-center justify-center opacity-60">
                         <p className="text-gray-500 dark:text-slate-400 mb-6 uppercase tracking-wider text-xs font-bold">Try asking:</p>
                         <div className="flex flex-wrap justify-center gap-3 max-w-2xl">

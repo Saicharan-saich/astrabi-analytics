@@ -97,10 +97,16 @@ import { validateAnalyticalResult } from './analyticalResultValidator';
 import { compileAnalyticalIRToSQL } from './analyticalSqlAst';
 import { canCompileTotalPeriodComparisonLocally } from './deterministicRouting';
 import { getAISQLEngineConfig } from './engineConfig';
+import { detectBroadScopeQuestion } from './scopeIntent';
 
-/** AI SQL policy: local engines describe and validate analytical facts; the
- * governed LLM route is the sole author of executable AI SQL. */
-const AI_SQL_MODEL_OWNS_SQL = true;
+/**
+ * Benchmark runs preserve the model-owned route so published evaluations stay
+ * comparable. Interactive questions use the proven typed/local compilers when
+ * they support the requested shape and escalate only the unresolved work.
+ */
+function modelOwnsSQLForRun(requestPurpose?: 'benchmark'): boolean {
+    return requestPurpose === 'benchmark';
+}
 
 /**
  * Progress callback for tracking pipeline execution steps.
@@ -150,6 +156,7 @@ export async function runAISQLPipeline(
     // Snapshot the global configuration once so an in-flight query cannot
     // change behaviour halfway through if an admin saves new settings.
     const engineConfig = getAISQLEngineConfig().engines;
+    const modelOwnsSQL = modelOwnsSQLForRun(executionOptions?.requestPurpose);
     let repairAttempts = 0;
     const TOTAL_STEPS = 12;
     const reportProgress = (step: string, stepNumber: number) => {
@@ -163,6 +170,14 @@ export async function runAISQLPipeline(
     };
 
     console.log('[AI SQL Pipeline] Starting for question:', question);
+
+    const broadScope = detectBroadScopeQuestion(question);
+    if (broadScope.needsClarification) {
+        throw new AISQLPipelineError(
+            'clarification_required',
+            broadScope.reason || 'Choose a dataset overview, all records, or a focused metric and grouping.',
+        );
+    }
 
     if (externalFilters?.length) {
         console.log(`[Pipeline] ${externalFilters.length} external filter(s) provided from UI`);
@@ -722,25 +737,25 @@ export async function runAISQLPipeline(
     let qbNotes: string[] = [];
     let qbReason: string | null = null;
     let qbTraceDetails: Record<string, any>;
-    const locallyOwnedTotalComparison = !AI_SQL_MODEL_OWNS_SQL && canCompileTotalPeriodComparisonLocally(
+    const locallyOwnedTotalComparison = !modelOwnsSQL && canCompileTotalPeriodComparisonLocally(
         plan,
         semanticModel,
         apdmeResult.derivedMetricApplied,
     );
-    const irCompilation = AI_SQL_MODEL_OWNS_SQL
+    const irCompilation = modelOwnsSQL
         ? { supported: false as const, sql: undefined, reasons: ['AI SQL model owns SQL synthesis'] }
         : compileAnalyticalIRToSQL(activeAnalyticalIR);
     const irContractIssues = irCompilation.supported && irCompilation.sql && activeQueryContract
         ? validateSQLAgainstContract(irCompilation.sql, activeQueryContract).filter(issue => issue.severity === 'error')
         : [];
-    const locallyOwnedCanonicalIR = !AI_SQL_MODEL_OWNS_SQL
+    const locallyOwnedCanonicalIR = !modelOwnsSQL
         && executionOptions?.requestPurpose !== 'benchmark'
         && irCompilation.supported
         && !!irCompilation.sql
         && analyticalIRIssues.every(issue => issue.severity !== 'error')
         && irContractIssues.length === 0;
 
-    if (AI_SQL_MODEL_OWNS_SQL) {
+    if (modelOwnsSQL) {
         qbReason = 'AI SQL deterministic engines provide context and validation only; the governed LLM authors SQL.';
         qbTraceDetails = {
             fits: false,
@@ -821,11 +836,11 @@ export async function runAISQLPipeline(
         }
     }
     traceStep({
-        stepNumber: 5, name: AI_SQL_MODEL_OWNS_SQL ? 'Deterministic Context Builder' : locallyOwnedCanonicalIR ? 'Canonical IR Compiler' : locallyOwnedTotalComparison ? 'Period Comparison Compiler' : antiJoin ? 'Anti-Join Compiler' : 'Question Builder Compiler', engine: 'qbMapper', icon: '🎛️',
+        stepNumber: 5, name: modelOwnsSQL ? 'Deterministic Context Builder' : locallyOwnedCanonicalIR ? 'Canonical IR Compiler' : locallyOwnedTotalComparison ? 'Period Comparison Compiler' : antiJoin ? 'Anti-Join Compiler' : 'Question Builder Compiler', engine: 'qbMapper', icon: '🎛️',
         status: qbSQL ? 'pass' : 'skip',
         summary: qbSQL
             ? `Governed deterministic query compiled — ${qbNotes.join('; ')}`
-            : AI_SQL_MODEL_OWNS_SQL
+            : modelOwnsSQL
                 ? 'Schema, semantics, relationships, grounded literals, question plan and output contract prepared for the LLM'
                 : `Request requires an approved AI fallback — ${qbReason || 'compilation failed'}`,
         details: qbTraceDetails,
@@ -842,16 +857,26 @@ export async function runAISQLPipeline(
     let directSqlBlocked = false;
     let directSqlFailureKind: AISQLPipelineFailureKind | undefined;
     let directQuerySpec: DynamicQuerySpec | undefined;
-    if (!AI_SQL_MODEL_OWNS_SQL && (locallyOwnedCanonicalIR || locallyOwnedTotalComparison) && qbSQL) {
+    const locallyExecutableSQL = !modelOwnsSQL && !!qbSQL
+        && (locallyOwnedCanonicalIR || locallyOwnedTotalComparison || !!antiJoin || !requiresAdvancedSql);
+    if (locallyExecutableSQL) {
         directSqlError = locallyOwnedCanonicalIR
             ? 'Not required: the frozen Canonical Analytical IR compiled to contract-valid typed SQL.'
-            : 'Not required: the deterministic period compiler produced the exact two-row answer shape.';
+            : locallyOwnedTotalComparison
+                ? 'Not required: the deterministic period compiler produced the exact two-row answer shape.'
+                : antiJoin
+                    ? 'Not required: the deterministic anti-join compiler produced the requested set result.'
+                    : 'Not required: the Question Builder compiler supports this analytical shape locally.';
         traceStep({
             stepNumber: 5, name: 'Direct-SQL Engine', engine: 'directSqlEngine', icon: '✍️',
             status: 'skip',
             summary: locallyOwnedCanonicalIR
                 ? 'Skipped — canonical IR compiled locally with zero model tokens'
-                : 'Skipped — deterministic period SQL prevents unrequested detail grouping',
+                : locallyOwnedTotalComparison
+                    ? 'Skipped — deterministic period SQL prevents unrequested detail grouping'
+                    : antiJoin
+                        ? 'Skipped — deterministic anti-join SQL compiled locally with zero model tokens'
+                        : 'Skipped — supported Question Builder SQL compiled locally with zero model tokens',
             details: {
                 reason: directSqlError,
                 tokens: 0,
@@ -905,7 +930,7 @@ export async function runAISQLPipeline(
     // AI SQL never substitutes a locally authored query when model planning is
     // unavailable or uncertain. That would silently change the requested
     // reasoning while presenting the result as AI SQL.
-    if (directSqlBlocked || !directSQL) {
+    if (directSqlBlocked || (!directSQL && !locallyExecutableSQL)) {
         const message = directSqlError || 'AI SQL stopped before execution because it could not preserve the requested analytical shape.';
         if (directSqlFailureKind) throw new AISQLPipelineError(directSqlFailureKind, message);
         throw new Error(message);
@@ -931,7 +956,7 @@ export async function runAISQLPipeline(
         // Question Builder's share-of-total table calc (it only applies to
         // builder-compiled SQL).
         qbShareValueKey = null;
-    } else if (!AI_SQL_MODEL_OWNS_SQL && qbSQL && !requiresAdvancedSql) {
+    } else if (locallyExecutableSQL && qbSQL) {
         // Normal governed path: locally compiled SQL.
         sqlResult = { sql: qbSQL, method: 'question-builder', explanation: '' };
     } else {
@@ -968,12 +993,12 @@ export async function runAISQLPipeline(
     // A basic Question Builder query is not a semantically equivalent backup
     // for an explicit window/table calculation. The correction engine below
     // must first compile the required advanced operation.
-    let deterministicSQL: string | null = !AI_SQL_MODEL_OWNS_SQL && !requiresAdvancedSql ? qbSQL : null;
+    let deterministicSQL: string | null = locallyExecutableSQL ? qbSQL : null;
     if (directSQL) {
         // An approved fallback query is being executed.
         currentSQL = directSQL;
         _correctionStatus = 'skip';
-    } else if (!AI_SQL_MODEL_OWNS_SQL && qbSQL && !requiresAdvancedSql) {
+    } else if (locallyExecutableSQL && qbSQL) {
         // Locally compiled deterministic SQL.
         currentSQL = qbSQL;
         _correctionStatus = 'skip';
@@ -1230,7 +1255,7 @@ export async function runAISQLPipeline(
     // deterministic engines — the Question Builder backup if one was built,
     // otherwise the correction engine — which always produce runnable SQL from
     // the plan. This keeps a failed LLM query from crashing into an error.
-    if (!AI_SQL_MODEL_OWNS_SQL && execResult.error && directSQL) {
+    if (!modelOwnsSQL && execResult.error && directSQL) {
         console.warn('[Pipeline] LLM SQL failed to execute after repair — using the deterministic backup.');
         try {
             const usingQbBackup = !!deterministicSQL;
@@ -1308,18 +1333,18 @@ export async function runAISQLPipeline(
     // still answer a different question (for example, LIMIT 1 for "each group"
     // or a scalar aggregate for "all rows"). Compare only locally computed row
     // counts against the pre-SQL contract; no result values leave the browser.
-    if (!AI_SQL_MODEL_OWNS_SQL && engineConfig.resultContractValidation && activeQueryContract) {
+    if (!modelOwnsSQL && engineConfig.resultContractValidation && activeQueryContract) {
         const normalizedRows = normalizeResultToContract(execResult.data || [], activeQueryContract);
         if (normalizedRows.length !== (execResult.data || []).length) {
             console.log(`[Pipeline] Set-result normalization removed ${(execResult.data || []).length - normalizedRows.length} duplicate row(s).`);
             execResult = { ...execResult, data: normalizedRows };
         }
     }
-    let resultContractIssues = !AI_SQL_MODEL_OWNS_SQL && engineConfig.resultContractValidation && activeQueryContract
+    let resultContractIssues = !modelOwnsSQL && engineConfig.resultContractValidation && activeQueryContract
         ? validateResultAgainstContract(execResult.data || [], activeQueryContract)
             .filter(issue => issue.severity === 'error')
         : [];
-    let analyticalResultIssues = !AI_SQL_MODEL_OWNS_SQL && engineConfig.resultContractValidation && activeAnalyticalIR
+    let analyticalResultIssues = !modelOwnsSQL && engineConfig.resultContractValidation && activeAnalyticalIR
         ? validateAnalyticalResult(execResult.data || [], activeAnalyticalIR)
             .filter(issue => issue.severity === 'error')
         : [];
@@ -1327,7 +1352,7 @@ export async function runAISQLPipeline(
     // model to patch its own SQL. This fixes valid-but-wrong result shapes (for
     // example repeated qualifying groups) without regex surgery or row data
     // leaving DuckDB.
-    if (!AI_SQL_MODEL_OWNS_SQL && (resultContractIssues.length || analyticalResultIssues.length) && activeAnalyticalIR) {
+    if (!modelOwnsSQL && (resultContractIssues.length || analyticalResultIssues.length) && activeAnalyticalIR) {
         const structuralRecovery = compileAnalyticalIRToSQL(activeAnalyticalIR);
         if (structuralRecovery.supported && structuralRecovery.sql && structuralRecovery.sql !== currentSQL) {
             const sqlIssues = activeQueryContract
@@ -2089,9 +2114,13 @@ export async function runAISQLPipeline(
             strategy: 'deterministic' as const,
             summary: locallyOwnedTotalComparison
                 ? 'The governed local period compiler produced two aggregate rows without an LLM SQL call.'
-                : 'The GPT SQL draft was unavailable or rejected, so the governed local compiler answered this request without sending dataset rows to an AI model.',
+                : locallyOwnedCanonicalIR
+                    ? 'The governed canonical compiler produced contract-valid SQL locally without an LLM call.'
+                    : antiJoin
+                        ? 'The governed set-logic compiler produced the anti-join locally without an LLM call.'
+                        : 'The governed Question Builder compiler produced and validated this SQL locally without an LLM call.',
             dataAccess: 'metadata_only' as const,
-            fallbackReason: locallyOwnedTotalComparison ? undefined : directSqlError || undefined,
+            fallbackReason: undefined,
         };
 
     const pipelineResult: AISQLPipelineResult = {

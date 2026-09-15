@@ -25,8 +25,8 @@ vi.mock('../services/duckdbEngine', async importOriginal => ({
 
 import { runAISQLPipeline } from '../services/ai-sql/pipeline';
 
-describe('AI SQL model-owned period-comparison route', () => {
-    it('gives the LLM schema facts and executes its model-authored two-period SQL without deterministic replacement', async () => {
+describe('AI SQL local-first period-comparison route', () => {
+    it('compiles and executes an exact two-period comparison locally without spending model tokens', async () => {
         directSqlMocks.generateDirectSQL.mockClear();
         directSqlMocks.executeSQLViaDuckDB.mockClear();
         directSqlMocks.generateDirectSQL.mockResolvedValue({
@@ -100,15 +100,15 @@ describe('AI SQL model-owned period-comparison route', () => {
             dataset,
         );
 
-        expect(directSqlMocks.generateDirectSQL).toHaveBeenCalledOnce();
+        expect(directSqlMocks.generateDirectSQL).not.toHaveBeenCalled();
         expect(directSqlMocks.executeSQLViaDuckDB).toHaveBeenCalled();
         const executedSql = String((directSqlMocks.executeSQLViaDuckDB.mock.calls as any[][])[0]?.[1] || '');
         expect(executedSql).toMatch(/^WITH periods/i);
         expect(executedSql).toMatch(/\bLAG\s*\(/i);
         expect(executedSql).toMatch(/\bgrowth_pct\b/i);
         expect(executedSql).not.toMatch(/GROUP BY\s+.*order_id/i);
-        expect(result.engine).toBe('llm-sql');
-        expect(result.tokenUsage.total).toBe(30);
+        expect(result.engine).toBe('correction-engine');
+        expect(result.tokenUsage.total).toBe(0);
         expect(result.plan.intent).toBe('total_comparison');
         expect(result.plan.metrics).toEqual([expect.objectContaining({ field: 'amount', agg: 'sum' })]);
         expect(result.plan.dimensions).toEqual([]);

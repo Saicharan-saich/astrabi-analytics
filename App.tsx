@@ -1850,6 +1850,8 @@ function App() {
                     dataset={dataset}
                     onPin={(title, result) => handlePin({ ...result, insight: title })}
                     initialQuery={smartQuestionQuery}
+                    onOpenDatasetOverview={() => setActiveTab(Tab.DATASET_SUMMARY)}
+                    onOpenAllRecords={() => setActiveTab(Tab.DATA)}
                     onViewFullPage={(result, pipelineResult, query, fmt) => {
                       setVisualPreviewResult(result);
                       setVisualPreviewPipeline(pipelineResult);

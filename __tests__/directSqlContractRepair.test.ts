@@ -5,6 +5,12 @@ vi.mock('../services/ai-sql/modelConfig', () => ({
   LUNA_MODEL: 'luna',
   PLANNER_MODEL: 'terra',
   SOL_MODEL: 'sol',
+  selectAISQLRoute: vi.fn((_question: string, workload: string) => ({
+    model: workload === 'plan' ? 'terra' : 'luna',
+    tier: workload === 'plan' ? 'terra' : 'luna',
+    workload,
+    reason: 'test route',
+  })),
 }));
 
 import { fetchWithFallback } from '../services/ai-sql/modelConfig';

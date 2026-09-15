@@ -22,6 +22,8 @@ export { getClassificationTelemetry } from './arbitrationEngine';
 export { generateTrustVerification } from './trustEngine';
 export { createAISQLBuilderHandoff } from './builderHandoff';
 export type { AISQLBuilderHandoff } from './builderHandoff';
+export { detectBroadScopeQuestion, buildFocusedQuestionSuggestion } from './scopeIntent';
+export type { BroadScopeDetection } from './scopeIntent';
 export {
     buildCanonicalQueryIntent,
     reconcilePlanWithCanonicalIntent,
