@@ -8,6 +8,7 @@ import { DateFilterItem } from './DateFilterItem';
 import { Tooltip } from './Tooltip';
 import { QuerySelect } from './QuerySelect';
 import { resolvePhysicalBuilderFields } from '../services/questionBuilderFieldGuard';
+import { buildAnalyticalCapabilityContract, type CapabilityFieldRule } from '../services/ai-sql';
 
 interface QuestionBuilderProps {
     dataset: Dataset;
@@ -215,7 +216,6 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const isTimeDimension = !!timeGrain;
     // Effective dimension sent to the engine (timeGrain takes priority)
     const effectiveDimension = timeGrain || dimension;
-
     // Auto-expand options row when any refinement is active
     useEffect(() => {
         if (comparison || (limit > 0) || (isTimeDimension && sort !== 'oldest') || (!isTimeDimension && sort !== 'desc')) {
@@ -454,6 +454,60 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const countableColumns = visibleColumns.filter(c => c.type === ColumnType.DIMENSION || c.type === ColumnType.ID).map(c => c.name);
     const isDimensionMetric = countableColumns.includes(metric);
     const dateColumns = visibleColumns.filter(c => c.type === ColumnType.DATE).map(c => c.name);
+    const capabilityContract = useMemo(
+        () => dataset.aiSqlSemanticModel ? buildAnalyticalCapabilityContract(dataset.aiSqlSemanticModel) : null,
+        [dataset.aiSqlSemanticModel, dataset.aiSqlSemanticRevision],
+    );
+    const capabilityRuleFor = (fieldName: string): CapabilityFieldRule | undefined => {
+        const normalized = fieldName.trim().toLowerCase();
+        return capabilityContract?.fields.find(rule => rule.field.trim().toLowerCase() === normalized);
+    };
+    const allMetricAggregationOptions = [
+        { label: 'Total  (Σ)', value: 'SUM' },
+        { label: 'Average  (μ)', value: 'AVG' },
+        { label: 'Highest  (↑)', value: 'MAX' },
+        { label: 'Lowest  (↓)', value: 'MIN' },
+        { label: 'Count  (#)', value: 'COUNT' },
+        { label: 'Unique Count  (∩)', value: 'COUNT_DISTINCT' },
+        { label: 'Raw Values', value: 'NONE' },
+    ];
+    const safeAggregationOptions = (fieldName: string, dimensionMetric = false) => {
+        if (dimensionMetric) return allMetricAggregationOptions.filter(option => ['COUNT', 'COUNT_DISTINCT', 'NONE'].includes(option.value));
+        const rule = capabilityRuleFor(fieldName);
+        if (!rule) return allMetricAggregationOptions;
+        return allMetricAggregationOptions.filter(option => rule.allowedAggregations.includes(option.value.toLowerCase() as any));
+    };
+    const safeDefaultAggregation = (fieldName: string): string => {
+        const rule = capabilityRuleFor(fieldName);
+        if (!rule) return 'SUM';
+        const preferred = rule.allowedAggregations.includes(rule.additivity === 'additive' ? 'sum' : 'avg')
+            ? (rule.additivity === 'additive' ? 'SUM' : 'AVG')
+            : rule.allowedAggregations[0]?.toUpperCase();
+        return preferred || 'COUNT';
+    };
+
+    useEffect(() => {
+        if (!metric || !capabilityContract) return;
+        const allowed = safeAggregationOptions(metric, countableColumns.includes(metric)).map(option => option.value);
+        if (!allowed.includes(aggregation)) setAggregation(safeDefaultAggregation(metric));
+    }, [metric, capabilityContract]);
+
+    useEffect(() => {
+        if (!capabilityContract || !secondaryMetrics.length) return;
+        setSecondaryMetricAggregations(current => {
+            let changed = false;
+            const next = { ...current };
+            for (const secondaryMetric of secondaryMetrics) {
+                const active = next[secondaryMetric] || 'SUM';
+                const allowed = safeAggregationOptions(secondaryMetric).map(option => option.value);
+                if (!allowed.includes(active)) {
+                    next[secondaryMetric] = safeDefaultAggregation(secondaryMetric);
+                    changed = true;
+                }
+            }
+            return changed ? next : current;
+        });
+    }, [secondaryMetrics, capabilityContract]);
 
     // Helper: get human-readable label for a column
     const getLabel = (colName: string): string => {
@@ -818,21 +872,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 menuPlacement="auto"
                                 value={aggregation}
                                 onChange={setAggregation}
-                                options={isDimensionMetric
-                                    ? [
-                                        { label: 'Count  (#)', value: 'COUNT' },
-                                        { label: 'Unique Count  (∩)', value: 'COUNT_DISTINCT' },
-                                        { label: 'Raw Values', value: 'NONE' }
-                                    ]
-                                    : [
-                                        { label: 'Total  (Σ)', value: 'SUM' },
-                                        { label: 'Average  (μ)', value: 'AVG' },
-                                        { label: 'Highest  (↑)', value: 'MAX' },
-                                        { label: 'Lowest  (↓)', value: 'MIN' },
-                                        { label: 'Count  (#)', value: 'COUNT' },
-                                        { label: 'Unique Count  (∩)', value: 'COUNT_DISTINCT' },
-                                        { label: 'Raw Values', value: 'NONE' }
-                                    ]}
+                                options={safeAggregationOptions(metric, isDimensionMetric)}
                                 icon={<span className="font-bold text-xs px-0.5">{isDimensionMetric ? '#' : 'Σ'}</span>}
                                 colorTextClass="text-purple-400"
                                 colorRingClass="focus:ring-purple-500/30"
@@ -852,6 +892,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                     setMetric(val);
                                     if (countableColumns.includes(val) && !['COUNT', 'COUNT_DISTINCT'].includes(aggregation)) {
                                         setAggregation('COUNT');
+                                    } else {
+                                        const allowed = safeAggregationOptions(val).map(option => option.value);
+                                        if (!allowed.includes(aggregation)) setAggregation(safeDefaultAggregation(val));
                                     }
                                 }}
                                 options={[
@@ -876,14 +919,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 menuPlacement="auto"
                                 value={secondaryMetricAggregations[sm] || 'SUM'}
                                 onChange={value => setSecondaryMetricAggregations(prev => ({ ...prev, [sm]: value }))}
-                                options={[
-                                    { label: 'Σ Total', value: 'SUM' },
-                                    { label: 'μ Average', value: 'AVG' },
-                                    { label: '↑ Highest', value: 'MAX' },
-                                    { label: '↓ Lowest', value: 'MIN' },
-                                    { label: '# Count', value: 'COUNT' },
-                                    { label: '∩ Unique Count', value: 'COUNT_DISTINCT' },
-                                ]}
+                                options={safeAggregationOptions(sm).filter(option => option.value !== 'NONE').map(option => ({
+                                    ...option,
+                                    label: option.label.replace(/\s+\([^)]*\)/, ''),
+                                }))}
                                 colorTextClass="text-teal-300"
                                 colorRingClass="focus:ring-teal-400/50"
                                 searchable={false}
@@ -913,6 +952,15 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             </button>
                         </span>
                     ))}
+
+                    {metric && capabilityRuleFor(metric) && (
+                        <span
+                            className="rounded-lg border border-indigo-400/20 bg-indigo-500/10 px-2 py-1 text-[10px] font-bold text-indigo-300"
+                            title={`Dataset capability contract ${capabilityContract?.contractId}: ${capabilityRuleFor(metric)?.evidence.join(' · ')}`}
+                        >
+                            Contract-safe: {capabilityRuleFor(metric)?.allowedAggregations.map(value => value.replace('_', ' ')).join(', ')}
+                        </span>
+                    )}
 
                     {/* Secondary Dimension Chips */}
                     {!gafsOnly && secondaryDimensions.map((sd, i) => (

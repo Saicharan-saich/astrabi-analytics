@@ -3,6 +3,7 @@ export type AISQLPipelineFailureKind =
     | 'clarification_required'
     | 'summary_story_required'
     | 'planner_invalid_spec'
+    | 'capability_contract_violation'
     | 'sql_validation_failed';
 
 /** A deliberate, typed pipeline stop that occurs before SQL execution. */

@@ -99,6 +99,12 @@ import { canCompileTotalPeriodComparisonLocally } from './deterministicRouting';
 import { getAISQLEngineConfig } from './engineConfig';
 import { detectBroadScopeQuestion, detectSummaryRequest } from './scopeIntent';
 import { resolveConversationTurn } from './conversationIntent';
+import {
+    buildAnalyticalCapabilityContract,
+    validatePlanAgainstCapabilityContract,
+    type CapabilityValidation,
+} from './analyticalCapabilityContract';
+import { buildAnalysisCertificate } from './analysisCertificate';
 
 /**
  * Benchmark runs preserve the model-owned route so published evaluations stay
@@ -206,6 +212,7 @@ export async function runAISQLPipeline(
     let _s1 = performance.now();
     const semanticResolution = resolveAISQLSemanticModel(dataset);
     const semanticModel = semanticResolution.model;
+    const capabilityContract = buildAnalyticalCapabilityContract(semanticModel);
     console.log(`[Pipeline] Step 1: ${semanticResolution.reused ? 'Reusing cached' : 'Rebuilt stale/missing'} semantic model (${semanticResolution.revision})`);
     const _metrics = semanticModel.fields.filter(f => f.role === 'metric').length;
     const _dims = semanticModel.fields.filter(f => f.role === 'dimension').length;
@@ -268,6 +275,7 @@ export async function runAISQLPipeline(
     let activeCanonicalIntent: CanonicalQueryIntent | undefined;
     let activeAnalyticalIR: AnalyticalIR | undefined;
     let analyticalIRIssues: IRVerificationIssue[] = [];
+    let capabilityValidation: CapabilityValidation | undefined;
     // The hybrid path deliberately starts with the local semantic engines, then
     // asks a selected GPT-5.6 model to write plan-constrained SQL. The LLM never
     // receives dataset rows; local DuckDB remains the only execution engine.
@@ -698,6 +706,7 @@ export async function runAISQLPipeline(
         apdmeResult.derivedMetrics,
     );
     analyticalIRIssues = engineConfig.canonicalAudit ? verifyAnalyticalIR(activeAnalyticalIR) : [];
+    capabilityValidation = validatePlanAgainstCapabilityContract(plan, capabilityContract, activeAnalyticalIR);
     const requiresAdvancedSql = activeCanonicalIntent.analyticOperations.length > 0;
     if (canonicalReconciliation.changes.length) {
         console.log(`[Pipeline] Canonical audit found ${canonicalReconciliation.changes.length} advisory structural conflict(s): ${canonicalReconciliation.changes.join('; ')}`);
@@ -719,6 +728,27 @@ export async function runAISQLPipeline(
             planVerification: _verification.issues,
         },
     }, performance.now());
+
+    traceStep({
+        stepNumber: 4,
+        name: 'Capability Contract',
+        engine: 'analyticalCapabilityContract',
+        icon: '🛡️',
+        status: capabilityValidation.status === 'blocked' ? 'fail' : capabilityValidation.status === 'review' ? 'warn' : 'pass',
+        summary: `${capabilityContract.contractId} · ${capabilityValidation.summary}`,
+        details: {
+            contractId: capabilityContract.contractId,
+            datasetGrain: capabilityContract.grain,
+            checks: capabilityValidation.checks,
+        },
+    }, performance.now());
+    if (capabilityValidation.status === 'blocked') {
+        const failures = capabilityValidation.checks.filter(check => check.status === 'fail');
+        throw new AISQLPipelineError(
+            'capability_contract_violation',
+            failures.map(check => check.detail).join(' ') || capabilityValidation.summary,
+        );
+    }
 
     // Local uncertainty is evidence for the model, not a deterministic veto.
     // The model sees the competing plan/verification signals and decides whether
@@ -2148,6 +2178,8 @@ export async function runAISQLPipeline(
                 && analyticalResultIssues.every(issue => issue.severity !== 'error'),
             issues: [...analyticalIRIssues, ...analyticalResultIssues],
         },
+        capabilityContract,
+        capabilityValidation,
         sql: currentSQL,
         engine: sqlEngine,
         validation,
@@ -2236,10 +2268,9 @@ export async function runAISQLPipeline(
 
         const blockingChecks = contractResult.checks.filter(check => check.status === 'fail');
         pipelineResult.displaySafety = {
-            // Read-only SQL safety is enforced before execution. Answer
-            // contract failures are advisory verification signals and must not
-            // suppress an otherwise executable local result.
-            allowed: true,
+            // Executable SQL is not automatically a trustworthy answer. A
+            // failed semantic/result contract withholds the visual.
+            allowed: blockingChecks.length === 0,
             reasons: blockingChecks.map(check => check.message),
             recoverySuggestions: contractResult.repairSuggestions,
         };
@@ -2255,9 +2286,9 @@ export async function runAISQLPipeline(
             if (pipelineResult.trust) {
                 pipelineResult.trust.status = 'validation_issue';
                 pipelineResult.trust.confidence = 'low';
-                pipelineResult.trust.summary = 'The calculation ran and is shown with semantic verification warnings.';
+                pipelineResult.trust.summary = 'The calculation ran, but the answer was withheld because semantic verification failed.';
             }
-            pipelineResult.explanation = 'This answer was produced by read-only SQL, but semantic verification found issues with its requested metrics, filters, grain, or visual fields. Review the warning before relying on it.';
+            pipelineResult.explanation = 'QuickInsight withheld this answer because its requested metrics, filters, grain, or visual fields did not pass semantic verification.';
         }
 
         traceStep({
@@ -2274,15 +2305,15 @@ export async function runAISQLPipeline(
 
         console.log(`[Pipeline] Contract: ${contractResult.summary} (${Math.round(performance.now() - contractStart)}ms)`);
     } catch (cvErr: any) {
-        console.warn('[Pipeline] Contract validation unavailable; preserving the read-only local result with a warning:', cvErr?.message);
+        console.warn('[Pipeline] Contract validation unavailable; withholding the unverifiable result:', cvErr?.message);
         pipelineResult.displaySafety = {
-            allowed: true,
+            allowed: false,
             reasons: ['The answer contract validator was unavailable.'],
             recoverySuggestions: ['Retry the question or review the generated SQL before using the result.'],
         };
         pipelineResult.confidence.score = Math.min(pipelineResult.confidence.score, 39);
         pipelineResult.confidence.level = 'low';
-        pipelineResult.explanation = 'The read-only SQL result is shown, but its semantic verification step did not complete. Review the SQL before relying on it.';
+        pipelineResult.explanation = 'QuickInsight withheld this answer because semantic verification did not complete.';
         if (pipelineResult.trust) {
             pipelineResult.trust.status = 'validation_issue';
             pipelineResult.trust.confidence = 'low';
@@ -2301,6 +2332,47 @@ export async function runAISQLPipeline(
             }],
         };
     }
+
+    // ── Step 13: Analysis Certificate ────────────────────────────
+    // The certificate is proof-carrying output: it packages the exact contract,
+    // checks, execution locality and SQL fingerprint that justify display.
+    const finalCapabilityValidation = capabilityValidation
+        || validatePlanAgainstCapabilityContract(plan, capabilityContract, activeAnalyticalIR);
+    pipelineResult.analysisCertificate = buildAnalysisCertificate({
+        question,
+        contract: capabilityContract,
+        capabilityValidation: finalCapabilityValidation,
+        result: pipelineResult,
+    });
+    if (pipelineResult.analysisCertificate.status === 'withheld') {
+        pipelineResult.displaySafety = {
+            allowed: false,
+            reasons: pipelineResult.analysisCertificate.checks
+                .filter(check => check.status === 'fail')
+                .map(check => check.detail),
+            recoverySuggestions: pipelineResult.displaySafety?.recoverySuggestions || [
+                'Review the failed certificate checks and revise the requested fields, aggregation, grain, or relationship path.',
+            ],
+        };
+    } else if (!pipelineResult.displaySafety) {
+        pipelineResult.displaySafety = { allowed: true, reasons: [], recoverySuggestions: [] };
+    }
+    traceStep({
+        stepNumber: 13,
+        name: 'Analysis Certificate',
+        engine: 'analysisCertificate',
+        icon: '🔏',
+        status: pipelineResult.analysisCertificate.status === 'withheld'
+            ? 'fail'
+            : pipelineResult.analysisCertificate.status === 'conditional' ? 'warn' : 'pass',
+        summary: pipelineResult.analysisCertificate.summary,
+        details: {
+            certificateId: pipelineResult.analysisCertificate.certificateId,
+            contractId: pipelineResult.analysisCertificate.contractId,
+            sqlFingerprint: pipelineResult.analysisCertificate.execution.sqlFingerprint,
+            checkCount: pipelineResult.analysisCertificate.checks.length,
+        },
+    }, performance.now());
 
     return pipelineResult;
 }

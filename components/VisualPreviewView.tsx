@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ArrowLeft, Pin, Code, Table2, BarChart2, Palette, Activity, Sparkles,
   Copy, Check, X, RefreshCw, Play, Database, Loader2, Microscope,
-  MessageSquare, Send, MousePointerClick, ChevronDown, ListChecks, SlidersHorizontal
+  MessageSquare, Send, MousePointerClick, ChevronDown, ListChecks, SlidersHorizontal, ShieldCheck
 } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
 import { ChartVisualization } from './ChartVisualization';
@@ -18,6 +18,7 @@ import { PipelineReport } from './PipelineReport';
 import { isDimensionOnlyResult } from '../services/ai-sql/resultPresentation';
 import { TraceStoryPanel } from './TraceStoryPanel';
 import { createPinnedAISQLResult } from '../services/ai-sql/pinnedResult';
+import { AnalysisCertificatePanel } from './AnalysisCertificatePanel';
 
 interface VisualPreviewViewProps {
   dataset: Dataset | null;
@@ -49,7 +50,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       : initialPipeline?.chart?.chartType === 'table' ? 'table' : 'chart'
   );
   const [workspaceMode, setWorkspaceMode] = useState<'result' | 'details'>('result');
-  const [detailsSection, setDetailsSection] = useState<'overview' | 'workspace' | 'trace'>('overview');
+  const [detailsSection, setDetailsSection] = useState<'overview' | 'workspace' | 'trace' | 'certificate'>('overview');
   const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
   const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);
   const [isAIInsightOpen, setIsAIInsightOpen] = useState(false);
@@ -328,6 +329,16 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 <ListChecks className="h-5 w-5" /> Trace
               </button>
             )}
+            {activePipeline?.analysisCertificate && (
+              <button
+                onClick={() => { setDetailsSection('certificate'); setWorkspaceMode('details'); }}
+                aria-label="Open analysis certificate"
+                aria-controls="ai-sql-analysis-certificate"
+                className={`flex h-12 items-center gap-2 rounded-xl border px-4 text-sm font-extrabold transition-all ${activePipeline.analysisCertificate.status === 'certified' ? isDark ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : isDark ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+              >
+                <ShieldCheck className="h-5 w-5" /> {activePipeline.analysisCertificate.status === 'certified' ? 'Certified' : 'Review'}
+              </button>
+            )}
             {onPin && (
               <button
                 onClick={handlePin}
@@ -472,6 +483,11 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         {activePipeline?.traceStory && (
           <button role="tab" aria-selected={detailsSection === 'trace'} aria-controls="ai-sql-trace-story" onClick={() => setDetailsSection('trace')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${detailsSection === 'trace' ? 'bg-violet-50 dark:bg-violet-500/20 text-violet-600 dark:text-violet-300 ring-1 ring-violet-400/30' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}>
             <ListChecks className="w-3.5 h-3.5" /> Trace
+          </button>
+        )}
+        {activePipeline?.analysisCertificate && (
+          <button role="tab" aria-selected={detailsSection === 'certificate'} aria-controls="ai-sql-analysis-certificate" onClick={() => setDetailsSection('certificate')} className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-bold transition-all ${detailsSection === 'certificate' ? 'bg-emerald-50 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300 ring-1 ring-emerald-400/30' : 'text-gray-500 dark:text-slate-400 hover:bg-gray-100 dark:hover:bg-slate-700/50'}`}>
+            <ShieldCheck className="w-3.5 h-3.5" /> Certificate
           </button>
         )}
         <div className="w-px h-5 bg-gray-200 dark:bg-white/10 mx-1" />
@@ -846,6 +862,12 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       {workspaceMode === 'details' && detailsSection === 'trace' && activePipeline?.traceStory && (
         <div id="ai-sql-trace-story" role="tabpanel" aria-label="Calculation trace story" tabIndex={0} className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-7">
           <TraceStoryPanel story={activePipeline.traceStory} question={activeQuery} />
+        </div>
+      )}
+
+      {workspaceMode === 'details' && detailsSection === 'certificate' && activePipeline?.analysisCertificate && (
+        <div id="ai-sql-analysis-certificate" role="tabpanel" aria-label="Analysis certificate" tabIndex={0} className="flex-1 min-h-0 overflow-y-auto p-5 sm:p-7">
+          <AnalysisCertificatePanel certificate={activePipeline.analysisCertificate} isDark={isDark} />
         </div>
       )}
 

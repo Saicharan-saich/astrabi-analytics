@@ -25,6 +25,22 @@ export type { AISQLBuilderHandoff } from './builderHandoff';
 export { resolveConversationTurn } from './conversationIntent';
 export type { ConversationTurnKind, ConversationTurnResolution } from './conversationIntent';
 export {
+    allowedAggregationsForField,
+    buildAnalyticalCapabilityContract,
+    validatePlanAgainstCapabilityContract,
+} from './analyticalCapabilityContract';
+export type {
+    AnalyticalCapabilityContract,
+    CapabilityAggregation,
+    CapabilityCheck,
+    CapabilityFieldRule,
+    CapabilityRelationshipRule,
+    CapabilityStatus,
+    CapabilityValidation,
+} from './analyticalCapabilityContract';
+export { buildAnalysisCertificate } from './analysisCertificate';
+export type { AnalysisCertificate, AnalysisCertificateCheck } from './analysisCertificate';
+export {
     detectBroadScopeQuestion, detectSummaryRequest, buildFocusedQuestionSuggestion,
     buildQuestionExamples, buildSummaryStoryQuestions,
 } from './scopeIntent';

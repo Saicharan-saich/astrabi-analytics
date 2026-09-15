@@ -515,6 +515,10 @@ export interface AISQLPipelineResult {
         passed: boolean;
         issues: import('./analyticalIR').IRVerificationIssue[];
     };
+    /** Versioned dataset-specific analytical type system used before SQL execution. */
+    capabilityContract?: import('./analyticalCapabilityContract').AnalyticalCapabilityContract;
+    /** Pre-execution verdict for the requested analytical operations. */
+    capabilityValidation?: import('./analyticalCapabilityContract').CapabilityValidation;
     /** Generated SQL */
     sql: string;
     /** Which engine generated `sql`: the local typed Question Builder
@@ -594,5 +598,7 @@ export interface AISQLPipelineResult {
         reasons: string[];
         recoverySuggestions: string[];
     };
+    /** Machine-readable evidence package for the displayed or withheld answer. */
+    analysisCertificate?: import('./analysisCertificate').AnalysisCertificate;
 }
 
