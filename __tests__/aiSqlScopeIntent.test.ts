@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildFocusedQuestionSuggestion, detectBroadScopeQuestion } from '../services/ai-sql/scopeIntent';
+import { buildFocusedQuestionSuggestion, buildQuestionExamples, detectBroadScopeQuestion } from '../services/ai-sql/scopeIntent';
 import { runAISQLPipeline } from '../services/ai-sql/pipeline';
 import type { Dataset } from '../types';
 
@@ -35,6 +35,13 @@ describe('AI SQL broad-scope clarification', () => {
         } as Dataset;
 
         expect(buildFocusedQuestionSuggestion(dataset)).toBe('Show total Trade Value by Flow Direction');
+        expect(buildQuestionExamples(dataset)).toEqual([
+            'Show total Trade Value by Flow Direction',
+            'Compare Trade Value by Flow Direction',
+            'Show the top 10 Flow Direction by Trade Value',
+            'Show average Trade Value by Flow Direction',
+            'Count records by Flow Direction',
+        ]);
     });
 
     it('enforces clarification at the pipeline boundary before SQL generation', async () => {

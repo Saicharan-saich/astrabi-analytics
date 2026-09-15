@@ -11,6 +11,7 @@
 
 import { ColumnDefinition, DatasetDomainProfile, ColumnSemantic, ColumnType, MaskedColumnProfile } from '../types';
 import { buildMaskedProfiles, profilesToPromptText } from './dataMasker';
+import { inferRowGrain } from './rowGrainInference';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONFIGURATION
@@ -419,12 +420,26 @@ export async function profileDatasetWithAI(
         ));
         console.log(`[AI Profiler] Confidence: ${(computedConfidence * 100).toFixed(0)}% (coverage=${(coverageScore * 100).toFixed(0)}%, unknowns=${unknownCols}, metrics=${metricCount}, dims=${dimCount})`);
 
-        // Step 8: Build the final profile
+        // Step 8: Infer row grain locally. This is structural metadata, so it
+        // does not require another model call or expose raw values.
+        const inferredGrain = inferRowGrain(
+            rows,
+            columns,
+            fileName,
+            pass1Parsed.domain!,
+            allSemantics,
+        );
+
+        // Step 9: Build the final profile
         const profile: DatasetDomainProfile = {
             domain: pass1Parsed.domain!,
             subDomain: pass1Parsed.subDomain,
             summary: pass1Parsed.summary || '',
             confidence: computedConfidence,
+            grain: inferredGrain.label,
+            grainConfidence: inferredGrain.confidence,
+            grainSource: inferredGrain.source,
+            grainEvidence: inferredGrain.evidence,
             themeColor: pass1Parsed.themeColor,
             columnSemantics: allSemantics,
             suggestedQuestionCategories: generateSuggestedCategories(pass1Parsed.domain!),

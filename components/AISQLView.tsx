@@ -18,7 +18,7 @@ import { collectSafeDomains } from '../services/ai-sql/schemaSerializer';
 import { Tooltip } from './Tooltip';
 import { checkAiSqlLimit, formatResetTime, AI_SQL_LIMITS } from '../services/aiSqlRateLimiter';
 import { useAuthStore } from '../store/useAuthStore';
-import { buildFocusedQuestionSuggestion, detectBroadScopeQuestion } from '../services/ai-sql/scopeIntent';
+import { buildFocusedQuestionSuggestion, buildQuestionExamples, detectBroadScopeQuestion } from '../services/ai-sql/scopeIntent';
 
 interface AISQLViewProps {
     dataset: Dataset | null;
@@ -153,14 +153,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
         }
     }, [initialQuery, dataset]);
 
-    const examples = [
-        "Total revenue by category",
-        "Top 10 products by profit",
-        "Monthly sales trend",
-        "Average order value by region",
-        "Count of orders this year",
-        "Revenue breakdown by segment"
-    ];
+    const examples = useMemo(() => dataset ? buildQuestionExamples(dataset) : [], [dataset]);
+    const exampleQuestion = examples[0] || 'Show total sales by category';
 
     const chartTypeMap: Record<string, string> = {
         kpiCard: 'kpiCard', line: 'line', bar: 'bar', horizontalBar: 'horizontalBar',
@@ -496,7 +490,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                             aria-label="Ask a question about your data"
                             aria-describedby="ai-sql-input-help"
                             className="w-full bg-transparent border-none outline-none text-gray-900 dark:text-white px-5 pt-4 pb-2 placeholder:text-gray-400 dark:placeholder:text-slate-500 font-medium resize-none min-h-[56px] max-h-[160px]"
-                            placeholder='Ask a question about your data... e.g. "Show top 10 products by total revenue"'
+                            placeholder={`Ask about a metric, comparison, trend, or ranking... e.g. "${exampleQuestion}"`}
                             value={query}
                             onChange={(e) => setQuery(e.target.value)}
                             onKeyDown={(e) => {
@@ -624,8 +618,15 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
 
                 {/* Example Suggestions */}
                 {!isLoading && !error && !noDataMsg && !scopeClarification && !clarificationMessage && (
-                    <div className="flex-1 flex flex-col items-center justify-center opacity-60">
-                        <p className="text-gray-500 dark:text-slate-400 mb-6 uppercase tracking-wider text-xs font-bold">Try asking:</p>
+                    <div className="flex-1 flex flex-col items-center justify-center">
+                        <div className="mb-5 max-w-2xl rounded-xl border border-cyan-200/70 bg-cyan-50/70 px-5 py-3 text-center dark:border-cyan-500/20 dark:bg-cyan-500/[0.07]">
+                            <p className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">A useful question usually includes</p>
+                            <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
+                                what to measure <span className="text-gray-400">+</span> how to split or compare it <span className="text-gray-400">+</span> an optional time period or filter
+                            </p>
+                            <p className="mt-1 text-[11px] text-gray-400 dark:text-slate-500">These are helpful patterns, not restrictions. You can still type any question supported by this dataset.</p>
+                        </div>
+                        <p className="mb-4 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400">Examples from your columns</p>
                         <div className="flex flex-wrap justify-center gap-3 max-w-2xl">
                             {examples.map((ex, i) => (
                                 <button

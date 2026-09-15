@@ -11,6 +11,7 @@ import {
 } from './types';
 import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, getSampleData } from './services/analysisEngine';
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
+import { inferRowGrain } from './services/rowGrainInference';
 import { buildSemanticModel } from './services/semanticModel';
 import { resolveAISQLSemanticModel } from './services/ai-sql/semanticLayer';
 import { fetchGlobalHiddenTabs } from './services/tabVisibilityService';
@@ -564,7 +565,7 @@ function App() {
 
         // ── AI SEMANTIC PROFILING (async, non-blocking) ──
         setIsAIProfiling(true);
-        profileDatasetWithAI(rows, columns, file.name).then(profile => {
+        profileDatasetWithAI(rows, columns, newDataset.subjectTable || file.name).then(profile => {
           setIsAIProfiling(false);
           if (profile) {
             const profiled: Dataset = { ...newDataset, domainProfile: profile };
@@ -599,10 +600,15 @@ function App() {
                 isHidden: false,
               };
             }
+            const inferredGrain = inferRowGrain(rows, columns, newDataset.subjectTable || file.name, heuristicDomain || 'Sales', colSem);
             const fallbackProfile: any = {
               domain: heuristicDomain || 'Sales',
               summary: `Detected as ${heuristicDomain || 'Sales'} domain (heuristic — please review)`,
               confidence: 0.4,
+              grain: inferredGrain.label,
+              grainConfidence: inferredGrain.confidence,
+              grainSource: inferredGrain.source,
+              grainEvidence: inferredGrain.evidence,
               themeColor: '#6366f1',
               columnSemantics: colSem,
               detectedAt: Date.now(),
@@ -632,10 +638,15 @@ function App() {
               isHidden: false,
             };
           }
+          const inferredGrain = inferRowGrain(rows, columns, newDataset.subjectTable || file.name, heuristicDomain || 'Sales', colSem);
           const fallbackProfile: any = {
             domain: heuristicDomain || 'Sales',
             summary: `Detected as ${heuristicDomain || 'Sales'} domain (heuristic — please review)`,
             confidence: 0.4,
+            grain: inferredGrain.label,
+            grainConfidence: inferredGrain.confidence,
+            grainSource: inferredGrain.source,
+            grainEvidence: inferredGrain.evidence,
             themeColor: '#6366f1',
             columnSemantics: colSem,
             detectedAt: Date.now(),
@@ -826,7 +837,13 @@ function App() {
             isHidden: false,
           };
         }
-        const sampleProfile: any = { domain: 'Sales', summary: 'Sample sales dataset', confidence: 0.9, themeColor: '#6366f1', columnSemantics: colSem, detectedAt: Date.now() };
+        const sampleGrain = inferRowGrain(rows, columns, 'sample_sales_data.csv', 'Sales', colSem);
+        const sampleProfile: any = {
+          domain: 'Sales', summary: 'Sample sales dataset', confidence: 0.9,
+          grain: sampleGrain.label, grainConfidence: sampleGrain.confidence,
+          grainSource: sampleGrain.source, grainEvidence: sampleGrain.evidence,
+          themeColor: '#6366f1', columnSemantics: colSem, detectedAt: Date.now(),
+        };
         sampleDs.domainProfile = sampleProfile;
 
         // ── BUILD SEMANTIC MODELS ──
@@ -874,7 +891,14 @@ function App() {
           };
         }
         const hDomain = detectDomainFromColumns(columns, name);
-        const connProfile: any = { domain: hDomain || 'Sales', summary: `Detected as ${hDomain || 'Sales'} domain`, confidence: 0.5, themeColor: '#6366f1', columnSemantics: colSem, detectedAt: Date.now() };
+        const connectorSubject = event.data.result.subjectTable || name;
+        const connectorGrain = inferRowGrain(rows, columns, connectorSubject, hDomain || 'Sales', colSem);
+        const connProfile: any = {
+          domain: hDomain || 'Sales', summary: `Detected as ${hDomain || 'Sales'} domain`, confidence: 0.5,
+          grain: connectorGrain.label, grainConfidence: connectorGrain.confidence,
+          grainSource: connectorGrain.source, grainEvidence: connectorGrain.evidence,
+          themeColor: '#6366f1', columnSemantics: colSem, detectedAt: Date.now(),
+        };
 
         console.log(`[App] Connector columns (master table): ${columns.length} columns — ${columns.map((c: any) => c.name).join(', ')}`);
 

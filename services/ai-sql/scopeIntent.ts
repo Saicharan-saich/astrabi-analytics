@@ -65,3 +65,36 @@ export function buildFocusedQuestionSuggestion(dataset: Dataset): string {
         ? `Show the different ${humanize(fallbackDimension.name)} values`
         : 'Count the records in this dataset';
 }
+
+/**
+ * Metadata-only teaching examples tailored to the current dataset. These are
+ * suggestions, not a whitelist: they never restrict what the user can type.
+ */
+export function buildQuestionExamples(dataset: Dataset): string[] {
+    const model = dataset.aiSqlSemanticModel;
+    const metric = model?.fields.find(field => field.role === 'metric'
+        && field.semanticType !== 'identifier');
+    const dimensions = model?.fields.filter(field => field.role === 'dimension'
+        && field.semanticType !== 'identifier'
+        && field.semanticType !== 'date'
+        && !/url|notes?|description/i.test(field.name)) || [];
+    const date = model?.fields.find(field => field.semanticType === 'date');
+
+    const metricLabel = metric ? humanize(metric.displayLabel || metric.name) : null;
+    const firstDimension = dimensions[0] ? humanize(dimensions[0].displayLabel || dimensions[0].name) : null;
+    const secondDimension = dimensions[1] ? humanize(dimensions[1].displayLabel || dimensions[1].name) : firstDimension;
+    const dateLabel = date ? humanize(date.displayLabel || date.name) : null;
+    const suggestions: string[] = [];
+
+    if (metricLabel && firstDimension) {
+        suggestions.push(`Show total ${metricLabel} by ${firstDimension}`);
+        suggestions.push(`Compare ${metricLabel} by ${firstDimension}`);
+        suggestions.push(`Show the top 10 ${secondDimension || firstDimension} by ${metricLabel}`);
+    }
+    if (metricLabel && dateLabel) suggestions.push(`Show the ${metricLabel} trend by ${dateLabel}`);
+    if (metricLabel && secondDimension) suggestions.push(`Show average ${metricLabel} by ${secondDimension}`);
+    if (firstDimension) suggestions.push(`Count records by ${firstDimension}`);
+
+    if (!suggestions.length) suggestions.push(buildFocusedQuestionSuggestion(dataset));
+    return [...new Set(suggestions)].slice(0, 6);
+}

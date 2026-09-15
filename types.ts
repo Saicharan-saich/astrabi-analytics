@@ -102,6 +102,9 @@ export interface DatasetDomainProfile {
   summary: string;               // "This dataset contains employee payroll records..."
   confidence: number;            // 0-1 confidence score
   grain?: string;                // What each row represents: "Order", "Employee", "Transaction", etc.
+  grainConfidence?: number;      // 0-1 confidence in the inferred row grain
+  grainSource?: 'unique_identifier' | 'composite_identifier' | 'table_name' | 'fallback' | 'user';
+  grainEvidence?: string[];      // Privacy-safe reasons for the inferred grain
   themeColor?: string;           // Domain-specific accent color
   columnSemantics: Record<string, ColumnSemantic>;
   suggestedQuestionCategories?: string[];

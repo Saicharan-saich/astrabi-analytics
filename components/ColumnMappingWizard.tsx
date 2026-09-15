@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { DatasetDomainProfile, ColumnSemantic, ColumnType, ColumnDefinition } from '../types';
 import { inferDefaultAggregation } from '../services/smartAggregation';
+import { inferRowGrain } from '../services/rowGrainInference';
 
 // ═══════════════════════════════════════════════════════════════════
 // CONSTANTS
@@ -98,7 +99,6 @@ interface ValidationError {
 
 function validateMapping(
     columnSemantics: Record<string, ColumnSemantic>,
-    grain: string,
 ): ValidationError[] {
     const errors: ValidationError[] = [];
     const visible = Object.entries(columnSemantics).filter(([, s]) => !s.isHidden);
@@ -113,10 +113,6 @@ function validateMapping(
     if (dimensions.length === 0) {
         errors.push({ id: 'no_dimension', message: 'At least 1 dimension column is required. What will values be grouped by?', severity: 'error' });
     }
-    if (!grain.trim()) {
-        errors.push({ id: 'no_grain', message: 'Define what each row represents (grain). This is required.', severity: 'error' });
-    }
-
     // Check METRIC aggregation
     for (const [name, sem] of metrics) {
         if (sem.aggregation === 'NONE') {
@@ -161,9 +157,19 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
     onDismiss,
 }) => {
     // ── Editable state ──
+    const inferredGrain = useMemo(() => inferRowGrain(
+        [],
+        columns,
+        fileName,
+        initialProfile.domain,
+        initialProfile.columnSemantics,
+    ), [columns, fileName, initialProfile.domain, initialProfile.columnSemantics]);
+    const initialGrain = initialProfile.grain || inferredGrain.label;
     const [domain, setDomain] = useState(initialProfile.domain);
     const [subDomain, setSubDomain] = useState(initialProfile.subDomain || '');
-    const [grain, setGrain] = useState(initialProfile.grain || '');
+    const [grain, setGrain] = useState(initialGrain);
+    const [grainWasEdited, setGrainWasEdited] = useState(initialProfile.grainSource === 'user');
+    const [showGrainOverride, setShowGrainOverride] = useState(false);
     const [showPreview, setShowPreview] = useState(false);
 
     const [columnSemantics, setColumnSemantics] = useState<Record<string, ColumnSemantic>>(() => {
@@ -203,7 +209,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
     }, [columnSemantics]);
 
     // ── Validation ──
-    const validationErrors = useMemo(() => validateMapping(columnSemantics, grain), [columnSemantics, grain]);
+    const validationErrors = useMemo(() => validateMapping(columnSemantics), [columnSemantics]);
     const hardErrors = validationErrors.filter(e => e.severity === 'error');
     const warnings = validationErrors.filter(e => e.severity === 'warning');
     const canApply = hardErrors.length === 0;
@@ -258,7 +264,9 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
     const resetToAI = () => {
         setDomain(initialProfile.domain);
         setSubDomain(initialProfile.subDomain || '');
-        setGrain(initialProfile.grain || '');
+        setGrain(initialGrain);
+        setGrainWasEdited(initialProfile.grainSource === 'user');
+        setShowGrainOverride(false);
         const merged: Record<string, ColumnSemantic> = {};
         for (const col of columns) {
             const existing = initialProfile.columnSemantics?.[col.name];
@@ -294,7 +302,12 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             ...initialProfile,
             domain,
             subDomain: subDomain || undefined,
-            grain,
+            grain: grain.trim() || inferredGrain.label,
+            grainConfidence: grainWasEdited ? 1 : (initialProfile.grainConfidence ?? inferredGrain.confidence),
+            grainSource: grainWasEdited ? 'user' : (initialProfile.grainSource ?? inferredGrain.source),
+            grainEvidence: grainWasEdited
+                ? ['Adjusted by the user in advanced row-detail settings']
+                : (initialProfile.grainEvidence ?? inferredGrain.evidence),
             columnSemantics,
             detectedAt: Date.now(),
         };
@@ -373,44 +386,59 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             <div className="flex-1 overflow-y-auto custom-scrollbar">
                 <div className="max-w-7xl mx-auto px-6 py-5 space-y-4">
 
-                    {/* ══ SECTION 1: GRAIN + DOMAIN (Mandatory) ══ */}
+                    {/* ══ SECTION 1: INFERRED ROW DETAIL + DOMAIN ══ */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                        {/* Grain (MANDATORY — most prominent) */}
-                        <div className={`col-span-2 rounded-xl p-4 border transition-all ${showErrors && !grain.trim()
-                            ? 'bg-red-500/10 border-red-500/30'
-                            : 'bg-[#171c26] border-white/[0.06]'
-                            }`}>
-                            <div className="flex items-center gap-2 mb-2">
+                        {/* Row grain is inferred automatically; correction is optional. */}
+                        <div className="col-span-2 rounded-xl p-4 border border-white/[0.06] bg-[#171c26]">
+                            <div className="flex items-center justify-between gap-3 mb-2">
+                                <div className="flex items-center gap-2">
                                 <Layers className="w-4 h-4 text-violet-400" />
-                                <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Each row represents a... <span className="text-red-400">*</span></label>
+                                    <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Row detail inferred automatically</span>
+                                </div>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${(initialProfile.grainConfidence ?? inferredGrain.confidence) >= 0.75
+                                    ? 'bg-emerald-500/15 text-emerald-300'
+                                    : 'bg-amber-500/15 text-amber-300'
+                                    }`}>
+                                    {(initialProfile.grainConfidence ?? inferredGrain.confidence) >= 0.75 ? 'High confidence' : 'Best match'}
+                                </span>
                             </div>
-                            <div className="flex gap-2">
-                                <input
-                                    type="text"
-                                    value={grain}
-                                    onChange={e => setGrain(e.target.value)}
-                                    placeholder="e.g. Order, Employee, Transaction..."
-                                    className="flex-1 bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-white text-sm placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all"
-                                />
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-base font-semibold text-white">One row = {grain || inferredGrain.label}</div>
+                                    <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
+                                        QuickInsight uses identifiers, uniqueness, and source metadata to assign this automatically.
+                                    </p>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowGrainOverride(value => !value)}
+                                    className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-white/[0.08]"
+                                >
+                                    {showGrainOverride ? 'Done' : 'Change'}
+                                </button>
                             </div>
-                            <p className="text-[10px] text-gray-500 mt-1.5 leading-relaxed">
-                                This tells the system the <span className="text-gray-400 font-medium">level of detail</span> in your data.
-                                For example, if each row is an <span className="text-violet-400">Order</span>, metrics like Sales will be summed <em>per order</em>.
-                                If each row is a <span className="text-violet-400">Line Item</span>, the same Sales metric aggregates at a finer level.
-                                Getting this right ensures accurate totals and averages.
-                            </p>
-                            <div className="flex flex-wrap gap-1.5 mt-2">
-                                {grainOptions.map(g => (
-                                    <button
-                                        key={g}
-                                        onClick={() => setGrain(g)}
-                                        className={`px-2 py-0.5 rounded text-[10px] font-medium transition-all ${grain === g
-                                            ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30'
-                                            : 'bg-white/[0.04] text-gray-500 hover:text-gray-300 border border-white/[0.06]'
-                                            }`}
-                                    >{g}</button>
-                                ))}
-                            </div>
+                            {showGrainOverride && (
+                                <div className="mt-3 border-t border-white/[0.06] pt-3">
+                                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Advanced override</label>
+                                    <input
+                                        type="text"
+                                        value={grain}
+                                        onChange={event => { setGrain(event.target.value); setGrainWasEdited(true); }}
+                                        placeholder="e.g. Order, line item, trade summary"
+                                        className="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                                    />
+                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                        {grainOptions.map(option => (
+                                            <button
+                                                type="button"
+                                                key={option}
+                                                onClick={() => { setGrain(option); setGrainWasEdited(true); }}
+                                                className="rounded border border-white/[0.06] bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium text-gray-400 hover:text-gray-200"
+                                            >{option}</button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
 
                         {/* Domain */}
@@ -418,7 +446,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                             <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold block mb-2">Domain</label>
                             <select
                                 value={domain}
-                                onChange={e => { setDomain(e.target.value); setGrain(''); }}
+                                onChange={e => setDomain(e.target.value)}
                                 className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50"
                             >
                                 {ALL_DOMAINS.map(d => (
