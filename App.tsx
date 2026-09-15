@@ -342,6 +342,7 @@ function App() {
 
   // ── Data Story state ──
   const [showDataStory, setShowDataStory] = useState(false);
+  const [dataStoryQuestion, setDataStoryQuestion] = useState<string | undefined>(undefined);
 
   // Alert evaluation on dataset load/refresh
   const alertStore = useAlertStore();
@@ -1461,7 +1462,7 @@ function App() {
                         onToggle={() => setSidebarOpen(false)}
                         onOpenUserManagement={() => { setShowUserMgmt(true); setSidebarOpen(false); }}
                         hasVisualResult={!!visualPreviewResult}
-                        onDataStory={() => { setShowDataStory(true); setSidebarOpen(false); }}
+                        onDataStory={() => { setDataStoryQuestion(undefined); setShowDataStory(true); setSidebarOpen(false); }}
                         onOpenTabManager={() => { setShowTabManager(true); setSidebarOpen(false); }}
                       />
                     </motion.div>
@@ -1484,7 +1485,7 @@ function App() {
                       onToggle={() => toggleSidebar()}
                       onOpenUserManagement={() => setShowUserMgmt(true)}
                       hasVisualResult={!!visualPreviewResult}
-                      onDataStory={() => setShowDataStory(true)}
+                      onDataStory={() => { setDataStoryQuestion(undefined); setShowDataStory(true); }}
                       onOpenTabManager={() => setShowTabManager(true)}
                     />
                   </motion.div>
@@ -1876,6 +1877,10 @@ function App() {
                     initialQuery={smartQuestionQuery}
                     onOpenDatasetOverview={() => setActiveTab(Tab.DATASET_SUMMARY)}
                     onOpenAllRecords={() => setActiveTab(Tab.DATA)}
+                    onOpenSummaryStory={(question) => {
+                      setDataStoryQuestion(question);
+                      setShowDataStory(true);
+                    }}
                     onViewFullPage={(result, pipelineResult, query, fmt) => {
                       setVisualPreviewResult(result);
                       setVisualPreviewPipeline(pipelineResult);
@@ -2181,7 +2186,8 @@ function App() {
             {showDataStory && dataset && (
               <DataStoryView
                 dataset={dataset}
-                onClose={() => setShowDataStory(false)}
+                question={dataStoryQuestion}
+                onClose={() => { setShowDataStory(false); setDataStoryQuestion(undefined); }}
               />
             )}
           </div>

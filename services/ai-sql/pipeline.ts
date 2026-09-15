@@ -97,7 +97,8 @@ import { validateAnalyticalResult } from './analyticalResultValidator';
 import { compileAnalyticalIRToSQL } from './analyticalSqlAst';
 import { canCompileTotalPeriodComparisonLocally } from './deterministicRouting';
 import { getAISQLEngineConfig } from './engineConfig';
-import { detectBroadScopeQuestion } from './scopeIntent';
+import { detectBroadScopeQuestion, detectSummaryRequest } from './scopeIntent';
+import { resolveConversationTurn } from './conversationIntent';
 
 /**
  * Benchmark runs preserve the model-owned route so published evaluations stay
@@ -170,6 +171,21 @@ export async function runAISQLPipeline(
     };
 
     console.log('[AI SQL Pipeline] Starting for question:', question);
+
+    const conversationTurn = resolveConversationTurn(question, dataset);
+    if (conversationTurn.kind !== 'analysis') {
+        throw new AISQLPipelineError(
+            'conversation_only',
+            'This message is conversational and does not require a SQL query.',
+        );
+    }
+
+    if (detectSummaryRequest(question).isSummary) {
+        throw new AISQLPipelineError(
+            'summary_story_required',
+            'This request needs the multi-visual summary story rather than one SQL result.',
+        );
+    }
 
     const broadScope = detectBroadScopeQuestion(question);
     if (broadScope.needsClarification) {

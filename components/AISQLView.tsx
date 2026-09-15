@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, Shield, ShieldCheck, LayoutDashboard, Table2, Target } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
-import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
+import { resolveConversationTurn, runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { MODEL_LADDER_LABEL } from '../services/ai-sql/modelConfig';
 import {
     getPrivacyMode, setPrivacyMode, PrivacyMode,
@@ -16,9 +16,9 @@ import {
 } from '../services/ai-sql/privacySelection';
 import { collectSafeDomains } from '../services/ai-sql/schemaSerializer';
 import { Tooltip } from './Tooltip';
-import { checkAiSqlLimit, formatResetTime, AI_SQL_LIMITS } from '../services/aiSqlRateLimiter';
+import { checkAiSqlLimit, formatResetTime } from '../services/aiSqlRateLimiter';
 import { useAuthStore } from '../store/useAuthStore';
-import { buildFocusedQuestionSuggestion, buildQuestionExamples, detectBroadScopeQuestion } from '../services/ai-sql/scopeIntent';
+import { buildFocusedQuestionSuggestion, buildQuestionExamples, detectBroadScopeQuestion, detectSummaryRequest } from '../services/ai-sql/scopeIntent';
 
 interface AISQLViewProps {
     dataset: Dataset | null;
@@ -27,10 +27,11 @@ interface AISQLViewProps {
     onViewFullPage?: (result: AnalysisResult, pipelineResult: AISQLPipelineResult, query: string, formatting: FormattingConfig) => void;
     onOpenDatasetOverview?: () => void;
     onOpenAllRecords?: () => void;
+    onOpenSummaryStory?: (question: string) => void;
 }
 
 export const AISQLView: React.FC<AISQLViewProps> = ({
-    dataset, onPin, initialQuery, onViewFullPage, onOpenDatasetOverview, onOpenAllRecords,
+    dataset, onPin, initialQuery, onViewFullPage, onOpenDatasetOverview, onOpenAllRecords, onOpenSummaryStory,
 }) => {
     const [query, setQuery] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -42,6 +43,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
     const [noDataSQL, setNoDataSQL] = useState<string | null>(null);
     const [scopeClarification, setScopeClarification] = useState<string | null>(null);
     const [clarificationMessage, setClarificationMessage] = useState<string | null>(null);
+    const [conversationReply, setConversationReply] = useState<{
+        title: string;
+        message: string;
+        suggestions: string[];
+    } | null>(null);
 
     // ── AI SQL Privacy Mode ──
     // "Better answers" sends values from the user's data, so it is gated on
@@ -53,6 +59,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
     const datasetKey = dataset?.name || dataset?.id || '';
     const [selection, setSelectionState] = useState<PrivacySelection>(EMPTY_SELECTION);
     useEffect(() => { setSelectionState(datasetKey ? getSelection(datasetKey) : EMPTY_SELECTION); }, [datasetKey]);
+    const [lastBusinessQuestion, setLastBusinessQuestion] = useState<string | null>(null);
+    useEffect(() => {
+        setLastBusinessQuestion(null);
+        setConversationReply(null);
+    }, [datasetKey]);
 
     // Better answers is only genuinely on when it has been agreed to.
     const enhancedActive = privacyMode === 'enhanced' && consented;
@@ -113,8 +124,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
         setConsentDialog(null);
     };
 
-    // Every question is answered STANDALONE — no conversation history is kept or
-    // sent, so an answer can never inherit context from a previous question.
+    // Conversational memory is intentionally bounded to one previous business
+    // question. Answer text, SQL, result rows and older turns are never retained
+    // or sent as chat history.
 
     // Rate limiting
     const currentUser = useAuthStore(s => s.currentUser);
@@ -165,11 +177,50 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
     const handleSubmit = async () => {
         if (!query.trim() || !dataset || isLoading) return;
 
+        // Resolve small talk and help entirely in the browser, before quota
+        // checks or query planning. A clear follow-up may reuse only the
+        // immediately preceding business question.
+        const turn = resolveConversationTurn(query, dataset, lastBusinessQuestion);
+        if (turn.kind !== 'analysis' && turn.kind !== 'follow_up') {
+            const localReply = (() => {
+                if (turn.kind === 'greeting') return {
+                    title: 'Hello',
+                    message: `Hello! I can help you explore ${dataset.name || 'this dataset'}. Ask about a metric, comparison, trend, ranking, or summary.`,
+                    suggestions: examples.slice(0, 3),
+                };
+                if (turn.kind === 'help') return {
+                    title: 'Here is how to ask',
+                    message: 'A useful business question names what to measure, how to compare or group it, and optionally a period or filter. You can also ask for a dataset summary to create a multi-visual story.',
+                    suggestions: examples.slice(0, 3),
+                };
+                if (turn.kind === 'thanks') return {
+                    title: 'You are welcome',
+                    message: 'You can ask another question about this dataset whenever you are ready.',
+                    suggestions: examples.slice(0, 2),
+                };
+                return {
+                    title: 'See you next time',
+                    message: 'Your dataset remains ready when you want to continue the analysis.',
+                    suggestions: [],
+                };
+            })();
+            setConversationReply(localReply);
+            setScopeClarification(null);
+            setClarificationMessage(null);
+            setError(null);
+            setNoDataMsg(null);
+            setNoDataSQL(null);
+            return;
+        }
+
+        const analyticalQuestion = turn.resolvedQuestion;
+        setConversationReply(null);
+
         // A dataset-wide request is not one well-defined SQL answer. Resolve it
         // locally before rate limiting or model invocation so non-technical
         // users choose the result they actually intended without spending AI
         // tokens on a guess.
-        const scope = detectBroadScopeQuestion(query);
+        const scope = detectBroadScopeQuestion(analyticalQuestion);
         if (scope.needsClarification) {
             setScopeClarification(scope.reason || 'Please choose the kind of result you want.');
             setClarificationMessage(null);
@@ -191,6 +242,22 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
             return;
         }
 
+        // A summary is intentionally multi-result. Preserve the full wording
+        // (including periods and filters) and route it to the story builder.
+        if (detectSummaryRequest(analyticalQuestion).isSummary) {
+            setScopeClarification(null);
+            setClarificationMessage(null);
+            setError(null);
+            setNoDataMsg(null);
+            setNoDataSQL(null);
+            if (onOpenSummaryStory) {
+                setLastBusinessQuestion(analyticalQuestion);
+                onOpenSummaryStory(analyticalQuestion);
+                incrementAiSqlUsage();
+                return;
+            }
+        }
+
         setIsLoading(true);
         setError(null);
         setScopeClarification(null);
@@ -202,7 +269,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
         try {
             const timeoutMs = 60000;
             const result = await Promise.race([
-                runAISQLPipeline(query, dataset),
+                runAISQLPipeline(analyticalQuestion, dataset),
                 new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Query timed out after 60 seconds. Please try again.')), timeoutMs))
             ]);
 
@@ -225,6 +292,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
             if (result.rawData.length === 0 && result.explanation) {
                 setNoDataMsg(result.explanation);
                 setNoDataSQL(result.sql);
+                setLastBusinessQuestion(analyticalQuestion);
                 setIsLoading(false);
                 return;
             }
@@ -257,7 +325,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                 data: result.chartData,
                 xKey: result.chart.xKey,
                 yKey: result.chart.yKey,
-                yLabel: query,
+                yLabel: analyticalQuestion,
                 insight: result.explanation,
                 sql: result.sql,
                 config: {
@@ -267,7 +335,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                     timeGrain: TimeGrain.RAW,
                     analysisType: AnalysisType.STANDARD,
                     questionId: 'ai_sql_' + Date.now(),
-                    questionLabel: query,
+                    questionLabel: analyticalQuestion,
                     secondaryMetrics: result.chart.secondaryYKeys,
                     axisMode: result.chart.useDualAxis ? 'dual' : 'auto',
                     limit: result.plan.limit || 0,
@@ -284,10 +352,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
 
             // Navigate to Visual Preview immediately
             if (onViewFullPage) {
-                onViewFullPage(finalResult, result, query, fmt);
+                onViewFullPage(finalResult, result, analyticalQuestion, fmt);
             }
 
             // ── Increment usage AFTER successful query ──
+            setLastBusinessQuestion(analyticalQuestion);
             incrementAiSqlUsage();
 
         } catch (err: any) {
@@ -346,7 +415,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                     <div className="flex items-center gap-2">
                         <p className="text-gray-500 dark:text-slate-400 text-sm flex-1">
                             Ask a focused question about a metric, category, comparison, or time period. QuickInsight calculates supported answers locally, validates every read-only query, and chooses a suitable visual or data table.
-                            Broad requests such as “summarize everything” are clarified first. Each answer shows its calculation path; questions are independent, with no conversational memory.
+                            Summary requests create a multi-visual data story and preserve any period, grouping, or filter you specify. Short follow-ups may use only your previous business question—not its answer, SQL, rows, or a full chat transcript.
                         </p>
                         <Tooltip
                             position="left"
@@ -367,6 +436,37 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                         </Tooltip>
                     </div>
                 </div>
+
+                {conversationReply && !isLoading && (
+                    <div role="status" aria-live="polite" className="shrink-0 rounded-xl border border-cyan-200 bg-cyan-50 p-5 dark:border-cyan-500/30 dark:bg-cyan-500/10">
+                        <div className="flex items-start gap-3">
+                            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-300" aria-hidden="true" />
+                            <div className="min-w-0 flex-1">
+                                <div className="font-bold text-cyan-900 dark:text-cyan-100">{conversationReply.title}</div>
+                                <p className="mt-1 text-sm leading-relaxed text-cyan-800 dark:text-cyan-200/80">{conversationReply.message}</p>
+                                {conversationReply.suggestions.length > 0 && (
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                        {conversationReply.suggestions.map(suggestion => (
+                                            <button
+                                                key={suggestion}
+                                                type="button"
+                                                onClick={() => {
+                                                    setQuery(suggestion);
+                                                    setConversationReply(null);
+                                                    requestAnimationFrame(() => inputRef.current?.focus());
+                                                }}
+                                                className="rounded-full border border-cyan-300 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-800 transition hover:border-cyan-500 hover:bg-cyan-100 dark:border-cyan-500/30 dark:bg-slate-900/60 dark:text-cyan-100 dark:hover:bg-cyan-500/15"
+                                            >
+                                                {suggestion}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <button aria-label="Dismiss response" onClick={() => { setConversationReply(null); inputRef.current?.focus(); }} className="shrink-0 text-cyan-500 hover:text-cyan-800 dark:hover:text-cyan-100"><X className="h-4 w-4" /></button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Dataset-wide requests need an output choice, not a guessed SQL query. */}
                 {scopeClarification && !isLoading && (
@@ -509,7 +609,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                             </div>
                             <button
                                 onClick={handleSubmit}
-                                disabled={!query.trim() || isLoading || (!limitStatus.allowed && !limitStatus.blocked)}
+                                disabled={!query.trim() || isLoading}
                                 className="bg-cyan-600 hover:bg-cyan-500 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-md hover:shadow-lg active:scale-95"
                             >
                                 {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : !limitStatus.allowed ? <Lock className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
@@ -617,7 +717,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
 
 
                 {/* Example Suggestions */}
-                {!isLoading && !error && !noDataMsg && !scopeClarification && !clarificationMessage && (
+                {!isLoading && !error && !noDataMsg && !scopeClarification && !clarificationMessage && !conversationReply && (
                     <div className="flex-1 flex flex-col items-center justify-center">
                         <div className="mb-5 max-w-2xl rounded-xl border border-cyan-200/70 bg-cyan-50/70 px-5 py-3 text-center dark:border-cyan-500/20 dark:bg-cyan-500/[0.07]">
                             <p className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">A useful question usually includes</p>

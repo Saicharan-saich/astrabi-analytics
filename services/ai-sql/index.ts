@@ -22,8 +22,13 @@ export { getClassificationTelemetry } from './arbitrationEngine';
 export { generateTrustVerification } from './trustEngine';
 export { createAISQLBuilderHandoff } from './builderHandoff';
 export type { AISQLBuilderHandoff } from './builderHandoff';
-export { detectBroadScopeQuestion, buildFocusedQuestionSuggestion } from './scopeIntent';
-export type { BroadScopeDetection } from './scopeIntent';
+export { resolveConversationTurn } from './conversationIntent';
+export type { ConversationTurnKind, ConversationTurnResolution } from './conversationIntent';
+export {
+    detectBroadScopeQuestion, detectSummaryRequest, buildFocusedQuestionSuggestion,
+    buildQuestionExamples, buildSummaryStoryQuestions,
+} from './scopeIntent';
+export type { BroadScopeDetection, SummaryIntentDetection, SummaryStoryQuestion } from './scopeIntent';
 export {
     buildCanonicalQueryIntent,
     reconcilePlanWithCanonicalIntent,

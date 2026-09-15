@@ -1,5 +1,7 @@
 export type AISQLPipelineFailureKind =
+    | 'conversation_only'
     | 'clarification_required'
+    | 'summary_story_required'
     | 'planner_invalid_spec'
     | 'sql_validation_failed';
 

@@ -1,11 +1,13 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { X, Loader2, ChevronLeft, ChevronRight, Play, Pause } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
-import { runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
+import { buildSummaryStoryQuestions, runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
+import { resolveAISQLSemanticModel } from '../services/ai-sql/semanticLayer';
 import { ChartVisualization } from './ChartVisualization';
 
 interface DataStoryViewProps {
   dataset: Dataset;
+  question?: string;
   onClose: () => void;
 }
 
@@ -18,6 +20,7 @@ interface StorySlide {
   pipeline?: AISQLPipelineResult;
   result?: AnalysisResult;
   chartType?: string;
+  errorMessage?: string;
 }
 
 const CHART_MAP: Record<string, string> = {
@@ -37,18 +40,17 @@ const STORY_FORMATTING: FormattingConfig = {
   tableCalculations: [],
 };
 
-const SLIDE_DEFS = [
-  { id: 'overview', question: 'What is the total revenue?', title: 'The Big Picture', icon: '\u{1F4B0}' },
-  { id: 'trend', question: 'Show the revenue trend over time', title: 'The Journey Over Time', icon: '\u{1F4C8}' },
-  { id: 'ranking', question: 'Which category generates the most revenue?', title: 'The Champions', icon: '\u{1F3C6}' },
-  { id: 'share', question: 'What percentage does each category contribute?', title: 'Share of the Pie', icon: '\u{1F967}' },
-  { id: 'growth', question: 'Show year-over-year growth', title: 'Growth Story', icon: '\u{1F680}' },
-  { id: 'seasonality', question: 'Which month historically performs best?', title: 'Seasonal Patterns', icon: '\u{1F4C5}' },
-];
-
-export const DataStoryView: React.FC<DataStoryViewProps> = ({ dataset, onClose }) => {
+export const DataStoryView: React.FC<DataStoryViewProps> = ({ dataset, question, onClose }) => {
+  const storyQuestion = question || 'Give me a summary of this dataset';
+  const storyDataset = useMemo(() => dataset.aiSqlSemanticModel
+    ? dataset
+    : { ...dataset, aiSqlSemanticModel: resolveAISQLSemanticModel(dataset).model }, [dataset]);
+  const storyDefs = useMemo(
+    () => buildSummaryStoryQuestions(storyDataset, storyQuestion),
+    [storyDataset, storyQuestion],
+  );
   const [slides, setSlides] = useState<StorySlide[]>(
-    SLIDE_DEFS.map(d => ({ ...d, status: 'pending' as const }))
+    storyDefs.map(d => ({ ...d, status: 'pending' as const }))
   );
   const [currentSlide, setCurrentSlide] = useState(-1);
   const [phase, setPhase] = useState<'loading' | 'presenting'>('loading');
@@ -60,26 +62,35 @@ export const DataStoryView: React.FC<DataStoryViewProps> = ({ dataset, onClose }
   useEffect(() => {
     mountedRef.current = true;
     let cancelled = false;
+    setSlides(storyDefs.map(definition => ({ ...definition, status: 'pending' as const })));
+    setCurrentSlide(-1);
+    setPhase('loading');
 
     async function runStory() {
-      for (let i = 0; i < SLIDE_DEFS.length; i++) {
+      for (let i = 0; i < storyDefs.length; i++) {
         if (cancelled) return;
         setSlides(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'loading' } : s));
 
         try {
-          const res = await runAISQLPipeline(SLIDE_DEFS[i].question, dataset);
+          const res = await runAISQLPipeline(storyDefs[i].question, storyDataset);
           if (cancelled) return;
+          if (res.displaySafety?.allowed === false) {
+            throw new Error(res.displaySafety.reasons.join(' ') || 'This result did not pass display-safety validation.');
+          }
+          if (res.rawData.length === 0) {
+            throw new Error(res.explanation || 'No matching data was found for this part of the summary.');
+          }
 
           const ct = CHART_MAP[res.chart.chartType] || 'bar';
           const result: AnalysisResult = {
             data: res.chartData, xKey: res.chart.xKey, yKey: res.chart.yKey,
-            yLabel: SLIDE_DEFS[i].question, insight: res.explanation, sql: res.sql,
+            yLabel: storyDefs[i].question, insight: res.explanation, sql: res.sql,
             config: {
               metric: res.plan.metrics[0]?.field || res.chart.yKey,
               dimension: res.plan.dimensions[0]?.field || res.chart.xKey,
               aggregation: AggregationType.SUM, timeGrain: TimeGrain.RAW,
-              analysisType: AnalysisType.STANDARD, questionId: `story_${SLIDE_DEFS[i].id}`,
-              questionLabel: SLIDE_DEFS[i].question,
+              analysisType: AnalysisType.STANDARD, questionId: `story_${storyDefs[i].id}`,
+              questionLabel: storyDefs[i].question,
               secondaryMetrics: res.chart.secondaryYKeys,
               axisMode: res.chart.useDualAxis ? 'dual' : 'auto',
               limit: res.plan.limit || 0, sort: res.plan.sort?.[0]?.dir || 'desc',
@@ -94,10 +105,10 @@ export const DataStoryView: React.FC<DataStoryViewProps> = ({ dataset, onClose }
           setSlides(prev => prev.map((s, idx) =>
             idx === i ? { ...s, status: 'done', pipeline: res, result, chartType: ct } : s
           ));
-        } catch {
+        } catch (error) {
           if (cancelled) return;
           setSlides(prev => prev.map((s, idx) =>
-            idx === i ? { ...s, status: 'error' } : s
+            idx === i ? { ...s, status: 'error', errorMessage: error instanceof Error ? error.message : 'This analysis could not be completed.' } : s
           ));
         }
       }
@@ -115,7 +126,7 @@ export const DataStoryView: React.FC<DataStoryViewProps> = ({ dataset, onClose }
 
     runStory();
     return () => { cancelled = true; mountedRef.current = false; };
-  }, [dataset]);
+  }, [storyDataset, storyDefs]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -185,13 +196,13 @@ export const DataStoryView: React.FC<DataStoryViewProps> = ({ dataset, onClose }
       {phase === 'loading' && (
         <div className="flex-1 flex flex-col items-center justify-center relative z-10">
           <div className="text-5xl mb-6 animate-bounce">{'\u{1F4CA}'}</div>
-          <h2 className="text-3xl font-bold text-white mb-2">Crafting Your Data Story</h2>
-          <p className="text-white/40 text-sm mb-8">Analyzing patterns across your dataset...</p>
+          <h2 className="text-3xl font-bold text-white mb-2">Building Your Summary</h2>
+          <p className="mb-8 max-w-xl text-center text-sm text-white/50">{storyQuestion}</p>
 
           <div className="w-80 mb-8">
             <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
               <div className="h-full bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-full transition-all duration-700 ease-out"
-                style={{ width: `${(completedCount / SLIDE_DEFS.length) * 100}%` }} />
+                style={{ width: `${(completedCount / Math.max(1, storyDefs.length)) * 100}%` }} />
             </div>
           </div>
 
@@ -300,6 +311,17 @@ export const DataStoryView: React.FC<DataStoryViewProps> = ({ dataset, onClose }
             </button>
           </div>
         </>
+      )}
+
+      {phase === 'presenting' && !activeSlide && (
+        <div className="relative z-10 flex flex-1 flex-col items-center justify-center px-8 text-center">
+          <div className="mb-4 text-4xl">⚠️</div>
+          <h2 className="text-2xl font-bold text-white">The summary could not be completed</h2>
+          <p className="mt-2 max-w-xl text-sm text-white/50">
+            None of the generated analyses returned a display-safe result. Review the dataset mappings or try a more specific period or metric.
+          </p>
+          <button onClick={onClose} className="mt-6 rounded-xl bg-indigo-500 px-4 py-2 font-semibold text-white hover:bg-indigo-600">Close</button>
+        </div>
       )}
     </div>
   );
