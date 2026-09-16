@@ -17,7 +17,7 @@ import { QuestionBuilderVideoGuide } from './QuestionBuilderVideoGuide';
 import { AIInsightPanel } from './AIInsightPanel';
 import { TransparencyPanel } from './TransparencyPanel';
 
-import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers, Calendar } from 'lucide-react';
+import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers, Calendar, Undo2 } from 'lucide-react';
 
 interface BuilderViewProps {
     dataset: Dataset;
@@ -61,12 +61,23 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [showHandoffNotice, setShowHandoffNotice] = useState(true);
     const [freshSession, setFreshSession] = useState(false);
     const [builderResetVersion, setBuilderResetVersion] = useState(0);
+    const [undoDepth, setUndoDepth] = useState(0);
+    const [undoRestoreConfig, setUndoRestoreConfig] = useState<any>(null);
+    const undoHistoryRef = useRef<any[]>([]);
+    const requestedConfigRef = useRef<any>(null);
     const lastHandoffIdRef = useRef<string | null>(null);
     const lastIncomingConfigRef = useRef<any>(initialConfig);
     // Builder controls can fire rapidly (typing a limit, swapping fields,
     // toggling filters). Only the newest requested analysis is allowed to
     // update the visible result; a slower older run must never overwrite it.
     const runSequenceRef = useRef(0);
+
+    const clearUndoHistory = useCallback(() => {
+        undoHistoryRef.current = [];
+        requestedConfigRef.current = null;
+        setUndoDepth(0);
+        setUndoRestoreConfig(null);
+    }, []);
 
     // Responsive chart libraries measure their parent. Notify them immediately
     // and once more after the layout settles when the Builder column changes.
@@ -134,6 +145,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         }
     }, [dataset.id]);
 
+    React.useEffect(() => {
+        clearUndoHistory();
+    }, [dataset.id, clearUndoHistory]);
+
     // Dedicated effect: sync asOfDate when ETL populates timeContext (async)
     React.useEffect(() => {
         const tc = dataset.timeContext;
@@ -157,8 +172,9 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         if (initialConfig !== lastIncomingConfigRef.current) {
             lastIncomingConfigRef.current = initialConfig;
             setFreshSession(false);
+            clearUndoHistory();
         }
-    }, [initialConfig]);
+    }, [initialConfig, clearUndoHistory]);
 
     // Auto-run when editing from dashboard (initialConfig changes)
     React.useEffect(() => {
@@ -166,7 +182,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             setFreshSession(false);
             // Small delay to let QuestionBuilder remount with new initial values
             const timer = setTimeout(() => {
-                handleRun(initialConfig);
+                handleRun(initialConfig, { recordHistory: false });
             }, 100);
             return () => clearTimeout(timer);
         }
@@ -182,7 +198,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         setFreshSession(false);
         setShowHandoffNotice(true);
         if (initialConfig.chartType) setChartType(initialConfig.chartType);
-        const timer = setTimeout(() => handleRun(initialConfig), 120);
+        clearUndoHistory();
+        const timer = setTimeout(() => handleRun(initialConfig, { recordHistory: false }), 120);
         return () => clearTimeout(timer);
     }, [initialConfig?._handoffId]);
 
@@ -193,7 +210,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         if (dataset.version !== prevVersionRef.current && lastRunConfig) {
             prevVersionRef.current = dataset.version;
             console.log(`[BuilderView] Dataset version changed (v${dataset.version}) — re-running analysis`);
-            handleRun(lastRunConfig);
+            handleRun(lastRunConfig, { recordHistory: false });
         }
     }, [dataset.version]);
 
@@ -219,7 +236,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             hasAutoRestoredRef.current = true;
             console.log('[BuilderView] Restoring session — auto-running saved config');
             // Delay slightly to let QuestionBuilder mount with saved initial values
-            const timer = setTimeout(() => handleRun(savedSession.config), 300);
+            const timer = setTimeout(() => handleRun(savedSession.config, { recordHistory: false }), 300);
             return () => clearTimeout(timer);
         }
     }, [dataset.rows.length]);
@@ -237,7 +254,16 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         if (maxForCol && !isUserOverride) setAsOfDate(maxForCol);
     };
 
-    const handleRun = async (config: any) => {
+    const handleRun = async (config: any, options: { recordHistory?: boolean } = {}) => {
+        const nextRequestedConfig = JSON.parse(JSON.stringify(config));
+        const previousRequestedConfig = requestedConfigRef.current;
+        if (options.recordHistory !== false && previousRequestedConfig
+            && JSON.stringify(previousRequestedConfig) !== JSON.stringify(nextRequestedConfig)) {
+            undoHistoryRef.current = [...undoHistoryRef.current, previousRequestedConfig].slice(-30);
+            setUndoDepth(undoHistoryRef.current.length);
+        }
+        requestedConfigRef.current = nextRequestedConfig;
+
         const runSequence = ++runSequenceRef.current;
         try {
             setError(null);
@@ -299,7 +325,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             }
 
             setResult(res);
-            setLastRunConfig(config);
+            setLastRunConfig(nextRequestedConfig);
             const previousGrouping = JSON.stringify([lastRunConfig?.dimension, ...(lastRunConfig?.secondaryDimensions || [])]);
             const nextGrouping = JSON.stringify([config.dimension, ...(config.secondaryDimensions || [])]);
             if (previousGrouping !== nextGrouping) {
@@ -316,6 +342,32 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             setIsLoading(false);
         }
     };
+
+    const handleUndo = () => {
+        if (isLoading || undoHistoryRef.current.length === 0) return;
+        const targetConfig = undoHistoryRef.current[undoHistoryRef.current.length - 1];
+        undoHistoryRef.current = undoHistoryRef.current.slice(0, -1);
+        setUndoDepth(undoHistoryRef.current.length);
+        setUndoRestoreConfig(targetConfig);
+        setBuilderResetVersion(version => version + 1);
+        setContentTab('visual');
+        setForceGridMode('auto');
+        void handleRun(targetConfig, { recordHistory: false });
+    };
+
+    React.useEffect(() => {
+        if (!isActive) return;
+        const onUndoShortcut = (event: KeyboardEvent) => {
+            if (!(event.ctrlKey || event.metaKey) || event.shiftKey || event.key.toLowerCase() !== 'z') return;
+            const target = event.target as HTMLElement | null;
+            if (target?.matches('input, textarea, [contenteditable="true"]')) return;
+            if (undoHistoryRef.current.length === 0 || isLoading) return;
+            event.preventDefault();
+            handleUndo();
+        };
+        window.addEventListener('keydown', onUndoShortcut);
+        return () => window.removeEventListener('keydown', onUndoShortcut);
+    }, [isActive, isLoading, undoDepth]);
 
     // --- Click-to-Drill ---
     const handleDrillDown = useCallback((dimensionValue: string) => {
@@ -427,6 +479,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         setForceGridMode('auto');
         setChartType('bar');
         setShowHandoffNotice(false);
+        clearUndoHistory();
 
         // A transferred AI SQL config and the persisted builder config are two
         // independent sources. Both must be ignored/removed or the synthetic
@@ -442,10 +495,11 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             onUpdateFormatting?.({ ...formatting, tableCalculations: [] });
         }
         onReset?.();
-    }, [formatting, onReset, onUpdateFormatting, storageKey]);
+    }, [clearUndoHistory, formatting, onReset, onUpdateFormatting, storageKey]);
 
     const effectiveInitialConfig = freshSession ? undefined : initialConfig;
     const effectiveSavedSession = freshSession ? null : savedSession;
+    const activeBuilderConfig = undoRestoreConfig || effectiveInitialConfig || effectiveSavedSession?.config || {};
     const dimensionLayout = useMemo(() => result
         ? resolveDimensionVisualization(result.data, result.xKey, result.yKey, result.config, forceGridMode)
         : null,
@@ -496,22 +550,22 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     dataset={dataset}
                     mode={effectiveInitialConfig?._source === 'ai-sql' ? 'gafs' : 'full'}
                     onRun={handleRun}
-                    initialMetric={effectiveInitialConfig?.metric || effectiveSavedSession?.config?.metric || ''}
-                    initialAggregation={effectiveInitialConfig?.aggregation || effectiveSavedSession?.config?.aggregation || 'SUM'}
-                    initialDimension={effectiveInitialConfig?.dimension || effectiveSavedSession?.config?.dimension || ''}
-                    initialTimeFilter={effectiveInitialConfig?.timeFilter || effectiveSavedSession?.config?.timeFilter || 'all_time'}
-                    initialLimit={effectiveInitialConfig?.limit ?? effectiveSavedSession?.config?.limit ?? 0}
-                    initialSort={effectiveInitialConfig?.sort || effectiveSavedSession?.config?.sort || 'desc'}
-                    initialComparison={effectiveInitialConfig?.comparison || effectiveSavedSession?.config?.comparison || ''}
-                    initialComparisonGrain={effectiveInitialConfig?.comparisonGrain || effectiveSavedSession?.config?.comparisonGrain || 'month'}
-                    initialComparisonOffset={effectiveInitialConfig?.comparisonOffset ?? effectiveSavedSession?.config?.comparisonOffset ?? 1}
-                    initialSecondaryMetrics={effectiveInitialConfig?.secondaryMetrics || effectiveSavedSession?.config?.secondaryMetrics || []}
-                    initialSecondaryMetricVisuals={effectiveInitialConfig?.secondaryMetricVisuals || effectiveSavedSession?.config?.secondaryMetricVisuals || {}}
-                    initialSecondaryMetricAggregations={effectiveInitialConfig?.secondaryMetricAggregations || effectiveSavedSession?.config?.secondaryMetricAggregations || {}}
-                    initialSecondaryDimensions={effectiveInitialConfig?.secondaryDimensions || effectiveSavedSession?.config?.secondaryDimensions || []}
-                    initialFilters={effectiveInitialConfig?.filters || effectiveSavedSession?.config?.filters || {}}
-                    initialMeasureFilters={effectiveInitialConfig?.measureFilters || effectiveSavedSession?.config?.measureFilters || []}
-                    initialDateFilters={effectiveInitialConfig?.dateFilters || effectiveSavedSession?.config?.dateFilters || []}
+                    initialMetric={activeBuilderConfig.metric || ''}
+                    initialAggregation={activeBuilderConfig.aggregation || 'SUM'}
+                    initialDimension={activeBuilderConfig.dimension || ''}
+                    initialTimeFilter={activeBuilderConfig.timeFilter || 'all_time'}
+                    initialLimit={activeBuilderConfig.limit ?? 0}
+                    initialSort={activeBuilderConfig.sort || 'desc'}
+                    initialComparison={activeBuilderConfig.comparison || ''}
+                    initialComparisonGrain={activeBuilderConfig.comparisonGrain || 'month'}
+                    initialComparisonOffset={activeBuilderConfig.comparisonOffset ?? 1}
+                    initialSecondaryMetrics={activeBuilderConfig.secondaryMetrics || []}
+                    initialSecondaryMetricVisuals={activeBuilderConfig.secondaryMetricVisuals || {}}
+                    initialSecondaryMetricAggregations={activeBuilderConfig.secondaryMetricAggregations || {}}
+                    initialSecondaryDimensions={activeBuilderConfig.secondaryDimensions || []}
+                    initialFilters={activeBuilderConfig.filters || {}}
+                    initialMeasureFilters={activeBuilderConfig.measureFilters || []}
+                    initialDateFilters={activeBuilderConfig.dateFilters || []}
                     asOfDate={asOfDate}
                     onDateChange={handleAsOfDateChange}
                     anchorColumn={anchorColumn}
@@ -538,6 +592,19 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 </button>
 
                 <QuestionBuilderVideoGuide />
+
+                <button
+                    type="button"
+                    onClick={handleUndo}
+                    disabled={undoDepth === 0 || isLoading}
+                    className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-extrabold text-slate-700 shadow-sm transition enabled:hover:border-indigo-300 enabled:hover:bg-indigo-50 enabled:hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    aria-label="Undo last Question Builder change"
+                    title={undoDepth > 0 ? `Undo last Question Builder change (${undoDepth} available) · Ctrl/Cmd+Z` : 'Nothing to undo yet'}
+                >
+                    <Undo2 className="h-4 w-4" aria-hidden="true" />
+                    Undo
+                    {undoDepth > 1 && <span className="rounded-full bg-slate-100 px-1.5 text-[10px] tabular-nums">{undoDepth}</span>}
+                </button>
 
                 {/* Time anchor stays visible in the top command bar. */}
                 {isActive && ReactDOM.createPortal(
@@ -761,7 +828,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                     return; // Don't call handleRun here — wait for dataset.version change
                                 }
                                 // Import mode: just re-run with current data
-                                handleRun(lastRunConfig);
+                                handleRun(lastRunConfig, { recordHistory: false });
                             }}
                             disabled={isLiveRefreshing}
                             className={`flex items-center text-sm font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap ${

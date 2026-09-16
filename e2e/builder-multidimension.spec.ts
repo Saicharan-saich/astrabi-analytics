@@ -58,14 +58,26 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.getByRole('button', { name: 'Close Question Builder video' }).click();
     await expect(guide).toBeHidden();
 
+    const undo = page.getByRole('button', { name: 'Undo last Question Builder change' });
+    await expect(undo).toBeDisabled();
+
     await page.locator('.qi-builder-dimension button[aria-haspopup="listbox"]').first().click();
     await page.getByRole('option', { name: 'trade scope', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Visual', exact: true })).toBeVisible({ timeout: 30000 });
+    await expect(undo).toBeDisabled();
     await page.getByRole('button', { name: 'Options', exact: true }).click();
     await page.getByRole('button', { name: /Add Dimension/i }).click();
     await page.getByRole('option', { name: 'flow direction', exact: true }).click();
+    await expect(undo).toBeEnabled({ timeout: 30000 });
     await page.getByRole('button', { name: /Add Dimension/i }).click();
     await page.getByRole('option', { name: 'period label', exact: true }).click();
 
+    await expect(page.getByText('Small Multiples', { exact: true })).toBeVisible({ timeout: 30000 });
+    await undo.click();
+    await expect(page.getByText('Small Multiples', { exact: true })).toBeHidden({ timeout: 30000 });
+    await page.getByRole('button', { name: 'Options', exact: true }).click();
+    await page.getByRole('button', { name: /Add Dimension/i }).click();
+    await page.getByRole('option', { name: 'period label', exact: true }).click();
     await expect(page.getByText('Small Multiples', { exact: true })).toBeVisible({ timeout: 30000 });
     await expect(page.locator('.qi-visual-stage span[title="FY2022-23"]')).toBeVisible();
     await expect(page.locator('.qi-visual-stage span[title="FY2023-24"]')).toBeVisible();
