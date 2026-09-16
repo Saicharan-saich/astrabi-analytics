@@ -488,7 +488,7 @@ export interface ResultNarrative {
 }
 
 export interface AIQueryProvenance {
-    /** Whether a deterministic compiler answered the question or an LLM fallback was needed. */
+    /** Historical results may be deterministic; new AI SQL runs are model-authored. */
     strategy: 'deterministic' | 'llm-sql-fallback' | 'llm-plan' | 'hybrid-plan-llm-sql';
     /** OpenRouter model used when the hybrid LLM SQL draft succeeds. */
     model?: string;
@@ -496,7 +496,7 @@ export interface AIQueryProvenance {
     summary: string;
     /** Explicit privacy statement for this request. */
     dataAccess: 'metadata_only' | 'approved_safe_values';
-    /** Whether the LLM SQL was downgraded to a deterministic fallback */
+    /** Historical compatibility flag. New AI SQL runs never downgrade to local SQL. */
     downgraded?: boolean;
     /** Machine-readable evidence when the LLM draft was unavailable/rejected. */
     fallbackReason?: string;
@@ -521,9 +521,8 @@ export interface AISQLPipelineResult {
     capabilityValidation?: import('./analyticalCapabilityContract').CapabilityValidation;
     /** Generated SQL */
     sql: string;
-    /** Which engine generated `sql`: the local typed Question Builder
-     *  compiler, the privacy-governed direct-SQL LLM fallback, or the
-     *  deterministic correction engine. */
+    /** Which engine generated `sql`. New AI SQL runs use `llm-sql`; the other
+     * values remain readable for previously saved results. */
     engine?: 'question-builder' | 'llm-sql' | 'correction-engine' | 'llm';
     /** Validation checks */
     validation: ValidationResult;
@@ -553,10 +552,10 @@ export interface AISQLPipelineResult {
     traceStory?: TraceStory;
     /** Automatic plain-English answer shown with every visual. */
     narrative?: ResultNarrative;
-    /** How this answer was produced, including any LLM fallback. */
+    /** How this answer was produced. */
     provenance?: AIQueryProvenance;
-    /** Exact LLM token cost for this question. Metadata and user-approved safe
-     * values may be sent only when an LLM fallback is needed; rows remain local. */
+    /** Exact model token cost for this question. Metadata and user-approved
+     * safe values may be sent to the AI; rows remain local. */
     tokenUsage?: { prompt: number; completion: number; total: number };
     /** Ambiguity Intelligence Layer — assumptions made during resolution */
     assumptions?: {

@@ -366,7 +366,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                 setClarificationMessage(message);
                 setError(null);
                 return;
-            } else if (/timed out|timeout/i.test(message)) setErrorTitle('Query timed out');
+            } else if (err?.kind === 'ai_sql_unavailable') setErrorTitle('AI SQL unavailable');
+            else if (err?.kind === 'ai_sql_execution_failed') setErrorTitle('AI query could not run safely');
+            else if (/timed out|timeout/i.test(message)) setErrorTitle('Query timed out');
             else if (/network|failed to fetch|connect|offline/i.test(message)) setErrorTitle('Connection problem');
             else setErrorTitle('Query could not be completed');
             setError(message);
@@ -522,7 +524,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                             <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                         )}
                         <span>
-                            If an AI fallback is needed, it receives:{' '}
+                            AI SQL receives:{' '}
                             <span className="font-semibold text-gray-700 dark:text-slate-200">
                                 {enhancedActive
                                     ? sharingSummary.values === 0
@@ -573,7 +575,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                             Early Access Preview
                         </span>
                         <span className="text-[12px] text-indigo-600/70 dark:text-indigo-400/70 ml-1.5">
-                            — local-first answers, visible calculation paths, and a controlled GPT‑5.6 fallback only when needed.
+                            — AI-authored queries, visible calculation paths, and private local execution with no local-answer fallback.
                         </span>
                     </div>
                     <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-300/40 dark:border-indigo-500/30">

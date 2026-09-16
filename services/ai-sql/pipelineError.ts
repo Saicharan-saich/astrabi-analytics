@@ -4,7 +4,9 @@ export type AISQLPipelineFailureKind =
     | 'summary_story_required'
     | 'planner_invalid_spec'
     | 'capability_contract_violation'
-    | 'sql_validation_failed';
+    | 'sql_validation_failed'
+    | 'ai_sql_unavailable'
+    | 'ai_sql_execution_failed';
 
 /** A deliberate, typed pipeline stop that occurs before SQL execution. */
 export class AISQLPipelineError extends Error {

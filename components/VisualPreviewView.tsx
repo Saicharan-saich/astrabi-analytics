@@ -123,10 +123,10 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const provenance = activePipeline?.provenance;
   const isLocalAnswer = provenance?.strategy === 'deterministic';
   const provenanceLabel = isLocalAnswer
-    ? 'Local analytics'
+    ? 'Legacy result'
     : provenance?.model
-      ? `AI fallback · ${provenance.model.replace('openai/', '').toUpperCase()}`
-      : provenance ? 'AI fallback' : null;
+      ? `AI SQL · ${provenance.model.replace('openai/', '').toUpperCase()}`
+      : provenance ? 'AI SQL' : null;
   const provenanceClass = isLocalAnswer
     ? 'bg-emerald-100 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300'
     : 'bg-violet-100 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300';
@@ -388,7 +388,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               )}
               {(activePipeline as any)?.tokenUsage && !isLocalAnswer && (
                 <span
-                  title={`AI fallback tokens: ${(activePipeline as any).tokenUsage.prompt} prompt + ${(activePipeline as any).tokenUsage.completion} completion. Only schema metadata and approved safe values are shared; dataset rows are not sent to the model.`}
+                  title={`AI SQL tokens: ${(activePipeline as any).tokenUsage.prompt} prompt + ${(activePipeline as any).tokenUsage.completion} completion. Only schema metadata and approved safe values are shared; dataset rows are not sent to the model.`}
                   className="cursor-help"
                 >
                   · 🪙 {(((activePipeline as any).tokenUsage.total) || 0).toLocaleString()} tokens
@@ -415,7 +415,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               <Database className="w-3.5 h-3.5" /> Details
             </button>
           </div>
-          {/* Answer path makes the local-first privacy boundary visible to the user. */}
+          {/* Answer path makes AI authorship and the local execution boundary visible. */}
           {provenanceLabel && (
             <span
               title={provenance?.summary}
@@ -817,8 +817,8 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               <div className={`rounded-2xl border p-5 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
                 <div className="mb-4 flex items-center gap-2 text-sm font-black"><Database className="h-4 w-4 text-indigo-500" /> Answer details</div>
                 <dl className="grid gap-4 text-sm sm:grid-cols-2">
-                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Answer path</dt><dd className="mt-1 font-bold">{provenanceLabel || 'Local analytics'}</dd></div>
-                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Model route</dt><dd className="mt-1 break-words font-bold">{provenance?.model?.replace('openai/', '').toUpperCase() || 'No LLM used'}</dd></div>
+                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Answer path</dt><dd className="mt-1 font-bold">{provenanceLabel || 'AI SQL'}</dd></div>
+                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Model route</dt><dd className="mt-1 break-words font-bold">{provenance?.model?.replace('openai/', '').toUpperCase() || 'Model unavailable'}</dd></div>
                   <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Intent</dt><dd className="mt-1 font-bold">{activePipeline?.plan?.intent || '—'}</dd></div>
                   <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Result grain</dt><dd className="mt-1 font-bold">{activePipeline?.plan?.resultGrain || '—'}</dd></div>
                   <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Recommended visual</dt><dd className="mt-1 font-bold">{activePipeline?.chart?.chartType || chartType}</dd></div>

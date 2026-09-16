@@ -25,8 +25,8 @@ vi.mock('../services/duckdbEngine', async importOriginal => ({
 
 import { runAISQLPipeline } from '../services/ai-sql/pipeline';
 
-describe('AI SQL local-first period-comparison route', () => {
-    it('compiles and executes an exact two-period comparison locally without spending model tokens', async () => {
+describe('AI SQL model-owned period-comparison route', () => {
+    it('requires and executes the model-authored two-period comparison SQL', async () => {
         directSqlMocks.generateDirectSQL.mockClear();
         directSqlMocks.executeSQLViaDuckDB.mockClear();
         directSqlMocks.generateDirectSQL.mockResolvedValue({
@@ -100,15 +100,20 @@ describe('AI SQL local-first period-comparison route', () => {
             dataset,
         );
 
-        expect(directSqlMocks.generateDirectSQL).not.toHaveBeenCalled();
+        expect(directSqlMocks.generateDirectSQL).toHaveBeenCalledTimes(1);
         expect(directSqlMocks.executeSQLViaDuckDB).toHaveBeenCalled();
         const executedSql = String((directSqlMocks.executeSQLViaDuckDB.mock.calls as any[][])[0]?.[1] || '');
         expect(executedSql).toMatch(/^WITH periods/i);
         expect(executedSql).toMatch(/\bLAG\s*\(/i);
         expect(executedSql).toMatch(/\bgrowth_pct\b/i);
         expect(executedSql).not.toMatch(/GROUP BY\s+.*order_id/i);
-        expect(result.engine).toBe('correction-engine');
-        expect(result.tokenUsage.total).toBe(0);
+        expect(result.engine).toBe('llm-sql');
+        expect(result.tokenUsage.total).toBe(30);
+        expect(result.provenance).toMatchObject({
+            strategy: 'hybrid-plan-llm-sql',
+            model: 'terra → luna → sol',
+            downgraded: false,
+        });
         expect(result.plan.intent).toBe('total_comparison');
         expect(result.plan.metrics).toEqual([expect.objectContaining({ field: 'amount', agg: 'sum' })]);
         expect(result.plan.dimensions).toEqual([]);
@@ -122,5 +127,39 @@ describe('AI SQL local-first period-comparison route', () => {
         expect(result.rawData.some(row => 'order_id' in row)).toBe(false);
         expect(result.chartData.map(row => row.period)).toEqual(['This Month', 'Last Month']);
         expect(result.chart.growth?.pct).toBe(100);
+    });
+
+    it('stops honestly when the model does not return SQL instead of executing a local substitute', async () => {
+        directSqlMocks.generateDirectSQL.mockReset();
+        directSqlMocks.executeSQLViaDuckDB.mockClear();
+        directSqlMocks.generateDirectSQL.mockResolvedValue({
+            sql: null,
+            tokens: 0,
+            error: 'The AI service is temporarily unavailable.',
+            blocked: true,
+        });
+        const rows = [
+            { order_id: 'A', category: 'Office Supplies', amount: 100 },
+            { order_id: 'B', category: 'Electronics', amount: 90 },
+        ];
+        const dataset: Dataset = {
+            id: 'no-local-fallback',
+            name: 'Sales Dataset.csv',
+            rows,
+            columns: [
+                { name: 'order_id', type: ColumnType.ID, originalType: 'string' },
+                { name: 'category', type: ColumnType.DIMENSION, originalType: 'string' },
+                { name: 'amount', type: ColumnType.METRIC, originalType: 'number' },
+            ],
+            totalRows: rows.length,
+            etlLogs: [],
+        };
+
+        await expect(runAISQLPipeline('Show sales by category', dataset)).rejects.toMatchObject({
+            kind: 'ai_sql_unavailable',
+            message: 'The AI service is temporarily unavailable.',
+        });
+        expect(directSqlMocks.generateDirectSQL).toHaveBeenCalledTimes(1);
+        expect(directSqlMocks.executeSQLViaDuckDB).not.toHaveBeenCalled();
     });
 });
