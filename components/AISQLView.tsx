@@ -367,8 +367,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
     }
 
     return (
-        <div className="qi-ai-workspace flex flex-col h-full bg-slate-50 dark:bg-[#07111f] p-6 overflow-hidden">
-            <div className="qi-ai-frame max-w-3xl mx-auto w-full flex flex-col h-full gap-5">
+        <div className="qi-ai-workspace h-full overflow-y-auto overscroll-contain bg-slate-50 p-3 dark:bg-[#07111f] sm:p-6">
+            <div className="qi-ai-frame mx-auto flex min-h-full w-full max-w-3xl flex-col gap-5 pb-6">
 
                 {/* Header */}
                 <div className="flex flex-col gap-1 shrink-0">
@@ -691,7 +691,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
 
                 {/* Example Suggestions */}
                 {!isLoading && !error && !noDataMsg && !scopeClarification && !clarificationMessage && !conversationReply && (
-                    <div className="flex-1 flex flex-col items-center justify-center">
+                    <div className="flex min-h-[220px] shrink-0 flex-col items-center justify-center py-5">
                         <div className="mb-5 max-w-2xl rounded-xl border border-cyan-200/70 bg-cyan-50/70 px-5 py-3 text-center dark:border-cyan-500/20 dark:bg-cyan-500/[0.07]">
                             <p className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">A useful question usually includes</p>
                             <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
