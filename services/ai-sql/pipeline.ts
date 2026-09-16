@@ -340,15 +340,15 @@ export async function runAISQLPipeline(
             const ds = await generateDirectSQL(
                 `${anchoredQuestion}${explicitUIConstraints}`,
                 richSchema,
-                // The LLM reads the complete question itself. Local NLP plans,
-                // contracts and analytical IR are deliberately excluded from
-                // this route because they are interpretations, not schema facts.
-                undefined,
-                undefined,
+                // Local engines plan first and provide bounded advisory context.
+                // The model still owns conversational/compositional reasoning
+                // and SQL authorship; local evidence never bypasses validation.
+                engineConfig.intentPlanner ? plan : undefined,
+                engineConfig.planVerification ? plannerIssues : undefined,
                 engineConfig.semanticLayer ? semanticModel : undefined,
                 executionOptions?.requestPurpose,
-                undefined,
-                undefined,
+                activeQueryContract,
+                activeAnalyticalIR,
             );
             if (ds.sql && !ds.error) {
                 let sql = ds.sql;
@@ -385,8 +385,8 @@ export async function runAISQLPipeline(
     };
 
     // ─── Step 2: Generate Analysis Plan ─────────────────────────────
-    // The local plan is diagnostic context only. It is never compiled as the
-    // answer on AI SQL; the model independently interprets the full question.
+    // The local plan is governed advisory context. It is never compiled as the
+    // answer on AI SQL; the model interprets the question and authors the SQL.
     reportProgress('Asking the AI...', 3);
     _s1 = performance.now();
     // Preserve a local compatibility audit for verification and presentation.
@@ -398,11 +398,11 @@ export async function runAISQLPipeline(
     // and can turn a SUM comparison into a raw-row projection. The concrete
     // resolved range is injected below after the comparison-aware plan exists.
     let plan = generateLocalPlan(question, semanticModel, grainOverride);
-    console.log('[Pipeline] Step 2: Local compatibility plan built for diagnostics only');
+    console.log('[Pipeline] Step 2: Local governed plan built for AI context and validation');
     traceStep({
         stepNumber: 3, name: 'Intent Planner', engine: 'intentPlanner', icon: '🎯',
         status: plan.ambiguous ? 'warn' : 'pass',
-        summary: `Non-authoritative local audit (0 tokens) — the LLM independently interprets the full question`,
+        summary: `Local governed plan prepared (0 tokens) — supplied as advisory context to the LLM`,
         details: {
             intent: plan.intent,
             dimensions: plan.dimensions.map(d => ({ field: d.field, grain: d.timeGrain || null })),
@@ -413,7 +413,7 @@ export async function runAISQLPipeline(
             resultGrain: plan.resultGrain,
             ambiguous: plan.ambiguous,
             plannerCallSkipped: true,
-            semanticAuthority: false,
+            semanticAuthority: 'advisory',
         },
     }, _s1);
 

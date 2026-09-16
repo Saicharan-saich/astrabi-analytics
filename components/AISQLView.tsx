@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, Shield, ShieldCheck, LayoutDashboard, Table2, Target } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
-import { resolveConversationTurn, runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
+import { resolveConversationTurnWithAI, runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
 import { MODEL_LADDER_LABEL } from '../services/ai-sql/modelConfig';
 import {
     getPrivacyMode, setPrivacyMode, PrivacyMode,
@@ -18,7 +18,7 @@ import { collectSafeDomains } from '../services/ai-sql/schemaSerializer';
 import { Tooltip } from './Tooltip';
 import { checkAiSqlLimit, formatResetTime } from '../services/aiSqlRateLimiter';
 import { useAuthStore } from '../store/useAuthStore';
-import { buildFocusedQuestionSuggestion, buildQuestionExamples, detectBroadScopeQuestion, detectSummaryRequest } from '../services/ai-sql/scopeIntent';
+import { buildFocusedQuestionSuggestion, buildQuestionExamples } from '../services/ai-sql/scopeIntent';
 
 interface AISQLViewProps {
     dataset: Dataset | null;
@@ -177,59 +177,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
     const handleSubmit = async () => {
         if (!query.trim() || !dataset || isLoading) return;
 
-        // Resolve small talk and help entirely in the browser, before quota
-        // checks or query planning. A clear follow-up may reuse only the
-        // immediately preceding business question.
-        const turn = resolveConversationTurn(query, dataset, lastBusinessQuestion);
-        if (turn.kind !== 'analysis' && turn.kind !== 'follow_up') {
-            const localReply = (() => {
-                if (turn.kind === 'greeting') return {
-                    title: 'Hello',
-                    message: `Hello! I can help you explore ${dataset.name || 'this dataset'}. Ask about a metric, comparison, trend, ranking, or summary.`,
-                    suggestions: examples.slice(0, 3),
-                };
-                if (turn.kind === 'help') return {
-                    title: 'Here is how to ask',
-                    message: 'A useful business question names what to measure, how to compare or group it, and optionally a period or filter. You can also ask for a dataset summary to create a multi-visual story.',
-                    suggestions: examples.slice(0, 3),
-                };
-                if (turn.kind === 'thanks') return {
-                    title: 'You are welcome',
-                    message: 'You can ask another question about this dataset whenever you are ready.',
-                    suggestions: examples.slice(0, 2),
-                };
-                return {
-                    title: 'See you next time',
-                    message: 'Your dataset remains ready when you want to continue the analysis.',
-                    suggestions: [],
-                };
-            })();
-            setConversationReply(localReply);
-            setScopeClarification(null);
-            setClarificationMessage(null);
-            setError(null);
-            setNoDataMsg(null);
-            setNoDataSQL(null);
-            return;
-        }
-
-        const analyticalQuestion = turn.resolvedQuestion;
-        setConversationReply(null);
-
-        // A dataset-wide request is not one well-defined SQL answer. Resolve it
-        // locally before rate limiting or model invocation so non-technical
-        // users choose the result they actually intended without spending AI
-        // tokens on a guess.
-        const scope = detectBroadScopeQuestion(analyticalQuestion);
-        if (scope.needsClarification) {
-            setScopeClarification(scope.reason || 'Please choose the kind of result you want.');
-            setClarificationMessage(null);
-            setError(null);
-            setNoDataMsg(null);
-            setNoDataSQL(null);
-            return;
-        }
-
         // ── Rate limit check ──
         const currentStatus = checkAiSqlLimit(currentUser);
         if (!currentStatus.allowed) {
@@ -242,22 +189,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
             return;
         }
 
-        // A summary is intentionally multi-result. Preserve the full wording
-        // (including periods and filters) and route it to the story builder.
-        if (detectSummaryRequest(analyticalQuestion).isSummary) {
-            setScopeClarification(null);
-            setClarificationMessage(null);
-            setError(null);
-            setNoDataMsg(null);
-            setNoDataSQL(null);
-            if (onOpenSummaryStory) {
-                setLastBusinessQuestion(analyticalQuestion);
-                onOpenSummaryStory(analyticalQuestion);
-                incrementAiSqlUsage();
-                return;
-            }
-        }
-
         setIsLoading(true);
         setError(null);
         setScopeClarification(null);
@@ -266,7 +197,43 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
         setNoDataMsg(null);
         setNoDataSQL(null);
 
+        let analyticalQuestion = query.trim();
         try {
+            // Local engines prepare a compact metadata-only candidate first;
+            // the governed model owns the conversational decision. It receives
+            // at most one prior business question and never receives answer
+            // text, SQL, result rows, or a full chat transcript.
+            const turn = await resolveConversationTurnWithAI(query, dataset, lastBusinessQuestion);
+            analyticalQuestion = turn.resolvedQuestion;
+            console.log(`[AI SQL Conversation] ${turn.turnType} → ${turn.route} (${Math.round(turn.confidence * 100)}%, ${turn.model}, ${turn.tokens} tokens)`);
+
+            if (turn.route === 'conversation') {
+                setConversationReply({
+                    title: turn.replyTitle || 'QuickInsight',
+                    message: turn.replyMessage || '',
+                    suggestions: turn.turnType === 'goodbye' ? [] : examples.slice(0, 3),
+                });
+                incrementAiSqlUsage();
+                return;
+            }
+            setConversationReply(null);
+
+            if (turn.route === 'clarification') {
+                setScopeClarification(turn.clarificationQuestion || 'Please clarify the result you want.');
+                incrementAiSqlUsage();
+                return;
+            }
+
+            if (turn.route === 'summary_story') {
+                if (!onOpenSummaryStory) {
+                    throw new Error('The summary-story view is unavailable.');
+                }
+                setLastBusinessQuestion(analyticalQuestion);
+                onOpenSummaryStory(analyticalQuestion);
+                incrementAiSqlUsage();
+                return;
+            }
+
             const timeoutMs = 60000;
             const result = await Promise.race([
                 runAISQLPipeline(analyticalQuestion, dataset),
@@ -362,7 +329,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
         } catch (err: any) {
             console.error('[AI SQL Pipeline] Error:', err);
             const message = err.message || 'An unexpected error occurred.';
-            if (err?.kind === 'clarification_required') {
+            if (/conversation planner/i.test(message)) {
+                setErrorTitle('AI conversation could not be planned');
+                setError(message);
+                return;
+            } else if (err?.kind === 'clarification_required') {
                 setClarificationMessage(message);
                 setError(null);
                 return;
@@ -401,7 +372,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
 
                 {/* Header */}
                 <div className="flex flex-col gap-1 shrink-0">
-                    <Tooltip text="Ask a focused question. QuickInsight builds a local semantic plan and a deterministic, read-only query first. If a question needs escalation, it uses the appropriate GPT-5.6 route and clearly shows that in the result." position="right">
+                    <Tooltip text="QuickInsight builds a local semantic and safety plan first. The AI then resolves conversational meaning and authors SQL within that governed context; local read-only validation and execution remain authoritative." position="right">
                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                             <img src="/ai-sql-logo.png" alt="AI SQL" className="w-7 h-7 rounded-lg object-cover" />
                             AI SQL
@@ -416,8 +387,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                     </Tooltip>
                     <div className="flex items-center gap-2">
                         <p className="text-gray-500 dark:text-slate-400 text-sm flex-1">
-                            Ask a focused question about a metric, category, comparison, or time period. QuickInsight calculates supported answers locally, validates every read-only query, and chooses a suitable visual or data table.
-                            Summary requests create a multi-visual data story and preserve any period, grouping, or filter you specify. Short follow-ups may use only your previous business question—not its answer, SQL, rows, or a full chat transcript.
+                            Ask naturally about a metric, category, comparison, time period, or dataset summary. QuickInsight prepares a local governed plan, then the AI resolves whether your message is a new question, follow-up, summary, or clarification.
+                            Only your immediately previous business question may be supplied for context—not its answer, SQL, rows, or a full chat transcript. Every generated query is still validated as read-only and executed locally.
                         </p>
                         <Tooltip
                             position="left"

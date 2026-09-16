@@ -954,10 +954,11 @@ export async function generateDirectSQL(
     analyticalIR?: AnalyticalIR,
 ): Promise<DirectSQLResult> {
     const engineConfig = getAISQLEngineConfig().engines;
-    // Legacy callers may still supply a local plan for diagnostics. It is never
-    // semantic authority: the model must independently interpret the question.
+    // The local governed plan is bounded evidence, not executable authority.
+    // The model reasons over it alongside the complete question and schema;
+    // downstream local validators remain authoritative for safe execution.
     const planContext = analysisPlan
-        ? `\n\nLegacy local-plan diagnostics (untrusted semantic suggestions):\n${JSON.stringify(analysisPlan, null, 2)}\nDo not copy its entity, grain, metrics, filters, sorting or limit unless your own reading of the complete question confirms them. Use verified physical field names only.`
+        ? `\n\nLocal governed analysis plan (advisory evidence):\n${JSON.stringify(analysisPlan, null, 2)}\nReconcile this plan with the complete question and verified schema. Preserve correct locally resolved fields, time ranges, filters, grain, sorting and limits; correct any conflict explicitly in your Query Specification. Use verified physical field names only.`
         : '';
     const verificationContext = plannerVerification?.length
         ? `\n\nLocal diagnostics to consider:\n${JSON.stringify(plannerVerification, null, 2)}`
