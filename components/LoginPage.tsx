@@ -300,8 +300,8 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                             <Users className="w-4 h-4" />
                             Continue as Guest
                         </button>
-                        <p className="text-[10px] text-gray-500 text-center mt-1.5">
-                            View-only access — no account needed
+                        <p className="text-[10px] text-gray-500 text-center mt-1.5 leading-relaxed">
+                            Upload data, build visuals and ask up to 10 AI SQL questions per day — no account needed
                         </p>
                     </div>
                 </div>

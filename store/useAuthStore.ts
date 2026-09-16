@@ -4,6 +4,8 @@ import { User, UserRole } from '../types';
 import { indexedDBStorage } from '../services/indexedDBStorage';
 import { resetUserData, useAppStore } from './useAppStore';
 import { pushDashboardToCloud } from '../services/dashboardCloudSync';
+import { getAiSqlUsage, recordAiSqlUsage } from '../services/aiSqlRateLimiter';
+import { createGuestContributor, isGuestUser } from '../services/guestAccessPolicy';
 
 // ── User Data Isolation ──────────────────────────────────────────
 const APP_STORAGE_KEY = 'QuickInsight-storage-v4';
@@ -135,8 +137,6 @@ const AVATAR_COLORS = [
     '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
 ];
 
-const AI_SQL_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
-
 interface AuthState {
     currentUser: User | null;
     users: User[];
@@ -240,15 +240,8 @@ export const useAuthStore = create<AuthState>()(
             },
 
             loginAsGuest: () => {
-                const guestUser: User = {
-                    id: 'guest_' + Date.now().toString(36),
-                    email: 'guest@quickinsight.app',
-                    name: 'Guest User',
-                    role: UserRole.VIEWER,
-                    passwordHash: '',
-                    createdAt: Date.now(),
-                    avatar: '#94a3b8',
-                };
+                const guestUser = createGuestContributor();
+                guestUser.aiSqlUsage = getAiSqlUsage(guestUser);
                 lastActivityTime = Date.now();
                 saveUserAppData(get().currentUser?.id || '__anonymous__');
                 resetUserData();
@@ -332,18 +325,15 @@ export const useAuthStore = create<AuthState>()(
                 const state = get();
                 if (!state.currentUser) return;
                 const userId = state.currentUser.id;
-                const now = Date.now();
+                const nextUsage = recordAiSqlUsage(state.currentUser);
 
                 set(st => {
+                    if (st.currentUser && isGuestUser(st.currentUser)) {
+                        return { currentUser: { ...st.currentUser, aiSqlUsage: nextUsage } };
+                    }
                     const updatedUsers = st.users.map(u => {
                         if (u.id !== userId) return u;
-                        const usage = u.aiSqlUsage;
-                        // If no usage or window expired, start fresh
-                        if (!usage || (now - usage.windowStart >= AI_SQL_WINDOW_MS)) {
-                            return { ...u, aiSqlUsage: { count: 1, windowStart: now } };
-                        }
-                        // Increment within current window
-                        return { ...u, aiSqlUsage: { ...usage, count: usage.count + 1 } };
+                        return { ...u, aiSqlUsage: nextUsage };
                     });
                     const updatedCurrentUser = updatedUsers.find(u => u.id === userId) || st.currentUser;
                     return { users: updatedUsers, currentUser: updatedCurrentUser };

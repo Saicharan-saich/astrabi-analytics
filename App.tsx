@@ -65,6 +65,7 @@ import { TabVisibilityManager } from './components/TabVisibilityManager';
 import { AISQLEngineControlView } from './components/AISQLEngineControlView';
 import { useMobile } from './hooks/useMobile';
 import { saveEditedDashboardItem } from './services/dashboardVisualLifecycle';
+import { canGuestNavigateToTab, isGuestUser } from './services/guestAccessPolicy';
 
 // The 150-case benchmark fixtures are admin-only and intentionally loaded only
 // when Benchmark Lab is opened, keeping the normal application bundle lean.
@@ -234,6 +235,7 @@ function App() {
 
   // Auth State
   const { isAuthenticated, currentUser, logout } = useAuthStore();
+  const isGuest = isGuestUser(currentUser);
   const { isMobile } = useMobile();
   const [showUserMgmt, setShowUserMgmt] = useState(false);
   const [showTabManager, setShowTabManager] = useState(false);
@@ -329,6 +331,14 @@ function App() {
     const interval = setInterval(() => { void checkSession(); }, 30_000);
     return () => clearInterval(interval);
   }, [isAuthenticated, currentUser?.id, logout]);
+
+  // Guest contributors have four primary workspaces. Internal child screens
+  // used by upload and AI SQL remain available, while all unrelated routes are
+  // rejected even if stale persisted state or another control requests them.
+  useEffect(() => {
+    if (!isAuthenticated || !isGuest || canGuestNavigateToTab(activeTab)) return;
+    setActiveTab(Tab.UPLOAD);
+  }, [activeTab, isAuthenticated, isGuest, setActiveTab]);
 
   // ── Visual Preview state (full-page AI SQL result view) ──
   const [visualPreviewResult, setVisualPreviewResult] = useState<AnalysisResult | null>(null);
@@ -1655,7 +1665,7 @@ function App() {
 
                 <div className="flex items-center gap-1 md:gap-1.5 shrink-0">
                   {/* Notification Center (Alert Bell) */}
-                  <NotificationCenter onNavigateToAlerts={() => setActiveTab(Tab.ALERTS)} />
+                  {!isGuest && <NotificationCenter onNavigateToAlerts={() => setActiveTab(Tab.ALERTS)} />}
                   {/* Re-open Column Mapping — hide on mobile */}
                   {dataset?.domainProfile && (
                     <button
@@ -1879,8 +1889,8 @@ function App() {
                     dataset={dataset}
                     onPin={(title, result) => handlePin({ ...result, insight: title })}
                     initialQuery={smartQuestionQuery}
-                    onOpenDatasetOverview={() => setActiveTab(Tab.DATASET_SUMMARY)}
-                    onOpenAllRecords={() => setActiveTab(Tab.DATA)}
+                    onOpenDatasetOverview={isGuest ? undefined : () => setActiveTab(Tab.DATASET_SUMMARY)}
+                    onOpenAllRecords={isGuest ? undefined : () => setActiveTab(Tab.DATA)}
                     onOpenSummaryStory={(question) => {
                       setDataStoryQuestion(question);
                       setShowDataStory(true);

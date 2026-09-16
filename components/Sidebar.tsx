@@ -8,6 +8,7 @@ import { PageInfoButton, PageKey } from './PageInfoButton';
 import classNames from 'clsx';
 import { useTheme } from './ThemeProvider';
 import { useAppStore } from '../store/useAppStore';
+import { isGuestPrimaryTab, isGuestUser } from '../services/guestAccessPolicy';
 
 interface SidebarProps {
     activeTab: Tab;
@@ -25,6 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     const { theme } = useTheme();
     const isDark = theme === 'dark';
     const userRole = currentUser?.role || UserRole.VIEWER;
+    const isGuest = isGuestUser(currentUser);
     const perms = ROLE_PERMISSIONS[userRole];
     const hiddenTabs = useAppStore((s: any) => s.hiddenTabs) || [];
 
@@ -102,6 +104,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     ];
 
     const filterItems = (items: any[]) => items.filter(item => {
+        // Guest contributors always receive the same intentionally small
+        // onboarding navigation, independent of admin tab customisation.
+        if (isGuest) return isGuestPrimaryTab(item.id);
         if (item.requiresUpload && !perms.canUpload) return false;
         if (item.requiresEditSchema && !perms.canEditSchema) return false;
         if (item.requiresCreateVisuals && !perms.canCreateVisuals) return false;
@@ -290,7 +295,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                 </div>
                 {renderSection('Analysis', analysisSection)}
                 {/* Data Story special button */}
-                {onDataStory && perms.canCreateVisuals && !hiddenTabs.includes('DATA_STORY') && (
+                {!isGuest && onDataStory && perms.canCreateVisuals && !hiddenTabs.includes('DATA_STORY') && (
                     <div className="px-2 mb-2">
                         <button
                             onClick={onDataStory}
@@ -359,18 +364,20 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                                 <div className="flex items-center gap-1.5 mt-0.5">
                                     <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold border ${getRoleBadgeClasses(currentUser.role)}`}>
                                         {getRoleIcon(currentUser.role)}
-                                        {ROLE_PERMISSIONS[currentUser.role].label}
+                                        {isGuest ? 'Guest Contributor' : ROLE_PERMISSIONS[currentUser.role].label}
                                     </span>
                                 </div>
                             </div>
-                            <button
-                                onClick={() => { setShowChangePw(true); setPwError(''); setPwSuccess(false); setPwCurrent(''); setPwNew(''); setPwConfirm(''); }}
-                                className={`p-1.5 rounded-lg transition-all duration-200 shrink-0 ${isDark ? 'text-gray-500 hover:text-violet-400 hover:bg-violet-500/10' : 'text-gray-400 hover:text-violet-500 hover:bg-violet-50'
-                                    }`}
-                                title="Change Password"
-                            >
-                                <KeyRound className="w-4 h-4" />
-                            </button>
+                            {!isGuest && (
+                                <button
+                                    onClick={() => { setShowChangePw(true); setPwError(''); setPwSuccess(false); setPwCurrent(''); setPwNew(''); setPwConfirm(''); }}
+                                    className={`p-1.5 rounded-lg transition-all duration-200 shrink-0 ${isDark ? 'text-gray-500 hover:text-violet-400 hover:bg-violet-500/10' : 'text-gray-400 hover:text-violet-500 hover:bg-violet-50'
+                                        }`}
+                                    title="Change Password"
+                                >
+                                    <KeyRound className="w-4 h-4" />
+                                </button>
+                            )}
                             <button
                                 onClick={async () => await logout()}
                                 className={`p-1.5 rounded-lg transition-all duration-200 shrink-0 ${isDark ? 'text-gray-500 hover:text-red-400 hover:bg-red-500/10' : 'text-gray-400 hover:text-red-500 hover:bg-red-50'

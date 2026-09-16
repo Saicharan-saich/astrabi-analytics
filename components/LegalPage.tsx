@@ -307,7 +307,7 @@ const TermsAndConditions: React.FC = () => (
             <Paragraph>You are responsible for all activity that occurs under your account. You must notify us immediately at <a href={`mailto:${CONTACT_EMAIL}`} className="text-indigo-600 hover:underline font-medium">{CONTACT_EMAIL}</a> if you suspect unauthorised access to your account.</Paragraph>
         </SubSection>
         <SubSection title="2.3 Guest Access">
-            <Paragraph>Guest access provides view-only functionality with limited features. Guest users do not create a persistent account and cannot save dashboards to the cloud.</Paragraph>
+            <Paragraph>Guest access provides a limited contributor workspace for uploading data, using Question Builder, asking up to 10 AI SQL questions in a rolling 24-hour period, and creating a local dashboard. Guest users do not create a persistent account, and their dashboards are not saved to the cloud.</Paragraph>
         </SubSection>
 
         <SectionTitle emoji="✅" title="3. Acceptable Use" />
