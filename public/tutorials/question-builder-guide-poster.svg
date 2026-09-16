@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="720" viewBox="0 0 1280 720" role="img" aria-labelledby="title desc">
+  <title id="title">Question Builder walkthrough</title>
+  <desc id="desc">A preview showing Question Builder controls beside a grouped bar chart.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f172a"/>
+      <stop offset="1" stop-color="#312e81"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop stop-color="#6366f1"/>
+      <stop offset="1" stop-color="#22d3ee"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%"><feDropShadow dx="0" dy="12" stdDeviation="16" flood-opacity=".25"/></filter>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg)"/>
+  <circle cx="1100" cy="-20" r="330" fill="#4f46e5" opacity=".2"/>
+  <circle cx="110" cy="700" r="260" fill="#0891b2" opacity=".14"/>
+  <text x="72" y="82" fill="#a5b4fc" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="3">QUICKINSIGHT WALKTHROUGH</text>
+  <text x="72" y="134" fill="white" font-family="Arial, sans-serif" font-size="42" font-weight="800">Build a useful visual in under a minute</text>
+  <g transform="translate(72 184)" filter="url(#shadow)">
+    <rect width="1136" height="458" rx="24" fill="#f8fafc"/>
+    <rect width="1136" height="58" rx="24" fill="#fff"/>
+    <rect y="34" width="1136" height="24" fill="#fff"/>
+    <circle cx="32" cy="29" r="7" fill="#ef4444"/><circle cx="55" cy="29" r="7" fill="#f59e0b"/><circle cx="78" cy="29" r="7" fill="#22c55e"/>
+    <text x="104" y="36" fill="#0f172a" font-family="Arial, sans-serif" font-size="17" font-weight="700">Question Builder</text>
+    <rect x="24" y="80" width="330" height="350" rx="18" fill="#eef2ff" stroke="#c7d2fe"/>
+    <text x="48" y="115" fill="#4338ca" font-family="Arial, sans-serif" font-size="14" font-weight="800">BUILD THE QUESTION</text>
+    <g font-family="Arial, sans-serif">
+      <text x="48" y="154" fill="#64748b" font-size="12" font-weight="700">MEASURE</text><rect x="48" y="166" width="278" height="44" rx="10" fill="white" stroke="#cbd5e1"/><text x="64" y="194" fill="#0f172a" font-size="15" font-weight="700">value usd bn</text>
+      <text x="48" y="238" fill="#64748b" font-size="12" font-weight="700">AGGREGATION</text><rect x="48" y="250" width="278" height="44" rx="10" fill="white" stroke="#cbd5e1"/><text x="64" y="278" fill="#0f172a" font-size="15" font-weight="700">Sum</text>
+      <text x="48" y="322" fill="#64748b" font-size="12" font-weight="700">GROUP BY</text><rect x="48" y="334" width="278" height="44" rx="10" fill="#4f46e5"/><text x="64" y="362" fill="white" font-size="15" font-weight="700">flow direction + period</text>
+      <rect x="48" y="392" width="132" height="28" rx="9" fill="#dcfce7"/><text x="62" y="411" fill="#15803d" font-size="12" font-weight="700">Filter: All trade</text>
+    </g>
+    <g transform="translate(390 82)">
+      <text x="0" y="25" fill="#0f172a" font-family="Arial, sans-serif" font-size="20" font-weight="800">Imports vs exports by reporting period</text>
+      <text x="0" y="51" fill="#64748b" font-family="Arial, sans-serif" font-size="13">Every control updates this visual and remains editable.</text>
+      <line x1="0" y1="310" x2="700" y2="310" stroke="#cbd5e1"/>
+      <line x1="0" y1="94" x2="0" y2="310" stroke="#cbd5e1"/>
+      <g fill="#4f46e5"><rect x="72" y="152" width="62" height="158" rx="8"/><rect x="274" y="118" width="62" height="192" rx="8"/><rect x="476" y="82" width="62" height="228" rx="8"/></g>
+      <g fill="#16a34a"><rect x="140" y="184" width="62" height="126" rx="8"/><rect x="342" y="159" width="62" height="151" rx="8"/><rect x="544" y="132" width="62" height="178" rx="8"/></g>
+      <g fill="#0f172a" font-family="Arial, sans-serif" font-size="13" font-weight="700"><text x="82" y="331">FY2023</text><text x="284" y="331">FY2024</text><text x="486" y="331">FY2025</text></g>
+      <circle cx="240" cy="366" r="7" fill="#4f46e5"/><text x="254" y="371" fill="#475569" font-family="Arial, sans-serif" font-size="13">Import</text><circle cx="330" cy="366" r="7" fill="#16a34a"/><text x="344" y="371" fill="#475569" font-family="Arial, sans-serif" font-size="13">Export</text>
+    </g>
+  </g>
+  <g transform="translate(1100 602)"><circle r="44" fill="url(#accent)"/><path d="M-10-18L20 0-10 18Z" fill="white"/></g>
+</svg>

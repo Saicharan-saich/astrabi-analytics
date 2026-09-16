@@ -12,6 +12,7 @@
     "test:e2e": "playwright test",
     "scan:secrets": "node scripts/scan-secrets.mjs",
     "scan:secrets:history": "node scripts/scan-secrets.mjs --history",
+    "generate:builder-video": "node scripts/generate-question-builder-video.mjs",
     "check:backend": "node --check backend/server.js && node --check backend/security.js && node --check backend/llmProviderError.js"
   },
   "dependencies": {

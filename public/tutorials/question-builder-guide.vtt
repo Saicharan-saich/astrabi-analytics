@@ -1,0 +1,19 @@
+WEBVTT
+
+00:00.000 --> 00:04.000
+Start with the measure: choose the number you want to understand.
+
+00:04.000 --> 00:08.000
+Choose the aggregation. Sum adds the selected value across matching rows.
+
+00:08.000 --> 00:12.000
+Choose a dimension to split the measure into groups, such as import versus export.
+
+00:12.000 --> 00:16.000
+Add another dimension for a grouped-in-group comparison, such as reporting period.
+
+00:16.000 --> 00:20.000
+Use filters, sorting and limits to focus the answer on your business question.
+
+00:20.000 --> 00:24.000
+Change the chart, show labels, export the result or pin it. Every control remains editable.

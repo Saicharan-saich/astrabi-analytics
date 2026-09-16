@@ -12,6 +12,7 @@ import { getCalculationDisplayName, applyMultipleCalculations, type TableCalcula
 import { Tooltip } from './Tooltip';
 import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 import { FormatPanel } from './FormatPanel';
+import { QuestionBuilderVideoGuide } from './QuestionBuilderVideoGuide';
 
 import { AIInsightPanel } from './AIInsightPanel';
 import { TransparencyPanel } from './TransparencyPanel';
@@ -535,6 +536,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     {isBuilderCollapsed ? 'Show Builder' : 'Hide Builder'}
 
                 </button>
+
+                <QuestionBuilderVideoGuide />
 
                 {/* Time anchor stays visible in the top command bar. */}
                 {isActive && ReactDOM.createPortal(
