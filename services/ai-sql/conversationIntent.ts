@@ -12,21 +12,10 @@ const HELP = /^(?:help|help me|what can you do|who are you|what are you|how (?:d
 const THANKS = /^(?:thanks|thank you|thank you very much|great thanks|okay thanks|ok thanks|cheers)[!?.,\s]*$/i;
 const GOODBYE = /^(?:bye|goodbye|see you|that'?s all|done for now)[!?.,\s]*$/i;
 const FOLLOW_UP_START = /^(?:and|also|now|then|but|instead|what about|how about|same|only|exclude|include|filter|break it down|split it|compare it|by\b|for\b|in\b|during\b|where\b)/i;
-const ANALYTICAL_LANGUAGE = /\b(?:show|list|count|total|sum|average|avg|minimum|min|max|maximum|compare|versus|vs|trend|growth|share|percentage|percent|top|bottom|highest|lowest|rank|distribution|correlation|summary|overview|dashboard|records?|rows?|sales|revenue|profit|amount|value|quantity|orders?|customers?|products?|category|region|period|month|quarter|year|week|day|fy\s*\d+)\b/i;
+const ANAPHORIC_FOLLOW_UP = /\b(?:it|that|those|them|the same|same result|same analysis|previous result|again)\b/i;
 
 function normalize(value: string): string {
     return value.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
-}
-
-function mentionsDatasetField(question: string, dataset: Dataset): boolean {
-    const normalizedQuestion = ` ${normalize(question).toLowerCase()} `;
-    const fields = dataset.aiSqlSemanticModel?.fields || [];
-    return fields.some(field => [field.name, field.displayLabel, ...(field.synonyms || [])]
-        .filter(Boolean)
-        .some(value => {
-            const normalizedValue = normalize(String(value)).toLowerCase();
-            return normalizedValue.length > 2 && normalizedQuestion.includes(` ${normalizedValue} `);
-        }));
 }
 
 /**
@@ -36,7 +25,7 @@ function mentionsDatasetField(question: string, dataset: Dataset): boolean {
  */
 export function resolveConversationTurn(
     question: string,
-    dataset: Dataset,
+    _dataset: Dataset,
     previousBusinessQuestion?: string | null,
 ): ConversationTurnResolution {
     const normalized = normalize(question);
@@ -45,10 +34,15 @@ export function resolveConversationTurn(
     if (THANKS.test(normalized)) return { kind: 'thanks', resolvedQuestion: normalized };
     if (GOODBYE.test(normalized)) return { kind: 'goodbye', resolvedQuestion: normalized };
 
+    // Context inheritance must be opt-in. The earlier broad fallback treated
+    // any short question containing an unfamiliar business term as a follow-up.
+    // That could turn "Which country are we exporting more?" into
+    // "Give me a full data summary; Which country..." and wrongly launch the
+    // summary-story workflow. Only explicit connective/anaphoric wording may
+    // now reuse the immediately preceding question.
     const looksLikeFollowUp = Boolean(previousBusinessQuestion)
         && normalized.length <= 120
-        && (FOLLOW_UP_START.test(normalized)
-            || (!ANALYTICAL_LANGUAGE.test(normalized) && !mentionsDatasetField(normalized, dataset) && normalized.split(/\s+/).length <= 6));
+        && (FOLLOW_UP_START.test(normalized) || ANAPHORIC_FOLLOW_UP.test(normalized));
 
     if (looksLikeFollowUp) {
         return {

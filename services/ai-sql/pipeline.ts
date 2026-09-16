@@ -854,23 +854,19 @@ export async function runAISQLPipeline(
     reportProgress('Correcting SQL...', 5);
     _s1 = performance.now();
     let currentSQL: string;
-    let _correctionStatus: 'pass' | 'warn' | 'skip' = 'pass';
     // No locally authored SQL safety net is permitted on the AI SQL route.
     // Failed model SQL is repaired by the model or rejected transparently.
     if (directSQL) {
         // The approved model-authored query is being executed.
         currentSQL = directSQL;
-        _correctionStatus = 'skip';
     } else {
         throw new AISQLPipelineError('ai_sql_unavailable', 'The AI did not produce SQL that could enter the verified execution path.');
     }
     traceStep({
         stepNumber: 7, name: 'SQL Correction Engine', engine: 'sqlCorrectionEngine', icon: '🔧',
-        status: _correctionStatus,
-        summary: _correctionStatus === 'skip'
-            ? 'Skipped — model-authored SQL passed the read-only safety gate'
-            : 'AI SQL was not replaced by a local query',
-        details: { correctedSQL: currentSQL, usedFallback: _correctionStatus === 'warn' },
+        status: 'skip',
+        summary: 'Skipped — model-authored SQL passed the read-only safety gate',
+        details: { correctedSQL: currentSQL, usedFallback: false },
     }, _s1);
 
     // Which AI engine produced `currentSQL` — surfaced in the SQL tab.

@@ -33,6 +33,22 @@ describe('AI SQL conversational intent gate', () => {
         expect(result.resolvedQuestion).toBe('Compare imports and exports; Now for FY2025');
     });
 
+    it('does not attach a complete new trade question to a previous summary request', () => {
+        const result = resolveConversationTurn(
+            'Which country are we exporting more?',
+            dataset,
+            'Give me full data summary',
+        );
+        expect(result.kind).toBe('analysis');
+        expect(result.resolvedQuestion).toBe('Which country are we exporting more?');
+    });
+
+    it('still inherits context when the follow-up explicitly refers to the prior question', () => {
+        const result = resolveConversationTurn('Make it monthly', dataset, 'Compare imports and exports');
+        expect(result.kind).toBe('follow_up');
+        expect(result.resolvedQuestion).toBe('Compare imports and exports; Make it monthly');
+    });
+
     it('does not invent context when no previous business question exists', () => {
         expect(resolveConversationTurn('Now for FY2025', dataset).kind).toBe('analysis');
     });
