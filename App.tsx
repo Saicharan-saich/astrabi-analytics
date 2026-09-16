@@ -7,7 +7,8 @@ import {
   Tab,
   ColumnType,
   DatasetDomainProfile,
-  UserRole
+  UserRole,
+  DashboardItem
 } from './types';
 import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, getSampleData } from './services/analysisEngine';
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
@@ -63,6 +64,7 @@ import { GameView } from './components/GameView';
 import { TabVisibilityManager } from './components/TabVisibilityManager';
 import { AISQLEngineControlView } from './components/AISQLEngineControlView';
 import { useMobile } from './hooks/useMobile';
+import { saveEditedDashboardItem } from './services/dashboardVisualLifecycle';
 
 // The 150-case benchmark fixtures are admin-only and intentionally loaded only
 // when Benchmark Lab is opened, keeping the normal application bundle lean.
@@ -240,7 +242,7 @@ function App() {
   const [pendingProfile, setPendingProfile] = useState<any>(null);
   const [showSplash, setShowSplash] = useState(true);
   const [smartQuestionQuery, setSmartQuestionQuery] = useState<string | null>(null);
-  const [pendingPinItem, setPendingPinItem] = useState<any>(null);
+  const [pendingPinItem, setPendingPinItem] = useState<DashboardItem | null>(null);
 
   // ── Activity Tracking ──
   const { trackActivity } = useActivityStore();
@@ -1278,6 +1280,7 @@ function App() {
   const [workbenchConfig, setWorkbenchConfig] = useState<any>(undefined);
   const [workbenchResult, setWorkbenchResult] = useState<AnalysisResult | undefined>(undefined);
   const [editingDashboardItemId, setEditingDashboardItemId] = useState<string | null>(null);
+  const [editingDashboardItem, setEditingDashboardItem] = useState<DashboardItem | null>(null);
 
   const showToast = (msg: string) => {
     setToastMsg(msg);
@@ -1326,7 +1329,7 @@ function App() {
   // fresh mount) — irritating and unwanted. Users trigger it themselves via the
   // "Build my dashboard" / "Auto-build" buttons on the Dashboard tab.
 
-  const handleEditAnalysis = (item: any) => {
+  const handleEditAnalysis = (item: DashboardItem) => {
     const config = { ...item.result.config };
     // Backward compat: AI SQL cards pinned before the limit/sort fix
     if (config.questionId?.startsWith('ai_sql_') || config.questionId?.startsWith('regen_')) {
@@ -1345,19 +1348,20 @@ function App() {
     setWorkbenchConfig(config);
     setWorkbenchResult(item.result);
     setEditingDashboardItemId(item.id);
+    setEditingDashboardItem(item);
     setActiveTab(Tab.BUILDER); // Redirected from WORKBENCH (hidden)
     showToast("Editing: " + item.title);
   };
 
+  const clearDashboardEdit = () => {
+    setEditingDashboardItemId(null);
+    setEditingDashboardItem(null);
+  };
+
   const handleSaveBackToDashboard = (result: AnalysisResult) => {
-    if (editingDashboardItemId) {
-      updateItem({
-        id: editingDashboardItemId,
-        title: result.insight || "Updated Analysis",
-        result: result,
-        width: 'half' as 'half' | 'full'
-      });
-      setEditingDashboardItemId(null);
+    if (editingDashboardItemId && editingDashboardItem) {
+      updateItem(saveEditedDashboardItem(editingDashboardItem, result));
+      clearDashboardEdit();
       setActiveTab(Tab.DASHBOARD);
       showToast("Dashboard visual updated!");
     }
@@ -1905,7 +1909,7 @@ function App() {
                       onOpenInBuilder={(handoff) => {
                         setWorkbenchConfig(handoff.config);
                         setWorkbenchResult(undefined);
-                        setEditingDashboardItemId(null);
+                        clearDashboardEdit();
                         updateFormatting(handoff.formatting);
                         setActiveTab(Tab.BUILDER);
                         showToast(handoff.fidelity === 'full'
@@ -1937,7 +1941,7 @@ function App() {
                       initialConfig={workbenchConfig}
                       editingItemId={editingDashboardItemId}
                       onSaveBackToDashboard={handleSaveBackToDashboard}
-                      onCancelEdit={() => { setEditingDashboardItemId(null); setActiveTab(Tab.DASHBOARD); }}
+                      onCancelEdit={() => { clearDashboardEdit(); setActiveTab(Tab.DASHBOARD); }}
                       onLiveRefresh={handleLiveRefresh}
                       isLiveRefreshing={isLiveRefreshing}
                       refreshSchedule={dataset?.refreshSchedule}
@@ -1946,7 +1950,7 @@ function App() {
                       onReset={() => {
                         setWorkbenchConfig(undefined);
                         setWorkbenchResult(undefined);
-                        setEditingDashboardItemId(null);
+                        clearDashboardEdit();
                       }}
                     />
                   )}
@@ -1962,7 +1966,7 @@ function App() {
                     onUpdateFormatting={updateFormatting}
                     editingDashboardItemId={editingDashboardItemId}
                     onSaveBackToDashboard={handleSaveBackToDashboard}
-                    onCancelEdit={() => { setEditingDashboardItemId(null); setActiveTab(Tab.DASHBOARD); }}
+                    onCancelEdit={() => { clearDashboardEdit(); setActiveTab(Tab.DASHBOARD); }}
                   />
                 </div>
 
@@ -2009,11 +2013,11 @@ function App() {
                 <div className={`h-full w-full ${activeTab === Tab.QUICK_INSIGHTS ? '' : 'hidden'}`}>
                   <QuickInsightsView
                     dataset={dataset}
-                    onPin={(title, result) => handlePin(result)}
+                    onPin={(title, result) => handlePin({ ...result, insight: title })}
                     onOpenInBuilder={(config) => {
                       setWorkbenchConfig(config);
                       setWorkbenchResult(undefined);
-                      setEditingDashboardItemId(null);
+                      clearDashboardEdit();
                       setActiveTab(Tab.BUILDER);
                     }}
                     onAskQuestion={handleSmartQuestion}

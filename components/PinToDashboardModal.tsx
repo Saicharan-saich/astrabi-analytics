@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { X, Plus, LayoutDashboard, Check } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAppStore } from '../store/useAppStore';
-import { DashboardItem, DashboardDefinition } from '../types';
+import { DashboardItem } from '../types';
+import { normalizeDashboardVisualTitle, titleDashboardItem } from '../services/dashboardVisualLifecycle';
 
 interface PinToDashboardModalProps {
     item: DashboardItem;
@@ -15,19 +16,22 @@ export const PinToDashboardModal: React.FC<PinToDashboardModalProps> = ({ item, 
     const [isCreating, setIsCreating] = useState(dashboards.length === 0);
     const [newName, setNewName] = useState('');
     const [selectedId, setSelectedId] = useState<string | null>(dashboards[0]?.id || null);
+    const [visualTitle, setVisualTitle] = useState(() => normalizeDashboardVisualTitle(item.title));
 
     const theme = useAppStore(s => s.theme);
     const isDark = theme === 'dark';
 
     const handlePin = () => {
+        if (!visualTitle.trim()) return;
+        const namedItem = titleDashboardItem(item, visualTitle);
         if (isCreating && newName.trim()) {
             // Create new dashboard and pin to it
             const id = createDashboard(newName.trim());
-            addItemToDashboard(id, item);
+            addItemToDashboard(id, namedItem);
             onPinned(newName.trim());
         } else if (selectedId) {
             // Pin to existing dashboard
-            addItemToDashboard(selectedId, item);
+            addItemToDashboard(selectedId, namedItem);
             const db = dashboards.find(d => d.id === selectedId);
             onPinned(db?.name || 'Dashboard');
         }
@@ -84,11 +88,34 @@ export const PinToDashboardModal: React.FC<PinToDashboardModalProps> = ({ item, 
                         </button>
                     </div>
 
-                    {/* Visual preview */}
-                    <div className={`mx-6 mt-4 px-3 py-2 rounded-lg text-xs font-medium truncate ${
-                        isDark ? 'bg-white/[0.04] text-gray-400 border border-white/[0.06]' : 'bg-gray-50 text-gray-500 border border-gray-200'
-                    }`}>
-                        📌 {item.title || 'Untitled Visual'}
+                    {/* User-owned visual title */}
+                    <div className="px-6 pt-4">
+                        <label
+                            htmlFor="pin-visual-title"
+                            className={`block text-[11px] font-semibold uppercase tracking-wider mb-2 ${
+                                isDark ? 'text-gray-500' : 'text-gray-400'
+                            }`}
+                        >
+                            Visual title
+                        </label>
+                        <input
+                            id="pin-visual-title"
+                            type="text"
+                            value={visualTitle}
+                            onChange={e => setVisualTitle(e.target.value)}
+                            maxLength={120}
+                            autoFocus={!isCreating}
+                            aria-describedby="pin-visual-title-help"
+                            className={`w-full px-3 py-2.5 rounded-lg text-sm font-semibold outline-none transition-colors ${
+                                isDark
+                                    ? 'bg-white/[0.04] text-white border border-white/[0.1] focus:border-violet-500/50 placeholder:text-gray-600'
+                                    : 'bg-gray-50 text-gray-900 border border-gray-200 focus:border-violet-400 placeholder:text-gray-400'
+                            }`}
+                            placeholder="Name this visual"
+                        />
+                        <p id="pin-visual-title-help" className={`mt-1.5 text-[11px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                            This name stays with the visual when you edit and save it later.
+                        </p>
                     </div>
 
                     {/* Dashboard list */}
@@ -189,9 +216,9 @@ export const PinToDashboardModal: React.FC<PinToDashboardModalProps> = ({ item, 
                         </button>
                         <button
                             onClick={handlePin}
-                            disabled={isCreating ? !newName.trim() : !selectedId}
+                            disabled={!visualTitle.trim() || (isCreating ? !newName.trim() : !selectedId)}
                             className={`px-5 py-2 rounded-lg text-sm font-bold transition-all ${
-                                (isCreating ? newName.trim() : selectedId)
+                                (visualTitle.trim() && (isCreating ? newName.trim() : selectedId))
                                     ? 'bg-gradient-to-r from-violet-500 to-indigo-600 text-white shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40'
                                     : isDark
                                         ? 'bg-white/[0.06] text-gray-600 cursor-not-allowed'

@@ -567,7 +567,10 @@ export const useAppStore = create<AppStore>()(
                 set((state) => {
                 const newDashboards = updateDashboard(state.dashboards, dashboardId, d => ({
                     ...d,
-                    items: d.items.map(i => i.id === item.id ? item : i),
+                    // Merge instead of replacing so a focused update cannot
+                    // accidentally discard user titles, layout, provenance, or
+                    // dashboard filter preferences added by another workflow.
+                    items: d.items.map(i => i.id === item.id ? { ...i, ...item } : i),
                 }));
                 return {
                     dashboards: newDashboards,
