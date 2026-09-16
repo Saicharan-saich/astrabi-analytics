@@ -1,19 +1,25 @@
 WEBVTT
 
-00:00.000 --> 00:04.000
-Start with the measure: choose the number you want to understand.
+00:00.000 --> 00:08.750
+Understand the builder sentence: show me a measure using a calculation, grouped by dimensions.
 
-00:04.000 --> 00:08.000
-Choose the aggregation. Sum adds the selected value across matching rows.
+00:08.750 --> 00:17.500
+Choose the measure: the business value you want to analyse, such as value in billions of US dollars.
 
-00:08.000 --> 00:12.000
-Choose a dimension to split the measure into groups, such as import versus export.
+00:17.500 --> 00:26.250
+Choose the aggregation. Sum adds matching values; Average, Count, Minimum and Maximum answer different questions.
 
-00:12.000 --> 00:16.000
-Add another dimension for a grouped-in-group comparison, such as reporting period.
+00:26.250 --> 00:35.000
+Add the first dimension. Flow direction splits the total into Import and Export series.
 
-00:16.000 --> 00:20.000
-Use filters, sorting and limits to focus the answer on your business question.
+00:35.000 --> 00:43.750
+Add a second dimension. Period label creates a nested comparison without replacing flow direction.
 
-00:20.000 --> 00:24.000
-Change the chart, show labels, export the result or pin it. Every control remains editable.
+00:43.750 --> 00:52.500
+Filter the records, sort the result and set a limit to focus the business question.
+
+00:52.500 --> 01:01.250
+Choose a suitable visual and enable labels when exact values matter.
+
+01:01.250 --> 01:10.000
+Give the visual a meaningful title, choose a dashboard and pin it. The title remains when the visual is edited later.

@@ -51,7 +51,7 @@ export const QuestionBuilderVideoGuide: React.FC = () => {
                 className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-extrabold text-indigo-700 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
                 aria-haspopup="dialog"
                 aria-label="Watch how Question Builder works"
-                title="Watch a short Question Builder walkthrough"
+                title="Watch the narrated Question Builder walkthrough"
             >
                 <CirclePlay className="h-4 w-4" aria-hidden="true" />
                 Watch guide
@@ -78,10 +78,10 @@ export const QuestionBuilderVideoGuide: React.FC = () => {
                                     <BookOpen className="h-4 w-4" aria-hidden="true" /> Guided walkthrough
                                 </div>
                                 <h2 id="question-builder-video-title" className="text-lg font-black sm:text-xl">
-                                    Build a useful visual in under a minute
+                                    Build a useful visual in about 70 seconds
                                 </h2>
                                 <p id="question-builder-video-description" className="mt-1 text-sm text-slate-300">
-                                    See how measure, aggregation, dimensions, filters, sorting and labels work together.
+                                    Follow the visible cursor with narration and captions as a complete visual is built and pinned.
                                 </p>
                             </div>
                             <button
@@ -101,7 +101,6 @@ export const QuestionBuilderVideoGuide: React.FC = () => {
                                     className="aspect-video w-full bg-black"
                                     controls
                                     autoPlay
-                                    muted
                                     playsInline
                                     preload="metadata"
                                     poster={POSTER_SRC}

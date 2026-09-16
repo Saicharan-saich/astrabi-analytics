@@ -16,7 +16,7 @@
   <circle cx="1100" cy="-20" r="330" fill="#4f46e5" opacity=".2"/>
   <circle cx="110" cy="700" r="260" fill="#0891b2" opacity=".14"/>
   <text x="72" y="82" fill="#a5b4fc" font-family="Arial, sans-serif" font-size="20" font-weight="700" letter-spacing="3">QUICKINSIGHT WALKTHROUGH</text>
-  <text x="72" y="134" fill="white" font-family="Arial, sans-serif" font-size="42" font-weight="800">Build a useful visual in under a minute</text>
+  <text x="72" y="134" fill="white" font-family="Arial, sans-serif" font-size="42" font-weight="800">Build a useful visual in about 70 seconds</text>
   <g transform="translate(72 184)" filter="url(#shadow)">
     <rect width="1136" height="458" rx="24" fill="#f8fafc"/>
     <rect width="1136" height="58" rx="24" fill="#fff"/>
