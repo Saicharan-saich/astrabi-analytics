@@ -8,10 +8,26 @@ export enum ColumnType {
   UNKNOWN = 'UNKNOWN'
 }
 
+export type PhysicalDataType = 'number' | 'date' | 'boolean' | 'string' | 'mixed' | 'unknown';
+
+export interface ColumnConversionProfile {
+  sourceType: PhysicalDataType;
+  normalizedType: PhysicalDataType;
+  nonNullCount: number;
+  convertedCount: number;
+  invalidCount: number;
+  parseSuccessRate: number;
+  samples: { before: any; after: any }[];
+}
+
 export interface ColumnDefinition {
   name: string;
   type: ColumnType;
   originalType: string;
+  /** Runtime storage type after ETL. This is distinct from analytical role (`type`). */
+  physicalType?: PhysicalDataType;
+  /** Auditable evidence describing the source-to-normalized conversion. */
+  conversion?: ColumnConversionProfile;
 }
 
 export interface ETLLog {
@@ -136,6 +152,8 @@ export interface Dataset {
    * the real tables instead, so a one-to-many join cannot inflate a total.
    */
   relatedTables?: RelatedTable[];
+  /** Untouched source tables retained so mapping changes can safely rerun conversion. */
+  rawSourceTables?: RelatedTable[];
   domainProfile?: DatasetDomainProfile;  // AI-generated domain context
   // ── Connection Mode ──
   connectionMode?: ConnectionMode;       // 'import' (default/snapshot) or 'live' (real-time)
@@ -167,6 +185,8 @@ export interface RelatedTable {
   name: string;
   rows: Record<string, any>[];
   columns?: string[];
+  /** Typed column contract for normalized source tables. */
+  columnDefinitions?: ColumnDefinition[];
 }
 
 export interface SourceSchema {
@@ -186,6 +206,12 @@ export interface SourceColumnInfo {
   dataType: string;
   isPK: boolean;
   isNullable: boolean;
+  sourceDataType?: PhysicalDataType;
+  normalizedDataType?: PhysicalDataType;
+  analyticalRole?: ColumnType;
+  parseSuccessRate?: number;
+  invalidCount?: number;
+  convertedCount?: number;
 }
 
 export interface SourceJoinEdge {
@@ -390,6 +416,8 @@ export interface QueryConfig {
 
   // Deterministic Engine
   questionId?: string;
+  /** Verified AI SQL retained when a pinned result is reopened in Builder. */
+  aiSql?: string;
   semanticRoles?: Record<string, string>;
   timeFilter?: string;
 }
@@ -407,6 +435,11 @@ export interface AnalysisResult {
   config: QueryConfig;
   error?: string; // If mapping failed
   kpi?: number | string; // Optional override for the main KPI number
+  /** Legacy dashboard compatibility; new results use `vis` and config.chartType. */
+  chartType?: QueryConfig['chartType'];
+  xAxis?: string;
+  yAxis?: string;
+  xLabel?: string;
   vis?: ChartConfig['type']; // Recommended visualization
   formatting?: FormattingConfig; // Per-item formatting (preserved when pinning)
   visualizationMode?: 'auto' | 'grid' | 'combined'; // Preserves a Builder facet/combined choice when pinned

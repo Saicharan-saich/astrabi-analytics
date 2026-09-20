@@ -57,8 +57,25 @@ export function buildRelationalCatalog(tables: RelatedTable[]): RelationalCatalo
                 || keys.find(k => /^id$/i.test(k.column))
                 || keys.find(k => /(^|_)id$/i.test(k.column)) || keys[0];
             return { name: t.name, rows: t.rows.length, columns: sourceColumns(t).map(name => {
+                const definition = t.columnDefinitions?.find(column => column.name === name);
                 const value = t.rows.find(r => !blank(r[name]))?.[name];
-                return { name, dataType: typeof value === 'number' ? 'numeric' : 'varchar', isPK: primary?.column === name, isNullable: t.rows.some(r => blank(r[name])) };
+                const normalized = definition?.conversion?.normalizedType || definition?.physicalType;
+                const dataType = normalized === 'number' ? 'numeric'
+                    : normalized === 'date' ? 'date'
+                        : normalized === 'boolean' ? 'boolean'
+                            : typeof value === 'number' ? 'numeric' : 'varchar';
+                return {
+                    name,
+                    dataType,
+                    isPK: primary?.column === name,
+                    isNullable: t.rows.some(r => blank(r[name])),
+                    sourceDataType: definition?.conversion?.sourceType,
+                    normalizedDataType: definition?.conversion?.normalizedType || definition?.physicalType,
+                    analyticalRole: definition?.type,
+                    parseSuccessRate: definition?.conversion?.parseSuccessRate,
+                    invalidCount: definition?.conversion?.invalidCount,
+                    convertedCount: definition?.conversion?.convertedCount,
+                };
             }) };
         }),
         joinEdges: discovery.relationships.map(r => ({ leftTable: r.fromTable, leftColumn: r.fromColumn, rightTable: r.toTable, rightColumn: r.toColumn, type: 'fk' as const, provenance: 'inferred', cardinality: r.cardinality, confidence: r.confidence, evidence: r.evidence })),
@@ -113,6 +130,10 @@ export function materializeSubject(tables: RelatedTable[], catalog: RelationalCa
     visit(table, Object.fromEntries(columns.map(c => [c, c])), [], [table]);
     rows = rows.map(row => Object.fromEntries(Object.entries(row).map(([column, value]) => [column, value instanceof Date ? value.toISOString() : value])));
     const typedColumns = columns.map(name => {
+        const origin = origins[name];
+        const sourceDefinition = tables.find(source => source.name === origin?.table)
+            ?.columnDefinitions?.find(column => column.name === origin?.column);
+        if (sourceDefinition) return { ...sourceDefinition, name };
         const values = rows.map(r => r[name]).filter(v => !blank(v));
         const leaf = name.split('.').pop()!;
         const type = /(^|_)id$/i.test(leaf) ? ColumnType.ID
@@ -148,7 +169,7 @@ export function createSubjectDataset(parent: Dataset, table: string, standalone 
         sourceDatasetId: root, subjectTable: table, standaloneSubject: standalone,
         name: `${table}${standalone ? ' (source)' : ''}`, rows: view.rows, rawRows: tables.find(t => t.name === table)?.rows,
         columns: view.columns, fieldLineage: view.lineage, fieldOrigins: view.origins, totalRows: view.rows.length, timeContext: view.timeContext,
-        etlLogs: [], sourceSchema: catalog.schema, sourceTables: tables, relationalCatalog: catalog,
+        etlLogs: [], sourceSchema: catalog.schema, sourceTables: tables, rawSourceTables: parent.rawSourceTables, relationalCatalog: catalog,
         version: parent.version || 1, createdAt: parent.createdAt,
         connectionMode: parent.connectionMode || 'import', liveConnection: parent.liveConnection,
     };

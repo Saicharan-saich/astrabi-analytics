@@ -338,6 +338,51 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onSchemaOverride, onR
             )}
           </div>
 
+          {/* ─── Datatype Audit ─────────────────────────────────────────── */}
+          <div className={`${card} p-4 mb-6`}>
+            <div className="flex items-start justify-between gap-4 mb-3">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white">Datatype audit</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Storage conversion and analytical role are shown separately. Expand transformation steps below for before/after samples.
+                </p>
+              </div>
+              <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 whitespace-nowrap">{dataset.columns.length} columns</span>
+            </div>
+            <div className="overflow-auto rounded-lg border border-slate-200 dark:border-white/10 max-h-72">
+              <table className="w-full text-xs">
+                <thead className="bg-slate-50 dark:bg-slate-900/60 sticky top-0">
+                  <tr className="text-[10px] uppercase tracking-wider text-slate-500">
+                    <th className="px-3 py-2 text-left">Column</th>
+                    <th className="px-3 py-2 text-left">Source storage</th>
+                    <th className="px-3 py-2 text-left">Current storage</th>
+                    <th className="px-3 py-2 text-left">Normalized as</th>
+                    <th className="px-3 py-2 text-left">Analytical role</th>
+                    <th className="px-3 py-2 text-right">Quality</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-white/5">
+                  {dataset.columns.map(column => {
+                    const conversion = column.conversion;
+                    const hasFailures = (conversion?.invalidCount || 0) > 0;
+                    return (
+                      <tr key={column.name} className="hover:bg-slate-50 dark:hover:bg-white/[0.02]">
+                        <td className="px-3 py-2 font-mono font-medium text-slate-800 dark:text-slate-200">{column.name}</td>
+                        <td className="px-3 py-2 font-mono text-slate-500">{conversion?.sourceType || column.originalType || 'unknown'}</td>
+                        <td className="px-3 py-2 font-mono text-slate-500">{column.physicalType || 'unknown'}</td>
+                        <td className="px-3 py-2 font-mono text-indigo-600 dark:text-indigo-300">{conversion?.normalizedType || 'not audited'}</td>
+                        <td className="px-3 py-2"><span className={`px-2 py-0.5 rounded border text-[10px] font-bold ${getTypeColor(column.type)}`}>{column.type}</span></td>
+                        <td className={`px-3 py-2 text-right font-semibold ${hasFailures ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                          {conversion ? `${Math.round(conversion.parseSuccessRate * 100)}%${hasFailures ? ` · ${conversion.invalidCount} rejected` : ''}` : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           {/* ─── Summary Cards ─────────────────────────────────────────── */}
           <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-6">
             <div className={`${card} p-4`}>

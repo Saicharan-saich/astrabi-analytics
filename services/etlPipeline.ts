@@ -12,7 +12,7 @@
  *   Post:    TimeContext + DimDate + Quality Score
  */
 
-import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, TimeContext } from '../types';
+import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, PhysicalDataType, TimeContext } from '../types';
 import { generateDimDate } from './dimDateGenerator';
 import {
     parseLocaleNumber, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
@@ -559,7 +559,8 @@ function log(step: string, layer: number, status: ETLLog['status'], details: str
 // ╚══════════════════════════════════════════════════════════════════╝
 
 function layer1_structuralNormalization(
-    rawRows: Record<string, any>[]
+    rawRows: Record<string, any>[],
+    preserveRowMultiplicity = false,
 ): { rows: Record<string, any>[]; logs: ETLLog[]; columnsRemoved: number; duplicatesRemoved: number } {
     const logs: ETLLog[] = [];
     let columnsRemoved = 0;
@@ -684,6 +685,10 @@ function layer1_structuralNormalization(
 
     // ── 1f: Duplicate Row Removal (using truly unique ID/PK columns only) ──
     {
+        if (preserveRowMultiplicity) {
+            logs.push(log('Duplicate Row Removal', 1, 'skipped',
+                'Skipped for a relational source table so fact multiplicity and duplicate-key evidence remain intact.'));
+        } else {
         const before = rows.length;
         const allCols = Object.keys(rows[0] || {});
 
@@ -732,6 +737,7 @@ function layer1_structuralNormalization(
             } else {
                 logs.push(log('Duplicate Row Removal', 1, 'skipped', `No duplicate rows found (strategy: ${strategy}).`));
             }
+        }
         }
     }
 
@@ -1245,6 +1251,80 @@ function layer5_transformationEngine(
     return { rows, lineage, logs, typeCastCount };
 }
 
+function detectPhysicalDataType(values: any[]): PhysicalDataType {
+    const nonNull = values.filter(v => v !== null && v !== undefined && v !== '');
+    if (nonNull.length === 0) return 'unknown';
+    const kinds = new Set(nonNull.map(v => {
+        if (v instanceof Date) return 'date';
+        if (typeof v === 'number' && Number.isFinite(v)) return 'number';
+        if (typeof v === 'boolean') return 'boolean';
+        return 'string';
+    }));
+    return kinds.size === 1 ? [...kinds][0] as PhysicalDataType : 'mixed';
+}
+
+function normalizedTypeForRole(type: ColumnType): PhysicalDataType {
+    if (type === ColumnType.METRIC) return 'number';
+    if (type === ColumnType.DATE) return 'date';
+    if (type === ColumnType.BOOLEAN) return 'boolean';
+    if (type === ColumnType.ID || type === ColumnType.DIMENSION) return 'string';
+    return 'unknown';
+}
+
+function isValidNormalizedValue(value: any, type: ColumnType): boolean {
+    if (value === null || value === undefined || value === '') return false;
+    if (type === ColumnType.METRIC) return typeof value === 'number' && Number.isFinite(value);
+    if (type === ColumnType.DATE) return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value);
+    if (type === ColumnType.BOOLEAN) return value === 'True' || value === 'False' || value === true || value === false;
+    if (type === ColumnType.ID) return typeof value === 'string' || typeof value === 'number';
+    return true;
+}
+
+function attachConversionProfiles(
+    columns: ColumnDefinition[],
+    sourceRows: Record<string, any>[],
+    normalizedRows: Record<string, any>[],
+): ColumnDefinition[] {
+    return columns.map(column => {
+        const sourceValues = sourceRows.map(row => row[column.name]);
+        const normalizedValues = normalizedRows.map(row => row[column.name]);
+        const nonNullIndexes = sourceValues
+            .map((value, index) => ({ value, index }))
+            .filter(({ value }) => value !== null && value !== undefined && value !== '');
+        let invalidCount = 0;
+        let convertedCount = 0;
+        const samples: { before: any; after: any }[] = [];
+
+        for (const { value, index } of nonNullIndexes) {
+            const normalized = normalizedValues[index];
+            if (!isValidNormalizedValue(normalized, column.type)) invalidCount++;
+            const changed = typeof value !== typeof normalized || String(value) !== String(normalized);
+            if (changed) {
+                convertedCount++;
+                if (samples.length < 5) samples.push({ before: value, after: normalized });
+            }
+        }
+
+        const nonNullCount = nonNullIndexes.length;
+        const sourceType = detectPhysicalDataType(sourceValues);
+        const physicalType = detectPhysicalDataType(normalizedValues);
+        return {
+            ...column,
+            originalType: sourceType,
+            physicalType,
+            conversion: {
+                sourceType,
+                normalizedType: normalizedTypeForRole(column.type),
+                nonNullCount,
+                convertedCount,
+                invalidCount,
+                parseSuccessRate: nonNullCount > 0 ? (nonNullCount - invalidCount) / nonNullCount : 1,
+                samples,
+            },
+        };
+    });
+}
+
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  LAYER 5b: CORRECTNESS HARDENING                                ║
 // ║  Safe canonical merges (applied) + data-quality FLAGS (never    ║
@@ -1621,7 +1701,8 @@ function buildTimeContext(rows: Record<string, any>[], columns: ColumnDefinition
 export function runETLPipeline(
     rawData: Record<string, any>[],
     _fileName: string,
-    columnTypeOverrides?: Record<string, ColumnType>
+    columnTypeOverrides?: Record<string, ColumnType>,
+    options?: { preserveRowMultiplicity?: boolean },
 ): {
     rows: Record<string, any>[];
     columns: ColumnDefinition[];
@@ -1653,7 +1734,7 @@ export function runETLPipeline(
     console.log(`[ETL] Starting 7-Layer Pipeline on ${totalRowsBefore} rows, ${totalColumnsOriginal} columns`);
 
     // ── LAYER 1: Structural Normalization ──
-    const l1 = layer1_structuralNormalization(rawData);
+    const l1 = layer1_structuralNormalization(rawData, options?.preserveRowMultiplicity);
     let rows = l1.rows;
     allLogs.push(...l1.logs);
     console.log(`[ETL L1] Structural: ${rows.length} rows, ${Object.keys(rows[0] || {}).length} cols`);
@@ -1661,6 +1742,9 @@ export function runETLPipeline(
     // ── LAYER 2: Canonical Value Prep ──
     const l2 = layer2_canonicalValuePrep(rows);
     rows = l2.rows;
+    // Preserve the canonical source values so conversion can be audited after
+    // Layer 5 without retaining a second full raw dataset in the ETL result.
+    const preTransformRows = rows.map(row => ({ ...row }));
     allLogs.push(...l2.logs);
     console.log(`[ETL L2] Canonical: ${l2.nullsFixed} null tokens fixed`);
 
@@ -1735,7 +1819,8 @@ export function runETLPipeline(
 
     // ── POST: Column Ordering (ID → Date → Dimension → Metric) ──
     const typeOrder: Record<string, number> = { ID: 0, DATE: 1, DIMENSION: 2, METRIC: 3 };
-    const sortedColumns = [...l4.columns].sort((a, b) => (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99));
+    const profiledColumns = attachConversionProfiles(l4.columns, preTransformRows, rows);
+    const sortedColumns = [...profiledColumns].sort((a, b) => (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99));
     const columnOrder = sortedColumns.map(c => c.name);
     rows = rows.map(row => {
         const ordered: Record<string, any> = {};

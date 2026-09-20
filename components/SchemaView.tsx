@@ -229,21 +229,28 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                                 {isExpanded && (
                                     <div className="px-4 pb-4 pl-12">
                                         <div className="bg-slate-900/50 rounded-lg border border-slate-600 overflow-hidden">
-                                            <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-4 py-2 bg-slate-700/50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                            <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-4 px-4 py-2 bg-slate-700/50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                                                 <span>Column</span>
-                                                <span>Type</span>
+                                                <span>Source</span>
+                                                <span>Normalized</span>
+                                                <span>Role</span>
+                                                <span>Quality</span>
                                                 <span>Nullable</span>
-                                                <span>Key</span>
                                             </div>
                                             {table.columns.map((col, i) => (
-                                                <div key={i} className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 px-4 py-2 text-xs border-t border-slate-700/50 items-center hover:bg-slate-700/20 transition-colors">
+                                                <div key={i} className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-4 px-4 py-2 text-xs border-t border-slate-700/50 items-center hover:bg-slate-700/20 transition-colors">
                                                     <span className="font-mono text-slate-200 flex items-center gap-2 truncate">
                                                         {getTypeIcon(col.dataType)}
                                                         {col.name}
+                                                        {col.isPK && <Key className="w-3.5 h-3.5 text-amber-400" />}
                                                     </span>
-                                                    <span className={`font-mono text-[10px] ${getTypeColor(col.dataType)}`}>{col.dataType}</span>
+                                                    <span className="font-mono text-[10px] text-slate-400">{col.sourceDataType || col.dataType || 'unknown'}</span>
+                                                    <span className={`font-mono text-[10px] ${getTypeColor(col.dataType)}`}>{col.normalizedDataType || col.dataType}</span>
+                                                    <span className="font-mono text-[10px] text-violet-300">{col.analyticalRole || '—'}</span>
+                                                    <span className={`font-mono text-[10px] ${(col.invalidCount || 0) > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                        {col.parseSuccessRate == null ? '—' : `${Math.round(col.parseSuccessRate * 100)}%`}
+                                                    </span>
                                                     <span className="text-center">{col.isNullable ? <span className="text-slate-500 text-[10px]">YES</span> : <span className="text-amber-400 text-[10px] font-bold">NOT NULL</span>}</span>
-                                                    <span className="text-center">{col.isPK && <Key className="w-3.5 h-3.5 text-amber-400" />}</span>
                                                 </div>
                                             ))}
                                         </div>

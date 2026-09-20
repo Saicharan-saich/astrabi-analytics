@@ -524,6 +524,7 @@ function App() {
           // selected subject rows and field names as the other application views.
           relatedTables: result.relationalCatalog ? undefined : relatedTables,
           sourceTables: result.relationalCatalog ? relatedTables : undefined,
+          rawSourceTables: result.rawRelatedTables,
           relationalCatalog: result.relationalCatalog,
           subjectTable: result.subjectTable,
           fieldLineage: result.fieldLineage,
@@ -681,15 +682,78 @@ function App() {
     worker.postMessage({ type: 'PROCESS_FILE', file });
   };
 
+  const reprocessDatasetTypes = (
+    overrides: Record<string, ColumnType>,
+    updatedProfile?: DatasetDomainProfile,
+  ) => {
+    if (!dataset) return;
+    const worker = new Worker(new URL('./workers/etl.worker.ts', import.meta.url), { type: 'module' });
+    const rawTables = dataset.rawSourceTables || dataset.sourceTables || dataset.relatedTables;
+    const sourceColumnTypeOverrides: Record<string, Record<string, ColumnType>> = {};
+    for (const [field, type] of Object.entries(overrides)) {
+      const origin = dataset.fieldOrigins?.[field];
+      if (!origin) continue;
+      sourceColumnTypeOverrides[origin.table] ||= {};
+      sourceColumnTypeOverrides[origin.table][origin.column] = type;
+    }
+
+    worker.onmessage = (event: MessageEvent) => {
+      if (event.data.type === 'SUCCESS') {
+        const result = event.data.result;
+        const updated: Dataset = {
+          ...dataset,
+          rows: result.rows,
+          rawRows: result.rawRows,
+          columns: result.columns,
+          totalRows: result.rows.length,
+          etlLogs: result.logs,
+          timeContext: result.timeContext,
+          dimDate: result.dimDate,
+          sourceSchema: result.sourceSchema || dataset.sourceSchema,
+          sourceTables: result.relatedTables || dataset.sourceTables,
+          rawSourceTables: result.rawRelatedTables || dataset.rawSourceTables,
+          relationalCatalog: result.relationalCatalog || dataset.relationalCatalog,
+          subjectTable: result.subjectTable || dataset.subjectTable,
+          fieldLineage: result.fieldLineage || dataset.fieldLineage,
+          fieldOrigins: result.fieldOrigins || dataset.fieldOrigins,
+          domainProfile: updatedProfile || dataset.domainProfile,
+          version: (dataset.version || 1) + 1,
+        };
+        updated.semanticModel = buildSemanticModel(updated, dataset.semanticModel);
+        refreshAISQLSemanticSnapshot(updated, 'physical datatype conversion applied');
+        setDataset(updated);
+        saveDatasetToDB(updated);
+        if (updatedProfile) {
+          setPendingProfile(null);
+          showToast(`Mapping applied and values converted: ${updatedProfile.domain} · Grain: ${updatedProfile.grain || 'unset'}`);
+        } else {
+          showToast(`Converted ${Object.keys(overrides).join(', ')} and rebuilt the dataset`);
+        }
+        worker.terminate();
+      } else if (event.data.type === 'ERROR') {
+        setError(event.data.error || 'Datatype conversion failed.');
+        worker.terminate();
+      }
+    };
+
+    worker.postMessage({
+      type: 'PROCESS_FILE',
+      rawData: rawTables?.length
+        ? Object.fromEntries(rawTables.map(table => [table.name, table.rows]))
+        : (dataset.rawRows || dataset.rows),
+      fileName: dataset.name,
+      isConnector: !!dataset.liveConnection,
+      sourceSchema: dataset.sourceSchema,
+      subjectTable: dataset.subjectTable,
+      columnTypeOverrides: overrides,
+      sourceColumnTypeOverrides,
+    });
+  };
+
   const handleSchemaOverride = (columnName: string, newType: ColumnType) => {
     if (!dataset) return;
     if (dataset.relationalCatalog) {
-      // A role change must not rerun flat-table cleaning over a relational view.
-      const updated = { ...dataset, columns: dataset.columns.map(c => c.name === columnName ? { ...c, type: newType } : c), version: (dataset.version || 1) + 1 };
-      updated.semanticModel = buildSemanticModel(updated);
-      refreshAISQLSemanticSnapshot(updated, `subject field role: ${columnName}`);
-      setDataset(updated);
-      saveDatasetToDB(updated);
+      reprocessDatasetTypes({ [columnName]: newType });
       return;
     }
 
@@ -770,20 +834,18 @@ function App() {
     columnTypeOverrides: Record<string, ColumnType>,
   ) => {
     if (!dataset) return;
-    // Semantic-only update: preserves rows and avoids another ETL run.
+    // Descriptive semantic changes are metadata-only. A role change must run
+    // through ETL so the current values and DuckDB-facing types also change.
     let finalDataset: Dataset = {
       ...dataset,
       domainProfile: updatedProfile,
       version: (dataset.version || 1) + 1,
     };
     if (Object.keys(columnTypeOverrides).length > 0) {
-      const updatedColumns = dataset.columns.map(col => {
-        const override = columnTypeOverrides[col.name];
-        return override ? { ...col, type: override } : col;
-      });
-      finalDataset = { ...finalDataset, columns: updatedColumns };
       const sig = datasetSignature(dataset.columns.map(c => c.name));
       saveColumnCorrections(sig, columnTypeOverrides).catch(() => { /* fail-open */ });
+      reprocessDatasetTypes(columnTypeOverrides, updatedProfile);
+      return;
     }
     try {
       const model = buildSemanticModel(finalDataset);
@@ -927,6 +989,7 @@ function App() {
           dimDate,
           sourceSchema: resultSchema,
           sourceTables: event.data.result.relatedTables,
+          rawSourceTables: event.data.result.rawRelatedTables,
           relationalCatalog: event.data.result.relationalCatalog,
           subjectTable: event.data.result.subjectTable,
           fieldLineage: event.data.result.fieldLineage,

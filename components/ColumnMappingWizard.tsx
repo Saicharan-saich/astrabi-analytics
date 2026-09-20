@@ -658,7 +658,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                         {/* Header */}
                         <div className="grid grid-cols-[2.5fr_0.8fr_1.2fr_0.6fr_0.4fr] gap-2 px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.06] text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
                             <span>Column</span>
-                            <span>Type</span>
+                            <span>Role</span>
                             <span>Aggregation</span>
                             <span>Confidence</span>
                             <span className="text-center">Show</span>
@@ -770,6 +770,26 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                             <span className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Advanced Settings</span>
                                                         </div>
                                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                                                            <div className="md:col-span-4 grid grid-cols-2 md:grid-cols-4 gap-2 rounded-lg border border-white/[0.06] bg-black/10 p-2.5">
+                                                                <div>
+                                                                    <label className="text-[9px] text-gray-600 uppercase tracking-wider block">Source storage</label>
+                                                                    <span className="text-xs font-mono text-gray-300">{col.conversion?.sourceType || col.originalType || 'unknown'}</span>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[9px] text-gray-600 uppercase tracking-wider block">Current storage</label>
+                                                                    <span className="text-xs font-mono text-gray-300">{col.physicalType || 'unknown'}</span>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[9px] text-gray-600 uppercase tracking-wider block">Normalized as</label>
+                                                                    <span className="text-xs font-mono text-violet-300">{col.conversion?.normalizedType || 'not audited'}</span>
+                                                                </div>
+                                                                <div>
+                                                                    <label className="text-[9px] text-gray-600 uppercase tracking-wider block">Conversion quality</label>
+                                                                    <span className={`text-xs font-semibold ${(col.conversion?.invalidCount || 0) > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                                        {col.conversion ? `${Math.round(col.conversion.parseSuccessRate * 100)}% · ${col.conversion.invalidCount} rejected` : 'Awaiting ETL audit'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
                                                             {/* Semantic Role */}
                                                             <div>
                                                                 <label className="text-[10px] text-gray-600 uppercase tracking-wider block mb-1">Semantic Role</label>

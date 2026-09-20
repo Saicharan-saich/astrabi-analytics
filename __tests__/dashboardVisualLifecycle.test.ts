@@ -11,9 +11,12 @@ const result = (insight: string): AnalysisResult => ({
   chartType: 'bar',
   xAxis: 'region',
   yAxis: 'sales',
+  xKey: 'region',
+  yKey: 'sales',
   xLabel: 'Region',
   yLabel: 'Sales',
   insight,
+  sql: 'SELECT region, SUM(sales) AS sales FROM data GROUP BY region',
   config: {} as AnalysisResult['config'],
 });
 

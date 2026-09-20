@@ -1,14 +1,15 @@
 import { runAutomatedETL, parseCSV, parseExcelMultiSheet } from '../services/analysisEngine';
-import { buildRelationalCatalog, materializeSubject } from '../services/relationalCatalog';
+import { buildRelationalCatalog, materializeSubject, validateRelationship } from '../services/relationalCatalog';
+import { normalizeRelatedTables } from '../services/relationalNormalization';
 
 self.onmessage = async (e: MessageEvent) => {
-    const { type, file, fileName, rawData, isConnector, columnTypeOverrides, sourceSchema, joinEdges } = e.data;
+    const { type, file, fileName, rawData, isConnector, columnTypeOverrides, sourceColumnTypeOverrides, sourceSchema, joinEdges } = e.data;
     if (type !== 'PROCESS_FILE') return;
     try {
         let data: any[] = [];
         let relatedTables: { name: string; rows: any[]; columns?: string[] }[] | undefined;
         if (rawData) {
-            if (isConnector && typeof rawData === 'object' && !Array.isArray(rawData)) {
+            if (typeof rawData === 'object' && !Array.isArray(rawData)) {
                 relatedTables = Object.entries(rawData).map(([name, rows]) => ({ name, rows: rows as any[] }));
             } else data = typeof rawData === 'string' ? parseCSV(rawData) : rawData;
         } else if (file?.name.match(/\.csv$/i)) {
@@ -19,6 +20,24 @@ self.onmessage = async (e: MessageEvent) => {
             if (entries.length > 1) relatedTables = entries.map(([name, rows]) => ({ name, rows, columns: columns?.[name] }));
             else data = entries[0]?.[1] || [];
         } else throw new Error('Unsupported file format');
+
+        const rawRelatedTables = relatedTables?.map(table => ({
+            name: table.name,
+            rows: table.rows.map(row => ({ ...row })),
+            columns: table.columns ? [...table.columns] : undefined,
+        }));
+        const declaredEdges = joinEdges || sourceSchema?.joinEdges;
+        if (relatedTables?.length && declaredEdges?.length) {
+            // Validate declared keys before normalization. Cleaning must never
+            // hide duplicate lookup keys or change the evidence used here.
+            for (const edge of declaredEdges) validateRelationship(relatedTables, edge);
+        }
+        let relationalLogs: any[] = [];
+        if (relatedTables?.length) {
+            const normalized = normalizeRelatedTables(relatedTables, fileName || file?.name || 'dataset', sourceColumnTypeOverrides);
+            relatedTables = normalized.tables;
+            relationalLogs = normalized.logs;
+        }
 
         let catalog: ReturnType<typeof buildRelationalCatalog> | undefined;
         let subject: ReturnType<typeof materializeSubject> | undefined;
@@ -46,15 +65,25 @@ self.onmessage = async (e: MessageEvent) => {
             subject = materializeSubject(relatedTables, catalog, subjectTable);
             data = subject.rows;
         }
-        const result = runAutomatedETL(data, fileName || file?.name || 'dataset', columnTypeOverrides);
+        const result: any = subject && catalog
+            ? {
+                rows: subject.rows,
+                columns: subject.columns.map(column => ({
+                    ...column,
+                    type: columnTypeOverrides?.[column.name] || column.type,
+                })),
+                logs: [
+                { step: 'Relational subject', details: `Selected ${subjectTable}. ${catalog.subjects.length} source tables remain available in the subject selector.`, status: 'info', timestamp: Date.now() },
+                ...relationalLogs,
+                ],
+                timeContext: subject.timeContext,
+                dimDate: undefined,
+              }
+            : runAutomatedETL(data, fileName || file?.name || 'dataset', columnTypeOverrides);
         if (subject && catalog) {
-            // Preserve source multiplicity and field identity through legacy ETL.
-            result.rows = subject.rows;
-            result.columns = subject.columns.map(c => ({ ...c, type: columnTypeOverrides?.[c.name] || c.type }));
-            result.logs = [{ step: 'Relational subject', details: `Selected ${subjectTable}. ${catalog.subjects.length} source tables remain available in the subject selector.`, status: 'info', timestamp: Date.now() }];
             Object.assign(result, { relationalCatalog: catalog, subjectTable, fieldLineage: subject.lineage, fieldOrigins: subject.origins, sourceSchema: catalog.schema, relatedTables, timeContext: subject.timeContext, dimDate: undefined });
         } else if (sourceSchema) Object.assign(result, { sourceSchema });
-        Object.assign(result, { rawRows: data });
+        Object.assign(result, { rawRows: data, rawRelatedTables });
         self.postMessage({ type: 'SUCCESS', result });
     } catch (error: any) {
         self.postMessage({ type: 'ERROR', error: error.message || 'Unknown worker error' });
