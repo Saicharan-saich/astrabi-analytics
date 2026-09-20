@@ -17,7 +17,22 @@
 // ════════════════════════════════════════════════════════════════════
 
 const CURRENCY_SYMBOLS = /[$€£¥₹₩₫₽¢]/g;
+const CURRENCY_SYMBOL_MARKER = /[$€£¥₹₩₫₽¢]/;
+// Common ISO-4217 codes seen in uploaded finance, remittance and sales files.
+// Keep this as an allow-list: stripping arbitrary three-letter tokens would
+// silently turn identifiers such as "123ABC" into numbers.
+const CURRENCY_CODES = '(?:AED|ARS|AUD|BDT|BGN|BRL|CAD|CHF|CLP|CNY|COP|CZK|DKK|EGP|EUR|GBP|GHS|HKD|HUF|IDR|ILS|INR|JPY|KES|KRW|LKR|MAD|MXN|MYR|NGN|NOK|NZD|PEN|PHP|PKR|PLN|QAR|RON|RUB|SAR|SEK|SGD|THB|TRY|TWD|UAH|USD|VND|ZAR)';
+const CURRENCY_CODE_PREFIX = new RegExp(`^${CURRENCY_CODES}`, 'i');
+const CURRENCY_CODE_SUFFIX = new RegExp(`${CURRENCY_CODES}$`, 'i');
+const CURRENCY_CODE_MARKER = new RegExp(`(?:^|[^A-Z])${CURRENCY_CODES}(?:$|[^A-Z])`, 'i');
 const MAG: Record<string, number> = { k: 1e3, m: 1e6, b: 1e9, t: 1e12 };
+
+/** True when a cell carries an explicit currency symbol or supported ISO code. */
+export function hasCurrencyMarker(raw: any): boolean {
+    if (raw === null || raw === undefined) return false;
+    const value = String(raw).trim();
+    return CURRENCY_SYMBOL_MARKER.test(value) || CURRENCY_CODE_MARKER.test(value);
+}
 
 /** Decide which of '.'/',' is the decimal separator and return a JS-parseable
  *  string with '.' as decimal and no thousands separators. */
@@ -53,7 +68,8 @@ function disambiguateSeparators(s: string): string {
 /**
  * Parse a messy real-world numeric cell into a number, or null if it truly isn't
  * one. Handles currency symbols, %, parentheses/​trailing negatives, K/M/B/T
- * magnitude suffixes, and US/EU decimal & thousands separators.
+ * magnitude suffixes, ISO currency codes ("387 GBP", "USD 10") and US/EU
+ * decimal & thousands separators.
  */
 export function parseLocaleNumber(raw: any): number | null {
     if (raw === null || raw === undefined) return null;
@@ -73,6 +89,11 @@ export function parseLocaleNumber(raw: any): number | null {
     if (s.endsWith('-')) { sign = -sign; s = s.slice(0, -1); }           // 500- (trailing minus)
 
     if (s.endsWith('%')) s = s.slice(0, -1);                            // keep the number (45% → 45)
+
+    // Currency codes can be prefixes or suffixes and may originally have been
+    // separated by whitespace ("GBP 387" / "387.00 GBP"). Whitespace was
+    // intentionally removed above, so anchored removal is deterministic.
+    s = s.replace(CURRENCY_CODE_PREFIX, '').replace(CURRENCY_CODE_SUFFIX, '');
 
     // Scientific / exponent notation (1.23E+11, 1,5e3): split off the exponent
     // before separator disambiguation so these parse instead of becoming null.

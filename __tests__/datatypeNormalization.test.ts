@@ -21,6 +21,19 @@ describe('authoritative datatype normalization', () => {
         expect(result.rows.map(row => row.amount_gbp)).toEqual([1200.5, 300.25]);
     });
 
+    it('converts ISO-code currency strings before SQL aggregation', () => {
+        const result = runETLPipeline([
+            { delivery_method: 'Bank', amount_sent: '387.00 GBP' },
+            { delivery_method: 'Cash', amount_sent: '2,500.50 GBP' },
+        ], 'remittances.xlsx');
+
+        const amount = result.columns.find(column => column.name === 'amount_sent')!;
+        expect(amount.type).toBe(ColumnType.METRIC);
+        expect(amount.physicalType).toBe('number');
+        expect(amount.conversion?.parseSuccessRate).toBe(1);
+        expect(result.rows.map(row => row.amount_sent)).toEqual([387, 2500.5]);
+    });
+
     it('normalizes every sheet before relationship discovery and materialization', () => {
         const raw = [
             {

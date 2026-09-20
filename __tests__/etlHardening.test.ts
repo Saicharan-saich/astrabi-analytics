@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
-    parseLocaleNumber, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
+    parseLocaleNumber, hasCurrencyMarker, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
     canonicalKey, buildCanonicalCategoryMap, levenshtein, findNearDuplicateGroups,
     detectSignAnomalies, detectRangeAnomalies, detectDelimitedCells, detectDateOrderViolations,
     pivotTwoDigitYear, looksLikeLeadingZeroCode, detectMixedScale,
@@ -38,6 +38,16 @@ describe('parseLocaleNumber — recovers values that used to silently become nul
         expect(parseLocaleNumber('1.2K')).toBe(1200);
         expect(parseLocaleNumber('3M')).toBe(3_000_000);
         expect(parseLocaleNumber('2.5B')).toBe(2_500_000_000);
+    });
+    it('ISO currency prefixes and suffixes', () => {
+        expect(parseLocaleNumber('387.00 GBP')).toBe(387);
+        expect(parseLocaleNumber('GBP 2,500.50')).toBeCloseTo(2500.5, 6);
+        expect(parseLocaleNumber('(1.234,56 EUR)')).toBeCloseTo(-1234.56, 6);
+        expect(parseLocaleNumber('USD100-')).toBe(-100);
+        expect(hasCurrencyMarker('387.00 GBP')).toBe(true);
+        expect(hasCurrencyMarker('USD 100')).toBe(true);
+        expect(parseLocaleNumber('123ABC')).toBeNull();
+        expect(hasCurrencyMarker('123ABC')).toBe(false);
     });
     it('scientific notation & zero-width characters (previously lost)', () => {
         expect(parseLocaleNumber('1.23E+11')).toBeCloseTo(1.23e11, 0);

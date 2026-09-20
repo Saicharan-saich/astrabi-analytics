@@ -18,6 +18,7 @@
 import * as duckdb from '@duckdb/duckdb-wasm';
 import { logger } from './logger';
 import { finiteOrNull } from '../utils/numberSafety';
+import { parseLocaleNumber } from './etlHardening';
 
 /**
  * Normalise a DuckDB DATE/TIMESTAMP value to a display-ready string.
@@ -63,6 +64,10 @@ let initAttempts = 0;
 const MAX_INIT_RETRIES = 3;
 const INIT_ATTEMPT_TIMEOUT_MS = 45_000;
 const loadedTables = new Map<string, Promise<void>>();
+// A table name alone is not a cache key. ETL/mapping changes replace the row
+// array while keeping the standard table name "data"; remembering the exact
+// array prevents DuckDB from querying a stale VARCHAR schema after conversion.
+const loadedTableRows = new Map<string, any[]>();
 
 function withInitializationTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
     return new Promise<T>((resolve, reject) => {
@@ -115,6 +120,7 @@ async function initDuckDB(): Promise<void> {
             initPromise = null;
             initAttempts = 0;
             loadedTables.clear();
+            loadedTableRows.clear();
         }
     }
     if (initPromise) return initPromise;
@@ -200,6 +206,7 @@ export function resetDuckDB(): void {
     initError = null;
     initAttempts = 0;
     loadedTables.clear();
+    loadedTableRows.clear();
     logger.info('[DuckDB]', 'State reset — next query will re-initialize');
 }
 
@@ -225,10 +232,14 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
 
     const safeName = sanitizeTableName(tableName);
 
-    // If a load is already in flight for this table, await it and return
+    // If this exact row set is already loaded, reuse it. If ETL produced a new
+    // row array for the same table name, await any in-flight load and rebuild
+    // the table so its physical schema cannot remain stale.
     if (loadedTables.has(safeName)) {
         await loadedTables.get(safeName);
-        return;
+        if (loadedTableRows.get(safeName) === rows) return;
+        loadedTables.delete(safeName);
+        loadedTableRows.delete(safeName);
     }
 
     // Start the actual load and register the promise so concurrent callers await it
@@ -265,8 +276,9 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
                 if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(strVal)) {
                     hasDate = true;
                 }
-                // Check if it's a number
-                else if (!isNaN(Number(strVal.replace(/[$,]/g, ''))) && strVal.trim() !== '') {
+                // Use the same locale/currency parser as ETL. This is a final
+                // execution guard for numeric strings such as "387.00 GBP".
+                else if (parseLocaleNumber(strVal) !== null) {
                     hasNumber = true;
                 } else {
                     hasString = true;
@@ -303,8 +315,8 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
                     // codes/leading-zeros intact; a numeric column takes bare
                     // numbers (or NULL if a stray value isn't numeric).
                     if (colType.get(col) === 'DOUBLE') {
-                        const cleaned = s.replace(/[$,]/g, '');
-                        return (cleaned.trim() !== '' && !isNaN(Number(cleaned))) ? cleaned : 'NULL';
+                        const parsed = parseLocaleNumber(v);
+                        return parsed !== null ? String(parsed) : 'NULL';
                     }
                     return `'${s}'`;
                 });
@@ -319,12 +331,14 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
     })();
 
     loadedTables.set(safeName, loadPromise);
+    loadedTableRows.set(safeName, rows);
 
     try {
         await loadPromise;
     } catch (err) {
         // If loading fails, remove from map so it can be retried
         loadedTables.delete(safeName);
+        loadedTableRows.delete(safeName);
         throw err;
     }
 }
@@ -446,9 +460,7 @@ export async function executeViaDuckDB(
 
         // 2. Load data into table
         const safeName = sanitizeTableName(tableName);
-        if (!loadedTables.has(safeName)) {
-            await loadDataIntoTable(tableName, rows);
-        }
+        await loadDataIntoTable(tableName, rows);
 
         // 3. Rewrite the SQL to use the sanitized table name
         // The SQL compiler may use sanitizeIdentifier(name) which strips dots but keeps spaces/case
@@ -507,6 +519,7 @@ export function getDuckDBError(): string | null {
 export async function reloadTable(tableName: string, rows: any[]): Promise<void> {
     const safeName = sanitizeTableName(tableName);
     loadedTables.delete(safeName);
+    loadedTableRows.delete(safeName);
     await loadDataIntoTable(tableName, rows);
 }
 
@@ -674,8 +687,9 @@ export async function loadRelatedTables(tables: { name: string; rows: any[] }[])
         const safe = sanitizeTableName(t.name);
         if (safe === 'data' || safe === 'dim_date') continue;   // never shadow these
         if (!t.rows?.length) continue;
-        if (loadedTables.has(safe)) { loaded.push(safe); continue; }
         try {
+            // Always enter the row-aware loader. A refreshed source table can
+            // keep the same name while its values and physical types change.
             await loadDataIntoTable(t.name, t.rows);
             loaded.push(safe);
         } catch (err) {
@@ -699,9 +713,7 @@ export async function executeSQLViaDuckDB(
 
         // 2. Load data into "data" table (the standard table name used by AI prompts)
         const tableName = 'data';
-        if (!loadedTables.has(tableName)) {
-            await loadDataIntoTable(tableName, rows);
-        }
+        await loadDataIntoTable(tableName, rows);
 
         // 3. Load dim_date if time context provided
         if (timeContext?.minDate && timeContext?.maxDate) {
@@ -790,6 +802,8 @@ export async function preloadDuckDB(tableName: string, rows: any[]): Promise<voi
 export async function reloadDataTable(rows: any[]): Promise<void> {
     loadedTables.delete('data');
     loadedTables.delete('dim_date');
+    loadedTableRows.delete('data');
+    loadedTableRows.delete('dim_date');
     await loadDataIntoTable('data', rows);
 }
 
@@ -812,5 +826,6 @@ export async function reloadIsolatedBenchmarkData(rows: any[]): Promise<void> {
         await conn.query(`DROP TABLE IF EXISTS "${table.replace(/"/g, '""')}"`);
     }
     loadedTables.clear();
+    loadedTableRows.clear();
     await loadDataIntoTable('data', rows);
 }

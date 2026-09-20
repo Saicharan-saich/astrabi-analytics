@@ -15,7 +15,7 @@
 import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, PhysicalDataType, TimeContext } from '../types';
 import { generateDimDate } from './dimDateGenerator';
 import {
-    parseLocaleNumber, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
+    parseLocaleNumber, hasCurrencyMarker, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
     buildCanonicalCategoryMap, findNearDuplicateGroups, pivotTwoDigitYear,
     looksLikeLeadingZeroCode, detectMixedScale,
     detectSignAnomalies, detectRangeAnomalies, detectDelimitedCells, detectDateOrderViolations,
@@ -111,7 +111,6 @@ const WORD_NUMBERS: Record<string, number> = {
     hundred: 100, thousand: 1000, million: 1000000
 };
 
-const CURRENCY_REGEX = /[$€£¥₹₩₫₽¢]/;
 
 // Product/value synonym normalization dictionary
 const CATEGORY_SYNONYMS: Record<string, Record<string, string>> = {
@@ -180,7 +179,6 @@ const CATEGORY_SYNONYMS: Record<string, Record<string, string>> = {
         'Open': 'Active', 'Closed': 'Inactive',
     },
 };
-const CURRENCY_STRIP_REGEX = /[$€£¥₹₩₫₽¢,\s]/g;
 
 // Date formats ordered by specificity
 const DATE_FORMATS: { id: string; regex: RegExp; parse: (m: RegExpMatchArray) => { y: number; m: number; d: number } | null }[] = [
@@ -829,20 +827,23 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
 
         for (const v of nonNull) {
             const s = String(v);
-            if (CURRENCY_REGEX.test(s)) currencyDetected = true;
+            if (hasCurrencyMarker(v)) currencyDetected = true;
             if (s.includes('%')) percentageDetected = true;
             // Word number check
             if (typeof v === 'string' && wordToNumber(v) !== null) {
+                const wordNumber = wordToNumber(v)!;
                 wordNumberCount++;
                 numericCount++;
+                if (Number.isInteger(wordNumber)) integerCount++;
+                if (wordNumber < min) min = wordNumber;
+                if (wordNumber > max) max = wordNumber;
                 continue;
             }
-            const stripped = s.replace(CURRENCY_STRIP_REGEX, '').replace(/%/g, '').trim();
-            // Use Number() instead of parseFloat() to prevent partial parsing
-            // parseFloat("9/17/2024") returns 9 (wrong!), Number("9/17/2024") returns NaN (correct)
-            if (stripped === '') continue;
-            const num = Number(stripped);
-            if (!isNaN(num)) {
+            // Profile with the exact parser used by Layer 5. This prevents a
+            // value such as "387.00 GBP" from being classified as text and
+            // later reaching DuckDB as SUM(VARCHAR).
+            const num = parseLocaleNumber(v);
+            if (num !== null) {
                 numericCount++;
                 if (Number.isInteger(num)) integerCount++;
                 if (num < min) min = num;
