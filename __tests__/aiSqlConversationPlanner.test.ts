@@ -1,12 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Dataset } from '../types';
 
-vi.mock('../services/ai-sql/modelConfig', async importOriginal => {
-    const actual = await importOriginal<typeof import('../services/ai-sql/modelConfig')>();
-    return { ...actual, fetchWithFallback: vi.fn() };
-});
+vi.mock('../services/ai-sql/conversationClient', () => ({
+    requestAIConversationTurn: vi.fn(),
+}));
 
-import { fetchWithFallback } from '../services/ai-sql/modelConfig';
+import { requestAIConversationTurn } from '../services/ai-sql/conversationClient';
 import {
     normalizeAIConversationResolution,
     resolveConversationTurnWithAI,
@@ -26,21 +25,19 @@ const dataset = {
 } as Dataset;
 
 describe('AI SQL LLM conversation planner', () => {
-    beforeEach(() => vi.mocked(fetchWithFallback).mockReset());
+    beforeEach(() => vi.mocked(requestAIConversationTurn).mockReset());
 
     it('lets the model keep a complete new question independent from a previous summary', async () => {
-        vi.mocked(fetchWithFallback).mockResolvedValue({
+        vi.mocked(requestAIConversationTurn).mockResolvedValue({
             model: 'openai/gpt-5.6-luna',
-            data: {
-                choices: [{ message: { content: JSON.stringify({
-                    route: 'analysis',
-                    turnType: 'new_question',
-                    resolvedQuestion: 'Which country has the highest exports?',
-                    confidence: 0.98,
-                }) } }],
-                usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 },
+            resolution: {
+                route: 'analysis',
+                turnType: 'new_question',
+                resolvedQuestion: 'Which country has the highest exports?',
+                confidence: 0.98,
             },
-        } as any);
+            usage: { prompt_tokens: 120, completion_tokens: 30, total_tokens: 150 },
+        });
 
         const result = await resolveConversationTurnWithAI(
             'Which country has the highest exports?',
@@ -55,12 +52,15 @@ describe('AI SQL LLM conversation planner', () => {
             confidence: 0.98,
             tokens: 150,
         });
-        const messages = vi.mocked(fetchWithFallback).mock.calls[0][0];
-        const sharedPrompt = JSON.stringify(messages);
-        expect(sharedPrompt).toContain('Give me a full data summary');
-        expect(sharedPrompt).toContain('localEvidence');
-        expect(sharedPrompt).toContain('analysisPlan');
-        expect(sharedPrompt).not.toContain('SECRET_ROW_VALUE');
+        expect(requestAIConversationTurn).toHaveBeenCalledWith({
+            currentQuestion: 'Which country has the highest exports?',
+            previousBusinessQuestion: 'Give me a full data summary',
+        });
+        const sharedPayload = JSON.stringify(vi.mocked(requestAIConversationTurn).mock.calls[0][0]);
+        expect(sharedPayload).not.toContain('localEvidence');
+        expect(sharedPayload).not.toContain('analysisPlan');
+        expect(sharedPayload).not.toContain('value_usd_bn');
+        expect(sharedPayload).not.toContain('SECRET_ROW_VALUE');
     });
 
     it('accepts explicit model-owned summary routing', () => {

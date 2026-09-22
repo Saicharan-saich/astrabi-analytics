@@ -89,7 +89,6 @@ import {
 import { validateAnalyticalResult } from './analyticalResultValidator';
 import { getAISQLEngineConfig } from './engineConfig';
 import { detectBroadScopeQuestion, detectSummaryRequest } from './scopeIntent';
-import { resolveConversationTurn } from './conversationIntent';
 import {
     buildAnalyticalCapabilityContract,
     validatePlanAgainstCapabilityContract,
@@ -158,14 +157,6 @@ export async function runAISQLPipeline(
     };
 
     console.log('[AI SQL Pipeline] Starting for question:', question);
-
-    const conversationTurn = resolveConversationTurn(question, dataset);
-    if (conversationTurn.kind !== 'analysis') {
-        throw new AISQLPipelineError(
-            'conversation_only',
-            'This message is conversational and does not require a SQL query.',
-        );
-    }
 
     if (detectSummaryRequest(question).isSummary) {
         throw new AISQLPipelineError(

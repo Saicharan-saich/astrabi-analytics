@@ -23,13 +23,10 @@ export { generateTrustVerification } from './trustEngine';
 export { createAISQLBuilderHandoff } from './builderHandoff';
 export type { AISQLBuilderHandoff } from './builderHandoff';
 export {
-    resolveConversationTurn,
     resolveConversationTurnWithAI,
     normalizeAIConversationResolution,
 } from './conversationIntent';
 export type {
-    ConversationTurnKind,
-    ConversationTurnResolution,
     AIConversationRoute,
     AIConversationTurnType,
     AIConversationResolution,

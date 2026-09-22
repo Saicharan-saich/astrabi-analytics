@@ -199,10 +199,10 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
 
         let analyticalQuestion = query.trim();
         try {
-            // Local engines prepare a compact metadata-only candidate first;
-            // the governed model owns the conversational decision. It receives
-            // at most one prior business question and never receives answer
-            // text, SQL, result rows, or a full chat transcript.
+            // Conversational meaning is resolved exclusively by the dedicated,
+            // server-owned LLM prompt. It receives only this message and at
+            // most one prior resolved business question—never schema, answer
+            // text, SQL, result rows, local intent evidence or chat history.
             const turn = await resolveConversationTurnWithAI(query, dataset, lastBusinessQuestion);
             analyticalQuestion = turn.resolvedQuestion;
             console.log(`[AI SQL Conversation] ${turn.turnType} → ${turn.route} (${Math.round(turn.confidence * 100)}%, ${turn.model}, ${turn.tokens} tokens)`);
@@ -329,7 +329,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
         } catch (err: any) {
             console.error('[AI SQL Pipeline] Error:', err);
             const message = err.message || 'An unexpected error occurred.';
-            if (/conversation planner/i.test(message)) {
+            if (/conversation (?:planner|request|resolver)/i.test(message)) {
                 setErrorTitle('AI conversation could not be planned');
                 setError(message);
                 return;

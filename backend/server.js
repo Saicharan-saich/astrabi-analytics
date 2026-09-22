@@ -23,6 +23,14 @@ const {
 } = require('./security');
 const { parseProviderError } = require('./llmProviderError');
 const {
+    AI_SQL_CONVERSATION_MAX_TOKENS,
+    AI_SQL_CONVERSATION_MODEL,
+    buildAIConversationMessages,
+    extractJSONObject: extractAIConversationJSONObject,
+    normalizeAIConversationResponse,
+    validateAIConversationRequest,
+} = require('./aiSqlConversation');
+const {
     seedBundledBenchmarkHistory,
     upsertBenchmarkRun,
     validateBenchmarkRun,
@@ -1658,6 +1666,115 @@ function applyLlmRateLimit(req, res, next) {
         : LLM_RATE_LIMIT;
     return limiterForRequest(req, res, next);
 }
+
+// Dedicated AI SQL conversational resolver. The browser supplies only the
+// current question and one previous resolved business question; the prompt,
+// model and token budget stay server-owned so the classifier cannot be
+// modified or extracted from the public application bundle.
+app.post('/api/ai-sql/resolve-turn', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyLlmRateLimit, async (req, res) => {
+    const openRouterKey = process.env.OPENROUTER_API_KEY;
+    if (!openRouterKey) {
+        return res.status(500).json({ success: false, error: 'LLM service not configured' });
+    }
+
+    const validated = validateAIConversationRequest(req.body);
+    if (!validated.valid) {
+        return res.status(400).json({ success: false, error: validated.error });
+    }
+
+    const user = req.authUser;
+    const quota = await checkAIQuota(user.userId, { action: 'ai_query' });
+    if (!quota.allowed) {
+        return res.status(429).json({ success: false, error: quota.reason, quotaExceeded: true });
+    }
+
+    const { currentQuestion, previousBusinessQuestion } = validated.value;
+    try {
+        const providerResponse = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${openRouterKey}`,
+                'Content-Type': 'application/json',
+                'HTTP-Referer': process.env.FRONTEND_URL || 'http://localhost:5173',
+                'X-Title': 'QuickInsight AI SQL',
+            },
+            body: JSON.stringify({
+                model: AI_SQL_CONVERSATION_MODEL,
+                messages: buildAIConversationMessages(currentQuestion, previousBusinessQuestion),
+                max_tokens: AI_SQL_CONVERSATION_MAX_TOKENS,
+                temperature: 0,
+            }),
+        });
+
+        if (!providerResponse.ok) {
+            const errorText = await providerResponse.text().catch(() => 'Unknown error');
+            console.error('[AI SQL Conversation] Provider error:', providerResponse.status, errorText);
+            const providerError = parseProviderError(providerResponse.status, errorText);
+            return res.status(providerResponse.status).json({
+                success: false,
+                error: providerError.message,
+                providerStatus: providerResponse.status,
+                providerErrorType: providerError.providerErrorType,
+                providerErrorCategory: providerError.category,
+                retryable: providerError.retryable,
+                requestId: req.requestId,
+            });
+        }
+
+        const providerData = await providerResponse.json();
+        const raw = extractAIConversationJSONObject(providerData.choices?.[0]?.message?.content);
+        if (!raw) {
+            return res.status(502).json({
+                success: false,
+                error: 'The AI conversation resolver returned invalid JSON. Please try again.',
+            });
+        }
+
+        let resolution;
+        try {
+            resolution = normalizeAIConversationResponse(raw, previousBusinessQuestion);
+        } catch (error) {
+            console.warn('[AI SQL Conversation] Invalid structured response:', error.message);
+            return res.status(502).json({
+                success: false,
+                error: 'The AI conversation resolver returned an invalid decision. Please try again.',
+            });
+        }
+
+        const usage = providerData.usage || {};
+        const tokensUsed = Number(usage.total_tokens)
+            || (Number(usage.prompt_tokens) || 0) + (Number(usage.completion_tokens) || 0);
+        await logAIUsage(
+            user.userId,
+            user.email,
+            'ai_query',
+            tokensUsed,
+            AI_SQL_CONVERSATION_MODEL,
+            `purpose:ai_sql_conversation;turn:${resolution.turnType};tokens:${tokensUsed}`,
+        );
+
+        return res.json({
+            success: true,
+            resolution,
+            model: AI_SQL_CONVERSATION_MODEL,
+            usage: {
+                prompt_tokens: Number(usage.prompt_tokens) || 0,
+                completion_tokens: Number(usage.completion_tokens) || 0,
+                total_tokens: tokensUsed,
+            },
+            _quota: {
+                remaining: quota.remaining - 1,
+                limit: quota.limit,
+                used: (quota.used || 0) + 1,
+                scope: 'standard',
+                unlimited: false,
+            },
+        });
+    } catch (error) {
+        console.error('[AI SQL Conversation] Request failed:', error);
+        return res.status(500).json({ success: false, error: 'AI conversation request failed' });
+    }
+});
 
 app.post('/api/llm/chat', LLM_ENTRY_RATE_LIMIT, requireAuthenticatedUser, applyLlmRateLimit, async (req, res) => {
     const OPENROUTER_KEY = process.env.OPENROUTER_API_KEY;
