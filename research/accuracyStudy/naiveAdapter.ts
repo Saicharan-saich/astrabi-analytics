@@ -10,7 +10,7 @@
  * measured comparison only ever reflects a real model's real output.
  */
 
-const API_KEY = process.env.OPENROUTER_API_KEY || process.env.VITE_OPENROUTER_API_KEY || '';
+const API_KEY = process.env.OPENROUTER_API_KEY || '';
 const MODEL = process.env.NAIVE_STUDY_MODEL || 'anthropic/claude-sonnet-5';
 
 /** A representative "just write the SQL" prompt — no plan, no guards. */

@@ -12,7 +12,7 @@
 
 import { Dataset, ColumnType } from '../types';
 import { classifyShape } from './dataMasker';
-import { fetchWithFallback, API_KEY } from './ai-sql/modelConfig';
+import { fetchWithFallback } from './ai-sql/modelConfig';
 
 const TIMEOUT_MS = 25000;
 
@@ -159,15 +159,6 @@ export async function generateSQL(
     question: string,
     dataset: Dataset
 ): Promise<SQLGenerationResult> {
-    if (!API_KEY) {
-        return {
-            sql: '',
-            explanation: '',
-            columnsUsed: [],
-            error: 'OpenRouter API key not configured. Add VITE_OPENROUTER_API_KEY to your .env file.'
-        };
-    }
-
     const metadata = extractMetadata(dataset);
     const systemPrompt = buildSystemPrompt(metadata);
 

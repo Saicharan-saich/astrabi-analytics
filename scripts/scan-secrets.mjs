@@ -46,10 +46,12 @@ const git = (...args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer
 
 function scanText(text, label, findings) {
     for (const [name, rx] of PATTERNS) {
-        for (const line of text.split('\n')) {
+        for (const [index, line] of text.split('\n').entries()) {
             if (!rx.test(line)) continue;
             if (ALLOWED.some(a => a.test(line) || a.test(label))) continue;
-            findings.push({ name, label, sample: line.trim().slice(0, 90) });
+            // Never echo the matching line: CI logs must not become another
+            // place where a newly detected credential is disclosed.
+            findings.push({ name, label, line: index + 1 });
         }
     }
 }
@@ -101,7 +103,7 @@ if (findings.length === 0) {
 }
 
 console.error(`\n✗ Possible secrets found in ${scope}:\n`);
-for (const f of findings) console.error(`  ${f.name}\n    ${f.label}\n    ${f.sample}\n`);
+for (const f of findings) console.error(`  ${f.name}\n    ${f.label}:${f.line}\n`);
 console.error('If a hit is a deliberate placeholder, add a narrow pattern to ALLOWED in');
 console.error('scripts/scan-secrets.mjs. Do not widen it to a whole file.\n');
 console.error('If a hit is real: rotate the credential first — removing it from the repo');

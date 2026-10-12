@@ -7,7 +7,7 @@
  * The AI model interprets purely what it sees in the visual.
  */
 
-import { fetchWithFallback, API_KEY } from './ai-sql/modelConfig';
+import { fetchWithFallback } from './ai-sql/modelConfig';
 
 const TIMEOUT_MS = 20000;
 
@@ -124,10 +124,6 @@ export async function interpretChartVisual(
         numberFormat?: string;
     }
 ): Promise<string> {
-    if (!API_KEY) {
-        return '⚠️ Smart Insight is not configured. Please add your OpenRouter API key to the environment variables.';
-    }
-
     if (!chartImageBase64) {
         return '⚠️ No chart visual available to interpret. Please generate a chart first.';
     }

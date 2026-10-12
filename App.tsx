@@ -1305,7 +1305,9 @@ function App() {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': import.meta.env.VITE_API_KEY || '',
+        ...(localStorage.getItem('qi_token')
+          ? { Authorization: `Bearer ${localStorage.getItem('qi_token')}` }
+          : {}),
       },
       body: JSON.stringify({
         host: config.host,

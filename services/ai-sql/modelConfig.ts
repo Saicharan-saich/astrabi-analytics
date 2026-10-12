@@ -12,9 +12,8 @@
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5002/api';
 export const BACKEND_LLM_URL = `${API_BASE}/llm/chat`;
 
-// Legacy exports kept for compatibility — NOT used for direct calls
+// Legacy URL export kept for compatibility. All calls still target our backend.
 export const OPENROUTER_API_URL = BACKEND_LLM_URL;
-export const API_KEY = '__ROUTED_THROUGH_BACKEND__';
 
 /**
  * OpenRouter model ladder for AI SQL. All three are OpenAI GPT-5.6 models and

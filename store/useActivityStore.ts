@@ -68,13 +68,11 @@ function syncToBackend(activity: UserActivity): void {
     try {
         const token = localStorage.getItem('qi_token') || '';
         if (!token) return;
-        const apiKey = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_API_KEY) || '';
         fetch(`${API_BASE_URL}/api/activities`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
                 Authorization: `Bearer ${token}`,
-                ...(apiKey ? { 'x-api-key': apiKey } : {}),
             },
             body: JSON.stringify({
                 userId: activity.userId,

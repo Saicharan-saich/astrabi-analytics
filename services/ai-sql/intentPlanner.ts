@@ -15,7 +15,7 @@
 
 import { SemanticModel, SemanticField, AnalysisPlan, AnalysisIntent } from './types';
 import { serializeSemanticModel } from './semanticLayer';
-import { fetchWithFallback, PRIMARY_MODEL, selectAISQLModel, API_KEY } from './modelConfig';
+import { fetchWithFallback, PRIMARY_MODEL, selectAISQLModel } from './modelConfig';
 import { classifyQuestion, ClassificationResult, isTimePeriodComparison } from './questionClassifier';
 import { inferQueryShape } from './queryShape';
 import { detectRequestedLimit } from './questionNumbers';
@@ -1509,10 +1509,6 @@ export async function generatePlan(
     model: SemanticModel,
     grainOverride?: 'day' | 'week' | 'month' | 'quarter' | 'year'
 ): Promise<AnalysisPlan> {
-    if (!API_KEY) {
-        throw new Error('OpenRouter API key not configured. Set VITE_OPENROUTER_API_KEY in .env');
-    }
-
     // ── PRE-CLASSIFICATION: Deterministic question analysis ──
     const classification = classifyQuestion(question);
     const fieldMapping = mapFieldsFromQuestion(question, model);

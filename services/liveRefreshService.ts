@@ -14,11 +14,9 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://api.quickinsi
 
 function authenticatedHeaders(): Record<string, string> {
   const token = localStorage.getItem('qi_token') || '';
-  const apiKey = import.meta.env.VITE_API_KEY || '';
   return {
     'Content-Type': 'application/json',
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(apiKey ? { 'x-api-key': apiKey } : {}),
   };
 }
 
