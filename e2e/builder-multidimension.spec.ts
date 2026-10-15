@@ -2,6 +2,9 @@ import { test, expect } from '@playwright/test';
 import * as XLSX from 'xlsx';
 
 test('adding a third grouping dimension automatically shows facet panels', async ({ page }) => {
+    // Canvas labels are asserted after rendering; reduced motion removes
+    // timing differences between local Chromium and slower CI runners.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     const user = { id: 'multidimension-test-user', email: 'multidimension@example.com', name: 'Multidimension Test', role: 'contributor' };
     const token = 'header.' + Buffer.from(JSON.stringify({ userId: user.id })).toString('base64url') + '.signature';
     await page.route('**/api/**', async route => {
