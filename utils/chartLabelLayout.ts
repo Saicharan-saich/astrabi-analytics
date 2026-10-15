@@ -69,8 +69,11 @@ function candidatePositions(label: ChartLabelCandidate): ChartLabelPosition[] {
         // Every series participates in one layout. This prevents a percent
         // marker on y1 and a currency bar on y from painting over each other.
         for (const direction of [preferred, -preferred]) {
-            for (const row of [1, 2, 3, 4]) {
-                for (const column of [0, 1, -1, 2, -2]) {
+            // Compact facets and cross-platform font metrics can leave the
+            // first few slots occupied. Search farther only as a fallback;
+            // the nearest valid position still wins.
+            for (const row of [1, 2, 3, 4, 5, 6]) {
+                for (const column of [0, 1, -1, 2, -2, 3, -3, 4, -4]) {
                     points.push({
                         x: x + column * horizontalStep,
                         y: y + direction * (height / 2 + 8 + (row - 1) * verticalStep),

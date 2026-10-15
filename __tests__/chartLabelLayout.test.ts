@@ -39,6 +39,23 @@ describe('Cartesian data label placement', () => {
         });
     });
 
+    it('keeps dense combined-series labels visible in a short plot', () => {
+        const shortPlot: ChartLabelBounds = { left: 0, right: 500, top: 0, bottom: 150 };
+        const inputs = Array.from({ length: 8 }, (_, i) => label({
+            x: 210 + (i % 4) * 22,
+            y: i < 4 ? 34 : 85,
+            width: 34,
+            height: 14,
+        }));
+        const placements = layoutChartLabels(inputs, shortPlot);
+        expect(placements.every(Boolean)).toBe(true);
+        placements.forEach((point, index) => {
+            for (let previous = 0; previous < index; previous++) {
+                expect(rectanglesDoNotOverlap(point!, placements[previous]!, inputs[index], inputs[previous])).toBe(true);
+            }
+        });
+    });
+
     it('flips a horizontal bar label away from the right edge', () => {
         const [position] = layoutChartLabels([
             label({ x: 385, y: 100, width: 70, horizontal: true }),
