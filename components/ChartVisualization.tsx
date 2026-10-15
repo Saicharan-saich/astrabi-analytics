@@ -1735,9 +1735,6 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 });
 
                 const positions = layoutChartLabels(renderables, chart.chartArea);
-                if (typeof window !== 'undefined' && (window as any).__qiCaptureLayout) {
-                    (window as any).__qiLabelLayout = { renderables, positions, chartArea: chart.chartArea };
-                }
                 ctx.fillStyle = options.color || '#000000';
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';

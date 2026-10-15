@@ -69,6 +69,17 @@
   box-shadow: 0 7px 18px rgb(62 73 133 / 12%);
   transform: translateY(-1px);
 }
+/* The Builder's compact canvas must keep enough height for long category
+   labels and a multi-series legend. Keep its controls on one row when possible. */
+.qi-visual-stage .qi-visual-toolbar {
+  gap: 6px;
+  padding: 8px 10px;
+}
+.qi-visual-stage .qi-visual-toolbar > button,
+.qi-visual-stage .qi-visual-toolbar > div > button {
+  min-height: 34px;
+  padding-inline: 8px;
+}
 .qi-chart-type-trigger {
   color: #fff;
   background: linear-gradient(110deg, #545cf0, #357de8 66%, #268fcf);

@@ -16,7 +16,6 @@ test('adding a third grouping dimension automatically shows facet panels', async
     });
     await page.addInitScript(() => localStorage.setItem('QuickInsight-onboarding-complete', 'true'));
     await page.addInitScript(() => {
-        (window as any).__qiCaptureLayout = true;
         const original = CanvasRenderingContext2D.prototype.fillText;
         (window as any).__qiValueLabelInks = [];
         CanvasRenderingContext2D.prototype.fillText = function (this: CanvasRenderingContext2D, ...args: Parameters<typeof original>) {
@@ -98,15 +97,7 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.locator('.qi-visual-stage button[title="Hide labels"]').click();
     await page.evaluate(() => { (window as any).__qiValueLabelInks = []; });
     await page.locator('.qi-visual-stage button[title="Show labels for all series"]').click();
-    try {
-        await expect.poll(() => page.evaluate(() => (window as any).__qiValueLabelInks.length)).toBeGreaterThanOrEqual(8);
-    } catch (error) {
-        console.log('Label layout:', JSON.stringify(await page.evaluate(() => ({
-            layout: (window as any).__qiLabelLayout,
-            button: [...document.querySelectorAll('.qi-visual-stage button')].find(b => b.textContent?.includes('Labels'))?.getAttribute('title'),
-        }))));
-        throw error;
-    }
+    await expect.poll(() => page.evaluate(() => (window as any).__qiValueLabelInks.length)).toBeGreaterThanOrEqual(8);
     const inks = await page.evaluate(() => (window as any).__qiValueLabelInks as string[]);
     expect(inks.every(color => color === '#000000' || color === 'rgb(0, 0, 0)')).toBe(true);
 });
