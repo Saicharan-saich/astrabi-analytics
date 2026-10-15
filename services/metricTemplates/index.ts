@@ -108,6 +108,28 @@ export function autoSuggestMappings(
         const role = input.semanticRole.toLowerCase();
         const label = input.label.toLowerCase();
 
+        // Money at different grains must not be interchanged. In particular,
+        // sales_amount is revenue for a line, while unit_price is per item.
+        // Earlier fuzzy matching assigned cost_amount to a Unit Price formula.
+        const exactRoleNames: Record<string, string[]> = {
+            profit: ['profit', 'net_profit', 'gross_profit', 'profit_amount'],
+            revenue: ['sales_amount', 'revenue', 'sales', 'total_sales', 'revenue_amount', 'net_sales', 'amount'],
+            price: ['unit_price', 'selling_price', 'item_price', 'price_per_unit', 'price'],
+            cost: ['unit_cost', 'cost_price', 'cost_per_unit'],
+        };
+        const preferred = exactRoleNames[role]?.map(name => numericCols.find(column =>
+            column.name.toLowerCase() === name
+        )).find(Boolean);
+        if (preferred) {
+            suggestions[input.key] = preferred.name;
+            continue;
+        }
+        if (role === 'cost' && template.requiredInputs.some(candidate => candidate.semanticRole === 'price')) {
+            // A cost_amount column is generally a line total and cannot be
+            // subtracted from unit_price. Require an explicit unit cost here.
+            continue;
+        }
+
         let match = numericCols.find(c => String(c.semanticRole || '').toLowerCase() === role);
         if (!match) {
             const keywords = label.split(/\s+/);
@@ -122,4 +144,27 @@ export function autoSuggestMappings(
         if (match) suggestions[input.key] = match.name;
     }
     return suggestions;
+}
+
+/** Reject monetary inputs measured at different grains before materialising a template. */
+export function validateTemplateMappingGrain(
+    template: MetricTemplate,
+    mapping: Record<string, string>,
+): string | null {
+    const monetaryRoles = new Set(['price', 'cost', 'revenue', 'profit', 'actual', 'target', 'total', 'budget']);
+    const measures = template.requiredInputs
+        .filter(input => monetaryRoles.has(input.semanticRole.toLowerCase()))
+        .map(input => ({ label: input.label, column: mapping[input.key] || '' }))
+        .filter(input => input.column);
+    const grain = (name: string): 'unit' | 'total' | 'unknown' => {
+        const normalized = name.toLowerCase().replace(/[\s-]+/g, '_');
+        if (/(?:^|_)(?:unit|item|per_unit|per_item|price)(?:_|$)/.test(normalized)) return 'unit';
+        if (/(?:^|_)(?:amount|total|sales|revenue|profit|expense|spend|budget)(?:_|$)/.test(normalized)) return 'total';
+        return 'unknown';
+    };
+    const unit = measures.find(input => grain(input.column) === 'unit');
+    const total = measures.find(input => grain(input.column) === 'total');
+    return unit && total
+        ? `“${unit.column}” is per unit, while “${total.column}” is a total. Choose inputs measured at the same grain.`
+        : null;
 }

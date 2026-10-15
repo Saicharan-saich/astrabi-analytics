@@ -44,6 +44,7 @@ import { ThemeProvider } from './components/ThemeProvider';
 import { OnboardingTour } from './components/OnboardingTour';
 import { DatasetSwitcher } from './components/DatasetSwitcher';
 import { saveDatasetToDB, loadAllDatasetsFromDB, deleteDatasetFromDB } from './services/datasetDB';
+import { repairLegacyProfitMarginDataset } from './services/legacyDerivedMetricMigration';
 import { buildRelationalCatalog, createSubjectDataset } from './services/relationalCatalog';
 import { inferDefaultAggregation } from './services/smartAggregation';
 import { DomainReviewModal } from './components/DomainReviewModal';
@@ -394,10 +395,18 @@ function App() {
 
     loadAllDatasetsFromDB(userId).then(saved => {
       if (useAuthStore.getState().currentUser?.id !== userId) return;
+      const repaired = saved.map(original => {
+        const migrated = repairLegacyProfitMarginDataset(original);
+        if (migrated !== original) {
+          saveDatasetToDB(migrated);
+          console.log(`[App] Recomputed legacy Profit Margin % for ${migrated.name}`);
+        }
+        return migrated;
+      });
       console.log(`[App] Loaded ${saved.length} datasets from IndexedDB for user: ${userId}`);
-      if (saved.length > 0) {
-        const selected = saved.find(ds => ds.id === store.lastActiveDatasetId) || saved[saved.length - 1];
-        useAppStore.setState({ datasets: saved });
+      if (repaired.length > 0) {
+        const selected = repaired.find(ds => ds.id === store.lastActiveDatasetId) || repaired[repaired.length - 1];
+        useAppStore.setState({ datasets: repaired });
         useAppStore.getState().setDataset(selected);
       }
     });

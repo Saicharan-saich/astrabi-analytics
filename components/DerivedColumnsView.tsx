@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Search, Plus, Check, X, Trash2, Pencil, Calculator, BookOpen, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
-import { MetricTemplate, Industry, INDUSTRY_META, getTemplatesForDomain, searchTemplates, autoSuggestMappings, ALL_TEMPLATES } from '../services/metricTemplates';
+import { MetricTemplate, Industry, INDUSTRY_META, getTemplatesForDomain, searchTemplates, autoSuggestMappings, validateTemplateMappingGrain, ALL_TEMPLATES } from '../services/metricTemplates';
 import { ExpressionTerm, DerivedColumnSuggestion, computeDerivedColumn, materializeDerivedColumns, registerDerivedInSemanticModel } from '../services/aiDerivedSuggestions';
 import { useTheme } from './ThemeProvider';
 
@@ -137,6 +137,8 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
       const col = dataset.columns.find(c => c.name === columns[inp.key]);
       if (!col) { setMapError(`Column "${columns[inp.key]}" not found`); return; }
     }
+    const grainError = validateTemplateMappingGrain(template, columns);
+    if (grainError) { setMapError(grainError); return; }
 
     // Compute values
     const newRows = dataset.rows.map(row => {
@@ -153,6 +155,8 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
     const newCols = [...dataset.columns, {
       name: template.id, type: ColumnType.METRIC, originalName: template.id,
       semanticRole: 'derived_metric' as any, label: template.name,
+      derivedTemplateId: template.id, derivedFormulaVersion: 2,
+      derivedInputColumns: { ...columns },
     }];
 
     const updatedModel = (dataset as any).semanticModel
@@ -234,6 +238,7 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
 
   if (!dataset) return <div className="flex items-center justify-center h-full text-slate-400"><p>Load a dataset first.</p></div>;
 
+  const mappingGrainError = mapping ? validateTemplateMappingGrain(mapping.template, mapping.columns) : null;
   const inputCls = `w-full px-2.5 py-2 rounded-lg border text-sm ${isDark ? 'bg-slate-700 border-white/10 text-white' : 'bg-gray-50 border-gray-200'}`;
   const catLabel = (cat: string) => cat.charAt(0).toUpperCase() + cat.slice(1).replace(/_/g, ' ');
 
@@ -372,7 +377,7 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
               </div>
 
               {/* Sample preview */}
-              {Object.values(mapping.columns).every(Boolean) && dataset && dataset.rows.length > 0 && (
+              {!mappingGrainError && mapping.template.requiredInputs.every(input => Boolean(mapping.columns[input.key])) && dataset.rows.length > 0 && (
                 <div className={`mt-4 text-xs rounded-lg overflow-hidden border ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
                   <div className={`px-3 py-1.5 font-bold uppercase tracking-wider ${isDark ? 'bg-slate-700 text-slate-300' : 'bg-gray-100 text-gray-500'}`}>Preview (3 rows)</div>
                   {dataset.rows.slice(0, 3).map((row, i) => {
@@ -394,14 +399,14 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
                 </div>
               )}
 
-              {mapError && (
+              {(mapError || mappingGrainError) && (
                 <div className={`mt-3 flex items-center gap-2 text-xs text-red-500 ${isDark ? 'bg-red-500/10' : 'bg-red-50'} px-3 py-2 rounded-lg`}>
-                  <AlertTriangle className="w-3.5 h-3.5" /> {mapError}
+                  <AlertTriangle className="w-3.5 h-3.5" /> {mapError || mappingGrainError}
                 </div>
               )}
 
               <div className="flex gap-2 mt-4">
-                <button onClick={applyTemplate} className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2"><Check className="w-4 h-4" /> Create Metric</button>
+                <button onClick={applyTemplate} disabled={Boolean(mappingGrainError)} className="flex-1 bg-purple-600 hover:bg-purple-500 disabled:cursor-not-allowed disabled:opacity-50 text-white font-bold py-2.5 rounded-lg text-sm flex items-center justify-center gap-2"><Check className="w-4 h-4" /> Create Metric</button>
                 <button onClick={() => setMapping(null)} className={`px-4 py-2.5 rounded-lg border text-sm ${isDark ? 'border-white/10 hover:bg-white/5' : 'border-gray-200 hover:bg-gray-50'}`}><X className="w-4 h-4" /></button>
               </div>
             </div>

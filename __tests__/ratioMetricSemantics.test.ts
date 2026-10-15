@@ -9,9 +9,53 @@ import { recommendChart } from '../services/ai-sql/chartRecommender';
 import type { SemanticModel as AISemanticModel, ResultProfile, AnalysisPlan } from '../services/ai-sql/types';
 import type { SemanticModel } from '../services/semanticModel';
 import { runAnalysis } from '../services/analysisEngine';
+import { SALES_TEMPLATES } from '../services/metricTemplates/sales';
+import { autoSuggestMappings, validateTemplateMappingGrain } from '../services/metricTemplates';
+import { repairLegacyProfitMarginDataset } from '../services/legacyDerivedMetricMigration';
 import { AggregationType, AnalysisType, ColumnType, TimeGrain, type Dataset, type QueryConfig } from '../types';
 
 describe('governed ratio metrics', () => {
+    it('maps the sales margin template to line profit and revenue at matching grain', () => {
+        const template = SALES_TEMPLATES.find(metric => metric.id === 'profit_margin_pct')!;
+        const columns = ['unit_price', 'cost_amount', 'profit', 'sales_amount'].map(name => ({
+            name, type: 'METRIC',
+        }));
+        const mapping = autoSuggestMappings(template, columns);
+        expect(mapping).toEqual({ profit: 'profit', revenue: 'sales_amount' });
+        expect(validateTemplateMappingGrain(template, mapping)).toBeNull();
+        expect(template.formulaFn({ profit: 10, revenue: 100 })).toBe(10);
+        expect(template.formulaFn({ profit: 180, revenue: 900 })).toBe(20);
+        expect(validateTemplateMappingGrain(
+            SALES_TEMPLATES.find(metric => metric.id === 'gross_profit')!,
+            { price: 'unit_price', cost: 'cost_amount', qty: 'units' },
+        )).toMatch(/same grain/i);
+    });
+
+    it('repairs a stored legacy margin column before restoring the builder session', () => {
+        const dataset: Dataset = {
+            id: 'legacy-margin', name: 'retail.csv', totalRows: 2, etlLogs: [],
+            version: 1,
+            columns: [
+                { name: 'profit', type: ColumnType.METRIC, originalType: 'number' },
+                { name: 'sales_amount', type: ColumnType.METRIC, originalType: 'number' },
+                { name: 'unit_price', type: ColumnType.METRIC, originalType: 'number' },
+                { name: 'cost_amount', type: ColumnType.METRIC, originalType: 'number' },
+                { name: 'profit_margin_pct', type: ColumnType.METRIC, originalType: 'number', semanticRole: 'derived_metric', label: 'Profit Margin %' } as any,
+            ],
+            rows: [
+                { profit: 10, sales_amount: 100, unit_price: 2, cost_amount: 300, profit_margin_pct: -14900 },
+                { profit: 180, sales_amount: 900, unit_price: 5, cost_amount: 400, profit_margin_pct: -7900 },
+            ],
+        };
+        const repaired = repairLegacyProfitMarginDataset(dataset);
+        expect(repaired.rows.map(row => row.profit_margin_pct)).toEqual([10, 20]);
+        expect(repaired.columns.find(column => column.name === 'profit_margin_pct')).toMatchObject({
+            derivedFormulaVersion: 2,
+            derivedInputColumns: { profit: 'profit', revenue: 'sales_amount' },
+        });
+        expect(repairLegacyProfitMarginDataset(repaired)).toBe(repaired);
+    });
+
     it('recomputes a row-level ratio as a weighted average in JS and SQL', () => {
         const plan = buildQueryPlan({
             metric: 'profit',

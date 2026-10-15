@@ -28,6 +28,10 @@ export interface ColumnDefinition {
   physicalType?: PhysicalDataType;
   /** Auditable evidence describing the source-to-normalized conversion. */
   conversion?: ColumnConversionProfile;
+  /** Provenance for materialised template metrics; used to keep old uploads correct. */
+  derivedTemplateId?: string;
+  derivedFormulaVersion?: number;
+  derivedInputColumns?: Record<string, string>;
 }
 
 export interface ETLLog {

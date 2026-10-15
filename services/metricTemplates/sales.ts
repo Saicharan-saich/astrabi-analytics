@@ -16,7 +16,7 @@ export const SALES_TEMPLATES: MetricTemplate[] = [
   // ── Profitability ──
   m(I,'profit','gross_profit','Gross Profit','Revenue minus COGS.','📈','(price−cost) × qty',[IN.price(),IN.cost('Cost Price'),IN.qty()],({price,cost,qty})=>(price-cost)*qty,'currency'),
   m(I,'profit','net_profit','Net Profit','Profit after all deductions.','💎','revenue − total_cost',[IN.rev(),IN.cost('Total Cost')],({revenue,cost})=>revenue-cost,'currency'),
-  m(I,'profit','profit_margin_pct','Profit Margin %','Profit as % of revenue.','📉','(price−cost)/price×100',[IN.price(),IN.cost()],({price,cost})=>price===0?null:((price-cost)/price)*100,'percent','AVG','non_additive'),
+  m(I,'profit','profit_margin_pct','Profit Margin %','Profit as % of sales revenue.','📉','profit / revenue × 100',[IN.a('Profit','profit'),IN.rev('Sales Revenue')],({profit,revenue})=>revenue===0?null:(profit/revenue)*100,'percent','AVG','non_additive'),
   m(I,'profit','gross_margin','Gross Margin','Gross profit per unit.','🎯','price − cost',[IN.price(),IN.cost()],({price,cost})=>price-cost,'currency'),
   m(I,'profit','contribution_margin','Contribution Margin','Revenue minus variable costs.','🔥','price − variable_cost',[IN.price(),IN.cost('Variable Cost')],({price,cost})=>price-cost,'currency'),
   m(I,'profit','contribution_margin_pct','Contribution Margin %','Contribution as % of price.','📐','(price−cost)/price×100',[IN.price(),IN.cost('Variable Cost')],({price,cost})=>price===0?null:((price-cost)/price)*100,'percent','AVG','non_additive'),

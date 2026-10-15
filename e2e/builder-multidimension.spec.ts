@@ -46,7 +46,7 @@ test('adding a third grouping dimension automatically shows facet panels', async
 
     await expect(page.getByRole('button', { name: 'Watch how Question Builder works' })).toBeVisible();
     await page.getByRole('button', { name: 'Watch how Question Builder works' }).click();
-    const guide = page.getByRole('dialog', { name: 'Build a useful visual in under a minute' });
+    const guide = page.getByRole('dialog', { name: /Build a useful visual in about 70 seconds/i });
     await expect(guide).toBeVisible();
     await expect(guide.locator('video')).toHaveAttribute('poster', '/tutorials/question-builder-guide-poster.svg');
     await expect(guide.locator('video source')).toHaveAttribute('src', '/tutorials/question-builder-guide.webm');
