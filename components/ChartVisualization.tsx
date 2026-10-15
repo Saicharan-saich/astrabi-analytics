@@ -1230,7 +1230,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     // Default to true black on light backgrounds — slate grey read as faint over the chart.
                     // Charts use a light canvas in both app themes. Keep every
                     // value label black by default, independent of series color.
-                    color: formatting?.dataLabelColor || (isDark ? '#f8fafc' : '#17233b'),
+                    color: formatting?.dataLabelColor || '#000000',
                     font: {
                         weight: formatting?.dataLabelBold !== false ? 'bold' : 'normal',
                         size: dataLabelFontSize
