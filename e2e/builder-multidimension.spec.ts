@@ -18,7 +18,9 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.addInitScript(() => {
         const original = CanvasRenderingContext2D.prototype.fillText;
         (window as any).__qiValueLabelInks = [];
+        (window as any).__qiCanvasTexts = [];
         CanvasRenderingContext2D.prototype.fillText = function (this: CanvasRenderingContext2D, ...args: Parameters<typeof original>) {
+            (window as any).__qiCanvasTexts.push(String(args[0]));
             if (String(args[0]) === '100' || String(args[0]) === '50') {
                 (window as any).__qiValueLabelInks.push(String(this.fillStyle));
             }
@@ -97,7 +99,16 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.locator('.qi-visual-stage button[title="Hide labels"]').click();
     await page.evaluate(() => { (window as any).__qiValueLabelInks = []; });
     await page.locator('.qi-visual-stage button[title="Show labels for all series"]').click();
-    await expect.poll(() => page.evaluate(() => (window as any).__qiValueLabelInks.length)).toBeGreaterThanOrEqual(8);
+    try {
+        await expect.poll(() => page.evaluate(() => (window as any).__qiValueLabelInks.length)).toBeGreaterThanOrEqual(8);
+    } catch (error) {
+        console.log('Canvas labels after All:', await page.evaluate(() => ({
+            texts: (window as any).__qiCanvasTexts.slice(-100),
+            inks: (window as any).__qiValueLabelInks,
+            canvases: [...document.querySelectorAll('.qi-visual-stage canvas')].map(c => ({ width: c.width, height: c.height })),
+        })));
+        throw error;
+    }
     const inks = await page.evaluate(() => (window as any).__qiValueLabelInks as string[]);
     expect(inks.every(color => color === '#000000' || color === 'rgb(0, 0, 0)')).toBe(true);
 });
