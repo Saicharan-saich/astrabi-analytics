@@ -411,6 +411,8 @@ export interface QueryConfig {
   axisMode?: 'auto' | 'single' | 'dual' | 'blended'; // How to handle Y axes for multi-metric
   secondaryMetricVisuals?: Record<string, string>; // Per-metric visual type: { 'quantity': 'bar', 'discount': 'area' }
   secondaryMetricAggregations?: Record<string, string>; // Per-metric aggregation: { 'quantity': 'SUM', 'discount': 'AVG' }
+  /** Internal semantic contract: ratio metric -> denominator/weight column. */
+  metricWeightColumns?: Record<string, string>;
   secondaryDimensions?: string[]; // Additional grouping dimensions (e.g., ['region', 'category'])
   tableCalculations?: string[]; // Table calculations to apply post-aggregation (e.g., pct_change, diff_from_prev)
 

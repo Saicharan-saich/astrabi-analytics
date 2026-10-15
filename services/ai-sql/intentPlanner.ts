@@ -203,7 +203,13 @@ function resolveFieldPhrase(phrase: string, model: SemanticModel, role?: 'dimens
     for (const field of model.fields) {
         // Identifiers can be counted, but must never become monetary/quantity
         // measures because a long phrase happens to share an incidental noun.
-        if (role === 'metric' && field.semanticType === 'identifier') continue;
+        if (role === 'metric' && (
+            field.semanticType === 'identifier'
+            || field.keyRole === 'primary_key'
+            || field.keyRole === 'foreign_key'
+            || field.keyRole === 'identifier'
+            || /(?:^|_)(?:id|key|code)$|(?:^|_)(?:id|key|code)(?:_|$)/i.test(field.name)
+        )) continue;
         let fieldScore = 0;
         for (const alias of [field.name, field.displayLabel, ...(field.synonyms || [])]) {
             const aliasWords = normalizedFieldWords(alias);
@@ -298,18 +304,41 @@ export function enforceExplicitMeasure(plan: AnalysisPlan, question: string, mod
                 .map(match => ({ start: match.index || 0, end: (match.index || 0) + match[0].length }));
         })
     );
+    const operationWords = new Set(['total', 'sum', 'average', 'avg', 'mean', 'minimum', 'min', 'maximum', 'max', 'count', 'number']);
     const mentioned = model.fields
-        .filter(field => field.role === 'metric' && field.semanticType !== 'identifier')
-        .flatMap(field => [field.name, field.displayLabel, ...(field.synonyms || [])].map(alias => ({ field, alias })))
-        .flatMap(({ field, alias }) => {
+        .filter(field => field.role === 'metric'
+            && field.semanticType !== 'identifier'
+            && field.keyRole !== 'primary_key'
+            && field.keyRole !== 'foreign_key'
+            && field.keyRole !== 'identifier'
+            && !/(?:^|_)(?:id|key|code)$|(?:^|_)(?:id|key|code)(?:_|$)/i.test(field.name))
+        .flatMap(field => [field.name, field.displayLabel, ...(field.synonyms || [])]
+            .map((alias, aliasIndex) => ({ field, alias, aliasIndex })))
+        .flatMap(({ field, alias, aliasIndex }) => {
             const phrase = alias.toLowerCase().replace(/[_-]+/g, ' ').trim();
-            if (phrase.length < 2) return [];
+            // Aggregation words can qualify any metric; they must never select a
+            // physical field by themselves ("total profit" != cost_amount).
+            if (phrase.length < 2 || operationWords.has(phrase)) return [];
             return [...normalized.matchAll(new RegExp(`\\b${escaped(phrase)}\\b`, 'gi'))]
                 .filter(match => !compositeRanges.some(range =>
                     (match.index || 0) >= range.start && (match.index || 0) + match[0].length <= range.end
                 ))
-                .map(match => ({ field, index: match.index || 0 }));
+                .map(match => ({
+                    field,
+                    index: match.index || 0,
+                    end: (match.index || 0) + match[0].length,
+                    // Physical name > display label > generated synonym.
+                    priority: aliasIndex === 0 ? 3 : aliasIndex === 1 ? 2 : 1,
+                    phraseLength: phrase.length,
+                }));
         })
+        .sort((a, b) => b.priority - a.priority || b.phraseLength - a.phraseLength)
+        // One textual mention can resolve to only one physical field. This
+        // prevents broad generated synonyms such as "earnings" from selecting
+        // several measures at once.
+        .filter((candidate, index, all) => all.findIndex(other =>
+            other.index === candidate.index && other.end === candidate.end
+        ) === index)
         .sort((a, b) => a.index - b.index)
         .filter((candidate, index, all) => all.findIndex(other =>
             other.field.name.toLowerCase() === candidate.field.name.toLowerCase()
@@ -319,7 +348,14 @@ export function enforceExplicitMeasure(plan: AnalysisPlan, question: string, mod
         const match = question.match(/\b(?:average|avg|mean|total|sum|count|minimum|maximum)\s+(?:of\s+)?(.+?)(?=\s+(?:of\s+\w+|with\s+|having\s+|whose\s+|for\s+each|for\s+every|per|by|where|when|during|in)\b|[?.,;]|$)/i);
         const requested = match ? resolveFieldPhrase(match[1], model, 'metric') : undefined;
         if (!requested) return;
-        mentioned.push({ field: requested, index: match?.index || 0 });
+        const index = match?.index || 0;
+        mentioned.push({
+            field: requested,
+            index,
+            end: index + (match?.[0]?.length || requested.name.length),
+            priority: 3,
+            phraseLength: requested.name.length,
+        });
     }
 
     const explicitOperations = inferQueryShape(question).explicitAggregations;

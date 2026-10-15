@@ -23,6 +23,11 @@ export interface DerivedColumnSuggestion {
     format: 'currency' | 'percent' | 'number' | 'integer';
     preview?: string;
     expression?: ExpressionTerm[];
+    /** Optional governed semantics supplied by a metric-library template. */
+    semanticAggregation?: 'SUM' | 'AVG' | 'MIN' | 'MAX';
+    semanticBehavior?: 'additive' | 'semi_additive' | 'non_additive';
+    /** Denominator/weight that preserves a ratio when rows are aggregated. */
+    weightColumn?: string;
 }
 
 /** A single term in a multi-column expression chain */
@@ -257,13 +262,16 @@ export function registerDerivedInSemanticModel(
         if (existingCols.has(col.id)) continue; // already registered
 
         // Infer behavior from formula type
-        const behavior: MetricBehavior =
+        const behavior: MetricBehavior = col.semanticBehavior || (
             col.formula === 'divide' ? 'non_additive' :
             col.formula === 'multiply' && col.multiplier ? 'non_additive' : // percentage-like
-            'additive';
+            'additive');
 
         // Infer aggregation from behavior
-        const aggregation = behavior === 'additive' ? 'SUM' as any : 'AVG' as any;
+        const aggregation = (col.semanticAggregation || (behavior === 'additive' ? 'SUM' : 'AVG')) as any;
+        const simpleRatio = col.formula === 'divide'
+            && (!col.expression || (col.expression.length === 2 && col.expression[0]?.operator === 'divide'));
+        const weightColumn = col.weightColumn || (simpleRatio ? col.columnB : undefined);
 
         // Map format
         const format =
@@ -277,8 +285,8 @@ export function registerDerivedInSemanticModel(
             aggregation,
             behavior,
             format,
-            requiresWeighting: behavior === 'non_additive',
-            weightColumn: behavior === 'non_additive' ? col.columnB : undefined,
+            requiresWeighting: behavior === 'non_additive' && Boolean(weightColumn),
+            weightColumn: behavior === 'non_additive' ? weightColumn : undefined,
             label: col.label,
             isHidden: false,
         });

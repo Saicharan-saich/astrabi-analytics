@@ -460,7 +460,31 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     );
     const capabilityRuleFor = (fieldName: string): CapabilityFieldRule | undefined => {
         const normalized = fieldName.trim().toLowerCase();
-        return capabilityContract?.fields.find(rule => rule.field.trim().toLowerCase() === normalized);
+        const richRule = capabilityContract?.fields.find(rule => rule.field.trim().toLowerCase() === normalized);
+        if (richRule) return richRule;
+
+        // User-created metrics are registered immediately in the local semantic
+        // model, while the richer AI SQL snapshot is rebuilt separately. Honour
+        // that live contract so a ratio never briefly falls back to SUM in the UI.
+        const localMeasure = dataset.semanticModel?.measures.find(measure =>
+            measure.column.trim().toLowerCase() === normalized
+        );
+        if (!localMeasure) return undefined;
+        const nonAdditive = localMeasure.behavior === 'non_additive';
+        return {
+            field: localMeasure.column,
+            role: 'metric',
+            semanticType: localMeasure.format === 'percent' ? 'percentage' : 'quantity',
+            keyRole: 'none',
+            additivity: localMeasure.behavior,
+            unit: localMeasure.format === 'percent' ? 'percentage' : 'quantity',
+            allowedAggregations: nonAdditive
+                ? ['avg', 'min', 'max', 'count', 'count_distinct', 'none']
+                : ['sum', 'avg', 'min', 'max', 'count', 'count_distinct', 'none'],
+            allowedTimeGrains: [],
+            confidence: 1,
+            evidence: ['Registered derived metric', `default aggregation: ${localMeasure.aggregation}`],
+        };
     };
     const allMetricAggregationOptions = [
         { label: 'Total  (Σ)', value: 'SUM' },

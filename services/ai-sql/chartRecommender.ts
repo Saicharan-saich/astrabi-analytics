@@ -114,7 +114,11 @@ export function recommendChart(
     const isRowLevelProjection = plan.intent === 'projection'
         || (Boolean(plan.projectionFields?.length) && plan.metrics.length === 0);
     const isWideDetailResult = profile.columnCount >= 6 && dimensionCount >= 3;
-    if (isRowLevelProjection || isWideDetailResult) {
+    // A single row containing only numeric outputs is a scalar KPI bundle, even
+    // if a weak compatibility plan happened to call it a projection. Do not
+    // discard its measures behind the row-detail table rule.
+    const isScalarMetricBundle = rowCount === 1 && metricCount > 1 && dimensionCount === 0;
+    if ((isRowLevelProjection && !isScalarMetricBundle) || isWideDetailResult) {
         chartType = 'table';
         xKey = presentationDimensionColumns[0] || dimensionColumns[0] || '';
         yKey = visualMetricColumns[0] || metricColumns[0] || '';

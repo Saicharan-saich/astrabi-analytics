@@ -154,24 +154,56 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
     let sql = activeQ.sql || `-- Dynamic SQL generated for ${activeQ.id}`;
 
     // ═══ AGGREGATION SAFETY GUARD ═══════════════════════════════════
-    // If the semantic model says a metric is non-additive (e.g., current_quantity,
-    // unit_price), auto-correct SUM to the model's recommended aggregation.
-    // This prevents join-inflated numbers (e.g., 220 stock × 3 rows = 660).
-    if (query.metric && dataset.semanticModel) {
-        const semMeasure = findMeasure(dataset.semanticModel, query.metric);
-        if (semMeasure && semMeasure.behavior === 'non_additive' && query.aggregation === 'SUM') {
-            console.warn(`[runAnalysis] ⚠️ AGGREGATION GUARD: "${query.metric}" is non-additive (${semMeasure.behavior}). Auto-correcting SUM → ${semMeasure.aggregation}`);
-            query = { ...query, aggregation: semMeasure.aggregation as any };
-        }
-        // Also guard semi-additive metrics when grouped by time
-        if (semMeasure && semMeasure.behavior === 'semi_additive' && query.aggregation === 'SUM') {
-            const timeGrains = ['minute', 'hour', 'day', 'week', 'month', 'quarter', 'year'];
-            const dimIsTime = query.dimension && timeGrains.includes(query.dimension);
-            if (dimIsTime) {
-                console.warn(`[runAnalysis] ⚠️ AGGREGATION GUARD: "${query.metric}" is semi-additive — correcting SUM → MAX for time dimension`);
-                query = { ...query, aggregation: 'MAX' as any };
+    // Apply the semantic contract to every selected metric, not only the first.
+    // In particular, a materialised ratio such as profit/sales must be recomputed
+    // as SUM(profit)/SUM(sales) at the requested grain. AVG(row_margin) is biased
+    // because small and large rows otherwise receive equal weight.
+    if (dataset.semanticModel) {
+        const metricWeightColumns = { ...(query.metricWeightColumns || {}) };
+        const secondaryMetricAggregations = { ...(query.secondaryMetricAggregations || {}) };
+        const timeGrains = ['minute', 'hour', 'day', 'week', 'month', 'quarter', 'year'];
+        const dimIsTime = Boolean(query.dimension && timeGrains.includes(query.dimension));
+
+        const governAggregation = (metricName: string, requested: string): string => {
+            const measure = findMeasure(dataset.semanticModel!, metricName);
+            if (!measure) return requested;
+
+            let resolved = requested;
+            if (measure.behavior === 'non_additive' && resolved === 'SUM') {
+                resolved = measure.aggregation;
+                console.warn(`[runAnalysis] ⚠️ AGGREGATION GUARD: "${metricName}" is non-additive. Auto-correcting SUM → ${resolved}`);
+            } else if (measure.behavior === 'semi_additive' && resolved === 'SUM' && dimIsTime) {
+                resolved = 'MAX';
+                console.warn(`[runAnalysis] ⚠️ AGGREGATION GUARD: "${metricName}" is semi-additive over time. Auto-correcting SUM → MAX`);
             }
+
+            const availableWeight = measure.weightColumn && dataset.columns.find(column =>
+                column.name.toLowerCase() === measure.weightColumn!.toLowerCase()
+            )?.name;
+            if (resolved === 'AVG' && measure.requiresWeighting && availableWeight) {
+                metricWeightColumns[metricName] = availableWeight;
+                console.log(`[runAnalysis] Weighted ratio: "${metricName}" uses denominator "${availableWeight}"`);
+            }
+            return resolved;
+        };
+
+        const primaryAggregation = query.metric
+            ? governAggregation(query.metric, query.aggregation || 'SUM')
+            : query.aggregation;
+        for (const secondaryMetric of query.secondaryMetrics || []) {
+            const measure = findMeasure(dataset.semanticModel, secondaryMetric);
+            const requested = secondaryMetricAggregations[secondaryMetric]
+                || measure?.aggregation
+                || 'SUM';
+            secondaryMetricAggregations[secondaryMetric] = governAggregation(secondaryMetric, requested);
         }
+
+        query = {
+            ...query,
+            aggregation: primaryAggregation as AggregationType,
+            secondaryMetricAggregations,
+            ...(Object.keys(metricWeightColumns).length > 0 ? { metricWeightColumns } : {}),
+        };
     }
     // ═══ END AGGREGATION SAFETY GUARD ════════════════════════════════
 
@@ -187,7 +219,10 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
         console.log(`[runAnalysis] 🔀 QUERY PRUNING: ${pruneResult.log}`);
     }
 
-    const { data, xKey, yKey, kpi, growth, sql: generatedSQL } = evaluateLocally(activeQ as any, activeRows, mapping, dates, query, dataset.name, dataset.dimDate);
+    const {
+        data, xKey, yKey, kpi, growth, sql: generatedSQL,
+        secondaryYKeys, axisMode,
+    } = evaluateLocally(activeQ as any, activeRows, mapping, dates, query, dataset.name, dataset.dimDate);
 
     // INJECT DATE FILTERS INTO SQL PREVIEW
     let finalSQL = generatedSQL || sql;
@@ -244,6 +279,7 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
         config: query,
         vis: visuals as any,
         growth,
+        ...(secondaryYKeys?.length ? { secondaryYKeys, axisMode } : {}),
         // ── System Correction Directive: Confidence + Warnings ──
         confidence: 1.0,
         warnings: [],

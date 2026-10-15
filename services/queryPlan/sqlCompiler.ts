@@ -69,6 +69,18 @@ function compileAggregation(agg: AggregationType, expr: string): string {
     }
 }
 
+/** Compile one metric, including governed weighted averages for ratio fields. */
+function compileMetricAggregation(metric: Metric): string {
+    const expr = compileExpression(metric.expression);
+    if (metric.aggregation === 'AVG' && metric.weightExpression) {
+        const weight = compileExpression(metric.weightExpression);
+        // Match the JS engine: rows without a numeric metric value do not add
+        // their weight to the denominator.
+        return `SUM(${expr} * ${weight}) / NULLIF(SUM(CASE WHEN ${expr} IS NOT NULL THEN ${weight} END), 0)`;
+    }
+    return compileAggregation(metric.aggregation, expr);
+}
+
 // ── DIMENSION COMPILER ───────────────────────────────────────────
 
 function compileDimensionSelect(dim: Dimension): string {
@@ -154,8 +166,7 @@ function compileRangeFilter(f: RangeFilter): string {
 function compileGroupFilter(gf: GroupFilter, metrics: Metric[]): string {
     const metric = metrics.find(m => m.id === gf.metricId);
     if (!metric) return '1=1';
-    const expr = compileExpression(metric.expression);
-    const aggExpr = compileAggregation(metric.aggregation, expr);
+    const aggExpr = compileMetricAggregation(metric);
     return `${aggExpr} ${gf.op} ${gf.value}`;
 }
 
@@ -242,8 +253,7 @@ export function compileSQL(plan: QueryPlan): string {
 
     // Metrics
     for (const metric of plan.metrics) {
-        const expr = compileExpression(metric.expression);
-        const aggExpr = compileAggregation(metric.aggregation, expr);
+        const aggExpr = compileMetricAggregation(metric);
         selectCols.push(`${aggExpr} AS ${safeId(metric.alias)}`);
     }
 
@@ -294,7 +304,7 @@ export function compileSQL(plan: QueryPlan): string {
     if (plan._groupAvgHaving && plan.dimensions.length > 0) {
         const m = plan.metrics[plan._groupAvgHaving.metricIndex];
         if (m) {
-            const aggExpr = compileAggregation(m.aggregation, compileExpression(m.expression));
+            const aggExpr = compileMetricAggregation(m);
             const src = `"${plan.source.replace(/"/g, '""')}"`;
             const whereStr = whereClauses.length > 0 ? ` WHERE ${whereClauses.join(' AND ')}` : '';
             const groupStr = plan.dimensions.map(compileDimensionGroupBy).join(', ');

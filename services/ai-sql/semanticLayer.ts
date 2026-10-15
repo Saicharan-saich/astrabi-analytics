@@ -176,7 +176,10 @@ const SYNONYM_MAP: Record<string, string[]> = {
     margin: ['margin pct', 'profit margin', 'gross margin'],
     rate: ['percentage', 'ratio', 'pct'],
     // Amount
-    amount: ['value', 'total', 'sum', 'payment'],
+    // "total" and "sum" describe an operation, not a field. Treating them as
+    // amount synonyms made "total profit" spuriously select every amount-like
+    // column (for example cost_amount).
+    amount: ['value', 'payment'],
 };
 
 // ─── Column Name Pattern Matchers (kept for synonym/display logic) ────

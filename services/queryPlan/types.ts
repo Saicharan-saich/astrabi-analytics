@@ -34,6 +34,12 @@ export interface Metric {
     alias: string;            // REQUIRED — used in SQL `AS alias` and JS output keys
     expression: Expression;
     aggregation: AggregationType;
+    /**
+     * Denominator/weight used when an AVG metric is a materialised row-level
+     * ratio.  With this present AVG(value) means the analytically correct
+     * SUM(value * weight) / SUM(weight), not an unweighted mean of ratios.
+     */
+    weightExpression?: Expression;
 }
 
 // ── DIMENSIONS ───────────────────────────────────────────────────

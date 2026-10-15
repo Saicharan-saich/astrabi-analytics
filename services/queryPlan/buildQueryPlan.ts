@@ -37,6 +37,8 @@ export interface UIQueryConfig {
     limit?: number;
     secondaryMetrics?: string[];
     secondaryMetricAggregations?: Record<string, string>;
+    /** Metric column -> denominator/weight column for governed ratio averages. */
+    metricWeightColumns?: Record<string, string>;
     secondaryDimensions?: string[];
 }
 
@@ -123,6 +125,9 @@ export function buildQueryPlan(
         alias: metricAlias(query.metric, requestedPrimaryAgg),
         expression: primaryExpr,
         aggregation: primaryAgg,
+        ...(requestedPrimaryAgg === 'AVG' && query.metricWeightColumns?.[query.metric]
+            ? { weightExpression: { type: 'column', column: query.metricWeightColumns[query.metric] } as Expression }
+            : {}),
     });
 
     // Secondary metrics
@@ -135,6 +140,9 @@ export function buildQueryPlan(
                 alias: metricAlias(sm, requestedSecAgg),
                 expression: { type: 'column', column: sm },
                 aggregation: secAgg,
+                ...(requestedSecAgg === 'AVG' && query.metricWeightColumns?.[sm]
+                    ? { weightExpression: { type: 'column', column: query.metricWeightColumns[sm] } as Expression }
+                    : {}),
             });
         }
     }

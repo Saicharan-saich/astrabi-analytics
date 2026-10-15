@@ -269,6 +269,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                     limit: query.limit,
                     secondaryMetrics: query.secondaryMetrics,
                     secondaryMetricAggregations: query.secondaryMetricAggregations,
+                    metricWeightColumns: query.metricWeightColumns,
                     secondaryDimensions: query.secondaryDimensions,
                 },
                 dateColKey,

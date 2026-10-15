@@ -18,6 +18,35 @@ function parseNum(v: any): number {
   return Number(String(v).replace(/[$€£¥,\s%]/g, '').trim());
 }
 
+/**
+ * Discover whether a non-additive template is a ratio-of-sums and, if so,
+ * which mapped input is its denominator.  This evaluates the template against
+ * two synthetic rows; the correct weight is the one whose weighted row result
+ * equals the formula evaluated at the summed inputs. Non-ratio formulas return
+ * no weight and keep their ordinary AVG semantics.
+ */
+function inferTemplateWeightInput(template: MetricTemplate): string | undefined {
+  if (template.outputBehavior !== 'non_additive' || template.defaultAggregation !== 'AVG') return undefined;
+  const keys = template.requiredInputs.map(input => input.key);
+  if (keys.length < 2) return undefined;
+  const first = Object.fromEntries(keys.map((key, index) => [key, 2 + index * 3]));
+  const second = Object.fromEntries(keys.map((key, index) => [key, 11 + index * 5]));
+  const combined = Object.fromEntries(keys.map(key => [key, first[key] + second[key]]));
+  const firstResult = template.formulaFn(first);
+  const secondResult = template.formulaFn(second);
+  const combinedResult = template.formulaFn(combined);
+  if (![firstResult, secondResult, combinedResult].every(value => typeof value === 'number' && Number.isFinite(value))) return undefined;
+
+  const matches = keys.filter(key => {
+    const denominator = first[key] + second[key];
+    if (denominator === 0) return false;
+    const weighted = ((firstResult as number) * first[key] + (secondResult as number) * second[key]) / denominator;
+    const tolerance = Math.max(1e-8, Math.abs(combinedResult as number) * 1e-8);
+    return Math.abs(weighted - (combinedResult as number)) <= tolerance;
+  });
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
@@ -127,11 +156,19 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
     }];
 
     const updatedModel = (dataset as any).semanticModel
-      ? registerDerivedInSemanticModel((dataset as any).semanticModel, [{
+      ? (() => {
+          const weightInput = inferTemplateWeightInput(template);
+          return registerDerivedInSemanticModel((dataset as any).semanticModel, [{
           id: template.id, label: template.name, description: template.description,
-          formula: 'multiply', columnA: '', columnB: '',
+          formula: weightInput ? 'divide' : 'multiply',
+          columnA: columns[template.requiredInputs[0]?.key] || '',
+          columnB: weightInput ? columns[weightInput] : (columns[template.requiredInputs[1]?.key] || ''),
           category: template.category as any, confidence: 100, format: template.outputFormat,
-        }])
+          semanticAggregation: template.defaultAggregation,
+          semanticBehavior: template.outputBehavior,
+          weightColumn: weightInput ? columns[weightInput] : undefined,
+        }]);
+        })()
       : undefined;
 
     const updated: any = { ...dataset, rows: newRows, columns: newCols, version: (dataset.version || 1) + 1 };

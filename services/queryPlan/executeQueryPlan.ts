@@ -145,6 +145,8 @@ function evaluateExpression(expr: Expression, row: Record<string, any>): any {
 
 interface MetricStats {
     sum: number;
+    weightedSum: number;
+    weightSum: number;
     nonNullCount: number; // SQL COUNT(expression), including text values
     numericCount: number; // Numeric values used as the AVG denominator
     countAll: number;     // Total count including nulls
@@ -155,10 +157,10 @@ interface MetricStats {
 }
 
 function emptyStats(): MetricStats {
-    return { sum: 0, nonNullCount: 0, numericCount: 0, countAll: 0, min: Infinity, max: -Infinity, first: null, distinct: new Set() };
+    return { sum: 0, weightedSum: 0, weightSum: 0, nonNullCount: 0, numericCount: 0, countAll: 0, min: Infinity, max: -Infinity, first: null, distinct: new Set() };
 }
 
-function accumulateStats(stats: MetricStats, rawValue: any): void {
+function accumulateStats(stats: MetricStats, rawValue: any, rawWeight?: any): void {
     stats.countAll += 1;
     const isNull = rawValue === null || rawValue === undefined || rawValue === '';
     if (isNull) return; // COUNT skips nulls (SQL semantics)
@@ -179,12 +181,23 @@ function accumulateStats(stats: MetricStats, rawValue: any): void {
 
     stats.numericCount += 1;
     stats.sum += v;
+    if (rawWeight !== undefined) {
+        const weight = parseNum(rawWeight);
+        if (!isNaN(weight)) {
+            stats.weightedSum += v * weight;
+            stats.weightSum += weight;
+        }
+    }
     stats.min = Math.min(stats.min, v);
     stats.max = Math.max(stats.max, v);
     if (stats.first === null) stats.first = v; // Track first value for NONE
 }
 
-function resolveAggregation(stats: MetricStats, agg: AggregationType): number {
+function resolveAggregation(stats: MetricStats, metric: Metric): number {
+    if (metric.aggregation === 'AVG' && metric.weightExpression) {
+        return stats.weightSum !== 0 ? stats.weightedSum / stats.weightSum : 0;
+    }
+    const agg = metric.aggregation;
     switch (agg) {
         case 'SUM': return stats.sum;
         case 'AVG': return stats.numericCount > 0 ? stats.sum / stats.numericCount : 0;
@@ -399,7 +412,10 @@ export function executeQueryPlan(
         for (let i = 0; i < plan.metrics.length; i++) {
             const metric = plan.metrics[i];
             const rawValue = evaluateExpression(metric.expression, row);
-            accumulateStats(group.metricStats[i], rawValue);
+            const rawWeight = metric.weightExpression
+                ? evaluateExpression(metric.weightExpression, row)
+                : undefined;
+            accumulateStats(group.metricStats[i], rawValue, rawWeight);
         }
     }
 
@@ -420,7 +436,7 @@ export function executeQueryPlan(
         // Metric columns (using alias as key)
         for (let i = 0; i < plan.metrics.length; i++) {
             const metric = plan.metrics[i];
-            row[metric.alias] = resolveAggregation(group.metricStats[i], metric.aggregation);
+            row[metric.alias] = resolveAggregation(group.metricStats[i], metric);
         }
 
         data.push(row);
