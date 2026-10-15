@@ -63,12 +63,20 @@ export const createGradient = (ctx: CanvasRenderingContext2D, color: string, cha
     return gradient;
 };
 
-/** Create premium vertical gradient for bar fills (top: bright → bottom: deeper) */
-export const createBarGradient = (ctx: CanvasRenderingContext2D, color: string, chartArea: any): string | CanvasGradient => {
+/** Give bars a subtle material finish without changing their series color. */
+export const createBarGradient = (
+    ctx: CanvasRenderingContext2D,
+    color: string,
+    chartArea: any,
+    horizontal = false,
+): string | CanvasGradient => {
     if (!chartArea) return color;
-    const gradient = ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
-    gradient.addColorStop(0, color + 'B0'); // Slightly transparent at base
-    gradient.addColorStop(1, color + 'F0'); // Rich at top
+    const gradient = horizontal
+        ? ctx.createLinearGradient(chartArea.left, 0, chartArea.right, 0)
+        : ctx.createLinearGradient(0, chartArea.bottom, 0, chartArea.top);
+    gradient.addColorStop(0, darkenColor(color, 8));
+    gradient.addColorStop(0.55, color);
+    gradient.addColorStop(1, lightenColor(color, 7));
     return gradient;
 };
 

@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
     isSequentialData,
     lightenColor,
+    createBarGradient,
     selectPalette,
     generateColors,
     formatNumber,
@@ -31,6 +32,23 @@ describe('lightenColor', () => {
         const lightened = lightenColor(original, 50);
         // Should not be the same as original
         expect(lightened).not.toBe(original);
+    });
+});
+
+describe('bar finish', () => {
+    it('uses the supplied series color and respects bar orientation', () => {
+        const calls: number[][] = [];
+        const stops: Array<[number, string]> = [];
+        const gradient = { addColorStop: (at: number, color: string) => stops.push([at, color]) };
+        const ctx = { createLinearGradient: (...args: number[]) => { calls.push(args); return gradient; } } as unknown as CanvasRenderingContext2D;
+        const area = { left: 10, right: 110, top: 20, bottom: 120 };
+
+        expect(createBarGradient(ctx, '#4274dc', area, true)).toBe(gradient);
+        expect(calls[0]).toEqual([10, 0, 110, 0]);
+        expect(stops[1]).toEqual([0.55, '#4274dc']);
+        expect(createBarGradient(ctx, '#4274dc', area, false)).toBe(gradient);
+        expect(calls[1]).toEqual([0, 120, 0, 20]);
+        expect(createBarGradient(ctx, '#4274dc', undefined)).toBe('#4274dc');
     });
 });
 
