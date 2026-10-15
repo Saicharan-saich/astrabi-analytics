@@ -55,6 +55,7 @@ import {
 } from '../utils/chartUtils';
 import { sanitizeRows } from '../utils/numberSafety';
 import { effectiveDataLabelMode, shouldRenderDataLabel } from '../utils/dataLabelVisibility';
+import { layoutChartLabels } from '../utils/chartLabelLayout';
 import { MapChart } from './MapChart';
 import { CHART_TYPE_OPTIONS } from './charts/chartRegistry';
 
@@ -1652,13 +1653,23 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             } else {
                 // ── BAR / LINE / OTHER CHARTS — show data point labels ──
                 const latestData = transformedDataRef.current;
+                const renderables: Array<{
+                    text: string;
+                    font: string;
+                    x: number;
+                    y: number;
+                    width: number;
+                    height: number;
+                    horizontal: boolean;
+                    positive: boolean;
+                }> = [];
+                const mode = options.labelMode || 'all';
 
                 chart.data.datasets.forEach((dataset: any, i: number) => {
                     const meta = chart.getDatasetMeta(i);
                     if (meta.hidden) return;
 
                     // Label mode filtering: 'primary' = only dataset 0, 'all' = all datasets
-                    const mode = options.labelMode || 'all';
                     if (!shouldRenderDataLabel(mode, i)) return;
 
                     meta.data.forEach((element: any, index: number) => {
@@ -1686,52 +1697,31 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         // Preserve font emphasis, but never inherit series colors
                         // for value labels: a single selected label color applies
                         // consistently to all datasets.
-                        if (isComparisonDs) {
-                            ctx.font = `italic ${options.font.size - 1}px "Inter", sans-serif`;
-                        } else if (isSecondaryDs) {
-                            ctx.font = `bold ${options.font.size - 1}px "Inter", sans-serif`;
-                        } else {
-                            ctx.font = `${options.font.weight} ${options.font.size}px "Inter", sans-serif`;
-                        }
-                        ctx.fillStyle = options.color || '#000000';
-                        ctx.textAlign = 'center';
-
-                        const area = chart.chartArea;
-                        const labelWidth = ctx.measureText(text).width;
-                        const fontHeight = options.font.size || 12;
-                        if (chart.options.indexAxis === 'y') {
-                            const positive = Number(value) >= 0;
-                            let x = element.x + (positive ? 8 : -8);
-                            ctx.textAlign = positive ? 'left' : 'right';
-                            ctx.textBaseline = 'middle';
-                            if (positive && x + labelWidth > area.right - 2) {
-                                x = element.x - 8;
-                                ctx.textAlign = 'right';
-                            } else if (!positive && x - labelWidth < area.left + 2) {
-                                x = element.x + 8;
-                                ctx.textAlign = 'left';
-                            }
-                            x = Math.max(area.left + 2, Math.min(area.right - 2, x));
-                            ctx.fillText(text, x, element.y);
-                        } else {
-                            const positive = Number(value) >= 0;
-                            let y = element.y + (positive ? -10 : 10);
-                            ctx.textBaseline = positive ? 'bottom' : 'top';
-                            // Never discard a label merely because the mark is
-                            // close to the chart's top or bottom edge.
-                            if (positive && y - fontHeight < area.top + 2) {
-                                y = element.y + 5;
-                                ctx.textBaseline = 'top';
-                            } else if (!positive && y + fontHeight > area.bottom - 2) {
-                                y = element.y - 5;
-                                ctx.textBaseline = 'bottom';
-                            }
-                            y = Math.max(area.top + fontHeight + 2, Math.min(area.bottom - 2, y));
-                            const x = Math.max(area.left + labelWidth / 2 + 2,
-                                Math.min(area.right - labelWidth / 2 - 2, element.x));
-                            ctx.fillText(text, x, y);
-                        }
+                        const fontSize = Math.max(9, (options.font.size || 12) - (isComparisonDs || isSecondaryDs ? 1 : 0));
+                        const font = `${isComparisonDs ? 'italic' : isSecondaryDs ? 'bold' : options.font.weight} ${fontSize}px "Inter", sans-serif`;
+                        ctx.font = font;
+                        renderables.push({
+                            text,
+                            font,
+                            x: element.x,
+                            y: element.y,
+                            width: ctx.measureText(text).width + 2,
+                            height: fontSize + 2,
+                            horizontal: chart.options.indexAxis === 'y',
+                            positive: Number(value) >= 0,
+                        });
                     });
+                });
+
+                const positions = layoutChartLabels(renderables, chart.chartArea);
+                ctx.fillStyle = options.color || '#000000';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                renderables.forEach((label, index) => {
+                    const point = positions[index];
+                    if (!point) return;
+                    ctx.font = label.font;
+                    ctx.fillText(label.text, point.x, point.y);
                 });
             }
             ctx.restore();
