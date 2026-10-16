@@ -913,7 +913,8 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
         const dateParseRate = nonNull.length > 0 ? totalDateParseable / nonNull.length : 0;
 
         // Boolean token rate
-        const boolCount = nonNull.filter(v => typeof v === 'string' && BOOLEAN_TOKENS[v.toLowerCase().trim()] !== undefined).length;
+        const boolCount = nonNull.filter(v => typeof v === 'boolean'
+            || (typeof v === 'string' && BOOLEAN_TOKENS[v.toLowerCase().trim()] !== undefined)).length;
 
         const profile: ColumnProfileData = {
             name: col,
@@ -1089,18 +1090,17 @@ function layer4_rulePlanner(
             const fmt = p.dateFormatCandidate || 'YYYY-MM-DD';
             steps.push({ name: `PARSE_DATE(${fmt})`, fn: (v: any) => tryParseDateWithFormat(v, fmt) || tryParseDateAny(v)?.iso || null });
         } else if (type === ColumnType.BOOLEAN) {
-            steps.push({
-                name: 'NORMALIZE_BOOLEAN', fn: (v: any) => {
-                    if (v === true) return 'True';
-                    if (v === false) return 'False';
-                    if (typeof v === 'number') return v === 1 ? 'True' : v === 0 ? 'False' : String(v);
-                    if (typeof v !== 'string') return v;
-                    const b = BOOLEAN_TOKENS[v.toLowerCase().trim()];
-                    return b !== undefined ? (b ? 'True' : 'False') : v;
-                }
-            });
-            steps.push({ name: 'IMPUTE_UNKNOWN', fn: (v: any) => (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) ? 'Unknown' : v });
+            // BOOLEAN is a semantic role, not permission to rewrite the
+            // source's Yes/No, Y/N, True/False or native boolean values.
+            // Layer 2 has already handled whitespace and null tokens.
         } else if (type === ColumnType.DIMENSION) {
+            // A user may expose a boolean-coded field as a dimension for
+            // grouping. Keep its original category labels exactly as uploaded.
+            if (p.booleanTokenRate >= 0.6) {
+                columns.push({ name: p.name, type, originalType: 'string' });
+                plans.push({ column: p.name, type, steps });
+                continue;
+            }
             // Messy-cased columns (human-typed names like "waTtS") get aggressive
             // normalization; clean/brand columns keep preservation-aware casing.
             const titleFn = p.messyCasing ? forceTitleCase : toTitleCase;
@@ -1119,12 +1119,8 @@ function layer4_rulePlanner(
                         const valKey = Object.keys(group).find(k => k.toLowerCase().trim() === val.toLowerCase());
                         if (valKey) return group[valKey];
                     }
-                    // 2. Fallback: scan all groups (case-insensitive value match)
-                    for (const group of Object.values(CATEGORY_SYNONYMS)) {
-                        if (group[val]) return group[val];
-                        const valKey = Object.keys(group).find(k => k.toLowerCase().trim() === val.toLowerCase());
-                        if (valKey) return group[valKey];
-                    }
+                    // Never borrow a mapping from an unrelated column: "No"
+                    // may mean a return flag, not the region "North".
                     return v;
                 }
             });
@@ -1264,10 +1260,10 @@ function detectPhysicalDataType(values: any[]): PhysicalDataType {
     return kinds.size === 1 ? [...kinds][0] as PhysicalDataType : 'mixed';
 }
 
-function normalizedTypeForRole(type: ColumnType): PhysicalDataType {
+function normalizedTypeForRole(type: ColumnType, physicalType: PhysicalDataType): PhysicalDataType {
     if (type === ColumnType.METRIC) return 'number';
     if (type === ColumnType.DATE) return 'date';
-    if (type === ColumnType.BOOLEAN) return 'boolean';
+    if (type === ColumnType.BOOLEAN) return physicalType;
     if (type === ColumnType.ID || type === ColumnType.DIMENSION) return 'string';
     return 'unknown';
 }
@@ -1276,7 +1272,9 @@ function isValidNormalizedValue(value: any, type: ColumnType): boolean {
     if (value === null || value === undefined || value === '') return false;
     if (type === ColumnType.METRIC) return typeof value === 'number' && Number.isFinite(value);
     if (type === ColumnType.DATE) return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value);
-    if (type === ColumnType.BOOLEAN) return value === 'True' || value === 'False' || value === true || value === false;
+    if (type === ColumnType.BOOLEAN) return typeof value === 'boolean'
+        || (typeof value === 'string' && BOOLEAN_TOKENS[value.toLowerCase().trim()] !== undefined)
+        || (typeof value === 'number' && (value === 0 || value === 1));
     if (type === ColumnType.ID) return typeof value === 'string' || typeof value === 'number';
     return true;
 }
@@ -1315,7 +1313,7 @@ function attachConversionProfiles(
             physicalType,
             conversion: {
                 sourceType,
-                normalizedType: normalizedTypeForRole(column.type),
+                normalizedType: normalizedTypeForRole(column.type, physicalType),
                 nonNullCount,
                 convertedCount,
                 invalidCount,

@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactDOM from 'react-dom';
 import { ChevronDown, Plus, Calendar, Settings, ArrowUpDown, Filter, X, TrendingUp, List, Hash, SlidersHorizontal, Layers, MapPin, Clock, Check, Search, Calculator, GitCompareArrows, Blocks } from 'lucide-react';
-import { Dataset, ColumnType } from '../types';
+import { Dataset } from '../types';
 import type { TableCalculation } from '../utils/tableCalculations';
 import { FilterItem } from './FilterItem';
 import { DateFilterItem } from './DateFilterItem';
 import { Tooltip } from './Tooltip';
 import { QuerySelect } from './QuerySelect';
 import { resolvePhysicalBuilderFields } from '../services/questionBuilderFieldGuard';
+import { questionBuilderColumns } from '../services/questionBuilderColumns';
 import { buildAnalyticalCapabilityContract, type CapabilityFieldRule } from '../services/ai-sql';
 
 interface QuestionBuilderProps {
@@ -443,17 +444,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         setLimit(next);
     };
 
-    // Extract columns — filter out AI-hidden junk columns
-    const visibleColumns = dataset.columns.filter(c => {
-        if (!dataset.domainProfile?.columnSemantics) return true;
-        const sem = dataset.domainProfile.columnSemantics[c.name];
-        return !sem?.isHidden;
-    });
-    const metrics = visibleColumns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
-    const dims = visibleColumns.filter(c => c.type === ColumnType.DIMENSION || c.type === ColumnType.ID).map(c => c.name);
-    const countableColumns = visibleColumns.filter(c => c.type === ColumnType.DIMENSION || c.type === ColumnType.ID).map(c => c.name);
+    // Manual Builder controls expose the physical uploaded fields, including
+    // boolean flags, even when an AI profile suggests hiding a field.
+    const { metrics, dimensions: dims, countable: countableColumns, dates: dateColumns } = questionBuilderColumns(dataset);
     const isDimensionMetric = countableColumns.includes(metric);
-    const dateColumns = visibleColumns.filter(c => c.type === ColumnType.DATE).map(c => c.name);
     const capabilityContract = useMemo(
         () => dataset.aiSqlSemanticModel ? buildAnalyticalCapabilityContract(dataset.aiSqlSemanticModel) : null,
         [dataset.aiSqlSemanticModel, dataset.aiSqlSemanticRevision],

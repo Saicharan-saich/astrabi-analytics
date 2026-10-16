@@ -236,6 +236,7 @@ export function buildSemanticModel(
                 break;
             }
 
+            case ColumnType.BOOLEAN:
             case ColumnType.DIMENSION: {
                 const dimDef = classifyDimension(col.name);
                 dimensions.push({
