@@ -20,6 +20,7 @@ import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 import { DashboardDateFilter } from './DashboardDateFilter';
 import { dashboardDateFilterLabel } from '../utils/dashboardDateFilter';
 import { filterDashboardRows } from '../utils/dashboardFilterRows';
+import { dashboardFilterColumnExists, resolveDashboardFilterSource } from '../utils/dashboardFilterSource';
 
 interface DashboardProps {
   dataset?: Dataset;
@@ -126,6 +127,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     setDashboardFilters_legacy: setDashboardFilters,
     selectedDatasetId, setSelectedDatasetId,
   } = useAppStore();
+  const availableDatasets = useAppStore(state => state.datasets);
 
   // ── Multi-Dashboard Tab State ────────────────────────────────
   const [renamingDashboardId, setRenamingDashboardId] = useState<string | null>(null);
@@ -226,12 +228,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   }>>({});
   const filterQueue = useRef<Promise<void>>(Promise.resolve());
   const filterSignature = JSON.stringify(dashboardFilters);
+  const filterSource = (item: DashboardItem) => resolveDashboardFilterSource(item, dataset, availableDatasets);
+  const filterSourceError = (item: DashboardItem) => {
+    if (!dashboardFilters.length || item.ignoreGlobalFilter) return null;
+    const source = filterSource(item);
+    if (!source) return 'This card’s source dataset is not available locally. Reopen or reconnect it to apply dashboard filters.';
+    const missing = dashboardFilters.find(filter => !dashboardFilterColumnExists(source, filter.column));
+    return missing ? `The card’s source dataset does not have “${missing.column}”. This filter cannot be applied to this card.` : null;
+  };
   const isSqlCard = (item: DashboardItem) => Boolean(item.result.aiSqlRefresh
     || item.result.queryConfig?.aiSql || (!item.result.queryConfig && item.result.sql));
   const usesSqlFilter = (item: DashboardItem) => dashboardFilters.length > 0 && !item.ignoreGlobalFilter
-    && !item.result.needsLocalData && isSqlCard(item) && Boolean(dataset)
-    && (!item.datasetId || item.datasetId === dataset?.id);
-  const sqlFilterKey = (item: DashboardItem) => [activeDashboardId, dataset?.id, dataset?.version,
+    && !item.result.needsLocalData && isSqlCard(item) && !filterSourceError(item);
+  const sqlFilterKey = (item: DashboardItem) => [activeDashboardId, filterSource(item)?.id, filterSource(item)?.version,
     filterSignature, item.id, item.pinnedAt, item.result.aiSqlRefresh?.sql || item.result.queryConfig?.aiSql || item.result.sql].join(':');
 
   // Saved SQL must be evaluated at the source grain. Filtering its already
@@ -239,18 +248,19 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   // comparisons. Keep this derived answer local and never overwrite the pin.
   useEffect(() => {
     let cancelled = false;
-    if (!dataset || !dashboardFilters.length) return () => { cancelled = true; };
-    const cards = filteredItems.filter(item => !item.ignoreGlobalFilter && !item.result.needsLocalData
-      && isSqlCard(item) && (!item.datasetId || item.datasetId === dataset.id));
+    if (!dashboardFilters.length) return () => { cancelled = true; };
+    const cards = filteredItems.filter(item => usesSqlFilter(item));
     if (!cards.length) return () => { cancelled = true; };
     const run = async () => {
-      const rows = filterDashboardRows(dataset.rows, dataset.columns, dashboardFilters);
       for (const item of cards) {
         if (cancelled) return;
+        const source = filterSource(item);
+        if (!source) continue;
+        const rows = filterDashboardRows(source.rows, source.columns, dashboardFilters);
         const key = sqlFilterKey(item);
         try {
           const { rebuildDashboardItem } = await import('../services/dashboardRestore');
-          const refreshed = await rebuildDashboardItem(item, dataset, rows);
+          const refreshed = await rebuildDashboardItem(item, source, rows);
           if (!cancelled) setFilteredSqlCards(previous => ({ ...previous, [item.id]: { key, result: refreshed.result } }));
         } catch (error) {
           if (!cancelled) setFilteredSqlCards(previous => ({ ...previous, [item.id]: {
@@ -263,13 +273,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     // rebuilds concurrently while a user changes filter selections quickly.
     filterQueue.current = filterQueue.current.catch(() => {}).then(run);
     return () => { cancelled = true; };
-  }, [activeDashboardId, dashboardFilters, dataset, filteredItems]);
+  }, [activeDashboardId, dashboardFilters, dataset, availableDatasets, filteredItems]);
 
   const sqlFilterState = (item: DashboardItem) => usesSqlFilter(item)
     ? filteredSqlCards[item.id]?.key === sqlFilterKey(item) ? filteredSqlCards[item.id] : null
     : undefined;
   const visibleResult = (item: DashboardItem) => sqlFilterState(item)?.result || item.result;
   const sqlFilterView = (item: DashboardItem) => {
+    const sourceError = filterSourceError(item);
+    if (sourceError) return <div className="h-full flex flex-col items-center justify-center gap-2 p-5 text-center text-amber-700">
+      <AlertTriangle className="w-6 h-6" /><p role="alert" className="text-xs max-w-sm">{sourceError}</p>
+    </div>;
     const state = sqlFilterState(item);
     if (state === undefined || state?.result) return null;
     return <div className="h-full flex flex-col items-center justify-center gap-2 p-5 text-center text-slate-600">
@@ -288,24 +302,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     if (item.ignoreGlobalFilter) return item.result.data;
     if (dashboardFilters.length === 0 || !Array.isArray(item.result.data)) return item.result.data;
 
-    // A dashboard can hold cards pinned from DIFFERENT datasets, but filtering
-    // re-aggregates from the dataset that happens to be loaded right now. Doing
-    // that to a card from another dataset looks for columns that are not there
-    // (e.g. an Amazon card asking for "sales"/"ship_mode" inside a different
-    // workbook), every row is skipped, and the card renders "No data to
-    // display". Leave those cards on their pinned figures instead — a stale
-    // number is far better than a blank tile.
-    if (item.datasetId && dataset?.id && item.datasetId !== dataset.id) {
-      return item.result.data;
-    }
-
+    const source = filterSource(item);
+    if (!source || filterSourceError(item)) return [];
     const xKey = item.result.xKey;
     const yKey = item.result.yKey;
-    const sourceRows = dataset?.rows ?? [];
+    const sourceRows = source.rows;
     const cfg = item.result.config || item.result.queryConfig;
 
     // Pass 1: filter raw dataset rows by ALL global filters
-    const filteredSource = filterDashboardRows(sourceRows, dataset?.columns || [], dashboardFilters);
+    const filteredSource = filterDashboardRows(sourceRows, source.columns, dashboardFilters);
 
     // ── RE-AGGREGATE from filtered rows ──
     if (cfg && cfg.metric && filteredSource.length === 0) return [];
@@ -315,7 +320,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
       const agg = (cfg.aggregation || 'SUM').toUpperCase();
       const timeDims = ['day', 'week', 'month', 'quarter', 'year'];
       const isTimeDim = timeDims.includes(dimCol);
-      const dateCol = dataset?.timeContext?.anchorDateColumn || dataset?.columns?.find(c => c.type === 'DATE')?.name;
+      const dateCol = source.timeContext?.anchorDateColumn || source.columns.find(c => c.type === 'DATE')?.name;
       const groups = new Map<string, number[]>();
       filteredSource.forEach((row: any) => {
         let dimVal = '(Total)';
@@ -366,15 +371,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     const maxRows = ['bar', 'horizontalBar', 'pie', 'donut', 'groupedBar', 'stackedBar'].includes(chartVis) ? 25 : 500;
     const rawData = item.result.data || [];
     return rawData.length > maxRows ? rawData.slice(0, maxRows) : rawData;
-  }, [dashboardFilters, dataset, filteredSqlCards, filterSignature, activeDashboardId]);
+  }, [dashboardFilters, dataset, availableDatasets, filteredSqlCards, filterSignature, activeDashboardId]);
 
   // Cards restored from cloud contain definitions only. Rebuild against their
   // original local dataset, or an explicitly selected replacement.
   const restoreAttempts = useRef(new Set<string>());
   const [restoreErrors, setRestoreErrors] = useState<Record<string, string>>({});
   const handleRefreshCard = useCallback(async (item: DashboardItem, replacement?: Dataset) => {
-    const source = replacement || useAppStore.getState().datasets.find(d => d.id === item.datasetId)
-      || ((!item.datasetId || item.datasetId === dataset?.id) ? dataset : undefined);
+    const source = replacement || resolveDashboardFilterSource(item, dataset, useAppStore.getState().datasets);
     if (!source) return;
     const dashboardId = activeDashboardId;
     setRefreshingCards(prev => new Set(prev).add(item.id));
@@ -394,12 +398,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     }
   }, [dataset, activeDashboardId, updateItem]);
 
-  const availableDatasets = useAppStore(state => state.datasets);
   useEffect(() => { restoreAttempts.current.clear(); }, [activeDashboardId]);
   useEffect(() => {
     for (const item of items) {
-      const source = availableDatasets.find(d => d.id === item.datasetId)
-        || (item.datasetId === dataset?.id ? dataset : undefined);
+      const source = resolveDashboardFilterSource(item, dataset, availableDatasets);
       if (!source || !item.result.needsLocalData) continue;
       const key = `${activeDashboardId}:${item.id}:${source.id}:${source.version}`;
       if (restoreAttempts.current.has(key)) continue;

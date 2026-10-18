@@ -19,6 +19,7 @@ import * as duckdb from '@duckdb/duckdb-wasm';
 import { logger } from './logger';
 import { finiteOrNull } from '../utils/numberSafety';
 import { parseLocaleNumber } from './etlHardening';
+import { createSerializedAsyncQueue } from '../utils/serializedAsync';
 
 /**
  * Normalise a DuckDB DATE/TIMESTAMP value to a display-ready string.
@@ -68,6 +69,11 @@ const loadedTables = new Map<string, Promise<void>>();
 // array while keeping the standard table name "data"; remembering the exact
 // array prevents DuckDB from querying a stale VARCHAR schema after conversion.
 const loadedTableRows = new Map<string, any[]>();
+// The single DuckDB connection and its `data` table are shared by AI SQL,
+// dashboard filters, auto-insights and preload. A load + query is one unit:
+// interleaving DROP/CREATE from another caller can return the wrong dataset
+// or cause "table data does not exist".
+const runExclusiveDuckDB = createSerializedAsyncQueue();
 
 function withInitializationTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
     return new Promise<T>((resolve, reject) => {
@@ -455,6 +461,7 @@ export async function executeViaDuckDB(
     tableName: string,
     rows: any[]
 ): Promise<DuckDBResult> {
+  return runExclusiveDuckDB(async () => {
     try {
         // 1. Initialize DuckDB
         await initDuckDB();
@@ -498,6 +505,7 @@ export async function executeViaDuckDB(
             error: `DuckDB initialization failed: ${errorMsg}`,
         };
     }
+  });
 }
 
 /**
@@ -518,10 +526,12 @@ export function getDuckDBError(): string | null {
  * Force reload a table (e.g., after data changes).
  */
 export async function reloadTable(tableName: string, rows: any[]): Promise<void> {
+  return runExclusiveDuckDB(async () => {
     const safeName = sanitizeTableName(tableName);
     loadedTables.delete(safeName);
     loadedTableRows.delete(safeName);
     await loadDataIntoTable(tableName, rows);
+  });
 }
 
 /**
@@ -679,7 +689,7 @@ function generateDimDateRows(minDate: string, maxDate: string): any[] {
  * the real tables lets AI SQL join only what a question needs, at the right
  * grain. "data" is never overwritten, so nothing that depends on it changes.
  */
-export async function loadRelatedTables(tables: { name: string; rows: any[] }[]): Promise<string[]> {
+async function loadRelatedTablesUnlocked(tables: { name: string; rows: any[] }[]): Promise<string[]> {
     await initDuckDB();
     if (!conn) throw new Error('DuckDB connection not available');
 
@@ -699,6 +709,10 @@ export async function loadRelatedTables(tables: { name: string; rows: any[] }[])
     }
     if (loaded.length) logger.info('[DuckDB]', `Related tables available: ${loaded.join(', ')}`);
     return loaded;
+}
+
+export async function loadRelatedTables(tables: { name: string; rows: any[] }[]): Promise<string[]> {
+    return runExclusiveDuckDB(() => loadRelatedTablesUnlocked(tables));
 }
 
 export async function executeSQLViaDuckDB(
@@ -732,7 +746,7 @@ export async function executeSQLViaDuckDB(
         // 3b. Load the unjoined source tables, when the dataset has them, so a
         // query can reference them by name instead of the flattened join.
         if (relatedTables?.length) {
-            await loadRelatedTables(relatedTables);
+            await loadRelatedTablesUnlocked(relatedTables);
         }
 
         // 4. Normalize SQL for DuckDB
@@ -751,6 +765,7 @@ export async function executeSQLViaDuckDB(
         return { data: result.data, columns: result.columns };
     };
 
+    return runExclusiveDuckDB(async () => {
     try {
         return await attemptExecution();
     } catch (err) {
@@ -777,6 +792,7 @@ export async function executeSQLViaDuckDB(
         logger.error('[DuckDB]', 'executeSQLViaDuckDB error:', errorMsg);
         return { data: [], columns: [], error: errorMsg };
     }
+    });
 }
 
 /**
@@ -784,6 +800,7 @@ export async function executeSQLViaDuckDB(
  * Call this after ETL completes to warm up the engine.
  */
 export async function preloadDuckDB(tableName: string, rows: any[]): Promise<void> {
+  return runExclusiveDuckDB(async () => {
     try {
         await initDuckDB();
         await loadDataIntoTable(tableName, rows);
@@ -795,6 +812,7 @@ export async function preloadDuckDB(tableName: string, rows: any[]): Promise<voi
     } catch (err) {
         logger.warn('[DuckDB]', 'Pre-load failed (non-fatal):', err);
     }
+  });
 }
 
 /**
@@ -802,11 +820,13 @@ export async function preloadDuckDB(tableName: string, rows: any[]): Promise<voi
  * Call this when the active dataset changes.
  */
 export async function reloadDataTable(rows: any[]): Promise<void> {
+  return runExclusiveDuckDB(async () => {
     loadedTables.delete('data');
     loadedTables.delete('dim_date');
     loadedTableRows.delete('data');
     loadedTableRows.delete('dim_date');
     await loadDataIntoTable('data', rows);
+  });
 }
 
 /** Preflight used by long-running tools so initialization failures are shown before work starts. */
@@ -821,6 +841,7 @@ export async function ensureDuckDBReady(): Promise<void> {
  * the next gold or candidate result.
  */
 export async function reloadIsolatedBenchmarkData(rows: any[]): Promise<void> {
+  return runExclusiveDuckDB(async () => {
     await initDuckDB();
     if (!conn) throw new Error('DuckDB connection not available');
     const tables = Array.from(loadedTables.keys());
@@ -830,4 +851,5 @@ export async function reloadIsolatedBenchmarkData(rows: any[]): Promise<void> {
     loadedTables.clear();
     loadedTableRows.clear();
     await loadDataIntoTable('data', rows);
+  });
 }
