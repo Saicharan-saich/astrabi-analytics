@@ -17,6 +17,8 @@ import { useAppStore } from '../store/useAppStore';
 import { Dataset, DashboardItem, RefreshSchedule } from '../types';
 import { DashboardFilter } from '../store/useAppStore';
 import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
+import { DashboardDateFilter } from './DashboardDateFilter';
+import { dashboardDateFilterLabel, matchesDashboardDateFilter } from '../utils/dashboardDateFilter';
 
 interface DashboardProps {
   dataset?: Dataset;
@@ -242,7 +244,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     // the stored SQL AST, preserve the verified AI SQL result as-is.
     if (item.result.aiSqlRefresh || item.result.queryConfig?.aiSql) return item.result.data;
 
-    const isDateStr = (v: string) => /^\d{4}-\d{2}-\d{2}$/.test(v);
     const xKey = item.result.xKey;
     const yKey = item.result.yKey;
     const sourceRows = dataset?.rows ?? [];
@@ -253,23 +254,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     dashboardFilters.forEach(f => {
       filteredSource = filteredSource.filter((row: any) => {
         const val = row[f.column];
-        if (val === undefined || val === null) return true;
         const colType = dataset?.columns?.find(c => c.name === f.column)?.type;
-
-        if (colType === 'DATE' && f.values.length > 0) {
-          const d = new Date(val);
-          if (isNaN(d.getTime())) return true;
-          const yr = String(d.getFullYear());
-          const qtr = `${yr}-Q${Math.ceil((d.getMonth() + 1) / 3)}`;
-          const hierarchyTokens = f.values.filter(v => !isDateStr(v));
-          const dateRangeValues = f.values.filter(v => isDateStr(v));
-          let passedHierarchy = hierarchyTokens.length === 0;
-          let passedRange = dateRangeValues.length === 0;
-          if (hierarchyTokens.length > 0) passedHierarchy = hierarchyTokens.some(v => v === yr || v === qtr);
-          if (dateRangeValues.length >= 2) { const from = new Date(dateRangeValues[0]); const to = new Date(dateRangeValues[1]); passedRange = d >= from && d <= to; }
-          if (hierarchyTokens.length > 0 && dateRangeValues.length >= 2) return passedHierarchy || passedRange;
-          return passedHierarchy && passedRange;
-        }
+        if (colType === 'DATE') return matchesDashboardDateFilter(f, val);
+        if (val === undefined || val === null) return true;
         if (f.type === 'measure' && f.operator !== undefined && f.numericValue !== undefined) {
           const num = typeof val === 'number' ? val : parseFloat(val);
           if (isNaN(num)) return true;
@@ -285,7 +272,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     });
 
     // ── RE-AGGREGATE from filtered rows ──
-    if (cfg && cfg.metric && filteredSource.length > 0) {
+    if (cfg && cfg.metric && filteredSource.length === 0) return [];
+    if (cfg && cfg.metric) {
       const metricCol = cfg.metric;
       const dimCol = cfg.dimension || '';
       const agg = (cfg.aggregation || 'SUM').toUpperCase();
@@ -947,32 +935,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             return Array.from(valSet).sort();
           })();
 
-          // ── Date hierarchy values (year > quarter > month) ──
-          const dateHierarchy: { years: string[]; quarters: Map<string, string[]>; months: Map<string, string[]> } = (() => {
-            const years = new Set<string>();
-            const quarters = new Map<string, string[]>();
-            const months = new Map<string, string[]>();
-            if (!filterColumn || !isDateColumn) return { years: [], quarters, months };
-            const rows = dataset?.rows ?? [];
-            rows.forEach((row: any) => {
-              const raw = row[filterColumn];
-              if (!raw) return;
-              const d = new Date(raw);
-              if (isNaN(d.getTime())) return;
-              const yr = String(d.getFullYear());
-              const qtr = `Q${Math.ceil((d.getMonth() + 1) / 3)}`;
-              const qKey = `${yr}-${qtr}`;
-              const mon = d.toLocaleString('en', { month: 'short' });
-              const mKey = `${yr}-${mon}`;
-              years.add(yr);
-              if (!quarters.has(yr)) quarters.set(yr, []);
-              if (!quarters.get(yr)!.includes(qKey)) quarters.get(yr)!.push(qKey);
-              if (!months.has(qKey)) months.set(qKey, []);
-              if (!months.get(qKey)!.includes(mKey)) months.get(qKey)!.push(mKey);
-            });
-            return { years: Array.from(years).sort(), quarters, months };
-          })();
-
           const activeFilter = dashboardFilters.find(f => f.column === filterColumn);
 
           return (
@@ -1009,6 +971,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                         <span className="text-slate-500 dark:text-slate-400">
                           {f.operator} {f.numericValue}
                         </span>
+                      ) : dataset?.columns?.find(column => column.name === f.column)?.type === 'DATE' ? (
+                        <span className="text-slate-500 dark:text-slate-400">{dashboardDateFilterLabel(f)}</span>
                       ) : (
                         <span className="text-slate-500 dark:text-slate-400">
                           ∈ {f.values.length > 2 ? `${f.values.slice(0, 2).join(', ')} +${f.values.length - 2}` : f.values.join(', ')}
@@ -1107,113 +1071,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       </>
                     )}
 
-                    {/* ── DATE filter: hierarchical year/quarter/month + date range ── */}
+                    {/* ── DATE filter: choose either an inclusive range or a calendar level ── */}
                     {filterColumn && isDateColumn && (
-                      <div className="flex flex-col gap-2 flex-1 min-w-[240px]">
-                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                          Date Range / Hierarchy
-                        </label>
-
-                        {/* Date-range inputs */}
-                        {(() => {
-                          // Only populate date inputs with actual yyyy-MM-dd values, not hierarchy tokens like "2024" or "2024-Q3"
-                          const isDateStr = (v?: string) => v ? /^\d{4}-\d{2}-\d{2}$/.test(v) : false;
-                          const dateFrom = activeFilter?.values?.find(v => isDateStr(v) && (activeFilter.values!.indexOf(v) === 0 || !isDateStr(activeFilter.values![0]))) ?? '';
-                          const dateTo = activeFilter?.values?.find((v, i) => isDateStr(v) && i > 0) ?? '';
-                          return (
-                            <div className="flex flex-wrap items-center gap-2">
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium">From</span>
-                                <input
-                                  type="date"
-                                  value={dateFrom}
-                                  onChange={e => {
-                                    const from = e.target.value;
-                                    if (!from) { setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn)); return; }
-                                    // Remove any existing date-range values and keep hierarchy tokens
-                                    const hierarchyTokens = (activeFilter?.values || []).filter(v => !isDateStr(v));
-                                    const existing = dashboardFilters.filter(f => f.column !== filterColumn);
-                                    setDashboardFilters([...existing, { column: filterColumn, type: 'dimension', values: [...hierarchyTokens, from, dateTo || from] }]);
-                                  }}
-                                  className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                                />
-                              </div>
-                              <div className="flex flex-col gap-0.5">
-                                <span className="text-[9px] text-slate-400 dark:text-slate-500 font-medium">To</span>
-                                <input
-                                  type="date"
-                                  value={dateTo}
-                                  onChange={e => {
-                                    const to = e.target.value;
-                                    const from = dateFrom;
-                                    if (!from && !to) { setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn)); return; }
-                                    const hierarchyTokens = (activeFilter?.values || []).filter(v => !isDateStr(v));
-                                    const existing = dashboardFilters.filter(f => f.column !== filterColumn);
-                                    setDashboardFilters([...existing, { column: filterColumn, type: 'dimension', values: [...hierarchyTokens, from || to, to || from] }]);
-                                  }}
-                                  className="bg-white dark:bg-slate-700 border border-slate-200 dark:border-white/10 rounded-lg px-2.5 py-1.5 text-sm text-slate-800 dark:text-white focus:ring-2 focus:ring-indigo-500 outline-none"
-                                />
-                              </div>
-                            </div>
-                          );
-                        })()}
-
-                        {/* Hierarchy pills — year / quarter / month */}
-                        {dateHierarchy.years.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 max-h-[90px] overflow-y-auto pr-1">
-                            {dateHierarchy.years.map(yr => {
-                              const isActive = activeFilter?.values?.includes(yr) ?? false;
-                              return (
-                                <button
-                                  key={yr}
-                                  onClick={() => {
-                                    const existing = dashboardFilters.find(f => f.column === filterColumn);
-                                    if (isActive) {
-                                      const newVals = (existing?.values || []).filter(v => v !== yr);
-                                      if (newVals.length === 0) setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn));
-                                      else setDashboardFilters(dashboardFilters.map(f => f.column === filterColumn ? { ...f, values: newVals } : f));
-                                    } else {
-                                      if (existing) setDashboardFilters(dashboardFilters.map(f => f.column === filterColumn ? { ...f, values: [...f.values, yr] } : f));
-                                      else setDashboardFilters([...dashboardFilters, { column: filterColumn, type: 'dimension', values: [yr] }]);
-                                    }
-                                  }}
-                                  className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all border ${isActive
-                                    ? 'bg-indigo-100 dark:bg-indigo-500/30 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-500/50'
-                                    : 'bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:border-slate-300'
-                                    }`}
-                                >
-                                  {yr}
-                                </button>
-                              );
-                            })}
-                            {dateHierarchy.years.flatMap(yr => (dateHierarchy.quarters.get(yr) || []).map(q => {
-                              const isActive = activeFilter?.values?.includes(q) ?? false;
-                              return (
-                                <button
-                                  key={q}
-                                  onClick={() => {
-                                    const existing = dashboardFilters.find(f => f.column === filterColumn);
-                                    if (isActive) {
-                                      const newVals = (existing?.values || []).filter(v => v !== q);
-                                      if (newVals.length === 0) setDashboardFilters(dashboardFilters.filter(f => f.column !== filterColumn));
-                                      else setDashboardFilters(dashboardFilters.map(f => f.column === filterColumn ? { ...f, values: newVals } : f));
-                                    } else {
-                                      if (existing) setDashboardFilters(dashboardFilters.map(f => f.column === filterColumn ? { ...f, values: [...f.values, q] } : f));
-                                      else setDashboardFilters([...dashboardFilters, { column: filterColumn, type: 'dimension', values: [q] }]);
-                                    }
-                                  }}
-                                  className={`px-2 py-0.5 rounded text-[11px] font-medium transition-all border ${isActive
-                                    ? 'bg-violet-100 dark:bg-violet-500/25 text-violet-700 dark:text-violet-300 border-violet-300 dark:border-violet-500/40'
-                                    : 'bg-slate-50 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-white/10 hover:border-slate-300'
-                                    }`}
-                                >
-                                  {q}
-                                </button>
-                              );
-                            }))}
-                          </div>
-                        )}
-                      </div>
+                      <DashboardDateFilter
+                        key={filterColumn}
+                        column={filterColumn}
+                        rows={dataset?.rows ?? []}
+                        activeFilter={activeFilter}
+                        onApply={next => setDashboardFilters([
+                          ...dashboardFilters.filter(filter => filter.column !== filterColumn), next,
+                        ])}
+                        onRemove={() => setDashboardFilters(dashboardFilters.filter(filter => filter.column !== filterColumn))}
+                      />
                     )}
 
                     {/* ── DIMENSION filter: value pills ── */}
@@ -1280,7 +1149,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                   {/* Help text */}
                   {!filterColumn && (
                     <p className="mt-3 text-xs text-slate-400 dark:text-slate-500">
-                      Select a column to build a filter. Categorical fields show selectable values; numeric fields show a comparison operator; date fields show hierarchy + calendar.
+                      Select a column to build a filter. Categorical fields show selectable values; numeric fields show a comparison operator; date fields let you choose a range or a year-to-day calendar level.
                     </p>
                   )}
                 </div>

@@ -272,6 +272,16 @@ export interface DashboardFilter {
     operator?: '>' | '<' | '=' | '!=' | '>=' | '<=';
     /** Numeric: value to compare against */
     numericValue?: number;
+    /** Date filters use one explicit mode; older saved year/quarter/range values remain supported. */
+    dateMode?: 'range' | 'calendar';
+    dateRange?: { from: string; to: string };
+    dateSelection?: {
+        year: string;
+        quarter?: string;
+        month?: string;
+        weekStart?: string;
+        day?: string;
+    };
 }
 
 interface DashboardFilterState {

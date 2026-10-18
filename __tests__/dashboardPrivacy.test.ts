@@ -54,6 +54,21 @@ describe('dashboard data boundary', () => {
         expect(clean.items[0].result.aiSqlRefresh.plan.comparison.mode).toBe('total');
         expect(clean.items[0].result.aiSqlRefresh.plan.filters[0].value).toEqual(['North']);
     });
+    it('retains selected dashboard date periods without retaining unknown filter data', () => {
+        const original = dashboardFixture();
+        original.filters = [{
+            column: 'order_date', type: 'dimension', values: ['2025-02-17'], dateMode: 'calendar',
+            dateSelection: { year: '2025', quarter: '1', month: '02', weekStart: '2025-02-17' },
+            privateRows: [{ customer: 'PRIVATE_FILTER_ROW' }],
+        }];
+        const clean = sanitizeDashboard(original);
+        expect(clean.filters).toEqual([{
+            column: 'order_date', type: 'dimension', values: ['2025-02-17'], dateMode: 'calendar',
+            dateSelection: { year: '2025', quarter: '1', month: '02', weekStart: '2025-02-17' },
+        }]);
+        expect(JSON.stringify(clean)).not.toContain('PRIVATE_FILTER_ROW');
+        expect(sanitizeDashboard(clean).filters).toEqual(clean.filters);
+    });
 });
 
 // Execute the production UPSERT against an actual SQL engine. This covers
