@@ -23,7 +23,7 @@ export function restoreDashboardItems(cloudItems: DashboardItem[], localItems: D
 }
 
 /** Execute a saved card locally; never ask the LLM to recreate its query. */
-export async function rebuildDashboardItem(item: DashboardItem, dataset: Dataset): Promise<DashboardItem> {
+export async function rebuildDashboardItem(item: DashboardItem, dataset: Dataset, sourceRows: Record<string, any>[] = dataset.rows): Promise<DashboardItem> {
     const previous = item.result;
     let fresh: AnalysisResult;
     if (previous.aiSqlRefresh || previous.queryConfig?.aiSql) {
@@ -31,7 +31,7 @@ export async function rebuildDashboardItem(item: DashboardItem, dataset: Dataset
         const safe = validateReadOnlySQL(sql);
         if (!safe.ok) throw new Error(safe.reason);
         const { refreshPinnedAISQLResult } = await import('./ai-sql/pinnedResult');
-        fresh = await refreshPinnedAISQLResult(dataset, previous);
+        fresh = await refreshPinnedAISQLResult(dataset, previous, sourceRows);
     } else if (!previous.queryConfig && previous.sql) {
         // Auto-built dashboards already store executable SQL and chart-shaped
         // column names. Their insight IDs are not Question Builder registry IDs.
@@ -40,7 +40,7 @@ export async function rebuildDashboardItem(item: DashboardItem, dataset: Dataset
         const { executeSQLViaDuckDB } = await import('./duckdbEngine');
         const { sanitizeRows } = await import('./autoInsightsEngine');
         const execution = await executeSQLViaDuckDB(
-            sanitizeRows(dataset.rows), safe.sql, dataset.timeContext, dataset.relatedTables,
+            sanitizeRows(sourceRows), safe.sql, dataset.timeContext, dataset.relatedTables, dataset.rows,
         );
         if (execution.error) throw new Error(execution.error);
         fresh = {

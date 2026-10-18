@@ -14,11 +14,12 @@ import {
   Plus, Pencil, Copy, MoreHorizontal, Check, Loader2, Tag, Sparkles
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { Dataset, DashboardItem, RefreshSchedule } from '../types';
+import { AnalysisResult, Dataset, DashboardItem, RefreshSchedule } from '../types';
 import { DashboardFilter } from '../store/useAppStore';
 import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 import { DashboardDateFilter } from './DashboardDateFilter';
-import { dashboardDateFilterLabel, matchesDashboardDateFilter } from '../utils/dashboardDateFilter';
+import { dashboardDateFilterLabel } from '../utils/dashboardDateFilter';
+import { filterDashboardRows } from '../utils/dashboardFilterRows';
 
 interface DashboardProps {
   dataset?: Dataset;
@@ -220,9 +221,70 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   const [filterMeasureOp, setFilterMeasureOp] = useState<'>' | '<' | '=' | '!=' | '>=' | '<='>('>');
   const [filterMeasureValue, setFilterMeasureValue] = useState<string>('');
   const [refreshingCards, setRefreshingCards] = useState<Set<string>>(new Set());
+  const [filteredSqlCards, setFilteredSqlCards] = useState<Record<string, {
+    key: string; result?: AnalysisResult; error?: string;
+  }>>({});
+  const filterQueue = useRef<Promise<void>>(Promise.resolve());
+  const filterSignature = JSON.stringify(dashboardFilters);
+  const isSqlCard = (item: DashboardItem) => Boolean(item.result.aiSqlRefresh
+    || item.result.queryConfig?.aiSql || (!item.result.queryConfig && item.result.sql));
+  const usesSqlFilter = (item: DashboardItem) => dashboardFilters.length > 0 && !item.ignoreGlobalFilter
+    && !item.result.needsLocalData && isSqlCard(item) && Boolean(dataset)
+    && (!item.datasetId || item.datasetId === dataset?.id);
+  const sqlFilterKey = (item: DashboardItem) => [activeDashboardId, dataset?.id, dataset?.version,
+    filterSignature, item.id, item.pinnedAt, item.result.aiSqlRefresh?.sql || item.result.queryConfig?.aiSql || item.result.sql].join(':');
+
+  // Saved SQL must be evaluated at the source grain. Filtering its already
+  // aggregated chart rows would leave KPIs unchanged or corrupt multi-metric
+  // comparisons. Keep this derived answer local and never overwrite the pin.
+  useEffect(() => {
+    let cancelled = false;
+    if (!dataset || !dashboardFilters.length) return () => { cancelled = true; };
+    const cards = filteredItems.filter(item => !item.ignoreGlobalFilter && !item.result.needsLocalData
+      && isSqlCard(item) && (!item.datasetId || item.datasetId === dataset.id));
+    if (!cards.length) return () => { cancelled = true; };
+    const run = async () => {
+      const rows = filterDashboardRows(dataset.rows, dataset.columns, dashboardFilters);
+      for (const item of cards) {
+        if (cancelled) return;
+        const key = sqlFilterKey(item);
+        try {
+          const { rebuildDashboardItem } = await import('../services/dashboardRestore');
+          const refreshed = await rebuildDashboardItem(item, dataset, rows);
+          if (!cancelled) setFilteredSqlCards(previous => ({ ...previous, [item.id]: { key, result: refreshed.result } }));
+        } catch (error) {
+          if (!cancelled) setFilteredSqlCards(previous => ({ ...previous, [item.id]: {
+            key, error: error instanceof Error ? error.message : 'Could not apply this filter to the saved query.',
+          } }));
+        }
+      }
+    };
+    // DuckDB uses one local `data` table: never run two dashboard filter
+    // rebuilds concurrently while a user changes filter selections quickly.
+    filterQueue.current = filterQueue.current.catch(() => {}).then(run);
+    return () => { cancelled = true; };
+  }, [activeDashboardId, dashboardFilters, dataset, filteredItems]);
+
+  const sqlFilterState = (item: DashboardItem) => usesSqlFilter(item)
+    ? filteredSqlCards[item.id]?.key === sqlFilterKey(item) ? filteredSqlCards[item.id] : null
+    : undefined;
+  const visibleResult = (item: DashboardItem) => sqlFilterState(item)?.result || item.result;
+  const sqlFilterView = (item: DashboardItem) => {
+    const state = sqlFilterState(item);
+    if (state === undefined || state?.result) return null;
+    return <div className="h-full flex flex-col items-center justify-center gap-2 p-5 text-center text-slate-600">
+      {state?.error ? <AlertTriangle className="w-6 h-6 text-amber-500" /> : <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />}
+      <p className="text-sm font-semibold">{state?.error ? 'Filter could not be applied' : 'Applying dashboard filters…'}</p>
+      {state?.error && <p role="alert" className="text-xs max-w-sm text-amber-700">{state.error}</p>}
+    </div>;
+  };
 
   // ── Reusable helper: apply global filters to a dashboard card's data ──
   const getFilteredData = useCallback((item: DashboardItem) => {
+    if (usesSqlFilter(item)) {
+      const entry = filteredSqlCards[item.id];
+      return entry?.key === sqlFilterKey(item) ? entry.result?.data || [] : [];
+    }
     if (item.ignoreGlobalFilter) return item.result.data;
     if (dashboardFilters.length === 0 || !Array.isArray(item.result.data)) return item.result.data;
 
@@ -237,39 +299,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
       return item.result.data;
     }
 
-    // AI SQL cards can contain CTEs, window calculations, conditional
-    // aggregates and several result measures. Re-aggregating them through the
-    // single-metric dashboard filter helper destroys that result grain (often
-    // collapsing a comparison to one bar). Until filters can be compiled into
-    // the stored SQL AST, preserve the verified AI SQL result as-is.
-    if (item.result.aiSqlRefresh || item.result.queryConfig?.aiSql) return item.result.data;
-
     const xKey = item.result.xKey;
     const yKey = item.result.yKey;
     const sourceRows = dataset?.rows ?? [];
     const cfg = item.result.config || item.result.queryConfig;
 
     // Pass 1: filter raw dataset rows by ALL global filters
-    let filteredSource = sourceRows;
-    dashboardFilters.forEach(f => {
-      filteredSource = filteredSource.filter((row: any) => {
-        const val = row[f.column];
-        const colType = dataset?.columns?.find(c => c.name === f.column)?.type;
-        if (colType === 'DATE') return matchesDashboardDateFilter(f, val);
-        if (val === undefined || val === null) return true;
-        if (f.type === 'measure' && f.operator !== undefined && f.numericValue !== undefined) {
-          const num = typeof val === 'number' ? val : parseFloat(val);
-          if (isNaN(num)) return true;
-          switch (f.operator) {
-            case '>': return num > f.numericValue; case '<': return num < f.numericValue;
-            case '=': return num === f.numericValue; case '!=': return num !== f.numericValue;
-            case '>=': return num >= f.numericValue; case '<=': return num <= f.numericValue;
-            default: return true;
-          }
-        }
-        return f.values.length === 0 || f.values.includes(String(val));
-      });
-    });
+    const filteredSource = filterDashboardRows(sourceRows, dataset?.columns || [], dashboardFilters);
 
     // ── RE-AGGREGATE from filtered rows ──
     if (cfg && cfg.metric && filteredSource.length === 0) return [];
@@ -330,7 +366,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     const maxRows = ['bar', 'horizontalBar', 'pie', 'donut', 'groupedBar', 'stackedBar'].includes(chartVis) ? 25 : 500;
     const rawData = item.result.data || [];
     return rawData.length > maxRows ? rawData.slice(0, maxRows) : rawData;
-  }, [dashboardFilters, dataset]);
+  }, [dashboardFilters, dataset, filteredSqlCards, filterSignature, activeDashboardId]);
 
   // Cards restored from cloud contain definitions only. Rebuild against their
   // original local dataset, or an explicitly selected replacement.
@@ -605,8 +641,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               </h3>
             </div>
             <div className="h-[calc(100%-52px)]">
-              {item.result.needsLocalData ? missingDataView(item) : <DashboardResultVisualization
-                result={item.result}
+              {item.result.needsLocalData ? missingDataView(item) : sqlFilterView(item) || <DashboardResultVisualization
+                result={visibleResult(item)}
                 data={getFilteredData(item)}
                 formatting={item.result.formatting || formatting}
               />}
@@ -1351,8 +1387,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                   <div className="flex-1 p-2 min-h-0 overflow-hidden flex items-center justify-center bg-white">
                     <div className="w-full h-full min-h-0 overflow-hidden rounded-xl bg-white">
                       <ErrorBoundary compact label={item.title || 'Chart'}>
-                        {item.result.needsLocalData ? missingDataView(item) : <DashboardResultVisualization
-                          result={item.result}
+                        {item.result.needsLocalData ? missingDataView(item) : sqlFilterView(item) || <DashboardResultVisualization
+                          result={visibleResult(item)}
                           data={getFilteredData(item)}
                           formatting={item.result.formatting || formatting}
                         />}

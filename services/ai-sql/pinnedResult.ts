@@ -212,6 +212,7 @@ export function rebuildPinnedAISQLPresentation(
 export async function refreshPinnedAISQLResult(
     dataset: Dataset,
     previous: AnalysisResult,
+    sourceRows: Record<string, any>[] = dataset.rows,
 ): Promise<AnalysisResult> {
     const upgradedPrevious = ensurePinnedAISQLRefreshContext(previous);
     const refresh = upgradedPrevious.aiSqlRefresh;
@@ -219,10 +220,11 @@ export async function refreshPinnedAISQLResult(
 
     const semanticModel = resolveAISQLSemanticModel(dataset).model;
     const execution = await executeSQLViaDuckDB(
-        dataset.rows,
+        sourceRows,
         refresh.sql,
         semanticModel.timeContext,
         dataset.relatedTables,
+        dataset.rows,
     );
     if (execution.error) throw new Error(execution.error);
 

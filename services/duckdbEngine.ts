@@ -227,8 +227,8 @@ function sanitizeTableName(name: string): string {
  * Load an array of row objects into a DuckDB table.
  * Infers column types from the data and uses INSERT statements.
  */
-async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> {
-    if (!conn || rows.length === 0) return;
+async function loadDataIntoTable(tableName: string, rows: any[], schemaRows: any[] = rows): Promise<void> {
+    if (!conn || (rows.length === 0 && schemaRows.length === 0)) return;
 
     const safeName = sanitizeTableName(tableName);
 
@@ -248,7 +248,7 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
         await conn!.query(`DROP TABLE IF EXISTS "${safeName}"`);
 
         // Infer schema from first row
-        const sampleRow = rows[0];
+        const sampleRow = rows[0] || schemaRows[0];
         const columns = Object.keys(sampleRow);
 
         const colInfos = columns.map(col => {
@@ -262,8 +262,9 @@ async function loadDataIntoTable(tableName: string, rows: any[]): Promise<void> 
             let hasNumber = false;
             let hasString = false;
 
-            for (let i = 0; i < rows.length; i++) {
-                const val = rows[i][col];
+            const typeRows = rows.length ? rows : schemaRows;
+            for (let i = 0; i < typeRows.length; i++) {
+                const val = typeRows[i][col];
                 if (val === null || val === undefined || val === '') continue;
 
                 // A native JS number is unambiguously numeric.
@@ -704,7 +705,8 @@ export async function executeSQLViaDuckDB(
     rows: any[],
     sql: string,
     timeContext?: { minDate: string; maxDate: string; primaryDateColumn?: string },
-    relatedTables?: { name: string; rows: any[] }[]
+    relatedTables?: { name: string; rows: any[] }[],
+    schemaRows?: any[],
 ): Promise<SQLExecutionResult> {
     const attemptExecution = async (): Promise<SQLExecutionResult> => {
         // 1. Initialize DuckDB
@@ -713,7 +715,7 @@ export async function executeSQLViaDuckDB(
 
         // 2. Load data into "data" table (the standard table name used by AI prompts)
         const tableName = 'data';
-        await loadDataIntoTable(tableName, rows);
+        await loadDataIntoTable(tableName, rows, schemaRows);
 
         // 3. Load dim_date if time context provided
         if (timeContext?.minDate && timeContext?.maxDate) {
