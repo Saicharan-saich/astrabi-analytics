@@ -12,6 +12,9 @@ export interface ChartLabelCandidate {
     height: number;
     horizontal: boolean;
     positive: boolean;
+    minX?: number;
+    maxX?: number;
+    preferredDirection?: 'above' | 'below';
 }
 
 export interface ChartLabelPosition {
@@ -51,7 +54,9 @@ function candidatePositions(label: ChartLabelCandidate): ChartLabelPosition[] {
     const { x, y, width, height, horizontal, positive } = label;
     const verticalStep = height + 7;
     const horizontalStep = width + 12;
-    const preferred = positive ? -1 : 1;
+    const preferred = label.preferredDirection === 'below' ? 1
+        : label.preferredDirection === 'above' ? -1
+            : positive ? -1 : 1;
     const points: ChartLabelPosition[] = [];
 
     if (horizontal) {
@@ -100,9 +105,14 @@ export function layoutChartLabels(
             || !Number.isFinite(label.width) || !Number.isFinite(label.height)
             || label.width <= 0 || label.height <= 0) return null;
 
+        const localBounds = {
+            ...bounds,
+            left: Math.max(bounds.left, label.minX ?? bounds.left),
+            right: Math.min(bounds.right, label.maxX ?? bounds.right),
+        };
         for (const point of candidatePositions(label)) {
             const box = boxAt(point.x, point.y, label.width, label.height);
-            if (!fits(box, bounds) || occupied.some(other => overlaps(box, other))) continue;
+            if (!fits(box, localBounds) || occupied.some(other => overlaps(box, other))) continue;
             occupied.push(box);
             return point;
         }

@@ -35,7 +35,23 @@
   border-color: #dfe5ef;
   box-shadow: 0 16px 48px -24px rgb(22 34 74 / 25%), 0 2px 6px rgb(22 34 74 / 3%);
 }
-.qi-visual-stage { background-color: #fff !important; }
+.qi-visual-stage {
+  background: #f8fafc !important;
+  border-color: #dce6f1 !important;
+  box-shadow: 0 12px 32px -22px rgb(25 48 85 / 28%) !important;
+}
+html.dark .qi-visual-stage {
+  color: #e6eef8 !important;
+  background: #101b2d !important;
+  border-color: #2c405a !important;
+  box-shadow: 0 16px 36px -20px rgb(0 0 0 / 46%) !important;
+}
+.qi-visual-stage::before {
+  background: linear-gradient(90deg, transparent, #5a93d4, transparent);
+  box-shadow: none;
+  animation: none;
+  opacity: .55;
+}
 .qi-answer-canvas::before {
   content: '';
   position: absolute;
@@ -82,12 +98,12 @@
 }
 .qi-chart-type-trigger {
   color: #fff;
-  background: linear-gradient(110deg, #545cf0, #357de8 66%, #268fcf);
-  box-shadow: 0 8px 18px -9px rgb(53 94 220 / 70%), inset 0 1px 0 rgb(255 255 255 / 24%);
+  background: #3977bf;
+  box-shadow: 0 5px 12px -8px rgb(38 84 145 / 50%);
 }
 .qi-chart-type-trigger:hover {
-  filter: brightness(1.06);
-  box-shadow: 0 11px 22px -9px rgb(53 94 220 / 70%);
+  background: #2c67ad;
+  box-shadow: 0 6px 14px -8px rgb(38 84 145 / 55%);
 }
 .qi-zoom-control {
   background: #fff;
@@ -100,11 +116,31 @@
     #fff;
 }
 .qi-visual[data-appearance='dark'] .qi-visual-toolbar {
-  border-bottom-color: #2c3a55;
-  background: linear-gradient(180deg, #16223a, #111c31);
+  border-bottom-color: #293c54;
+  background: #17243a;
 }
 .qi-visual[data-appearance='dark'] .qi-visual-plot {
-  background: radial-gradient(30rem 14rem at 0% 0%, rgb(94 110 235 / 11%), transparent 65%), #111c31;
+  background: #111e31;
+}
+.qi-visual[data-appearance='dark'] .qi-visual-toolbar > button:not(.bg-indigo-600):not(.bg-emerald-600):not(.bg-blue-600):not(.bg-slate-700),
+.qi-visual[data-appearance='dark'] .qi-zoom-control {
+  color: #dce8f7;
+  background: #213149;
+  border-color: #364a64;
+  box-shadow: none;
+}
+.qi-visual[data-appearance='dark'] .qi-visual-toolbar > button.bg-indigo-600,
+.qi-visual[data-appearance='dark'] .qi-visual-toolbar > button.bg-slate-700 {
+  background: #346ca9;
+  color: #f3f8ff;
+  box-shadow: none;
+  --tw-ring-color: rgb(126 173 221 / 30%);
+}
+.qi-visual[data-appearance='dark'] .qi-zoom-control button {
+  color: #dce8f7;
+}
+.qi-visual[data-appearance='dark'] .qi-chart-type-trigger {
+  background: #356fae;
 }
 .qi-visual button:focus-visible,
 .qi-answer-workspace button:focus-visible,

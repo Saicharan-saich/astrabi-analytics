@@ -56,6 +56,7 @@ import {
 import { sanitizeRows } from '../utils/numberSafety';
 import { effectiveDataLabelMode, shouldRenderDataLabel } from '../utils/dataLabelVisibility';
 import { layoutChartLabels } from '../utils/chartLabelLayout';
+import { extraTooltipMetricKeys, readableChartTextColor } from '../utils/chartPresentation';
 import { MapChart } from './MapChart';
 import { CHART_TYPE_OPTIONS } from './charts/chartRegistry';
 
@@ -203,34 +204,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     const [zoom, setZoom] = useState(1);
     const [chartSelectorOpen, setChartSelectorOpen] = useState(false);
 
-    // Detect the ACTUAL surface behind the chart (not the global app theme):
-    // walk up the DOM to the first opaque background and judge its luminance.
-    // This is correct even where a panel's background disagrees with the app
-    // theme — e.g. the builder is a white panel even in dark mode, so the chart
-    // there must use dark text/labels, while a dark dashboard card uses light.
+    // The chart surface follows the app theme. Reading an ancestor's computed
+    // background-color is unreliable for gradient-backed cards (it is often
+    // transparent even when the rendered surface is dark).
     const [isDark, setIsDark] = useState(() =>
         typeof document !== 'undefined' && document.documentElement.classList.contains('dark'));
     const detectSurface = useCallback(() => {
-        // Inspect the host card, not the chart's own painted plot. Otherwise
-        // changing the plot theme would make surface detection self-referential.
-        let node: HTMLElement | null = (resolvedRef.current?.closest('.qi-visual')?.parentElement as HTMLElement | null)
-            || resolvedRef.current;
-        while (node) {
-            const bg = getComputedStyle(node).backgroundColor;
-            const m = bg && bg.match(/rgba?\(([^)]+)\)/);
-            if (m) {
-                const parts = m[1].split(',').map(s => parseFloat(s.trim()));
-                const [r, g, b, a = 1] = parts;
-                if (a > 0.2) { // opaque enough to be "the surface"
-                    setIsDark((0.299 * r + 0.587 * g + 0.114 * b) < 140);
-                    return;
-                }
-            }
-            node = node.parentElement;
-        }
-        // Fallback: app theme.
         setIsDark(typeof document !== 'undefined' && document.documentElement.classList.contains('dark'));
-    }, [resolvedRef]);
+    }, []);
     useEffect(() => {
         detectSurface();
         if (typeof document === 'undefined') return;
@@ -488,6 +469,17 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         } catch { return value.toLocaleString(); }
     };
 
+    const formatCompactMetricLabel = (value: number, metricName: string): string => {
+        const full = formatForMetricName(value, metricName);
+        if (Math.abs(value) >= 1000 && full.includes('$')) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency', currency: 'USD', notation: 'compact',
+                maximumFractionDigits: 1,
+            }).format(value);
+        }
+        return full;
+    };
+
     // Compact axis formatter — uses K/M/B by default for axis ticks to save space
     const formatAxisNumber = (value: number | undefined | null) => {
         if (value === undefined || value === null || isNaN(value)) return '0';
@@ -702,8 +694,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // palest steps of the default sequential palette so the smallest bars
         // stay readable on BOTH light and dark surfaces (the default light end,
         // #dbeafe, vanishes on white).
-        if (isMagnitudeBar && !formatting?.colorMode) {
-            palette = ['#82adfa', '#6999f2', '#5485e9', '#4274dc', '#3564ca', '#2b55b5', '#21469b'];
+        if (isMagnitudeBar && (!formatting?.colorMode || formatting.colorMode === 'vibrant')) {
+            palette = isDark
+                ? ['#65a5d8', '#5b9bd3', '#518fc9', '#4884bf', '#3e79b3', '#356ea6', '#2c6298']
+                : ['#87b8e5', '#75a8df', '#6399d8', '#528ace', '#437cc2', '#376db2', '#2e609f'];
         }
 
         const baseColor = palette[Math.floor(palette.length / 2)]; // Mid-tone
@@ -925,12 +919,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             backgroundColor: isFillChart
                     ? (context: any) => createGradient(context.chart.ctx, baseColor, context.chart.chartArea)
                     : isBarVariant
-                        ? (context: any) => createBarGradient(
-                            context.chart.ctx,
-                            primaryColors[context.dataIndex] || baseColor,
-                            context.chart.chartArea,
-                            chartType === 'horizontalBar',
-                        )
+                        ? primaryColors
                         : `${baseColor}DD`,
             borderColor: isBarVariant
                 ? 'transparent'
@@ -946,7 +935,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             pointBorderWidth: 2,
             pointHoverBorderWidth: 3,
             pointHoverBackgroundColor: '#fff',
-            borderRadius: isBarVariant ? 11 : 0,
+            borderRadius: isBarVariant ? 7 : 0,
             borderSkipped: false,
             maxBarThickness: 64,
             barPercentage: isBarVariant ? 0.72 : undefined,
@@ -1123,9 +1112,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             : [];
 
         const SECONDARY_COLORS = [
-            { border: '#f59e0b', bg: '#f59e0b40' }, // Amber
-            { border: '#10b981', bg: '#10b98140' }, // Emerald
-            { border: '#f43f5e', bg: '#f43f5e40' }, // Rose
+            { border: isDark ? '#5bd4c2' : '#0f9c8f', bg: isDark ? '#5bd4c240' : '#0f9c8f30' },
+            { border: isDark ? '#e8b576' : '#c47c33', bg: isDark ? '#e8b57640' : '#c47c3330' },
+            { border: isDark ? '#dc9eb5' : '#bc668a', bg: isDark ? '#dc9eb540' : '#bc668a30' },
         ];
 
         // Determine axis mode: compare primary vs secondary max values
@@ -1163,6 +1152,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
             datasets.push({
                 label: humanLabel,
+                qiSecondaryMetric: true,
                 data: secValues,
                 type: isBarType ? 'bar' as const : 'line' as const,
                 borderColor: colorSet.border,
@@ -1170,7 +1160,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 borderWidth: isBarType ? 1.5 : 2.5,
                 pointRadius: isBarType ? 0 : 4,
                 pointHoverRadius: isBarType ? 0 : 6,
-                pointBackgroundColor: '#fff',
+                pointBackgroundColor: isDark ? '#12243c' : '#fff',
                 pointBorderColor: colorSet.border,
                 pointBorderWidth: 2,
                 fill: isAreaType,
@@ -1184,7 +1174,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             labels,
             datasets
         };
-    }, [transformedData, xKey, yKey, chartType, calculatedYLabel, formatting, data, config, seriesKey, disableAutoSeries]);
+    }, [transformedData, xKey, yKey, chartType, calculatedYLabel, formatting, data, config, seriesKey, disableAutoSeries, isDark]);
 
     const options = useMemo(() => {
         const isPieChart = chartType === 'pie' || chartType === 'doughnut' || chartType === 'gauge';
@@ -1201,7 +1191,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const DATA_LABEL_SIZES: Record<string, number> = { xs: 10, sm: 12, md: 14, lg: 16 };
         const AXIS_LABEL_SIZES: Record<string, number> = { xs: 10, sm: 12, md: 14, lg: 17 };
         const dataLabelFontSize = DATA_LABEL_SIZES[formatting?.dataLabelSize || 'md'] || 11;
-        const axisLabelFontSize = AXIS_LABEL_SIZES[formatting?.axisLabelSize || 'md'] || 12;
+        const categoryCount = chartData?.labels?.length || 0;
+        const axisLabelFontSize = Math.min(
+            AXIS_LABEL_SIZES[formatting?.axisLabelSize || 'md'] || 12,
+            categoryCount > 10 ? 11 : 17,
+        );
         const prefersReducedMotion = typeof window !== 'undefined'
             && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         const secondaryAxisColor = chartData?.datasets?.find((ds: any) => ds.yAxisID === 'y1')?.borderColor;
@@ -1224,13 +1218,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         return formatCompactLabel(val);
                     },
                     secondaryFormatter: (val: number, metricName: string) => {
-                        return formatForMetricName(val, metricName);
+                        return formatCompactMetricLabel(val, metricName);
                     },
                     primaryLabel: yLabel || yKey || '',
-                    // Default to true black on light backgrounds — slate grey read as faint over the chart.
-                    // Charts use a light canvas in both app themes. Keep every
-                    // value label black by default, independent of series color.
-                    color: formatting?.dataLabelColor || '#000000',
+                    color: readableChartTextColor(formatting?.dataLabelColor, isDark, isDark ? '#ecf4ff' : '#000000'),
                     font: {
                         weight: formatting?.dataLabelBold !== false ? 'bold' : 'normal',
                         size: dataLabelFontSize
@@ -1270,7 +1261,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                     formatting?.headerSize === 'xl' ? 24 : 21,
                         weight: formatting?.headerBold !== false ? 'bold' as const : 'normal' as const
                     },
-                    color: formatting?.headerColor || (isDark ? '#f8fafc' : '#000000'),
+                    color: readableChartTextColor(formatting?.headerColor, isDark, isDark ? '#f8fafc' : '#172a45'),
                     padding: {
                         top: 10,
                         bottom: 15
@@ -1402,17 +1393,20 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                 }
                             }
 
-                            // Always show secondary metric values from the data row
+                            // The tooltip body already shows every plotted series.
+                            // Include only extra numeric fields from the result row.
                             const metaKeys = new Set([xKey, yKey, 'previous_value', 'previous_period_label', 'growth_pct',
                                 'difference', 'raw_value', 'rawValue', '__original_value', '_original',
                                 'x', 'value', 'period', 'metric']);
                             const isCalcKey = (k: string) => /running_total|cumulative|percent_of_total|pct_of_total|rank|percentile|moving_avg|pct_diff|diff_from_prev|_sum$|_count$|_avg$|_min$|_max$/i.test(k);
-                            Object.keys(dp).forEach(k => {
-                                if (!metaKeys.has(k) && !isCalcKey(k) && typeof dp[k] === 'number') {
-                                    const humanName = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-                                    const formatted = formatForMetricName(dp[k], k);
-                                    lines.push(`  ● ${humanName}: ${formatted}`);
-                                }
+                            const plottedLabels = [
+                                ...contexts.map(context => String(context.dataset?.label || '')),
+                                ...(config?.secondaryMetrics || []),
+                            ];
+                            extraTooltipMetricKeys(dp, plottedLabels, metaKeys).forEach(k => {
+                                if (isCalcKey(k)) return;
+                                const humanName = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                                lines.push(`  ● ${humanName}: ${formatForMetricName(dp[k], k)}`);
                             });
 
                             return lines.length > 0 ? lines.join('\n') : '';
@@ -1442,14 +1436,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     },
                     ticks: {
                         display: xVisible ?? true,
-                        maxRotation: isHorizontal ? 0 : 45,
+                        maxRotation: isHorizontal ? 0 : categoryCount > 10 ? 38 : 45,
                         minRotation: 0,
                         font: {
                             size: axisLabelFontSize,
                             family: "'Inter', 'system-ui', -apple-system, sans-serif",
                             weight: formatting?.axisBold !== false ? '600' as const : ('500' as any)
                         },
-                        color: formatting?.axisColor || (isDark ? '#dbe4f1' : '#52637d'),
+                        color: readableChartTextColor(formatting?.axisColor, isDark, isDark ? '#c5d3e5' : '#52637d'),
                         padding: 11,
                         // For horizontal bars, X-axis is the VALUE axis — format numbers
                         // For vertical bars, X-axis is the CATEGORY axis — no callback needed
@@ -1482,7 +1476,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             family: "'Inter', 'system-ui', -apple-system, sans-serif",
                             weight: formatting?.axisBold !== false ? '600' as const : ('500' as any)
                         },
-                        color: formatting?.axisColor || (isDark ? '#dbe4f1' : '#52637d'),
+                        color: readableChartTextColor(formatting?.axisColor, isDark, isDark ? '#c5d3e5' : '#52637d'),
                         padding: 11,
                         ...(!isHorizontal ? {
                             callback: function (value: any) {
@@ -1683,8 +1677,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     height: number;
                     horizontal: boolean;
                     positive: boolean;
+                    minX?: number;
+                    maxX?: number;
+                    preferredDirection?: 'above' | 'below';
                 }> = [];
                 const mode = options.labelMode || 'all';
+                const categoryCount = chart.data.labels?.length || 0;
+                const categoryWidth = categoryCount > 0 ? chart.chartArea.width / categoryCount : 0;
+                const denseCategories = categoryCount > 10 && categoryWidth < 78;
 
                 chart.data.datasets.forEach((dataset: any, i: number) => {
                     const meta = chart.getDatasetMeta(i);
@@ -1699,7 +1699,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
                         // Determine dataset type first
                         const isComparisonDs = i === 1 && latestData.some((d: any) => d.previous_value !== undefined);
-                        const isSecondaryDs = i >= 2;
+                        const isSecondaryDs = dataset.qiSecondaryMetric === true;
 
                         // Skip near-zero values for primary/comparison datasets only
                         // Secondary metrics (like discount) always show labels even for 0
@@ -1707,7 +1707,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
                         // Format the label text based on dataset type
                         let text: string;
-                        if (options.secondaryFormatter && dataset.label && dataset.label !== options.primaryLabel) {
+                        if (isSecondaryDs && options.secondaryFormatter && dataset.label) {
                             text = options.secondaryFormatter(value, dataset.label);
                         } else if (options.formatter) {
                             text = options.formatter(value, { dataset });
@@ -1718,9 +1718,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         // Preserve font emphasis, but never inherit series colors
                         // for value labels: a single selected label color applies
                         // consistently to all datasets.
-                        const fontSize = Math.max(9, (options.font.size || 12) - (isComparisonDs || isSecondaryDs ? 1 : 0));
+                        const baseFontSize = denseCategories ? Math.min(options.font.size || 12, 11) : (options.font.size || 12);
+                        const fontSize = Math.max(9, baseFontSize - (isComparisonDs || isSecondaryDs ? 1 : 0));
                         const font = `${isComparisonDs ? 'italic' : isSecondaryDs ? 'bold' : options.font.weight} ${fontSize}px "Inter", sans-serif`;
                         ctx.font = font;
+                        const isVerticalCategory = chart.options.indexAxis !== 'y' && chart.scales?.x?.type === 'category';
+                        const categoryCenter = isVerticalCategory ? chart.scales.x.getPixelForTick(index) : null;
                         renderables.push({
                             text,
                             font,
@@ -1730,6 +1733,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             height: fontSize + 2,
                             horizontal: chart.options.indexAxis === 'y',
                             positive: Number(value) >= 0,
+                            minX: categoryCenter !== null && Number.isFinite(categoryCenter)
+                                ? categoryCenter - categoryWidth * 0.49 : undefined,
+                            maxX: categoryCenter !== null && Number.isFinite(categoryCenter)
+                                ? categoryCenter + categoryWidth * 0.49 : undefined,
+                            preferredDirection: isSecondaryDs && (dataset.type === 'line' || meta.type === 'line')
+                                ? 'below' : undefined,
                         });
                     });
                 });

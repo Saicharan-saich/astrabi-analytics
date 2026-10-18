@@ -70,4 +70,24 @@ describe('Cartesian data label placement', () => {
         expect(placements.filter(Boolean).length).toBeLessThan(8);
         expect(placements.filter(Boolean).length).toBeGreaterThan(0);
     });
+
+    it('keeps dense city labels with their category and separates bar and line values', () => {
+        const cityPlot: ChartLabelBounds = { left: 0, right: 900, top: 0, bottom: 190 };
+        const inputs = Array.from({ length: 15 }, (_, index) => {
+            const center = index * 60 + 30;
+            return [
+                label({ x: center, y: 55, width: 43, height: 13, minX: center - 29, maxX: center + 29 }),
+                label({ x: center, y: 150, width: 33, height: 12, minX: center - 29, maxX: center + 29, preferredDirection: 'below' as const }),
+            ];
+        }).flat();
+        const placements = layoutChartLabels(inputs, cityPlot);
+        expect(placements.every(Boolean)).toBe(true);
+        placements.forEach((position, index) => {
+            expect(position!.x).toBeGreaterThanOrEqual(inputs[index].minX!);
+            expect(position!.x).toBeLessThanOrEqual(inputs[index].maxX!);
+            for (let previous = 0; previous < index; previous++) {
+                expect(rectanglesDoNotOverlap(position!, placements[previous]!, inputs[index], inputs[previous])).toBe(true);
+            }
+        });
+    });
 });

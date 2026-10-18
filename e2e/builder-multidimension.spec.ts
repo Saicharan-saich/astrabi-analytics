@@ -30,6 +30,9 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.getByLabel('Email Address').fill(user.email);
     await page.getByLabel('Password', { exact: true }).fill('LocalFixtureOnly123');
     await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+    if (await page.getByTitle('Switch to light mode').isVisible()) {
+        await page.getByTitle('Switch to light mode').click();
+    }
     await page.getByRole('button', { name: 'Data Source', exact: true }).click();
 
     const workbook = XLSX.utils.book_new();
@@ -99,5 +102,15 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.locator('.qi-visual-stage button[title="Show labels for all series"]').click();
     await expect.poll(() => page.evaluate(() => (window as any).__qiValueLabelInks.length)).toBeGreaterThanOrEqual(8);
     const inks = await page.evaluate(() => (window as any).__qiValueLabelInks as string[]);
-    expect(inks.every(color => color === '#000000' || color === 'rgb(0, 0, 0)')).toBe(true);
+    expect(inks.every(color => color === '#000000' || color === 'rgb(0, 0, 0)'), `Light label colors: ${inks.join(', ')}`).toBe(true);
+
+    await page.getByTitle('Switch to dark mode').click();
+    await expect(page.locator('.qi-visual[data-appearance="dark"]')).toBeVisible();
+    await page.locator('.qi-visual-stage button[title="Hide labels"]').click();
+    await page.evaluate(() => { (window as any).__qiValueLabelInks = []; });
+    await page.locator('.qi-visual-stage button[title="Show labels for all series"]').click();
+    await expect.poll(() => page.evaluate(() => (window as any).__qiValueLabelInks.length)).toBeGreaterThanOrEqual(8);
+    const darkInks = await page.evaluate(() => (window as any).__qiValueLabelInks as string[]);
+    expect(darkInks.every(color => color === '#ecf4ff' || color === 'rgb(236, 244, 255)'), `Dark label colors: ${darkInks.join(', ')}`).toBe(true);
+    await expect(page.locator('.qi-visual-stage')).toHaveCSS('background-color', 'rgb(16, 27, 45)');
 });
