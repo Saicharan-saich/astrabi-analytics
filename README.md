@@ -13,6 +13,40 @@
 
 ---
 
+## Quick Start
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) v18+
+
+In your first terminal, clone the repository, install both sets of dependencies, and start the backend:
+
+```bash
+git clone https://github.com/Saicharan-saich/astrabi-analytics.git
+cd astrabi-analytics
+npm install
+cd backend
+npm install
+node server.js
+```
+
+Open a second terminal in the `astrabi-analytics` folder and start the frontend:
+
+```bash
+npm run dev
+```
+
+Open **http://localhost:3000** in your browser.
+
+### First Use
+
+1. **Register** an account on the sign-in page
+2. **Upload a CSV** or click **Try Sample Data**
+3. The ETL pipeline automatically cleans and profiles your data
+4. Navigate to **Workbench** and explore using the Question Builder or pre-built questions
+
+---
+
 ## What is QuickInsight?
 
 QuickInsight is a **self-service exploratory data analytics (EDA) tool** that lets anyone — analysts, managers, or non-technical users — upload a dataset and instantly explore it through interactive charts, dashboards, and a guided question builder. No SQL, no code, no setup.
@@ -31,53 +65,6 @@ Upload a CSV, and QuickInsight's **semantic inference engine** automatically cla
 | **Smart Visualizations** | Automatically selects the best chart type (bar, line, area, doughnut, treemap, combo, KPI card) based on data shape, cardinality, and query structure. |
 | **Pinnable Dashboards** | Pin any analysis to a persistent, drag-and-drop dashboard with auto-saving layout. |
 | **Authentication** | Built-in JWT authentication with secure session management. |
-
----
-
-## Quick Start
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/) v18+
-
-### 1. Clone
-
-```bash
-git clone https://github.com/Saicharan-saich/QuickInsight-analytics.git
-cd QuickInsight-analytics
-```
-
-### 2. Install
-
-```bash
-# Frontend
-npm install
-
-# Backend
-cd backend
-npm install
-cd ..
-```
-
-### 3. Run
-
-```bash
-# Terminal 1 — Backend API (port 5002)
-cd backend
-node server.js
-
-# Terminal 2 — Frontend (port 3000)
-npm run dev
-```
-
-Open **http://localhost:3000** in your browser.
-
-### 4. First Use
-
-1. **Register** an account on the sign-in page
-2. **Upload a CSV** or click **Try Sample Data**
-3. The ETL pipeline automatically cleans and profiles your data
-4. Navigate to **Workbench** and explore using the Question Builder or pre-built questions
 
 ---
 
@@ -129,7 +116,7 @@ CSV Upload
 ## Project Structure
 
 ```
-QuickInsight-analytics/
+astrabi-analytics/
 ├── App.tsx                     # Application entry point
 ├── types.ts                    # TypeScript interfaces
 ├── components/
