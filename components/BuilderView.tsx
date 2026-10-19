@@ -744,20 +744,23 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 {result && !error && (
                     <>
                         <div className="w-px h-5 bg-slate-200 mx-1" />
-                        {(['visual', 'sql', 'data'] as const).map(tab => (
-                            <button
-                                key={tab}
-                                onClick={() => setContentTab(tab)}
-                                className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${contentTab === tab
-                                    ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300 border-indigo-300'
-                                    : 'text-slate-700 hover:text-indigo-700 bg-white hover:bg-indigo-50 border-slate-300 shadow-sm'
-                                    }`}
-                            >
-                                {tab === 'visual' ? <><BarChart2 className="w-3 h-3" /> Visual</> :
-                                    tab === 'sql' ? <><Code className="w-3 h-3" /> SQL</> :
-                                        <><Table2 className="w-3 h-3" /> Data</>}
-                            </button>
-                        ))}
+                        <div className="qi-builder-view-tabs flex items-center gap-1" role="group" aria-label="Result view">
+                            {(['visual', 'sql', 'data'] as const).map(tab => (
+                                <button
+                                    key={tab}
+                                    aria-pressed={contentTab === tab}
+                                    onClick={() => setContentTab(tab)}
+                                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${contentTab === tab
+                                        ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300 border-indigo-300'
+                                        : 'text-slate-700 hover:text-indigo-700 bg-white hover:bg-indigo-50 border-slate-300 shadow-sm'
+                                        }`}
+                                >
+                                    {tab === 'visual' ? <><BarChart2 className="w-3 h-3" /> Visual</> :
+                                        tab === 'sql' ? <><Code className="w-3 h-3" /> SQL</> :
+                                            <><Table2 className="w-3 h-3" /> Data</>}
+                                </button>
+                            ))}
+                        </div>
                     </>
                 )}
 
@@ -833,7 +836,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
                 {/* Compact KPI + Actions */}
                 {result && !error && (
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="qi-builder-actions-toolbar flex flex-wrap items-center gap-2 min-w-0">
                         {/* Actions stay beside the workspace tabs; the redundant summary now lives in the result view. */}
                         {/* Export */}
                         <button onClick={exportToCSV} className="flex items-center text-sm font-bold text-slate-700 hover:text-indigo-700 bg-white hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all border border-slate-300 shadow-sm whitespace-nowrap" title="Export CSV">

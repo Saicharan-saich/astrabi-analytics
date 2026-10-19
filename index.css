@@ -3168,3 +3168,24 @@ html.light .qi-theme-analyst .qi-ai-frame {
   .qi-builder-layout,
   .qi-builder-splitter::before { transition: none !important; }
 }
+
+/* Keep all result actions discoverable as the user narrows the result pane.
+   The tab switch stays together; secondary actions flow to the next row. */
+@media (min-width: 1180px) {
+  .qi-builder-commandbar {
+    flex-wrap: wrap !important;
+    align-content: center;
+    row-gap: 0.45rem;
+    overflow: visible;
+    scrollbar-width: none;
+  }
+
+  .qi-builder-view-tabs,
+  .qi-builder-actions-toolbar {
+    max-width: 100%;
+  }
+
+  .qi-builder-actions-toolbar {
+    flex: 0 1 auto;
+  }
+}

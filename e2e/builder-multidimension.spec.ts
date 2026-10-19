@@ -91,6 +91,13 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.locator('.qi-builder-dimension button[aria-haspopup="listbox"]').first().click();
     await page.getByRole('option', { name: 'trade scope', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Visual', exact: true })).toBeVisible({ timeout: 30000 });
+    const commandbar = page.locator('.qi-builder-commandbar');
+    await expect.poll(() => commandbar.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(2);
+    await splitter.focus();
+    await page.keyboard.press('End');
+    await expect.poll(() => commandbar.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(2);
+    await expect(commandbar.getByRole('button', { name: 'Pin', exact: true })).toBeVisible();
+    await splitter.dblclick();
     await expect(undo).toBeDisabled();
     await page.getByRole('button', { name: 'Options', exact: true }).click();
     await page.getByRole('button', { name: /Add Dimension/i }).click();
