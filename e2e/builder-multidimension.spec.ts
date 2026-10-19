@@ -74,15 +74,15 @@ test('adding a third grouping dimension automatically shows facet panels', async
 
     await expect(page.getByRole('button', { name: 'Watch how Question Builder works' })).toBeVisible();
     await page.getByRole('button', { name: 'Watch how Question Builder works' }).click();
-    const guide = page.getByRole('dialog', { name: /Build a useful visual in about 70 seconds/i });
+    const guide = page.getByRole('dialog', { name: /Build a useful visual in under two minutes/i });
     await expect(guide).toBeVisible();
-    await expect(guide.locator('video')).toHaveAttribute('poster', '/tutorials/question-builder-guide-poster.svg');
+    await expect(guide.locator('video')).toHaveAttribute('poster', '/tutorials/question-builder-guide-poster.png');
     await expect(guide.locator('video source')).toHaveAttribute('src', '/tutorials/question-builder-guide.webm');
     await expect(guide.locator('video track[kind="captions"]')).toHaveAttribute('src', '/tutorials/question-builder-guide.vtt');
     await expect.poll(
         () => guide.locator('video').evaluate(video => Number.isFinite((video as HTMLVideoElement).duration) ? Math.round((video as HTMLVideoElement).duration) : 0),
         { timeout: 15000 },
-    ).toBeGreaterThanOrEqual(23);
+    ).toBeGreaterThanOrEqual(90);
     await page.getByRole('button', { name: 'Close Question Builder video' }).click();
     await expect(guide).toBeHidden();
 

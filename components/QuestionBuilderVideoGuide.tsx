@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import { BookOpen, CirclePlay, Keyboard, X } from 'lucide-react';
 
 const VIDEO_SRC = '/tutorials/question-builder-guide.webm';
-const POSTER_SRC = '/tutorials/question-builder-guide-poster.svg';
+const POSTER_SRC = '/tutorials/question-builder-guide-poster.png';
 
 export const QuestionBuilderVideoGuide: React.FC = () => {
     const [isOpen, setIsOpen] = useState(false);
@@ -78,10 +78,10 @@ export const QuestionBuilderVideoGuide: React.FC = () => {
                                     <BookOpen className="h-4 w-4" aria-hidden="true" /> Guided walkthrough
                                 </div>
                                 <h2 id="question-builder-video-title" className="text-lg font-black sm:text-xl">
-                                    Build a useful visual in about 70 seconds
+                                    Build a useful visual in under two minutes
                                 </h2>
                                 <p id="question-builder-video-description" className="mt-1 text-sm text-slate-300">
-                                    Follow the visible cursor with narration and captions as a complete visual is built and pinned.
+                                    Watch the current Question Builder with narration and captions as a visual is built and pinned.
                                 </p>
                             </div>
                             <button
@@ -113,7 +113,6 @@ export const QuestionBuilderVideoGuide: React.FC = () => {
                                         src="/tutorials/question-builder-guide.vtt"
                                         srcLang="en"
                                         label="English"
-                                        default
                                     />
                                     Your browser cannot play this video. Use the written steps below instead.
                                 </video>
@@ -121,23 +120,23 @@ export const QuestionBuilderVideoGuide: React.FC = () => {
 
                             <div className="mt-4 grid gap-3 sm:grid-cols-3">
                                 <div className="rounded-xl border border-white/10 bg-white/5 p-3">
-                                    <div className="text-xs font-black text-indigo-300">1. Choose the calculation</div>
-                                    <p className="mt-1 text-xs leading-relaxed text-slate-300">Select what to measure and how to aggregate it, such as Sum of sales.</p>
+                                    <div className="text-xs font-black text-indigo-300">1. Build the question</div>
+                                    <p className="mt-1 text-xs leading-relaxed text-slate-300">Pick a measure and calculation, then group by time or a category. The answer appears in words.</p>
                                 </div>
                                 <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                                     <div className="text-xs font-black text-cyan-300">2. Shape the answer</div>
-                                    <p className="mt-1 text-xs leading-relaxed text-slate-300">Add dimensions, filters, sorting and limits. Each choice updates the result.</p>
+                                    <p className="mt-1 text-xs leading-relaxed text-slate-300">Add or remove measures, filter values, and use sorting or limits. Each choice updates the result.</p>
                                 </div>
                                 <div className="rounded-xl border border-white/10 bg-white/5 p-3">
                                     <div className="text-xs font-black text-emerald-300">3. Finish and share</div>
-                                    <p className="mt-1 text-xs leading-relaxed text-slate-300">Switch visual type, enable labels, export the data or pin the result.</p>
+                                    <p className="mt-1 text-xs leading-relaxed text-slate-300">Resize the panels, use automatic colours or choose your own, then pin the result.</p>
                                 </div>
                             </div>
                         </div>
 
                         <footer className="flex flex-col gap-2 border-t border-white/10 px-5 py-3 text-xs text-slate-400 sm:flex-row sm:items-center sm:justify-between sm:px-6">
                             <span className="inline-flex items-center gap-1.5"><Keyboard className="h-3.5 w-3.5" aria-hidden="true" /> Press Esc to close at any time.</span>
-                            <span>The walkthrough uses example trade data; your available fields will match your dataset.</span>
+                            <span>The walkthrough uses example retail data; your available fields will match your dataset.</span>
                         </footer>
                     </section>
                 </div>,

@@ -1,215 +1,366 @@
 import { chromium } from '@playwright/test';
+import { createServer } from 'vite';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const output = path.join(root, 'public', 'tutorials', 'question-builder-guide.webm');
-const narrationMasterPath = path.join(root, 'public', 'tutorials', 'question-builder-guide-narration.wav');
-const voiceoverPath = path.join(os.tmpdir(), `quickinsight-builder-guide-${process.pid}.wav`);
-const duration = 70000;
+const assetDir = path.join(root, 'public', 'tutorials');
+const temporaryDir = fs.mkdtempSync(path.join(os.tmpdir(), 'quickinsight-guide-'));
+const output = path.join(assetDir, 'question-builder-guide.webm');
+const audioOutput = path.join(assetDir, 'question-builder-guide-narration.wav');
+const captionsOutput = path.join(assetDir, 'question-builder-guide.vtt');
+const posterOutput = path.join(assetDir, 'question-builder-guide-poster.png');
+const timingOutput = path.join(assetDir, 'question-builder-guide-timing.json');
 
-const narration = [
-  'Welcome to the QuickInsight Question Builder. It turns a business question into a calculation you can inspect and change.',
-  'Start with the measure. This is the number you want to understand. Here, we select trade value in billions of U S dollars.',
-  'Next, choose the aggregation. Sum adds the measure across matching records. You can also use average, count, minimum, or maximum when appropriate.',
-  'Now add the first dimension. Flow direction splits the total into imports and exports, and the visual updates immediately.',
-  'Add a second dimension to create a more detailed comparison. Period label nests reporting periods inside the flow direction groups without losing either level.',
-  'Use filters to focus the business question, then choose sorting and a row limit. In this example, we keep exports and rank the largest periods first.',
-  'Choose a chart that suits the grouped result and enable labels when exact values matter. Every builder control remains editable.',
-  'Finally, pin the result. Give the visual a meaningful name, choose a dashboard, and save it. That title stays with the visual when you edit it later.',
-].join(' ');
+// These scenes are captured from the running application, not drawn as a mock UI.
+// Each narration segment has its own audio duration, so the shot and captions
+// stay in sync even if a different local voice is installed.
+const scenes = [
+  {
+    title: 'Start with a business question',
+    body: 'Pick the number you want to understand and how to calculate it.',
+    narration: 'Welcome to Quick Insight’s Question Builder. Start with a measure, like sales, and choose how to calculate it. Sum adds the matching sales values.',
+  },
+  {
+    title: 'See monthly sales',
+    body: 'Time → Month builds a trend; darker or brighter shades show the highs.',
+    narration: 'For a monthly trend, choose Month in the Time tab. The chart updates automatically, and the colour shades make lower and higher sales easier to spot.',
+  },
+  {
+    title: 'Compare products',
+    body: 'Named categories receive distinct colours instead of a value ramp.',
+    narration: 'Switch to Product to compare categories. Each product gets a distinct colour. The plain-English answer says what the visual is showing.',
+  },
+  {
+    title: 'Add another measure',
+    body: 'Use Options to place Profit alongside Sales.',
+    narration: 'Need more context? Open Options and add Profit as another measure. You can compare both numbers in one visual without building a new question.',
+  },
+  {
+    title: 'Keep the question tidy',
+    body: 'Remove an extra measure from Options whenever it is no longer needed.',
+    narration: 'If Profit is not needed, remove it from the same Options menu. The visual returns to Sales, and Profit remains available to add again.',
+  },
+  {
+    title: 'Focus the answer',
+    body: 'Filter to a product; sorting and limits are available in Options.',
+    narration: 'Filter to the product you want to inspect. Sorting and limits are also available in Options. Every change recalculates the answer.',
+  },
+  {
+    title: 'Make the visual yours',
+    body: 'Resize the panels; Auto chooses time shades or category colours.',
+    narration: 'Drag the divider to give the chart more room. In Style, Auto chooses value shades for time and distinct colours for categories, but you can override it.',
+  },
+  {
+    title: 'Name and pin the result',
+    body: 'Choose a clear visual title and a dashboard name.',
+    narration: 'When the answer is ready, choose Pin. Give the visual a clear title, then choose or create the dashboard where it belongs.',
+  },
+  {
+    title: 'Return to your dashboard',
+    body: 'The saved visual is ready to revisit, refresh and share.',
+    narration: 'The finished visual now lives on your dashboard. You can revisit it, refresh it, or keep exploring the data with another question.',
+  },
+];
+
+const escapePowerShell = value => value.replaceAll("'", "''");
+const toTimestamp = milliseconds => {
+  const total = Math.max(0, Math.round(milliseconds));
+  const hours = Math.floor(total / 3600000);
+  const minutes = Math.floor((total % 3600000) / 60000);
+  const seconds = Math.floor((total % 60000) / 1000);
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}.${String(total % 1000).padStart(3, '0')}`;
+};
+
+function findWavData(wav) {
+  if (wav.toString('ascii', 0, 4) !== 'RIFF' || wav.toString('ascii', 8, 12) !== 'WAVE') {
+    throw new Error('Local speech synthesis returned an invalid WAV file.');
+  }
+  let offset = 12;
+  while (offset + 8 <= wav.length) {
+    const size = wav.readUInt32LE(offset + 4);
+    if (wav.toString('ascii', offset, offset + 4) === 'data') {
+      return { header: wav.subarray(0, offset + 8), pcm: wav.subarray(offset + 8, offset + 8 + size), dataSizeAt: offset + 4 };
+    }
+    offset += 8 + size + (size % 2);
+  }
+  throw new Error('Local speech synthesis returned WAV without audio data.');
+}
 
 function createNarration() {
-  // Speech synthesis is intentionally cached: Windows SAPI renders close to
-  // real time, while the video itself must also be recorded in real time.
-  if (fs.existsSync(narrationMasterPath)) {
-    return `data:audio/wav;base64,${fs.readFileSync(narrationMasterPath).toString('base64')}`;
+  const narrationHash = createHash('sha256').update(JSON.stringify({ voice: 'Microsoft Mark', rate: 0, scenes: scenes.map(scene => scene.narration) })).digest('hex');
+  if (fs.existsSync(audioOutput) && fs.existsSync(captionsOutput) && fs.existsSync(timingOutput)) {
+    const timing = JSON.parse(fs.readFileSync(timingOutput, 'utf8'));
+    if (timing.hash === narrationHash && timing.scenes?.length === scenes.length) {
+      timing.scenes.forEach((times, index) => Object.assign(scenes[index], times));
+      fs.copyFileSync(audioOutput, path.join(temporaryDir, 'narration.wav'));
+      fs.copyFileSync(captionsOutput, path.join(temporaryDir, 'captions.vtt'));
+      fs.copyFileSync(timingOutput, path.join(temporaryDir, 'timing.json'));
+      return { audio: fs.readFileSync(audioOutput), durationMs: scenes.at(-1).endMs + 350 };
+    }
   }
-  const escapedPath = voiceoverPath.replaceAll("'", "''");
-  const escapedNarration = narration.replaceAll("'", "''");
+  const lines = Buffer.from(JSON.stringify(scenes.map(scene => scene.narration)), 'utf8').toString('base64');
+  const directory = escapePowerShell(temporaryDir);
   const script = [
     'Add-Type -AssemblyName System.Speech',
     '$speaker = New-Object System.Speech.Synthesis.SpeechSynthesizer',
-    "$preferred = @('Microsoft Zira Desktop','Microsoft Zira','Microsoft David Desktop','Microsoft David')",
+    "$preferred = @('Microsoft Mark','Microsoft Mark Desktop','Microsoft Zira Desktop','Microsoft Zira','Microsoft David Desktop')",
     '$installed = @($speaker.GetInstalledVoices() | ForEach-Object { $_.VoiceInfo.Name })',
     '$voice = $preferred | Where-Object { $installed -contains $_ } | Select-Object -First 1',
     'if ($voice) { $speaker.SelectVoice($voice) }',
-    '$speaker.Rate = 1',
+    '$speaker.Rate = 0',
     '$speaker.Volume = 100',
-    `$speaker.SetOutputToWaveFile('${escapedPath}')`,
-    `$speaker.Speak('${escapedNarration}')`,
+    `$lines = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${lines}')) | ConvertFrom-Json`,
+    `for ($i = 0; $i -lt $lines.Count; $i++) { $speaker.SetOutputToWaveFile((Join-Path '${directory}' ($i.ToString() + '.wav'))); $speaker.Speak([string]$lines[$i]); $speaker.SetOutputToNull() }`,
     '$speaker.Dispose()',
   ].join('; ');
   const encoded = Buffer.from(script, 'utf16le').toString('base64');
   const result = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], { encoding: 'utf8' });
-  if (result.status !== 0 || !fs.existsSync(voiceoverPath)) {
-    throw new Error(`Could not generate narrated audio. ${result.stderr || result.stdout || 'PowerShell speech synthesis failed.'}`);
+  if (result.status !== 0) throw new Error(`Narration synthesis failed: ${result.stderr || result.stdout}`);
+
+  const clips = scenes.map((_, index) => findWavData(fs.readFileSync(path.join(temporaryDir, `${index}.wav`))));
+  const byteRate = clips[0].header.readUInt32LE(28);
+  const blockAlign = clips[0].header.readUInt16LE(32);
+  const pauseBytes = Math.round((byteRate * 0.65) / blockAlign) * blockAlign;
+  const chunks = [];
+  let elapsedBytes = 0;
+  clips.forEach((clip, index) => {
+    if (clip.header.readUInt32LE(28) !== byteRate || clip.header.readUInt16LE(32) !== blockAlign) {
+      throw new Error('The narration voice changed audio format between scenes.');
+    }
+    scenes[index].startMs = elapsedBytes / byteRate * 1000;
+    chunks.push(clip.pcm);
+    elapsedBytes += clip.pcm.length;
+    chunks.push(Buffer.alloc(pauseBytes));
+    elapsedBytes += pauseBytes;
+    scenes[index].endMs = elapsedBytes / byteRate * 1000;
+  });
+  const audio = Buffer.concat([clips[0].header, ...chunks]);
+  audio.writeUInt32LE(audio.length - 8, 4);
+  audio.writeUInt32LE(elapsedBytes, clips[0].dataSizeAt);
+  fs.writeFileSync(path.join(temporaryDir, 'narration.wav'), audio);
+
+  const captions = ['WEBVTT', ''];
+  scenes.forEach(scene => {
+    captions.push(`${toTimestamp(scene.startMs)} --> ${toTimestamp(scene.endMs - 150)}`);
+    captions.push(scene.narration.replace('Quick Insight’s', 'QuickInsight’s'));
+    captions.push('');
+  });
+  fs.writeFileSync(path.join(temporaryDir, 'captions.vtt'), captions.join('\n'));
+  fs.writeFileSync(path.join(temporaryDir, 'timing.json'), JSON.stringify({ hash: narrationHash, scenes: scenes.map(scene => ({ startMs: scene.startMs, endMs: scene.endMs })) }, null, 2));
+  return { audio, durationMs: scenes.at(-1).endMs + 350 };
+}
+
+function retailCsv() {
+  const rows = ['order_date,product,region,sales_amount,profit'];
+  const products = ['Notebook', 'Headphones', 'Desk Lamp'];
+  for (let month = 1; month <= 8; month++) {
+    products.forEach((product, index) => {
+      const sales = 1800 + month * 210 + index * 390 + ((month + index) % 3) * 180;
+      rows.push(`2025-${String(month).padStart(2, '0')}-12,${product},${index === 1 ? 'South' : 'North'},${sales},${Math.round(sales * (0.17 + index * 0.035))}`);
+    });
   }
-  fs.copyFileSync(voiceoverPath, narrationMasterPath);
-  return `data:audio/wav;base64,${fs.readFileSync(voiceoverPath).toString('base64')}`;
+  return Buffer.from(rows.join('\n'), 'utf8');
 }
 
-const audioDataUrl = createNarration();
-const browserCandidates = [
-  process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
-  'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-  'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-].filter(Boolean);
-const executablePath = browserCandidates.find(candidate => fs.existsSync(candidate));
-const browser = await chromium.launch({
-  headless: true,
-  args: [
-    '--disable-background-timer-throttling',
-    '--disable-renderer-backgrounding',
-    '--disable-backgrounding-occluded-windows',
-  ],
-  ...(executablePath ? { executablePath } : {}),
-});
-const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
-
-await page.setContent(`<!doctype html>
-<html><body style="margin:0;background:#020617;overflow:hidden">
-<canvas id="guide" width="1280" height="720"></canvas>
-<script>
-const canvas = document.getElementById('guide');
-const ctx = canvas.getContext('2d');
-const W = canvas.width;
-const H = canvas.height;
-const duration = ${duration};
-const stepDuration = duration / 8;
-const audioDataUrl = ${JSON.stringify(audioDataUrl)};
-const steps = [
-  { title: 'Understand the builder sentence', body: 'Show me [measure] using [calculation], grouped by [dimensions].', badge: '1 of 8', target: [215, 127] },
-  { title: 'Choose the measure', body: 'Select the business value to analyse — here, value_usd_bn.', badge: '2 of 8', target: [219, 279] },
-  { title: 'Choose the calculation', body: 'Sum adds matching values; Average, Count, Min and Max answer different questions.', badge: '3 of 8', target: [219, 361] },
-  { title: 'Add the first dimension', body: 'Flow direction splits one total into separate Import and Export series.', badge: '4 of 8', target: [219, 443] },
-  { title: 'Add another dimension', body: 'Period label creates a nested comparison without replacing flow direction.', badge: '5 of 8', target: [220, 512] },
-  { title: 'Filter, sort and limit', body: 'Keep relevant records, rank the result, and control how many groups are shown.', badge: '6 of 8', target: [140, 558] },
-  { title: 'Choose the visual and labels', body: 'Match the chart to the result shape and show exact values when useful.', badge: '7 of 8', target: [1003, 128] },
-  { title: 'Name and pin the visual', body: 'Choose a meaningful title and dashboard. The name survives future edits.', badge: '8 of 8', target: [1175, 128] },
-];
-
-function rr(x, y, w, h, r, fill, stroke, lineWidth = 1) {
-  const radius = Math.min(r, w / 2, h / 2);
-  ctx.beginPath(); ctx.roundRect(x, y, w, h, radius);
-  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
-  if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = lineWidth; ctx.stroke(); }
-}
-function text(value, x, y, size, color, weight = 500, align = 'left') {
-  ctx.font = weight + ' ' + size + 'px Arial, sans-serif';
-  ctx.fillStyle = color; ctx.textAlign = align; ctx.textBaseline = 'middle';
-  ctx.fillText(value, x, y);
-}
-function ease(value) {
-  const t = Math.max(0, Math.min(1, value));
-  return t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
-}
-function field(label, value, x, y, active, accent = '#4f46e5') {
-  text(label.toUpperCase(), x, y, 11, active ? accent : '#64748b', 800);
-  if (active) { ctx.shadowColor = accent; ctx.shadowBlur = 16; }
-  rr(x, y + 14, 288, 47, 11, active ? '#eef2ff' : '#ffffff', active ? accent : '#cbd5e1', active ? 2 : 1);
-  ctx.shadowBlur = 0; text(value, x + 16, y + 38, 15, '#0f172a', 700); text('⌄', x + 266, y + 38, 18, '#64748b', 700, 'center');
-}
-function dropdown(x, y, options, selected) {
-  ctx.shadowColor = '#0f172a'; ctx.shadowBlur = 20; rr(x, y, 288, options.length * 34 + 12, 10, '#ffffff', '#cbd5e1'); ctx.shadowBlur = 0;
-  options.forEach((option, index) => {
-    if (index === selected) rr(x + 6, y + 6 + index * 34, 276, 30, 7, '#eef2ff');
-    text(option, x + 17, y + 21 + index * 34, 13, index === selected ? '#4338ca' : '#334155', index === selected ? 800 : 600);
-    if (index === selected) text('✓', x + 264, y + 21 + index * 34, 13, '#4f46e5', 800, 'center');
+async function captureScenes(browser, baseUrl) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 720 }, deviceScaleFactor: 1, reducedMotion: 'reduce' });
+  const page = await context.newPage();
+  const user = { id: 'guide-demo-user', email: 'guide@example.invalid', name: 'Guide Demo', role: 'contributor' };
+  const token = `header.${Buffer.from(JSON.stringify({ userId: user.id })).toString('base64url')}.signature`;
+  await page.route('**/api/**', async route => {
+    const pathname = new URL(route.request().url()).pathname;
+    const body = pathname.endsWith('/auth/login') ? { success: true, token, user }
+      : pathname.endsWith('/auth/verify') ? { success: true, valid: true, user }
+        : pathname.endsWith('/dashboards') ? { dashboards: [] } : {};
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: { 'Access-Control-Allow-Origin': '*' } });
   });
-}
-function drawChart(step, pulse) {
-  const x0 = 465, y0 = 190, chartW = 700, chartH = 292;
-  const multi = step >= 4; const split = step >= 3; const exportOnly = step >= 5;
-  text(multi ? 'Imports vs exports by reporting period' : split ? 'Trade value by flow direction' : 'Trade value overview', x0, 142, 22, '#0f172a', 800);
-  text(exportOnly ? 'Filtered to Export · highest first' : 'SUM of value_usd_bn', x0, 168, 13, exportOnly ? '#15803d' : '#64748b', 700);
-  ctx.strokeStyle = '#e2e8f0'; ctx.lineWidth = 1;
-  for (let i = 0; i < 5; i++) { const y = y0 + i * chartH / 4; ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x0 + chartW, y); ctx.stroke(); text(String(2000 - i * 500), x0 - 16, y, 11, '#64748b', 600, 'right'); }
-  let categories = multi ? ['FY2023-24', 'FY2024-25', 'FY2025-26'] : split ? ['Import', 'Export'] : ['Goods', 'Services', 'Software'];
-  let first = multi ? [979, 1490, 1730] : split ? [1490, 860] : [1490, 292, 191];
-  let second = multi && !exportOnly ? [860, 734, 980] : null;
-  if (exportOnly) { categories = ['FY2025-26', 'FY2023-24', 'FY2024-25']; first = [980, 860, 734]; }
-  categories.forEach((label, i) => {
-    const groupX = x0 + 82 + i * 213; const aH = first[i] / 2000 * 245 * pulse;
-    rr(groupX, y0 + chartH - aH, 62, aH, 7, exportOnly ? '#16a34a' : '#3b82f6');
-    if (step >= 6) text(first[i] >= 1000 ? (first[i] / 1000).toFixed(1) + 'K' : String(first[i]), groupX + 31, y0 + chartH - aH - 13, 12, '#0f172a', 800, 'center');
-    if (second) { const bH = second[i] / 2000 * 245 * pulse; rr(groupX + 70, y0 + chartH - bH, 62, bH, 7, '#16a34a'); if (step >= 6) text(String(second[i]), groupX + 101, y0 + chartH - bH - 13, 12, '#0f172a', 800, 'center'); }
-    text(label, groupX + (second ? 66 : 31), y0 + chartH + 27, 12, '#334155', 700, 'center');
+  await page.addInitScript(() => localStorage.setItem('QuickInsight-onboarding-complete', 'true'));
+  await page.goto(baseUrl, { waitUntil: 'domcontentloaded', timeout: 90000 });
+  await page.getByRole('button', { name: /skip tour/i }).click();
+  await page.getByLabel('Email Address').fill(user.email);
+  await page.getByLabel('Password', { exact: true }).fill('LocalGuideFixture123');
+  await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+  await page.getByRole('button', { name: 'Data Source', exact: true }).click();
+  await page.locator('input[type="file"][accept=".csv,.xlsx,.xls"]').setInputFiles({
+    name: 'guide-retail.csv', mimeType: 'text/csv', buffer: retailCsv(),
   });
-  if (multi && !exportOnly) { rr(x0 + 260, 541, 12, 12, 3, '#3b82f6'); text('Import', x0 + 280, 547, 12, '#475569', 600); rr(x0 + 352, 541, 12, 12, 3, '#16a34a'); text('Export', x0 + 372, 547, 12, '#475569', 600); }
-}
-function drawCursor(step, local) {
-  const previous = step === 0 ? [70, 76] : steps[step - 1].target; const target = steps[step].target; const movement = ease(local / .22);
-  const x = previous[0] + (target[0] - previous[0]) * movement; const y = previous[1] + (target[1] - previous[1]) * movement; const click = local > .22 && local < .38;
-  if (click) { const ring = 9 + (local - .22) / .16 * 24; ctx.beginPath(); ctx.arc(x, y, ring, 0, Math.PI * 2); ctx.strokeStyle = 'rgba(99,102,241,' + (1 - (local - .22) / .16) + ')'; ctx.lineWidth = 4; ctx.stroke(); ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2); ctx.fillStyle = '#f43f5e'; ctx.fill(); }
-  ctx.save(); ctx.translate(x, y); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, 27); ctx.lineTo(7, 20); ctx.lineTo(13, 33); ctx.lineTo(19, 30); ctx.lineTo(13, 18); ctx.lineTo(23, 18); ctx.closePath(); ctx.fillStyle = '#ffffff'; ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 3; ctx.fill(); ctx.stroke(); ctx.restore();
-}
-function pinDialog(local) {
-  if (local < .28) return;
-  ctx.fillStyle = 'rgba(15,23,42,.46)'; ctx.fillRect(34, 100, 1212, 508); ctx.shadowColor = '#0f172a'; ctx.shadowBlur = 26; rr(438, 162, 440, 390, 20, '#ffffff'); ctx.shadowBlur = 0;
-  text('Pin to Dashboard', 470, 198, 19, '#0f172a', 800); text('Name the visual and choose where to save it', 470, 225, 12, '#64748b', 600); text('VISUAL TITLE', 470, 266, 10, '#64748b', 800);
-  rr(470, 280, 376, 46, 9, '#f8fafc', '#8b5cf6', 2); const fullTitle = 'FY2025 export performance'; const typed = fullTitle.slice(0, Math.floor(Math.max(0, local - .38) / .34 * fullTitle.length)); text(typed || 'Name this visual', 485, 303, 14, typed ? '#0f172a' : '#94a3b8', 700);
-  text('DASHBOARD', 470, 359, 10, '#64748b', 800); rr(470, 374, 376, 55, 10, '#eef2ff', '#c7d2fe'); text('Executive Trade Dashboard', 486, 396, 14, '#4338ca', 700); text('6 visuals', 486, 416, 10, '#64748b', 600);
-  rr(664, 472, 182, 44, 10, '#4f46e5'); text('Pin to Dashboard', 755, 494, 13, '#ffffff', 800, 'center');
-}
-function draw(ms) {
-  const step = Math.min(7, Math.floor(ms / stepDuration)); const local = (ms % stepDuration) / stepDuration; const pulse = Math.min(1, local * 3 + .22);
-  const bg = ctx.createLinearGradient(0, 0, W, H); bg.addColorStop(0, '#0f172a'); bg.addColorStop(1, '#312e81'); ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-  ctx.globalAlpha = .15; ctx.fillStyle = '#22d3ee'; ctx.beginPath(); ctx.arc(70, 680, 280, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#6366f1'; ctx.beginPath(); ctx.arc(1190, -20, 310, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
-  text('QUICKINSIGHT', 44, 39, 13, '#a5b4fc', 800); text('Question Builder guided walkthrough', 44, 71, 25, '#ffffff', 800);
-  rr(34, 100, 1212, 508, 22, '#f8fafc'); rr(34, 100, 1212, 55, 22, '#ffffff'); ctx.fillStyle = '#ffffff'; ctx.fillRect(34, 132, 1212, 23); text('Show me', 60, 128, 15, '#0f172a', 800);
-  rr(158, 113, 176, 32, 9, step === 1 ? '#eef2ff' : '#f8fafc', step === 1 ? '#4f46e5' : '#cbd5e1'); text(step >= 1 ? 'value usd bn' : 'choose a measure', 246, 129, 12, '#334155', 700, 'center'); text('using', 347, 128, 13, '#64748b', 700);
-  rr(393, 113, 86, 32, 9, step === 2 ? '#f5f3ff' : '#f8fafc', step === 2 ? '#7c3aed' : '#cbd5e1'); text(step >= 2 ? 'Sum' : '...', 436, 129, 12, '#334155', 700, 'center'); text('grouped by', 492, 128, 13, '#64748b', 700);
-  rr(571, 113, 176, 32, 9, step === 3 ? '#ecfeff' : '#f8fafc', step === 3 ? '#0891b2' : '#cbd5e1'); text(step >= 3 ? 'flow direction' : 'a dimension', 659, 129, 12, '#334155', 700, 'center');
-  rr(805, 113, 116, 32, 9, step === 6 ? '#eef2ff' : '#ffffff', step === 6 ? '#4f46e5' : '#cbd5e1'); text('Vertical Bar', 863, 129, 12, '#475569', 700, 'center');
-  rr(931, 113, 105, 32, 9, step === 6 ? '#eef2ff' : '#ffffff', step === 6 ? '#4f46e5' : '#cbd5e1'); text(step >= 6 ? 'Labels ✓' : 'Labels', 983, 129, 12, step >= 6 ? '#4338ca' : '#475569', 700, 'center');
-  rr(1046, 113, 78, 32, 9, '#ffffff', '#cbd5e1'); text('Export', 1085, 129, 12, '#475569', 700, 'center'); rr(1134, 113, 82, 32, 9, step === 7 ? '#4f46e5' : '#ffffff', step === 7 ? '#4f46e5' : '#cbd5e1'); text('Pin', 1175, 129, 12, step === 7 ? '#ffffff' : '#475569', 700, 'center');
-  rr(54, 174, 360, 410, 18, '#ffffff', '#e2e8f0'); text('BUILD THE QUESTION', 78, 202, 12, '#6366f1', 800); field('Measure', step >= 1 ? 'value usd bn' : 'Choose a measure', 78, 232, step === 1); field('Aggregation', step >= 2 ? 'Sum' : 'Choose calculation', 78, 314, step === 2, '#7c3aed'); field('Group by', step >= 3 ? 'flow direction' : 'Choose a dimension', 78, 396, step === 3, '#0891b2');
-  if (step >= 4) { rr(78, 480, 288, 39, 10, '#ecfeff', step === 4 ? '#0891b2' : '#a5f3fc', step === 4 ? 2 : 1); text('+ period label', 94, 500, 14, '#0e7490', 700); } else { rr(78, 480, 138, 36, 10, '#f8fafc', '#cbd5e1'); text('+ Dimension', 147, 498, 12, '#475569', 700, 'center'); }
-  if (step >= 5) { rr(78, 534, 112, 32, 9, '#dcfce7', '#86efac'); text('Export only', 134, 550, 12, '#15803d', 700, 'center'); rr(198, 534, 94, 32, 9, '#f1f5f9', '#cbd5e1'); text('Highest', 245, 550, 12, '#475569', 700, 'center'); rr(300, 534, 66, 32, 9, '#f1f5f9', '#cbd5e1'); text('Top 10', 333, 550, 12, '#475569', 700, 'center'); }
-  drawChart(step, pulse);
-  if (step === 1 && local > .25 && local < .58) dropdown(78, 292, ['value usd bn', 'trade volume', 'record count'], 0);
-  if (step === 2 && local > .25 && local < .58) dropdown(78, 374, ['Sum', 'Average', 'Count', 'Minimum', 'Maximum'], 0);
-  if (step === 3 && local > .25 && local < .58) dropdown(78, 456, ['flow direction', 'trade scope', 'country', 'category'], 0);
-  if (step === 4 && local > .25 && local < .58) dropdown(78, 520, ['period label', 'country', 'category'], 0);
-  if (step === 7) pinDialog(local);
-  const info = steps[step]; rr(34, 628, 1212, 70, 16, '#0f172a', '#334155'); rr(54, 647, 58, 32, 16, '#4f46e5'); text(info.badge, 83, 663, 11, '#ffffff', 800, 'center'); text(info.title, 132, 651, 17, '#ffffff', 800); text(info.body, 132, 676, 13, '#cbd5e1', 500); rr(1000, 657, 205, 7, 4, '#334155'); rr(1000, 657, 205 * Math.min(1, ms / duration), 7, 4, '#22d3ee'); drawCursor(step, local);
+  await page.getByRole('heading', { name: 'Dataset Workspace' }).waitFor({ timeout: 30000 });
+  await page.getByRole('button', { name: 'Question Builder', exact: true }).click();
+  await page.locator('#qi-builder-panel .qi-builder-metric').first().waitFor();
+
+  const frames = [];
+  const capture = async (target, name) => {
+    await page.waitForTimeout(850);
+    const locator = page.locator(target).first();
+    if (await locator.isVisible().catch(() => false)) await locator.scrollIntoViewIfNeeded();
+    const box = await locator.boundingBox().catch(() => null);
+    const image = await page.screenshot({ type: 'png', animations: 'disabled' });
+    frames.push({ image: `data:image/png;base64,${image.toString('base64')}`, box });
+    console.log(`Captured guide scene ${frames.length}/${scenes.length}: ${name}`);
+  };
+
+  // Start on the real Builder, then build two different question shapes.
+  await capture('.qi-builder-metric', 'measure and aggregation');
+  await page.getByRole('button', { name: 'Time', exact: true }).click();
+  await page.locator('#qi-builder-panel .qi-builder-time-grain button[aria-haspopup="listbox"]').first().click();
+  await page.getByRole('option', { name: 'Month', exact: true }).click();
+  await capture('.qi-builder-time-grain', 'monthly sales');
+
+  await page.locator('#qi-builder-panel .qi-builder-time-grain button[aria-haspopup="listbox"]').first().click();
+  await page.getByRole('option', { name: '(None)', exact: true }).click();
+  await page.getByRole('button', { name: 'Build', exact: true }).click();
+  await page.locator('#qi-builder-panel .qi-builder-dimension button[aria-haspopup="listbox"]').first().click();
+  await page.getByRole('option', { name: 'product', exact: true }).click();
+  await capture('.qi-builder-dimension', 'product comparison');
+
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  const options = page.locator('.qi-builder-options-panel');
+  await options.getByRole('button', { name: /Add Metric/i }).click();
+  await page.getByRole('option', { name: 'profit', exact: true }).click();
+  await options.getByRole('button', { name: 'Remove additional metric profit' }).scrollIntoViewIfNeeded();
+  await capture('.qi-builder-options-panel [aria-label="Remove additional metric profit"]', 'additional profit measure');
+  await options.getByRole('button', { name: 'Remove additional metric profit' }).click();
+  await capture('.qi-builder-options-panel', 'remove additional measure');
+
+  await page.getByRole('button', { name: 'Options', exact: true }).click();
+  await page.getByTitle('Pick which product values to include').click();
+  await page.locator('.qi-dimension-value-menu').waitFor();
+  await page.locator('.qi-dimension-value-menu').getByRole('button', { name: 'Notebook', exact: true }).click();
+  await capture('.qi-dimension-value-menu', 'filter values');
+  await page.getByTitle('Pick which product values to include').click();
+
+  const splitter = page.getByRole('separator', { name: 'Resize Question Builder and visual result' });
+  await splitter.focus();
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('ArrowLeft');
+  await page.getByRole('button', { name: 'Style', exact: true }).click();
+  await capture('.qi-format-panel [role="group"][aria-label="Colour meaning"]', 'resize and automatic colours');
+  await page.getByRole('button', { name: 'Close chart appearance' }).click();
+
+  await page.locator('.qi-builder-commandbar').getByRole('button', { name: 'Pin', exact: true }).click();
+  await page.getByText('Pin to Dashboard', { exact: true }).first().waitFor();
+  await page.locator('#pin-visual-title').fill('Notebook sales');
+  await page.locator('#new-dashboard-name').fill('Retail Overview');
+  await capture('#pin-visual-title', 'pin to a dashboard');
+  await page.getByRole('button', { name: 'Pin to Dashboard', exact: true }).click();
+  if (await page.getByRole('button', { name: 'Open navigation' }).isVisible()) {
+    await page.getByRole('button', { name: 'Open navigation' }).click();
+  }
+  await page.getByRole('button', { name: 'Dashboard', exact: true }).click();
+  await capture('.qi-dashboard-workspace', 'saved dashboard');
+  await context.close();
+  return frames;
 }
 
-window.startRecording = async () => {
-  const audioContext = new AudioContext(); const audioBuffer = await audioContext.decodeAudioData(await (await fetch(audioDataUrl)).arrayBuffer()); const audioSource = audioContext.createBufferSource(); const audioDestination = audioContext.createMediaStreamDestination(); audioSource.buffer = audioBuffer; audioSource.connect(audioDestination);
-  const videoStream = canvas.captureStream(30); const combinedStream = new MediaStream([...videoStream.getVideoTracks(), ...audioDestination.stream.getAudioTracks()]); const mimeTypes = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']; const mimeType = mimeTypes.find(type => MediaRecorder.isTypeSupported(type)); if (!mimeType) throw new Error('No supported WebM MediaRecorder codec');
-  return new Promise((resolve, reject) => {
-    const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 1400000, audioBitsPerSecond: 96000 }); const chunks = [];
-    recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); }; recorder.onerror = event => reject(event.error || new Error('MediaRecorder failed')); recorder.onstop = () => { const blob = new Blob(chunks, { type: mimeType }); const link = document.createElement('a'); link.href = URL.createObjectURL(blob); link.download = 'question-builder-guide.webm'; document.body.appendChild(link); link.click(); resolve({ bytes: blob.size, audioSeconds: audioBuffer.duration }); };
-    draw(0); recorder.start(1000); audioSource.start(0); const start = performance.now();
-    const frameTimer = setInterval(() => {
-      const elapsed = performance.now() - start;
-      draw(Math.min(duration, elapsed));
-      if (elapsed >= duration) {
-        clearInterval(frameTimer);
-        recorder.stop();
+async function recordGuide(browser, frames, audio, durationMs) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+  await page.setContent('<!doctype html><html><body style="margin:0;background:#0b1221"><canvas id="guide" width="1280" height="720"></canvas></body></html>');
+  await page.evaluate(async ({ frames, audio, scenes, durationMs }) => {
+    const canvas = document.getElementById('guide');
+    const ctx = canvas.getContext('2d');
+    const images = await Promise.all(frames.map(frame => new Promise((resolve, reject) => {
+      const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = frame.image;
+    })));
+    const audioContext = new AudioContext();
+    const decoded = await audioContext.decodeAudioData(Uint8Array.from(atob(audio), char => char.charCodeAt(0)).buffer);
+
+    const draw = milliseconds => {
+      const index = Math.max(0, scenes.findIndex(scene => milliseconds < scene.endMs));
+      const scene = scenes[index];
+      const progress = Math.max(0, Math.min(1, (milliseconds - scene.startMs) / (scene.endMs - scene.startMs)));
+      ctx.drawImage(images[index], 0, 0, 1280, 720);
+      if (index > 0 && progress < 0.09) {
+        ctx.globalAlpha = 1 - progress / 0.09;
+        ctx.drawImage(images[index - 1], 0, 0, 1280, 720);
+        ctx.globalAlpha = 1;
       }
-    }, 1000 / 30);
-  });
-};
-</script></body></html>`);
+      const box = frames[index].box;
+      if (box && box.y > 78 && box.y + box.height < 595) {
+        const glow = 0.55 + 0.3 * Math.sin(milliseconds / 260);
+        ctx.save(); ctx.shadowColor = '#64d9ff'; ctx.shadowBlur = 18;
+        ctx.strokeStyle = `rgba(99, 220, 255, ${glow})`; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.roundRect(box.x - 5, box.y - 5, box.width + 10, box.height + 10, 12); ctx.stroke(); ctx.restore();
+      }
+      ctx.fillStyle = 'rgba(5, 12, 28, 0.88)';
+      ctx.beginPath(); ctx.roundRect(318, 11, 426, 38, 16); ctx.fill();
+      ctx.font = '800 13px Arial'; ctx.fillStyle = '#d1ddff'; ctx.fillText('QUICKINSIGHT  /  QUESTION BUILDER', 336, 35);
+      ctx.font = '700 12px Arial'; ctx.textAlign = 'right';
+      ctx.fillText(`${index + 1} / ${scenes.length}`, 722, 35); ctx.textAlign = 'left';
+      const bottom = ctx.createLinearGradient(0, 520, 0, 658);
+      bottom.addColorStop(0, 'rgba(5, 12, 28, 0)'); bottom.addColorStop(0.35, 'rgba(5, 12, 28, 0.9)'); bottom.addColorStop(1, 'rgba(5, 12, 28, 0.97)');
+      ctx.fillStyle = bottom; ctx.fillRect(0, 520, 1280, 138);
+      ctx.font = '800 25px Arial'; ctx.fillStyle = '#ffffff'; ctx.fillText(scene.title, 34, 585);
+      ctx.font = '500 17px Arial'; ctx.fillStyle = '#d4def1'; ctx.fillText(scene.body, 34, 617);
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.38)'; ctx.fillRect(34, 639, 1212, 5);
+      ctx.fillStyle = '#57c8f4'; ctx.fillRect(34, 639, 1212 * Math.min(1, milliseconds / durationMs), 5);
+    };
 
+    window.startRecording = () => new Promise((resolve, reject) => {
+      const source = audioContext.createBufferSource();
+      const compressor = audioContext.createDynamicsCompressor();
+      const destination = audioContext.createMediaStreamDestination();
+      source.buffer = decoded; source.connect(compressor); compressor.connect(destination);
+      const stream = new MediaStream([...canvas.captureStream(30).getVideoTracks(), ...destination.stream.getAudioTracks()]);
+      const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(type => MediaRecorder.isTypeSupported(type));
+      if (!mimeType) return reject(new Error('No supported WebM recorder'));
+      const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 1800000, audioBitsPerSecond: 128000 });
+      const chunks = [];
+      recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+      recorder.onerror = event => reject(event.error || new Error('MediaRecorder failed'));
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: mimeType });
+        const link = document.createElement('a'); link.href = URL.createObjectURL(blob);
+        link.download = 'question-builder-guide.webm'; document.body.appendChild(link); link.click();
+        resolve({ bytes: blob.size, audioSeconds: decoded.duration });
+      };
+      draw(0); recorder.start(1000); source.start(); const started = performance.now();
+      const timer = setInterval(() => {
+        const elapsed = performance.now() - started; draw(Math.min(durationMs, elapsed));
+        if (elapsed >= durationMs) { clearInterval(timer); recorder.stop(); }
+      }, 1000 / 30);
+    });
+  }, { frames, audio: audio.toString('base64'), scenes, durationMs });
+  try {
+    const downloadPromise = page.waitForEvent('download', { timeout: durationMs + 90000 });
+    const recordingPromise = page.evaluate(() => window.startRecording());
+    const download = await downloadPromise;
+    await download.saveAs(path.join(temporaryDir, 'guide.webm'));
+    return await recordingPromise;
+  } finally {
+    await page.close();
+  }
+}
+
+let server;
+let browser;
 try {
-  // Decoding the narrated WAV can take 20–30 seconds before real-time canvas
-  // recording begins, so the packaging timeout must include that preparation.
-  const downloadPromise = page.waitForEvent('download', { timeout: duration + 90000 });
-  const recordingPromise = page.evaluate(() => window.startRecording());
-  const download = await downloadPromise;
-  await download.saveAs(output);
-  const result = await recordingPromise;
-  console.log(`Generated ${output} (${Math.round(result.bytes / 1024)} KiB, ${(duration / 1000).toFixed(0)}s video, ${result.audioSeconds.toFixed(1)}s narration)`);
+  server = await createServer({ root, logLevel: 'error', server: { host: '127.0.0.1', port: 0 } });
+  await server.listen();
+  const baseUrl = server.resolvedUrls.local[0];
+  const browserCandidates = [
+    process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE,
+    'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+    'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+  ].filter(Boolean);
+  const executablePath = browserCandidates.find(candidate => fs.existsSync(candidate));
+  browser = await chromium.launch({ headless: true, args: ['--disable-background-timer-throttling', '--disable-renderer-backgrounding'], ...(executablePath ? { executablePath } : {}) });
+  const frames = await captureScenes(browser, baseUrl);
+  const { audio, durationMs } = createNarration();
+  const result = await recordGuide(browser, frames, audio, durationMs);
+  fs.copyFileSync(path.join(temporaryDir, 'guide.webm'), output);
+  fs.copyFileSync(path.join(temporaryDir, 'narration.wav'), audioOutput);
+  fs.copyFileSync(path.join(temporaryDir, 'captions.vtt'), captionsOutput);
+  fs.copyFileSync(path.join(temporaryDir, 'timing.json'), timingOutput);
+  fs.writeFileSync(posterOutput, Buffer.from(frames[2].image.split(',')[1], 'base64'));
+  console.log(`Generated ${output}: ${(durationMs / 1000).toFixed(1)}s, ${Math.round(result.bytes / 1024)} KiB, narration ${result.audioSeconds.toFixed(1)}s`);
 } finally {
-  await browser.close();
-  fs.rmSync(voiceoverPath, { force: true });
+  await browser?.close();
+  await server?.close();
+  fs.rmSync(temporaryDir, { recursive: true, force: true });
 }
