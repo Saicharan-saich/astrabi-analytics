@@ -40,6 +40,7 @@ test('adding a third grouping dimension automatically shows facet panels', async
         ['Goods', 'Services'].flatMap(trade_scope =>
             ['Import', 'Export'].map(flow_direction => ({
                 period_label, trade_scope, flow_direction, value_usd_bn: trade_scope === 'Goods' ? 100 : 50,
+                cost_usd_bn: trade_scope === 'Goods' ? 70 : 30,
             }))));
     XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(rows), 'Fact_Trade_Summary');
     await page.locator('input[type="file"][accept=".csv,.xlsx,.xls"]').setInputFiles({
@@ -100,7 +101,19 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await splitter.dblclick();
     await expect(undo).toBeDisabled();
     await page.getByRole('button', { name: 'Options', exact: true }).click();
+    const optionsPanel = page.locator('.qi-builder-options-panel');
+    await optionsPanel.getByRole('button', { name: /Add Metric/i }).click();
+    await page.getByRole('option', { name: 'cost usd bn', exact: true }).click();
+    await optionsPanel.getByRole('button', { name: 'Remove additional metric cost usd bn' }).click();
+    await expect(page.getByRole('button', { name: 'Remove additional metric cost usd bn' })).toHaveCount(0);
+    await optionsPanel.getByRole('button', { name: /Add Metric/i }).click();
+    await expect(page.getByRole('option', { name: 'cost usd bn', exact: true })).toBeVisible();
+    await page.keyboard.press('Escape');
     await page.getByRole('button', { name: /Add Dimension/i }).click();
+    await page.getByRole('option', { name: 'flow direction', exact: true }).click();
+    await optionsPanel.getByRole('button', { name: 'Remove additional dimension flow direction' }).click();
+    await expect(page.getByRole('button', { name: 'Remove additional dimension flow direction' })).toHaveCount(0);
+    await optionsPanel.getByRole('button', { name: /Add Dimension/i }).click();
     await page.getByRole('option', { name: 'flow direction', exact: true }).click();
     await expect(undo).toBeEnabled({ timeout: 30000 });
     await page.getByRole('button', { name: /Add Dimension/i }).click();

@@ -184,6 +184,15 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     // Secondary dimensions for multi-dimension grouping
     const [secondaryDimensions, setSecondaryDimensions] = useState<string[]>(initialSecondaryDimensions);
 
+    const removeSecondaryMetric = (field: string) => {
+        setSecondaryMetrics(prev => prev.filter(metricName => metricName !== field));
+        setSecondaryMetricVisuals(prev => { const next = { ...prev }; delete next[field]; return next; });
+        setSecondaryMetricAggregations(prev => { const next = { ...prev }; delete next[field]; return next; });
+    };
+    const removeSecondaryDimension = (field: string) => {
+        setSecondaryDimensions(prev => prev.filter(dimensionName => dimensionName !== field));
+    };
+
     // Comparison state
     const [comparison, setComparison] = useState<string>(initialComparison);
     const [comparisonGrain, setComparisonGrain] = useState<string>(initialComparisonGrain);
@@ -922,7 +931,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     </div>
 
                     {/* Secondary Metric Chips (display only — add button moved to Options row) */}
-                    {!gafsOnly && secondaryMetrics.map((sm, i) => (
+                    {!gafsOnly && secondaryMetrics.map(sm => (
                         <span key={sm} className="inline-flex items-center gap-1.5 bg-teal-500/20 text-teal-300 font-bold text-xs border border-teal-400/30 rounded-lg px-2.5 py-1.5 shadow-sm hover:scale-[1.02] transition-all relative overflow-visible">
                             <span className="text-teal-500 font-normal text-xs">+</span>
                             <span>{sm.replace(/_/g, ' ')}</span>
@@ -954,11 +963,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 searchable={false}
                                 className="!py-1 !pl-2 !pr-1.5 !bg-teal-500/20 !border-teal-400/30"
                             />
-                            <button onClick={() => {
-                                setSecondaryMetrics(prev => prev.filter((_, idx) => idx !== i));
-                                setSecondaryMetricVisuals(prev => { const next = { ...prev }; delete next[sm]; return next; });
-                                setSecondaryMetricAggregations(prev => { const next = { ...prev }; delete next[sm]; return next; });
-                            }}
+                            <button type="button" onClick={() => removeSecondaryMetric(sm)}
+                                aria-label={`Remove additional metric ${sm.replace(/_/g, ' ')}`}
+                                title={`Remove additional metric ${sm.replace(/_/g, ' ')}`}
                                 className="text-teal-400 hover:text-red-500 transition-colors ml-0.5">
                                 <X className="w-3.5 h-3.5" />
                             </button>
@@ -975,11 +982,13 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     )}
 
                     {/* Secondary Dimension Chips */}
-                    {!gafsOnly && secondaryDimensions.map((sd, i) => (
+                    {!gafsOnly && secondaryDimensions.map(sd => (
                         <span key={sd} className="inline-flex items-center gap-1 bg-violet-500/20 text-violet-300 font-bold text-xs border border-violet-400/30 rounded-lg px-2 py-1 shadow-sm hover:scale-[1.02] transition-all">
                             <Layers className="w-3 h-3 text-violet-400" />
                             <span>{sd.replace(/_/g, ' ')}</span>
-                            <button onClick={() => setSecondaryDimensions(prev => prev.filter((_, idx) => idx !== i))}
+                            <button type="button" onClick={() => removeSecondaryDimension(sd)}
+                                aria-label={`Remove additional dimension ${sd.replace(/_/g, ' ')}`}
+                                title={`Remove additional dimension ${sd.replace(/_/g, ' ')}`}
                                 className="text-violet-400 hover:text-red-500 transition-colors ml-0.5">
                                 <X className="w-3.5 h-3.5" />
                             </button>
@@ -1415,6 +1424,36 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                                 colorRingClass="focus:ring-blue-500/30"
                                 placeholder="+ Add Dimension"
                             />
+                        </div>
+                    )}
+
+                    {!gafsOnly && (secondaryMetrics.length > 0 || secondaryDimensions.length > 0) && (
+                        <div className="w-full border-t border-white/10 pt-3" aria-label="Added fields">
+                            <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Added to this question</div>
+                            <div className="flex flex-wrap gap-2">
+                                {secondaryMetrics.map(field => (
+                                    <button
+                                        key={`metric-${field}`}
+                                        type="button"
+                                        onClick={() => removeSecondaryMetric(field)}
+                                        aria-label={`Remove additional metric ${field.replace(/_/g, ' ')}`}
+                                        className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-teal-400/30 bg-teal-500/10 px-2.5 py-1.5 text-xs font-semibold text-teal-200 transition-colors hover:border-red-400/50 hover:bg-red-500/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-300"
+                                    >
+                                        <span>Metric: {field.replace(/_/g, ' ')}</span><X className="h-3.5 w-3.5" aria-hidden="true" />
+                                    </button>
+                                ))}
+                                {secondaryDimensions.map(field => (
+                                    <button
+                                        key={`dimension-${field}`}
+                                        type="button"
+                                        onClick={() => removeSecondaryDimension(field)}
+                                        aria-label={`Remove additional dimension ${field.replace(/_/g, ' ')}`}
+                                        className="inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-violet-400/30 bg-violet-500/10 px-2.5 py-1.5 text-xs font-semibold text-violet-200 transition-colors hover:border-red-400/50 hover:bg-red-500/10 hover:text-red-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-violet-300"
+                                    >
+                                        <span>Dimension: {field.replace(/_/g, ' ')}</span><X className="h-3.5 w-3.5" aria-hidden="true" />
+                                    </button>
+                                ))}
+                            </div>
                         </div>
                     )}
 
