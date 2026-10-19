@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import ReactDOM from 'react-dom';
 import { ChevronDown, Search, Check } from 'lucide-react';
+import { querySelectMenuPosition, type MenuPlacement, type QuerySelectMenuPosition } from '../utils/querySelectPosition';
 
 export interface SelectOption {
     label: string;
@@ -19,16 +20,7 @@ interface QuerySelectProps {
     colorRingClass?: string;
     className?: string;
     buttonContent?: React.ReactNode;
-    menuPlacement?: 'auto' | 'up' | 'down';
-}
-
-interface MenuPosition {
-    top: number;
-    left: number;
-    width: number;
-    maxHeight: number;
-    placement: 'up' | 'down';
-    detached: boolean;
+    menuPlacement?: MenuPlacement;
 }
 
 export const QuerySelect: React.FC<QuerySelectProps> = ({
@@ -46,7 +38,7 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
 }) => {
     const [isOpen, setIsOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
-    const [menuPosition, setMenuPosition] = useState<MenuPosition>({
+    const [menuPosition, setMenuPosition] = useState<QuerySelectMenuPosition>({
         top: 0,
         left: 8,
         width: 240,
@@ -78,10 +70,6 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         if (!button) return;
 
         const rect = button.getBoundingClientRect();
-        const viewportPadding = 8;
-        const gap = 6;
-        const availableAbove = Math.max(0, rect.top - viewportPadding - gap);
-        const availableBelow = Math.max(0, window.innerHeight - rect.bottom - viewportPadding - gap);
         // Calculate a stable natural requirement from the option model. The
         // rendered menu contains an inner scrolling flex child, so the root's
         // scrollHeight may itself reflect an earlier maxHeight constraint.
@@ -93,43 +81,13 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         const measuredContentHeight = menuRef.current?.scrollHeight ?? 0;
         const desiredHeight = Math.min(480, Math.max(estimatedHeight, measuredContentHeight));
 
-        let placement: 'up' | 'down';
-        if (menuPlacement === 'auto') {
-            placement = availableBelow >= desiredHeight || availableBelow >= availableAbove ? 'down' : 'up';
-        } else {
-            const requestedSpace = menuPlacement === 'up' ? availableAbove : availableBelow;
-            const oppositeSpace = menuPlacement === 'up' ? availableBelow : availableAbove;
-            placement = requestedSpace < 96 && oppositeSpace > requestedSpace
-                ? (menuPlacement === 'up' ? 'down' : 'up')
-                : menuPlacement;
-        }
-
-        const availableHeight = placement === 'up' ? availableAbove : availableBelow;
-        const viewportHeight = Math.max(96, window.innerHeight - viewportPadding * 2);
-        const targetHeight = Math.min(desiredHeight, viewportHeight);
-        // When both anchored sides are cramped, use a viewport-contained
-        // popover instead of reducing the choices to a tiny scroll window.
-        const detached = Math.max(availableAbove, availableBelow) < targetHeight;
-        const minMenuWidth = Math.min(240, Math.max(160, window.innerWidth - viewportPadding * 2));
-        const width = Math.min(320, Math.max(rect.width, minMenuWidth));
-        const left = Math.max(
-            viewportPadding,
-            Math.min(rect.left, window.innerWidth - width - viewportPadding)
-        );
-
-        setMenuPosition({
-            top: detached
-                ? Math.max(viewportPadding, Math.min(
-                    rect.top + rect.height / 2 - targetHeight / 2,
-                    window.innerHeight - targetHeight - viewportPadding
-                ))
-                : placement === 'up' ? rect.top - gap : rect.bottom + gap,
-            left,
-            width,
-            maxHeight: detached ? targetHeight : Math.max(96, Math.min(targetHeight, availableHeight)),
-            placement,
-            detached,
-        });
+        setMenuPosition(querySelectMenuPosition({
+            anchor: rect,
+            viewportWidth: window.innerWidth,
+            viewportHeight: window.innerHeight,
+            desiredHeight,
+            preference: menuPlacement,
+        }));
     }, [groupHeaderCount, menuPlacement, options.length, searchable]);
 
     useEffect(() => {
@@ -143,9 +101,21 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
                 setIsOpen(false);
             }
         };
-        const handleViewportChange = () => updateMenuPosition();
+        const handleViewportChange = (event?: Event) => {
+            // Scrolling the choices must not reposition or resize their menu.
+            if (event?.target instanceof Node && menuRef.current?.contains(event.target)) return;
+            updateMenuPosition();
+        };
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return;
+            event.stopPropagation();
+            setIsOpen(false);
+            setSearchQuery('');
+            buttonRef.current?.focus();
+        };
 
         document.addEventListener('mousedown', handleClickOutside);
+        document.addEventListener('keydown', handleKeyDown);
         window.addEventListener('resize', handleViewportChange);
         window.addEventListener('scroll', handleViewportChange, true);
 
@@ -156,6 +126,7 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         return () => {
             cancelAnimationFrame(frame);
             document.removeEventListener('mousedown', handleClickOutside);
+            document.removeEventListener('keydown', handleKeyDown);
             window.removeEventListener('resize', handleViewportChange);
             window.removeEventListener('scroll', handleViewportChange, true);
         };
@@ -165,6 +136,7 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
         onChange(val);
         setIsOpen(false);
         setSearchQuery('');
+        buttonRef.current?.focus();
     };
 
     const selectedOption = options.find(o => o.value === value);
