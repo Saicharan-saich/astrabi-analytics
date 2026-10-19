@@ -56,6 +56,7 @@ import {
 import { sanitizeRows } from '../utils/numberSafety';
 import { effectiveDataLabelMode, shouldRenderDataLabel } from '../utils/dataLabelVisibility';
 import { layoutChartLabels } from '../utils/chartLabelLayout';
+import { fitPieLabelText, layoutPieLabelRows } from '../utils/pieLabelLayout';
 import { extraTooltipMetricKeys, readableChartTextColor } from '../utils/chartPresentation';
 import { MapChart } from './MapChart';
 import { CHART_TYPE_OPTIONS } from './charts/chartRegistry';
@@ -1574,7 +1575,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
                 // Collect label positions
                 const dataLabels = chart.data.labels || [];
-                const labelInfos: { angle: number; labelText: string; outerX: number; outerY: number; side: 'left' | 'right' }[] = [];
+                const labelInfos: { index: number; angle: number; labelText: string; outerX: number; outerY: number; side: 'left' | 'right'; weight: number }[] = [];
 
                 meta.data.forEach((arc: any, index: number) => {
                     const value = dataset.data[index];
@@ -1597,55 +1598,39 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     const labelText = `${catName}: ${pct.toFixed(1)}%`;
                     const side: 'left' | 'right' = outerX >= centerX ? 'right' : 'left';
 
-                    labelInfos.push({ angle: midAngle, labelText, outerX, outerY, side });
+                    labelInfos.push({ index, angle: midAngle, labelText, outerX, outerY, side, weight: pct });
                 });
 
-                // Collision avoidance per side — clamp within canvas bounds
-                const marginY = 14; // min distance from canvas edge
-                const minGap = 20;
+                const placed = new Map<number, number>();
                 for (const side of ['left', 'right'] as const) {
-                    const group = labelInfos.filter(l => l.side === side).sort((a, b) => a.outerY - b.outerY);
-                    // Clamp each label within canvas bounds
-                    for (const lbl of group) {
-                        lbl.outerY = Math.max(marginY, Math.min(canvasHeight - marginY, lbl.outerY));
-                    }
-                    // Push overlapping labels apart
-                    for (let i = 1; i < group.length; i++) {
-                        if (group[i].outerY - group[i - 1].outerY < minGap) {
-                            group[i].outerY = group[i - 1].outerY + minGap;
-                        }
-                    }
-                    // If last label is off canvas, push all up
-                    if (group.length > 0) {
-                        const lastY = group[group.length - 1].outerY;
-                        if (lastY > canvasHeight - marginY) {
-                            const overflow = lastY - (canvasHeight - marginY);
-                            for (const lbl of group) {
-                                lbl.outerY = Math.max(marginY, lbl.outerY - overflow);
-                            }
-                            // Re-apply minimum gap after shifting
-                            for (let i = 1; i < group.length; i++) {
-                                if (group[i].outerY - group[i - 1].outerY < minGap) {
-                                    group[i].outerY = group[i - 1].outerY + minGap;
-                                }
-                            }
-                        }
-                    }
+                    const rows = labelInfos.filter(label => label.side === side)
+                        .map(label => ({ index: label.index, preferredY: label.outerY, weight: label.weight }));
+                    layoutPieLabelRows(rows, canvasHeight).forEach(row => placed.set(row.index, row.y));
                 }
 
                 // Draw each label with leader line
                 labelInfos.forEach(info => {
-                    const { angle, labelText, outerX, outerY, side } = info;
+                    const outerY = placed.get(info.index);
+                    if (outerY === undefined) return;
+                    const { angle, side } = info;
+                    const availableWidth = side === 'right'
+                        ? canvasWidth - 14 - (centerX + 12)
+                        : centerX - 12 - 14;
+                    ctx.font = 'bold 11px "Inter", sans-serif';
+                    const labelText = fitPieLabelText(info.labelText, availableWidth, text => ctx.measureText(text).width);
+                    if (!labelText) return;
+                    const textWidth = ctx.measureText(labelText).width;
+                    const labelX = side === 'right'
+                        ? Math.max(centerX + 12, Math.min(info.outerX + 23, canvasWidth - 14 - textWidth))
+                        : Math.min(centerX - 12, Math.max(info.outerX - 23, 14 + textWidth));
+                    const elbowX = labelX + (side === 'right' ? -5 : 5);
+                    const outerX = Math.max(8, Math.min(canvasWidth - 8, info.outerX));
 
                     const outerRadius = meta.data[0]?.outerRadius || 100;
 
                     // Start point on pie edge
                     const edgeX = centerX + Math.cos(angle) * (outerRadius + 4);
                     const edgeY = centerY + Math.sin(angle) * (outerRadius + 4);
-
-                    // Elbow extends horizontally
-                    const elbowExtend = side === 'right' ? 18 : -18;
-                    const elbowX = outerX + elbowExtend;
 
                     // Leader line
                     ctx.strokeStyle = '#94a3b8';
@@ -1659,9 +1644,6 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     // Label text
                     ctx.textAlign = side === 'right' ? 'left' : 'right';
                     ctx.textBaseline = 'middle';
-                    const labelX = elbowX + (side === 'right' ? 5 : -5);
-
-                    ctx.font = 'bold 11px "Inter", sans-serif';
                     ctx.fillStyle = options.color || '#000000';
                     ctx.fillText(labelText, labelX, outerY);
                 });
