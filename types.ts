@@ -262,6 +262,8 @@ export enum AnalysisType {
 
 export type FormattingConfig = {
   colorMode: 'vibrant' | 'electric' | 'neon' | 'sunset' | 'ocean' | 'blueSequential' | 'greenSequential' | 'purpleSequential' | 'orangeSequential' | 'tealSequential';
+  /** Auto follows the question's grouping: time is sequential; categories are discrete. */
+  colorEncoding?: 'auto' | 'sequential' | 'discrete';
   numberFormat: 'auto' | 'raw' | 'currency_usd' | 'currency_eur' | 'percent' | 'compact';
   fontSize: 'sm' | 'md' | 'lg';
   headerSize: 'sm' | 'md' | 'lg' | 'xl';

@@ -92,6 +92,16 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.locator('.qi-builder-dimension button[aria-haspopup="listbox"]').first().click();
     await page.getByRole('option', { name: 'trade scope', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Visual', exact: true })).toBeVisible({ timeout: 30000 });
+    await page.getByRole('button', { name: 'Style', exact: true }).click();
+    const appearance = page.locator('.qi-format-panel');
+    const colourMeaning = appearance.getByRole('group', { name: 'Colour meaning' });
+    await expect(colourMeaning.getByRole('button', { name: 'Auto', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await colourMeaning.getByRole('button', { name: 'Low → high' }).click();
+    await expect(colourMeaning.getByRole('button', { name: 'Low → high' })).toHaveAttribute('aria-pressed', 'true');
+    await colourMeaning.getByRole('button', { name: 'Categories' }).click();
+    await expect(colourMeaning.getByRole('button', { name: 'Categories' })).toHaveAttribute('aria-pressed', 'true');
+    await colourMeaning.getByRole('button', { name: 'Auto', exact: true }).click();
+    await page.getByRole('button', { name: 'Close chart appearance' }).click();
     const commandbar = page.locator('.qi-builder-commandbar');
     await expect.poll(() => commandbar.evaluate(element => element.scrollWidth - element.clientWidth)).toBeLessThanOrEqual(2);
     await splitter.focus();

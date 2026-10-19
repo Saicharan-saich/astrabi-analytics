@@ -7,6 +7,8 @@
 
 import { FormattingConfig, QueryConfig } from '../types';
 
+type ColorFormatting = Partial<Pick<FormattingConfig, 'colorMode' | 'colorEncoding'>>;
+
 // ─── Palettes ────────────────────────────────────────────────────────
 // Curated harmonious palettes inspired by Linear, Stripe, and Vercel dashboards.
 // Each color is carefully chosen for visual harmony and WCAG contrast.
@@ -44,13 +46,29 @@ export const FONT_SIZES: Record<string, number> = {
 
 // ─── Color Helpers ───────────────────────────────────────────────────
 
-/** Detect if analysis is dimension-based (categorical) or measure-based (sequential) */
+/** Detect a time grouping without mistaking numeric category IDs for a timeline. */
 export const isSequentialData = (xKey: string, data: any[]): boolean => {
-    const timePatterns = ['date', 'day', 'week', 'month', 'quarter', 'year', 'time'];
-    const isTimeKey = timePatterns.some(pattern => xKey.toLowerCase().includes(pattern));
-    const xValues = data.map(d => d[xKey]);
-    const isNumeric = xValues.every(v => !isNaN(Number(v)));
-    return isTimeKey || (isNumeric && xValues.length > 1);
+    const keyParts = xKey.toLowerCase().split(/[^a-z]+/).filter(Boolean);
+    const timeParts = new Set(['date', 'day', 'weekday', 'week', 'month', 'quarter', 'year', 'time', 'timestamp', 'period']);
+    if (keyParts.some(part => timeParts.has(part))) return true;
+    const values = data.map(row => row[xKey]).filter(value => value !== null && value !== undefined && value !== '');
+    return values.length > 1 && values.every(value =>
+        typeof value === 'string' && /^\d{4}[-/]\d{1,2}(?:[-/]\d{1,2})?(?:\s|$)|^\d{4}-[QW]\d{1,2}$/.test(value)
+    );
+};
+
+/** Question semantics choose the encoding; chart shape alone does not. */
+export const resolveColorEncoding = (
+    formatting: ColorFormatting | undefined,
+    xKey: string,
+    data: any[],
+    chartType = 'bar',
+): 'sequential' | 'discrete' => {
+    if (formatting?.colorEncoding === 'sequential' || formatting?.colorEncoding === 'discrete') {
+        return formatting.colorEncoding;
+    }
+    if (['pie', 'doughnut', 'polarArea', 'radar', 'treemap', 'funnel'].includes(chartType)) return 'discrete';
+    return isSequentialData(xKey, data) ? 'sequential' : 'discrete';
 };
 
 /** Create canvas gradient for line/area fill (top: colored → bottom: transparent) */
@@ -114,8 +132,8 @@ export const lightenColor = (color: string, percent: number = 20): string => {
 };
 
 /** Pick the correct palette given a formatting config, xKey, and data */
-export const selectPalette = (formatting: FormattingConfig | undefined, xKey: string, data: any[]): string[] => {
-    const useSequential = isSequentialData(xKey, data);
+export const selectPalette = (formatting: ColorFormatting | undefined, xKey: string, data: any[], chartType = 'bar'): string[] => {
+    const useSequential = resolveColorEncoding(formatting, xKey, data, chartType) === 'sequential';
     if (formatting?.colorMode) {
         const selectedMode = formatting.colorMode as PaletteName;
         if (useSequential) {
@@ -148,7 +166,7 @@ export const generateColors = (
             const range = max - min || 1;
             return vals.map(v => {
                 const normalized = (v - min) / range;
-                const index = Math.floor(normalized * (palette.length - 1));
+                const index = max === min ? Math.floor(palette.length / 2) : Math.floor(normalized * (palette.length - 1));
                 return palette[index];
             });
         }

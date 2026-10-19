@@ -48,8 +48,8 @@ ChartJS.register(
 import { Dataset, ColumnType, AggregationType, QueryConfig, AnalysisResult, TimeGrain, AnalysisType, ChartConfig, FormattingConfig } from '../types';
 import { applyTableCalculation } from '../utils/tableCalculations';
 import {
-    PALETTES, FONT_SIZES,
-    isSequentialData, createGradient, createBarGradient, lightenColor,
+    FONT_SIZES,
+    resolveColorEncoding, selectPalette, createGradient, createBarGradient, lightenColor,
     generateColors as genColors,
     formatNumber as formatNum, formatDateLabel
 } from '../utils/chartUtils';
@@ -620,6 +620,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
         // TREEMAP DATA TRANSFORMATION
         if (chartType === 'treemap') {
+            const encoding = resolveColorEncoding(formatting, xKey, transformedData, chartType);
+            const treeColors = genColors(values, selectPalette(formatting, xKey, transformedData, chartType), encoding === 'sequential');
             return {
                 datasets: [{
                     label: calculatedYLabel || 'Value',
@@ -628,7 +630,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     groups: [xKey],
                     backgroundColor: (ctx: any) => {
                         if (ctx.type !== 'data') return 'transparent';
-                        return PALETTES.vibrant[(ctx.dataIndex ?? 0) % PALETTES.vibrant.length];
+                        return treeColors[(ctx.dataIndex ?? 0) % treeColors.length];
                     },
                     borderColor: '#fff',
                     borderWidth: 3,
@@ -648,93 +650,24 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             };
         }
 
-        // SMART COLOR SELECTION: Sequential vs Discrete
-        // A single-measure bar chart encodes MAGNITUDE, not identity — the axis
-        // labels already name each category. So colour bars as one cohesive hue
-        // keyed to value (taller = deeper), never a categorical rainbow that
-        // implies the colours mean something. (Multi-series bars take the
-        // seriesCol path below and are unaffected.)
-        const isMagnitudeBar = chartType === 'bar' || chartType === 'horizontalBar' || chartType === 'lollipop';
-        const useSequential = isSequentialData(xKey, transformedData) || isMagnitudeBar;
+        // Time periods encode a low-to-high measure; named categories encode
+        // identity. The appearance panel can explicitly override this choice.
+        const useSequential = resolveColorEncoding(formatting, xKey, transformedData, chartType) === 'sequential';
+        let palette = selectPalette(formatting, xKey, transformedData, chartType);
 
-        // Select appropriate palette
-        let palette: string[];
-        if (formatting?.colorMode) {
-            // User manually selected a palette
-            const selectedMode = formatting.colorMode as keyof typeof PALETTES;
-
-            if (useSequential) {
-                // If Sequential Data: Map Discrete selection to Sequential Palette
-                // vibrant -> blue, neon -> green, sunset -> orange, etc.
-                const map: Record<string, string[]> = {
-                    vibrant: PALETTES.blueSequential,
-                    electric: PALETTES.purpleSequential,
-                    neon: PALETTES.greenSequential,
-                    sunset: PALETTES.orangeSequential,
-                    ocean: PALETTES.tealSequential
-                };
-                // If the user actually selected a sequential palette explicitly (if we allowed it), use it. 
-                // Otherwise map from discrete.
-                palette = map[selectedMode] || PALETTES[selectedMode] || PALETTES.blueSequential;
-            } else {
-                // Discrete Data: Use the selected Multi-Color palette
-                palette = PALETTES[selectedMode] || PALETTES.vibrant;
-            }
-        } else {
-            // Auto-select based on data type
-            if (useSequential) {
-                // Time-series or measure analysis → Use sequential gradient
-                palette = PALETTES.blueSequential;
-            } else {
-                // Categorical/dimension analysis → Use discrete multi-color
-                palette = PALETTES.vibrant;
-            }
-        }
-
-        // Single-measure bars: a cohesive brand-blue magnitude ramp. Drops the
-        // palest steps of the default sequential palette so the smallest bars
-        // stay readable on BOTH light and dark surfaces (the default light end,
-        // #dbeafe, vanishes on white).
-        if (isMagnitudeBar && (!formatting?.colorMode || formatting.colorMode === 'vibrant')) {
+        // Keep the auto blue value ramp visible on both surfaces: high values
+        // become darker on light charts and brighter on dark charts.
+        if (useSequential && (!formatting?.colorMode || formatting.colorMode === 'vibrant')) {
             palette = isDark
-                ? ['#65a5d8', '#5b9bd3', '#518fc9', '#4884bf', '#3e79b3', '#356ea6', '#2c6298']
-                : ['#87b8e5', '#75a8df', '#6399d8', '#528ace', '#437cc2', '#376db2', '#2e609f'];
+                ? ['#417a9f', '#4887ae', '#4f94bc', '#57a2cb', '#60b0da', '#6abfe9', '#77cef4']
+                : ['#4f91c2', '#4888bd', '#407eb5', '#3874aa', '#306a9e', '#285f90', '#205481'];
         }
 
         const baseColor = palette[Math.floor(palette.length / 2)]; // Mid-tone
         const borderColor = palette[Math.floor(palette.length / 3)]; // Darker shade
 
         // Generate colors for multiple data points
-        const generateColors = (input: number | number[]) => {
-            const count = Array.isArray(input) ? input.length : input;
-
-            if (useSequential) {
-                // Sequential: Use gradient from light to dark based on VALUE
-                if (Array.isArray(input)) {
-                    const vals = input;
-                    const max = Math.max(...vals);
-                    const min = Math.min(...vals);
-                    const range = max - min || 1;
-
-                    return vals.map(v => {
-                        // Normalize 0 to 1
-                        const normalized = (v - min) / range;
-                        // Map to palette index. Higher value = Higher index (Darker)
-                        const index = Math.floor(normalized * (palette.length - 1));
-                        return palette[index];
-                    });
-                } else {
-                    // Fallback for Pie charts or where values aren't passed
-                    return Array.from({ length: count }, (_, i) => {
-                        const index = Math.floor((i / Math.max(1, count - 1)) * (palette.length - 1));
-                        return palette[index];
-                    });
-                }
-            } else {
-                // Discrete: Cycle through distinct colors
-                return Array.from({ length: count }, (_, i) => palette[i % palette.length]);
-            }
-        };
+        const generateColors = (input: number | number[]) => genColors(input, palette, useSequential);
 
         // KPI Card: no Chart.js dataset needed (comparison handled in renderChart inline)
         if (chartType === 'kpiCard') {
@@ -842,7 +775,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             // Get unique series values and x-axis labels
             const seriesValues = [...new Set(transformedData.map(d => String(d[seriesCol])))];
             const uniqueLabels = [...new Set(transformedData.map(d => formatDate(String(d[xKey] ?? ''))))];
-            const seriesColors = genColors(seriesValues.length, PALETTES.vibrant, false);
+            const seriesColors = genColors(seriesValues.length, selectPalette({ ...formatting, colorEncoding: 'discrete' }, xKey, transformedData, chartType), false);
             const isFillChart = chartType === 'area' || chartType === 'stackedArea';
             const isCurved = chartType === 'curvedLine' || chartType === 'area';
             const isStepped = chartType === 'steppedLine';
@@ -896,7 +829,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // Mixing in Cartesian properties (fill, tension, pointRadius,
         // borderSkipped, maxBarThickness) can break Arc rendering.
         if (isPieChart) {
-            const bgColors = generateColors(values.length) as string[];
+            const bgColors = generateColors(values);
             return {
                 labels,
                 datasets: [{
@@ -931,11 +864,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             stepped: isStepped ? 'middle' as const : false,
             pointRadius: isLineVariant ? (values.length > 30 ? 0 : 3) : 0,
             pointHoverRadius: isLineVariant ? 7 : 0,
-            pointBackgroundColor: '#fff',
-            pointBorderColor: baseColor,
+            pointBackgroundColor: isLineVariant ? primaryColors : '#fff',
+            pointBorderColor: isLineVariant ? primaryColors : baseColor,
             pointBorderWidth: 2,
             pointHoverBorderWidth: 3,
             pointHoverBackgroundColor: '#fff',
+            segment: isLineVariant && useSequential
+                ? { borderColor: (context: any) => primaryColors[context.p1DataIndex] || baseColor }
+                : undefined,
             borderRadius: isBarVariant ? 7 : 0,
             borderSkipped: false,
             maxBarThickness: 64,

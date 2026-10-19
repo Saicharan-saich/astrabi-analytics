@@ -50,7 +50,9 @@ const SizeToggle: React.FC<{
     {options.map(opt => (
       <button
         key={opt.value}
+        type="button"
         onClick={() => onChange(opt.value)}
+        aria-pressed={value === opt.value}
         className={`flex-1 text-xs py-2 rounded-md font-bold transition-all ${
           value === opt.value
             ? 'bg-white dark:bg-slate-600 text-indigo-600 dark:text-indigo-300 shadow-sm'
@@ -127,6 +129,7 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
         </h3>
         <button
           onClick={onClose}
+          aria-label="Close chart appearance"
           className="text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 p-1 rounded-full transition-colors"
         >
           <X className="w-4 h-4" />
@@ -135,6 +138,19 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
 
       <div className="space-y-4">
         {/* ═══ SECTION: Color & Palette ══════════════════════ */}
+        <div role="group" aria-label="Colour meaning">
+          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
+            Colour meaning
+          </label>
+          <SizeToggle
+            value={formatting.colorEncoding || 'auto'}
+            options={[{ label: 'Auto', value: 'auto' }, { label: 'Low → high', value: 'sequential' }, { label: 'Categories', value: 'discrete' }]}
+            onChange={value => update({ colorEncoding: value as NonNullable<FormattingConfig['colorEncoding']> })}
+          />
+          <p className="mt-1.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+            Auto uses a low-to-high shade for time periods and distinct colours for named categories. Multi-series colours stay distinct.
+          </p>
+        </div>
         <div>
           <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
             Color Palette
