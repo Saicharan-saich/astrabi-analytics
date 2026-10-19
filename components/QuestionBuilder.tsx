@@ -10,6 +10,7 @@ import { QuerySelect } from './QuerySelect';
 import { resolvePhysicalBuilderFields } from '../services/questionBuilderFieldGuard';
 import { questionBuilderColumns } from '../services/questionBuilderColumns';
 import { buildAnalyticalCapabilityContract, type CapabilityFieldRule } from '../services/ai-sql';
+import { describeBuilderQuestion } from '../utils/builderAnswer';
 
 interface QuestionBuilderProps {
     dataset: Dataset;
@@ -297,41 +298,34 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, []);
 
-    // Generate plain English summary
+    // Preview the current controls immediately; the result workspace separately
+    // reports a finding only after the query has completed.
     const summaryText = useMemo(() => {
-        if (!metric) return '';
-        const titleCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-        const aggLabelMap: Record<string, string> = { 'SUM': 'total', 'AVG': 'average', 'COUNT': 'count of', 'COUNT_DISTINCT': 'number of unique', 'MAX': 'highest', 'MIN': 'lowest', 'NONE': '' };
-        const aggLabel = aggLabelMap[aggregation] || aggregation.toLowerCase();
-        const metricLabel = titleCase(metric);
-        let text = aggregation === 'NONE' ? `Showing ${metricLabel} values` : `Showing the ${aggLabel} ${metricLabel}`;
-        const dimParts: string[] = [];
-        if (dimension) dimParts.push(titleCase(dimension));
-        if (timeGrain) dimParts.push(timeGrain);
-        if (dimParts.length > 0) {
-            text += ` by ${dimParts.join(' over ')}`;
-        } else {
-            text += ' (overall total)';
+        const dimensionFilters: Record<string, string[]> = {};
+        const measureFilters: Array<{ column: string; operator: string; value: number }> = [];
+        const dateFilters: Array<{ column: string; timeGrain: string; values: string[] }> = [];
+        for (const filter of filters) {
+            if (!filter.column) continue;
+            if (filter.type === 'dimension') {
+                const values = Array.isArray(filter.value) ? filter.value : [filter.value];
+                if (values.filter(Boolean).length) dimensionFilters[filter.column] = values.filter(Boolean);
+            } else if (filter.type === 'measure') {
+                measureFilters.push({ column: filter.column, operator: filter.operator, value: filter.value });
+            } else if (!gafsOnly && filter.mode === 'range' && filter.rangeStart && filter.rangeEnd) {
+                dateFilters.push({ column: filter.column, timeGrain: 'day', values: [`${filter.rangeStart}__${filter.rangeEnd}`] });
+            } else if (!gafsOnly && filter.values?.length) {
+                dateFilters.push({ column: filter.column, timeGrain: filter.timeGrain || 'year', values: filter.values });
+            }
         }
-        if (timeFilter && timeFilter !== 'all_time') {
-            const timeLabels: Record<string, string> = {
-                'today': 'for today', 'yesterday': 'for yesterday',
-                'this_week': 'for this week', 'this_month': 'for this month',
-                'this_quarter': 'for this quarter', 'this_year': 'for this year',
-                'last_7_days': 'over the last 7 days', 'last_30_days': 'over the last 30 days',
-                'last_90_days': 'over the last 90 days'
-            };
-            const timeLabel = timeLabels[timeFilter] || (timeFilter.startsWith('last_') ? `over the last ${timeFilter.split('_')[1]} ${timeFilter.split('_')[2] || 'days'}` : `for ${timeFilter.replace(/_/g, ' ')}`);
-            text += ` ${timeLabel}`;
-        } else {
-            text += ' across all time';
-        }
-        if (comparison === 'previous_period') text += ', compared to the previous period';
-        else if (comparison === 'same_period_last_year') text += ', compared to the same period last year';
-        else if (comparison === 'same_period_last_n') text += `, compared to the last ${comparisonOffset} ${comparisonGrain}${comparisonOffset > 1 ? 's' : ''}`;
-        text += '.';
-        return text;
-    }, [metric, aggregation, dimension, timeGrain, timeFilter, comparison, comparisonGrain, comparisonOffset]);
+        return describeBuilderQuestion({
+            metric, aggregation, dimension: timeGrain || dimension,
+            secondaryDimensions: gafsOnly ? [] : [...secondaryDimensions, ...(timeGrain && dimension ? [dimension] : [])],
+            secondaryMetrics: gafsOnly ? [] : secondaryMetrics,
+            secondaryMetricAggregations, timeFilter: gafsOnly ? 'all_time' : timeFilter,
+            filters: dimensionFilters, measureFilters, dateFilters, sort, limit,
+            comparison: gafsOnly ? '' : comparison, comparisonGrain, comparisonOffset,
+        });
+    }, [metric, aggregation, dimension, timeGrain, timeFilter, filters, sort, limit, comparison, comparisonGrain, comparisonOffset, secondaryDimensions, secondaryMetrics, secondaryMetricAggregations, gafsOnly]);
 
     // Auto-sync comparison grain with time filter
     useEffect(() => {
@@ -867,10 +861,10 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         );
                     })}
                 </div>
-                <div className="min-w-0 w-full text-left sm:w-auto sm:text-right">
-                    <div className="text-[10px] font-bold uppercase tracking-[0.18em] text-slate-500">Current analysis</div>
-                    <div className="max-w-[540px] whitespace-normal break-words text-xs font-semibold leading-5 text-slate-300">
-                        {summaryText || 'Choose a metric to begin'}
+                <div className="qi-builder-question-summary min-w-0 w-full rounded-xl border border-indigo-400/20 bg-indigo-400/[0.08] px-3 py-2 text-left" role="status" aria-live="polite">
+                    <div className="text-[10px] font-bold uppercase tracking-[0.16em] text-indigo-300">Your question in words</div>
+                    <div className="whitespace-normal break-words text-sm font-semibold leading-5 text-slate-100">
+                        {summaryText}
                     </div>
                 </div>
             </div>

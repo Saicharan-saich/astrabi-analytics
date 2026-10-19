@@ -13,6 +13,7 @@ import { Tooltip } from './Tooltip';
 import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 import { FormatPanel } from './FormatPanel';
 import { QuestionBuilderVideoGuide } from './QuestionBuilderVideoGuide';
+import { describeBuilderFinding, describeBuilderQuestion } from '../utils/builderAnswer';
 
 import { AIInsightPanel } from './AIInsightPanel';
 import { TransparencyPanel } from './TransparencyPanel';
@@ -910,6 +911,13 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
                 {result && !error && !isLoading && (
                     <>
+                        <section className="qi-builder-answer mb-3 shrink-0 rounded-2xl border border-indigo-200 bg-indigo-50/80 px-4 py-3 text-slate-800 shadow-sm" aria-label="Your answer in words" aria-live="polite">
+                            <div className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-indigo-700">Your answer in words</div>
+                            <p className="mt-1 text-sm font-semibold leading-6">{describeBuilderQuestion(lastRunConfig || result.config)}</p>
+                            {describeBuilderFinding(result, formatting) && (
+                                <p className="mt-1 text-sm leading-6 text-slate-600">{describeBuilderFinding(result, formatting)}</p>
+                            )}
+                        </section>
                         {/* â”€â”€â”€ VISUAL TAB â”€â”€â”€ */}
                         {contentTab === 'visual' && (
                           <>
