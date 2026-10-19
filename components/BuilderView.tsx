@@ -14,11 +14,12 @@ import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 import { FormatPanel } from './FormatPanel';
 import { QuestionBuilderVideoGuide } from './QuestionBuilderVideoGuide';
 import { describeBuilderFinding, describeBuilderQuestion } from '../utils/builderAnswer';
+import { BUILDER_SPLIT_DEFAULT, BUILDER_SPLIT_MIN, builderSplitMaximum, clampBuilderSplit } from '../utils/builderSplitter';
 
 import { AIInsightPanel } from './AIInsightPanel';
 import { TransparencyPanel } from './TransparencyPanel';
 
-import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers, Calendar, Undo2 } from 'lucide-react';
+import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers, Calendar, Undo2, GripVertical } from 'lucide-react';
 
 interface BuilderViewProps {
     dataset: Dataset;
@@ -40,6 +41,42 @@ interface BuilderViewProps {
 }
 
 export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange, isActive = true, onReset }) => {
+    const workspaceRef = useRef<HTMLDivElement>(null);
+    const [workspaceWidth, setWorkspaceWidth] = useState(() => typeof window === 'undefined' ? 1200 : window.innerWidth);
+    const [preferredBuilderWidth, setPreferredBuilderWidth] = useState(() => {
+        try {
+            const saved = Number(localStorage.getItem('qi_builder_pane_width_v1'));
+            return Number.isFinite(saved) && saved > 0 ? saved : BUILDER_SPLIT_DEFAULT;
+        } catch { return BUILDER_SPLIT_DEFAULT; }
+    });
+    const [isResizingBuilder, setIsResizingBuilder] = useState(false);
+    const builderWidth = clampBuilderSplit(preferredBuilderWidth, workspaceWidth);
+    const builderMaxWidth = builderSplitMaximum(workspaceWidth);
+
+    React.useEffect(() => {
+        const workspace = workspaceRef.current;
+        if (!workspace) return;
+        const updateWidth = () => setWorkspaceWidth(workspace.getBoundingClientRect().width);
+        updateWidth();
+        const observer = new ResizeObserver(updateWidth);
+        observer.observe(workspace);
+        return () => observer.disconnect();
+    }, []);
+
+    React.useEffect(() => {
+        const timer = window.setTimeout(() => {
+            try { localStorage.setItem('qi_builder_pane_width_v1', String(preferredBuilderWidth)); } catch { /* private storage unavailable */ }
+        }, 250);
+        return () => window.clearTimeout(timer);
+    }, [preferredBuilderWidth]);
+
+    const resizeBuilderToPointer = (clientX: number) => {
+        const workspace = workspaceRef.current;
+        if (!workspace) return;
+        const rect = workspace.getBoundingClientRect();
+        setPreferredBuilderWidth(clampBuilderSplit(clientX - rect.left, rect.width));
+    };
+
     // ── Session persistence key (scoped to dataset) ──
     const storageKey = `qi_builder_${dataset.id}`;
     const [savedSession, setSavedSession] = useState<any>(() => {
@@ -90,7 +127,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             cancelAnimationFrame(frame);
             window.clearTimeout(settle);
         };
-    }, [isBuilderCollapsed]);
+    }, [isBuilderCollapsed, builderWidth]);
 
     // Full-screen mode is intentionally local to this Builder instance. Keeping
     // the same instance alive preserves the query, result, filters and formatting.
@@ -507,7 +544,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     [result, forceGridMode]);
 
     return (
-        <div className={`qi-builder-workspace qi-builder-layout ${isBuilderCollapsed ? 'qi-builder-layout--builder-collapsed' : ''} ${isAnalyticsExplorer ? 'qi-builder-layout--explorer' : ''} flex flex-col h-full bg-slate-50`}>
+        <div ref={workspaceRef} style={{ '--qi-builder-dock-width': `${builderWidth}px` } as React.CSSProperties} className={`qi-builder-workspace qi-builder-layout ${isBuilderCollapsed ? 'qi-builder-layout--builder-collapsed' : ''} ${isAnalyticsExplorer ? 'qi-builder-layout--explorer' : ''} ${isResizingBuilder ? 'qi-builder-layout--resizing' : ''} flex flex-col h-full bg-slate-50`}>
             {isAnalyticsExplorer && (
                 <div className="qi-analytics-explorer-header qi-builder-context flex items-center justify-between px-5 py-3 bg-white border-b border-slate-200 shadow-sm shrink-0 z-30">
                     <div>
@@ -524,7 +561,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             )}
 
             {/* â”€â”€â”€ COLLAPSIBLE BUILDER â”€â”€â”€ */}
-            <div className={`qi-builder-panel qi-builder-dock relative bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isAnalyticsExplorer ? 'hidden' : (isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible')}`}>
+            <div id="qi-builder-panel" className={`qi-builder-panel qi-builder-dock relative bg-white border-b border-slate-200 shadow-sm z-20 shrink-0 transition-all duration-300 ease-in-out ${isAnalyticsExplorer ? 'hidden' : (isBuilderCollapsed ? 'max-h-0 border-b-0 overflow-hidden' : 'max-h-[500px] overflow-visible')}`}>
                 {effectiveInitialConfig?._source === 'ai-sql' && showHandoffNotice && (
                     <div className={`mx-3 mt-2 flex items-start gap-2 rounded-lg border px-3 py-2 text-xs ${effectiveInitialConfig._handoffWarnings?.length ? 'border-amber-200 bg-amber-50 text-amber-800' : 'border-emerald-200 bg-emerald-50 text-emerald-800'}`} role="status">
                         {effectiveInitialConfig._handoffWarnings?.length ? <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 shrink-0" />}
@@ -578,6 +615,54 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     onMovingAvgWindowChange={movingAvgWindow => formatting && onUpdateFormatting?.({ ...formatting, movingAvgWindow })}
                 />
             </div>
+
+            {!isBuilderCollapsed && !isAnalyticsExplorer && (
+                <div
+                    role="separator"
+                    tabIndex={0}
+                    aria-label="Resize Question Builder and visual result"
+                    aria-orientation="vertical"
+                    aria-controls="qi-builder-panel qi-builder-result-pane"
+                    aria-valuemin={BUILDER_SPLIT_MIN}
+                    aria-valuemax={builderMaxWidth}
+                    aria-valuenow={builderWidth}
+                    aria-valuetext={`${builderWidth} pixels for Question Builder`}
+                    className="qi-builder-splitter"
+                    title="Drag to resize the Question Builder. Use arrow keys when focused; double-click to reset."
+                    onPointerDown={event => {
+                        if (event.button !== 0) return;
+                        event.preventDefault();
+                        event.currentTarget.setPointerCapture(event.pointerId);
+                        setIsResizingBuilder(true);
+                    }}
+                    onPointerMove={event => {
+                        if (isResizingBuilder && event.currentTarget.hasPointerCapture(event.pointerId)) {
+                            resizeBuilderToPointer(event.clientX);
+                        }
+                    }}
+                    onPointerUp={event => {
+                        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                        setIsResizingBuilder(false);
+                    }}
+                    onPointerCancel={event => {
+                        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+                        setIsResizingBuilder(false);
+                    }}
+                    onLostPointerCapture={() => setIsResizingBuilder(false)}
+                    onDoubleClick={() => setPreferredBuilderWidth(BUILDER_SPLIT_DEFAULT)}
+                    onKeyDown={event => {
+                        const step = event.shiftKey ? 40 : 16;
+                        if (event.key === 'ArrowLeft') setPreferredBuilderWidth(clampBuilderSplit(builderWidth - step, workspaceWidth));
+                        else if (event.key === 'ArrowRight') setPreferredBuilderWidth(clampBuilderSplit(builderWidth + step, workspaceWidth));
+                        else if (event.key === 'Home') setPreferredBuilderWidth(BUILDER_SPLIT_MIN);
+                        else if (event.key === 'End') setPreferredBuilderWidth(builderMaxWidth);
+                        else return;
+                        event.preventDefault();
+                    }}
+                >
+                    <span className="qi-builder-splitter-grip" aria-hidden="true"><GripVertical className="h-4 w-4" /></span>
+                </div>
+            )}
 
             {/* â”€â”€â”€ TOOLBAR â”€â”€â”€ */}
             <div className="qi-builder-toolbar qi-builder-commandbar relative flex items-center gap-2 bg-white border-b border-slate-200 px-3 py-1.5 shrink-0 shadow-sm z-10">
@@ -868,7 +953,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             </div>
 
             {/* â”€â”€â”€ CONTENT AREA â€” Tabbed â”€â”€â”€ */}
-            <div className="qi-builder-content flex-1 flex flex-col overflow-auto p-4">
+            <div id="qi-builder-result-pane" className="qi-builder-content flex-1 flex flex-col overflow-auto p-4">
 
                 {error && (
                     <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg mb-4 flex items-start">

@@ -50,6 +50,27 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await expect(page.getByRole('heading', { name: 'Dataset Workspace' })).toBeVisible({ timeout: 30000 });
     await page.getByRole('button', { name: 'Question Builder', exact: true }).click();
 
+    const splitter = page.getByRole('separator', { name: 'Resize Question Builder and visual result' });
+    const builderDock = page.locator('#qi-builder-panel');
+    await expect(splitter).toBeVisible();
+    const originalWidth = (await builderDock.boundingBox())!.width;
+    await splitter.focus();
+    await page.keyboard.press('ArrowRight');
+    await expect.poll(async () => (await builderDock.boundingBox())!.width).toBeGreaterThan(originalWidth + 8);
+    const grip = (await splitter.boundingBox())!;
+    await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(grip.x + grip.width / 2 + 100, grip.y + grip.height / 2, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(async () => (await builderDock.boundingBox())!.width).toBeGreaterThan(originalWidth + 50);
+    await splitter.dblclick();
+    await expect.poll(async () => (await builderDock.boundingBox())!.width).toBeCloseTo(originalWidth, 0);
+    await page.getByRole('button', { name: 'Hide Builder', exact: true }).click();
+    await expect(splitter).toBeHidden();
+    await page.getByRole('button', { name: 'Show Builder', exact: true }).click();
+    await expect(splitter).toBeVisible();
+    await expect.poll(async () => (await builderDock.boundingBox())!.width).toBeCloseTo(originalWidth, 0);
+
     await expect(page.getByRole('button', { name: 'Watch how Question Builder works' })).toBeVisible();
     await page.getByRole('button', { name: 'Watch how Question Builder works' }).click();
     const guide = page.getByRole('dialog', { name: /Build a useful visual in about 70 seconds/i });
