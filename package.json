@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "@duckdb/duckdb-wasm": "^1.33.1-dev45.0",
-    "chart.js": "^4.5.1",
+    "chart.js": "^4.6.1",
     "chartjs-chart-treemap": "^3.1.0",
     "clsx": "^2.1.1",
     "d3-scale": "4.0.2",
@@ -29,10 +29,10 @@
     "react-dom": "^18.3.1",
     "react-grid-layout": "^1.4.4",
     "react-simple-maps": "3.0.0",
-    "sql.js": "^1.14.1",
-    "tailwind-merge": "^3.4.0",
+    "sql.js": "^1.15.1",
+    "tailwind-merge": "^3.7.0",
     "xlsx": "^0.18.5",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.16"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.1",
