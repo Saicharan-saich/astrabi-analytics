@@ -45,6 +45,11 @@ ChartJS.register(
     TreemapElement
 );
 
+// Charts use the same typeface as the rest of the UI (Manrope, see index.css)
+// so axis ticks, legends and tooltips read as part of the interface.
+const CHART_FONT_FAMILY = "'Manrope', 'Inter', system-ui, -apple-system, sans-serif";
+ChartJS.defaults.font.family = CHART_FONT_FAMILY;
+
 import { Dataset, ColumnType, AggregationType, QueryConfig, AnalysisResult, TimeGrain, AnalysisType, ChartConfig, FormattingConfig } from '../types';
 import { applyTableCalculation } from '../utils/tableCalculations';
 import {
@@ -1177,7 +1182,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     labels: {
                         font: {
                             size: Math.max(fontSize, 11),
-                            family: "'Inter', 'system-ui', -apple-system, sans-serif",
+                            family: CHART_FONT_FAMILY,
                             weight: '600' as any,
                         },
                         usePointStyle: true,
@@ -1215,11 +1220,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     titleFont: {
                         size: 14,
                         weight: 'bold' as const,
-                        family: "'Inter', 'system-ui', -apple-system, sans-serif"
+                        family: CHART_FONT_FAMILY
                     },
                     bodyFont: {
                         size: 13,
-                        family: "'Inter', 'system-ui', -apple-system, sans-serif"
+                        family: CHART_FONT_FAMILY
                     },
                     bodySpacing: 8,
                     titleMarginBottom: 11,
@@ -1377,7 +1382,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         minRotation: 0,
                         font: {
                             size: axisLabelFontSize,
-                            family: "'Inter', 'system-ui', -apple-system, sans-serif",
+                            family: CHART_FONT_FAMILY,
                             weight: formatting?.axisBold !== false ? '600' as const : ('500' as any)
                         },
                         color: readableChartTextColor(formatting?.axisColor, isDark, isDark ? '#c5d3e5' : '#52637d'),
@@ -1410,7 +1415,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         display: yVisible ?? true,
                         font: {
                             size: axisLabelFontSize,
-                            family: "'Inter', 'system-ui', -apple-system, sans-serif",
+                            family: CHART_FONT_FAMILY,
                             weight: formatting?.axisBold !== false ? '600' as const : ('500' as any)
                         },
                         color: readableChartTextColor(formatting?.axisColor, isDark, isDark ? '#c5d3e5' : '#52637d'),

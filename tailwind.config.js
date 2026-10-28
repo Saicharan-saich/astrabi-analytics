@@ -52,9 +52,11 @@ export default {
     './store/**/*.{ts,tsx}',
     './hooks/**/*.{ts,tsx}',
   ],
-  // darkMode left at the v3 default ('media') to match the Play CDN's behavior —
-  // the app themes via `theme === 'dark' ? ...` conditionals + CSS variables, not
-  // Tailwind `dark:` variants (there are none in the codebase).
+  // `dark:` variants follow the app's own theme toggle. ThemeProvider puts
+  // `dark` or `light` on <html>; with the old 'media' default, ~1,000 `dark:`
+  // classes across 26 components followed the OS setting instead, so an app
+  // set to dark on a light-mode OS rendered light-mode text on dark surfaces.
+  darkMode: 'class',
   theme: {
     extend: {
       colors: {

@@ -3293,6 +3293,36 @@ html.light .qi-nav-active-pill {
   pointer-events: none;
 }
 
+/* ── Modal entrances ─────────────────────────────────
+   Plain (non-Framer) modal overlays share one markup shape:
+   a fixed, centred flex container with a black/xx backdrop.
+   They now fade in, and their panel lifts in slightly.
+   `:not([style])` skips Framer Motion elements, which carry
+   inline styles and already animate themselves. */
+@keyframes qi-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes qi-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fixed.inset-0.flex.items-center.justify-center[class*="bg-black/"]:not([style]) {
+  animation: qi-backdrop-in var(--motion-fast) ease-out backwards;
+}
+
+.fixed.inset-0.flex.items-center.justify-center[class*="bg-black/"]:not([style]) > :not([style]) {
+  animation: qi-panel-in var(--motion-base) var(--ease-out-quint) backwards;
+}
+
 /* ── Respect reduced motion everywhere ──────────────
    Catches every CSS animation and transition (Tailwind
    utilities included). Framer Motion is covered separately
