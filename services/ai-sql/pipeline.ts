@@ -1798,7 +1798,10 @@ export async function runAISQLPipeline(
     // Surface ERROR-level faithfulness issues to the user rather than answering
     // silently — the "never a silent wrong answer" guarantee.
     const _vErrors = _verification.issues.filter(i => i.severity === 'error');
-    const _analyticalErrors = [...analyticalIRIssues, ...analyticalResultIssues].filter(issue => issue.severity === 'error');
+    // Only checks on the executed result produce a user-facing caveat. The
+    // pre-execution audit describes the local pre-analysis (often a guess the
+    // model then overrides) and stays visible in the certificate as a warning.
+    const _analyticalErrors = analyticalResultIssues.filter(issue => issue.severity === 'error');
     const verificationCaveat = _vErrors.length > 0 || _analyticalErrors.length > 0
         ? ` ⚠️ Heads up: ${[..._vErrors, ..._analyticalErrors].map(i => i.message).join(' ')} Please double-check or rephrase.`
         : '';
@@ -1837,7 +1840,13 @@ export async function runAISQLPipeline(
         analyticalValidation: {
             passed: analyticalIRIssues.every(issue => issue.severity !== 'error')
                 && analyticalResultIssues.every(issue => issue.severity !== 'error'),
-            issues: [...analyticalIRIssues, ...analyticalResultIssues],
+            // Pre-execution IR findings audit the local pre-analysis, which
+            // the pipeline treats as advisory everywhere else; tag them so the
+            // certificate does not withhold a verified result on their account.
+            issues: [
+                ...analyticalIRIssues.map(issue => ({ ...issue, stage: 'pre_execution' as const })),
+                ...analyticalResultIssues.map(issue => ({ ...issue, stage: 'result' as const })),
+            ],
         },
         capabilityContract,
         capabilityValidation,

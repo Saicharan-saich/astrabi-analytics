@@ -110,6 +110,13 @@ export interface IRVerificationIssue {
     code: string;
     severity: 'error' | 'warn';
     message: string;
+    /**
+     * `pre_execution`: found by auditing the local pre-analysis of the
+     * question before the model wrote SQL. It is advisory evidence about the
+     * local interpretation, not about the executed answer.
+     * `result` (or unset): found by checking the executed result.
+     */
+    stage?: 'pre_execution' | 'result';
 }
 
 function unique<T>(values: T[], key: (value: T) => string): T[] {

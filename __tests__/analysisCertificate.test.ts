@@ -46,6 +46,54 @@ describe('Analysis Certificate', () => {
     expect(withheld.status).toBe('withheld');
   });
 
+  it('does not withhold a verified result because the local pre-check disagreed', () => {
+    // Regression: "Among our top 10 cities by sales, which are making the least
+    // profit?" was withheld because the local pre-analysis guessed the wrong
+    // grain, even though the executed SQL passed every result check.
+    const certificate = buildAnalysisCertificate({
+      question: 'Among our top 10 cities by sales, which are making the least profit?',
+      contract,
+      capabilityValidation: validation('safe', 'pass'),
+      result: result({
+        analyticalValidation: {
+          passed: false,
+          issues: [{ code: 'ranking_without_measure', severity: 'error', stage: 'pre_execution', message: 'Grouped/frequency ranking requires an aggregate ranking expression.' }],
+        },
+      }),
+    });
+    expect(certificate.status).toBe('conditional');
+    const check = certificate.checks.find(item => item.id === 'meaning:ranking_without_measure');
+    expect(check?.status).toBe('warn');
+    expect(check?.detail).toContain('Local pre-check (advisory)');
+  });
+
+  it('still withholds when the executed result fails an analytical check', () => {
+    const certificate = buildAnalysisCertificate({
+      question: 'Total sales',
+      contract,
+      capabilityValidation: validation('safe', 'pass'),
+      result: result({
+        analyticalValidation: {
+          passed: false,
+          issues: [{ code: 'scalar_has_group_grain', severity: 'error', stage: 'result', message: 'A scalar answer cannot be split into unrelated grouped rows.' }],
+        },
+      }),
+    });
+    expect(certificate.status).toBe('withheld');
+  });
+
+  it('treats untagged analytical errors as blocking (backwards compatible)', () => {
+    const certificate = buildAnalysisCertificate({
+      question: 'Total sales',
+      contract,
+      capabilityValidation: validation('safe', 'pass'),
+      result: result({
+        analyticalValidation: { passed: false, issues: [{ code: 'implicit_limit', severity: 'error', message: 'An unbounded listing must not be silently reduced by LIMIT.' }] },
+      }),
+    });
+    expect(certificate.status).toBe('withheld');
+  });
+
   it('contains evidence metadata but no source rows', () => {
     const certificate = buildAnalysisCertificate({ question: 'Total sales', contract, capabilityValidation: validation('safe', 'pass'), result: result() });
     expect(JSON.stringify(certificate)).not.toContain('rawData');

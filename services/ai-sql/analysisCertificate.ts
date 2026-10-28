@@ -68,12 +68,17 @@ export function buildAnalysisCertificate(args: {
         checks.push({ id: `sql:${check.name}`, category: 'sql', status: check.status, title: check.name, detail: check.message });
     }
     for (const issue of result.analyticalValidation?.issues || []) {
+        // A pre-execution finding concerns the local pre-analysis of the
+        // question, not the SQL that ran. The executed result is verified by
+        // the result and answer-contract checks below, so these never block
+        // display on their own; they are recorded as warnings.
+        const advisory = issue.stage === 'pre_execution';
         checks.push({
             id: `meaning:${issue.code}`,
             category: 'meaning',
-            status: issue.severity === 'error' ? 'fail' : 'warn',
+            status: issue.severity === 'error' && !advisory ? 'fail' : 'warn',
             title: issue.code.replace(/_/g, ' '),
-            detail: issue.message,
+            detail: advisory ? `Local pre-check (advisory): ${issue.message}` : issue.message,
         });
     }
     for (const check of result.contractValidation?.checks || []) {
