@@ -114,7 +114,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                     <GitMerge className="w-4 h-4 text-indigo-400" />
                     <h3 className="text-sm font-bold text-white">Relationship Map</h3>
                     {schema.joinEdges.length > 0 && (
-                        <span className="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-semibold">
+                        <span className="text-[11px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-semibold">
                             {schema.joinEdges.length} join{schema.joinEdges.length !== 1 ? 's' : ''}
                         </span>
                     )}
@@ -135,14 +135,14 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                                     <Database className="w-4 h-4 text-indigo-400 flex-shrink-0" />
                                     <div>
                                         <div className="text-xs font-bold text-white">{edge.leftTable}</div>
-                                        <div className="text-[10px] font-mono text-indigo-300">{edge.leftColumn}</div>
+                                        <div className="text-[11px] font-mono text-indigo-300">{edge.leftColumn}</div>
                                     </div>
                                 </div>
 
                                 {/* Join connector */}
                                 <div className="flex items-center gap-1.5 flex-shrink-0">
                                     <div className="w-10 h-[2px] bg-gradient-to-r from-slate-500 to-transparent group-hover:from-indigo-500 transition-colors" />
-                                    <div className={`px-2 py-1 rounded-md text-[9px] font-extrabold uppercase tracking-wider border ${edge.type === 'fk'
+                                    <div className={`px-2 py-1 rounded-md text-[10px] font-extrabold uppercase tracking-wider border ${edge.type === 'fk'
                                             ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                                             : 'bg-amber-500/15 text-amber-400 border-amber-500/30'
                                         }`}>
@@ -157,7 +157,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                                     <Database className="w-4 h-4 text-purple-400 flex-shrink-0" />
                                     <div>
                                         <div className="text-xs font-bold text-white">{edge.rightTable}</div>
-                                        <div className="text-[10px] font-mono text-purple-300">{edge.rightColumn}</div>
+                                        <div className="text-[11px] font-mono text-purple-300">{edge.rightColumn}</div>
                                     </div>
                                 </div>
                             </div>
@@ -210,7 +210,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                                         <Database className="w-4 h-4 text-indigo-400" />
                                         <div>
                                             <div className="text-sm font-bold text-white">{table.name}</div>
-                                            <div className="text-[10px] text-slate-400">
+                                            <div className="text-[11px] text-slate-400">
                                                 {table.rows.toLocaleString()} rows · {table.columns.length} columns
                                                 {pkCols.length > 0 && <span className="ml-2 text-amber-400">· {pkCols.length} PK</span>}
                                                 {joins.length > 0 && <span className="ml-2 text-emerald-400">· {joins.length} join{joins.length !== 1 ? 's' : ''}</span>}
@@ -219,7 +219,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                                     </div>
                                     <div className="flex items-center gap-2">
                                         {joins.length > 0 && (
-                                            <span className="text-[9px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full font-semibold border border-emerald-500/20">
+                                            <span className="text-[10px] bg-emerald-500/15 text-emerald-400 px-2 py-0.5 rounded-full font-semibold border border-emerald-500/20">
                                                 RELATIONSHIPS AVAILABLE
                                             </span>
                                         )}
@@ -229,7 +229,7 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                                 {isExpanded && (
                                     <div className="px-4 pb-4 pl-12">
                                         <div className="bg-slate-900/50 rounded-lg border border-slate-600 overflow-hidden">
-                                            <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-4 px-4 py-2 bg-slate-700/50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                                            <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-x-4 px-4 py-2 bg-slate-700/50 text-[11px] font-bold text-slate-400 uppercase tracking-wider">
                                                 <span>Column</span>
                                                 <span>Source</span>
                                                 <span>Normalized</span>
@@ -244,13 +244,13 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                                                         {col.name}
                                                         {col.isPK && <Key className="w-3.5 h-3.5 text-amber-400" />}
                                                     </span>
-                                                    <span className="font-mono text-[10px] text-slate-400">{col.sourceDataType || col.dataType || 'unknown'}</span>
-                                                    <span className={`font-mono text-[10px] ${getTypeColor(col.dataType)}`}>{col.normalizedDataType || col.dataType}</span>
-                                                    <span className="font-mono text-[10px] text-violet-300">{col.analyticalRole || '—'}</span>
-                                                    <span className={`font-mono text-[10px] ${(col.invalidCount || 0) > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                    <span className="font-mono text-[11px] text-slate-400">{col.sourceDataType || col.dataType || 'unknown'}</span>
+                                                    <span className={`font-mono text-[11px] ${getTypeColor(col.dataType)}`}>{col.normalizedDataType || col.dataType}</span>
+                                                    <span className="font-mono text-[11px] text-violet-300">{col.analyticalRole || '—'}</span>
+                                                    <span className={`font-mono text-[11px] ${(col.invalidCount || 0) > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
                                                         {col.parseSuccessRate == null ? '—' : `${Math.round(col.parseSuccessRate * 100)}%`}
                                                     </span>
-                                                    <span className="text-center">{col.isNullable ? <span className="text-slate-500 text-[10px]">YES</span> : <span className="text-amber-400 text-[10px] font-bold">NOT NULL</span>}</span>
+                                                    <span className="text-center">{col.isNullable ? <span className="text-slate-500 text-[11px]">YES</span> : <span className="text-amber-400 text-[11px] font-bold">NOT NULL</span>}</span>
                                                 </div>
                                             ))}
                                         </div>
@@ -271,15 +271,15 @@ export const SchemaView: React.FC<SchemaViewProps> = ({ dataset }) => {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-center">
                     <div>
                         <div className="text-2xl font-bold text-indigo-400">{dataset.totalRows.toLocaleString()}</div>
-                        <div className="text-[10px] text-slate-400 font-medium uppercase">Rows</div>
+                        <div className="text-[11px] text-slate-400 font-medium uppercase">Rows</div>
                     </div>
                     <div>
                         <div className="text-2xl font-bold text-purple-400">{dataset.columns.length}</div>
-                        <div className="text-[10px] text-slate-400 font-medium uppercase">Columns</div>
+                        <div className="text-[11px] text-slate-400 font-medium uppercase">Columns</div>
                     </div>
                     <div>
                         <div className="text-2xl font-bold text-emerald-400">{schema.tables.length}</div>
-                        <div className="text-[10px] text-slate-400 font-medium uppercase">Source Tables</div>
+                        <div className="text-[11px] text-slate-400 font-medium uppercase">Source Tables</div>
                     </div>
                 </div>
             </div>

@@ -56,7 +56,7 @@ const TOUR_STEPS = [
 
 const MiniChart: React.FC = () => (
     <div className="relative h-40 rounded-2xl border border-white/10 bg-slate-950/65 overflow-hidden">
-        <div className="absolute inset-x-5 top-5 flex items-center justify-between text-[10px] text-slate-500">
+        <div className="absolute inset-x-5 top-5 flex items-center justify-between text-[11px] text-slate-500">
             <span>Monthly sales</span>
             <span className="rounded-full bg-emerald-400/10 px-2 py-1 text-emerald-300">+18.4%</span>
         </div>
@@ -81,7 +81,7 @@ const VisualStage: React.FC<{ step: number }> = ({ step }) => {
                         <span className="h-2 w-2 rounded-full bg-emerald-400" />
                         <span className="text-xs font-semibold text-slate-200">Dataset workspace</span>
                     </div>
-                    <span className="rounded-full bg-indigo-400/10 px-2 py-1 text-[10px] text-indigo-200">Private by default</span>
+                    <span className="rounded-full bg-indigo-400/10 px-2 py-1 text-[11px] text-indigo-200">Private by default</span>
                 </div>
                 <div className="rounded-2xl border border-dashed border-indigo-300/35 bg-indigo-500/[0.07] px-6 py-9 text-center">
                     <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-400 to-cyan-400 shadow-lg shadow-indigo-500/30">
@@ -97,7 +97,7 @@ const VisualStage: React.FC<{ step: number }> = ({ step }) => {
                     {['Cleaned', 'Mapped', 'Ready'].map((label) => (
                         <div key={label} className="rounded-xl border border-white/[0.07] bg-white/[0.03] p-2 text-center">
                             <Check className="mx-auto h-3.5 w-3.5 text-emerald-300" />
-                            <span className="mt-1 block text-[10px] text-slate-300">{label}</span>
+                            <span className="mt-1 block text-[11px] text-slate-300">{label}</span>
                         </div>
                     ))}
                 </div>
@@ -113,17 +113,17 @@ const VisualStage: React.FC<{ step: number }> = ({ step }) => {
                         <Database className="h-4 w-4 text-cyan-300" />
                         <span className="text-xs font-semibold text-slate-200">Semantic model</span>
                     </div>
-                    <span className="text-[10px] text-emerald-300">Local processing</span>
+                    <span className="text-[11px] text-emerald-300">Local processing</span>
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-3">
                     <div className="rounded-2xl border border-cyan-300/15 bg-cyan-400/[0.06] p-4">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-cyan-200">Dimensions</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-cyan-200">Dimensions</p>
                         {['Order date', 'Region', 'Ship mode'].map((field) => (
                             <div key={field} className="mt-2 rounded-lg bg-slate-950/55 px-2.5 py-2 text-xs text-slate-200">{field}</div>
                         ))}
                     </div>
                     <div className="rounded-2xl border border-violet-300/15 bg-violet-400/[0.06] p-4">
-                        <p className="text-[10px] font-semibold uppercase tracking-wider text-violet-200">Measures</p>
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-violet-200">Measures</p>
                         {['Sales', 'Profit', 'Quantity'].map((field) => (
                             <div key={field} className="mt-2 rounded-lg bg-slate-950/55 px-2.5 py-2 text-xs text-slate-200">{field}</div>
                         ))}
@@ -145,10 +145,10 @@ const VisualStage: React.FC<{ step: number }> = ({ step }) => {
                         <Database className="h-4 w-4 text-sky-300" />
                         Question Builder
                     </div>
-                    <span className="text-[10px] text-sky-200">No SQL required</span>
+                    <span className="text-[11px] text-sky-200">No SQL required</span>
                 </div>
                 <div className="mt-5 rounded-2xl border border-white/[0.08] bg-slate-950/55 p-4">
-                    <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Build your analysis</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Build your analysis</p>
                     <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
                         <span className="rounded-lg bg-sky-400/10 px-2.5 py-2 font-semibold text-sky-100">SUM of Sales</span>
                         <ChevronRight className="h-3.5 w-3.5 text-slate-600" />
@@ -163,7 +163,7 @@ const VisualStage: React.FC<{ step: number }> = ({ step }) => {
                         ['Visual', 'Column chart'],
                     ].map(([label, value]) => (
                         <div key={label} className="rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2.5">
-                            <p className="text-[10px] text-slate-500">{label}</p>
+                            <p className="text-[11px] text-slate-500">{label}</p>
                             <p className="mt-1 text-[11px] font-semibold text-slate-200">{value}</p>
                         </div>
                     ))}
@@ -184,7 +184,7 @@ const VisualStage: React.FC<{ step: number }> = ({ step }) => {
                     AI SQL workspace
                 </div>
                 <div className="mt-5 rounded-2xl border border-violet-300/20 bg-violet-400/[0.07] p-4">
-                    <p className="text-[10px] uppercase tracking-wider text-violet-200">Ask a question</p>
+                    <p className="text-[11px] uppercase tracking-wider text-violet-200">Ask a question</p>
                     <p className="mt-2 text-sm font-semibold leading-relaxed text-white">“Which region has the highest profit margin?”</p>
                 </div>
                 <div className="mt-4 flex items-center gap-2 text-[11px] text-slate-400">
@@ -205,7 +205,7 @@ const VisualStage: React.FC<{ step: number }> = ({ step }) => {
                     <BarChart2 className="h-4 w-4 text-amber-300" />
                     Executive dashboard
                 </div>
-                <span className="rounded-md bg-amber-300/10 px-2 py-1 text-[10px] text-amber-200">Live insight</span>
+                <span className="rounded-md bg-amber-300/10 px-2 py-1 text-[11px] text-amber-200">Live insight</span>
             </div>
             <div className="mt-5 grid grid-cols-3 gap-2">
                 {[
@@ -214,7 +214,7 @@ const VisualStage: React.FC<{ step: number }> = ({ step }) => {
                     ['Orders', '9,994'],
                 ].map(([label, value]) => (
                     <div key={label} className="rounded-xl border border-white/[0.08] bg-slate-950/55 p-3">
-                        <p className="text-[10px] text-slate-500">{label}</p>
+                        <p className="text-[11px] text-slate-500">{label}</p>
                         <p className="mt-1 text-sm font-extrabold text-white">{value}</p>
                     </div>
                 ))}
@@ -257,7 +257,7 @@ export const PreLoginTour: React.FC<PreLoginTourProps> = ({ onComplete }) => {
                     <img src="/logo.jpg" alt="QuickInsight" className="h-10 w-10 rounded-xl object-cover ring-1 ring-white/15" />
                     <div>
                         <p className="text-sm font-extrabold tracking-tight">QuickInsight</p>
-                        <p className="text-[10px] uppercase tracking-[0.18em] text-slate-500">Data intelligence, privately</p>
+                        <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Data intelligence, privately</p>
                     </div>
                 </div>
                 <button onClick={onComplete} className="rounded-xl px-3 py-2 text-xs font-semibold text-slate-400 transition-colors hover:bg-white/[0.06] hover:text-white">

@@ -118,7 +118,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
                                 <div className="flex items-center gap-2">
                                     <Clock className="w-4 h-4 text-gray-500" />
                                     <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">Recent Uploads</h3>
-                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 font-bold">
+                                    <span className="text-[11px] px-2 py-0.5 rounded-full bg-violet-500/15 text-violet-400 font-bold">
                                         {datasets.length}
                                     </span>
                                 </div>
@@ -148,7 +148,7 @@ export const UploadView: React.FC<UploadViewProps> = ({
                                                         <span>{ds.columns.length} columns</span>
                                                     </div>
                                                     {isActive && (
-                                                        <span className="inline-block mt-1.5 text-[10px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                                                        <span className="inline-block mt-1.5 text-[11px] font-bold uppercase tracking-wider text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full">
                                                             Current workspace
                                                         </span>
                                                     )}

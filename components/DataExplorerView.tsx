@@ -237,7 +237,7 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
 
             {/* Column Types Legend (only in clean mode) */}
             {viewMode === 'clean' && (
-                <div className="flex items-center gap-3 text-[10px] uppercase tracking-wider text-slate-500">
+                <div className="flex items-center gap-3 text-[11px] uppercase tracking-wider text-slate-500">
                     {[ColumnType.METRIC, ColumnType.DATE, ColumnType.DIMENSION, ColumnType.ID].map(t => (
                         <span key={t} className={`px-2 py-0.5 rounded-full ${typeColor(t)} font-bold`}>{t}</span>
                     ))}
@@ -249,16 +249,16 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
                 <table className="w-full text-sm">
                     <thead className="sticky top-0 z-10 bg-slate-800/95 backdrop-blur-sm">
                         <tr>
-                            <th className="px-3 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5 w-12">#</th>
+                            <th className="px-3 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5 w-12">#</th>
                             {columns.map(col => (
                                 <th
                                     key={col}
                                     onClick={() => handleSort(col)}
-                                    className="px-3 py-3 text-left text-[10px] font-bold uppercase tracking-wider border-b border-white/5 cursor-pointer hover:bg-white/5 transition-colors group whitespace-nowrap"
+                                    className="px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider border-b border-white/5 cursor-pointer hover:bg-white/5 transition-colors group whitespace-nowrap"
                                 >
                                     <div className="flex items-center gap-1.5">
                                         {viewMode === 'clean' && (
-                                            <span className={`px-1.5 py-0.5 rounded text-[9px] ${typeColor(getColType(col))}`}>
+                                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${typeColor(getColType(col))}`}>
                                                 {getColType(col).charAt(0)}
                                             </span>
                                         )}
@@ -266,7 +266,7 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
                                         <ArrowUpDown className={`w-3 h-3 transition-opacity ${sortCol === col ? 'text-indigo-400 opacity-100' : 'text-slate-600 opacity-0 group-hover:opacity-50'
                                             }`} />
                                         {sortCol === col && (
-                                            <span className="text-indigo-400 text-[9px]">{sortAsc ? '↑' : '↓'}</span>
+                                            <span className="text-indigo-400 text-[10px]">{sortAsc ? '↑' : '↓'}</span>
                                         )}
                                     </div>
                                 </th>
@@ -279,7 +279,7 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
                                 key={idx}
                                 className="hover:bg-white/3 transition-colors"
                             >
-                                <td className="px-3 py-2 text-[10px] text-slate-600 font-mono">{currentPage * pageSize + idx + 1}</td>
+                                <td className="px-3 py-2 text-[11px] text-slate-600 font-mono">{currentPage * pageSize + idx + 1}</td>
                                 {columns.map(col => {
                                     const val = row[col];
                                     const isEmpty = val === null || val === undefined || val === '';

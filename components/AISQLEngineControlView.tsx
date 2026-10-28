@@ -207,9 +207,9 @@ export const AISQLEngineControlView: React.FC = () => {
                                         <span className={`h-5 w-5 rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-5' : 'translate-x-0'}`} />
                                     </span>
                                 </div>
-                                <h3 className="mt-3 flex items-center gap-2 text-sm font-black">{engine.name}<span className={`text-[10px] uppercase ${enabled ? 'text-emerald-500' : 'text-slate-500'}`}>{enabled ? 'On' : 'Off'}</span></h3>
+                                <h3 className="mt-3 flex items-center gap-2 text-sm font-black">{engine.name}<span className={`text-[11px] uppercase ${enabled ? 'text-emerald-500' : 'text-slate-500'}`}>{enabled ? 'On' : 'Off'}</span></h3>
                                 <p className={`mt-1.5 text-xs leading-5 ${muted}`}>{engine.description}</p>
-                                {engine.failClosed && <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-500"><Power className="h-3 w-3" /> Off pauses pipeline</span>}
+                                {engine.failClosed && <span className="mt-2 inline-flex items-center gap-1 text-[11px] font-bold uppercase tracking-wider text-amber-500"><Power className="h-3 w-3" /> Off pauses pipeline</span>}
                             </button>
                         );})}
                     </div>
@@ -245,7 +245,7 @@ export const AISQLEngineControlView: React.FC = () => {
                                                 <span className="min-w-0">
                                                     <span className="flex items-center gap-2 text-sm font-bold">
                                                         {engine.name}
-                                                        <span className={`text-[10px] font-black uppercase ${enabled ? 'text-emerald-500' : 'text-slate-500'}`}>{enabled ? 'On' : 'Off'}</span>
+                                                        <span className={`text-[11px] font-black uppercase ${enabled ? 'text-emerald-500' : 'text-slate-500'}`}>{enabled ? 'On' : 'Off'}</span>
                                                     </span>
                                                     <span className={`mt-1 block text-xs leading-5 ${muted}`}>{engine.description}</span>
                                                 </span>

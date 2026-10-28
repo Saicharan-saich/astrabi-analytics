@@ -522,7 +522,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                                     strokeDasharray={`${(limitStatus.used / limitStatus.limit) * 94.2} 94.2`}
                                 />
                             </svg>
-                            <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold text-gray-700 dark:text-slate-200">
+                            <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-gray-700 dark:text-slate-200">
                                 {limitStatus.remaining}
                             </span>
                         </div>
@@ -549,7 +549,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                             — AI-authored queries, visible calculation paths, and private local execution with no local-answer fallback.
                         </span>
                     </div>
-                    <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-300/40 dark:border-indigo-500/30">
+                    <span className="shrink-0 text-[11px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-300/40 dark:border-indigo-500/30">
                         Beta
                     </span>
                 </div>
@@ -578,7 +578,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                         <div className="flex items-center justify-between px-4 pb-3">
                             <div id="ai-sql-input-help" className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
                                 <img src="/ai-sql-logo.png" alt="" className="w-3.5 h-3.5 rounded-sm" />
-                                <span>AI reasoning → validate → local DuckDB → visualise &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[10px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
+                                <span>AI reasoning → validate → local DuckDB → visualise &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[11px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
                             </div>
                             <button
                                 onClick={handleSubmit}
@@ -646,7 +646,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                                 <div className="h-1.5 flex-1 bg-red-200 dark:bg-red-500/20 rounded-full overflow-hidden">
                                     <div className="h-full bg-gradient-to-r from-red-500 to-cyan-500 rounded-full" style={{ width: '100%' }} />
                                 </div>
-                                <span className="text-[10px] font-bold text-red-600 dark:text-red-400">{limitStatus.used}/{limitStatus.limit}</span>
+                                <span className="text-[11px] font-bold text-red-600 dark:text-red-400">{limitStatus.used}/{limitStatus.limit}</span>
                             </div>
                         </div>
                     </div>

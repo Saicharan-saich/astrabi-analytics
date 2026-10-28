@@ -85,7 +85,7 @@ const ColorPickerRow: React.FC<{
     {value && (
       <button
         onClick={() => onChange(undefined)}
-        className="text-[10px] text-slate-400 hover:text-indigo-500 transition-colors font-medium"
+        className="text-[11px] text-slate-400 hover:text-indigo-500 transition-colors font-medium"
       >
         Reset
       </button>
@@ -268,7 +268,7 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
 
         {/* Chart Title */}
         <div className="bg-slate-50 dark:bg-slate-700/30 rounded-lg p-3 space-y-3 border border-slate-100 dark:border-slate-600/30">
-          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Chart Title</span>
+          <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Chart Title</span>
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">Size</label>
             <SizeToggle
@@ -297,7 +297,7 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
 
         {/* Data Labels */}
         <div className="bg-slate-50 dark:bg-slate-700/30 rounded-lg p-3 space-y-3 border border-slate-100 dark:border-slate-600/30">
-          <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Data Labels</span>
+          <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Data Labels</span>
           <div>
             <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">Size</label>
             <SizeToggle
@@ -327,7 +327,7 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
         {/* Axis Labels — hidden for pie/map */}
         {!isPieType && !isMapType && (
           <div className="bg-slate-50 dark:bg-slate-700/30 rounded-lg p-3 space-y-3 border border-slate-100 dark:border-slate-600/30">
-            <span className="text-[10px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Axis Labels</span>
+            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Axis Labels</span>
             <div>
               <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">Size</label>
               <SizeToggle

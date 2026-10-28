@@ -39,9 +39,9 @@ export const AlertsView: React.FC<AlertsViewProps> = ({ dataset }) => {
 
   const statusBadge = (rule: AlertRule) => {
     const s = rule.status;
-    if (s === 'active') return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Active</span>;
-    if (s === 'snoozed') return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Snoozed</span>;
-    if (s === 'disabled') return <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-gray-500/10 text-gray-400 border border-gray-500/20">Disabled</span>;
+    if (s === 'active') return <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Active</span>;
+    if (s === 'snoozed') return <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-amber-500/10 text-amber-400 border border-amber-500/20">Snoozed</span>;
+    if (s === 'disabled') return <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-gray-500/10 text-gray-400 border border-gray-500/20">Disabled</span>;
     return null;
   };
 
@@ -149,7 +149,7 @@ export const AlertsView: React.FC<AlertsViewProps> = ({ dataset }) => {
                         </span>
                       )}
                       {rule.lastEvaluatedAt && (
-                        <span className={`text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>
+                        <span className={`text-[11px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>
                           <Clock className="w-3 h-3 inline mr-0.5" />{timeAgo(rule.lastEvaluatedAt)}
                         </span>
                       )}
@@ -204,12 +204,12 @@ export const AlertsView: React.FC<AlertsViewProps> = ({ dataset }) => {
                       <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
                         className="overflow-hidden">
                         <div className={`mt-3 pt-3 border-t space-y-2 ${isDark ? 'border-white/[0.06]' : 'border-gray-100'}`}>
-                          <span className={`text-[10px] font-semibold uppercase tracking-wider ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>Recent Events</span>
+                          <span className={`text-[11px] font-semibold uppercase tracking-wider ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>Recent Events</span>
                           {ruleEvents.slice(0, 5).map(evt => (
                             <div key={evt.id} className={`flex items-center gap-2 text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
                               <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${evt.severity === 'critical' ? 'bg-red-400' : evt.severity === 'warning' ? 'bg-amber-400' : 'bg-blue-400'}`} />
                               <span className="flex-1 truncate">{evt.message}</span>
-                              <span className={`text-[10px] shrink-0 ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{timeAgo(evt.triggeredAt)}</span>
+                              <span className={`text-[11px] shrink-0 ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{timeAgo(evt.triggeredAt)}</span>
                             </div>
                           ))}
                         </div>
@@ -241,8 +241,8 @@ export const AlertsView: React.FC<AlertsViewProps> = ({ dataset }) => {
                         <span className={`text-xs font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>{evt.ruleName}</span>
                         <p className={`text-[11px] truncate ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>{evt.message}</p>
                       </div>
-                      <span className={`text-[10px] shrink-0 ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{timeAgo(evt.triggeredAt)}</span>
-                      {evt.acknowledged && <span className={`text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>✓</span>}
+                      <span className={`text-[11px] shrink-0 ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>{timeAgo(evt.triggeredAt)}</span>
+                      {evt.acknowledged && <span className={`text-[11px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>✓</span>}
                     </div>
                   );
                 })}

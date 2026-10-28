@@ -64,7 +64,7 @@ export const DashboardDateFilter: React.FC<DashboardDateFilterProps> = ({ column
   return (
     <div className="flex min-w-[260px] flex-1 flex-col gap-3">
       <div>
-        <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Date filter</div>
+        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">Date filter</div>
         <div role="tablist" aria-label="Date filter mode" className="mt-1.5 inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1 dark:border-white/10 dark:bg-slate-900/60">
           {(['range', 'calendar'] as const).map(option => (
             <button
@@ -85,11 +85,11 @@ export const DashboardDateFilter: React.FC<DashboardDateFilterProps> = ({ column
 
       {mode === 'range' ? (
         <div className="flex flex-wrap items-end gap-2">
-          <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+          <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
             From
             <input aria-label="From date" type="date" value={from} onChange={event => setFrom(event.target.value)} className={selectClass} />
           </label>
-          <label className="flex flex-col gap-1 text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+          <label className="flex flex-col gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
             To
             <input aria-label="To date" type="date" value={to} onChange={event => setTo(event.target.value)} className={selectClass} />
           </label>
@@ -106,31 +106,31 @@ export const DashboardDateFilter: React.FC<DashboardDateFilterProps> = ({ column
       ) : (
         <div>
           <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-5">
-            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Year
+            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Year
               <select aria-label="Year" value={selection?.year || ''} onChange={event => changeSelection(event.target.value ? { year: event.target.value } : undefined)} className={`mt-1 ${selectClass}`}>
                 <option value="">All years</option>
                 {options.years.map(year => <option key={year} value={year}>{year}</option>)}
               </select>
             </label>
-            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Quarter
+            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Quarter
               <select aria-label="Quarter" disabled={!selection?.year} value={selection?.quarter || ''} onChange={event => changeSelection({ year: selection!.year, ...(event.target.value ? { quarter: event.target.value } : {}) })} className={`mt-1 ${selectClass}`}>
                 <option value="">All quarters</option>
                 {options.quarters.map(quarter => <option key={quarter} value={quarter}>Q{quarter}</option>)}
               </select>
             </label>
-            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Month
+            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Month
               <select aria-label="Month" disabled={!selection?.quarter} value={selection?.month || ''} onChange={event => changeSelection({ year: selection!.year, quarter: selection!.quarter, ...(event.target.value ? { month: event.target.value } : {}) })} className={`mt-1 ${selectClass}`}>
                 <option value="">All months</option>
                 {options.months.map(month => <option key={month} value={month}>{monthNames[Number(month) - 1]}</option>)}
               </select>
             </label>
-            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Week
+            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Week
               <select aria-label="Week" disabled={!selection?.month} value={selection?.weekStart || ''} onChange={event => changeSelection({ year: selection!.year, quarter: selection!.quarter, month: selection!.month, ...(event.target.value ? { weekStart: event.target.value } : {}) })} className={`mt-1 ${selectClass}`}>
                 <option value="">All weeks</option>
                 {options.weeks.map(weekStart => <option key={weekStart} value={weekStart}>{weekStart} – {dashboardAddDays(weekStart, 6)}</option>)}
               </select>
             </label>
-            <label className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Day
+            <label className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">Day
               <select aria-label="Day" disabled={!selection?.weekStart} value={selection?.day || ''} onChange={event => changeSelection({ year: selection!.year, quarter: selection!.quarter, month: selection!.month, weekStart: selection!.weekStart, ...(event.target.value ? { day: event.target.value } : {}) })} className={`mt-1 ${selectClass}`}>
                 <option value="">All days</option>
                 {options.days.map(day => <option key={day} value={day}>{day}</option>)}

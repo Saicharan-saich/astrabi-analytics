@@ -157,7 +157,7 @@ export const TransparencyPanel: React.FC<TransparencyPanelProps> = ({
                 <Info className={`w-3.5 h-3.5 shrink-0 ${accentIcon}`} aria-hidden="true" />
                 <span>How was this calculated?</span>
                 {conf && (
-                    <span className={`ml-1 hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md border text-[10px] font-semibold ${confToneClasses}`}>
+                    <span className={`ml-1 hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md border text-[11px] font-semibold ${confToneClasses}`}>
                         {conf.label}
                     </span>
                 )}
@@ -199,7 +199,7 @@ export const TransparencyPanel: React.FC<TransparencyPanelProps> = ({
                         )}
                         {/* Confidence badge (mobile / when hidden in header) */}
                         {conf && (
-                            <span className={`sm:hidden inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[10px] font-semibold ${confToneClasses}`}>
+                            <span className={`sm:hidden inline-flex items-center gap-1 px-2 py-1 rounded-lg border text-[11px] font-semibold ${confToneClasses}`}>
                                 <ShieldCheck className="w-3 h-3" aria-hidden="true" />
                                 {conf.label}
                             </span>

@@ -714,7 +714,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               ) : (
                 <span>{db.name}</span>
               )}
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-md font-bold ${
+              <span className={`text-[11px] px-1.5 py-0.5 rounded-md font-bold ${
                 db.id === (activeDashboardId || dashboards[0]?.id)
                   ? 'bg-violet-500/20 text-violet-300'
                   : 'bg-white/[0.06] text-gray-500'
@@ -822,7 +822,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     : 'Create a visual in AI SQL or Question Builder, then pin it here'}
                 </p>
                 {dataset && (
-                  <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-300">
+                  <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
                     <Database className="w-3 h-3" /> Current dataset · {dataset.totalRows?.toLocaleString() || 0} rows
                   </span>
                 )}
@@ -864,12 +864,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                   <div className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 dark:bg-violet-500/10 border border-violet-200/50 dark:border-violet-500/20 rounded-lg">
                     <Eye className="w-3.5 h-3.5 text-violet-500 dark:text-violet-400" />
                     <span className="text-xs font-bold text-violet-700 dark:text-violet-300">{kpiSummary.totalVisuals}</span>
-                    <span className="text-[10px] text-violet-500/70 dark:text-violet-400/60 font-medium">visuals</span>
+                    <span className="text-[11px] text-violet-500/70 dark:text-violet-400/60 font-medium">visuals</span>
                   </div>
                   <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200/50 dark:border-amber-500/20 rounded-lg">
                     {getChartIcon(kpiSummary.mostUsedChart)}
                     <span className="text-xs font-bold text-amber-700 dark:text-amber-300 capitalize">{kpiSummary.mostUsedChart}</span>
-                    <span className="text-[10px] text-amber-500/70 dark:text-amber-400/60 font-medium">most used</span>
+                    <span className="text-[11px] text-amber-500/70 dark:text-amber-400/60 font-medium">most used</span>
                   </div>
                 </div>
               )}
@@ -988,7 +988,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                 <SlidersHorizontal className="w-4 h-4" />
                 Global Filters
                 {dashboardFilters.length > 0 && (
-                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-500 text-white text-[10px] font-bold">
+                  <span className="ml-1 px-1.5 py-0.5 rounded-full bg-indigo-500 text-white text-[11px] font-bold">
                     {dashboardFilters.length}
                   </span>
                 )}
@@ -1042,7 +1042,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
 
                     {/* ── Column picker with optgroup by type ── */}
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Column</label>
+                      <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Column</label>
                       <select
                         value={filterColumn}
                         onChange={e => {
@@ -1067,7 +1067,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     {filterColumn && isNumericColumn && (
                       <>
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Operator</label>
+                          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Operator</label>
                           <select
                             value={filterMeasureOp}
                             onChange={e => setFilterMeasureOp(e.target.value as any)}
@@ -1079,7 +1079,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                           </select>
                         </div>
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Value</label>
+                          <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">Value</label>
                           <input
                             type="number"
                             placeholder="e.g. 1000"
@@ -1126,7 +1126,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     {/* ── DIMENSION filter: value pills ── */}
                     {filterColumn && !isNumericColumn && !isDateColumn && categoricalValues.length > 0 && (
                       <div className="flex flex-col gap-1.5 flex-1 min-w-[200px]">
-                        <label className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                        <label className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
                           Values <span className="normal-case font-normal">(click to select)</span>
                         </label>
                         <div className="flex flex-wrap gap-1.5 max-h-[100px] overflow-y-auto pr-1">
@@ -1308,7 +1308,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       {item.datasetName && uniqueDatasets.length > 1 && (() => {
                         const c = datasetColorMap.get(item.datasetId || '') || DATASET_COLORS[0];
                         return (
-                          <span className={`hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${c.bg} ${c.text} shrink-0`}>
+                          <span className={`hidden sm:flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${c.bg} ${c.text} shrink-0`}>
                             <span className={`w-1.5 h-1.5 rounded-full ${c.dot}`} />
                             {item.datasetName}
                           </span>

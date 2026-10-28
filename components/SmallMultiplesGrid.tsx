@@ -94,7 +94,7 @@ export const SmallMultiplesGrid: React.FC<SmallMultiplesGridProps> = ({
                 <span className="text-xs text-slate-400">
                     {yLabel} by {xKey.replace(/_/g, ' ')} — split by <strong className="text-slate-600">{splitKey.replace(/_/g, ' ')}</strong>
                 </span>
-                <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                <span className="text-[11px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
                     {sortedKeys.length} panels
                 </span>
             </div>

@@ -135,7 +135,7 @@ const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, 
                     </div>
                     <div className="min-w-0">
                         <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate">{stat.name}</h4>
-                        <span className={`text-[10px] font-semibold uppercase tracking-wider ${color.text}`}>{stat.type}</span>
+                        <span className={`text-[11px] font-semibold uppercase tracking-wider ${color.text}`}>{stat.type}</span>
                     </div>
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
@@ -150,7 +150,7 @@ const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, 
 
             {/* Data completeness bar */}
             <div className="px-4 pb-2">
-                <div className="flex items-center justify-between text-[10px] text-slate-400 mb-1">
+                <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
                     <span>{fillPct.toFixed(0)}% filled</span>
                     <span>{stat.nullCount} nulls</span>
                 </div>
@@ -177,7 +177,7 @@ const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, 
                                 { label: 'Std Dev', value: formatNum(stat.stdDev) },
                             ].map(item => (
                                 <div key={item.label} className="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-2.5 py-2 text-center">
-                                    <div className="text-[10px] text-slate-400 font-medium">{item.label}</div>
+                                    <div className="text-[11px] text-slate-400 font-medium">{item.label}</div>
                                     <div className="text-xs font-bold text-gray-900 dark:text-white">{item.value}</div>
                                 </div>
                             ))}
@@ -187,11 +187,11 @@ const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, 
                     {stat.type === 'DATE' && (
                         <div className="grid grid-cols-2 gap-2">
                             <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2">
-                                <div className="text-[10px] text-slate-400 font-medium">Earliest</div>
+                                <div className="text-[11px] text-slate-400 font-medium">Earliest</div>
                                 <div className="text-xs font-bold text-gray-900 dark:text-white">{stat.min || '—'}</div>
                             </div>
                             <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2">
-                                <div className="text-[10px] text-slate-400 font-medium">Latest</div>
+                                <div className="text-[11px] text-slate-400 font-medium">Latest</div>
                                 <div className="text-xs font-bold text-gray-900 dark:text-white">{stat.max || '—'}</div>
                             </div>
                         </div>
@@ -199,7 +199,7 @@ const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, 
 
                     {stat.topValues && stat.topValues.length > 0 && (
                         <div>
-                            <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mb-2">Top Values</div>
+                            <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-2">Top Values</div>
                             <div className="space-y-1.5">
                                 {stat.topValues.map((tv, i) => {
                                     const barW = stat.topValues![0].count > 0
@@ -215,7 +215,7 @@ const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, 
                                                     className="h-full bg-violet-500/30 dark:bg-violet-500/20 rounded-full flex items-center justify-end pr-1"
                                                     style={{ width: `${barW}%`, minWidth: '20px' }}
                                                 >
-                                                    <span className="text-[9px] font-bold text-violet-600 dark:text-violet-300">
+                                                    <span className="text-[10px] font-bold text-violet-600 dark:text-violet-300">
                                                         {tv.count}
                                                     </span>
                                                 </div>
@@ -335,7 +335,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                                     {kpi.icon}
                                 </div>
                                 <div className="text-xl font-black text-gray-900 dark:text-white">{kpi.value}</div>
-                                <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{kpi.label}</div>
+                                <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">{kpi.label}</div>
                             </div>
                         ))}
                     </div>

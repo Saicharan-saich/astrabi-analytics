@@ -507,8 +507,8 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               <div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <h1 className={`text-xl md:text-2xl font-black tracking-tight ${strong}`}>AI SQL Benchmark Lab</h1>
-                  <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-400 border border-rose-500/20">Admin only</span>
-                  <span className="px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Data runs locally</span>
+                  <span className="px-2 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider bg-rose-500/10 text-rose-400 border border-rose-500/20">Admin only</span>
+                  <span className="px-2 py-1 rounded-lg text-[11px] font-black uppercase tracking-wider bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Data runs locally</span>
                 </div>
                 <p className={`mt-2 max-w-3xl text-sm leading-6 ${muted}`}>
                   Choose the unchanged original 550-question baseline or the independently audited BIRD + Spider 2.0 holdout. Every candidate answer uses the production AI SQL pipeline and executes locally; reference answers remain outside the model prompt.
@@ -554,7 +554,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             {selectedCorpus === 'legacy-550' && <section>
               <div className="flex items-end justify-between gap-4 mb-3">
                 <div><h2 className={`text-sm font-black ${strong}`}>Product regression suites</h2><p className={`text-[11px] mt-1 ${muted}`}>The existing 150-case synthetic compatibility baseline, part of the original 550.</p></div>
-                <span className={`text-[10px] font-black uppercase tracking-wider ${muted}`}>150 questions</span>
+                <span className={`text-[11px] font-black uppercase tracking-wider ${muted}`}>150 questions</span>
               </div>
               <div className="grid md:grid-cols-3 gap-4">
               {BENCHMARK_SUITES.map(suite => {
@@ -579,9 +579,9 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                     <h2 className={`mt-4 text-base font-black ${strong}`}>{suite.name}</h2>
                     <p className={`mt-2 text-xs leading-5 ${muted}`}>{suite.description}</p>
                     <div className="mt-4 flex items-center gap-2 flex-wrap">
-                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-black ${accent.badge}`}>{suite.cases.length} questions</span>
-                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>v{suite.version}</span>
-                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>Frozen outputs</span>
+                      <span className={`px-2 py-1 rounded-lg border text-[11px] font-black ${accent.badge}`}>{suite.cases.length} questions</span>
+                      <span className={`px-2 py-1 rounded-lg border text-[11px] font-bold ${softSurface} ${muted}`}>v{suite.version}</span>
+                      <span className={`px-2 py-1 rounded-lg border text-[11px] font-bold ${softSurface} ${muted}`}>Frozen outputs</span>
                     </div>
                   </button>
                 );
@@ -592,7 +592,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             <section>
               <div className="flex items-end justify-between gap-4 mb-3">
                 <div><h2 className={`text-sm font-black ${strong}`}>Research evaluation</h2><p className={`text-[11px] mt-1 ${muted}`}>Original public-source questions, frozen reference outputs, complete lazy-loaded fixtures, and an independently recorded oracle-quality gate.</p></div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-cyan-400">{corpusSuites.filter(suite => suite.evaluationClass === 'official-public-subset').reduce((n, suite) => n + suite.cases.length, 0)} quality-cleared</span>
+                <span className="text-[11px] font-black uppercase tracking-wider text-cyan-400">{corpusSuites.filter(suite => suite.evaluationClass === 'official-public-subset').reduce((n, suite) => n + suite.cases.length, 0)} quality-cleared</span>
               </div>
               <div className="grid md:grid-cols-2 gap-4">
               {corpusSuites.filter(suite => suite.evaluationClass === 'official-public-subset').map(suite => {
@@ -610,13 +610,13 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                       <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${accent.icon}`}><Database className="w-5 h-5" /></div>
                       <div className={`w-5 h-5 rounded-md border flex items-center justify-center ${selected ? 'bg-violet-600 border-violet-500 text-white' : isDark ? 'border-white/20' : 'border-slate-300'}`}>{selected && <Check className="w-3.5 h-3.5" />}</div>
                     </div>
-                    <div className="mt-4 flex items-center gap-2 flex-wrap"><h2 className={`text-base font-black ${strong}`}>{suite.name}</h2><span className="px-2 py-0.5 rounded-md border border-cyan-500/25 bg-cyan-500/10 text-[9px] font-black uppercase tracking-wider text-cyan-400">Official-source subset</span></div>
+                    <div className="mt-4 flex items-center gap-2 flex-wrap"><h2 className={`text-base font-black ${strong}`}>{suite.name}</h2><span className="px-2 py-0.5 rounded-md border border-cyan-500/25 bg-cyan-500/10 text-[10px] font-black uppercase tracking-wider text-cyan-400">Official-source subset</span></div>
                     <p className={`mt-2 text-xs leading-5 ${muted}`}>{suite.description}</p>
                     <div className="mt-4 flex items-center gap-2 flex-wrap">
-                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-black ${accent.badge}`}>{suite.cases.length} runnable</span>
-                      {(suite.quarantinedCaseCount || 0) > 0 && <span className="px-2 py-1 rounded-lg border border-amber-500/25 bg-amber-500/10 text-[10px] font-black text-amber-400">{suite.quarantinedCaseCount} quarantined</span>}
-                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>v{suite.version}</span>
-                      <span className={`px-2 py-1 rounded-lg border text-[10px] font-bold ${softSurface} ${muted}`}>{suite.id === 'spider2-lite-holdout' ? 'Public SQLite subset' : 'Public dev split'}</span>
+                      <span className={`px-2 py-1 rounded-lg border text-[11px] font-black ${accent.badge}`}>{suite.cases.length} runnable</span>
+                      {(suite.quarantinedCaseCount || 0) > 0 && <span className="px-2 py-1 rounded-lg border border-amber-500/25 bg-amber-500/10 text-[11px] font-black text-amber-400">{suite.quarantinedCaseCount} quarantined</span>}
+                      <span className={`px-2 py-1 rounded-lg border text-[11px] font-bold ${softSurface} ${muted}`}>v{suite.version}</span>
+                      <span className={`px-2 py-1 rounded-lg border text-[11px] font-bold ${softSurface} ${muted}`}>{suite.id === 'spider2-lite-holdout' ? 'Public SQLite subset' : 'Public dev split'}</span>
                     </div>
                   </button>
                 );
@@ -819,7 +819,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                       className={`rounded-xl border p-3 text-left transition-all ${STATUS_CLASSES[status]} ${statusFilter === status ? 'ring-2 ring-current/30' : 'hover:brightness-110'}`}
                     >
                       <span className="block text-xl font-black">{outcomeCounts[status]}</span>
-                      <span className="mt-1 block text-[10px] font-black leading-4">{STATUS_LABELS[status]}</span>
+                      <span className="mt-1 block text-[11px] font-black leading-4">{STATUS_LABELS[status]}</span>
                     </button>
                   ))}
                 </div>
@@ -833,11 +833,11 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                     <h2 className={`text-sm font-black ${strong}`}>Manual adjudication</h2>
                     <p className={`mt-1 text-[11px] ${muted}`}>A separate human-review record. These decisions never overwrite the strict automatic benchmark score.</p>
                   </div>
-                  <span className={`rounded-lg border px-2.5 py-1 text-[10px] font-black ${softSurface} ${strong}`}>{adjudicatedTotal} reviewed</span>
+                  <span className={`rounded-lg border px-2.5 py-1 text-[11px] font-black ${softSurface} ${strong}`}>{adjudicatedTotal} reviewed</span>
                 </div>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {ALL_ADJUDICATION_VERDICTS.filter(verdict => adjudicationCounts[verdict] > 0).map(verdict => (
-                    <span key={verdict} className={`rounded-lg border px-2.5 py-1.5 text-[10px] font-black ${ADJUDICATION_CLASSES[verdict]}`}>
+                    <span key={verdict} className={`rounded-lg border px-2.5 py-1.5 text-[11px] font-black ${ADJUDICATION_CLASSES[verdict]}`}>
                       {ADJUDICATION_LABELS[verdict]} · {adjudicationCounts[verdict]}
                     </span>
                   ))}
@@ -902,7 +902,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[1050px] text-left">
                     <thead className={isDark ? 'bg-white/[0.025]' : 'bg-slate-50'}>
-                      <tr className={`text-[10px] uppercase tracking-wider ${muted}`}>
+                      <tr className={`text-[11px] uppercase tracking-wider ${muted}`}>
                         <th className="px-4 py-3 w-10" />
                         <th className="px-3 py-3">Case</th>
                         <th className="px-3 py-3">Question</th>
@@ -920,14 +920,14 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                           <React.Fragment key={result.caseId}>
                             <tr className={`border-t ${isDark ? 'border-white/[0.06] hover:bg-white/[0.025]' : 'border-slate-100 hover:bg-slate-50'}`}>
                               <td className="pl-4 py-3"><button onClick={() => setExpandedCase(expanded ? null : result.caseId)} className={`p-1 rounded-lg ${muted}`}>{expanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}</button></td>
-                              <td className="px-3 py-3"><div className={`text-xs font-mono font-bold ${strong}`}>{result.caseId}</div><div className={`text-[10px] mt-1 ${muted}`}>{result.category} · {result.difficulty}</div><div className={`text-[9px] mt-1 font-mono ${muted}`}>{result.sourceId}</div></td>
+                              <td className="px-3 py-3"><div className={`text-xs font-mono font-bold ${strong}`}>{result.caseId}</div><div className={`text-[11px] mt-1 ${muted}`}>{result.category} · {result.difficulty}</div><div className={`text-[10px] mt-1 font-mono ${muted}`}>{result.sourceId}</div></td>
                               <td className={`px-3 py-3 text-xs max-w-md ${strong}`}>{result.question}</td>
                               <td className="px-3 py-3">
-                                <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[10px] font-black ${STATUS_CLASSES[result.status]}`}>{result.passed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}{STATUS_LABELS[result.status]}</span>
-                                {result.adjudication && <div className={`mt-1.5 w-fit rounded-lg border px-2 py-1 text-[9px] font-black ${ADJUDICATION_CLASSES[result.adjudication.verdict]}`}>Review: {ADJUDICATION_LABELS[result.adjudication.verdict]}</div>}
-                                {result.passed && (!result.safeToDisplay || !result.validSql) && <div className="mt-1 text-[9px] font-bold text-amber-400">{[!result.safeToDisplay && 'Safety warning', !result.validSql && 'SQL warning'].filter(Boolean).join(' · ')}</div>}
+                                <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-lg border text-[11px] font-black ${STATUS_CLASSES[result.status]}`}>{result.passed ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}{STATUS_LABELS[result.status]}</span>
+                                {result.adjudication && <div className={`mt-1.5 w-fit rounded-lg border px-2 py-1 text-[10px] font-black ${ADJUDICATION_CLASSES[result.adjudication.verdict]}`}>Review: {ADJUDICATION_LABELS[result.adjudication.verdict]}</div>}
+                                {result.passed && (!result.safeToDisplay || !result.validSql) && <div className="mt-1 text-[10px] font-bold text-amber-400">{[!result.safeToDisplay && 'Safety warning', !result.validSql && 'SQL warning'].filter(Boolean).join(' · ')}</div>}
                               </td>
-                              <td className="px-3 py-3"><div className={`text-[11px] font-bold ${strong}`}>{result.engine || result.strategy || '—'}</div><div className={`text-[10px] mt-1 ${muted}`}>{result.status === 'llm_unavailable' ? 'No LLM response' : (result.model || 'Deterministic/local')}</div></td>
+                              <td className="px-3 py-3"><div className={`text-[11px] font-bold ${strong}`}>{result.engine || result.strategy || '—'}</div><div className={`text-[11px] mt-1 ${muted}`}>{result.status === 'llm_unavailable' ? 'No LLM response' : (result.model || 'Deterministic/local')}</div></td>
                               <td className={`px-3 py-3 text-xs text-right font-mono ${strong}`}>{milliseconds(result.pipelineLatencyMs || result.latencyMs)}</td>
                               <td className={`px-3 py-3 text-xs text-right font-mono ${strong}`}>{result.tokenUsage.total.toLocaleString()}</td>
                               <td className={`px-3 py-3 text-xs text-right font-mono ${strong}`}>{typeof result.confidence === 'number' ? `${result.confidence}/100` : '—'}</td>
@@ -936,7 +936,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                               <tr className={`border-t ${isDark ? 'border-white/[0.05] bg-black/20' : 'border-slate-100 bg-slate-50/80'}`}>
                                 <td colSpan={8} className="p-4 md:p-5">
                                   {result.failureReason && <div className="mb-4 rounded-xl border border-rose-500/20 bg-rose-500/10 px-3 py-2 text-xs text-rose-400"><AlertTriangle className="w-4 h-4 inline mr-1.5" />{result.failureReason}</div>}
-                                  {result.context && <div className={`mb-4 rounded-xl border p-3 text-xs leading-5 ${softSurface} ${strong}`}><span className={`block text-[10px] uppercase tracking-wider font-black mb-1 ${muted}`}>Official benchmark evidence</span>{result.context}</div>}
+                                  {result.context && <div className={`mb-4 rounded-xl border p-3 text-xs leading-5 ${softSurface} ${strong}`}><span className={`block text-[11px] uppercase tracking-wider font-black mb-1 ${muted}`}>Official benchmark evidence</span>{result.context}</div>}
                                   {!isRunning && displayedRun && (
                                     <div className={`mb-4 rounded-2xl border p-4 ${softSurface}`}>
                                       <div className="flex flex-col lg:flex-row lg:items-start gap-3 justify-between">
@@ -960,25 +960,25 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                                         placeholder="Optional evidence note: explain why this is acceptable, partial, incorrect, or affected by the gold fixture."
                                         className={`mt-3 min-h-20 w-full resize-y rounded-xl border px-3 py-2 text-xs leading-5 outline-none disabled:opacity-45 ${softSurface} ${strong}`}
                                       />
-                                      {result.adjudication && <div className={`mt-2 text-[10px] ${muted}`}>Saved locally · {new Date(result.adjudication.adjudicatedAt).toLocaleString()} · included in JSON and CSV exports</div>}
+                                      {result.adjudication && <div className={`mt-2 text-[11px] ${muted}`}>Saved locally · {new Date(result.adjudication.adjudicatedAt).toLocaleString()} · included in JSON and CSV exports</div>}
                                     </div>
                                   )}
                                   <div className="grid xl:grid-cols-2 gap-4">
                                     <div>
-                                      <div className={`text-[10px] uppercase tracking-wider font-black mb-2 ${muted}`}>{result.referenceResult ? 'Published reference · source SQLite SQL (when available)' : 'Gold SQL'}</div>
+                                      <div className={`text-[11px] uppercase tracking-wider font-black mb-2 ${muted}`}>{result.referenceResult ? 'Published reference · source SQLite SQL (when available)' : 'Gold SQL'}</div>
                                       <pre className={`rounded-xl border p-3 text-[11px] leading-5 overflow-auto max-h-64 whitespace-pre-wrap ${softSurface} ${strong}`}>{result.goldSql || 'The publisher supplies reference result files for this case, but no gold SQL. No substitute gold SQL was invented.'}</pre>
                                       {result.referenceResult && <p className={`mt-2 text-[11px] ${muted}`}>{result.referenceResult.alternatives.length} published reference alternative(s). {result.matchedReferenceSource ? `Matched: ${result.matchedReferenceSource}` : 'Scored against publisher-specified columns with row-preserving comparison.'}</p>}
                                     </div>
                                     <div>
-                                      <div className={`text-[10px] uppercase tracking-wider font-black mb-2 ${muted}`}>Candidate SQL</div>
+                                      <div className={`text-[11px] uppercase tracking-wider font-black mb-2 ${muted}`}>Candidate SQL</div>
                                       <pre className={`rounded-xl border p-3 text-[11px] leading-5 overflow-auto max-h-64 whitespace-pre-wrap ${softSurface} ${strong}`}>{result.candidateSql || 'No candidate SQL was produced.'}</pre>
                                     </div>
                                     <div>
-                                      <div className={`text-[10px] uppercase tracking-wider font-black mb-2 ${muted}`}>Frozen gold output</div>
+                                      <div className={`text-[11px] uppercase tracking-wider font-black mb-2 ${muted}`}>Frozen gold output</div>
                                       <pre className={`rounded-xl border p-3 text-[11px] leading-5 overflow-auto max-h-64 ${softSurface} ${strong}`}>{JSON.stringify(result.expectedRows, null, 2)}</pre>
                                     </div>
                                     <div>
-                                      <div className={`text-[10px] uppercase tracking-wider font-black mb-2 ${muted}`}>Candidate output</div>
+                                      <div className={`text-[11px] uppercase tracking-wider font-black mb-2 ${muted}`}>Candidate output</div>
                                       <pre className={`rounded-xl border p-3 text-[11px] leading-5 overflow-auto max-h-64 ${softSurface} ${strong}`}>{JSON.stringify(result.actualRows, null, 2)}</pre>
                                     </div>
                                   </div>
@@ -1031,13 +1031,13 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
                             <span className={`text-sm font-black ${strong}`}>{new Date(run.startedAt).toLocaleString()}</span>
-                            <span className={`rounded-lg border px-2 py-1 text-[10px] font-black ${softSurface} ${strong}`}>{run.questionLimit ? `Custom ${run.questionLimit}` : run.scope === 'full' ? 'Full run' : 'Smoke run'}</span>
-                            <span className={`rounded-lg border px-2 py-1 text-[10px] font-black ${run.privacyMode === 'enhanced' ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-400' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400'}`}>{run.privacyMode === 'enhanced' ? 'Better answers' : 'Private'}</span>
+                            <span className={`rounded-lg border px-2 py-1 text-[11px] font-black ${softSurface} ${strong}`}>{run.questionLimit ? `Custom ${run.questionLimit}` : run.scope === 'full' ? 'Full run' : 'Smoke run'}</span>
+                            <span className={`rounded-lg border px-2 py-1 text-[11px] font-black ${run.privacyMode === 'enhanced' ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-400' : 'border-emerald-500/25 bg-emerald-500/10 text-emerald-400'}`}>{run.privacyMode === 'enhanced' ? 'Better answers' : 'Private'}</span>
                           </div>
                           <div className={`mt-1 text-[11px] ${muted}`}>{run.methodologyLabel} · {run.metrics.completed}/{run.metrics.total} completed · {run.selectedSuiteIds.length} suites · {run.metrics.totalTokens.toLocaleString()} tokens</div>
                           <div className="mt-3 flex flex-wrap gap-1.5">
                             {ALL_STATUSES.filter(status => counts[status] > 0).map(status => (
-                              <span key={status} className={`rounded-lg border px-2 py-1 text-[10px] font-black ${STATUS_CLASSES[status]}`}>{STATUS_LABELS[status]} {counts[status]}</span>
+                              <span key={status} className={`rounded-lg border px-2 py-1 text-[11px] font-black ${STATUS_CLASSES[status]}`}>{STATUS_LABELS[status]} {counts[status]}</span>
                             ))}
                           </div>
                         </div>
@@ -1085,10 +1085,10 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
             <div className="space-y-4">
               {corpusSuites.map(suite => (
                 <div key={suite.id} className={`rounded-2xl border p-5 ${panel}`}>
-                  <div className="flex items-center justify-between gap-3"><h3 className={`text-sm font-black ${strong}`}>{suite.name}</h3><span className={`text-[10px] font-bold ${muted}`}>v{suite.version}</span></div>
+                  <div className="flex items-center justify-between gap-3"><h3 className={`text-sm font-black ${strong}`}>{suite.name}</h3><span className={`text-[11px] font-bold ${muted}`}>v{suite.version}</span></div>
                   <p className={`mt-2 text-xs leading-5 ${muted}`}>{suite.methodology}</p>
                   <a href={suite.attribution.homepage} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 mt-3 text-xs font-bold text-violet-400 hover:text-violet-300">{suite.evaluationClass === 'official-public-subset' ? 'Public source' : 'Source inspiration'}: {suite.attribution.benchmark}<ChevronRight className="w-3.5 h-3.5" /></a>
-                  <div className={`mt-3 pt-3 border-t text-[10px] leading-4 ${isDark ? 'border-white/[0.06] text-slate-500' : 'border-slate-100 text-slate-400'}`}>{suite.attribution.notice}</div>
+                  <div className={`mt-3 pt-3 border-t text-[11px] leading-4 ${isDark ? 'border-white/[0.06] text-slate-500' : 'border-slate-100 text-slate-400'}`}>{suite.attribution.notice}</div>
                 </div>
               ))}
               <div className={`rounded-2xl border p-5 ${panel}`}>

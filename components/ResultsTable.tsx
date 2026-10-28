@@ -40,12 +40,12 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                         Results Table
                     </h4>
                     {hasComparison && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-600 border border-blue-100">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-600 border border-blue-100">
                             vs Previous Period
                         </span>
                     )}
                     {calcColumns.length > 0 && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-600 border border-emerald-100">
                             + {calcColumns.length} calculation{calcColumns.length > 1 ? 's' : ''}
                         </span>
                     )}
@@ -126,7 +126,7 @@ export const ResultsTable: React.FC<ResultsTableProps> = ({
                                                         ? 'bg-emerald-100 text-emerald-700 shadow-sm shadow-emerald-100'
                                                         : 'bg-red-100 text-red-700 shadow-sm shadow-red-100'
                                                         }`}>
-                                                        <span className="text-[10px]">{isPositive ? '▲' : '▼'}</span>
+                                                        <span className="text-[11px]">{isPositive ? '▲' : '▼'}</span>
                                                         {isPositive ? '+' : ''}{growthPct.toFixed(1)}%
                                                     </span>
                                                 ) : (

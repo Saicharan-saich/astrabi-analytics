@@ -59,7 +59,7 @@ html.dark .qi-visual-stage {
   left: 30px;
   right: 30px;
   height: 2px;
-  background: linear-gradient(90deg, transparent, #818cf8, #67c9cd, transparent);
+  background: linear-gradient(90deg, transparent, #6d8ae6, #67c9cd, transparent);
   pointer-events: none;
 }
 .qi-visual {
@@ -145,7 +145,7 @@ html.dark .qi-visual-stage {
 .qi-visual button:focus-visible,
 .qi-answer-workspace button:focus-visible,
 .qi-dimension-result button:focus-visible {
-  outline: 2px solid #6366f1;
+  outline: 2px solid #4f6fdc;
   outline-offset: 3px;
 }
 .qi-chart-menu {
@@ -217,7 +217,7 @@ html.dark .qi-visual-stage {
   background: radial-gradient(ellipse at 20% 0%, rgb(101 104 235 / 15%), transparent 56%), #111c31;
 }
 .qi-visual[data-appearance='dark'] .qi-kpi-value {
-  background: linear-gradient(110deg, #a5b4fc, #7dd3fc);
+  background: linear-gradient(110deg, #8fa8ea, #7dd3fc);
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }

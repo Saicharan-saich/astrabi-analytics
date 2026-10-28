@@ -44,7 +44,7 @@ export const DatasetSwitcher: React.FC<DatasetSwitcherProps> = ({
             {open && (
                 <div className="absolute top-full mt-2 left-0 w-72 rounded-xl border border-white/10 bg-slate-900/95 backdrop-blur-lg shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2">
                     <div className="px-3 py-2.5 border-b border-white/5">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-widest">
                             Loaded Datasets ({datasets.length})
                         </span>
                     </div>
@@ -65,7 +65,7 @@ export const DatasetSwitcher: React.FC<DatasetSwitcherProps> = ({
                                     <span className={`text-sm font-medium ${ds.id === activeDataset?.id ? 'text-indigo-300' : 'text-slate-300'}`}>
                                         {ds.name}
                                     </span>
-                                    <span className="block text-[10px] text-slate-500">
+                                    <span className="block text-[11px] text-slate-500">
                                         {ds.totalRows.toLocaleString()} rows · {ds.columns.length} cols
                                     </span>
                                 </button>

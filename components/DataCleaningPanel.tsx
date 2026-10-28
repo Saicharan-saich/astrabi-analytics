@@ -53,11 +53,11 @@ const QualityBar: React.FC<{ value: number; label: string }> = ({ value, label }
     const color = value >= 90 ? 'bg-emerald-500' : value >= 70 ? 'bg-amber-500' : 'bg-red-500';
     return (
         <div className="flex items-center gap-2">
-            <span className="text-[10px] text-slate-500 dark:text-slate-400 w-20 shrink-0">{label}</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400 w-20 shrink-0">{label}</span>
             <div className="flex-1 h-1.5 bg-slate-100 dark:bg-white/10 rounded-full overflow-hidden">
                 <div className={`h-full ${color} rounded-full transition-all duration-500`} style={{ width: `${value}%` }} />
             </div>
-            <span className="text-[10px] font-bold text-slate-600 dark:text-slate-300 w-8 text-right tabular-nums">{value.toFixed(0)}%</span>
+            <span className="text-[11px] font-bold text-slate-600 dark:text-slate-300 w-8 text-right tabular-nums">{value.toFixed(0)}%</span>
         </div>
     );
 };
@@ -151,7 +151,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                     </div>
                     {qualityReport && (
                         <div className="text-right">
-                            <div className="text-[10px] text-slate-400 uppercase tracking-wider font-bold">Quality Score</div>
+                            <div className="text-[11px] text-slate-400 uppercase tracking-wider font-bold">Quality Score</div>
                             <QualityBadge score={qualityReport.overallScore} size="lg" />
                         </div>
                     )}
@@ -221,7 +221,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                                             <QualityBar value={Math.min(col.uniqueness, 100)} label="Unique" />
                                             <QualityBar value={col.consistency} label="Consistent" />
                                         </div>
-                                        <div className="flex gap-3 mt-2 text-[10px] text-slate-400 dark:text-slate-500">
+                                        <div className="flex gap-3 mt-2 text-[11px] text-slate-400 dark:text-slate-500">
                                             {col.nullCount > 0 && <span>🕳️ {col.nullCount} nulls</span>}
                                             {col.outlierCount > 0 && <span>📊 {col.outlierCount} outliers</span>}
                                             <span className="ml-auto">{col.dataType}</span>

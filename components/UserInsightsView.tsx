@@ -207,7 +207,7 @@ export const UserInsightsView: React.FC = () => {
                   <span className={card.color}>{card.icon}</span>
                 </div>
                 <div>
-                  <p className={`text-[10px] font-semibold uppercase tracking-wider ${mutedText}`}>{card.label}</p>
+                  <p className={`text-[11px] font-semibold uppercase tracking-wider ${mutedText}`}>{card.label}</p>
                   <p className={`text-2xl font-bold ${headerText}`}>{card.value.toLocaleString()}</p>
                 </div>
               </div>
@@ -263,7 +263,7 @@ export const UserInsightsView: React.FC = () => {
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
                           <span className={`text-sm font-semibold truncate ${headerText}`}>{s.userName}</span>
-                          <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-bold border ${getRoleBadge(s.userRole, isDark)}`}>
+                          <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold border ${getRoleBadge(s.userRole, isDark)}`}>
                             {getRoleIcon(s.userRole)} {s.userRole}
                           </span>
                         </div>
@@ -294,10 +294,10 @@ export const UserInsightsView: React.FC = () => {
                       <h3 className={`text-xl font-bold ${headerText}`}>{selectedSummary.userName}</h3>
                       <p className={`text-sm ${subtleText}`}>{selectedSummary.userEmail}</p>
                       <div className="flex items-center gap-2 mt-1">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold border ${getRoleBadge(selectedSummary.userRole, isDark)}`}>
+                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-bold border ${getRoleBadge(selectedSummary.userRole, isDark)}`}>
                           {getRoleIcon(selectedSummary.userRole)} {selectedSummary.userRole}
                         </span>
-                        <span className={`text-[10px] ${mutedText}`}>
+                        <span className={`text-[11px] ${mutedText}`}>
                           · Joined {new Date(selectedSummary.firstSeen).toLocaleDateString()}
                         </span>
                       </div>
@@ -322,7 +322,7 @@ export const UserInsightsView: React.FC = () => {
                       >
                         <div className="flex items-center gap-1.5 mb-1">
                           <span className="text-sm">{stat.icon}</span>
-                          <span className={`text-[10px] font-semibold uppercase tracking-wider ${mutedText}`}>{stat.label}</span>
+                          <span className={`text-[11px] font-semibold uppercase tracking-wider ${mutedText}`}>{stat.label}</span>
                         </div>
                         <p className={`text-xl font-bold ${headerText}`}>{stat.value}</p>
                       </div>
@@ -364,7 +364,7 @@ export const UserInsightsView: React.FC = () => {
                               {meta.label}
                               {a.details && <span className={`ml-1 ${mutedText}`}>· {a.details}</span>}
                             </span>
-                            <span className={`text-[10px] font-mono ${mutedText}`}>{timeAgo(a.timestamp)}</span>
+                            <span className={`text-[11px] font-mono ${mutedText}`}>{timeAgo(a.timestamp)}</span>
                           </div>
                         );
                       })}
@@ -398,7 +398,7 @@ export const UserInsightsView: React.FC = () => {
                   return (
                     <div key={i} className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${isDark ? 'hover:bg-white/[0.03]' : 'hover:bg-gray-50'}`}>
                       <div
-                        className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-[10px] shrink-0"
+                        className="w-8 h-8 rounded-full flex items-center justify-center text-white font-bold text-[11px] shrink-0"
                         style={{ backgroundColor: '#7c3aed' }}
                       >
                         {a.userName.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
@@ -411,7 +411,7 @@ export const UserInsightsView: React.FC = () => {
                         </span>
                         {a.details && <span className={`text-sm ml-1 ${mutedText}`}>· {a.details}</span>}
                       </div>
-                      <span className={`text-[10px] font-mono shrink-0 ${mutedText}`}>{timeAgo(a.timestamp)}</span>
+                      <span className={`text-[11px] font-mono shrink-0 ${mutedText}`}>{timeAgo(a.timestamp)}</span>
                     </div>
                   );
                 })

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb, Bell, Activity, Zap, Shield, Gamepad2, Settings, Wand2, Beaker, SlidersHorizontal } from 'lucide-react';
+import React, { useId, useState } from 'react';
+import { LayoutGroup, motion } from 'framer-motion';
+import { Layout, Database, Play, Search, Upload, X, BarChart2, MessageSquare, LogOut, Users, Crown, Pencil, Eye, GitMerge, Wrench, Sparkles, KeyRound, Check, AlertTriangle, Loader2, ChevronRight, Lightbulb, Bell, Activity, Zap, Shield, Gamepad2, Settings, Wand2, Beaker, SlidersHorizontal, Table2, BookOpen, Compass } from 'lucide-react';
 import { Tab, UserRole } from '../types';
 import { useAuthStore, ROLE_PERMISSIONS } from '../store/useAuthStore';
 import { useAlertStore } from '../store/useAlertStore';
@@ -39,10 +40,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     const [pwSuccess, setPwSuccess] = useState(false);
     const [pwLoading, setPwLoading] = useState(false);
 
-    // Explore Data collapsible state
+    // Legacy dataset-preparation routes all live inside Dataset Workspace, so
+    // that nav item stays highlighted while any of them is open.
     const exploreDataTabs = [Tab.COLUMN_MAPPING, Tab.ETL, Tab.DATA_STUDIO, Tab.SCHEMA, Tab.DATASET_SUMMARY];
     const isExploreActive = exploreDataTabs.includes(activeTab);
-    const [exploreDataOpen, setExploreDataOpen] = useState(isExploreActive);
+    // Two Sidebars can be mounted at once (desktop + mobile drawer); a per-instance
+    // LayoutGroup keeps each one's sliding highlight independent.
+    const navGroupId = useId();
 
     const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5002/api';
 
@@ -76,28 +80,35 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         setPwLoading(false);
     };
 
+    // Navigation is grouped by the job the user is doing. Tab ids, labels,
+    // permissions and guest filtering are unchanged — only grouping, order
+    // and icons differ, so every page and saved link behaves as before.
     const dataSection = [
         { id: Tab.UPLOAD, label: 'Data Source', icon: Upload, requiresUpload: true, tooltip: 'Upload CSV/Excel files or connect to databases like SQL Server to import your data.' },
+        // Dataset preparation lives in one workspace; legacy route IDs remain supported for saved links.
+        { id: Tab.DATASET_SUMMARY, label: 'Dataset Workspace', icon: Table2, activeAlso: exploreDataTabs, tooltip: 'Explore raw and cleaned data, review column mapping and schema, inspect automated cleaning, and use hands-on data studio tools.' },
+        { id: Tab.DERIVED_COLUMNS, label: 'Derived Columns', icon: Wand2, requiresCreateVisuals: true, tooltip: 'AI-suggested and custom derived columns — create new business metrics from your data.' },
     ];
 
-    // Dataset preparation lives in one workspace; legacy route IDs remain supported for saved links.
-    const exploreDataItems = [
-        { id: Tab.DATASET_SUMMARY, label: 'Dataset Workspace', icon: BarChart2, tooltip: 'Explore raw and cleaned data, review column mapping and schema, inspect automated cleaning, and use hands-on data studio tools.' },
-    ];
-
-    const analysisSection = [
+    const askSection = [
         { id: Tab.BUILDER, label: 'Question Builder', icon: Search, requiresCreateVisuals: true, tooltip: 'A simplified natural-language-style builder: "Show me [metric] by [dimension]" with intuitive dropdowns.' },
         { id: Tab.AI_SQL, label: 'AI SQL', icon: Sparkles, requiresCreateVisuals: true, tooltip: 'Ask questions in natural language — AI SQL selects the right GPT-5.6 reasoning tier, validates read-only SQL, and creates a visual result.' },
-        { id: Tab.GAME, label: 'GAFS Challenge', icon: Gamepad2, tooltip: 'Every chart is 4 steps: split it up, add something up, filter the rows, put them in order. Learn them by helping a small farm find out what makes money.' },
-        { id: Tab.QUICK_INSIGHTS, label: 'Discover', icon: Zap, requiresCreateVisuals: true, tooltip: 'Automatic insight discovery — the moment your data loads, it surfaces what stands out (drops, spikes, concentration, outliers), explains the likely root cause, and writes an executive summary. No question required.' },
-        { id: Tab.SMART_QUESTIONS, label: 'Smart Insights', icon: Lightbulb, requiresCreateVisuals: true, tooltip: 'AI-curated questions tailored to your dataset. Click any card to instantly run the analysis.' },
         ...(hasVisualResult ? [{ id: Tab.VISUAL_PREVIEW, label: 'Visual Result', icon: BarChart2, requiresCreateVisuals: true, tooltip: 'View your latest AI SQL result — chart, table, SQL, and formatting controls.' }] : []),
-        { id: Tab.DERIVED_COLUMNS, label: 'Derived Columns', icon: Lightbulb, requiresCreateVisuals: true, tooltip: 'AI-suggested and custom derived columns — create new business metrics from your data.' },
         { id: Tab.CUSTOM_QUESTIONS, label: 'Custom Questions', icon: Wrench, requiresManageQuestions: true, tooltip: 'Build custom analytical questions with SQL. Admin only.' },
     ];
+
+    const insightSection = [
+        { id: Tab.QUICK_INSIGHTS, label: 'Discover', icon: Compass, requiresCreateVisuals: true, tooltip: 'Automatic insight discovery — the moment your data loads, it surfaces what stands out (drops, spikes, concentration, outliers), explains the likely root cause, and writes an executive summary. No question required.' },
+        { id: Tab.SMART_QUESTIONS, label: 'Smart Insights', icon: Lightbulb, requiresCreateVisuals: true, tooltip: 'AI-curated questions tailored to your dataset. Click any card to instantly run the analysis.' },
+        { id: Tab.GAME, label: 'GAFS Challenge', icon: Gamepad2, tooltip: 'Every chart is 4 steps: split it up, add something up, filter the rows, put them in order. Learn them by helping a small farm find out what makes money.' },
+    ];
+
     const viewSection = [
         { id: Tab.DASHBOARD, label: 'Dashboard', icon: Layout, tooltip: 'View all your pinned analyses in a dashboard layout with drag-and-drop arrangement.' },
         { id: Tab.ALERTS, label: 'Monitoring', icon: Bell, badge: unreadCount, tooltip: 'Create business rules to monitor metrics. Get alerted when thresholds are crossed or trends change.' },
+    ];
+
+    const adminSection = [
         ...(userRole === UserRole.ADMIN ? [{ id: Tab.USER_INSIGHTS, label: 'User Insights', icon: Activity, requiresManageUsers: true, tooltip: 'View usage analytics per user — logins, queries, uploads, and engagement scores. Admin only.' }] : []),
         ...(userRole === UserRole.ADMIN ? [{ id: Tab.BENCHMARK, label: 'Benchmark Lab', icon: Beaker, tooltip: 'Run the versioned 150-question AI SQL accuracy benchmark and export reproducible evidence. Admin only.' }] : []),
         ...(userRole === UserRole.ADMIN ? [{ id: Tab.AI_SQL_ENGINES, label: 'AI SQL Engines', icon: SlidersHorizontal, tooltip: 'Control global AI SQL reasoning, verification, and repair stages. Admin only.' }] : []),
@@ -140,50 +151,62 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
     };
 
     const renderNavItem = (item: any) => {
-        const isActive = activeTab === item.id;
+        const isActive = activeTab === item.id || (item.activeAlso?.includes(activeTab) ?? false);
         return (
             <Tooltip key={item.id} text={item.tooltip || ''} position="right" delay={400}>
                 <button
                     onClick={() => onTabChange(item.id)}
+                    aria-current={isActive ? 'page' : undefined}
                     className={classNames(
-                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 group relative text-[13px] font-medium",
+                        "w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-colors duration-150 group relative text-[13px] font-medium",
                         isActive
-                            ? isDark
-                                ? "bg-gradient-to-r from-violet-500/15 to-indigo-500/10 text-violet-300 shadow-sm shadow-violet-500/10"
-                                : "bg-gradient-to-r from-violet-50 to-indigo-50 text-violet-700 shadow-sm shadow-violet-500/5"
+                            ? isDark ? "text-violet-200" : "text-violet-700"
                             : isDark
-                                ? "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200 hover:translate-x-0.5"
-                                : "text-gray-600 hover:bg-gray-50 hover:text-gray-900 hover:translate-x-0.5"
+                                ? "text-gray-400 hover:bg-white/[0.04] hover:text-gray-200"
+                                : "text-gray-600 hover:bg-gray-100/80 hover:text-gray-900"
                     )}
                 >
-                    {/* Active left accent bar — gradient */}
+                    {/* Active highlight glides between items (shared layout animation). */}
                     {isActive && (
-                        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-r-full bg-gradient-to-b from-violet-400 to-indigo-500 sidebar-active-indicator" />
+                        <>
+                            <motion.span
+                                layoutId="qi-nav-active-pill"
+                                className="qi-nav-active-pill"
+                                transition={{ type: 'spring', stiffness: 520, damping: 40, mass: 0.8 }}
+                                aria-hidden="true"
+                            />
+                            <motion.span
+                                layoutId="qi-nav-active-bar"
+                                className="qi-nav-active-bar"
+                                transition={{ type: 'spring', stiffness: 520, damping: 40, mass: 0.8 }}
+                                aria-hidden="true"
+                            />
+                        </>
                     )}
 
-                    <div className={classNames(
-                        "w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200 shrink-0",
+                    <span className={classNames(
+                        "relative w-7 h-7 rounded-lg flex items-center justify-center transition-colors duration-150 shrink-0",
                         isActive
-                            ? isDark ? "bg-violet-500/20 text-violet-400" : "bg-violet-100 text-violet-600"
-                            : isDark ? "bg-white/[0.04] text-gray-500 group-hover:bg-white/[0.06] group-hover:text-gray-300" : "bg-gray-100 text-gray-400 group-hover:bg-gray-200 group-hover:text-gray-600"
+                            ? isDark ? "bg-violet-500/20 text-violet-300" : "bg-white text-violet-600 shadow-sm"
+                            : isDark ? "bg-white/[0.04] text-gray-500 group-hover:bg-white/[0.07] group-hover:text-gray-300" : "bg-gray-100 text-gray-400 group-hover:bg-white group-hover:text-gray-600"
                     )}>
                         <item.icon className="w-[15px] h-[15px]" />
-                    </div>
-                    <span>{item.label}</span>
+                    </span>
+                    <span className="relative">{item.label}</span>
                     {/* Info button — appears on hover */}
                     <span
-                        className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity duration-200"
+                        className="relative ml-auto opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150"
                         onClick={e => e.stopPropagation()}
                     >
                         <PageInfoButton pageKey={item.id as PageKey} />
                     </span>
                     {item.badge > 0 && (
-                        <span className="ml-auto flex items-center gap-1">
+                        <span className="relative ml-auto flex items-center gap-1">
                             <span className="relative flex h-2 w-2">
                                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
                                 <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500" />
                             </span>
-                            <span className={`text-[10px] font-bold ${isDark ? 'text-red-400' : 'text-red-500'}`}>{item.badge}</span>
+                            <span className={`text-[11px] font-bold ${isDark ? 'text-red-400' : 'text-red-500'}`}>{item.badge}</span>
                         </span>
                     )}
                 </button>
@@ -191,60 +214,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
         );
     };
 
+    const renderSectionHeading = (label: string) => (
+        <div className={`px-3 pt-1 pb-1.5 text-[11px] font-semibold uppercase tracking-[0.1em] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+            {label}
+        </div>
+    );
+
     const renderSection = (label: string, items: any[]) => {
         const filtered = filterItems(items);
         if (filtered.length === 0) return null;
         return (
-            <div className="mb-1">
-                <div className="px-3 mb-2 flex items-center gap-2">
-                    <div className={`h-px flex-1 ${isDark ? 'bg-gradient-to-r from-violet-500/20 to-transparent' : 'bg-gradient-to-r from-violet-200 to-transparent'}`} />
-                    <span className={`text-[10px] font-bold uppercase tracking-[0.12em] ${isDark ? 'text-gray-500' : 'text-gray-400'
-                        }`}>
-                        {label}
-                    </span>
-                    <div className={`h-px flex-1 ${isDark ? 'bg-gradient-to-l from-violet-500/20 to-transparent' : 'bg-gradient-to-l from-violet-200 to-transparent'}`} />
-                </div>
+            <div role="group" aria-label={label}>
+                {renderSectionHeading(label)}
                 <div className="space-y-0.5">
                     {filtered.map(renderNavItem)}
                 </div>
-            </div>
-        );
-    };
-
-    // Render the "Explore Data" collapsible group
-    const renderExploreDataGroup = () => {
-        const filteredExplore = filterItems(exploreDataItems);
-        if (filteredExplore.length === 0) return null;
-        return (
-            <div className="space-y-0.5">
-                <button
-                    onClick={() => setExploreDataOpen(!exploreDataOpen)}
-                    className={classNames(
-                        "w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-150 text-[13px] font-medium relative",
-                        isExploreActive
-                            ? isDark ? "bg-violet-500/15 text-violet-300" : "bg-violet-50 text-violet-700"
-                            : isDark ? "text-gray-400 hover:bg-white/[0.05] hover:text-gray-200" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
-                    )}
-                >
-                    {isExploreActive && (
-                        <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-4 rounded-r-full ${isDark ? 'bg-violet-400' : 'bg-violet-600'}`} />
-                    )}
-                    <Database className={classNames(
-                        "w-[17px] h-[17px] transition-colors duration-150",
-                        isExploreActive ? isDark ? "text-violet-400" : "text-violet-600" : isDark ? "text-gray-500" : "text-gray-400"
-                    )} />
-                    <span className="flex-1 text-left">Explore Data</span>
-                    <ChevronRight className={classNames(
-                        "w-3.5 h-3.5 transition-transform duration-200",
-                        exploreDataOpen ? "rotate-90" : "",
-                        isDark ? "text-gray-600" : "text-gray-400"
-                    )} />
-                </button>
-                {exploreDataOpen && (
-                    <div className={`ml-4 pl-3 space-y-0.5 border-l ${isDark ? 'border-white/[0.06]' : 'border-gray-200'}`}>
-                        {filteredExplore.map(renderNavItem)}
-                    </div>
-                )}
             </div>
         );
     };
@@ -260,7 +244,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                     </div>
                     <div>
                         <span className="font-extrabold text-[15px] tracking-tight block leading-tight gradient-text-brand">QuickInsight</span>
-                        <span className={`text-[10px] font-medium tracking-wide ${isDark ? 'text-gray-500' : 'text-gray-400'
+                        <span className={`text-[11px] font-medium tracking-wide ${isDark ? 'text-gray-500' : 'text-gray-400'
                             }`}>Analytics Platform</span>
                     </div>
                 </div>
@@ -278,42 +262,35 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
             <div className={`mx-2 mb-3 h-px ${isDark ? 'bg-gradient-to-r from-transparent via-white/[0.08] to-transparent' : 'bg-gradient-to-r from-transparent via-gray-200 to-transparent'}`} />
 
             {/* Navigation */}
-            <nav className="flex-1 min-h-0 overflow-y-auto space-y-3 stagger-in">
-                {/* Data section: Upload + collapsible Explore Data */}
-                <div className="mb-1">
-                    <div className="px-3 mb-2 flex items-center gap-2">
-                        <div className={`h-px flex-1 ${isDark ? 'bg-gradient-to-r from-violet-500/20 to-transparent' : 'bg-gradient-to-r from-violet-200 to-transparent'}`} />
-                        <span className={`text-[10px] font-bold uppercase tracking-[0.12em] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
-                            Data
-                        </span>
-                        <div className={`h-px flex-1 ${isDark ? 'bg-gradient-to-l from-violet-500/20 to-transparent' : 'bg-gradient-to-l from-violet-200 to-transparent'}`} />
-                    </div>
-                    <div className="space-y-0.5">
-                        {filterItems(dataSection).map(renderNavItem)}
-                        {renderExploreDataGroup()}
-                    </div>
-                </div>
-                {renderSection('Analysis', analysisSection)}
+            <LayoutGroup id={navGroupId}>
+            <nav className="flex-1 min-h-0 overflow-y-auto space-y-4 stagger-in" aria-label="Main">
+                {renderSection('Data', dataSection)}
+                {renderSection('Ask', askSection)}
+                {renderSection('Insights', insightSection)}
                 {/* Data Story special button */}
                 {!isGuest && onDataStory && perms.canCreateVisuals && !hiddenTabs.includes('DATA_STORY') && (
-                    <div className="px-2 mb-2">
+                    <div className="px-1">
                         <button
                             onClick={onDataStory}
                             className={classNames(
-                                'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-bold transition-all duration-200 border',
+                                'w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-colors duration-150 border',
                                 isDark
-                                    ? 'bg-gradient-to-r from-indigo-500/10 to-purple-500/10 text-indigo-300 border-indigo-500/20 hover:from-indigo-500/20 hover:to-purple-500/20 hover:border-indigo-400/30'
-                                    : 'bg-gradient-to-r from-indigo-50 to-purple-50 text-indigo-700 border-indigo-200 hover:from-indigo-100 hover:to-purple-100'
+                                    ? 'bg-gradient-to-r from-violet-500/10 to-indigo-500/5 text-violet-200 border-violet-500/20 hover:from-violet-500/20 hover:to-indigo-500/10 hover:border-violet-400/30'
+                                    : 'bg-gradient-to-r from-violet-50 to-indigo-50 text-violet-700 border-violet-200 hover:from-violet-100 hover:to-indigo-100'
                             )}
                         >
-                            <span className="text-base">{'\u{1F4CA}'}</span>
+                            <span className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isDark ? 'bg-violet-500/20 text-violet-300' : 'bg-white text-violet-600 shadow-sm'}`}>
+                                <BookOpen className="w-[15px] h-[15px]" />
+                            </span>
                             <span>Data Story</span>
-                            <span className={`ml-auto text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${isDark ? 'bg-indigo-500/20 text-indigo-300' : 'bg-indigo-100 text-indigo-600'}`}>New</span>
+                            <span className={`ml-auto text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full ${isDark ? 'bg-emerald-500/15 text-emerald-300' : 'bg-emerald-100 text-emerald-700'}`}>New</span>
                         </button>
                     </div>
                 )}
-                {renderSection('Views', viewSection)}
+                {renderSection('Share & monitor', viewSection)}
+                {renderSection('Admin', adminSection)}
             </nav>
+            </LayoutGroup>
 
             {/* User Section */}
             <div className="shrink-0 mt-auto pt-2 space-y-1.5">
@@ -322,7 +299,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                 {perms.canManageUsers && onOpenUserManagement && (
                     <button
                         onClick={onOpenUserManagement}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-[13px] font-medium ${isDark ? 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-200 hover:translate-x-0.5' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 hover:translate-x-0.5'
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-[13px] font-medium ${isDark ? 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-200' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                             }`}
                     >
                         <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-white/[0.04] text-gray-500' : 'bg-gray-100 text-gray-400'}`}>
@@ -335,7 +312,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                 {userRole === UserRole.ADMIN && onOpenTabManager && (
                     <button
                         onClick={onOpenTabManager}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-[13px] font-medium ${isDark ? 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-200 hover:translate-x-0.5' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900 hover:translate-x-0.5'
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200 text-[13px] font-medium ${isDark ? 'text-gray-400 hover:bg-white/[0.04] hover:text-gray-200' : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                             }`}
                     >
                         <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${isDark ? 'bg-white/[0.04] text-gray-500' : 'bg-gray-100 text-gray-400'}`}>
@@ -362,7 +339,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                             <div className="flex-1 min-w-0">
                                 <div className={`text-sm font-bold truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>{currentUser.name}</div>
                                 <div className="flex items-center gap-1.5 mt-0.5">
-                                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold border ${getRoleBadgeClasses(currentUser.role)}`}>
+                                    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-bold border ${getRoleBadgeClasses(currentUser.role)}`}>
                                         {getRoleIcon(currentUser.role)}
                                         {isGuest ? 'Guest Contributor' : ROLE_PERMISSIONS[currentUser.role].label}
                                     </span>
@@ -391,8 +368,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                 )}
 
                 <div className="mt-1.5 px-3 py-1 flex items-center justify-center gap-2">
-                    <span className={`text-[10px] font-mono ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>v3.0</span>
-                    <span className={`text-[10px] ${isDark ? 'text-gray-700' : 'text-gray-300'}`}>·</span>
+                    <span className={`text-[11px] font-mono ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>v3.0</span>
+                    <span className={`text-[11px] ${isDark ? 'text-gray-700' : 'text-gray-300'}`}>·</span>
                     <button
                         onClick={() => onTabChange(Tab.LEGAL)}
                         className={`text-xs font-semibold transition-colors flex items-center gap-1.5 rounded-md px-1.5 py-1 ${isDark ? 'text-slate-400 hover:text-indigo-300 hover:bg-white/[0.05]' : 'text-slate-600 hover:text-indigo-700 hover:bg-indigo-50'}`}
@@ -419,7 +396,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
 
                         <div className="space-y-3">
                             <div>
-                                <label className={`text-[10px] font-semibold uppercase tracking-wider block mb-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Current Password</label>
+                                <label className={`text-[11px] font-semibold uppercase tracking-wider block mb-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Current Password</label>
                                 <input
                                     type="password" value={pwCurrent} onChange={e => setPwCurrent(e.target.value)}
                                     className={`w-full rounded-lg px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white placeholder-gray-600' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'
@@ -428,7 +405,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                                 />
                             </div>
                             <div>
-                                <label className={`text-[10px] font-semibold uppercase tracking-wider block mb-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>New Password</label>
+                                <label className={`text-[11px] font-semibold uppercase tracking-wider block mb-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>New Password</label>
                                 <input
                                     type="password" value={pwNew} onChange={e => setPwNew(e.target.value)}
                                     className={`w-full rounded-lg px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white placeholder-gray-600' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'
@@ -437,7 +414,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                                 />
                             </div>
                             <div>
-                                <label className={`text-[10px] font-semibold uppercase tracking-wider block mb-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Confirm New Password</label>
+                                <label className={`text-[11px] font-semibold uppercase tracking-wider block mb-1 ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Confirm New Password</label>
                                 <input
                                     type="password" value={pwConfirm} onChange={e => setPwConfirm(e.target.value)}
                                     className={`w-full rounded-lg px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-violet-500/50 transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white placeholder-gray-600' : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400'

@@ -298,8 +298,8 @@ export const DataStoryView: React.FC<DataStoryViewProps> = ({ dataset, question,
               <ChevronLeft className="w-4 h-4" /> Previous
             </button>
             <p className="text-white/20 text-xs">
-              Press <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white/40 text-[10px] font-mono">{'\u2190'}</kbd>{' '}
-              <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white/40 text-[10px] font-mono">{'\u2192'}</kbd> to navigate
+              Press <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white/40 text-[11px] font-mono">{'\u2190'}</kbd>{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-white/10 text-white/40 text-[11px] font-mono">{'\u2192'}</kbd> to navigate
             </p>
             <button onClick={currentSlide === doneSlides.length - 1 ? onClose : goNext}
               className={`flex items-center gap-2 px-4 py-2 rounded-xl transition-all border ${

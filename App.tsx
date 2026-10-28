@@ -1659,7 +1659,7 @@ function App() {
                                 <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
                                 <div className="text-left">
                                   <div className="font-bold">Import</div>
-                                  <div className={`text-[10px] ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Static snapshot of your data</div>
+                                  <div className={`text-[11px] ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Static snapshot of your data</div>
                                 </div>
                                 {dataset.connectionMode === 'import' && (
                                   <svg className="w-4 h-4 ml-auto text-indigo-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
@@ -1677,7 +1677,7 @@ function App() {
                                 <svg className="w-4 h-4 shrink-0 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                                 <div className="text-left">
                                   <div className="font-bold">⚡ Live</div>
-                                  <div className={`text-[10px] ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Real-time data from database</div>
+                                  <div className={`text-[11px] ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Real-time data from database</div>
                                 </div>
                                 {dataset.connectionMode === 'live' && (
                                   <svg className="w-4 h-4 ml-auto text-emerald-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
@@ -1696,7 +1696,7 @@ function App() {
                                     <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
                                     <div className="text-left">
                                       <div className="font-bold">🔌 Reconnect</div>
-                                      <div className={`text-[10px] ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Re-enter password to reconnect</div>
+                                      <div className={`text-[11px] ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>Re-enter password to reconnect</div>
                                     </div>
                                   </button>
                                 </>
@@ -1912,11 +1912,11 @@ function App() {
                 </AnimatePresence>
 
                 {/* Dataset preparation tools live inside Dataset Workspace. Legacy routes preserve deep links. */}
-                <div className={`h-full w-full ${activeTab === Tab.COLUMN_MAPPING ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.COLUMN_MAPPING ? '' : 'hidden'}`}>
                   <DatasetSummaryView dataset={dataset} initialSection="mapping" {...datasetWorkspaceProps} />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.UPLOAD ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.UPLOAD ? '' : 'hidden'}`}>
                   <UploadView
                     onFileUpload={handleFileUpload}
                     onSampleLoad={loadSampleData}
@@ -1930,35 +1930,35 @@ function App() {
                   />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.ETL ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.ETL ? '' : 'hidden'}`}>
                   <DatasetSummaryView dataset={dataset} initialSection="cleaned" {...datasetWorkspaceProps} />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.DATA_STUDIO ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.DATA_STUDIO ? '' : 'hidden'}`}>
                   <DatasetSummaryView dataset={dataset} initialSection="studio" {...datasetWorkspaceProps} />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.SCHEMA ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.SCHEMA ? '' : 'hidden'}`}>
                   <DatasetSummaryView dataset={dataset} initialSection="schema" {...datasetWorkspaceProps} />
                 </div>
 
                 {/* Legacy Data Explorer links open the Explorer section of Dataset Workspace. */}
-                <div className={`h-full w-full ${activeTab === Tab.DATA ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.DATA ? '' : 'hidden'}`}>
                   <DatasetSummaryView dataset={dataset} initialSection="explore" {...datasetWorkspaceProps} />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.DATASET_SUMMARY ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.DATASET_SUMMARY ? '' : 'hidden'}`}>
                   <DatasetSummaryView dataset={dataset} {...datasetWorkspaceProps} />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.NLQ ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.NLQ ? '' : 'hidden'}`}>
                   <NLQView
                     dataset={dataset}
                     onPin={(title, result) => handlePin({ ...result, insight: title })}
                   />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.AI_SQL ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.AI_SQL ? '' : 'hidden'}`}>
                   <AISQLView
                     dataset={dataset}
                     onPin={(title, result) => handlePin({ ...result, insight: title })}
@@ -1979,7 +1979,7 @@ function App() {
                   />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.VISUAL_PREVIEW ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.VISUAL_PREVIEW ? '' : 'hidden'}`}>
                   {visualPreviewResult && (
                     <VisualPreviewView
                       dataset={dataset}
@@ -2004,7 +2004,7 @@ function App() {
                   )}
                 </div>
 
-                <div className={`h-full w-full overflow-hidden ${activeTab === Tab.DERIVED_COLUMNS ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full overflow-hidden ${activeTab === Tab.DERIVED_COLUMNS ? '' : 'hidden'}`}>
                   <DerivedColumnsView
                     dataset={dataset}
                     onDatasetUpdate={(updated) => {
@@ -2015,7 +2015,7 @@ function App() {
                   />
                 </div>
 
-                <div className={`h-full w-full overflow-hidden ${activeTab === Tab.BUILDER ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full overflow-hidden ${activeTab === Tab.BUILDER ? '' : 'hidden'}`}>
                   {dataset && (
                     <BuilderView
                       dataset={dataset}
@@ -2040,7 +2040,7 @@ function App() {
                   )}
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.WORKBENCH ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.WORKBENCH ? '' : 'hidden'}`}>
                   <WorkbenchView
                     dataset={dataset}
                     initialConfig={workbenchConfig}
@@ -2054,7 +2054,7 @@ function App() {
                   />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.DASHBOARD ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.DASHBOARD ? '' : 'hidden'}`}>
                   <Dashboard
                     dataset={dataset}
                     onAddResult={handlePin}
@@ -2068,19 +2068,19 @@ function App() {
                   />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.CUSTOM_QUESTIONS ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.CUSTOM_QUESTIONS ? '' : 'hidden'}`}>
                   <AdminQuestionBuilder dataset={dataset} />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.ALERTS ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.ALERTS ? '' : 'hidden'}`}>
                   <AlertsView dataset={dataset} />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.USER_INSIGHTS ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.USER_INSIGHTS ? '' : 'hidden'}`}>
                   <UserInsightsView />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.BENCHMARK ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.BENCHMARK ? '' : 'hidden'}`}>
                   {activeTab === Tab.BENCHMARK && (
                     <React.Suspense fallback={<div className="h-full flex items-center justify-center text-sm text-slate-400">Loading Benchmark Lab…</div>}>
                       <BenchmarkLabView activeDataset={dataset} />
@@ -2088,13 +2088,13 @@ function App() {
                   )}
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.AI_SQL_ENGINES ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.AI_SQL_ENGINES ? '' : 'hidden'}`}>
                   {activeTab === Tab.AI_SQL_ENGINES && currentUser?.role === UserRole.ADMIN && (
                     <AISQLEngineControlView />
                   )}
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.QUICK_INSIGHTS ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.QUICK_INSIGHTS ? '' : 'hidden'}`}>
                   <QuickInsightsView
                     dataset={dataset}
                     onPin={(title, result) => handlePin({ ...result, insight: title })}
@@ -2108,7 +2108,7 @@ function App() {
                   />
                 </div>
 
-                <div className={`h-full w-full ${activeTab === Tab.SMART_QUESTIONS ? '' : 'hidden'}`}>
+                <div className={`qi-view h-full w-full ${activeTab === Tab.SMART_QUESTIONS ? '' : 'hidden'}`}>
                   {dataset && (
                     <SmartQuestionsView
                       dataset={dataset}
@@ -2126,7 +2126,7 @@ function App() {
             )}
 
             {/* GAFS Challenge Game */}
-            <div className={`h-full w-full ${activeTab === Tab.GAME ? '' : 'hidden'}`}>
+            <div className={`qi-view h-full w-full ${activeTab === Tab.GAME ? '' : 'hidden'}`}>
               <GameView onNavigateToBuilder={() => setActiveTab(Tab.BUILDER)} />
             </div>
 

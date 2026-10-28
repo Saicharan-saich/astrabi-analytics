@@ -34,9 +34,9 @@ export const AnalysisCertificatePanel: React.FC<AnalysisCertificatePanelProps> =
             </div>
           </div>
           <div className="grid shrink-0 grid-cols-3 gap-2 text-center">
-            <div className="rounded-xl bg-emerald-500/10 px-3 py-2"><div className="text-lg font-black text-emerald-500">{passed}</div><div className="text-[9px] font-bold uppercase text-slate-400">Passed</div></div>
-            <div className="rounded-xl bg-amber-500/10 px-3 py-2"><div className="text-lg font-black text-amber-500">{warnings}</div><div className="text-[9px] font-bold uppercase text-slate-400">Review</div></div>
-            <div className="rounded-xl bg-rose-500/10 px-3 py-2"><div className="text-lg font-black text-rose-500">{failed}</div><div className="text-[9px] font-bold uppercase text-slate-400">Failed</div></div>
+            <div className="rounded-xl bg-emerald-500/10 px-3 py-2"><div className="text-lg font-black text-emerald-500">{passed}</div><div className="text-[10px] font-bold uppercase text-slate-400">Passed</div></div>
+            <div className="rounded-xl bg-amber-500/10 px-3 py-2"><div className="text-lg font-black text-amber-500">{warnings}</div><div className="text-[10px] font-bold uppercase text-slate-400">Review</div></div>
+            <div className="rounded-xl bg-rose-500/10 px-3 py-2"><div className="text-lg font-black text-rose-500">{failed}</div><div className="text-[10px] font-bold uppercase text-slate-400">Failed</div></div>
           </div>
         </div>
 
@@ -88,8 +88,8 @@ export const AnalysisCertificatePanel: React.FC<AnalysisCertificatePanelProps> =
 
 const CertificateFact: React.FC<{ label: string; value: string; detail: string; mono?: boolean }> = ({ label, value, detail, mono }) => (
   <div>
-    <div className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
+    <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{label}</div>
     <div className={`mt-1 break-words text-sm font-black ${mono ? 'font-mono' : ''}`}>{value}</div>
-    <div className="mt-0.5 text-[10px] text-slate-400">{detail}</div>
+    <div className="mt-0.5 text-[11px] text-slate-400">{detail}</div>
   </div>
 );

@@ -511,7 +511,7 @@ const InsightCard: React.FC<{
             <div className="flex items-center justify-between px-4 pt-4 pb-2">
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${style.bg} ${style.text}`}>
+                        <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${style.bg} ${style.text}`}>
                             {style.label}
                         </span>
                     </div>

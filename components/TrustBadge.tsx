@@ -64,7 +64,7 @@ export default function TrustBadge({ trust, isDark = false, compact = false }: T
             <button
                 onClick={() => { setShowSummary(!showSummary); setShowExplain(false); }}
                 className={`
-                    inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold
+                    inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold
                     border cursor-pointer transition-all duration-200
                     hover:scale-105 active:scale-95
                     ${config.badgeBg} ${config.badgeText} ${config.badgeBorder}
@@ -112,7 +112,7 @@ export default function TrustBadge({ trust, isDark = false, compact = false }: T
                                         {check.label}
                                     </div>
                                     {check.detail && (
-                                        <div className={`text-[10px] mt-0.5 leading-snug ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>
+                                        <div className={`text-[11px] mt-0.5 leading-snug ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>
                                             {check.detail}
                                         </div>
                                     )}

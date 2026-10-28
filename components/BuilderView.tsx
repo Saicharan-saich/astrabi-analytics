@@ -689,7 +689,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 >
                     <Undo2 className="h-4 w-4" aria-hidden="true" />
                     Undo
-                    {undoDepth > 1 && <span className="rounded-full bg-slate-100 px-1.5 text-[10px] tabular-nums">{undoDepth}</span>}
+                    {undoDepth > 1 && <span className="rounded-full bg-slate-100 px-1.5 text-[11px] tabular-nums">{undoDepth}</span>}
                 </button>
 
                 {/* Time anchor stays visible in the top command bar. */}
@@ -699,7 +699,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         <Tooltip text="Choose which date column defines the analysis time anchor." position="bottom">
                             <div className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
                                 <span
-                                    className="text-[10px] font-extrabold uppercase tracking-wide whitespace-nowrap"
+                                    className="text-[11px] font-extrabold uppercase tracking-wide whitespace-nowrap"
                                     style={{ color: '#000000', fontWeight: 800 }}
                                 >
                                     Date field
@@ -723,7 +723,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 shadow-sm cursor-pointer hover:border-indigo-300 transition-colors">
                             <Calendar className="w-3.5 h-3.5 text-indigo-500" />
                             <span
-                                className="text-[10px] font-extrabold uppercase tracking-wide"
+                                className="text-[11px] font-extrabold uppercase tracking-wide"
                                 style={{ color: '#000000', fontWeight: 800 }}
                             >
                                 As of
@@ -1000,7 +1000,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 {result && !error && !isLoading && (
                     <>
                         <section className="qi-builder-answer mb-3 shrink-0 rounded-2xl border border-indigo-200 bg-indigo-50/80 px-4 py-3 text-slate-800 shadow-sm" aria-label="Your answer in words" aria-live="polite">
-                            <div className="text-[10px] font-extrabold uppercase tracking-[0.14em] text-indigo-700">Your answer in words</div>
+                            <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-indigo-700">Your answer in words</div>
                             <p className="mt-1 text-sm font-semibold leading-6">{describeBuilderQuestion(lastRunConfig || result.config)}</p>
                             {describeBuilderFinding(result, formatting) && (
                                 <p className="mt-1 text-sm leading-6 text-slate-600">{describeBuilderFinding(result, formatting)}</p>
@@ -1156,7 +1156,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                         <input type="radio" name="builder-comparison" checked={!result?.config?.comparison || result?.config?.comparison === 'none'} onChange={() => { if (result) handleRun({ ...result.config, comparison: 'none' as any }); }} className="text-emerald-600" />
                                                         <div>
                                                             <span className="text-sm font-bold text-slate-700">Single Period</span>
-                                                            <span className="text-[10px] text-slate-500 block leading-tight">No comparison</span>
+                                                            <span className="text-[11px] text-slate-500 block leading-tight">No comparison</span>
                                                         </div>
                                                     </label>
                                                     {/* Previous Period */}
@@ -1164,7 +1164,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                         <input type="radio" name="builder-comparison" checked={result?.config?.comparison === 'previous_period'} onChange={() => { if (result) handleRun({ ...result.config, comparison: 'previous_period' as any }); }} className="text-emerald-600" />
                                                         <div>
                                                             <span className="text-sm font-bold text-slate-700">Previous Period</span>
-                                                            <span className="text-[10px] text-slate-500 block leading-tight">Compare with preceding period</span>
+                                                            <span className="text-[11px] text-slate-500 block leading-tight">Compare with preceding period</span>
                                                         </div>
                                                     </label>
                                                     {/* Same Period Last N (replaces static Same Period Last Year) */}
@@ -1172,7 +1172,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                         <input type="radio" name="builder-comparison" checked={result?.config?.comparison === 'same_period_last_n'} onChange={() => { if (result) handleRun({ ...result.config, comparison: 'same_period_last_n' as any, comparisonGrain: result.config.comparisonGrain || 'year', comparisonOffset: result.config.comparisonOffset || 1 }); }} className="text-emerald-600" />
                                                         <div>
                                                             <span className="text-sm font-bold text-slate-700">Same Period Last N</span>
-                                                            <span className="text-[10px] text-slate-500 block leading-tight">Flexible: pick grain &amp; offset (D/W/M/Q/Y)</span>
+                                                            <span className="text-[11px] text-slate-500 block leading-tight">Flexible: pick grain &amp; offset (D/W/M/Q/Y)</span>
                                                         </div>
                                                     </label>
                                                     {/* Grain + Offset controls (only when Same Period Last N is active) */}
@@ -1180,7 +1180,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                         <div className="ml-7 mt-2 p-3 bg-emerald-50/60 rounded-lg border border-emerald-200 space-y-3">
                                                             {/* Grain selector pills */}
                                                             <div>
-                                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Grain</span>
+                                                                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Grain</span>
                                                                 <div className="flex gap-1">
                                                                     {(['day', 'week', 'month', 'quarter', 'year'] as const).map(g => {
                                                                         const labels: Record<string, string> = { day: 'D', week: 'W', month: 'M', quarter: 'Q', year: 'Y' };
@@ -1196,7 +1196,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                             </div>
                                                             {/* Offset stepper */}
                                                             <div>
-                                                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Offset</span>
+                                                                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Offset</span>
                                                                 <div className="flex items-center gap-2">
                                                                     <button onClick={() => { const n = Math.max(1, (result.config.comparisonOffset || 1) - 1); handleRun({ ...result.config, comparisonOffset: n }); }}
                                                                         className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700 font-bold text-sm transition-all">−</button>
@@ -1204,7 +1204,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                                     <button onClick={() => { const n = Math.min(24, (result.config.comparisonOffset || 1) + 1); handleRun({ ...result.config, comparisonOffset: n }); }}
                                                                         className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-emerald-50 hover:border-emerald-400 hover:text-emerald-700 font-bold text-sm transition-all">+</button>
                                                                 </div>
-                                                                <span className="text-[10px] text-emerald-700 mt-1.5 block font-medium">
+                                                                <span className="text-[11px] text-emerald-700 mt-1.5 block font-medium">
                                                                     vs {result.config.comparisonOffset || 1} {(result.config.comparisonGrain || 'month') + ((result.config.comparisonOffset || 1) > 1 ? 's' : '')} ago
                                                                 </span>
                                                             </div>
@@ -1230,7 +1230,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                 </div>
                                                 {(['pct_diff_from_prev', 'diff_from_prev'] as TableCalculation[]).some(calc => (formatting.tableCalculations || []).includes(calc)) && (
                                                     <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 space-y-2">
-                                                        <label className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700">Comparison baseline</label>
+                                                        <label className="block text-[11px] font-bold uppercase tracking-wider text-emerald-700">Comparison baseline</label>
                                                         <select
                                                             value={formatting.tableCalculationComparison?.mode || 'previous'}
                                                             onChange={e => {
@@ -1267,7 +1267,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                                 ))}
                                                             </select>
                                                         )}
-                                                        <p className="text-[10px] leading-relaxed text-emerald-700">
+                                                        <p className="text-[11px] leading-relaxed text-emerald-700">
                                                             {(formatting.tableCalculationComparison?.mode || 'previous') === 'selected_value'
                                                                 ? 'Every visible value is compared with the selected baseline.'
                                                                 : 'Each value is compared with the previous visible row, using the current chart order.'}
@@ -1293,7 +1293,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         {contentTab === 'sql' && (
                             <div className="space-y-4">
                                 <div className="bg-gray-100 dark:bg-slate-900 rounded-xl p-4 shadow-inner overflow-hidden relative">
-                                    <div className="absolute top-2 right-2 text-[10px] text-gray-500 dark:text-slate-500 font-mono uppercase flex items-center bg-gray-200 dark:bg-slate-800 px-2 py-1 rounded"><Code className="w-3 h-3 mr-1" /> Generated SQL</div>
+                                    <div className="absolute top-2 right-2 text-[11px] text-gray-500 dark:text-slate-500 font-mono uppercase flex items-center bg-gray-200 dark:bg-slate-800 px-2 py-1 rounded"><Code className="w-3 h-3 mr-1" /> Generated SQL</div>
                                     <pre className="text-sm text-green-400 font-mono overflow-auto whitespace-pre-wrap p-2 min-h-[200px]">{showGrowthChart && result.calculatedSql ? result.calculatedSql : result.sql}</pre>
                                 </div>
                                 <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm">

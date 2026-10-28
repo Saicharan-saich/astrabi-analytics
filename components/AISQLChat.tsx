@@ -145,11 +145,11 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                     </div>
                     <div>
                         <h3 className="text-sm font-bold">AI SQL Generator</h3>
-                        <p className="text-[10px] text-white/70">Ask questions, get SQL queries</p>
+                        <p className="text-[11px] text-white/70">Ask questions, get SQL queries</p>
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    <div className="flex items-center gap-1 px-2 py-0.5 bg-white/10 rounded-full text-[10px]">
+                    <div className="flex items-center gap-1 px-2 py-0.5 bg-white/10 rounded-full text-[11px]">
                         <Database className="w-3 h-3" />
                         <span>{dataset.columns.length} cols</span>
                     </div>
@@ -236,7 +236,7 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                                     {msg.columnsUsed && msg.columnsUsed.length > 0 && (
                                         <div className="flex flex-wrap gap-1">
                                             {msg.columnsUsed.map(col => (
-                                                <span key={col} className="px-1.5 py-0.5 text-[9px] bg-violet-50 text-violet-600 border border-violet-200 rounded font-mono">
+                                                <span key={col} className="px-1.5 py-0.5 text-[10px] bg-violet-50 text-violet-600 border border-violet-200 rounded font-mono">
                                                     {col}
                                                 </span>
                                             ))}
@@ -274,7 +274,7 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                 {/* Remaining queries indicator */}
                 {!limitStatus.blocked && limitStatus.limit !== Infinity && (
                     <div className="flex items-center justify-between mb-2 px-1">
-                        <div className="flex items-center gap-1.5 text-[10px]" style={{ color: limitStatus.remaining > 3 ? '#64748b' : limitStatus.remaining > 0 ? '#d97706' : '#dc2626' }}>
+                        <div className="flex items-center gap-1.5 text-[11px]" style={{ color: limitStatus.remaining > 3 ? '#64748b' : limitStatus.remaining > 0 ? '#d97706' : '#dc2626' }}>
                             {limitStatus.remaining > 0
                                 ? <Clock className="w-3 h-3" />
                                 : <Lock className="w-3 h-3" />
@@ -339,7 +339,7 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                             <>
                                 <div className="space-y-3">
                                     <div>
-                                        <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">Question</label>
+                                        <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider block mb-1">Question</label>
                                         <input
                                             type="text"
                                             value={saveQuestionText}
@@ -350,7 +350,7 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                                         />
                                     </div>
                                     <div>
-                                        <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">Category</label>
+                                        <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider block mb-1">Category</label>
                                         <select
                                             value={saveCategory}
                                             onChange={e => setSaveCategory(e.target.value)}
@@ -364,8 +364,8 @@ export const AISQLChat: React.FC<AISQLChatProps> = ({ dataset, onClose }) => {
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">SQL Preview</label>
-                                        <pre className="bg-slate-900 text-emerald-300 text-[10px] rounded-lg p-2 overflow-x-auto font-mono max-h-24">
+                                        <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider block mb-1">SQL Preview</label>
+                                        <pre className="bg-slate-900 text-emerald-300 text-[11px] rounded-lg p-2 overflow-x-auto font-mono max-h-24">
                                             {showSaveModal}
                                         </pre>
                                     </div>

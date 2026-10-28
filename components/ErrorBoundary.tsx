@@ -59,10 +59,10 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
                 <div className="flex flex-col items-center justify-center h-full min-h-[120px] bg-slate-800/50 rounded-xl border border-red-500/20 p-4 text-center">
                     <AlertTriangle className="w-6 h-6 text-red-400/70 mb-2" />
                     <p className="text-xs text-slate-400 mb-1">{label || 'Component'} failed to render</p>
-                    <p className="text-[10px] text-slate-500 mb-3 max-w-[200px] truncate">{errorMessage}</p>
+                    <p className="text-[11px] text-slate-500 mb-3 max-w-[200px] truncate">{errorMessage}</p>
                     <button
                         onClick={this.handleRetry}
-                        className="flex items-center gap-1 px-2 py-1 text-[10px] bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
+                        className="flex items-center gap-1 px-2 py-1 text-[11px] bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
                     >
                         <RefreshCw className="w-3 h-3" /> Retry
                     </button>

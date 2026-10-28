@@ -307,7 +307,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                                         <Columns3 className="w-3.5 h-3.5" />
                                         Columns
                                         {parentOverrides && Object.keys(parentOverrides).length > 0 && (
-                                            <span className="bg-amber-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full ml-1">
+                                            <span className="bg-amber-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full ml-1">
                                                 {Object.keys(parentOverrides).length}
                                             </span>
                                         )}
@@ -333,7 +333,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                             <Tooltip text="As of date — defines what 'today' means for time queries. Defaults to MAX date in your dataset." position="bottom">
                                 <div className="flex items-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
                                     <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                                    <span className="text-[10px] text-slate-500 font-bold uppercase">As of</span>
+                                    <span className="text-[11px] text-slate-500 font-bold uppercase">As of</span>
                                     <input
                                         type="date"
                                         value={asOfDate}
@@ -349,10 +349,10 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                     {showColumnOverrides && questionReq && columnMapping && onColumnOverrideChange && (
                         <div className="bg-amber-50/50 border border-amber-200 rounded-lg p-2.5 animate-in slide-in-from-top-1 duration-200">
                             <div className="flex items-center justify-between mb-2">
-                                <span className="text-[10px] uppercase font-bold text-amber-600 tracking-wider flex items-center gap-1">
+                                <span className="text-[11px] uppercase font-bold text-amber-600 tracking-wider flex items-center gap-1">
                                     <Columns3 className="w-3 h-3" /> Column Mapping Override
                                 </span>
-                                <span className="text-[10px] text-amber-500">Auto-detected → Override</span>
+                                <span className="text-[11px] text-amber-500">Auto-detected → Override</span>
                             </div>
                             <div className="flex flex-wrap items-center gap-2">
                                 {questionReq.filter(role => role !== 'order_date').map(role => {
@@ -376,7 +376,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                                             ? 'bg-amber-100 border-amber-300'
                                             : 'bg-white border-slate-200'
                                             }`}>
-                                            <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider whitespace-nowrap">{roleLabel}</span>
+                                            <span className="text-[11px] uppercase font-bold text-slate-400 tracking-wider whitespace-nowrap">{roleLabel}</span>
                                             <div className="relative">
                                                 <select
                                                     value={overrideVal || autoCol}
@@ -414,7 +414,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                         {/* Metric */}
                         {allowedControls.includes('metric') && (
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Metric</label>
+                                <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Metric</label>
                                 <div className="relative">
                                     <select
                                         value={metric}
@@ -431,7 +431,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                         {/* Aggregation */}
                         {allowedControls.includes('aggregation') && (
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Agg</label>
+                                <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Agg</label>
                                 <div className="relative">
                                     <select
                                         value={aggregation}
@@ -452,7 +452,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                         {/* Dimension */}
                         {allowedControls.includes('dimension') && (
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Group By</label>
+                                <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Group By</label>
                                 <div className="relative">
                                     <select
                                         value={dimension}
@@ -474,7 +474,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                         {/* Time Filter */}
                         {allowedControls.includes('time') && (
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Time Period</label>
+                                <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Time Period</label>
                                 <div className="flex items-center gap-2">
                                     <div className="relative">
                                         <select
@@ -548,7 +548,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                                                             const n = timeFilter.split('_')[1] || '1';
                                                             setTimeFilter(`last_${n}_years`);
                                                         }}
-                                                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-all ${timeFilter.split('_')[2] === 'years'
+                                                        className={`px-2 py-0.5 text-[11px] font-bold rounded-md transition-all ${timeFilter.split('_')[2] === 'years'
                                                             ? 'bg-white text-orange-700 shadow-sm'
                                                             : 'text-orange-400 hover:text-orange-600'
                                                             }`}
@@ -559,7 +559,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                                                             const n = timeFilter.split('_')[1] || '1';
                                                             setTimeFilter(`last_${n}_cyears`);
                                                         }}
-                                                        className={`px-2 py-0.5 text-[10px] font-bold rounded-md transition-all ${timeFilter.split('_')[2] === 'cyears'
+                                                        className={`px-2 py-0.5 text-[11px] font-bold rounded-md transition-all ${timeFilter.split('_')[2] === 'cyears'
                                                             ? 'bg-white text-orange-700 shadow-sm'
                                                             : 'text-orange-400 hover:text-orange-600'
                                                             }`}
@@ -576,7 +576,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                         {/* View Toggle (Total vs Trend) — separate column for alignment */}
                         {allowedControls.includes('time') && (
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">View</label>
+                                <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">View</label>
                                 <div className="flex items-center gap-2">
                                     <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
                                         <button
@@ -639,7 +639,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                         {/* Moving Average Window Selector — visible only for MA questions */}
                         {questionLabel.toLowerCase().includes('moving average') && (
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Window</label>
+                                <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Window</label>
                                 <div className="relative">
                                     <select
                                         value={[3, 5, 7, 14, 30].includes(maWindow) ? maWindow : 'custom'}
@@ -675,7 +675,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                         {/* Sort */}
                         {(allowedControls.includes('sort') || ((dimension && dimension !== ''))) && (
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Sort</label>
+                                <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Sort</label>
                                 <div className="relative">
                                     <select
                                         value={sort}
@@ -695,7 +695,7 @@ export const QuestionCustomizer: React.FC<QuestionCustomizerProps> = ({
                         {/* Limit */}
                         {(allowedControls.includes('limit') || ((dimension && dimension !== ''))) && (
                             <div className="flex flex-col gap-1">
-                                <label className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Limit</label>
+                                <label className="text-[11px] uppercase font-bold text-slate-400 tracking-wider">Limit</label>
                                 <div className="flex items-center gap-1">
                                     <div className="relative">
                                         <select

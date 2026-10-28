@@ -329,7 +329,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                                                 ? 'bg-indigo-100 text-indigo-700'
                                                 : 'bg-slate-100 text-slate-400'
                                                 }`}>
-                                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${i < stepIndex ? 'bg-indigo-600 text-white' :
+                                                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[11px] font-bold ${i < stepIndex ? 'bg-indigo-600 text-white' :
                                                     i === stepIndex ? 'bg-indigo-600 text-white' :
                                                         'bg-slate-300 text-white'
                                                     }`}>{i < stepIndex ? '✓' : i + 1}</span>
@@ -475,7 +475,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                                                             </div>
                                                             <div className="flex items-center gap-2 flex-shrink-0">
                                                                 {cols && (
-                                                                    <span className="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md font-mono">
+                                                                    <span className="text-[11px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded-md font-mono">
                                                                         {cols.length} cols
                                                                     </span>
                                                                 )}
@@ -574,7 +574,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                                         <div className="flex items-center gap-2 mb-3">
                                             <GitMerge className="w-4 h-4 text-indigo-500" />
                                             <h4 className="text-sm font-bold text-slate-800">Relationship Map</h4>
-                                            <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
+                                            <span className="text-[11px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-medium">
                                                 {joinEdges.length} join{joinEdges.length !== 1 ? 's' : ''} detected
                                             </span>
                                         </div>
@@ -596,14 +596,14 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                                                                 <Database className="w-4 h-4 text-indigo-500 flex-shrink-0" />
                                                                 <div>
                                                                     <div className="text-xs font-bold text-slate-800">{edge.leftTable}</div>
-                                                                    <div className="text-[10px] font-mono text-indigo-600">{edge.leftColumn}</div>
+                                                                    <div className="text-[11px] font-mono text-indigo-600">{edge.leftColumn}</div>
                                                                 </div>
                                                             </div>
 
                                                             {/* Join arrow */}
                                                             <div className="flex items-center gap-1 flex-shrink-0">
                                                                 <div className="w-8 h-0.5 bg-slate-300 group-hover:bg-indigo-400 transition-colors" />
-                                                                <div className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider border ${edge.type === 'fk'
+                                                                <div className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${edge.type === 'fk'
                                                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                                                     : 'bg-amber-50 text-amber-700 border-amber-200'
                                                                     }`}>
@@ -618,7 +618,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                                                                 <Database className="w-4 h-4 text-purple-500 flex-shrink-0" />
                                                                 <div>
                                                                     <div className="text-xs font-bold text-slate-800">{edge.rightTable}</div>
-                                                                    <div className="text-[10px] font-mono text-purple-600">{edge.rightColumn}</div>
+                                                                    <div className="text-[11px] font-mono text-purple-600">{edge.rightColumn}</div>
                                                                 </div>
                                                             </div>
                                                         </div>
@@ -646,18 +646,18 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                                                                 <Database className="w-3.5 h-3.5 text-indigo-500" />
                                                                 <span className="text-xs font-bold text-slate-800">{tbl}</span>
                                                             </div>
-                                                            <span className="text-[10px] text-slate-400">{cols.length} cols</span>
+                                                            <span className="text-[11px] text-slate-400">{cols.length} cols</span>
                                                         </div>
                                                         <div className="flex flex-wrap gap-1">
                                                             {cols.slice(0, 8).map((col, i) => (
-                                                                <span key={i} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-mono border ${col.isPK ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'
+                                                                <span key={i} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-mono border ${col.isPK ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-slate-50 text-slate-600 border-slate-200'
                                                                     }`}>
                                                                     {col.isPK && <Key className="w-2.5 h-2.5" />}
                                                                     {col.name}
                                                                 </span>
                                                             ))}
                                                             {cols.length > 8 && (
-                                                                <span className="text-[10px] text-slate-400 px-1">+{cols.length - 8} more</span>
+                                                                <span className="text-[11px] text-slate-400 px-1">+{cols.length - 8} more</span>
                                                             )}
                                                         </div>
                                                     </div>
@@ -683,7 +683,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                                                             <span className="font-mono font-bold">{e.leftTable}.{e.leftColumn}</span>
                                                             <ArrowRight className="w-3 h-3" />
                                                             <span className="font-mono font-bold">{e.rightTable}.{e.rightColumn}</span>
-                                                            <span className={`ml-1 px-1.5 py-0.5 rounded text-[9px] font-bold ${e.type === 'fk' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+                                                            <span className={`ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold ${e.type === 'fk' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
                                                                 }`}>{e.type.toUpperCase()}</span>
                                                         </div>
                                                     ))}
@@ -714,7 +714,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                                                 )}
                                                 <Download className={`w-5 h-5 mb-1.5 ${connectionMode === 'import' ? 'text-indigo-600' : 'text-slate-400'}`} />
                                                 <div className={`text-xs font-bold ${connectionMode === 'import' ? 'text-indigo-900' : 'text-slate-700'}`}>Import (Snapshot)</div>
-                                                <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">Copies data into browser for fast offline analysis</div>
+                                                <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">Copies data into browser for fast offline analysis</div>
                                             </button>
                                             <button
                                                 onClick={() => setConnectionMode('live')}
@@ -731,7 +731,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                                                 )}
                                                 <Zap className={`w-5 h-5 mb-1.5 ${connectionMode === 'live' ? 'text-emerald-600' : 'text-slate-400'}`} />
                                                 <div className={`text-xs font-bold ${connectionMode === 'live' ? 'text-emerald-900' : 'text-slate-700'}`}>Live Connection</div>
-                                                <div className="text-[10px] text-slate-500 mt-0.5 leading-snug">Queries run against live database — refresh fetches latest data</div>
+                                                <div className="text-[11px] text-slate-500 mt-0.5 leading-snug">Queries run against live database — refresh fetches latest data</div>
                                             </button>
                                         </div>
                                     </div>

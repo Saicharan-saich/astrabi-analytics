@@ -144,7 +144,7 @@ export const PinToDashboardModal: React.FC<PinToDashboardModalProps> = ({ item, 
                                         <LayoutDashboard className="w-4 h-4 flex-shrink-0 opacity-60" />
                                         <div className="flex-1 min-w-0">
                                             <div className="text-sm font-medium truncate">{db.name}</div>
-                                            <div className={`text-[10px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
+                                            <div className={`text-[11px] ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>
                                                 {db.items.length} visual{db.items.length !== 1 ? 's' : ''}
                                             </div>
                                         </div>

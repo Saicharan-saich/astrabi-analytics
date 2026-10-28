@@ -209,7 +209,7 @@ export const AIInsightPanel: React.FC<AIInsightPanelProps> = ({
 
                 {/* Footer */}
                 <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-between bg-slate-50">
-                    <span className="text-[10px] text-slate-400">
+                    <span className="text-[11px] text-slate-400">
                         Smart Insight • Visual interpretation only
                     </span>
                     <button

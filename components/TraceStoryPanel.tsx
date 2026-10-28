@@ -20,7 +20,7 @@ export const TraceStoryPanel: React.FC<TraceStoryPanelProps> = ({ story, questio
           <div className="min-w-0">
             <h2 className="text-base font-black">How this insight was produced</h2>
             {question && <p className={`mt-1 text-sm ${isDark ? 'text-slate-400' : 'text-slate-600'}`}>{question}</p>}
-            <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-500">
+            <div className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-emerald-500">
               <CheckCircle2 className="h-3 w-3" /> Verified from executed SQL and returned result
             </div>
           </div>
@@ -43,7 +43,7 @@ export const TraceStoryPanel: React.FC<TraceStoryPanelProps> = ({ story, questio
                   <h3 className="text-sm font-black">{step.title}</h3>
                 </div>
                 <p className={`mt-1.5 text-sm leading-6 ${isDark ? 'text-slate-300' : 'text-slate-700'}`}>{step.description}</p>
-                <p className={`mt-2 break-words font-mono text-[10px] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Evidence: {step.evidence}</p>
+                <p className={`mt-2 break-words font-mono text-[11px] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>Evidence: {step.evidence}</p>
               </div>
             </li>
           ))}

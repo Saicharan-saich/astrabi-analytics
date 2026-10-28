@@ -98,7 +98,7 @@ export const FindingsFeed: React.FC<FindingsFeedProps> = ({ findings, loading, o
                                 <div className="min-w-0 flex-1">
                                     <div className="flex items-center gap-2 flex-wrap">
                                         <p className="text-sm font-semibold text-gray-900 dark:text-white">{f.headline}</p>
-                                        <span className={`text-[10px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${s.chip}`}>{s.label}</span>
+                                        <span className={`text-[11px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded ${s.chip}`}>{s.label}</span>
                                     </div>
                                     <p className="text-xs text-gray-500 dark:text-slate-400 mt-1 leading-relaxed">{f.detail}</p>
 

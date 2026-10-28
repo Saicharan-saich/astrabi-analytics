@@ -115,7 +115,7 @@ export const ParametersView: React.FC = () => {
             <div className="flex items-center gap-3 mb-2">
                 <SlidersHorizontal className="w-6 h-6 text-indigo-500" />
                 <h1 className="text-xl font-extrabold text-gray-900 dark:text-white">Parameters</h1>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300">ADMIN</span>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-amber-100 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300">ADMIN</span>
             </div>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-6 max-w-3xl">
                 AI SQL generates its SQL deterministically — by rules, not by the LLM. Most questions map onto the
@@ -155,7 +155,7 @@ export const ParametersView: React.FC = () => {
                                     ? <CheckCircle2 className="w-4 h-4 text-sky-500 shrink-0" />
                                     : <Cpu className="w-4 h-4 text-gray-400 shrink-0" />}
                             <span className="text-sm text-gray-800 dark:text-gray-100 flex-1">{d.q}</span>
-                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md shrink-0 ${TIER_META[d.result.tier].cls}`}>
+                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-md shrink-0 ${TIER_META[d.result.tier].cls}`}>
                                 {TIER_META[d.result.tier].label}
                             </span>
                         </button>
@@ -218,7 +218,7 @@ export const ParametersView: React.FC = () => {
                     <div key={s.name} className="px-4 py-3">
                         <div className="flex items-center gap-2 mb-1">
                             <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">{s.name}</span>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.06] text-gray-500 dark:text-gray-400">NEEDS NEW KNOB</span>
+                            <span className="text-[11px] font-bold px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.06] text-gray-500 dark:text-gray-400">NEEDS NEW KNOB</span>
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400 italic mb-1">“{s.example}”</div>
                         <div className="text-xs text-gray-600 dark:text-gray-300">{s.reason}</div>

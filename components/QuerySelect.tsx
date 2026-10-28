@@ -215,7 +215,7 @@ export const QuerySelect: React.FC<QuerySelectProps> = ({
                             Object.entries(filteredGroups).map(([group, opts]) => (
                                 <div key={group} className="mb-1 last:mb-0">
                                     {group !== 'default' && (
-                                        <div className="px-3 py-1.5 text-[10px] font-bold tracking-wider text-slate-500 uppercase">
+                                        <div className="px-3 py-1.5 text-[11px] font-bold tracking-wider text-slate-500 uppercase">
                                             {group}
                                         </div>
                                     )}

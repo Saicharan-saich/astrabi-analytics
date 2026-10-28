@@ -804,7 +804,7 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
                   <div key={m.gafs} className={`${m.bg} border rounded-lg p-3`}>
                     <p className={`text-xs font-bold ${m.color} mb-0.5`}>{m.gafs}</p>
                     <p className="text-xs text-white font-semibold">→ {m.builder}</p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">{m.desc}</p>
+                    <p className="text-[11px] text-slate-500 mt-0.5">{m.desc}</p>
                   </div>
                 ))}
               </div>
@@ -916,15 +916,15 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
           {profile.completedRuns > 0 && (
             <div className="grid grid-cols-3 gap-3 mb-6">
               <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-center">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-amber-400">Personal best</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-amber-400">Personal best</p>
                 <p className="text-xl font-black text-white mt-1">{profile.bestScore.toLocaleString()}</p>
               </div>
               <div className="rounded-xl border border-purple-500/20 bg-purple-500/10 p-3 text-center">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-purple-400">Best streak</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-purple-400">Best streak</p>
                 <p className="text-xl font-black text-white mt-1">{profile.bestStreak}×</p>
               </div>
               <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3 text-center">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Completed</p>
+                <p className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">Completed</p>
                 <p className="text-xl font-black text-white mt-1">{profile.completedRuns}</p>
               </div>
             </div>
@@ -1038,7 +1038,7 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
                 </h3>
                 <p className="text-[11px] text-slate-500 mt-1">First-attempt understanding across completed runs</p>
               </div>
-              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Private · this device</span>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">Private · this device</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {(['G', 'A', 'F', 'S'] as GAFSLane[]).map(lane => {
@@ -1170,8 +1170,8 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
             >
               <Zap className="w-3.5 h-3.5" />
               {streak}× streak
-              {streak >= 5 && <span className="text-[10px] bg-amber-500/20 px-1.5 py-0.5 rounded-full">×2</span>}
-              {streak >= 3 && streak < 5 && <span className="text-[10px] bg-amber-500/20 px-1.5 py-0.5 rounded-full">×1.5</span>}
+              {streak >= 5 && <span className="text-[11px] bg-amber-500/20 px-1.5 py-0.5 rounded-full">×2</span>}
+              {streak >= 3 && streak < 5 && <span className="text-[11px] bg-amber-500/20 px-1.5 py-0.5 rounded-full">×1.5</span>}
             </motion.div>
           )}
           {/* Score */}
@@ -1216,8 +1216,8 @@ const PracticeGame: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit }) 
           {/* Live blueprint makes the analytical plan visible while it is built. */}
           <div className="rounded-xl border border-white/10 bg-black/10 px-4 py-3">
             <div className="flex items-center justify-between gap-3 mb-2.5">
-              <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-slate-500">Your analysis blueprint</p>
-              <p className="text-[10px] text-slate-600">{Object.values(lanes).filter(Boolean).length}/4 decisions</p>
+              <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-slate-500">Your analysis blueprint</p>
+              <p className="text-[11px] text-slate-600">{Object.values(lanes).filter(Boolean).length}/4 decisions</p>
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {(['G', 'A', 'F', 'S'] as GAFSLane[]).map((lane, index) => {
@@ -1529,7 +1529,7 @@ export const GameView: React.FC<GameViewProps> = ({ onNavigateToBuilder, onExit 
             </div>
             <div className="p-5 -mt-8 relative">
               <span
-                className="text-[10px] font-bold px-2 py-1 rounded-full uppercase tracking-wider"
+                className="text-[11px] font-bold px-2 py-1 rounded-full uppercase tracking-wider"
                 style={{ background: FARM.honey, color: '#2E2318' }}
               >
                 Start here

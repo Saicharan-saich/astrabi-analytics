@@ -289,7 +289,7 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
                       : isDark ? 'text-slate-400 hover:text-white hover:bg-white/5 border border-white/[0.06]' : 'text-gray-500 hover:text-gray-800 hover:bg-gray-100 border border-gray-200'
                   } ${ind.industry === primary?.industry ? 'ring-1 ring-purple-400/30' : ''}`}>
                   <span>{ind.icon}</span> {ind.label}
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${activeIndustry === ind.industry ? 'bg-white/20' : isDark ? 'bg-white/5' : 'bg-gray-100'}`}>{ind.templates.length}</span>
+                  <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${activeIndustry === ind.industry ? 'bg-white/20' : isDark ? 'bg-white/5' : 'bg-gray-100'}`}>{ind.templates.length}</span>
                 </button>
               ))}
             </div>
@@ -323,11 +323,11 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
                             <span className="text-lg">{t.icon}</span>
                             <span className="font-bold text-sm">{t.name}</span>
                           </div>
-                          <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold ${t.outputFormat === 'currency' ? 'bg-emerald-500/15 text-emerald-500' : t.outputFormat === 'percent' ? 'bg-blue-500/15 text-blue-500' : 'bg-gray-500/15 text-gray-500'}`}>{t.outputFormat}</span>
+                          <span className={`text-[11px] px-2 py-0.5 rounded-full font-bold ${t.outputFormat === 'currency' ? 'bg-emerald-500/15 text-emerald-500' : t.outputFormat === 'percent' ? 'bg-blue-500/15 text-blue-500' : 'bg-gray-500/15 text-gray-500'}`}>{t.outputFormat}</span>
                         </div>
                         <p className="text-xs text-gray-500 dark:text-slate-400 leading-relaxed">{t.description}</p>
                         <div className={`text-xs font-mono px-2 py-1 rounded ${isDark ? 'bg-slate-900 text-purple-300' : 'bg-gray-100 text-purple-700'}`}>{t.formulaPreview}</div>
-                        <div className="text-[10px] text-gray-400">Needs: {t.requiredInputs.map(i => i.label).join(', ')}</div>
+                        <div className="text-[11px] text-gray-400">Needs: {t.requiredInputs.map(i => i.label).join(', ')}</div>
                         <button onClick={() => startMapping(t)} className="mt-auto bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold py-2 rounded-lg transition-all flex items-center justify-center gap-1.5">
                           <Plus className="w-3 h-3" /> Use Metric
                         </button>

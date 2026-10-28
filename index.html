@@ -4,11 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="QuickInsight — AI-powered business intelligence. Upload your data, ask questions, and get instant visualizations and insights." />
-    <meta name="theme-color" content="#6366f1" />
+    <meta name="theme-color" content="#0a0c12" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f6fb" media="(prefers-color-scheme: light)" />
     <meta property="og:title" content="QuickInsight" />
     <meta property="og:description" content="AI-powered business intelligence platform. Upload data, ask questions, get insights." />
     <meta property="og:type" content="website" />
-    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📊</text></svg>" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>QuickInsight — Business Intelligence</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -18,23 +19,10 @@
          dependency on an external CDN for styling. -->
 
     <style>
+      /* Paint the app ground before the stylesheet loads (no white flash).
+         Scrollbars are styled theme-aware in index.css. */
       body {
-        background-color: #080b14;
-      }
-      /* Custom scrollbar for better aesthetics */
-      ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
-      }
-      ::-webkit-scrollbar-track {
-        background: #f1f5f9; 
-      }
-      ::-webkit-scrollbar-thumb {
-        background: #cbd5e1; 
-        border-radius: 4px;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8; 
+        background-color: #0a0c12;
       }
     </style>
   <!-- The dev importmap (react/lucide/recharts/etc. via esm.sh) was removed:

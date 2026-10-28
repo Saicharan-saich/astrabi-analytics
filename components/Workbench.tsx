@@ -777,7 +777,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                         <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 w-full">
                             <button
                                 onClick={() => setShowAllQuestions(false)}
-                                className={`flex-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${!showAllQuestions
+                                className={`flex-1 px-2 py-1 text-[11px] font-bold uppercase tracking-wider rounded-md transition-all ${!showAllQuestions
                                     ? 'bg-white text-indigo-700 shadow-sm'
                                     : 'text-slate-400 hover:text-slate-600'
                                     }`}
@@ -786,7 +786,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                             </button>
                             <button
                                 onClick={() => setShowAllQuestions(true)}
-                                className={`flex-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${showAllQuestions
+                                className={`flex-1 px-2 py-1 text-[11px] font-bold uppercase tracking-wider rounded-md transition-all ${showAllQuestions
                                     ? 'bg-white text-indigo-700 shadow-sm'
                                     : 'text-slate-400 hover:text-slate-600'
                                     }`}
@@ -813,7 +813,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                 <button onClick={() => setActiveCategory(activeCategory === cat.category ? null : cat.category)} className="w-full flex items-center justify-between p-3 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 uppercase tracking-wider">
                                     <span>{cat.category}</span>
                                     <span className="flex items-center gap-1.5">
-                                        <span className="text-[10px] text-slate-400 font-normal normal-case">{filteredQs.length}</span>
+                                        <span className="text-[11px] text-slate-400 font-normal normal-case">{filteredQs.length}</span>
                                         <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                                     </span>
                                 </button>
@@ -1033,7 +1033,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                             handleRunAnalysis({ ...config, sort: newSort });
                                         }
                                     }}
-                                    className={`px-1 py-0.5 rounded text-[10px] font-bold transition-all border ${config?.sort === 'asc'
+                                    className={`px-1 py-0.5 rounded text-[11px] font-bold transition-all border ${config?.sort === 'asc'
                                         ? 'bg-amber-200 text-amber-800 border-amber-400'
                                         : 'bg-white text-amber-600 border-amber-300 hover:bg-amber-100'
                                         }`}
@@ -1060,7 +1060,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                 setTimeout(() => handleRunAnalysis({ ...config, ...({ periodScope: newScope, periodGrain: newGrain } as any) }), 100);
                                             }
                                         }}
-                                        className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-all border ${periodScope === p
+                                        className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all border ${periodScope === p
                                             ? 'bg-teal-500 text-white border-teal-600'
                                             : 'bg-white text-teal-600 border-teal-200 hover:bg-teal-100'
                                             }`}
@@ -1077,7 +1077,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                 setTimeout(() => handleRunAnalysis({ ...config, ...({ periodScope, periodGrain: grain } as any) }), 100);
                                             }
                                         }}
-                                        className="px-1 py-0.5 rounded text-[10px] font-bold border border-indigo-300 bg-white text-indigo-700 focus:ring-1 focus:ring-indigo-400 focus:outline-none cursor-pointer"
+                                        className="px-1 py-0.5 rounded text-[11px] font-bold border border-indigo-300 bg-white text-indigo-700 focus:ring-1 focus:ring-indigo-400 focus:outline-none cursor-pointer"
                                         title="Group data by time grain"
                                     >
                                         <option value="day">Day</option>
@@ -1126,7 +1126,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                             }}
                                             className="w-16 h-1 accent-purple-600"
                                         />
-                                        <span className={`text-[10px] font-bold min-w-[2.5rem] text-center ${whatIfPct > 0 ? 'text-green-600' : whatIfPct < 0 ? 'text-red-500' : 'text-slate-500'
+                                        <span className={`text-[11px] font-bold min-w-[2.5rem] text-center ${whatIfPct > 0 ? 'text-green-600' : whatIfPct < 0 ? 'text-red-500' : 'text-slate-500'
                                             }`}>
                                             {whatIfPct > 0 ? '+' : ''}{whatIfPct}%
                                         </span>
@@ -1147,7 +1147,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                         : (result.kpi ?? result.data.reduce((acc: number, row: any) => acc + (Number(row[result.yKey]) || 0), 0))?.toLocaleString(undefined, { maximumFractionDigits: 2 })
                                     }
                                 </span>
-                                <span className="bg-indigo-100 text-indigo-800 text-[10px] px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap">
+                                <span className="bg-indigo-100 text-indigo-800 text-[11px] px-1.5 py-0.5 rounded-full font-bold whitespace-nowrap">
                                     {result.data.length} rows
                                 </span>
                                 {result.growth && (
@@ -1321,7 +1321,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                     }} className="mt-0.5 text-indigo-600" />
                                                                     <div>
                                                                         <span className="text-xs font-bold text-slate-700 leading-tight">Single Period (Default)</span>
-                                                                        <span className="text-[10px] text-slate-500 leading-tight mt-0.5 block">Show data for the selected time range only</span>
+                                                                        <span className="text-[11px] text-slate-500 leading-tight mt-0.5 block">Show data for the selected time range only</span>
                                                                     </div>
                                                                 </label>
                                                                 <label className={`flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-all border ${config?.comparison === 'previous_period' ? 'bg-indigo-50 border-indigo-400 ring-1 ring-indigo-400 shadow-sm' : 'hover:bg-slate-50 border-transparent hover:border-slate-200'
@@ -1331,7 +1331,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                     }} className="mt-0.5 text-indigo-600" />
                                                                     <div>
                                                                         <span className="text-xs font-bold text-slate-700 leading-tight">Previous Period</span>
-                                                                        <span className="text-[10px] text-slate-500 leading-tight mt-0.5 block">Compare with the immediately preceding period</span>
+                                                                        <span className="text-[11px] text-slate-500 leading-tight mt-0.5 block">Compare with the immediately preceding period</span>
                                                                     </div>
                                                                 </label>
 
@@ -1343,7 +1343,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                     }} className="mt-0.5 text-indigo-600" />
                                                                     <div>
                                                                         <span className="text-xs font-bold text-slate-700 leading-tight">Same Period Last N</span>
-                                                                        <span className="text-[10px] text-slate-500 leading-tight mt-0.5 block">Flexible: pick grain &amp; offset (D/W/M/Q/Y)</span>
+                                                                        <span className="text-[11px] text-slate-500 leading-tight mt-0.5 block">Flexible: pick grain &amp; offset (D/W/M/Q/Y)</span>
                                                                     </div>
                                                                 </label>
 
@@ -1352,7 +1352,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                     <div className="ml-7 mt-1 p-3 bg-indigo-50/60 rounded-lg border border-indigo-100 space-y-3">
                                                                         {/* Grain selector pills */}
                                                                         <div>
-                                                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Grain</span>
+                                                                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Grain</span>
                                                                             <div className="flex gap-1">
                                                                                 {(['day', 'week', 'month', 'quarter', 'year'] as const).map(g => {
                                                                                     const labels: Record<string, string> = { day: 'D', week: 'W', month: 'M', quarter: 'Q', year: 'Y' };
@@ -1368,7 +1368,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                         </div>
                                                                         {/* Offset stepper */}
                                                                         <div>
-                                                                            <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Offset</span>
+                                                                            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Offset</span>
                                                                             <div className="flex items-center gap-2">
                                                                                 <button onClick={() => { const n = Math.max(1, (config.comparisonOffset || 1) - 1); handleRunAnalysis({ ...config, comparisonOffset: n }); }}
                                                                                     className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 font-bold text-sm transition-all">−</button>
@@ -1376,7 +1376,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                                 <button onClick={() => { const n = Math.min(24, (config.comparisonOffset || 1) + 1); handleRunAnalysis({ ...config, comparisonOffset: n }); }}
                                                                                     className="w-7 h-7 flex items-center justify-center rounded-md bg-white border border-slate-200 text-slate-600 hover:bg-indigo-50 hover:border-indigo-400 hover:text-indigo-700 font-bold text-sm transition-all">+</button>
                                                                             </div>
-                                                                            <span className="text-[10px] text-indigo-700 mt-1.5 block font-medium">
+                                                                            <span className="text-[11px] text-indigo-700 mt-1.5 block font-medium">
                                                                                 vs {config.comparisonOffset || 1} {(config.comparisonGrain || 'month') + ((config.comparisonOffset || 1) > 1 ? 's' : '')} ago
                                                                             </span>
                                                                         </div>
@@ -1391,7 +1391,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                                 <div className="w-2.5 h-6 bg-indigo-500 rounded-sm" />
                                                                                 <div className={`w-2.5 h-4 ${config?.comparison === 'same_period_last_year' ? 'bg-amber-300' : 'bg-slate-300'} rounded-sm self-end`} />
                                                                             </div>
-                                                                            <p className="text-[10px] text-indigo-700 leading-snug">
+                                                                            <p className="text-[11px] text-indigo-700 leading-snug">
                                                                                 <span className="font-bold">Total:</span> Side-by-side bars with <span className="font-bold text-emerald-600">growth %</span> labels.
                                                                             </p>
                                                                         </div>
@@ -1400,7 +1400,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                                 <div className="w-6 h-0.5 bg-indigo-500 mt-2" />
                                                                                 <div className={`w-6 mt-2 ${config?.comparison === 'same_period_last_year' ? 'border-amber-400' : 'border-slate-400'}`} style={{ borderTop: '2px dashed' }} />
                                                                             </div>
-                                                                            <p className="text-[10px] text-indigo-700 leading-snug">
+                                                                            <p className="text-[11px] text-indigo-700 leading-snug">
                                                                                 <span className="font-bold">Trend:</span> Switch to <span className="font-bold text-emerald-600">Trend</span> in the top bar to see dual-line overlay at D / W / M / Q / Y grain.
                                                                             </p>
                                                                         </div>
@@ -1455,7 +1455,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                             />
                                                                             <div className="flex-1 min-w-0">
                                                                                 <span className="text-xs font-bold text-slate-700 leading-tight block">{getCalculationDisplayName(calc)}</span>
-                                                                                <span className="text-[10px] text-slate-500 leading-tight">{desc}</span>
+                                                                                <span className="text-[11px] text-slate-500 leading-tight">{desc}</span>
                                                                             </div>
                                                                         </label>
                                                                     );
@@ -1503,7 +1503,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                                                             >+</button>
                                                                         </div>
                                                                     </label>
-                                                                    <p className="text-[10px] text-emerald-600 mt-1">Average of current + {(formatting.movingAvgWindow || 3) - 1} prior periods</p>
+                                                                    <p className="text-[11px] text-emerald-600 mt-1">Average of current + {(formatting.movingAvgWindow || 3) - 1} prior periods</p>
                                                                 </div>
                                                             )}
                                                         </div>
@@ -1542,7 +1542,7 @@ export const Workbench: React.FC<WorkbenchProps> = ({ dataset, initialConfig, in
                                             </div>
                                             <button
                                                 onClick={() => { navigator.clipboard.writeText(result.sql || ''); setCopiedSql(true); setTimeout(() => setCopiedSql(false), 2000); }}
-                                                className={`flex items-center gap-1.5 text-[10px] ${copiedSql ? 'text-green-400 bg-green-900/30' : 'text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700'} px-2.5 py-1 rounded transition-colors font-medium`}
+                                                className={`flex items-center gap-1.5 text-[11px] ${copiedSql ? 'text-green-400 bg-green-900/30' : 'text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700'} px-2.5 py-1 rounded transition-colors font-medium`}
                                             >
                                                 {copiedSql ? <><CheckCircle2 className="w-3 h-3" /> Copied!</> : <><Clipboard className="w-3 h-3" /> Copy SQL</>}
                                             </button>

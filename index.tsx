@@ -1,5 +1,6 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { MotionConfig } from 'framer-motion';
 import App from './App';
 import './visual-presentation.css';
 
@@ -11,6 +12,10 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    {/* Every Framer Motion animation in the app follows the OS
+        "reduce motion" setting: transforms are skipped, fades kept. */}
+    <MotionConfig reducedMotion="user">
+      <App />
+    </MotionConfig>
   </React.StrictMode>
 );

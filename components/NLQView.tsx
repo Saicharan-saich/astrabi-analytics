@@ -347,7 +347,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                             <div className="flex items-center justify-between px-4 pb-3">
                                 <div className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
                                     <MessageSquare className="w-3.5 h-3.5 text-indigo-400" />
-                                    <span>Deterministic parsing &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[10px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
+                                    <span>Deterministic parsing &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[11px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
                                 </div>
                                 <button
                                     onClick={handleParseAndRun}
@@ -480,7 +480,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                                             </>}
                                             {Object.keys(parseResult.filters).length > 0 && <>
                                                 <div className="text-slate-500">Filters</div>
-                                                <div className="text-white font-mono text-[10px]">{Object.entries(parseResult.filters).map(([k, v]) => `${k}: ${v.join(', ')}`).join('; ')}</div>
+                                                <div className="text-white font-mono text-[11px]">{Object.entries(parseResult.filters).map(([k, v]) => `${k}: ${v.join(', ')}`).join('; ')}</div>
                                             </>}
                                             {parseResult.sort && <>
                                                 <div className="text-slate-500">Sort</div>
@@ -752,7 +752,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                                                                                 <input type="checkbox" checked={isSelected} onChange={() => { const current = formatting.tableCalculations || []; const updated = isSelected ? current.filter(c => c !== calc) : [...current, calc]; updateFormatting({ ...formatting, tableCalculations: updated }); }} className="rounded text-emerald-600 focus:ring-emerald-500" />
                                                                                 <div className="flex-1 min-w-0">
                                                                                     <span className="text-xs font-bold text-slate-700 dark:text-white leading-tight block">{getCalculationDisplayName(calc)}</span>
-                                                                                    <span className="text-[10px] text-slate-500 leading-tight">{desc}</span>
+                                                                                    <span className="text-[11px] text-slate-500 leading-tight">{desc}</span>
                                                                                 </div>
                                                                             </label>
                                                                         );

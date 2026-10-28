@@ -104,7 +104,7 @@ export const AlertRuleWizard: React.FC<Props> = ({ dataset, editingRule, onSave,
   const STEPS = ['Metric', 'Filters', 'Time Window', 'Condition', 'Name & Save'];
 
   const cardCls = `rounded-2xl border p-5 ${isDark ? 'bg-[#1a1f2e] border-white/[0.06]' : 'bg-white border-gray-200'}`;
-  const labelCls = `text-[10px] font-semibold uppercase tracking-wider mb-2 block ${isDark ? 'text-gray-500' : 'text-gray-400'}`;
+  const labelCls = `text-[11px] font-semibold uppercase tracking-wider mb-2 block ${isDark ? 'text-gray-500' : 'text-gray-400'}`;
   const selectCls = `w-full rounded-xl px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 focus:ring-violet-500/40 transition-all ${isDark ? 'bg-white/[0.05] border-white/[0.08] text-white' : 'bg-gray-50 border-gray-200 text-gray-900'}`;
   const optionStyle = { color: '#0f172a', backgroundColor: '#ffffff' };
   const btnPrimary = 'px-5 py-2.5 rounded-xl text-sm font-semibold bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-lg shadow-violet-500/20 transition-all disabled:opacity-40';
@@ -121,7 +121,7 @@ export const AlertRuleWizard: React.FC<Props> = ({ dataset, editingRule, onSave,
               : i < step ? isDark ? 'text-emerald-400' : 'text-emerald-600'
               : isDark ? 'text-gray-600' : 'text-gray-400'
             }`}>
-              {i < step ? <Check className="w-3.5 h-3.5" /> : <span className="w-4 h-4 rounded-full border flex items-center justify-center text-[10px]">{i + 1}</span>}
+              {i < step ? <Check className="w-3.5 h-3.5" /> : <span className="w-4 h-4 rounded-full border flex items-center justify-center text-[11px]">{i + 1}</span>}
               <span className="hidden sm:inline">{s}</span>
             </button>
             {i < STEPS.length - 1 && <ChevronRight className={`w-3 h-3 ${isDark ? 'text-gray-700' : 'text-gray-300'}`} />}

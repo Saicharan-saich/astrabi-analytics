@@ -380,13 +380,13 @@ export const AdminQuestionBuilder: React.FC<AdminQuestionBuilderProps> = ({ data
                                             <div className="flex-1 min-w-0">
                                                 <p className={`text-sm font-semibold truncate ${isDark ? 'text-white' : 'text-slate-800'}`}>{q.question}</p>
                                                 <div className="flex items-center gap-2 mt-1">
-                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-violet-500/15 text-violet-400' : 'bg-violet-100 text-violet-600'}`}>
+                                                    <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-violet-500/15 text-violet-400' : 'bg-violet-100 text-violet-600'}`}>
                                                         {q.category}
                                                     </span>
-                                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-cyan-500/15 text-cyan-400' : 'bg-cyan-100 text-cyan-600'}`}>
+                                                    <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded ${isDark ? 'bg-cyan-500/15 text-cyan-400' : 'bg-cyan-100 text-cyan-600'}`}>
                                                         {q.evalType || 'auto'}
                                                     </span>
-                                                    <span className={`text-[10px] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{q.id}</span>
+                                                    <span className={`text-[11px] ${isDark ? 'text-slate-500' : 'text-slate-400'}`}>{q.id}</span>
                                                 </div>
                                             </div>
                                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity ml-2">

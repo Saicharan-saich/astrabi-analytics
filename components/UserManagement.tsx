@@ -259,7 +259,7 @@ export const UserManagement: React.FC<UserManagementProps> = ({ onClose }) => {
                                         <div className="flex items-center gap-2">
                                             <span className="text-white font-semibold text-sm">{user.name}</span>
                                             {user.id === currentUser?.id && (
-                                                <span className="text-[10px] font-bold px-1.5 py-0.5 bg-emerald-500/15 text-emerald-400 rounded">YOU</span>
+                                                <span className="text-[11px] font-bold px-1.5 py-0.5 bg-emerald-500/15 text-emerald-400 rounded">YOU</span>
                                             )}
                                         </div>
                                         <span className="text-slate-400 text-xs">{user.email}</span>

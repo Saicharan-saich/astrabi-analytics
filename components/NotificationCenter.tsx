@@ -60,7 +60,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
         {unreadCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center">
             <span className="absolute w-5 h-5 rounded-full bg-red-500/30 animate-ping" />
-            <span className="relative w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center shadow-lg shadow-red-500/30">
+            <span className="relative w-[18px] h-[18px] rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center shadow-lg shadow-red-500/30">
               {unreadCount > 9 ? '9+' : unreadCount}
             </span>
           </span>
@@ -83,7 +83,7 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
                 <Bell className={`w-4 h-4 ${isDark ? 'text-violet-400' : 'text-violet-600'}`} />
                 <span className={`text-sm font-bold ${isDark ? 'text-white' : 'text-gray-900'}`}>Notifications</span>
                 {unreadCount > 0 && (
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/20">
+                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 border border-red-500/20">
                     {unreadCount} new
                   </span>
                 )}
@@ -145,13 +145,13 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
                           {evt.message}
                         </p>
                         <div className="flex items-center gap-2 mt-1.5">
-                          <span className={`text-[10px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>
+                          <span className={`text-[11px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>
                             {timeAgo(evt.triggeredAt)}
                           </span>
                           {!evt.acknowledged && (
                             <button
                               onClick={() => acknowledgeEvent(evt.id)}
-                              className={`text-[10px] font-medium px-1.5 py-0.5 rounded transition-all ${isDark
+                              className={`text-[11px] font-medium px-1.5 py-0.5 rounded transition-all ${isDark
                                 ? 'text-violet-400 hover:bg-violet-500/10'
                                 : 'text-violet-600 hover:bg-violet-50'
                               }`}

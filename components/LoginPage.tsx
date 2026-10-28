@@ -183,7 +183,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                         <form onSubmit={handleSubmit} className="space-y-3">
                             {mode === 'register' && (
                                 <div>
-                                    <label htmlFor="quickinsight-name" className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                                    <label htmlFor="quickinsight-name" className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
                                         Full Name
                                     </label>
                                     <input
@@ -202,7 +202,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                             )}
 
                             <div>
-                                <label htmlFor="quickinsight-email" className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                                <label htmlFor="quickinsight-email" className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
                                     Email Address
                                 </label>
                                 <input
@@ -220,7 +220,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                             </div>
 
                             <div>
-                                <label htmlFor="quickinsight-password" className="block text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
+                                <label htmlFor="quickinsight-password" className="block text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-1.5">
                                     Password
                                 </label>
                                 <div className="relative">
@@ -286,7 +286,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                     <div className="px-6">
                         <div className="flex items-center gap-3">
                             <div className="flex-1 h-px bg-white/[0.06]" />
-                            <span className="text-[10px] text-gray-500 font-medium uppercase tracking-wider">or</span>
+                            <span className="text-[11px] text-gray-500 font-medium uppercase tracking-wider">or</span>
                             <div className="flex-1 h-px bg-white/[0.06]" />
                         </div>
                     </div>
@@ -300,7 +300,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                             <Users className="w-4 h-4" />
                             Continue as Guest
                         </button>
-                        <p className="text-[10px] text-gray-500 text-center mt-1.5 leading-relaxed">
+                        <p className="text-[11px] text-gray-500 text-center mt-1.5 leading-relaxed">
                             Upload data, build visuals and ask up to 10 AI SQL questions per day — no account needed
                         </p>
                     </div>
@@ -313,7 +313,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
                         { icon: <Brain className="w-3 h-3" />, label: 'AI Powered' },
                         { icon: <Zap className="w-3 h-3" />, label: 'Real-time' },
                     ].map((feat, i) => (
-                        <div key={i} className="flex items-center gap-1 text-[10px] text-gray-500">
+                        <div key={i} className="flex items-center gap-1 text-[11px] text-gray-500">
                             <span className="text-indigo-400">{feat.icon}</span>
                             {feat.label}
                         </div>
@@ -322,11 +322,11 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onShowLegal }) => {
 
                 {/* Footer */}
                 <div className="mt-3 text-center">
-                    <span className="text-[10px] text-gray-600 font-mono">v3.0</span>
+                    <span className="text-[11px] text-gray-600 font-mono">v3.0</span>
                     {onShowLegal && (
                         <>
-                            <span className="text-[10px] text-gray-700 mx-1.5">·</span>
-                            <button onClick={onShowLegal} className="text-[10px] text-gray-500 hover:text-indigo-400 transition-colors inline-flex items-center gap-1">
+                            <span className="text-[11px] text-gray-700 mx-1.5">·</span>
+                            <button onClick={onShowLegal} className="text-[11px] text-gray-500 hover:text-indigo-400 transition-colors inline-flex items-center gap-1">
                                 <Shield className="w-2.5 h-2.5" /> Privacy & Terms
                             </button>
                         </>

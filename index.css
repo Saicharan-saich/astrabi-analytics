@@ -227,11 +227,11 @@ html.light .text-transparent.bg-clip-text {
 
 /* ── Accent text colors stay vibrant in light mode ── */
 html.light .text-indigo-300 {
-  color: #4338ca !important;
+  color: #3247a0 !important;
 }
 
 html.light .text-indigo-400 {
-  color: #4f46e5 !important;
+  color: #3d58c4 !important;
 }
 
 html.light .text-purple-300 {
@@ -243,11 +243,11 @@ html.light .text-cyan-300 {
 }
 
 html.light .text-violet-300 {
-  color: #6d28d9 !important;
+  color: #2c55c8 !important;
 }
 
 html.light .text-violet-400 {
-  color: #7c3aed !important;
+  color: #3565e8 !important;
 }
 
 html.light .text-emerald-300 {
@@ -319,12 +319,12 @@ html.light [class*="bg-slate-900/"] {
 /* ── Indigo/violet accent backgrounds with opacity ── */
 html.light [class*="bg-indigo-500/20"],
 html.light [class*="bg-indigo-500/10"] {
-  background-color: rgba(99, 102, 241, 0.1) !important;
+  background-color: rgba(79, 111, 220, 0.1) !important;
 }
 
 html.light [class*="bg-violet-500/20"],
 html.light [class*="bg-violet-500/10"] {
-  background-color: rgba(139, 92, 246, 0.1) !important;
+  background-color: rgba(79, 128, 255, 0.1) !important;
 }
 
 html.light [class*="bg-emerald-500/20"],
@@ -344,7 +344,7 @@ html.light [class*="bg-amber-500/20"] {
 
 /* ── Ring/outline overrides ── */
 html.light [class*="ring-indigo-500/30"] {
-  --tw-ring-color: rgba(99, 102, 241, 0.25) !important;
+  --tw-ring-color: rgba(79, 111, 220, 0.25) !important;
 }
 
 html.light [class*="ring-emerald-500/20"] {
@@ -559,25 +559,25 @@ html.light .surface-card {
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(99, 102, 241, 0.08);
+  border: 1px solid rgba(79, 111, 220, 0.08);
   box-shadow: var(--shadow-card);
 }
 
 html.light .surface-card:hover {
-  border-color: rgba(99, 102, 241, 0.18);
-  box-shadow: var(--shadow-md), 0 0 16px -4px rgba(99, 102, 241, 0.1);
+  border-color: rgba(79, 111, 220, 0.18);
+  box-shadow: var(--shadow-md), 0 0 16px -4px rgba(79, 111, 220, 0.1);
 }
 
 html.light .glass-panel {
   background: rgba(255, 255, 255, 0.75);
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(79, 111, 220, 0.06);
   box-shadow: var(--shadow-card);
 }
 
 html.light .glass-panel-hover:hover {
-  border-color: rgba(99, 102, 241, 0.16);
+  border-color: rgba(79, 111, 220, 0.16);
   box-shadow: var(--shadow-md);
 }
 
@@ -585,13 +585,13 @@ html.light .glass-input {
   background: rgba(240, 241, 248, 0.8);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  border: 1px solid rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(79, 111, 220, 0.1);
   color: var(--text-primary);
 }
 
 html.light .glass-input:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1), 0 0 16px -4px rgba(99, 102, 241, 0.08);
+  box-shadow: 0 0 0 3px rgba(79, 111, 220, 0.1), 0 0 16px -4px rgba(79, 111, 220, 0.08);
 }
 
 /* Glass/Frost utilities */
@@ -622,7 +622,7 @@ html.light .glass-frost {
   background: rgba(255, 255, 255, 0.78);
   backdrop-filter: blur(16px) saturate(180%);
   -webkit-backdrop-filter: blur(16px) saturate(180%);
-  border: 1px solid rgba(99, 102, 241, 0.06);
+  border: 1px solid rgba(79, 111, 220, 0.06);
 }
 
 /* ── Animations ─────────────────────────────────────── */
@@ -686,9 +686,9 @@ html.light .glass-frost {
 
 .animate-shimmer {
   background: linear-gradient(90deg,
-      rgba(99, 102, 241, 0.04) 25%,
-      rgba(99, 102, 241, 0.1) 50%,
-      rgba(99, 102, 241, 0.04) 75%);
+      rgba(79, 111, 220, 0.04) 25%,
+      rgba(79, 111, 220, 0.1) 50%,
+      rgba(79, 111, 220, 0.04) 75%);
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
@@ -833,14 +833,14 @@ html.light .glass-frost {
   0%,
   100% {
     box-shadow:
-      0 0 0 1px rgba(99, 102, 241, 0.3),
-      0 0 20px -4px rgba(99, 102, 241, 0.15);
+      0 0 0 1px rgba(79, 111, 220, 0.3),
+      0 0 20px -4px rgba(79, 111, 220, 0.15);
   }
 
   50% {
     box-shadow:
-      0 0 0 1px rgba(99, 102, 241, 0.5),
-      0 0 28px -2px rgba(99, 102, 241, 0.25);
+      0 0 0 1px rgba(79, 111, 220, 0.5),
+      0 0 28px -2px rgba(79, 111, 220, 0.25);
   }
 }
 
@@ -896,9 +896,9 @@ html.light .glass-frost {
   height: 100%;
   background: linear-gradient(90deg,
       transparent 0%,
-      rgba(99, 102, 241, 0.05) 30%,
-      rgba(99, 102, 241, 0.1) 50%,
-      rgba(99, 102, 241, 0.05) 70%,
+      rgba(79, 111, 220, 0.05) 30%,
+      rgba(79, 111, 220, 0.1) 50%,
+      rgba(79, 111, 220, 0.05) 70%,
       transparent 100%);
   animation: chart-skeleton-wave 2s ease-in-out infinite;
 }
@@ -915,7 +915,7 @@ html.light .glass-frost {
 .chart-skeleton-bar {
   width: 24px;
   border-radius: 4px 4px 0 0;
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(79, 111, 220, 0.1);
 }
 
 /* ── Tab Content Transition ─────────────────────────── */
@@ -951,7 +951,7 @@ html.light .glass-frost {
 
 .btn-premium:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 20px -4px rgba(99, 102, 241, 0.35);
+  box-shadow: 0 4px 20px -4px rgba(79, 111, 220, 0.35);
 }
 
 .btn-premium:active {
@@ -961,21 +961,21 @@ html.light .glass-frost {
 
 /* ── Premium Gradient Text ─────────────────────────── */
 .gradient-text {
-  background: linear-gradient(135deg, #818cf8 0%, #a78bfa 40%, #c084fc 70%, #e879f9 100%);
+  background: linear-gradient(135deg, #6d8ae6 0%, #6d95ff 40%, #c084fc 70%, #e879f9 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 .gradient-text-brand {
-  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%);
+  background: linear-gradient(135deg, #4f6fdc 0%, #4f80ff 50%, #6d95ff 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 html.light .gradient-text {
-  background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 40%, #9333ea 70%, #c026d3 100%);
+  background: linear-gradient(135deg, #3d58c4 0%, #3565e8 40%, #9333ea 70%, #c026d3 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -1021,7 +1021,7 @@ html.light .bg-mesh-animated {
   inset: -1px;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, rgba(99,102,241,0.3), rgba(139,92,246,0.3), rgba(236,72,153,0.2), rgba(99,102,241,0.3));
+  background: linear-gradient(135deg, rgba(79,111,220,0.3), rgba(79,128,255,0.3), rgba(236,72,153,0.2), rgba(79,111,220,0.3));
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
   mask-composite: exclude;
@@ -1030,13 +1030,13 @@ html.light .bg-mesh-animated {
 
 /* ── Glow Utilities ────────────────────────────────── */
 .glow-indigo {
-  box-shadow: 0 0 30px -5px rgba(99, 102, 241, 0.25),
-              0 0 60px -10px rgba(99, 102, 241, 0.15);
+  box-shadow: 0 0 30px -5px rgba(79, 111, 220, 0.25),
+              0 0 60px -10px rgba(79, 111, 220, 0.15);
 }
 
 .glow-purple {
-  box-shadow: 0 0 30px -5px rgba(139, 92, 246, 0.25),
-              0 0 60px -10px rgba(139, 92, 246, 0.15);
+  box-shadow: 0 0 30px -5px rgba(79, 128, 255, 0.25),
+              0 0 60px -10px rgba(79, 128, 255, 0.15);
 }
 
 .glow-emerald {
@@ -1045,8 +1045,8 @@ html.light .bg-mesh-animated {
 }
 
 html.light .glow-indigo {
-  box-shadow: 0 0 40px -5px rgba(99, 102, 241, 0.15),
-              0 0 80px -10px rgba(99, 102, 241, 0.08);
+  box-shadow: 0 0 40px -5px rgba(79, 111, 220, 0.15),
+              0 0 80px -10px rgba(79, 111, 220, 0.08);
 }
 
 /* ── Premium Card Hover ────────────────────────────── */
@@ -1058,7 +1058,7 @@ html.light .glow-indigo {
 
 .card-hover-lift:hover {
   transform: translateY(-3px) scale(1.005);
-  box-shadow: var(--shadow-lg), 0 0 30px -8px rgba(99, 102, 241, 0.2);
+  box-shadow: var(--shadow-lg), 0 0 30px -8px rgba(79, 111, 220, 0.2);
   border-color: var(--border-hover);
 }
 
@@ -1084,8 +1084,8 @@ html.light .glow-indigo {
 
 /* ── Pulse Glow Animation ──────────────────────────── */
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 20px -4px rgba(99, 102, 241, 0.2); }
-  50% { box-shadow: 0 0 35px -2px rgba(99, 102, 241, 0.35); }
+  0%, 100% { box-shadow: 0 0 20px -4px rgba(79, 111, 220, 0.2); }
+  50% { box-shadow: 0 0 35px -2px rgba(79, 111, 220, 0.35); }
 }
 
 .animate-pulse-glow {
@@ -1128,7 +1128,7 @@ html.light .glow-indigo {
 .bg-dot-grid {
   background-image: radial-gradient(
     circle,
-    rgba(99, 102, 241, 0.08) 1px,
+    rgba(79, 111, 220, 0.08) 1px,
     transparent 1px
   );
   background-size: 24px 24px;
@@ -1137,7 +1137,7 @@ html.light .glow-indigo {
 html.light .bg-dot-grid {
   background-image: radial-gradient(
     circle,
-    rgba(99, 102, 241, 0.06) 1px,
+    rgba(79, 111, 220, 0.06) 1px,
     transparent 1px
   );
   background-size: 24px 24px;
@@ -1194,7 +1194,7 @@ html.light .bg-dot-grid {
   height: 500px;
   top: -10%;
   left: -5%;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.06) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(79, 111, 220, 0.06) 0%, transparent 70%);
 }
 
 .ambient-orb-2 {
@@ -1202,12 +1202,12 @@ html.light .bg-dot-grid {
   height: 400px;
   bottom: -10%;
   right: -5%;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.05) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(79, 128, 255, 0.05) 0%, transparent 70%);
   animation-delay: -4s;
 }
 
 html.light .ambient-orb-1 {
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.04) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(79, 111, 220, 0.04) 0%, transparent 70%);
 }
 
 html.light .ambient-orb-2 {
@@ -3187,5 +3187,123 @@ html.light .qi-theme-analyst .qi-ai-frame {
 
   .qi-builder-actions-toolbar {
     flex: 0 1 auto;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════
+   UI refresh layer — presentation only
+   Motion tokens, view transitions, numeric alignment and
+   reduced-motion safety. Purely additive: no component
+   logic depends on anything below.
+   ═══════════════════════════════════════════════════════ */
+:root {
+  --motion-fast: 140ms;
+  --motion-base: 220ms;
+  --motion-slow: 360ms;
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+/* ── View transitions ────────────────────────────────
+   Each main view stays mounted and is toggled with `hidden`.
+   A CSS animation restarts whenever an element goes from
+   display:none to displayed, so every tab switch gets a
+   soft fade-and-rise without touching navigation state.
+   `backwards` fill (not `both`) means no transform remains
+   after the animation, so fixed-position modals inside a
+   view are never re-anchored to the panel. */
+@keyframes qi-view-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.qi-view:not(.hidden) {
+  animation: qi-view-in var(--motion-base) var(--ease-out-quint) backwards;
+}
+
+/* ── Numbers line up ─────────────────────────────────
+   Tabular figures stop values jittering as they update and
+   keep columns of numbers aligned in tables and KPI tiles. */
+table,
+.qi-kpi-value,
+.kpi-value,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Text selection in the brand accent ── */
+::selection {
+  background: rgba(79, 128, 255, 0.32);
+}
+
+html.light ::selection {
+  background: rgba(53, 101, 232, 0.2);
+}
+
+/* ── Skeleton shimmer (for loading placeholders) ── */
+@keyframes qi-skeleton-sweep {
+  from { background-position: 150% 0; }
+  to { background-position: -50% 0; }
+}
+
+.qi-skeleton {
+  border-radius: var(--radius-sm);
+  background:
+    linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.06) 50%, transparent 70%) 0 0 / 200% 100%,
+    rgba(148, 163, 184, 0.1);
+  animation: qi-skeleton-sweep 1.4s var(--ease-in-out) infinite;
+}
+
+html.light .qi-skeleton {
+  background:
+    linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.7) 50%, transparent 70%) 0 0 / 200% 100%,
+    rgba(15, 23, 42, 0.06);
+}
+
+/* ── Sidebar navigation polish ── */
+.qi-nav-active-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: 0.75rem;
+  background: linear-gradient(90deg, rgba(79, 128, 255, 0.16), rgba(79, 111, 220, 0.06));
+  box-shadow: inset 0 0 0 1px rgba(79, 128, 255, 0.14);
+  pointer-events: none;
+}
+
+html.light .qi-nav-active-pill {
+  background: linear-gradient(90deg, #e6edff, #f1f4fd);
+  box-shadow: inset 0 0 0 1px rgba(53, 101, 232, 0.12);
+}
+
+.qi-nav-active-bar {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 1.25rem;
+  margin-top: -0.625rem;
+  border-radius: 0 999px 999px 0;
+  background: linear-gradient(180deg, #6d95ff, #3d58c4);
+  pointer-events: none;
+}
+
+/* ── Respect reduced motion everywhere ──────────────
+   Catches every CSS animation and transition (Tailwind
+   utilities included). Framer Motion is covered separately
+   by <MotionConfig reducedMotion="user"> in index.tsx. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

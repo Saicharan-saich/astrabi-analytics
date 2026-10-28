@@ -91,7 +91,7 @@ const ColumnChart: React.FC<{ rows: AnswerRow[] }> = ({ rows }) => {
         return (
           <div key={row.label} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end">
             <span
-              className="text-[10px] font-bold tabular-nums"
+              className="text-[11px] font-bold tabular-nums"
               style={{ color: isPeak || isTrough ? INK : INK_FAINT }}
             >
               {money(row.value)}
@@ -557,7 +557,7 @@ export const StoryMode: React.FC<StoryModeProps> = ({ onExit, onNavigateToBuilde
             <span className="w-1 h-1 rounded-full" style={{ background: '#6B5A48' }} />
             <span className="text-xs font-semibold" style={{ color: '#9A8770' }}>{chapter.subtitle}</span>
             <span
-              className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              className="text-[11px] font-bold px-2 py-0.5 rounded-full"
               style={{ background: `${FARM.leaf}22`, color: '#9FC98A' }}
             >
               Teaches: {chapter.teaches}

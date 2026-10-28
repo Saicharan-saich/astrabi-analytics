@@ -101,7 +101,7 @@ export const ETLStepCard: React.FC<Props> = ({
                     <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                             <h4 className="font-bold text-slate-900 dark:text-white leading-tight">{guide.title}</h4>
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${s.pill}`}>{s.label}</span>
+                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wide ${s.pill}`}>{s.label}</span>
                         </div>
                         <p className="text-[11px] font-mono text-slate-400 dark:text-slate-500 mt-0.5 truncate">{entry.step}</p>
                     </div>
@@ -127,7 +127,7 @@ export const ETLStepCard: React.FC<Props> = ({
                 {/* Example + (for applied) the risk if skipped */}
                 <div className="mt-2.5 flex flex-col gap-1.5">
                     <div className="flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                        <span className="font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide text-[10px] mt-0.5">Example</span>
+                        <span className="font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide text-[11px] mt-0.5">Example</span>
                         <span className="font-mono text-slate-600 dark:text-slate-300">{guide.example}</span>
                     </div>
                     {status === 'applied' && (
@@ -192,9 +192,9 @@ export const ETLStepCard: React.FC<Props> = ({
                                 <span className="text-slate-500 dark:text-slate-400 font-medium">Columns</span>
                                 <div className="flex flex-wrap gap-1 mt-1">
                                     {entry.affectedColumns.slice(0, 15).map((col, i) => (
-                                        <span key={i} className="inline-block px-2 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 rounded-md text-[10px] font-mono border border-indigo-200/70 dark:border-indigo-500/20">{col}</span>
+                                        <span key={i} className="inline-block px-2 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 rounded-md text-[11px] font-mono border border-indigo-200/70 dark:border-indigo-500/20">{col}</span>
                                     ))}
-                                    {entry.affectedColumns.length > 15 && <span className="text-slate-400 text-[10px] self-center">+{entry.affectedColumns.length - 15} more</span>}
+                                    {entry.affectedColumns.length > 15 && <span className="text-slate-400 text-[11px] self-center">+{entry.affectedColumns.length - 15} more</span>}
                                 </div>
                             </div>
                         )}
@@ -219,13 +219,13 @@ export const ETLStepCard: React.FC<Props> = ({
                                             return (
                                                 <tr key={li}>
                                                     <td className="px-3 py-1.5 font-mono font-medium text-slate-700 dark:text-slate-200 whitespace-nowrap">{colName.trim()}</td>
-                                                    <td className="px-3 py-1.5"><span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase border ${typeColor(colType)}`}>{colType}</span></td>
+                                                    <td className="px-3 py-1.5"><span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${typeColor(colType)}`}>{colType}</span></td>
                                                     <td className="px-3 py-1.5">
                                                         <div className="flex flex-wrap gap-1">
                                                             {steps.map((st, si) => {
                                                                 const dm = st.match(/^PARSE_DATE\((.+)\)$/);
                                                                 const info = dm ? { label: `Parse date (${dm[1]})`, icon: '📅' } : STEP_LABELS[st] || { label: st, icon: '⚙️' };
-                                                                return <span key={si} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 rounded text-[10px] border border-indigo-100 dark:border-indigo-500/20" title={st}><span>{info.icon}</span> {info.label}</span>;
+                                                                return <span key={si} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 rounded text-[11px] border border-indigo-100 dark:border-indigo-500/20" title={st}><span>{info.icon}</span> {info.label}</span>;
                                                             })}
                                                         </div>
                                                     </td>

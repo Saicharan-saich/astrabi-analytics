@@ -1886,9 +1886,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     <div className="qi-kpi-value text-5xl font-black text-indigo-600">{formatNumber(total)}</div>
                     <div className="qi-kpi-label text-sm font-medium text-slate-500 uppercase tracking-wider">{calculatedYLabel || 'Total'}</div>
                     <div className="qi-kpi-context flex gap-6 mt-2">
-                        <div className="text-center"><div className="text-lg font-bold text-slate-700">{count}</div><div className="text-[10px] text-slate-400">Records</div></div>
-                        <div className="text-center"><div className="text-lg font-bold text-slate-700">{formatNumber(avg)}</div><div className="text-[10px] text-slate-400">Average</div></div>
-                        <div className="text-center"><div className="text-lg font-bold text-slate-700">{formatNumber(max)}</div><div className="text-[10px] text-slate-400">Max</div></div>
+                        <div className="text-center"><div className="text-lg font-bold text-slate-700">{count}</div><div className="text-[11px] text-slate-400">Records</div></div>
+                        <div className="text-center"><div className="text-lg font-bold text-slate-700">{formatNumber(avg)}</div><div className="text-[11px] text-slate-400">Average</div></div>
+                        <div className="text-center"><div className="text-lg font-bold text-slate-700">{formatNumber(max)}</div><div className="text-[11px] text-slate-400">Max</div></div>
                     </div>
                 </div>
             );
@@ -2109,7 +2109,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             <div className="flex items-center justify-center w-4.5 h-4.5 border border-current rounded text-xs font-mono">12</div>
                             <span>Labels</span>
                             {formatting?.showDataLabels && (
-                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
+                                <span className={`text-[11px] px-1.5 py-0.5 rounded-full ${
                                     effectiveDataLabelMode(formatting) === 'all'
                                         ? 'bg-indigo-400/30 text-indigo-100'
                                         : 'bg-slate-500/30 text-slate-200'

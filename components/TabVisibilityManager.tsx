@@ -110,7 +110,7 @@ export const TabVisibilityManager: React.FC<TabVisibilityManagerProps> = ({ isOp
 
                 return (
                   <div key={section}>
-                    <h3 className={`text-[10px] font-bold uppercase tracking-wider mb-2 ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>
+                    <h3 className={`text-[11px] font-bold uppercase tracking-wider mb-2 ${isDark ? 'text-slate-500' : 'text-gray-400'}`}>
                       {section}
                     </h3>
                     <div className="space-y-1">
@@ -147,7 +147,7 @@ export const TabVisibilityManager: React.FC<TabVisibilityManagerProps> = ({ isOp
                             </div>
                             <div className="shrink-0">
                               {!tab.canHide ? (
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isDark ? 'bg-white/5 text-slate-500' : 'bg-gray-100 text-gray-400'}`}>Required</span>
+                                <span className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${isDark ? 'bg-white/5 text-slate-500' : 'bg-gray-100 text-gray-400'}`}>Required</span>
                               ) : hidden ? (
                                 <EyeOff className={`w-4 h-4 ${isDark ? 'text-slate-600' : 'text-gray-300'}`} />
                               ) : (

@@ -87,7 +87,7 @@ export const QuestionBankSidebar: React.FC<QuestionBankSidebarProps> = ({
                         <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200 w-full">
                             <button
                                 onClick={() => setShowAllQuestions(false)}
-                                className={`flex-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${!showAllQuestions
+                                className={`flex-1 px-2 py-1 text-[11px] font-bold uppercase tracking-wider rounded-md transition-all ${!showAllQuestions
                                     ? 'bg-white text-indigo-700 shadow-sm'
                                     : 'text-slate-400 hover:text-slate-600'
                                     }`}
@@ -96,7 +96,7 @@ export const QuestionBankSidebar: React.FC<QuestionBankSidebarProps> = ({
                             </button>
                             <button
                                 onClick={() => setShowAllQuestions(true)}
-                                className={`flex-1 px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-md transition-all ${showAllQuestions
+                                className={`flex-1 px-2 py-1 text-[11px] font-bold uppercase tracking-wider rounded-md transition-all ${showAllQuestions
                                     ? 'bg-white text-indigo-700 shadow-sm'
                                     : 'text-slate-400 hover:text-slate-600'
                                     }`}
@@ -122,7 +122,7 @@ export const QuestionBankSidebar: React.FC<QuestionBankSidebarProps> = ({
                                 <button onClick={() => setActiveCategory(activeCategory === cat.category ? null : cat.category)} className="w-full flex items-center justify-between p-3 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 uppercase tracking-wider">
                                     <span>{cat.category}</span>
                                     <span className="flex items-center gap-1.5">
-                                        <span className="text-[10px] text-slate-400 font-normal normal-case">{filteredQs.length}</span>
+                                        <span className="text-[11px] text-slate-400 font-normal normal-case">{filteredQs.length}</span>
                                         <ChevronDown className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
                                     </span>
                                 </button>
@@ -144,7 +144,7 @@ export const QuestionBankSidebar: React.FC<QuestionBankSidebarProps> = ({
                                                         }`}
                                                 >
                                                     {q.label}
-                                                    {!isResolvable && <span className="ml-1 text-[9px] text-slate-300">⚠</span>}
+                                                    {!isResolvable && <span className="ml-1 text-[10px] text-slate-300">⚠</span>}
                                                 </button>
                                             );
                                         })}

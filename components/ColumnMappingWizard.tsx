@@ -395,7 +395,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                 <Layers className="w-4 h-4 text-violet-400" />
                                     <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Row detail inferred automatically</span>
                                 </div>
-                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${(initialProfile.grainConfidence ?? inferredGrain.confidence) >= 0.75
+                                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${(initialProfile.grainConfidence ?? inferredGrain.confidence) >= 0.75
                                     ? 'bg-emerald-500/15 text-emerald-300'
                                     : 'bg-amber-500/15 text-amber-300'
                                     }`}>
@@ -419,7 +419,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                             </div>
                             {showGrainOverride && (
                                 <div className="mt-3 border-t border-white/[0.06] pt-3">
-                                    <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-gray-500">Advanced override</label>
+                                    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Advanced override</label>
                                     <input
                                         type="text"
                                         value={grain}
@@ -433,7 +433,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                 type="button"
                                                 key={option}
                                                 onClick={() => { setGrain(option); setGrainWasEdited(true); }}
-                                                className="rounded border border-white/[0.06] bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium text-gray-400 hover:text-gray-200"
+                                                className="rounded border border-white/[0.06] bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium text-gray-400 hover:text-gray-200"
                                             >{option}</button>
                                         ))}
                                     </div>
@@ -453,7 +453,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                     <option key={d} value={d} className="bg-[#171c26]">{d}</option>
                                 ))}
                             </select>
-                            {subDomain && <p className="text-[10px] text-gray-500 mt-1">Sub: {subDomain}</p>}
+                            {subDomain && <p className="text-[11px] text-gray-500 mt-1">Sub: {subDomain}</p>}
                         </div>
 
                         {/* ── Classification Status (user-friendly framing) ── */}
@@ -535,33 +535,33 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                     ].map(f => (
                                                         <div key={f.label}>
                                                             <div className="flex items-center justify-between mb-0.5">
-                                                                <span className="text-[10px] font-medium text-gray-500">{f.label}</span>
-                                                                <span className={`text-[10px] font-bold ${f.pct >= 80 ? 'text-emerald-400' : f.pct >= 50 ? 'text-amber-400' : 'text-gray-400'}`}>{f.pct}%</span>
+                                                                <span className="text-[11px] font-medium text-gray-500">{f.label}</span>
+                                                                <span className={`text-[11px] font-bold ${f.pct >= 80 ? 'text-emerald-400' : f.pct >= 50 ? 'text-amber-400' : 'text-gray-400'}`}>{f.pct}%</span>
                                                             </div>
                                                             <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
                                                                 <div className={`h-full rounded-full ${f.pct >= 80 ? 'bg-emerald-500' : f.pct >= 50 ? 'bg-amber-500' : 'bg-gray-500'}`} style={{ width: `${f.pct}%` }} />
                                                             </div>
-                                                            <p className="text-[9px] text-gray-600 mt-0.5">{f.desc}</p>
+                                                            <p className="text-[10px] text-gray-600 mt-0.5">{f.desc}</p>
                                                         </div>
                                                     ))}
 
                                                     {/* Columns needing review */}
                                                     {lowConfCols.length > 0 && (
                                                         <div className="mt-1 pt-2 border-t border-white/[0.04]">
-                                                            <p className="text-[10px] font-medium text-amber-400 mb-1">Columns to review:</p>
+                                                            <p className="text-[11px] font-medium text-amber-400 mb-1">Columns to review:</p>
                                                             <div className="space-y-0.5">
                                                                 {lowConfCols.slice(0, 5).map(([name]) => {
                                                                     const sem = columnSemantics[name];
                                                                     const reason = sem?.role === ColumnType.ID ? 'May not be an ID' : 'Uncommon name pattern';
                                                                     return (
-                                                                        <div key={name} className="flex items-center gap-1.5 text-[10px]">
+                                                                        <div key={name} className="flex items-center gap-1.5 text-[11px]">
                                                                             <span className="text-amber-400">•</span>
                                                                             <span className="text-gray-400 font-mono">{name}</span>
                                                                             <span className="text-gray-600">— {reason}</span>
                                                                         </div>
                                                                     );
                                                                 })}
-                                                                {lowConfCols.length > 5 && <p className="text-[9px] text-gray-600">...and {lowConfCols.length - 5} more</p>}
+                                                                {lowConfCols.length > 5 && <p className="text-[10px] text-gray-600">...and {lowConfCols.length - 5} more</p>}
                                                             </div>
                                                         </div>
                                                     )}
@@ -582,7 +582,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                             </div>
                             <div>
                                 <p className="text-xs font-medium text-violet-300">Quick review recommended</p>
-                                <p className="text-[10px] text-violet-400/70 mt-0.5">Some columns have uncommon names — a quick check of the types below will help the AI give you better results.</p>
+                                <p className="text-[11px] text-violet-400/70 mt-0.5">Some columns have uncommon names — a quick check of the types below will help the AI give you better results.</p>
                             </div>
                         </div>
                     )}
@@ -622,7 +622,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                             <div key={s.label} className={`${s.bg} border rounded-lg px-3 py-2 text-center flex-1 ${showErrors && s.req && s.count === 0 ? 'border-red-500/40' : 'border-white/[0.05]'
                                 }`}>
                                 <p className={`text-base font-bold ${showErrors && s.req && s.count === 0 ? 'text-red-400' : s.color}`}>{s.count}</p>
-                                <p className="text-[10px] text-gray-500">{s.label}{s.req ? ' *' : ''}</p>
+                                <p className="text-[11px] text-gray-500">{s.label}{s.req ? ' *' : ''}</p>
                             </div>
                         ))}
                     </div>
@@ -641,12 +641,12 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                         </div>
                         <div className="flex gap-1">
                             <button onClick={() => setTypeFilter('ALL')}
-                                className={`px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all ${typeFilter === 'ALL' ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30' : 'bg-white/[0.04] text-gray-500 hover:text-gray-300 border border-white/[0.06]'
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${typeFilter === 'ALL' ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30' : 'bg-white/[0.04] text-gray-500 hover:text-gray-300 border border-white/[0.06]'
                                     }`}
                             >All</button>
                             {COLUMN_TYPES.filter(t => t !== ColumnType.UNKNOWN).map(t => (
                                 <button key={t} onClick={() => setTypeFilter(typeFilter === t ? 'ALL' : t)}
-                                    className={`px-2.5 py-1.5 rounded-lg text-[10px] font-medium transition-all ${typeFilter === t ? TYPE_COLORS[t] + ' border' : 'bg-white/[0.04] text-gray-500 hover:text-gray-300 border border-white/[0.06]'
+                                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${typeFilter === t ? TYPE_COLORS[t] + ' border' : 'bg-white/[0.04] text-gray-500 hover:text-gray-300 border border-white/[0.06]'
                                         }`}
                                 >{t}</button>
                             ))}
@@ -656,7 +656,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                     {/* ══ COLUMN TABLE (SIMPLIFIED — critical fields only in main row) ══ */}
                     <div className="bg-[#171c26] border border-white/[0.06] rounded-xl overflow-hidden">
                         {/* Header */}
-                        <div className="grid grid-cols-[2.5fr_0.8fr_1.2fr_0.6fr_0.4fr] gap-2 px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.06] text-[10px] font-semibold text-gray-500 uppercase tracking-wider">
+                        <div className="grid grid-cols-[2.5fr_0.8fr_1.2fr_0.6fr_0.4fr] gap-2 px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.06] text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
                             <span>Column</span>
                             <span>Role</span>
                             <span>Aggregation</span>
@@ -688,7 +688,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                 <span className="text-xs">{roleInfo.icon}</span>
                                                 <div className="min-w-0">
                                                     <p className="text-sm font-medium text-white truncate">{col.name}</p>
-                                                    <p className="text-[10px] text-gray-500 truncate">{sem.humanLabel}</p>
+                                                    <p className="text-[11px] text-gray-500 truncate">{sem.humanLabel}</p>
                                                 </div>
                                             </div>
 
@@ -705,7 +705,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                         });
                                                     }}
                                                     onClick={e => e.stopPropagation()}
-                                                    className={`w-full px-1.5 py-1 rounded text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/50 ${TYPE_COLORS[sem.role] || TYPE_COLORS.UNKNOWN}`}
+                                                    className={`w-full px-1.5 py-1 rounded text-[11px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/50 ${TYPE_COLORS[sem.role] || TYPE_COLORS.UNKNOWN}`}
                                                 >
                                                     {COLUMN_TYPES.map(t => (
                                                         <option key={t} value={t} className="bg-[#171c26] text-white font-normal">{t}</option>
@@ -720,7 +720,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                         value={sem.aggregation}
                                                         onChange={e => { e.stopPropagation(); updateColumn(col.name, { aggregation: e.target.value as any }); }}
                                                         onClick={e => e.stopPropagation()}
-                                                        className={`w-full px-1.5 py-1 rounded text-[10px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/50 ${hasAggError
+                                                        className={`w-full px-1.5 py-1 rounded text-[11px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/50 ${hasAggError
                                                             ? 'bg-red-500/15 text-red-400 border-red-500/30'
                                                             : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
                                                             }`}
@@ -730,14 +730,14 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                         ))}
                                                     </select>
                                                 ) : (
-                                                    <span className="text-[10px] text-gray-600 px-1.5">—</span>
+                                                    <span className="text-[11px] text-gray-600 px-1.5">—</span>
                                                 )}
                                             </div>
 
                                             {/* Confidence */}
                                             <div className="flex items-center gap-1">
                                                 <span className="text-xs">{confInfo.emoji}</span>
-                                                <span className={`text-[10px] ${confInfo.color}`}>{confInfo.label}</span>
+                                                <span className={`text-[11px] ${confInfo.color}`}>{confInfo.label}</span>
                                             </div>
 
                                             {/* Visibility toggle */}
@@ -767,24 +767,24 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                     <div className="px-6 py-3 bg-white/[0.02] border-t border-white/[0.04]">
                                                         <div className="flex items-center gap-2 mb-2">
                                                             <PenLine className="w-3 h-3 text-violet-400" />
-                                                            <span className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Advanced Settings</span>
+                                                            <span className="text-[11px] font-semibold text-violet-400 uppercase tracking-wider">Advanced Settings</span>
                                                         </div>
                                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                                             <div className="md:col-span-4 grid grid-cols-2 md:grid-cols-4 gap-2 rounded-lg border border-white/[0.06] bg-black/10 p-2.5">
                                                                 <div>
-                                                                    <label className="text-[9px] text-gray-600 uppercase tracking-wider block">Source storage</label>
+                                                                    <label className="text-[10px] text-gray-600 uppercase tracking-wider block">Source storage</label>
                                                                     <span className="text-xs font-mono text-gray-300">{col.conversion?.sourceType || col.originalType || 'unknown'}</span>
                                                                 </div>
                                                                 <div>
-                                                                    <label className="text-[9px] text-gray-600 uppercase tracking-wider block">Current storage</label>
+                                                                    <label className="text-[10px] text-gray-600 uppercase tracking-wider block">Current storage</label>
                                                                     <span className="text-xs font-mono text-gray-300">{col.physicalType || 'unknown'}</span>
                                                                 </div>
                                                                 <div>
-                                                                    <label className="text-[9px] text-gray-600 uppercase tracking-wider block">Normalized as</label>
+                                                                    <label className="text-[10px] text-gray-600 uppercase tracking-wider block">Normalized as</label>
                                                                     <span className="text-xs font-mono text-violet-300">{col.conversion?.normalizedType || 'not audited'}</span>
                                                                 </div>
                                                                 <div>
-                                                                    <label className="text-[9px] text-gray-600 uppercase tracking-wider block">Conversion quality</label>
+                                                                    <label className="text-[10px] text-gray-600 uppercase tracking-wider block">Conversion quality</label>
                                                                     <span className={`text-xs font-semibold ${(col.conversion?.invalidCount || 0) > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
                                                                         {col.conversion ? `${Math.round(col.conversion.parseSuccessRate * 100)}% · ${col.conversion.invalidCount} rejected` : 'Awaiting ETL audit'}
                                                                     </span>
@@ -792,7 +792,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                             </div>
                                                             {/* Semantic Role */}
                                                             <div>
-                                                                <label className="text-[10px] text-gray-600 uppercase tracking-wider block mb-1">Semantic Role</label>
+                                                                <label className="text-[11px] text-gray-600 uppercase tracking-wider block mb-1">Semantic Role</label>
                                                                 <select
                                                                     value={sem.semanticRole || 'other'}
                                                                     onChange={e => updateColumn(col.name, { semanticRole: e.target.value })}
@@ -805,7 +805,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                             </div>
                                                             {/* Format */}
                                                             <div>
-                                                                <label className="text-[10px] text-gray-600 uppercase tracking-wider block mb-1">Format</label>
+                                                                <label className="text-[11px] text-gray-600 uppercase tracking-wider block mb-1">Format</label>
                                                                 <select
                                                                     value={sem.format}
                                                                     onChange={e => updateColumn(col.name, { format: e.target.value as any })}
@@ -818,7 +818,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                             </div>
                                                             {/* Label */}
                                                             <div>
-                                                                <label className="text-[10px] text-gray-600 uppercase tracking-wider block mb-1">Display Label</label>
+                                                                <label className="text-[11px] text-gray-600 uppercase tracking-wider block mb-1">Display Label</label>
                                                                 <input type="text" value={sem.humanLabel}
                                                                     onChange={e => updateColumn(col.name, { humanLabel: e.target.value })}
                                                                     className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-violet-500/50"
@@ -826,7 +826,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                             </div>
                                                             {/* Description */}
                                                             <div>
-                                                                <label className="text-[10px] text-gray-600 uppercase tracking-wider block mb-1">Description</label>
+                                                                <label className="text-[11px] text-gray-600 uppercase tracking-wider block mb-1">Description</label>
                                                                 <input type="text" value={sem.description}
                                                                     onChange={e => updateColumn(col.name, { description: e.target.value })}
                                                                     placeholder="What does this column represent?"
@@ -883,33 +883,33 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
 
                                         {/* Metrics */}
                                         <div>
-                                            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Metrics ({previewData.metricList.length})</p>
+                                            <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Metrics ({previewData.metricList.length})</p>
                                             <div className="flex flex-wrap gap-1.5">
                                                 {previewData.metricList.map(m => (
-                                                    <span key={m} className="px-2 py-0.5 rounded text-[10px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">{m}</span>
+                                                    <span key={m} className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">{m}</span>
                                                 ))}
-                                                {previewData.metricList.length === 0 && <span className="text-[10px] text-red-400">None — at least 1 required</span>}
+                                                {previewData.metricList.length === 0 && <span className="text-[11px] text-red-400">None — at least 1 required</span>}
                                             </div>
                                         </div>
 
                                         {/* Dimensions */}
                                         <div>
-                                            <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Dimensions ({previewData.dimensionList.length})</p>
+                                            <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Dimensions ({previewData.dimensionList.length})</p>
                                             <div className="flex flex-wrap gap-1.5">
                                                 {previewData.dimensionList.map(d => (
-                                                    <span key={d} className="px-2 py-0.5 rounded text-[10px] font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20">{d}</span>
+                                                    <span key={d} className="px-2 py-0.5 rounded text-[11px] font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20">{d}</span>
                                                 ))}
-                                                {previewData.dimensionList.length === 0 && <span className="text-[10px] text-red-400">None — at least 1 required</span>}
+                                                {previewData.dimensionList.length === 0 && <span className="text-[11px] text-red-400">None — at least 1 required</span>}
                                             </div>
                                         </div>
 
                                         {/* Dates */}
                                         {previewData.dateList.length > 0 && (
                                             <div>
-                                                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Dates ({previewData.dateList.length})</p>
+                                                <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Dates ({previewData.dateList.length})</p>
                                                 <div className="flex flex-wrap gap-1.5">
                                                     {previewData.dateList.map(d => (
-                                                        <span key={d} className="px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">{d}</span>
+                                                        <span key={d} className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">{d}</span>
                                                     ))}
                                                 </div>
                                             </div>
@@ -918,7 +918,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                         {/* Sample question */}
                                         {previewData.sampleQuestion && (
                                             <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg p-3">
-                                                <p className="text-[10px] text-gray-500 uppercase tracking-wider mb-1">Sample question that will work</p>
+                                                <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Sample question that will work</p>
                                                 <p className="text-sm text-violet-300 font-medium">"{previewData.sampleQuestion}"</p>
                                             </div>
                                         )}

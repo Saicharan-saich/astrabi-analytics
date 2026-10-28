@@ -368,7 +368,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           <button aria-label={drillDown ? 'Return to original answer' : 'Back to AI SQL'} onClick={() => { if (drillDown) { setDrillDown(null); } else { onBack(); } }} className={`p-2 rounded-lg transition-colors ${isDark ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}><ArrowLeft className="w-4 h-4" /></button>
           <div className="min-w-0">
             {drillDown && (
-              <div className="text-[10px] text-indigo-400 dark:text-indigo-300 font-medium flex items-center gap-1 mb-0.5">
+              <div className="text-[11px] text-indigo-400 dark:text-indigo-300 font-medium flex items-center gap-1 mb-0.5">
                 <MousePointerClick className="w-3 h-3" />
                 <span className="opacity-60 cursor-pointer hover:opacity-100" onClick={() => setDrillDown(null)}>{query}</span>
                 <span className="opacity-40">→</span>
@@ -463,7 +463,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               { label: 'SQL Quality', value: pipeline.confidence.factors.repairAttempts, max: 15 },
             ].map(f => (
               <div key={f.label}>
-                <div className="flex justify-between text-[10px] mb-0.5"><span className="text-gray-500 dark:text-slate-400">{f.label}</span><span className={`font-bold ${f.value >= f.max * 0.8 ? 'text-emerald-500' : f.value >= f.max * 0.5 ? 'text-yellow-500' : 'text-red-500'}`}>{f.value}/{f.max}</span></div>
+                <div className="flex justify-between text-[11px] mb-0.5"><span className="text-gray-500 dark:text-slate-400">{f.label}</span><span className={`font-bold ${f.value >= f.max * 0.8 ? 'text-emerald-500' : f.value >= f.max * 0.5 ? 'text-yellow-500' : 'text-red-500'}`}>{f.value}/{f.max}</span></div>
                 <div className="h-1.5 rounded-full bg-gray-100 dark:bg-white/[0.06] overflow-hidden"><div className={`h-full rounded-full ${f.value >= f.max * 0.8 ? 'bg-emerald-500' : f.value >= f.max * 0.5 ? 'bg-yellow-500' : 'bg-red-500'}`} style={{ width: `${(f.value / f.max) * 100}%` }} /></div>
               </div>
             ))}
@@ -523,7 +523,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                   <div className="flex items-start gap-3">
                     <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
                     <div className="min-w-0">
-                      <div className={`text-[10px] font-black uppercase tracking-wider ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`}>Answer in words</div>
+                      <div className={`text-[11px] font-black uppercase tracking-wider ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`}>Answer in words</div>
                       <p className={`mt-1 text-sm leading-5 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{activePipeline.narrative.summary}</p>
                     </div>
                   </div>
@@ -566,7 +566,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               )}
               {/* Drill-down hint */}
               {!activeDimensionOnly && (workspaceMode === 'result' || detailsSection === 'workspace') && !drillDown && !isDrilling && (
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 text-[10px] text-gray-400 dark:text-slate-500 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm px-3 py-1 rounded-full border border-gray-200/50 dark:border-white/5 opacity-60 hover:opacity-100 transition-opacity pointer-events-none">
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-slate-500 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm px-3 py-1 rounded-full border border-gray-200/50 dark:border-white/5 opacity-60 hover:opacity-100 transition-opacity pointer-events-none">
                   <MousePointerClick className="w-3 h-3" /> Click any data point to drill down
                 </div>
               )}
@@ -622,10 +622,10 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                   <span className="text-xs font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-2">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Generated SQL
                     {engineBadge && (
-                      <span className={`ml-1 text-[10px] font-bold px-1.5 py-0.5 rounded normal-case tracking-normal ${engineBadge.cls}`}>{engineBadge.label}</span>
+                      <span className={`ml-1 text-[11px] font-bold px-1.5 py-0.5 rounded normal-case tracking-normal ${engineBadge.cls}`}>{engineBadge.label}</span>
                     )}
                     {provenanceLabel && (
-                      <span title={provenance?.summary} className={`text-[10px] font-bold px-1.5 py-0.5 rounded normal-case tracking-normal ${provenanceClass}`}>
+                      <span title={provenance?.summary} className={`text-[11px] font-bold px-1.5 py-0.5 rounded normal-case tracking-normal ${provenanceClass}`}>
                         {provenanceLabel}
                       </span>
                     )}
@@ -663,10 +663,10 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                   </div>
                   {pipeline.validation?.checks && (
                     <div className="pt-2 border-t border-slate-100 dark:border-white/5">
-                      <div className="text-[10px] text-slate-400 font-bold uppercase mb-1.5">Validation</div>
+                      <div className="text-[11px] text-slate-400 font-bold uppercase mb-1.5">Validation</div>
                       <div className="flex flex-wrap gap-1.5">
                         {pipeline.validation.checks.slice(0, 6).map((c, i) => (
-                          <span key={i} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${c.status === 'pass' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : c.status === 'warn' ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600' : 'bg-red-50 dark:bg-red-900/20 text-red-600'}`} title={c.message}>
+                          <span key={i} className={`text-[11px] px-2 py-0.5 rounded-full font-medium ${c.status === 'pass' ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' : c.status === 'warn' ? 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600' : 'bg-red-50 dark:bg-red-900/20 text-red-600'}`} title={c.message}>
                             {c.status === 'pass' ? '✓' : c.status === 'warn' ? '⚠' : '✗'} {c.name}
                           </span>
                         ))}
@@ -696,7 +696,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
             <div className="p-4 space-y-1">
               {(['pct_diff_from_prev', 'diff_from_prev'] as TableCalculation[]).some(calc => (localFormatting.tableCalculations || []).includes(calc)) && (
                 <div className="mb-3 rounded-lg border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50/50 dark:bg-emerald-500/[0.06] p-3 space-y-2">
-                  <label className="block text-[10px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Comparison baseline</label>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300">Comparison baseline</label>
                   <select
                     value={localFormatting.tableCalculationComparison?.mode || 'previous'}
                     onChange={e => {
@@ -731,7 +731,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                       ))}
                     </select>
                   )}
-                  <p className="text-[10px] leading-relaxed text-emerald-700/80 dark:text-emerald-300/80">
+                  <p className="text-[11px] leading-relaxed text-emerald-700/80 dark:text-emerald-300/80">
                     {(localFormatting.tableCalculationComparison?.mode || 'previous') === 'selected_value'
                       ? 'Every visible value is compared with the selected baseline.'
                       : 'Each value is compared with the previous visible row, using the current chart order.'}
@@ -771,7 +771,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                     />
                     <div className="flex-1 min-w-0">
                       <span className="text-xs font-bold leading-tight block">{getCalculationDisplayName(calc)}</span>
-                      <span className="text-[10px] text-gray-500 dark:text-slate-500 leading-tight">{desc}</span>
+                      <span className="text-[11px] text-gray-500 dark:text-slate-500 leading-tight">{desc}</span>
                     </div>
                   </label>
                 );
@@ -789,22 +789,22 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           <div className="mx-auto max-w-5xl space-y-5">
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <div className={`rounded-2xl border p-4 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Rows returned</div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Rows returned</div>
                 <div className="mt-2 text-2xl font-black">{activeResult.data.length.toLocaleString()}</div>
               </div>
               <div className={`rounded-2xl border p-4 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Execution time</div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Execution time</div>
                 <div className="mt-2 text-2xl font-black">{Number(activePipeline?.executionTimeMs || 0).toLocaleString()}<span className="ml-1 text-sm font-bold text-slate-400">ms</span></div>
               </div>
               <div className={`rounded-2xl border p-4 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">AI tokens</div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">AI tokens</div>
                 <div className="mt-2 text-2xl font-black">{Number((activePipeline as any)?.tokenUsage?.total || 0).toLocaleString()}</div>
-                <div className="mt-1 text-[10px] text-slate-400">
+                <div className="mt-1 text-[11px] text-slate-400">
                   {Number((activePipeline as any)?.tokenUsage?.prompt || 0).toLocaleString()} prompt · {Number((activePipeline as any)?.tokenUsage?.completion || 0).toLocaleString()} completion
                 </div>
               </div>
               <div className={`rounded-2xl border p-4 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
-                <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Confidence</div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Confidence</div>
                 <div className="mt-2 flex items-end gap-2">
                   <span className="text-2xl font-black">{confScore ?? '—'}</span>
                   {confScore !== undefined && <span className="pb-1 text-xs font-bold text-slate-400">/ 100</span>}
@@ -817,12 +817,12 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               <div className={`rounded-2xl border p-5 ${isDark ? 'border-white/[0.08] bg-white/[0.03]' : 'border-slate-200 bg-white shadow-sm'}`}>
                 <div className="mb-4 flex items-center gap-2 text-sm font-black"><Database className="h-4 w-4 text-indigo-500" /> Answer details</div>
                 <dl className="grid gap-4 text-sm sm:grid-cols-2">
-                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Answer path</dt><dd className="mt-1 font-bold">{provenanceLabel || 'AI SQL'}</dd></div>
-                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Model route</dt><dd className="mt-1 break-words font-bold">{provenance?.model?.replace('openai/', '').toUpperCase() || 'Model unavailable'}</dd></div>
-                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Intent</dt><dd className="mt-1 font-bold">{activePipeline?.plan?.intent || '—'}</dd></div>
-                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Result grain</dt><dd className="mt-1 font-bold">{activePipeline?.plan?.resultGrain || '—'}</dd></div>
-                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Recommended visual</dt><dd className="mt-1 font-bold">{activePipeline?.chart?.chartType || chartType}</dd></div>
-                  <div><dt className="text-[10px] font-bold uppercase tracking-wider text-slate-400">SQL repairs</dt><dd className="mt-1 font-bold">{activePipeline?.repairAttempts || 0}</dd></div>
+                  <div><dt className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Answer path</dt><dd className="mt-1 font-bold">{provenanceLabel || 'AI SQL'}</dd></div>
+                  <div><dt className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Model route</dt><dd className="mt-1 break-words font-bold">{provenance?.model?.replace('openai/', '').toUpperCase() || 'Model unavailable'}</dd></div>
+                  <div><dt className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Intent</dt><dd className="mt-1 font-bold">{activePipeline?.plan?.intent || '—'}</dd></div>
+                  <div><dt className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Result grain</dt><dd className="mt-1 font-bold">{activePipeline?.plan?.resultGrain || '—'}</dd></div>
+                  <div><dt className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Recommended visual</dt><dd className="mt-1 font-bold">{activePipeline?.chart?.chartType || chartType}</dd></div>
+                  <div><dt className="text-[11px] font-bold uppercase tracking-wider text-slate-400">SQL repairs</dt><dd className="mt-1 font-bold">{activePipeline?.repairAttempts || 0}</dd></div>
                 </dl>
                 {explanation && <p className={`mt-5 rounded-xl border p-4 text-sm leading-relaxed ${isDark ? 'border-indigo-500/15 bg-indigo-500/[0.06] text-slate-300' : 'border-indigo-100 bg-indigo-50/60 text-slate-700'}`}>{explanation}</p>}
               </div>
