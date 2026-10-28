@@ -49,6 +49,7 @@ const CONFIGURABLE_ENGINES: EngineCard[] = [
     { id: 'semanticResultRepair', name: 'Semantic result repair', group: 'Result quality', description: 'Replans empty or clearly wrong-cardinality results using local execution evidence.' },
     { id: 'resultContractValidation', name: 'Result contract validation', group: 'Result quality', description: 'Checks returned fields, grain, cardinality and analytical invariants against the requested answer.' },
     { id: 'answerContractValidation', name: 'Answer contract validation', group: 'Result quality', description: 'Runs the final answer-shape and display-safety verification before presenting the result.' },
+    { id: 'answerCache', name: 'Verified answer reuse', group: 'SQL quality', description: 'Reuses the final SQL from an earlier successful run when the question, schema, evidence and settings are identical. It still runs locally on current data and passes every check; it saves all model tokens for repeat questions.' },
 ];
 
 const CORE_ENGINES: Array<{ id: AISQLEngineId; name: string; icon: React.FC<any>; description: string; failClosed?: boolean }> = [

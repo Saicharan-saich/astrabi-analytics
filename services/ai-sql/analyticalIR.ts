@@ -6,6 +6,7 @@
  * is frozen; they must not independently change projection, grain, population
  * or operation semantics afterwards.
  */
+import { compactPromptJSON } from './promptCompaction';
 import type { AnalysisPlan, PlanFilter, SemanticField, SemanticModel } from './types';
 import type { QueryContract } from './queryContract';
 import type { CanonicalQueryIntent } from './canonicalIntent';
@@ -519,8 +520,28 @@ export function verifyAnalyticalIR(ir: AnalyticalIR): IRVerificationIssue[] {
 }
 
 /** Metadata-only prompt representation. It contains no dataset row values. */
+/**
+ * Field references repeat schema facts (native grain, additivity, unit) that
+ * the prompt's column notes already state once per column. Strip them from
+ * references to schema columns so each fact is sent once. Calculated fields
+ * keep their unit (e.g. percentage), which the schema does not describe.
+ */
+function withoutRepeatedSchemaFacts(value: unknown): unknown {
+    if (Array.isArray(value)) return value.map(withoutRepeatedSchemaFacts);
+    if (!value || typeof value !== 'object') return value;
+    const source = value as Record<string, unknown>;
+    const isFieldRef = typeof source.field === 'string';
+    const out: Record<string, unknown> = {};
+    for (const [key, child] of Object.entries(source)) {
+        if (isFieldRef && (key === 'nativeGrain' || key === 'additivity')) continue;
+        if (isFieldRef && key === 'unit' && source.role !== 'calculation') continue;
+        out[key] = withoutRepeatedSchemaFacts(child);
+    }
+    return out;
+}
+
 export function formatAnalyticalIRForPrompt(ir: AnalyticalIR): string {
-    return JSON.stringify({
+    return compactPromptJSON(withoutRepeatedSchemaFacts({
         version: ir.version,
         answer: ir.answer,
         populations: ir.populations,
@@ -529,5 +550,5 @@ export function formatAnalyticalIRForPrompt(ir: AnalyticalIR): string {
         time: ir.time,
         constraints: ir.constraints,
         confidence: ir.confidence,
-    }, null, 2);
+    }));
 }

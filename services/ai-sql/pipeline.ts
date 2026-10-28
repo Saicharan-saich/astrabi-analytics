@@ -29,6 +29,8 @@ import { validateSQL, validateResult } from './sqlValidator';
 import { AISQLPipelineError, type AISQLPipelineFailureKind } from './pipelineError';
 import { buildTraceStory } from './traceStory';
 import { buildResultNarrative } from './resultNarrative';
+import { compactPlanForPrompt, compactPromptJSON } from './promptCompaction';
+import { buildAnswerCacheKey, rememberAnswer, takeCachedAnswer } from './answerCache';
 import { executeSQLViaDuckDB } from '../duckdbEngine';
 import { profileResult } from './resultProfiler';
 import { recommendChart } from './chartRecommender';
@@ -70,6 +72,7 @@ import { getEffectivePrivacyMode, type PrivacyMode } from './privacyMode';
 import { getSelection, applySelection } from './privacySelection';
 import {
     buildQueryContract,
+    formatQueryContractForPrompt,
     normalizeResultToContract,
     validateResultAgainstContract,
     validateSQLAgainstContract,
@@ -82,6 +85,7 @@ import {
 } from './canonicalIntent';
 import {
     buildAnalyticalIR,
+    formatAnalyticalIRForPrompt,
     verifyAnalyticalIR,
     type AnalyticalIR,
     type IRVerificationIssue,
@@ -248,6 +252,11 @@ export async function runAISQLPipeline(
     let activeAnalyticalIR: AnalyticalIR | undefined;
     let analyticalIRIssues: IRVerificationIssue[] = [];
     let capabilityValidation: CapabilityValidation | undefined;
+    // Verified answer reuse (see answerCache.ts): the key covers every input
+    // the model would see; a hit skips the model but not local execution or
+    // validation. Benchmark runs always call the model.
+    let answerCacheKey: string | undefined;
+    let answerReused = false;
     // The hybrid path deliberately starts with the local semantic engines, then
     // asks a selected GPT-5.6 model to write plan-constrained SQL. The LLM never
     // receives dataset rows; local DuckDB remains the only execution engine.
@@ -324,8 +333,32 @@ export async function runAISQLPipeline(
                 ? `${question}\n\nDataset reporting anchor: ${anchorDate}. Interpret relative dates such as "this month" against this dataset anchor, and use date literals rather than CURRENT_DATE, NOW(), or CURRENT_TIMESTAMP.`
                 : question;
             const explicitUIConstraints = externalFilters?.length
-                ? `\n\nExplicit filters selected by the user in the interface (mandatory factual constraints):\n${JSON.stringify(externalFilters, null, 2)}`
+                ? `\n\nExplicit filters selected by the user in the interface (mandatory factual constraints):\n${compactPromptJSON(externalFilters)}`
                 : '';
+            if (engineConfig.answerCache && executionOptions?.requestPurpose !== 'benchmark') {
+                answerCacheKey = buildAnswerCacheKey([
+                    `${anchoredQuestion}${explicitUIConstraints}`,
+                    richSchema,
+                    engineConfig.intentPlanner ? compactPlanForPrompt(plan) : '',
+                    engineConfig.planVerification ? compactPromptJSON(plannerIssues) : '',
+                    activeQueryContract ? formatQueryContractForPrompt(activeQueryContract) : '',
+                    activeAnalyticalIR ? formatAnalyticalIRForPrompt(activeAnalyticalIR) : '',
+                    privacyMode,
+                    compactPromptJSON(engineConfig),
+                ]);
+                const reused = forceRefresh ? null : takeCachedAnswer(answerCacheKey);
+                if (reused) {
+                    answerReused = true;
+                    console.log('[Pipeline] Reusing verified SQL from an identical earlier question (0 model tokens); it will still run locally and be validated.');
+                    return {
+                        sql: reused.sql,
+                        tokens: 0,
+                        model: reused.model ? `${reused.model} · reused` : 'reused answer',
+                        error: null,
+                        querySpec: reused.querySpec as DynamicQuerySpec | undefined,
+                    };
+                }
+            }
             // The selected GPT-5.6 planner receives the complete question and
             // verified data facts, but no local NLP interpretation and no rows.
             const ds = await generateDirectSQL(
@@ -777,7 +810,9 @@ export async function runAISQLPipeline(
         stepNumber: 5, name: 'AI SQL Engine', engine: 'directSqlEngine', icon: '✍️',
         status: directSQL ? 'pass' : 'skip',
         summary: directSQL
-            ? `AI-owned SQL: ${directSqlModel || 'GPT-5.6'} interpreted the complete question using ${effectivePrivacyMode === 'enhanced' ? 'metadata plus approved safe values' : 'metadata only'}`
+            ? answerReused
+                ? `Reused verified SQL from an identical earlier question — 0 model tokens; executed and validated again on current data`
+                : `AI-owned SQL: ${directSqlModel || 'GPT-5.6'} interpreted the complete question using ${effectivePrivacyMode === 'enhanced' ? 'metadata plus approved safe values' : 'metadata only'}`
             : 'AI SQL unavailable or rejected — no local query will be substituted',
         details: {
             sql: directSQL,
@@ -1825,7 +1860,9 @@ export async function runAISQLPipeline(
     const provenance = {
         strategy: 'hybrid-plan-llm-sql' as const,
         model: directSqlModel,
-        summary: `${directSqlModel || 'GPT-5.6'} interpreted the question and generated the SQL; the read-only query ran only in local DuckDB.`,
+        summary: answerReused
+            ? 'Reused the verified SQL from an identical earlier question (no AI call); the read-only query ran again in local DuckDB on current data.'
+            : `${directSqlModel || 'GPT-5.6'} interpreted the question and generated the SQL; the read-only query ran only in local DuckDB.`,
         dataAccess: effectivePrivacyMode === 'enhanced' ? 'approved_safe_values' as const : 'metadata_only' as const,
         downgraded: false,
     };
@@ -1860,6 +1897,7 @@ export async function runAISQLPipeline(
         // Surface the exact AI token cost for planning, SQL authorship, review,
         // and any model repair. Local safety checks and DuckDB execution are free.
         tokenUsage: totalTokenUsage,
+        answerReused,
     };
 
 
@@ -2033,6 +2071,23 @@ export async function runAISQLPipeline(
             checkCount: pipelineResult.analysisCertificate.checks.length,
         },
     }, performance.now());
+
+    // Remember only fully successful answers: rows returned, read-only SQL
+    // validated, and no analytical contract errors. A reused entry was
+    // consumed on read, so it survives only if it succeeded again.
+    if (
+        answerCacheKey
+        && currentSQL
+        && rawData.length > 0
+        && validation?.valid !== false
+        && pipelineResult.analyticalValidation?.passed !== false
+    ) {
+        rememberAnswer(answerCacheKey, {
+            sql: currentSQL,
+            querySpec: directQuerySpec,
+            model: directSqlModel?.replace(/ · reused$/, ''),
+        });
+    }
 
     return pipelineResult;
 }

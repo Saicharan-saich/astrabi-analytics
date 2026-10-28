@@ -7,6 +7,7 @@
  * ranking, comparison and negative-existence semantics. The LLM may still
  * choose the best SQL shape, but it may not silently change those facts.
  */
+import { compactPromptJSON } from './promptCompaction';
 import type { AnalysisPlan, SemanticModel } from './types';
 import { planJoins, type JoinLink, type JoinTable } from './joinEngine';
 import { inferQueryShape, type SelectionMode } from './queryShape';
@@ -1780,7 +1781,7 @@ function aggregateRankingExpressionPresent(
 
 /** Compact form used in model prompts; contains metadata/intent only. */
 export function formatQueryContractForPrompt(contract: QueryContract): string {
-    return JSON.stringify({
+    return compactPromptJSON({
         outputEntity: contract.outputEntity,
         expectedCardinality: contract.expectedCardinality,
         selectionMode: contract.selectionMode,
@@ -1815,7 +1816,7 @@ export function formatQueryContractForPrompt(contract: QueryContract): string {
         rankedSetOperation: contract.rankedSetOperation,
         comparison: contract.requiresComparison,
         requirements: contract.requirements,
-    }, null, 2);
+    });
 }
 
 /** Verify that generated SQL preserves every high-confidence contract fact. */

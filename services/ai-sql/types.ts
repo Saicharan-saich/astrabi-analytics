@@ -557,6 +557,8 @@ export interface AISQLPipelineResult {
     /** Exact model token cost for this question. Metadata and user-approved
      * safe values may be sent to the AI; rows remain local. */
     tokenUsage?: { prompt: number; completion: number; total: number };
+    /** True when the SQL was reused from an identical earlier question (0 model tokens). */
+    answerReused?: boolean;
     /** Ambiguity Intelligence Layer — assumptions made during resolution */
     assumptions?: {
         questionId: string;

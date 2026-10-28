@@ -218,6 +218,14 @@ export function collectSafeDomains(
  * No raw row values are ever emitted — only structural metadata — so the
  * privacy guarantee is identical to the plan engine's.
  */
+const UNINFORMATIVE_DIMENSION_UNITS = new Set(['text', 'date', 'identifier']);
+const GENERIC_SEMANTIC_TYPES = new Set(['category', 'unknown', 'identifier', 'date', 'text']);
+
+/** Matches only the sentence produced by semanticLayer.describeBusinessMeaning. */
+function isGeneratedBusinessMeaning(text: string): boolean {
+    return /^.+ is an? [\w-]+ (?:measure|descriptive field)(?: owned by .+)?\.$/.test(text.trim());
+}
+
 export function serializeSemanticModelSchema(
     model: SemanticModel,
     tableName = 'data',
@@ -227,17 +235,28 @@ export function serializeSemanticModelSchema(
     const colDefs = model.fields.map(f => `${idn(f.name)} ${duckType(f)}`).join(', ');
     lines.push(`Table ${idn(tableName)}(${colDefs})`);
     lines.push('');
+
+    // Token economy: when every column shares one native grain (the usual
+    // single-table upload), state it once instead of repeating it per column.
+    const grains = new Set(model.fields.map(f => f.nativeGrain || ''));
+    const sharedGrain = grains.size === 1 ? [...grains][0] : '';
+    if (sharedGrain) lines.push(`Native grain of every column: ${sharedGrain}`);
     lines.push('Column notes:');
 
     for (const f of model.fields) {
         const notes: string[] = [];
         if (f.ownerTable) notes.push(`owned by table ${f.ownerTable}`);
         if (f.keyRole && f.keyRole !== 'none') notes.push(f.keyRole.replace(/_/g, ' '));
-        if (f.nativeGrain) notes.push(`native grain: ${f.nativeGrain}`);
-        if (f.unit && f.unit !== 'unknown') notes.push(`unit: ${f.unit}`);
+        if (f.nativeGrain && !sharedGrain) notes.push(`native grain: ${f.nativeGrain}`);
+        // Units matter for measures (currency vs quantity vs percentage). For
+        // dimensions "text", "date" and "identifier" repeat what the role,
+        // type and date notes already say.
+        if (f.unit && f.unit !== 'unknown' && (f.role === 'metric' || !UNINFORMATIVE_DIMENSION_UNITS.has(f.unit))) {
+            notes.push(`unit: ${f.unit}`);
+        }
         if (f.role === 'metric') {
             notes.push('measure');
-            if (f.semanticType === 'currency') notes.push('money');
+            if (f.semanticType === 'currency' && f.unit !== 'currency') notes.push('money');
             if (f.additivity === 'non_additive' || isNonAdditiveMetric(f)) {
                 notes.push('per-unit/rate — do NOT SUM; use AVG');
             } else if (f.additivity === 'semi_additive') {
@@ -258,7 +277,7 @@ export function serializeSemanticModelSchema(
                 if (f.physicalType === 'number') {
                     notes.push('numeric calendar field — compare as a number; do NOT CAST to DATE');
                 } else if (f.physicalType === 'date') {
-                    notes.push("date stored as TEXT in YYYY-MM-DD form — wrap it in CAST(col AS DATE) before DATE_TRUNC / EXTRACT / strftime or a DATE-literal comparison");
+                    notes.push('TEXT date (YYYY-MM-DD) — use CAST(col AS DATE) before date functions or DATE-literal comparisons');
                 } else {
                     notes.push('date-like VARCHAR — cast to DATE only when the values use a parseable full-date format; numeric year comparisons stay numeric');
                 }
@@ -276,7 +295,16 @@ export function serializeSemanticModelSchema(
             }
         }
         if (f.synonyms?.length) notes.push(`aka ${f.synonyms.slice(0, 4).join(', ')}`);
-        if (f.businessMeaning) notes.push(f.businessMeaning);
+        // The semantic layer fills businessMeaning with a generated sentence
+        // ("Region is a geography descriptive field.") when no richer meaning
+        // is known. It only restates label, role and type, so send the one
+        // informative part — a specific semantic type — as a short tag, and
+        // keep genuine business descriptions verbatim.
+        if (f.businessMeaning && !isGeneratedBusinessMeaning(f.businessMeaning)) {
+            notes.push(f.businessMeaning);
+        } else if (f.semanticType && !GENERIC_SEMANTIC_TYPES.has(f.semanticType) && f.semanticType !== f.unit) {
+            notes.push(`type: ${f.semanticType}`);
+        }
         const dom = domains?.get(f.name);
         if (dom && dom.values.length) {
             const shown = dom.values.map(v => `'${v}'`).join(', ');

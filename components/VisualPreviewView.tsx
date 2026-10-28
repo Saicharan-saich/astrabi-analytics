@@ -386,6 +386,14 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                   · {provenanceLabel}
                 </span>
               )}
+              {(activePipeline as any)?.answerReused && (
+                <span
+                  title="This exact question was answered successfully before. Its verified SQL was reused without calling the AI, then run again on your current data and re-checked."
+                  className="cursor-help text-emerald-500"
+                >
+                  · ♻️ Reused verified answer
+                </span>
+              )}
               {(activePipeline as any)?.tokenUsage && !isLocalAnswer && (
                 <span
                   title={`AI SQL tokens: ${(activePipeline as any).tokenUsage.prompt} prompt + ${(activePipeline as any).tokenUsage.completion} completion. Only schema metadata and approved safe values are shared; dataset rows are not sent to the model.`}

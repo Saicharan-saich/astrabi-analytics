@@ -29,6 +29,7 @@ export const AI_SQL_ENGINE_IDS = [
     'semanticResultRepair',
     'resultContractValidation',
     'answerContractValidation',
+    'answerCache',
 ] as const;
 
 export type AISQLEngineId = typeof AI_SQL_ENGINE_IDS[number];

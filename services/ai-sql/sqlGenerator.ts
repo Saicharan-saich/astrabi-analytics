@@ -11,6 +11,7 @@ import { serializeSemanticModel } from './semanticLayer';
 import { fetchWithFallback } from './modelConfig';
 import type { DerivedMetric } from './derivedMetricEngine';
 import { formatQueryContractForPrompt, type QueryContract } from './queryContract';
+import { compactPlanForPrompt, compactPromptJSON } from './promptCompaction';
 
 const TIMEOUT_MS = 20000;
 
@@ -480,7 +481,7 @@ SEMANTIC MODEL:
 ${serialized}
 
 ANALYSIS PLAN:
-${JSON.stringify(plan, null, 2)}
+${compactPlanForPrompt(plan)}
 
 RULES:
 1. Use table name "data".
@@ -555,8 +556,8 @@ export async function repairSQL(
         ? `\nDETERMINISTIC QUERY CONTRACT (must remain satisfied):\n${formatQueryContractForPrompt(repairContext.queryContract)}\n`
         : '';
     const semanticAuthority = repairContext?.querySpec
-        ? `QUESTION:\n${repairContext.question || plan.originalQuestion}\n\nMODEL-AUTHORED QUERY SPECIFICATION (authoritative):\n${JSON.stringify(repairContext.querySpec, null, 2)}`
-        : `LEGACY ANALYSIS PLAN:\n${JSON.stringify(plan, null, 2)}`;
+        ? `QUESTION:\n${repairContext.question || plan.originalQuestion}\n\nMODEL-AUTHORED QUERY SPECIFICATION (authoritative):\n${compactPromptJSON(repairContext.querySpec)}`
+        : `LEGACY ANALYSIS PLAN:\n${compactPlanForPrompt(plan)}`;
 
     const prompt = `The following SQL query failed with an error. Fix it.
 

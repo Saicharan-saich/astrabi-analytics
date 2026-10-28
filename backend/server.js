@@ -2092,6 +2092,7 @@ const AI_SQL_ENGINE_KEYS = [
     'semanticResultRepair',
     'resultContractValidation',
     'answerContractValidation',
+    'answerCache',
 ];
 
 function normalizeAISQLEngineSettings(value, metadata = {}) {

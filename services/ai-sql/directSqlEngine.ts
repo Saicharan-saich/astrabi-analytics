@@ -26,6 +26,7 @@ import {
     type AnalyticalOperator,
 } from './analyticalIR';
 import { getAISQLEngineConfig } from './engineConfig';
+import { compactPlanForPrompt, compactPromptJSON, isPlanReliableForPrompt } from './promptCompaction';
 
 export const SIGNED_OUTCOME_SEMANTICS = `For signed business outcome measures such as profit, net income, margin, balance, or variance, ordinary phrases such as "no profit", "not profitable", "did not make a profit", or "failed to make a positive margin" mean the aggregated outcome is non-positive (<= 0) at the requested entity grain. Reserve exact equality (= 0) for explicit wording such as "zero", "exactly zero", or "equal to zero". This rule is about signed outcomes; questions about no related records still use anti-join/existence logic.`;
 
@@ -907,7 +908,7 @@ export async function repairSemanticSQL(
         },
         {
             role: 'user',
-            content: `Schema:\n${schemaText}\n\nQuestion:\n${question}\n\nQuery specification:\n${JSON.stringify(spec || {}, null, 2)}\n\nExecuted SQL:\n${originalSQL}\n\nLocal diagnostic (no row values are shared):\n${diagnostic}\n\nCorrected SQL:`,
+            content: `Schema:\n${schemaText}\n\nQuestion:\n${question}\n\nQuery specification:\n${compactPromptJSON(spec || {})}\n\nExecuted SQL:\n${originalSQL}\n\nLocal diagnostic (no row values are shared):\n${diagnostic}\n\nCorrected SQL:`,
         },
     ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
 
@@ -957,11 +958,15 @@ export async function generateDirectSQL(
     // The local governed plan is bounded evidence, not executable authority.
     // The model reasons over it alongside the complete question and schema;
     // downstream local validators remain authoritative for safe execution.
-    const planContext = analysisPlan
-        ? `\n\nLocal governed analysis plan (advisory evidence):\n${JSON.stringify(analysisPlan, null, 2)}\nReconcile this plan with the complete question and verified schema. Preserve correct locally resolved fields, time ranges, filters, grain, sorting and limits; correct any conflict explicitly in your Query Specification. Use verified physical field names only.`
+    // A plan built from a smart-default guess (or flagged ambiguous) is
+    // withheld: the deterministic contract below already carries the
+    // question's verified facts, and a guessed plan can steer the model to
+    // the wrong entity. Reliable plans are sent compactly.
+    const planContext = analysisPlan && isPlanReliableForPrompt(analysisPlan)
+        ? `\n\nLocal governed analysis plan (advisory evidence):\n${compactPlanForPrompt(analysisPlan)}\nReconcile this plan with the complete question and verified schema. Preserve correct locally resolved fields, time ranges, filters, grain, sorting and limits; correct any conflict explicitly in your Query Specification. Use verified physical field names only.`
         : '';
     const verificationContext = plannerVerification?.length
-        ? `\n\nLocal diagnostics to consider:\n${JSON.stringify(plannerVerification, null, 2)}`
+        ? `\n\nLocal diagnostics to consider:\n${compactPromptJSON(plannerVerification)}`
         : '';
     const presentationContext = buildEntityPresentationContext(semanticModel);
     const contractContext = queryContract
@@ -1025,7 +1030,7 @@ export async function generateDirectSQL(
                 { role: 'system', content: CLARIFICATION_ADJUDICATOR_PROMPT },
                 {
                     role: 'user',
-                    content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}${contractContext}${analyticalIRContext}\n\nQuestion: ${question}\n\nFirst planner specification:\n${JSON.stringify(draftSpec, null, 2)}\n\nReturn the final replacement Query Specification:`,
+                    content: `Schema:\n${schemaText}${presentationContext}${planContext}${verificationContext}${contractContext}${analyticalIRContext}\n\nQuestion: ${question}\n\nFirst planner specification:\n${compactPromptJSON(draftSpec)}\n\nReturn the final replacement Query Specification:`,
                 },
             ] as any, { temperature: 0, max_tokens: 2200, model: SOL_MODEL, requestPurpose });
             const adjudicatedUsage = adjudicated.data.usage || {};
@@ -1065,7 +1070,7 @@ export async function generateDirectSQL(
         };
     }
 
-    const userContext = `Schema:\n${schemaText}${presentationContext}${contractContext}${analyticalIRContext}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nQuestion: ${question}\n\nSQL:`;
+    const userContext = `Schema:\n${schemaText}${presentationContext}${contractContext}${analyticalIRContext}\n\nDynamic Query Specification:\n${compactPromptJSON(spec)}\n\nQuestion: ${question}\n\nSQL:`;
     const sqlPrompt = buildSQLSystemPrompt(question, spec, requestPurpose);
     const sqlRoute = requestPurpose === 'benchmark'
         ? { model: LUNA_MODEL }
@@ -1146,7 +1151,7 @@ export async function generateDirectSQL(
                 },
                 {
                     role: 'user',
-                    content: `Schema:\n${schemaText}${presentationContext}\n\nQuestion:\n${question}\n\nDynamic Query Specification:\n${JSON.stringify(spec, null, 2)}\n\nDeterministic Query Contract:\n${formatQueryContractForPrompt(queryContract)}\n\nRejected SQL:\n${safe.sql}\n\nContract violations:\n${contractIssues.map(issue => `- ${issue.message}`).join('\n')}\n\nCorrected SQL:`,
+                    content: `Schema:\n${schemaText}${presentationContext}\n\nQuestion:\n${question}\n\nDynamic Query Specification:\n${compactPromptJSON(spec)}\n\nDeterministic Query Contract:\n${formatQueryContractForPrompt(queryContract)}\n\nRejected SQL:\n${safe.sql}\n\nContract violations:\n${contractIssues.map(issue => `- ${issue.message}`).join('\n')}\n\nCorrected SQL:`,
                 },
                 ] as any, { temperature: 0, max_tokens: 2400, model: SOL_MODEL, requestPurpose });
                 const repairUsage = contractRepair.data.usage || {};
