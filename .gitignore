@@ -52,3 +52,6 @@ playwright-report/
 # public/benchmarks and are intentionally versioned.
 .benchmark-source/
 __pycache__/
+
+# Design-review screenshots from playwright.visual.config.ts
+visual-preview/

@@ -1,0 +1,46 @@
+name: Visual preview
+
+# Captures design-review screenshots of key screens (seeded, fully local
+# dashboard — no backend or AI calls) and publishes them to the
+# `visual-preview/<branch>` branch so they can be reviewed without running
+# the app locally. Runs on UI branches and on demand.
+on:
+  push:
+    branches: ['ui-**']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: visual-preview-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  screenshots:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Capture screenshots
+        run: npx playwright test -c playwright.visual.config.ts
+        continue-on-error: true
+      - name: Publish screenshots
+        run: |
+          set -e
+          BRANCH="visual-preview/${GITHUB_REF_NAME}"
+          mkdir -p /tmp/shots && cp -r visual-preview/. /tmp/shots/ 2>/dev/null || true
+          cd /tmp/shots
+          printf "Screenshots for %s @ %s\n" "$GITHUB_REF_NAME" "$GITHUB_SHA" > README.md
+          git init -q -b "$BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Visual preview for ${GITHUB_SHA}"
+          git push -q --force "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${BRANCH}"
