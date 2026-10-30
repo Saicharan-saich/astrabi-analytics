@@ -3928,3 +3928,104 @@ body {
 :root.light:is(.light) .qi-sidebar-frame { border-right: 1px solid var(--border-default) !important; }
 :root.light:is(.light) .app-topbar,
 :root.light:is(.light) .qi-topbar-frame { border-bottom: 1px solid var(--border-default) !important; }
+
+/* ── Light-mode leftovers found by the automated audit (2026-10-30) ── */
+/* Hard-coded dark navy surfaces (bg-[#0…]/bg-[#1…]) become normal cards. */
+:root.light:is(.light) :is([class*='bg-[#0'], [class*='bg-[#1']):not([class*='bg-[#0284']):not(.qi-prelogin-tour) {
+  background-color: var(--bg-surface) !important;
+  border-color: var(--border-default) !important;
+}
+/* Question Builder → Options: section tiles */
+:root.light:is(.light) .qi-builder-options-panel > div {
+  background: var(--bg-hover) !important;
+  border: 1px solid var(--border-default) !important;
+}
+/* Chart toolbar: neutral when off, accent chip when on (on = text-white). */
+:root:is(.light, .dark) .qi-visual-toolbar button[class*='text-white'] {
+  background: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent) !important;
+  box-shadow: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+}
+:root:is(.light, .dark) .qi-visual-toolbar button[class*='text-white'] * { color: inherit !important; }
+
+/* Accent text written for dark backgrounds (200–400 shades) reads as a
+   faint pastel on white. In light mode those map to the 700 shade. */
+:root.light:is(.light) :is([class*='text-cyan-2'], [class*='text-cyan-3'], [class*='text-cyan-4']):not(.qi-prelogin-tour *) { color: #0e7490 !important; }
+:root.light:is(.light) :is([class*='text-sky-2'], [class*='text-sky-3'], [class*='text-sky-4']):not(.qi-prelogin-tour *) { color: #0369a1 !important; }
+:root.light:is(.light) :is([class*='text-teal-2'], [class*='text-teal-3'], [class*='text-teal-4']):not(.qi-prelogin-tour *) { color: #0f766e !important; }
+:root.light:is(.light) :is([class*='text-emerald-2'], [class*='text-emerald-3'], [class*='text-emerald-4']):not(.qi-prelogin-tour *) { color: #047857 !important; }
+:root.light:is(.light) :is([class*='text-green-2'], [class*='text-green-3'], [class*='text-green-4']):not(.qi-prelogin-tour *) { color: #15803d !important; }
+:root.light:is(.light) :is([class*='text-lime-2'], [class*='text-lime-3'], [class*='text-lime-4']):not(.qi-prelogin-tour *) { color: #4d7c0f !important; }
+:root.light:is(.light) :is([class*='text-amber-2'], [class*='text-amber-3'], [class*='text-amber-4']):not(.qi-prelogin-tour *) { color: #b45309 !important; }
+:root.light:is(.light) :is([class*='text-yellow-2'], [class*='text-yellow-3'], [class*='text-yellow-4']):not(.qi-prelogin-tour *) { color: #a16207 !important; }
+:root.light:is(.light) :is([class*='text-orange-2'], [class*='text-orange-3'], [class*='text-orange-4']):not(.qi-prelogin-tour *) { color: #c2410c !important; }
+:root.light:is(.light) :is([class*='text-rose-2'], [class*='text-rose-3'], [class*='text-rose-4']):not(.qi-prelogin-tour *) { color: #be123c !important; }
+:root.light:is(.light) :is([class*='text-red-2'], [class*='text-red-3'], [class*='text-red-4']):not(.qi-prelogin-tour *) { color: #b91c1c !important; }
+:root.light:is(.light) :is([class*='text-pink-2'], [class*='text-pink-3'], [class*='text-pink-4']):not(.qi-prelogin-tour *) { color: #be185d !important; }
+:root.light:is(.light) :is([class*='text-purple-2'], [class*='text-purple-3'], [class*='text-purple-4']):not(.qi-prelogin-tour *) { color: #7e22ce !important; }
+:root.light:is(.light) :is([class*='text-fuchsia-2'], [class*='text-fuchsia-3'], [class*='text-fuchsia-4']):not(.qi-prelogin-tour *) { color: #a21caf !important; }
+:root.light:is(.light) :is([class*='text-violet-2'], [class*='text-violet-3'], [class*='text-violet-4']):not(.qi-prelogin-tour *) { color: #2c55c8 !important; }
+:root.light:is(.light) :is([class*='text-indigo-2'], [class*='text-indigo-3'], [class*='text-indigo-4']):not(.qi-prelogin-tour *) { color: #3247a0 !important; }
+:root.light:is(.light) :is([class*='text-blue-2'], [class*='text-blue-3'], [class*='text-blue-4']):not(.qi-prelogin-tour *) { color: #1d4ed8 !important; }
+
+/* Builder chips (Options / Add filter) */
+:root:is(.light, .dark) .qi-chip-button {
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border-color: var(--border-default);
+}
+:root:is(.light, .dark) .qi-chip-button:hover { color: var(--text-primary); background: var(--bg-hover); }
+:root:is(.light, .dark) .qi-chip-button.is-active {
+  color: var(--accent-foreground);
+  background: var(--accent);
+  border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+}
+:root:is(.light, .dark) .qi-chip-button.is-filtered {
+  color: #b45309;
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+:root.dark:is(.dark) .qi-chip-button.is-filtered { color: #fbbf24; background: rgba(245, 158, 11, 0.12); border-color: rgba(245, 158, 11, 0.3); }
+
+/* ── Present: dashboard picker + clean slides ─────────────────────── */
+:root:is(.light, .dark) .qi-present-dialog {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  box-shadow: 0 24px 48px -16px rgba(16, 24, 40, 0.28);
+}
+:root:is(.light, .dark) .qi-present-heading { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-present-muted { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-present-accent { color: var(--color-primary); }
+:root:is(.light, .dark) .qi-present-ok { color: #3f8f2a; }
+:root.dark:is(.dark) .qi-present-ok { color: #9ccc65; }
+:root:is(.light, .dark) .qi-present-warn { color: #b45309; }
+:root.dark:is(.dark) .qi-present-warn { color: #fbbf24; }
+:root:is(.light, .dark) .qi-present-option {
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+:root:is(.light, .dark) .qi-present-option:hover { border-color: var(--border-hover); background: var(--bg-hover); }
+:root:is(.light, .dark) .qi-present-option.is-selected {
+  border-color: var(--color-primary);
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--color-primary);
+}
+:root:is(.light, .dark) .qi-present-footer { border-top: 1px solid var(--border-default); background: var(--bg-app); }
+:root:is(.light, .dark) .qi-present-start { background: var(--color-primary); color: #fff; }
+:root:is(.light, .dark) .qi-present-start:hover:not(:disabled) { background: var(--color-primary-dark); }
+:root:is(.light, .dark) .qi-present-icon-button { color: var(--text-secondary); background: var(--bg-surface); border: 1px solid var(--border-default); }
+:root:is(.light, .dark) .qi-present-icon-button:hover:not(:disabled) { color: var(--text-primary); background: var(--bg-hover); }
+:root:is(.light, .dark) .qi-present-stage { background: var(--bg-app); }
+:root:is(.light, .dark) .qi-present-bar { background: var(--bg-surface); border-bottom: 1px solid var(--border-default); }
+:root:is(.light, .dark) .qi-present-slide {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  box-shadow: var(--shadow-lg);
+}
+:root:is(.light, .dark) .qi-present-dot { background: var(--border-hover); }
+:root:is(.light, .dark) .qi-present-dot.is-current { background: var(--color-primary); transform: scale(1.25); }

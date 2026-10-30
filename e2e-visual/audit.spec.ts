@@ -31,9 +31,11 @@ test('light mode audit', async ({ page }) => {
     if (await click(page.getByRole('button', { name: /Global Filters/ }))) await capture('dashboard-filters');
     await page.keyboard.press('Escape');
     if (await click(page.getByRole('button', { name: 'Present', exact: true }))) {
-        await capture('present');
+        await capture('present-picker');
+        if (await click(page.getByRole('radio', { name: /Regional review/ }))) await capture('present-picker-mixed');
+        if (await click(page.getByRole('button', { name: /Start presenting/ }))) await capture('present-slides');
         await page.keyboard.press('Escape');
-        await page.keyboard.press('Escape');
+        await click(page.getByRole('button', { name: /^E-commerce insights/ }));
     }
 
     if (await nav('Question Builder')) {

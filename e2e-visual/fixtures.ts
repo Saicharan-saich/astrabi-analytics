@@ -95,3 +95,24 @@ export function dashboardFixture() {
         filters: [],
     };
 }
+
+/** A second dashboard mixing a ready visual with one whose dataset is not loaded. */
+export function secondDashboardFixture() {
+    const ready = dashboardFixture().items.find(item => item.id === 'cities')!;
+    return {
+        id: 'visual-dashboard-2', name: 'Regional review', createdAt: 1767312000000,
+        items: [
+            { ...ready, id: 'cities-2' },
+            {
+                id: 'old-upload', title: 'Margin by store (old upload)', width: 'half', datasetId: 'retired-upload', datasetName: 'Stores_2024.xlsx',
+                result: {
+                    data: [], xKey: 'store', yKey: 'margin', yLabel: 'Margin', vis: 'bar', insight: '', sql: '', needsLocalData: true,
+                    config: { questionId: 'custom_builder', metric: 'margin', dimension: 'store', aggregation: 'SUM', timeGrain: 'Raw Date', analysisType: 'Standard' },
+                    queryConfig: { questionId: 'custom_builder', metric: 'margin', dimension: 'store', aggregation: 'SUM', timeGrain: 'Raw Date', analysisType: 'Standard' },
+                },
+            },
+        ],
+        layout: [{ i: 'cities-2', x: 0, y: 0, w: 6, h: 6 }, { i: 'old-upload', x: 6, y: 0, w: 6, h: 6 }],
+        filters: [],
+    };
+}

@@ -21,6 +21,8 @@ import { DashboardDateFilter } from './DashboardDateFilter';
 import { dashboardDateFilterLabel } from '../utils/dashboardDateFilter';
 import { filterDashboardRows } from '../utils/dashboardFilterRows';
 import { dashboardFilterColumnExists, resolveDashboardFilterSource } from '../utils/dashboardFilterSource';
+import { isItemPresentable, summariseDashboardReadiness } from '../utils/presentationReadiness';
+import { PresentDashboardDialog } from './PresentDashboardDialog';
 
 interface DashboardProps {
   dataset?: Dataset;
@@ -207,6 +209,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     return items.filter(item => item.datasetId === selectedDatasetId);
   }, [items, selectedDatasetId]);
 
+  const presentItems = useMemo(() => (presentOnlyReady
+    ? items.filter(item => isItemPresentable(item, dataset, availableDatasets, dashboardFilters.length))
+    : items), [items, presentOnlyReady, dataset, availableDatasets, dashboardFilters.length]);
+
   // Map dataset IDs to colours for badges
   const datasetColorMap = useMemo(() => {
     const map = new Map<string, typeof DATASET_COLORS[0]>();
@@ -216,6 +222,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   const [showClearModal, setShowClearModal] = useState(false);
   const [presentationMode, setPresentationMode] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
+  // Present: the user first picks a dashboard; by default only visuals whose
+  // data is loaded become slides (others would just show an error).
+  const [showPresentPicker, setShowPresentPicker] = useState(false);
+  const [presentOnlyReady, setPresentOnlyReady] = useState(true);
   const dashboardRef = useRef<HTMLDivElement>(null);
   const [hoveredCard, setHoveredCard] = useState<string | null>(null);
   const [filterOpen, setFilterOpen] = useState(false);
@@ -594,27 +604,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
       const tag = (e.target as HTMLElement)?.tagName;
       const isTyping = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable;
       if (e.key === 'Escape') setPresentationMode(false);
-      if (!isTyping && (e.key === 'ArrowRight' || e.key === ' ')) setCurrentSlide(prev => Math.min(prev + 1, items.length - 1));
+      if (!isTyping && (e.key === 'ArrowRight' || e.key === ' ')) setCurrentSlide(prev => Math.min(prev + 1, presentItems.length - 1));
       if (!isTyping && e.key === 'ArrowLeft') setCurrentSlide(prev => Math.max(prev - 1, 0));
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [presentationMode, items.length]);
+  }, [presentationMode, presentItems.length]);
 
   // Presentation Mode Overlay
-  if (presentationMode && items.length > 0) {
-    const item = items[currentSlide];
+  if (presentationMode && presentItems.length > 0) {
+    const item = presentItems[Math.min(currentSlide, presentItems.length - 1)];
     return (
-      <div className="fixed inset-0 z-[200] bg-slate-950 flex flex-col presentation-slide">
+      <div className="qi-present-stage fixed inset-0 z-[200] flex flex-col presentation-slide">
         {/* Presentation Header */}
-        <div className="flex items-center justify-between px-8 py-4 bg-slate-900/80 border-b border-white/5 print:hidden">
+        <div className="qi-present-bar flex items-center justify-between px-8 py-4 print:hidden">
           <div className="flex items-center gap-4">
-            <Presentation className="w-5 h-5 text-indigo-400" />
+            <Presentation className="w-5 h-5 qi-present-accent" />
             <EditableTitle
               value={item.title}
               onSave={(t) => updateItem({ ...item, title: t })}
-              className="text-white font-bold text-lg"
-              inputClassName="text-white text-lg"
+              className="qi-present-heading font-semibold text-lg"
+              inputClassName="text-lg"
             />
             {/* Active filter chips in presentation mode */}
             {dashboardFilters.length > 0 && (
@@ -629,10 +639,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             )}
           </div>
           <div className="flex items-center gap-4">
-            <span className="text-slate-400 text-sm">{currentSlide + 1} / {items.length}</span>
+            <span className="qi-present-muted text-sm tabular-nums">{Math.min(currentSlide, presentItems.length - 1) + 1} / {presentItems.length}</span>
             <button
               onClick={() => setPresentationMode(false)}
-              className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-white transition-colors"
+              className="qi-present-icon-button p-2 rounded-lg"
+              aria-label="Exit presentation"
             >
               <X className="w-5 h-5" />
             </button>
@@ -641,14 +652,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
 
         {/* Slide Content */}
         <div className="flex-1 flex items-center justify-center p-12 min-h-0">
-          <div className="w-full max-w-5xl h-full bg-white rounded-2xl shadow-2xl overflow-hidden">
-            <div className="p-3 border-b border-slate-100 bg-slate-50">
-              <h3 className="text-lg font-bold text-slate-800 text-center">
+          <div className="qi-present-slide w-full max-w-5xl h-full overflow-hidden">
+            <div className="px-5 pt-4 pb-1">
+              <h3 className="qi-present-heading text-lg font-semibold">
                 <EditableTitle
                   value={item.title}
                   onSave={(t) => updateItem({ ...item, title: t })}
                   className=""
-                  inputClassName="text-slate-800 text-lg text-center"
+                  inputClassName="text-lg"
                 />
               </h3>
             </div>
@@ -667,23 +678,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
           <button
             onClick={() => setCurrentSlide(prev => Math.max(prev - 1, 0))}
             disabled={currentSlide === 0}
-            className="p-3 rounded-full bg-slate-800 hover:bg-slate-700 text-white transition-colors disabled:opacity-30"
+            className="qi-present-icon-button p-3 rounded-full disabled:opacity-30"
           >
             <ChevronLeft className="w-6 h-6" />
           </button>
           <div className="flex gap-2">
-            {items.map((_, i) => (
+            {presentItems.map((_, i) => (
               <button
                 key={i}
                 onClick={() => setCurrentSlide(i)}
-                className={`w-3 h-3 rounded-full transition-all ${i === currentSlide ? 'bg-indigo-500 scale-125' : 'bg-slate-600 hover:bg-slate-500'}`}
+                className={`qi-present-dot w-2.5 h-2.5 rounded-full transition-all ${i === currentSlide ? 'is-current' : ''}`}
+                aria-label={`Go to slide ${i + 1}`}
               />
             ))}
           </div>
           <button
-            onClick={() => setCurrentSlide(prev => Math.min(prev + 1, items.length - 1))}
-            disabled={currentSlide === items.length - 1}
-            className="p-3 rounded-full bg-slate-800 hover:bg-slate-700 text-white transition-colors disabled:opacity-30"
+            onClick={() => setCurrentSlide(prev => Math.min(prev + 1, presentItems.length - 1))}
+            disabled={currentSlide >= presentItems.length - 1}
+            className="qi-present-icon-button p-3 rounded-full disabled:opacity-30"
           >
             <ChevronRight className="w-6 h-6" />
           </button>
@@ -864,7 +876,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             {items.length > 0 && (
               <div className="flex items-center gap-2 print:hidden">
                 <button
-                  onClick={() => { setCurrentSlide(0); setPresentationMode(true); }}
+                  onClick={() => setShowPresentPicker(true)}
                   className="qi-dash-button group flex items-center gap-2 px-3 py-2 text-sm font-medium"
                 >
                   <Presentation className="w-4 h-4" />
@@ -1365,6 +1377,25 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               );
             })}
           </ResponsiveGridLayout>
+        )}
+
+        {showPresentPicker && (
+          <PresentDashboardDialog
+            dashboards={dashboards.map(db => summariseDashboardReadiness(
+              db.id === activeDashboard?.id ? { ...db, items, filters: dashboardFilters } : db,
+              dataset,
+              availableDatasets,
+            ))}
+            initialDashboardId={activeDashboard?.id}
+            onCancel={() => setShowPresentPicker(false)}
+            onStart={(dashboardId, onlyReady) => {
+              if (dashboardId !== activeDashboard?.id) setActiveDashboard(dashboardId);
+              setPresentOnlyReady(onlyReady);
+              setCurrentSlide(0);
+              setShowPresentPicker(false);
+              setPresentationMode(true);
+            }}
+          />
         )}
 
         {/* ─── Clear All Confirmation Modal ─── */}

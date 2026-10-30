@@ -1310,7 +1310,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         {activeBuilderTab === 'build' && <button
                             ref={optionsButtonRef}
                             onClick={() => setShowOptions(!showOptions)}
-                            className={`flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase rounded-xl border transition-all duration-200 ${showOptions ? 'bg-white/15 border-white/20 text-white' : 'border-white/10 bg-white/5 text-slate-300 hover:bg-white/10 hover:text-white'}`}
+                            className={`qi-chip-button flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-bold tracking-wider uppercase rounded-xl border transition-colors duration-150 ${showOptions ? 'is-active' : ''}`}
+                            aria-expanded={showOptions}
                             title="Toggle options"
                         >
                             <SlidersHorizontal className="w-3.5 h-3.5" />
@@ -1322,7 +1323,8 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             <button
                                 ref={filterButtonRef}
                                 onClick={() => setShowFilterMenu(!showFilterMenu)}
-                                className={`flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase border rounded-xl px-3 py-1.5 transition-all duration-200 ${showFilterMenu || filters.length > 0 ? 'bg-amber-500/20 border-amber-500/30 text-amber-300' : 'bg-white/5 border-white/10 text-slate-300 hover:bg-white/10 hover:text-white'}`}
+                                className={`qi-chip-button flex items-center gap-1.5 text-[11px] font-bold tracking-wider uppercase border rounded-xl px-3 py-1.5 transition-colors duration-150 ${showFilterMenu ? 'is-active' : filters.length > 0 ? 'is-filtered' : ''}`}
+                                aria-expanded={showFilterMenu}
                             >
                                 <Filter className="w-3.5 h-3.5" />
                                 {filters.length > 0 ? `Filters (${filters.length})` : 'Add Filter'}

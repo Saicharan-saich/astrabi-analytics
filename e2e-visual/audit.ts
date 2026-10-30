@@ -54,7 +54,7 @@ export async function auditLightMode(page: Page, state: string) {
                 const back = effectiveBg(el);
                 if (fg && back) {
                     const cr = ratio(lum(fg), lum(back));
-                    if (cr < 2) faint.push({ el: describe(el), text: ownText.slice(0, 40), color: s.color, bg: `rgb(${back.r},${back.g},${back.b})`, contrast: +cr.toFixed(2) });
+                    if (cr < 2.5) faint.push({ el: describe(el), text: ownText.slice(0, 40), color: s.color, bg: `rgb(${back.r},${back.g},${back.b})`, contrast: +cr.toFixed(2) });
                 }
             }
         }
