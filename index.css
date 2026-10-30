@@ -4029,3 +4029,13 @@ body {
 }
 :root:is(.light, .dark) .qi-present-dot { background: var(--border-hover); }
 :root:is(.light, .dark) .qi-present-dot.is-current { background: var(--color-primary); transform: scale(1.25); }
+/* Light hues stay faint even at 500 on white; deepen them in light mode. */
+:root.light:is(.light) [class*='text-amber-5']:not(.qi-prelogin-tour *) { color: #b45309 !important; }
+:root.light:is(.light) [class*='text-yellow-5']:not(.qi-prelogin-tour *) { color: #a16207 !important; }
+:root.light:is(.light) [class*='text-lime-5']:not(.qi-prelogin-tour *) { color: #4d7c0f !important; }
+:root.light:is(.light) [class*='text-emerald-5']:not(.qi-prelogin-tour *) { color: #047857 !important; }
+:root.light:is(.light) [class*='text-green-5']:not(.qi-prelogin-tour *) { color: #15803d !important; }
+:root.light:is(.light) [class*='text-cyan-5']:not(.qi-prelogin-tour *) { color: #0e7490 !important; }
+:root.light:is(.light) [class*='text-teal-5']:not(.qi-prelogin-tour *) { color: #0f766e !important; }
+:root.light:is(.light) [class*='text-sky-5']:not(.qi-prelogin-tour *) { color: #0369a1 !important; }
+:root.light:is(.light) [class*='text-orange-5']:not(.qi-prelogin-tour *) { color: #c2410c !important; }
