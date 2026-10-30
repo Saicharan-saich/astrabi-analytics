@@ -1,3 +1,4 @@
+import { aiSqlPresentationChart } from '../utils/chartSuggestions';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, Shield, ShieldCheck, LayoutDashboard, Table2, Target } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
@@ -168,12 +169,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
     const examples = useMemo(() => dataset ? buildQuestionExamples(dataset) : [], [dataset]);
     const exampleQuestion = examples[0] || 'Show total sales by category';
 
-    const chartTypeMap: Record<string, string> = {
-        kpiCard: 'kpiCard', line: 'line', bar: 'bar', horizontalBar: 'horizontalBar',
-        groupedBar: 'groupedBar', stackedBar: 'stackedBar', area: 'area',
-        dualAxisCombo: 'combo', multiLine: 'line', donut: 'doughnut', pie: 'pie', heatmap: 'heatmap', table: 'table',
-    };
-
     const handleSubmit = async () => {
         if (!query.trim() || !dataset || isLoading) return;
 
@@ -308,7 +303,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                     limit: result.plan.limit || 0,
                     sort: result.plan.sort?.[0]?.dir || 'desc',
                 },
-                vis: (chartTypeMap[result.chart.chartType] || 'bar') as any,
+                vis: aiSqlPresentationChart(result) as any,
                 kpi: result.chart.chartType === 'kpiCard' && result.chartData.length > 0
                     ? result.chartData[0][result.chart.yKey] : undefined,
                 growth: result.chart.growth

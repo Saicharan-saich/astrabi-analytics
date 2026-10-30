@@ -2,6 +2,9 @@
 export const CATEGORIES = ['Electronics', 'Apparel', 'Home & Living', 'Accessories'];
 const CITIES = ['London', 'Manchester', 'Birmingham', 'Leeds', 'Glasgow', 'Bristol', 'Liverpool', 'Edinburgh'];
 const VENDORS = ['Northwind', 'Contoso', 'Fabrikam', 'Tailspin'];
+const COUNTRIES = ['United Kingdom', 'United Kingdom', 'United Kingdom', 'Germany', 'Germany', 'France', 'USA', 'USA', 'Spain', 'Netherlands', 'Ireland', 'Canada'];
+// Declining frequency so the stages read as a funnel.
+const STAGES = ['Visited', 'Visited', 'Visited', 'Visited', 'Visited', 'Visited', 'Visited', 'Visited', 'Added to cart', 'Added to cart', 'Added to cart', 'Added to cart', 'Checkout', 'Checkout', 'Purchased'];
 
 export function salesRows(): Record<string, any>[] {
     const rows: Record<string, any>[] = [];
@@ -22,6 +25,8 @@ export function salesRows(): Record<string, any>[] {
                 category,
                 vendor: VENDORS[(n * 5) % 4],
                 city: CITIES[(n * 3 + month) % 8],
+                country: COUNTRIES[(n * 7 + month) % COUNTRIES.length],
+                funnel_stage: STAGES[(n * 4 + month) % STAGES.length],
                 quantity: qty,
                 revenue,
                 profit: +(revenue * (0.18 + ((n * 7) % 10) / 100) - 4).toFixed(2),
@@ -113,6 +118,48 @@ export function secondDashboardFixture() {
             },
         ],
         layout: [{ i: 'cities-2', x: 0, y: 0, w: 6, h: 6 }, { i: 'old-upload', x: 6, y: 0, w: 6, h: 6 }],
+        filters: [],
+    };
+}
+
+/** Every chart type on one dashboard, each with data that suits it. */
+export function galleryDashboardFixture() {
+    const rows = salesRows();
+    const group = (key: (r: any) => string, metric: string | null, agg: 'SUM' | 'AVG' | 'COUNT' = 'SUM', xKey = 'label', yKey = 'value') => {
+        const buckets = new Map<string, number[]>();
+        rows.forEach(r => { const k = key(r); buckets.set(k, [...(buckets.get(k) || []), metric ? r[metric] : 1]); });
+        return [...buckets.entries()].map(([label, vals]) => ({
+            [xKey]: label,
+            [yKey]: Math.round((agg === 'AVG' ? vals.reduce((a, b) => a + b, 0) / vals.length : vals.reduce((a, b) => a + b, 0)) * 100) / 100,
+        }));
+    };
+    const card = (id: string, title: string, vis: string, data: any[], xKey: string, yKey: string, yLabel: string, config: any, formatting?: any) => {
+        const full = { questionId: 'custom_builder', aggregation: 'SUM', timeGrain: 'Raw Date', analysisType: 'Standard', ...config };
+        return {
+            id, title, width: 'half', datasetId: 'visual-sales', datasetName: 'Sales.csv',
+            result: { data, xKey, yKey, yLabel, vis, insight: '', sql: '', config: full, queryConfig: full, ...(formatting ? { formatting } : {}) },
+        };
+    };
+    const months = group(r => r.order_date.slice(0, 7), 'revenue', 'SUM', 'month', 'revenue').sort((a, b) => String(a.month).localeCompare(String(b.month))).slice(-12);
+    const fmt = { colorMode: 'vibrant', numberFormat: 'auto', fontSize: 'md', headerSize: 'md', headerBold: true, showLabels: true, showDataLabels: true, tableCalculations: [] };
+    const items = [
+        card('g-area', 'Area · revenue by month', 'area', months, 'month', 'revenue', 'Revenue', { metric: 'revenue', dimension: 'month', sort: 'oldest' }),
+        card('g-treemap', 'Treemap · revenue by city', 'treemap', group(r => r.city, 'revenue', 'SUM', 'city', 'revenue'), 'city', 'revenue', 'Revenue', { metric: 'revenue', dimension: 'city', sort: 'desc' }),
+        card('g-map', 'Map · revenue by country', 'map', group(r => r.country, 'revenue', 'SUM', 'country', 'revenue'), 'country', 'revenue', 'Revenue', { metric: 'revenue', dimension: 'country', sort: 'desc' }),
+        card('g-funnel', 'Funnel · sessions by stage', 'funnel', group(r => r.funnel_stage, null, 'COUNT', 'funnel_stage', 'value'), 'funnel_stage', 'value', 'Sessions', { metric: 'order_id', dimension: 'funnel_stage', aggregation: 'COUNT' }, fmt),
+        card('g-waterfall', 'Waterfall · profit by category', 'waterfall', group(r => r.category, 'profit', 'SUM', 'category', 'profit'), 'category', 'profit', 'Profit', { metric: 'profit', dimension: 'category', sort: 'desc' }, fmt),
+        card('g-lollipop', 'Lollipop · average order value by city', 'lollipop', group(r => r.city, 'revenue', 'AVG', 'city', 'revenue'), 'city', 'revenue', 'Average order value', { metric: 'revenue', dimension: 'city', aggregation: 'AVG', sort: 'desc' }),
+        card('g-radar', 'Radar · average units by city', 'radar', group(r => r.city, 'quantity', 'AVG', 'city', 'quantity'), 'city', 'quantity', 'Average units', { metric: 'quantity', dimension: 'city', aggregation: 'AVG' }),
+        card('g-polar', 'Polar area · orders by vendor', 'polarArea', group(r => r.vendor, null, 'COUNT', 'vendor', 'value'), 'vendor', 'value', 'Orders', { metric: 'order_id', dimension: 'vendor', aggregation: 'COUNT' }),
+        card('g-gauge', 'Gauge · revenue against goal', 'gauge', [{ dim: 'All', metric: Math.round(rows.reduce((a, r) => a + r.revenue, 0)) }], 'dim', 'metric', 'Revenue', { metric: 'revenue', dimension: '' }, { ...fmt, showDataLabels: false, kpiGoal: 3000000 }),
+        card('g-pie', 'Pie · orders by vendor', 'pie', group(r => r.vendor, null, 'COUNT', 'vendor', 'value'), 'vendor', 'value', 'Orders', { metric: 'order_id', dimension: 'vendor', aggregation: 'COUNT' }),
+        card('g-steps', 'Steps · average order value by month', 'steppedLine', group(r => r.order_date.slice(0, 7), 'revenue', 'AVG', 'month', 'revenue').sort((a, b) => String(a.month).localeCompare(String(b.month))).slice(-12), 'month', 'revenue', 'Average order value', { metric: 'revenue', dimension: 'month', aggregation: 'AVG', sort: 'oldest' }),
+        card('g-stacked-area', 'Stacked area · revenue by quarter and category', 'stackedArea', [], 'quarter', 'revenue', 'Revenue', { metric: 'revenue', dimension: 'quarter', sort: 'oldest', secondaryDimensions: ['category'] }),
+    ];
+    return {
+        id: 'visual-gallery', name: 'Chart gallery', createdAt: 1767398400000,
+        items,
+        layout: items.map((item, index) => ({ i: item.id, x: (index % 2) * 6, y: Math.floor(index / 2) * 6, w: 6, h: 6 })),
         filters: [],
     };
 }

@@ -26,7 +26,7 @@ import { TreemapController, TreemapElement } from 'chartjs-chart-treemap';
 import {
     BarChart2, LineChart as LineChartIcon, TrendingUp, PieChart as PieIcon,
     Activity, Grid, Disc, Palette, Download, ZoomIn, ZoomOut, RotateCcw, Globe,
-    LayoutGrid, Circle, Hexagon, ScatterChart, CircleDot, ChevronDown
+    LayoutGrid, Circle, Hexagon, ScatterChart, CircleDot, ChevronDown, Sparkles
 } from 'lucide-react';
 
 // Register Chart.js components
@@ -70,9 +70,10 @@ import { sanitizeRows } from '../utils/numberSafety';
 import { effectiveDataLabelMode, shouldRenderDataLabel } from '../utils/dataLabelVisibility';
 import { layoutChartLabels } from '../utils/chartLabelLayout';
 import { fitPieLabelText, layoutPieLabelRows } from '../utils/pieLabelLayout';
-import { extraTooltipMetricKeys, friendlySeriesLabel, readableChartTextColor } from '../utils/chartPresentation';
+import { extraTooltipMetricKeys, friendlySeriesLabel, gaugeScale, readableChartTextColor } from '../utils/chartPresentation';
 import { MapChart } from './MapChart';
 import { CHART_TYPE_OPTIONS } from './charts/chartRegistry';
+import { suggestCharts } from '../utils/chartSuggestions';
 import { doughnutCenterPlugin, stackTotalsPlugin } from './charts/cleanChartPlugins';
 
 interface ChartVisualizationProps {
@@ -306,6 +307,33 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         );
         return { ...result, transformedData: capped, truncatedFrom };
     }, [data, xKey, yKey, primaryCalc, yLabel, seriesLabel, formatting?.numberFormat, formatting?.movingAvgWindow, formatting?.tableCalculationComparison, chartType, (formatting as any)?.maxCategories]);
+
+    // ── "Try another view": charts that fit this result's shape ──────────
+    const chartSuggestions = useMemo(() => {
+        if (hideControls || compact || !Array.isArray(data) || data.length === 0) return null;
+        const first = data[0] || {};
+        const autoSeries = seriesKey || config?.secondaryDimensions?.[0] || (disableAutoSeries ? undefined : Object.keys(first).find(key =>
+            key !== xKey && key !== yKey && typeof first[key] === 'string'
+            && !key.startsWith('previous_') && !key.startsWith('comparison_') && key !== '__comparison_label'
+            && (() => { const unique = new Set(data.map(row => row?.[key])); return unique.size > 1 && unique.size <= 50; })()));
+        const comparisonOn = Boolean(config?.comparison && config.comparison !== 'none' && data.some(row => row?.previous_value !== undefined));
+        return suggestCharts({
+            rows: data,
+            xKey,
+            yKey,
+            dimension: config?.dimension,
+            aggregation: primaryCalc ? (primaryCalc === 'percent_of_total' ? 'SUM' : 'CALC') : config?.aggregation,
+            secondaryYKeys: config?.secondaryMetrics,
+            seriesKey: autoSeries && autoSeries in first ? autoSeries : undefined,
+            hasComparison: comparisonOn,
+            sort: config?.sort,
+            limit: config?.limit,
+            kpiGoal: formatting?.kpiGoal,
+        });
+    }, [hideControls, compact, data, xKey, yKey, seriesKey, disableAutoSeries, config?.dimension, config?.aggregation, config?.secondaryMetrics, config?.secondaryDimensions, config?.comparison, config?.sort, config?.limit, primaryCalc, formatting?.kpiGoal]);
+    const suggestedTypes = useMemo(() => new Set((chartSuggestions?.suggestions || []).map(item => item.type as string)), [chartSuggestions]);
+    const isShownAs = (type: string) => type === chartType
+        || (type === 'combo' && chartType === 'bar' && (config?.secondaryMetrics?.length || 0) > 0);
 
     // Calculation output semantics take precedence over the source metric. For
     // example, "% of Total (Sales)" is a percentage, while rank is ordinal.
@@ -636,31 +664,58 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const isLineVariant = effectiveType === 'line' || effectiveType === 'area' || effectiveType === 'stackedArea' || effectiveType === 'steppedLine' || effectiveType === 'curvedLine';
 
         // TREEMAP DATA TRANSFORMATION
+        // Clean style: one blue ramp by size (largest = deepest) unless the
+        // user picked per-category colours; labels switch between white and
+        // ink so every tile stays readable.
         if (chartType === 'treemap') {
+            const encodingAuto = !formatting?.colorEncoding || (formatting.colorEncoding as string) === 'auto';
             const encoding = resolveColorEncoding(formatting, xKey, transformedData, chartType);
-            const treeColors = genColors(values, selectPalette(formatting, xKey, transformedData, chartType), encoding === 'sequential');
+            const ramp = isDark
+                ? ['#2b4a7a', '#335792', '#3c65aa', '#4a74c0', '#5a85d2', '#6e97df', '#86aae8']
+                : ['#c9d8f6', '#a9c1f0', '#88a9ea', '#6890e0', '#4c78d4', '#3a64c0', '#2d52a6'];
+            const sortedValues = [...values].sort((a, b) => a - b);
+            const rampColour = (value: number) => {
+                if (sortedValues.length <= 1) return ramp[ramp.length - 2];
+                const rank = sortedValues.indexOf(value) / (sortedValues.length - 1);
+                return ramp[Math.min(ramp.length - 1, Math.round(rank * (ramp.length - 1)))];
+            };
+            const treeColors = encodingAuto
+                ? values.map(rampColour)
+                : genColors(values, selectPalette(formatting, xKey, transformedData, chartType), encoding === 'sequential');
+            const tileColour = (ctx: any) => {
+                const index = ctx.raw?._data?._index ?? ctx.dataIndex ?? 0;
+                if (encodingAuto) return rampColour(Number(ctx.raw?.v) || 0);
+                return treeColors[index % treeColors.length];
+            };
+            const isLightTile = (hex: string) => {
+                const h = String(hex || '').replace('#', '');
+                if (h.length < 6) return false;
+                const [r, g, b] = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+                return 0.2126 * r + 0.7152 * g + 0.0722 * b > 0.55;
+            };
             return {
                 datasets: [{
-                    label: calculatedYLabel || 'Value',
+                    label: friendlySeriesLabel(calculatedYLabel) || 'Value',
                     tree: transformedData,
                     key: yKey,
                     groups: [xKey],
-                    backgroundColor: (ctx: any) => {
-                        if (ctx.type !== 'data') return 'transparent';
-                        return treeColors[(ctx.dataIndex ?? 0) % treeColors.length];
-                    },
-                    borderColor: '#fff',
-                    borderWidth: 3,
-                    spacing: 2,
+                    backgroundColor: (ctx: any) => (ctx.type !== 'data' ? 'transparent' : tileColour(ctx)),
+                    hoverBackgroundColor: (ctx: any) => (ctx.type !== 'data' ? 'transparent' : lightenColor(tileColour(ctx), 6)),
+                    borderColor: isDark ? '#161920' : '#ffffff',
+                    borderWidth: 2,
+                    borderRadius: 4,
+                    spacing: 1,
                     labels: {
                         display: true,
                         align: 'left',
                         position: 'top',
-                        color: 'white',
-                        font: { size: 12, weight: 'bold' },
+                        padding: 8,
+                        overflow: 'hidden',
+                        color: (ctx: any) => (ctx.type === 'data' && isLightTile(tileColour(ctx)) ? '#1f2430' : '#ffffff'),
+                        font: [{ size: 12, weight: '600', family: CHART_FONT_FAMILY }, { size: 12, weight: '400', family: CHART_FONT_FAMILY }],
                         formatter: (ctx: any) => {
                             if (ctx.type !== 'data') return;
-                            return `${ctx.raw.g}\n${formatNumber(ctx.raw.v)}`;
+                            return [String(ctx.raw.g ?? ''), formatNumber(ctx.raw.v)];
                         }
                     }
                 }]
@@ -700,62 +755,97 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             return { labels: [], datasets: [] };
         }
 
-        // Gauge: special doughnut dataset
+        // Gauge: a half ring measured against a real scale — the KPI goal when
+        // one is set, 100% for a rate, otherwise a rounded ceiling.
         if (chartType === 'gauge') {
-            const total = values.reduce((a, b) => a + b, 0);
-            const maxVal = Math.max(...values) * 1.2;
+            const { value: gaugeValue, max: gaugeMax } = gaugeScale(values, formatting?.kpiGoal, yKey);
             return {
                 labels: ['Value', 'Remaining'],
                 datasets: [{
-                    data: [total, Math.max(0, maxVal - total)],
-                    backgroundColor: [baseColor, '#e2e8f0'],
+                    label: friendlySeriesLabel(calculatedYLabel),
+                    data: [Math.max(0, Math.min(gaugeValue, gaugeMax)), Math.max(0, gaugeMax - gaugeValue)],
+                    backgroundColor: [palette[0] || baseColor, isDark ? 'rgba(255,255,255,0.08)' : '#eceff3'],
                     borderWidth: 0,
                     circumference: 180,
                     rotation: 270,
-                    cutout: '75%',
+                    cutout: '74%',
+                    borderRadius: 4,
+                    qiGauge: { value: gaugeValue, max: gaugeMax },
                 }]
             };
         }
 
-        // Waterfall: compute running totals with positive/negative coloring
+        // Waterfall: floating bars from the running total before each step to
+        // the total after it, so gains rise and losses fall from the same
+        // level (stacking would split negatives onto their own stack).
         if (chartType === 'waterfall') {
-            const waterfallData: number[] = [];
-            const waterfallBase: number[] = [];
-            const bgColors: string[] = [];
+            const up = '#5fae6e';
+            const down = '#e5787a';
+            const totalColour = isDark ? '#7d93e8' : '#4a6fd8';
+            const pairs: [number, number][] = [];
+            const colours: string[] = [];
+            const stepLabels: string[] = [];
             let cumulative = 0;
-            values.forEach((v, i) => {
-                waterfallBase.push(cumulative);
-                waterfallData.push(v);
+            values.forEach(v => {
+                pairs.push([cumulative, cumulative + v]);
                 cumulative += v;
-                bgColors.push(v >= 0 ? '#10b981' : '#ef4444');
+                colours.push(v >= 0 ? up : down);
+                stepLabels.push(`${v >= 0 ? '+' : '\u2212'}${formatCompactLabel(Math.abs(v))}`);
             });
-            // Add total bar
             return {
                 labels: [...labels, 'Total'],
-                datasets: [
-                    { label: 'Base', data: [...waterfallBase, 0], backgroundColor: 'transparent', borderWidth: 0, borderSkipped: false, barPercentage: 0.5, stack: 'waterfall' },
-                    { label: calculatedYLabel || 'Value', data: [...waterfallData, cumulative], backgroundColor: [...bgColors, baseColor], borderWidth: 0, borderRadius: 3, borderSkipped: false, barPercentage: 0.5, stack: 'waterfall' }
-                ]
+                datasets: [{
+                    label: friendlySeriesLabel(calculatedYLabel) || 'Value',
+                    data: [...pairs, [0, cumulative]],
+                    qiValues: [...values, cumulative],
+                    qiLabels: [...stepLabels, formatCompactLabel(cumulative)],
+                    backgroundColor: [...colours, totalColour],
+                    hoverBackgroundColor: [...colours, totalColour].map(colour => lightenColor(colour, 8)),
+                    borderWidth: 0,
+                    borderRadius: 3,
+                    borderSkipped: false,
+                    barPercentage: 0.62,
+                    categoryPercentage: 0.9,
+                }]
             };
         }
 
-        // Funnel: horizontal bars sorted by descending value
+        // Funnel: stages centred on one axis so the narrowing reads as a
+        // funnel; each label carries the share kept from the first stage.
         if (chartType === 'funnel') {
-            const sorted = transformedData
-                .map((d, i) => ({ label: labels[i], value: values[i] }))
-                .sort((a, b) => b.value - a.value);
-            const funnelColors = generateColors(sorted.length);
+            const order = transformedData
+                .map((_, i) => i)
+                .sort((a, b) => values[b] - values[a]);
+            const sorted = order.map(i => ({ label: labels[i], value: values[i] }));
+            const widest = Math.max(...sorted.map(d => d.value), 0);
+            const first = sorted[0]?.value || 0;
+            const tone = palette[0] || baseColor;
+            const fills = sorted.map((_, index) => {
+                const alpha = Math.round(255 * (1 - (index / Math.max(1, sorted.length)) * 0.55)).toString(16).padStart(2, '0');
+                return /^#[0-9a-f]{6}$/i.test(tone) ? `${tone}${alpha}` : tone;
+            });
             return {
                 labels: sorted.map(d => d.label),
-                datasets: [{
-                    label: calculatedYLabel || 'Value',
-                    data: sorted.map(d => d.value),
-                    backgroundColor: sorted.map((_, index) => funnelColors[index] || baseColor),
-                    borderRadius: 3,
-                    borderSkipped: false,
-                    barPercentage: 0.85,
-                    categoryPercentage: 0.95,
-                }]
+                datasets: [
+                    {
+                        label: '', qiHelper: true,
+                        data: sorted.map(d => (widest - d.value) / 2),
+                        backgroundColor: 'transparent', hoverBackgroundColor: 'transparent',
+                        borderWidth: 0, stack: 'funnel', barPercentage: 0.9, categoryPercentage: 0.96,
+                    },
+                    {
+                        label: friendlySeriesLabel(calculatedYLabel) || 'Value',
+                        data: sorted.map(d => d.value),
+                        qiRowOrder: order,
+                        qiLabels: sorted.map((d, index) => index === 0 || first <= 0
+                            ? formatCompactLabel(d.value)
+                            : `${formatCompactLabel(d.value)} \u00b7 ${Math.round((d.value / first) * 100)}%`),
+                        backgroundColor: fills,
+                        hoverBackgroundColor: fills.map(colour => lightenColor(colour.slice(0, 7), 8)),
+                        borderWidth: 0, borderRadius: 3, borderSkipped: false,
+                        stack: 'funnel', barPercentage: 0.9, categoryPercentage: 0.96,
+                    },
+                ]
             };
         }
 
@@ -775,7 +865,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // split into separate datasets — one line/bar per dimension value.
         // This enables multi-line charts for "Sales by Hour, split by Product".
         const seriesCol = (() => {
-            if (disableAutoSeries || transformedData.length === 0 || isPieChart) return null;
+            if (disableAutoSeries || transformedData.length === 0 || (isPieChart && chartType !== 'radar')) return null;
             if (seriesKey) {
                 const unique = new Set(transformedData.map(d => String(d[seriesKey] ?? 'Unknown')));
                 return seriesKey in transformedData[0] && unique.size > 1 ? seriesKey : null;
@@ -792,7 +882,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             }) || null;
         })();
 
-        if (seriesCol && !isPieChart) {
+        if (seriesCol && (!isPieChart || chartType === 'radar')) {
             // Get unique series values and x-axis labels
             const seriesValues = [...new Set(transformedData.map(d => String(d[seriesCol])))];
             const uniqueLabels = [...new Set(transformedData.map(d => formatDate(String(d[xKey] ?? ''))))];
@@ -833,6 +923,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     maxBarThickness: isBarVariant ? Math.max(20, Math.floor(200 / seriesValues.length)) : undefined,
                     yAxisID: 'y',
                     spanGaps: true,
+                    ...(chartType === 'radar' ? {
+                        backgroundColor: `${color}1f`, borderColor: color, borderWidth: 2, fill: true,
+                        pointRadius: 3, pointHoverRadius: 5, pointBackgroundColor: color, pointBorderColor: isDark ? '#161920' : '#ffffff',
+                        yAxisID: undefined, tension: 0,
+                    } : {}),
                 };
             });
 
@@ -849,6 +944,28 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // These chart types use Arc elements, NOT Cartesian elements.
         // Mixing in Cartesian properties (fill, tension, pointRadius,
         // borderSkipped, maxBarThickness) can break Arc rendering.
+        // Radar: one translucent shape with a crisp outline (an arc-style
+        // dataset with per-point colours renders as a muddy polygon).
+        if (chartType === 'radar') {
+            const tone = palette[0] || baseColor;
+            return {
+                labels,
+                datasets: [{
+                    label: friendlySeriesLabel(calculatedYLabel),
+                    data: values,
+                    backgroundColor: `${tone}26`,
+                    borderColor: tone,
+                    borderWidth: 2,
+                    fill: true,
+                    pointRadius: 3,
+                    pointHoverRadius: 5,
+                    pointBackgroundColor: tone,
+                    pointBorderColor: isDark ? '#161920' : '#ffffff',
+                    pointBorderWidth: 1.5,
+                }]
+            };
+        }
+
         if (isPieChart) {
             const bgColors = generateColors(values);
             return {
@@ -1140,8 +1257,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     const options = useMemo(() => {
         const isPieChart = chartType === 'pie' || chartType === 'doughnut' || chartType === 'gauge';
         const isBarVariant = chartType === 'bar' || chartType === 'horizontalBar' || chartType === 'stackedBar' || chartType === 'groupedBar' || chartType === 'waterfall' || chartType === 'funnel' || chartType === 'lollipop' || chartType === 'combo';
-        const isStacked = chartType === 'stackedBar' || chartType === 'stackedArea' || chartType === 'waterfall';
+        const isStacked = chartType === 'stackedBar' || chartType === 'stackedArea' || chartType === 'funnel';
         const isHorizontal = chartType === 'horizontalBar' || chartType === 'funnel';
+        const isRadial = chartType === 'radar' || chartType === 'polarArea';
+        const isArcLegend = isPieChart || chartType === 'polarArea';
+        const plottedDatasetCount = (chartData?.datasets || []).filter((dataset: any) => !dataset.qiHelper).length;
+        const gaugeInfo = chartType === 'gauge'
+            ? gaugeScale(transformedData.map(row => Number(row[yKey]) || 0), formatting?.kpiGoal, yKey)
+            : null;
         // Difference calculations can legitimately be negative. Keep the familiar
         // zero baseline for positive-only charts, but do not clip negative bars.
         const hasNegativeValues = transformedData.some(row => Number(row[yKey]) < 0);
@@ -1168,14 +1291,20 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             layout: {
                 padding: isPieChart
                     ? (formatting?.showDataLabels && chartType !== 'doughnut' ? { top: 30, left: 56, right: 56, bottom: 30 } : { top: 8, left: 8, right: 8, bottom: 8 })
-                    : { top: isStacked && chartType !== 'waterfall' ? 28 : 20, left: 8, right: 12, bottom: 4 }
+                    : isRadial ? { top: 8, left: 8, right: 8, bottom: 8 }
+                : { top: chartType === 'stackedBar' || chartType === 'stackedArea' ? 28 : 20, left: 8, right: chartType === 'funnel' ? 72 : 12, bottom: 4 }
             },
             ...(chartType === 'doughnut' ? { cutout: '64%' } : {}),
             ...(chartType === 'gauge' ? { cutout: '70%' } : {}),
             plugins: {
                 qiDoughnutCenter: {
-                    display: chartType === 'doughnut',
-                    text: chartType === 'doughnut'
+                    display: chartType === 'doughnut' || chartType === 'gauge',
+                    anchor: chartType === 'gauge' ? 'above' : 'middle',
+                    text: gaugeInfo
+                        ? (gaugeInfo.basis === 'percent'
+                            ? `${(gaugeInfo.max === 1 ? gaugeInfo.value * 100 : gaugeInfo.value).toFixed(gaugeInfo.max === 1 || gaugeInfo.value < 10 ? 1 : 0)}%`
+                            : formatCompactLabel(gaugeInfo.value))
+                        : chartType === 'doughnut'
                         ? (() => {
                             const total = (chartData?.datasets?.[0]?.data || []).reduce((a: number, v: any) => a + (Number(v) || 0), 0);
                             // Full figure (18,016) reads better than 18K until it gets long.
@@ -1184,7 +1313,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                 : formatCompactLabel(total);
                         })()
                         : '',
-                    caption: 'Total',
+                    caption: gaugeInfo
+                        ? (gaugeInfo.basis === 'goal'
+                            ? `${Math.round((gaugeInfo.value / gaugeInfo.max) * 100)}% of ${formatCompactLabel(gaugeInfo.max)} goal`
+                            : gaugeInfo.basis === 'percent' ? 'of 100%' : `of ${formatCompactLabel(gaugeInfo.max)}`)
+                        : 'Total',
                     color: isDark ? '#e8eaef' : '#1f2430',
                     captionColor: isDark ? '#8c94a4' : '#8a92a3',
                     fontFamily: CHART_FONT_FAMILY,
@@ -1198,7 +1331,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 },
                 // Custom Data Labels Plugin
                 customDataLabels: { // Namespace for our custom plugin
-                    display: formatting ? formatting.showDataLabels : false,
+                    // A funnel without its numbers says nothing; always label it.
+                    display: chartType === 'funnel' || (formatting ? formatting.showDataLabels : false),
                     labelMode: effectiveDataLabelMode(formatting),
                     formatter: (val: number) => {
                         return formatCompactLabel(val);
@@ -1219,12 +1353,13 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 legend: {
                     // Hide legend on pie/doughnut when data labels are on — labels already show "Category: XX.X%"
                     display: (formatting?.showLabels ?? true)
+                        && chartType !== 'gauge'
                         && !(chartType !== 'doughnut' && isPieChart && formatting?.showDataLabels)
-                        && (isPieChart || (chartData?.datasets?.length ?? 0) > 1),
+                        && (isArcLegend || plottedDatasetCount > 1),
                     // Clean style: legend above the plot, left-aligned (or beside a
                     // pie/donut), small dots, quiet text.
-                    position: isPieChart ? 'right' as const : 'top' as const,
-                    align: isPieChart ? 'center' as const : 'start' as const,
+                    position: isArcLegend ? 'right' as const : 'top' as const,
+                    align: isArcLegend ? 'center' as const : 'start' as const,
                     labels: {
                         font: {
                             size: Math.max(fontSize, 12),
@@ -1233,11 +1368,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         },
                         usePointStyle: true,
                         pointStyle: 'circle',
-                        padding: isPieChart ? 14 : 16,
+                        padding: isArcLegend ? 14 : 16,
+                        filter: (item: any, data: any) => !data?.datasets?.[item.datasetIndex]?.qiHelper,
                         color: isDark ? '#a4abb9' : '#596275',
                         boxWidth: 7,
                         boxHeight: 7,
-                        ...(isPieChart ? {
+                        ...(isArcLegend ? {
                             // "Electronics  27%" — share sits in the legend, as in the reference
                             generateLabels: (chart: any) => {
                                 const base = ChartJS.overrides.doughnut.plugins.legend.labels.generateLabels(chart);
@@ -1268,6 +1404,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     }
                 },
                 tooltip: {
+                    enabled: chartType !== 'gauge',
                     // Clean style: a light card on light charts, dark on dark.
                     backgroundColor: isDark ? '#1b1f27' : '#ffffff',
                     titleColor: isDark ? '#e8eaef' : '#1f2430',
@@ -1299,7 +1436,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         title: function (contexts: any[]) {
                             const label = contexts[0]?.label || '';
                             const latestData = transformedDataRef.current;
-                            const idx = contexts[0]?.dataIndex;
+                            const idx = contexts[0]?.dataset?.qiRowOrder?.[contexts[0]?.dataIndex] ?? contexts[0]?.dataIndex;
                             const dp = idx !== undefined ? latestData[idx] : null;
                             if (dp && dp.previous_period_label) {
                                 return [label, `vs ${dp.previous_period_label}`];
@@ -1330,7 +1467,18 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         },
                         label: function (context: any) {
                             const latestData = transformedDataRef.current;
-                            const idx = context.dataIndex;
+                            // Waterfall/funnel bars carry their own value (the bar
+                            // geometry is an offset, not the measure).
+                            if (Array.isArray(context.dataset?.qiValues)) {
+                                const stepValue = Number(context.dataset.qiValues[context.dataIndex]) || 0;
+                                const isTotal = context.dataIndex === context.dataset.qiValues.length - 1;
+                                const name = context.dataset.label || 'Value';
+                                return isTotal ? `  Total: ${formatNumber(stepValue)}` : `  ${name}: ${stepValue >= 0 ? '+' : ''}${formatNumber(stepValue)}`;
+                            }
+                            if (Array.isArray(context.dataset?.qiLabels) && context.dataset?.qiRowOrder) {
+                                return `  ${context.dataset.label || 'Value'}: ${context.dataset.qiLabels[context.dataIndex]}`;
+                            }
+                            const idx = context.dataset?.qiRowOrder?.[context.dataIndex] ?? context.dataIndex;
                             const isTrend = latestData.length > 0 && latestData[idx]?.previous_value !== undefined;
 
                             if (isTrend) {
@@ -1378,7 +1526,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         afterBody: function (contexts: any[]) {
                             const latestData = transformedDataRef.current;
                             if (!contexts || contexts.length === 0) return '';
-                            const idx = contexts[0].dataIndex;
+                            if (Array.isArray(contexts[0].dataset?.qiValues)) return '';
+                            const idx = contexts[0].dataset?.qiRowOrder?.[contexts[0].dataIndex] ?? contexts[0].dataIndex;
                             const dp = latestData[idx];
                             if (!dp) return '';
 
@@ -1419,14 +1568,36 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     // Prevents grouped bar charts from showing all datasets
                     // when only some have data at a given category (e.g. top 3 products per category)
                     filter: function (tooltipItem: any) {
+                        if (tooltipItem.dataset?.qiHelper) return false;
+                        if (Array.isArray(tooltipItem.dataset?.qiValues)) return true;
                         const raw = tooltipItem.raw;
                         return raw !== null && raw !== undefined && raw !== 0 && raw !== '';
                     }
                 }
             },
-            scales: isPieChart ? undefined : {
+            scales: isPieChart ? undefined : isRadial ? {
+                r: {
+                    beginAtZero: true,
+                    angleLines: { color: isDark ? 'rgba(255,255,255,0.08)' : '#e6e9ee' },
+                    grid: { color: isDark ? 'rgba(255,255,255,0.08)' : '#e6e9ee' },
+                    pointLabels: {
+                        display: chartType === 'radar',
+                        color: isDark ? '#a4abb9' : '#596275',
+                        font: { size: 11, family: CHART_FONT_FAMILY, weight: '500' as any },
+                    },
+                    ticks: {
+                        display: chartType === 'radar',
+                        backdropColor: 'transparent',
+                        color: isDark ? '#6f7686' : '#a0a7b4',
+                        font: { size: 10, family: CHART_FONT_FAMILY },
+                        maxTicksLimit: 5,
+                        callback: (value: any) => formatCompactLabel(Number(value)),
+                    },
+                },
+            } : {
                 x: {
-                    display: xVisible ?? true,
+                    // A funnel's bar offsets are layout, not a scale.
+                    display: chartType === 'funnel' ? false : (xVisible ?? true),
                     stacked: isStacked,
                     ...(isHorizontal && !hasNegativeValues ? { beginAtZero: true, min: 0 } : {}),
                     grid: {
@@ -1465,7 +1636,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     ...(axisRange ? { min: axisRange.min, max: axisRange.max } : {}),
                     stacked: isStacked,
                     grid: {
-                        display: formatting?.showGridLines ?? true,
+                        display: chartType === 'funnel' ? false : (formatting?.showGridLines ?? true),
                         color: isDark ? 'rgba(255, 255, 255, 0.07)' : '#ebedf1',
                         drawBorder: false,
                         tickLength: 0,
@@ -1677,14 +1848,15 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
                 chart.data.datasets.forEach((dataset: any, i: number) => {
                     const meta = chart.getDatasetMeta(i);
-                    if (meta.hidden) return;
+                    if (meta.hidden || dataset.qiHelper) return;
+                    if (chart.config.type === 'radar' || chart.config.type === 'polarArea') return;
 
                     // Label mode filtering: 'primary' = only dataset 0, 'all' = all datasets
                     if (!shouldRenderDataLabel(mode, i)) return;
 
                     // Clean style: on long series, label only the points a reader
                     // looks for — first, last, highest and lowest.
-                    const numeric = (dataset.data as any[]).map(v => Number(v));
+                    const numeric = ((dataset.qiValues || dataset.data) as any[]).map(v => Number(v));
                     const keyPoints = new Set<number>();
                     if (categoryCount > 14) {
                         const finite = numeric.map((v, idx) => [v, idx] as const).filter(([v]) => Number.isFinite(v));
@@ -1698,12 +1870,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     const isStackedBarChart = chart.config.type === 'bar' && chart.options?.scales?.y?.stacked;
 
                     meta.data.forEach((element: any, index: number) => {
-                        const value = dataset.data[index];
+                        const value = Array.isArray(dataset.qiValues) ? dataset.qiValues[index] : dataset.data[index];
                         if (value === null || value === undefined) return;
                         if (categoryCount > 14 && !keyPoints.has(index)) return;
                         // Stacked segments too thin to hold a label stay unlabelled;
                         // the stack total above the bar carries the number.
-                        if (isStackedBarChart) return; // the stack total above each bar carries the number
+                        if (isStackedBarChart && !Array.isArray(dataset.qiLabels)) return; // the stack total above each bar carries the number
                         if (dataset.qiSecondaryMetric === true && categoryCount > 8) return;
 
                         // Determine dataset type first
@@ -1716,7 +1888,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
                         // Format the label text based on dataset type
                         let text: string;
-                        if (isSecondaryDs && options.secondaryFormatter && dataset.label) {
+                        if (Array.isArray(dataset.qiLabels) && dataset.qiLabels[index] !== undefined) {
+                            text = String(dataset.qiLabels[index]);
+                        } else if (isSecondaryDs && options.secondaryFormatter && dataset.label) {
                             text = options.secondaryFormatter(value, dataset.label);
                         } else if (options.formatter) {
                             text = options.formatter(value, { dataset });
@@ -1873,17 +2047,34 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     } : undefined;
 
     const treemapOptions = useMemo(() => ({
+        responsive: true,
+        maintainAspectRatio: false,
         onClick: handleClick,
+        layout: { padding: 4 },
         plugins: {
-            legend: { display: false }, // Treemap legend is tricky
+            legend: { display: false }, // tiles carry their own labels
             tooltip: {
+                backgroundColor: isDark ? '#1b1f27' : '#ffffff',
+                titleColor: isDark ? '#e8eaef' : '#1f2430',
+                bodyColor: isDark ? '#a4abb9' : '#596275',
+                borderColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#e6e8ec',
+                borderWidth: 1,
+                padding: { top: 10, bottom: 10, left: 12, right: 12 },
+                cornerRadius: 8,
+                displayColors: false,
+                titleFont: { size: 12, weight: 600 as any, family: CHART_FONT_FAMILY },
+                bodyFont: { size: 12, family: CHART_FONT_FAMILY },
                 callbacks: {
                     title: (items: any) => items[0].raw.g,
-                    label: (item: any) => formatNumber(item.raw.v)
+                    label: (item: any) => {
+                        const total = (item.dataset?.tree || []).reduce((sum: number, row: any) => sum + (Number(row?.[yKey]) || 0), 0);
+                        const share = total > 0 ? ` (${((item.raw.v / total) * 100).toFixed(1)}%)` : '';
+                        return `${formatNumber(item.raw.v)}${share}`;
+                    }
                 }
             }
         }
-    }), [handleClick]);
+    }), [handleClick, isDark, yKey]);
 
     // Merge onClick into the main options for non-treemap charts
     const chartOptions = useMemo(() => ({
@@ -2037,13 +2228,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
         if (chartType === 'map') {
             return (
-                <div className="w-full h-full p-4">
+                <div className="w-full h-full p-2">
                     <MapChart
                         data={transformedData || []}
                         locationKey={xKey}
                         valueKey={yKey}
                         labelContent={formatting?.mapLabelContent || 'value'}
-                        onTooltip={(text: string) => { }}
+                        valueLabel={friendlySeriesLabel(calculatedYLabel)}
+                        isDark={isDark}
                     />
                 </div>
             );
@@ -2098,6 +2290,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                                     >
                                                         <type.icon className="w-4 h-4 shrink-0" />
                                                         <span className="truncate">{type.label}</span>
+                                                        {suggestedTypes.has(type.id) && chartType !== type.id && (
+                                                            <span className="qi-chart-menu-fit ml-auto h-1.5 w-1.5 shrink-0 rounded-full" title="Fits this data" aria-label="Fits this data" />
+                                                        )}
                                                     </button>
                                                 ))}
                                             </div>
@@ -2216,6 +2411,39 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             )}
                         </button>
                     )}
+                </div>
+            )}
+
+            {/* Try another view — charts that fit this result, one click away */}
+            {!hideControls && chartSuggestions && chartSuggestions.suggestions.length > 1 && (
+                <div className="qi-chart-suggestions flex items-center gap-1.5 overflow-x-auto px-4 py-2 shrink-0" role="group" aria-label="Other ways to show this result">
+                    <span className="qi-chart-suggestions-label mr-1 flex shrink-0 items-center gap-1 text-[11px] font-semibold uppercase tracking-wide">
+                        <Sparkles className="h-3.5 w-3.5" aria-hidden="true" /> Views
+                    </span>
+                    {chartSuggestions.suggestions.slice(0, 5).map((suggestion, index) => {
+                        const Icon = CHART_TYPE_OPTIONS.flatMap(group => group.items).find(item => item.id === suggestion.type)?.icon || BarChart2;
+                        const active = isShownAs(suggestion.type);
+                        return (
+                            <button
+                                key={suggestion.type}
+                                type="button"
+                                onClick={() => { if (!active) onChartTypeChange(suggestion.type); }}
+                                aria-pressed={active}
+                                title={`${suggestion.label} — ${suggestion.reason}`}
+                                className={`qi-chart-suggestion flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium ${active ? 'is-active' : ''}`}
+                            >
+                                <Icon className="h-3.5 w-3.5" aria-hidden="true" />
+                                <span>{suggestion.label}</span>
+                                {index === 0 && <span className="qi-chart-suggestion-best">Best fit</span>}
+                            </button>
+                        );
+                    })}
+                    {(() => {
+                        const current = chartSuggestions.suggestions.find(item => isShownAs(item.type));
+                        return current ? (
+                            <span className="qi-chart-suggestions-reason ml-auto hidden shrink-0 pl-3 text-[12px] lg:inline">{current.label}: {current.reason}</span>
+                        ) : null;
+                    })()}
                 </div>
             )}
 

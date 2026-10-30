@@ -18,6 +18,7 @@ import { PipelineReport } from './PipelineReport';
 import { isDimensionOnlyResult } from '../services/ai-sql/resultPresentation';
 import { TraceStoryPanel } from './TraceStoryPanel';
 import { createPinnedAISQLResult } from '../services/ai-sql/pinnedResult';
+import { aiSqlPresentationChart } from '../utils/chartSuggestions';
 import { AnalysisCertificatePanel } from './AnalysisCertificatePanel';
 
 interface VisualPreviewViewProps {
@@ -154,7 +155,6 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
     try {
       const res = await runAISQLPipeline(drillQuery, dataset);
       if (res.rawData.length === 0) { setIsDrilling(false); return; }
-      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'horizontalBar' };
       setDrillDown({
         query: drillQuery,
         pipeline: res,
@@ -162,13 +162,13 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
           data: res.chartData, xKey: res.chart.xKey, yKey: res.chart.yKey, yLabel: drillQuery,
           insight: res.explanation, sql: res.sql,
           config: { metric: res.plan.metrics[0]?.field || res.chart.yKey, dimension: res.plan.dimensions[0]?.field || res.chart.xKey, aggregation: AggregationType.SUM, timeGrain: TimeGrain.RAW, analysisType: AnalysisType.STANDARD, questionId: 'drill_' + Date.now(), questionLabel: drillQuery, secondaryMetrics: res.chart.secondaryYKeys, axisMode: res.chart.useDualAxis ? 'dual' : 'auto', limit: res.plan.limit || 0, sort: res.plan.sort?.[0]?.dir || 'desc' },
-          vis: (chartMap[res.chart.chartType] || 'bar') as any,
+          vis: aiSqlPresentationChart(res) as any,
           kpi: res.chart.chartType === 'kpiCard' && res.chartData.length > 0 ? res.chartData[0][res.chart.yKey] : undefined,
           growth: res.chart.growth ? { diff: res.chart.growth.diff, pct: res.chart.growth.pct } : undefined,
           secondaryYKeys: res.chart.secondaryYKeys,
         },
       });
-      setChartType(chartMap[res.chart.chartType] || 'bar');
+      setChartType(aiSqlPresentationChart(res));
       setActiveTab(isDimensionOnlyResult(res.profile, res.rawData) ? 'chart' : res.chart.chartType === 'table' ? 'table' : 'chart');
     } catch { /* ignore */ } finally { setIsDrilling(false); }
   }, [dataset, isDrilling, pipeline, query]);
@@ -184,20 +184,19 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       // memory of earlier ones.
       const res = await runAISQLPipeline(q, dataset);
       if (res.rawData.length === 0) { setIsFollowUpLoading(false); return; }
-      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'horizontalBar' };
       // Replace current result with follow-up result
       setDrillDown(null);
       setResult({
         data: res.chartData, xKey: res.chart.xKey, yKey: res.chart.yKey, yLabel: q,
         insight: res.explanation, sql: res.sql,
         config: { metric: res.plan.metrics[0]?.field || res.chart.yKey, dimension: res.plan.dimensions[0]?.field || res.chart.xKey, aggregation: AggregationType.SUM, timeGrain: TimeGrain.RAW, analysisType: AnalysisType.STANDARD, questionId: 'followup_' + Date.now(), questionLabel: q, secondaryMetrics: res.chart.secondaryYKeys, axisMode: res.chart.useDualAxis ? 'dual' : 'auto', limit: res.plan.limit || 0, sort: res.plan.sort?.[0]?.dir || 'desc' },
-        vis: (chartMap[res.chart.chartType] || 'bar') as any,
+        vis: aiSqlPresentationChart(res) as any,
         kpi: res.chart.chartType === 'kpiCard' && res.chartData.length > 0 ? res.chartData[0][res.chart.yKey] : undefined,
         growth: res.chart.growth ? { diff: res.chart.growth.diff, pct: res.chart.growth.pct } : undefined,
         secondaryYKeys: res.chart.secondaryYKeys,
       });
       setPipeline(res);
-      setChartType(chartMap[res.chart.chartType] || 'bar');
+      setChartType(aiSqlPresentationChart(res));
       setActiveTab(isDimensionOnlyResult(res.profile, res.rawData) ? 'chart' : res.chart.chartType === 'table' ? 'table' : 'chart');
       setWorkspaceMode('result');
       setFollowUpQuery('');
@@ -265,17 +264,16 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       const res = await runAISQLPipeline(query, dataset, undefined, undefined, timeGrain, true);
       if (res.rawData.length === 0) { setIsReloading(false); return; }
       setPipeline(res);
-      const chartMap: Record<string,string> = { kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'donut', heatmap:'heatmap', table:'horizontalBar' };
       setResult({
         data: res.chartData, xKey: res.chart.xKey, yKey: res.chart.yKey, yLabel: query,
         insight: res.explanation, sql: res.sql,
         config: { metric: res.plan.metrics[0]?.field || res.chart.yKey, dimension: res.plan.dimensions[0]?.field || res.chart.xKey, aggregation: AggregationType.SUM, timeGrain: TimeGrain.RAW, analysisType: AnalysisType.STANDARD, questionId: 'regen_' + Date.now(), questionLabel: query, secondaryMetrics: res.chart.secondaryYKeys, axisMode: res.chart.useDualAxis ? 'dual' : 'auto', limit: res.plan.limit || 0, sort: res.plan.sort?.[0]?.dir || 'desc' },
-        vis: (chartMap[res.chart.chartType] || 'bar') as any,
+        vis: aiSqlPresentationChart(res) as any,
         kpi: res.chart.chartType === 'kpiCard' && res.chartData.length > 0 ? res.chartData[0][res.chart.yKey] : undefined,
         growth: res.chart.growth ? { diff: res.chart.growth.diff, pct: res.chart.growth.pct } : undefined,
         secondaryYKeys: res.chart.secondaryYKeys,
       });
-      setChartType((chartMap[res.chart.chartType] || 'bar'));
+      setChartType(aiSqlPresentationChart(res));
       setActiveTab(isDimensionOnlyResult(res.profile, res.rawData) ? 'chart' : res.chart.chartType === 'table' ? 'table' : 'chart');
       setWorkspaceMode('result');
     } catch { /* ignore */ } finally { setIsReloading(false); }

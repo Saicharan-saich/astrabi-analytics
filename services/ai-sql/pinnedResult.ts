@@ -21,6 +21,19 @@ const CHART_TYPE_MAP: Record<string, ChartConfig['type']> = {
     doughnut: 'doughnut',
     heatmap: 'bar',
     table: 'table',
+    // Every renderable view the user can switch to keeps its type when pinned.
+    pie: 'pie',
+    polarArea: 'polarArea',
+    radar: 'radar',
+    treemap: 'treemap',
+    map: 'map',
+    waterfall: 'waterfall',
+    funnel: 'funnel',
+    lollipop: 'lollipop',
+    gauge: 'gauge',
+    stackedArea: 'stackedArea',
+    steppedLine: 'steppedLine',
+    curvedLine: 'curvedLine',
 };
 
 function presentationChartType(value: string | undefined, fallback: ChartConfig['type']): ChartConfig['type'] {

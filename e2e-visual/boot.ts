@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test';
 import fs from 'fs';
 import path from 'path';
-import { dashboardFixture, salesRows, secondDashboardFixture } from './fixtures';
+import { dashboardFixture, galleryDashboardFixture, salesRows, secondDashboardFixture } from './fixtures';
 
 export const OUT = path.resolve('visual-preview');
 fs.mkdirSync(OUT, { recursive: true });
@@ -12,6 +12,7 @@ const token = 'header.' + Buffer.from(JSON.stringify({ userId: user.id })).toStr
 export async function boot(page: Page, theme: 'light' | 'dark', activeTab: string) {
     const dashboard = dashboardFixture();
     const second = secondDashboardFixture();
+    const gallery = galleryDashboardFixture();
     await page.route('**/api/**', async route => {
         const pathname = new URL(route.request().url()).pathname;
         const body = pathname.endsWith('/auth/login') ? { success: true, token, user }
@@ -20,12 +21,12 @@ export async function boot(page: Page, theme: 'light' | 'dark', activeTab: strin
             : {};
         await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: { 'Access-Control-Allow-Origin': '*' } });
     });
-    await page.addInitScript(({ dashboard, second, userId, theme, activeTab }) => {
+    await page.addInitScript(({ dashboard, second, gallery, userId, theme, activeTab }) => {
         localStorage.setItem('QuickInsight-onboarding-complete', 'true');
         localStorage.setItem(`QuickInsight-storage-v4-${userId}`, JSON.stringify({
-            version: 5, state: { activeTab, dashboards: [dashboard, second], activeDashboardId: dashboard.id, resetLegacyDashboards: false, deletedDashboardIds: [], theme },
+            version: 5, state: { activeTab, dashboards: [dashboard, second, gallery], activeDashboardId: dashboard.id, resetLegacyDashboards: false, deletedDashboardIds: [], theme },
         }));
-    }, { dashboard, second, userId: user.id, theme, activeTab });
+    }, { dashboard, second, gallery, userId: user.id, theme, activeTab });
     await page.goto('/');
     await page.evaluate(async ({ userId, rows }) => {
         const db = await new Promise<IDBDatabase>((resolve, reject) => {
@@ -44,6 +45,8 @@ export async function boot(page: Page, theme: 'light' | 'dark', activeTab: strin
                     { name: 'category', type: 'DIMENSION', originalType: 'string' },
                     { name: 'vendor', type: 'DIMENSION', originalType: 'string' },
                     { name: 'city', type: 'DIMENSION', originalType: 'string' },
+                    { name: 'country', type: 'DIMENSION', originalType: 'string' },
+                    { name: 'funnel_stage', type: 'DIMENSION', originalType: 'string' },
                     { name: 'quantity', type: 'METRIC', originalType: 'number' },
                     { name: 'revenue', type: 'METRIC', originalType: 'number' },
                     { name: 'profit', type: 'METRIC', originalType: 'number' },

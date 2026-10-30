@@ -15,6 +15,7 @@ import { FormatPanel } from './FormatPanel';
 import { QuestionBuilderVideoGuide } from './QuestionBuilderVideoGuide';
 import { describeBuilderFinding, describeBuilderQuestion } from '../utils/builderAnswer';
 import { BUILDER_SPLIT_DEFAULT, BUILDER_SPLIT_MIN, builderSplitMaximum, clampBuilderSplit } from '../utils/builderSplitter';
+import { chartShapeSignature, suggestCharts } from '../utils/chartSuggestions';
 
 import { AIInsightPanel } from './AIInsightPanel';
 import { TransparencyPanel } from './TransparencyPanel';
@@ -89,6 +90,14 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [result, setResult] = useState<AnalysisResult | undefined>(undefined);
     const [error, setError] = useState<string | null>(null);
     const [chartType, setChartType] = useState<any>(savedSession?.chartType || 'bar');
+    // A chart the user picked is kept while they refine the same question
+    // (filters, time range, sort); a new metric or grouping gets a fresh
+    // shape-based pick, so results are not always a bar or a line.
+    const chartChoiceRef = useRef<{ signature: string; type: string } | null>(
+        savedSession?.chartType && savedSession?.config
+            ? { signature: chartShapeSignature(savedSession.config), type: savedSession.chartType }
+            : null,
+    );
     const [isFormatPanelOpen, setIsFormatPanelOpen] = useState(false);
     const [isAnalyticsPanelOpen, setIsAnalyticsPanelOpen] = useState(false);
     const [showGrowthChart, setShowGrowthChart] = useState(false);
@@ -109,6 +118,12 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     // toggling filters). Only the newest requested analysis is allowed to
     // update the visible result; a slower older run must never overwrite it.
     const runSequenceRef = useRef(0);
+    // The user's own pick from the chart menu or the "Views" chips.
+    const chooseChartType = useCallback((type: string) => {
+        const config = requestedConfigRef.current || lastRunConfig;
+        chartChoiceRef.current = config ? { signature: chartShapeSignature(config), type } : null;
+        setChartType(type);
+    }, [lastRunConfig]);
 
     const clearUndoHistory = useCallback(() => {
         undoHistoryRef.current = [];
@@ -235,7 +250,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         lastHandoffIdRef.current = handoffId;
         setFreshSession(false);
         setShowHandoffNotice(true);
-        if (initialConfig.chartType) setChartType(initialConfig.chartType);
+        if (initialConfig.chartType) {
+            setChartType(initialConfig.chartType);
+            chartChoiceRef.current = { signature: chartShapeSignature(initialConfig), type: initialConfig.chartType };
+        }
         clearUndoHistory();
         const timer = setTimeout(() => handleRun(initialConfig, { recordHistory: false }), 120);
         return () => clearTimeout(timer);
@@ -342,22 +360,35 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
             const hasComp = config.comparison && config.comparison !== 'none' && config.comparison !== '';
             const hasSecondary = config.secondaryMetrics?.length > 0;
 
+            const shapeSignature = chartShapeSignature(config);
+            const pinnedChart = chartChoiceRef.current?.signature === shapeSignature ? chartChoiceRef.current.type : null;
+            if (!pinnedChart) chartChoiceRef.current = null;
+
             if (hasSecondary) {
                 // Combo chart: primary metric as BAR, secondary overlays as line/bar/area
                 // Force the primary chart to 'bar' for a clean combo look
-                setChartType('bar');
-            } else if (res.vis) {
-                const fewPts = (res.data?.length || 0) <= 4;
-                const isLineType = ['line', 'area', 'steppedLine', 'curvedLine', 'stackedArea'].includes(res.vis);
-                if (hasComp && fewPts && isLineType) {
-                    setChartType('bar');
-                } else {
-                    setChartType(res.vis);
-                }
+                setChartType(pinnedChart || 'bar');
             } else {
-                // When no vis recommendation and comparison is removed, revert to kpiCard
-                // if the result is a single aggregated row (Total mode)
-                if (!hasComp && (res.data?.length || 0) <= 1) {
+                const fewPts = (res.data?.length || 0) <= 4;
+                const suggested = suggestCharts({
+                    rows: res.data || [],
+                    xKey: res.xKey,
+                    yKey: res.yKey,
+                    dimension: config.dimension,
+                    aggregation: query.aggregation,
+                    seriesKey: config.secondaryDimensions?.[0],
+                    hasComparison: Boolean(hasComp && (res.data || []).some((row: any) => row?.previous_value !== undefined)),
+                    sort: config.sort,
+                    limit: config.limit,
+                    kpiGoal: formatting?.kpiGoal,
+                }).best?.type;
+                const next = pinnedChart || suggested || res.vis;
+                const isLineType = ['line', 'area', 'steppedLine', 'curvedLine', 'stackedArea'].includes(next || '');
+                if (next) {
+                    // Line chart with 1-4 compared points looks like dots, not a trend.
+                    setChartType(hasComp && fewPts && isLineType ? 'bar' : next);
+                } else if (!hasComp && (res.data?.length || 0) <= 1) {
+                    // No recommendation and a single aggregated row (Total mode)
                     setChartType('kpiCard');
                 }
             }
@@ -516,6 +547,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         setContentTab('visual');
         setForceGridMode('auto');
         setChartType('bar');
+        chartChoiceRef.current = null;
         setShowHandoffNotice(false);
         clearUndoHistory();
 
@@ -1066,7 +1098,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                 chartType={firstCol.calculation === 'percent_of_total' ? 'pie' : chartType}
                                                 seriesKey={calcLayout.seriesKey}
                                                 disableAutoSeries={calcLayout.groupedDimensions.length > 1 && !calcLayout.seriesKey}
-                                                onChartTypeChange={setChartType}
+                                                onChartTypeChange={chooseChartType}
                                                 formatting={{ ...formatting, tableCalculations: [], numberFormat: (firstCol.format || formatting?.numberFormat) as FormattingConfig['numberFormat'], showDataLabels: true }}
                                                 onToggleFormat={onUpdateFormatting ? () => setIsFormatPanelOpen(!isFormatPanelOpen) : undefined}
                                                 isFormatOpen={isFormatPanelOpen}
@@ -1108,7 +1140,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                             chartType={chartType}
                                             seriesKey={dimensionLayout?.seriesKey}
                                             disableAutoSeries={!!dimensionLayout && dimensionLayout.groupedDimensions.length > 1 && !dimensionLayout.seriesKey}
-                                            onChartTypeChange={setChartType}
+                                            onChartTypeChange={chooseChartType}
                                             formatting={{ ...formatting, tableCalculations: [] }}
                                             onToggleFormat={onUpdateFormatting ? () => setIsFormatPanelOpen(!isFormatPanelOpen) : undefined}
                                             isFormatOpen={isFormatPanelOpen}

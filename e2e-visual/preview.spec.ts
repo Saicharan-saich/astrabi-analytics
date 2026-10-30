@@ -15,6 +15,20 @@ for (const theme of ['light', 'dark'] as const) {
         }
     });
 
+    test(`chart gallery ${theme}`, async ({ page }) => {
+        await page.setViewportSize({ width: 1440, height: 3000 });
+        await boot(page, theme, 'DASHBOARD');
+        const tab = page.getByRole('button', { name: /^Chart gallery/ }).first();
+        if (await tab.isVisible().catch(() => false)) await tab.click();
+        await page.waitForTimeout(3500); // cards re-run and the map loads its shapes
+        await shoot(page, `12-gallery-${theme}`);
+        const cards = page.locator('.react-grid-item');
+        const count = await cards.count();
+        for (let i = 0; i < count; i++) {
+            await cards.nth(i).screenshot({ path: path.join(OUT, `13-gallery-card-${String(i + 1).padStart(2, '0')}-${theme}.png`) }).catch(() => {});
+        }
+    });
+
     test(`workspaces ${theme}`, async ({ page }) => {
         await boot(page, theme, 'DASHBOARD');
         const openNav = async (label: string) => {
@@ -38,6 +52,19 @@ for (const theme of ['light', 'dark'] as const) {
                 await page.getByRole('option', { name: 'category', exact: true }).click().catch(() => {});
                 await page.waitForTimeout(2500);
                 await shoot(page, `22-builder-result-${theme}`);
+                // Every "Views" chip, so each suggested chart is checked.
+                const chips = page.locator('.qi-chart-suggestion');
+                const chipCount = await chips.count();
+                for (let i = 0; i < chipCount; i++) {
+                    await chips.nth(i).click().catch(() => {});
+                    await shoot(page, `23-builder-view-${i + 1}-${theme}`);
+                }
+                for (const field of ['country', 'funnel_stage']) {
+                    await dimension.click().catch(() => {});
+                    await page.getByRole('option', { name: field, exact: true }).click().catch(() => {});
+                    await page.waitForTimeout(2500);
+                    await shoot(page, `24-builder-${field}-${theme}`);
+                }
             }
         }
         for (const [label, file] of [

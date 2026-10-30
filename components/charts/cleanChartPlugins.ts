@@ -17,6 +17,8 @@ export interface DoughnutCenterOptions {
     color?: string;
     captionColor?: string;
     fontFamily?: string;
+    /** 'above' places the text above the centre (half-ring gauges). */
+    anchor?: 'middle' | 'above';
 }
 
 export interface StackTotalsOptions {
@@ -53,12 +55,15 @@ export const doughnutCenterPlugin = {
         }
         const captionSize = Math.max(10, Math.round(size * 0.42));
         const gap = options.caption ? captionSize * 0.75 : 0;
+        const above = options.anchor === 'above';
+        const headlineY = above ? y - size * 0.55 - (options.caption ? captionSize * 1.2 : 0) : y - gap;
+        const captionY = above ? y - captionSize * 0.7 : y + size * 0.62;
         ctx.fillStyle = options.color || '#1f2430';
-        ctx.fillText(options.text, x, y - gap);
+        ctx.fillText(options.text, x, headlineY);
         if (options.caption) {
             ctx.font = `500 ${captionSize}px ${family}`;
             ctx.fillStyle = options.captionColor || '#8a92a3';
-            ctx.fillText(options.caption, x, y + size * 0.62);
+            ctx.fillText(options.caption, x, captionY);
         }
         ctx.restore();
     },

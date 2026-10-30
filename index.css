@@ -4039,3 +4039,54 @@ body {
 :root.light:is(.light) [class*='text-teal-5']:not(.qi-prelogin-tour *) { color: #0f766e !important; }
 :root.light:is(.light) [class*='text-sky-5']:not(.qi-prelogin-tour *) { color: #0369a1 !important; }
 :root.light:is(.light) [class*='text-orange-5']:not(.qi-prelogin-tour *) { color: #c2410c !important; }
+
+/* ── Chart views: "Try another view" chips, menu fit dot, map ─────── */
+:root:is(.light, .dark) .qi-chart-suggestions {
+  border-bottom: 1px solid var(--border-default);
+  scrollbar-width: none;
+}
+:root:is(.light, .dark) .qi-chart-suggestions::-webkit-scrollbar { display: none; }
+:root:is(.light, .dark) .qi-chart-suggestions-label,
+:root:is(.light, .dark) .qi-chart-suggestions-reason { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-chart-suggestion {
+  color: var(--text-secondary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+:root:is(.light, .dark) .qi-chart-suggestion:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border-color: var(--border-hover);
+}
+:root:is(.light, .dark) .qi-chart-suggestion:active { transform: scale(0.97); }
+:root:is(.light, .dark) .qi-chart-suggestion:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+:root:is(.light, .dark) .qi-chart-suggestion.is-active {
+  color: var(--accent-foreground);
+  background: var(--accent);
+  border-color: color-mix(in srgb, var(--color-primary) 40%, transparent);
+  cursor: default;
+}
+:root:is(.light, .dark) .qi-chart-suggestion-best {
+  margin-left: 2px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  color: #2f7a43;
+  background: #e8f5ec;
+}
+:root.dark:is(.dark) .qi-chart-suggestion-best { color: #8ad3a0; background: rgba(95, 174, 110, 0.16); }
+:root:is(.light, .dark) .qi-chart-menu-fit { background: #5fae6e; }
+
+:root:is(.light, .dark) .qi-map { background: var(--bg-surface); }
+:root:is(.light, .dark) .qi-map-legend,
+:root:is(.light, .dark) .qi-map-hover {
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-card);
+}
+:root:is(.light, .dark) .qi-map-legend-title,
+:root:is(.light, .dark) .qi-map-hover { color: var(--text-primary); }

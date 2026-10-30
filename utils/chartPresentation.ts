@@ -45,3 +45,25 @@ export const friendlySeriesLabel = (label: string | undefined): string => {
     const text = `${prefix[match[1].toUpperCase()] || ''}${field}`;
     return text.charAt(0).toUpperCase() + text.slice(1);
 };
+
+/** Round up to a readable ceiling: 1, 2, 2.5, 5 or 10 × a power of ten. */
+export function niceCeiling(value: number): number {
+    if (!Number.isFinite(value) || value <= 0) return 1;
+    const power = 10 ** Math.floor(Math.log10(value));
+    const step = [1, 2, 2.5, 5, 10].find(m => m * power >= value) || 10;
+    return step * power;
+}
+
+/**
+ * Scale for a gauge: the KPI goal when one is set, 100% (or 1.0) for a rate,
+ * otherwise a rounded ceiling just above the value.
+ */
+export function gaugeScale(values: number[], goal: number | undefined, metricName: string): { value: number; max: number; basis: 'goal' | 'percent' | 'ceiling' } {
+    const value = values.reduce((sum, v) => sum + (Number.isFinite(v) ? v : 0), 0);
+    if (goal && Number.isFinite(goal) && goal > 0) return { value, max: Math.max(goal, value), basis: 'goal' };
+    const name = metricName.toLowerCase();
+    const looksLikeRate = /(percent|pct|ratio|rate|share|conversion|margin)/.test(name);
+    if (looksLikeRate && value >= 0 && value <= 1) return { value, max: 1, basis: 'percent' };
+    if (looksLikeRate && value >= 0 && value <= 100) return { value, max: 100, basis: 'percent' };
+    return { value, max: niceCeiling(value * 1.15), basis: 'ceiling' };
+}

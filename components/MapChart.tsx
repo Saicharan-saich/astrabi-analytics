@@ -3,6 +3,7 @@ import { ComposableMap, Geographies, Geography, ZoomableGroup, Marker } from 're
 import { scaleLinear } from 'd3-scale';
 import { geoCentroid } from 'd3-geo';
 import { formatNumber } from '../utils/chartUtils';
+import { COUNTRY_ALIASES } from '../utils/chartSuggestions';
 
 // Standard World Map TopoJSON
 const GEO_WORLD = "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json";
@@ -33,9 +34,13 @@ interface MapChartProps {
     valueKey: string;
     labelContent?: 'value' | 'name' | 'both';
     onTooltip?: (content: string) => void;
+    /** Legend title, e.g. "Revenue". */
+    valueLabel?: string;
+    isDark?: boolean;
 }
 
-export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey, labelContent = 'value', onTooltip }) => {
+export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey, labelContent = 'value', onTooltip, valueLabel, isDark = false }) => {
+    const [hovered, setHovered] = React.useState('');
     // 1. Geography Mode Detection & Data Processing
     const { isUSMap, dataMap, min, max } = useMemo(() => {
         let usMatches = 0;
@@ -54,11 +59,11 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
             if (US_STATES.has(loc)) {
                 usMatches++;
             } else {
-                if (loc === 'usa' || loc === 'us' || loc === 'united states of america') loc = 'united states';
-                if (loc === 'uk' || loc === 'great britain') loc = 'united kingdom';
+                // Match the world map's own names ("United States of America").
+                loc = COUNTRY_ALIASES[loc] || loc;
             }
 
-            map[loc] = val;
+            map[loc] = (map[loc] || 0) + val;
         });
 
         const isUS = (data.length > 0 && usMatches / data.length > 0.3) || locationKey.toLowerCase().includes('state');
@@ -74,11 +79,17 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
     const geoUrl = isUSMap ? GEO_US : GEO_WORLD;
 
     const colorScale = scaleLinear<string>()
-        .domain([min, max])
-        .range(["#E0F2FE", "#0284C7"]);
+        .domain([min, max === min ? min + 1 : max])
+        .range(isDark ? ['#24406b', '#7aa5ff'] : ['#dbe6ff', '#2c55c8']);
+    const emptyFill = isDark ? '#1f232c' : '#eef1f5';
+    const strokeColour = isDark ? '#0e1015' : '#ffffff';
+    const plotted = Object.keys(dataMap).length;
+    // World maps get crowded: label countries only when there are few.
+    const showLabels = isUSMap || plotted <= 12;
+    const report = (text: string) => { setHovered(text); onTooltip?.(text); };
 
     return (
-        <div className="w-full h-full min-h-[400px] bg-slate-50 rounded-xl overflow-hidden border border-slate-100 relative">
+        <div className="qi-map w-full h-full min-h-[320px] rounded-xl overflow-hidden relative">
             <ComposableMap
                 projection={isUSMap ? "geoAlbersUsa" : "geoMercator"}
                 projectionConfig={isUSMap ? { scale: 1000 } : { scale: 100 }}
@@ -96,40 +107,35 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
                                         <Geography
                                             key={geo.rsmKey}
                                             geography={geo}
-                                            fill={hasData ? colorScale(value) : "#F1F5F9"}
-                                            stroke="#CBD5E1"
-                                            strokeWidth={0.5}
+                                            fill={hasData ? colorScale(value) : emptyFill}
+                                            stroke={strokeColour}
+                                            strokeWidth={0.6}
                                             style={{
                                                 default: { outline: "none" },
                                                 hover: {
-                                                    fill: hasData ? "#0EA5E9" : "#E2E8F0",
+                                                    fill: hasData ? (isDark ? '#a9c3ff' : '#3565e8') : emptyFill,
                                                     outline: "none",
                                                     cursor: hasData ? "pointer" : "default"
                                                 },
                                                 pressed: { outline: "none" },
                                             }}
                                             onMouseEnter={() => {
-                                                if (onTooltip) {
-                                                    const dispName = geo.properties.name;
-                                                    const valDisplay = hasData ? formatNumber(value) : 'No Data';
-                                                    onTooltip(`${dispName}: ${valDisplay}`);
-                                                }
+                                                const dispName = geo.properties.name;
+                                                report(hasData ? `${dispName}: ${formatNumber(value)}` : `${dispName}: no data`);
                                             }}
-                                            onMouseLeave={() => {
-                                                if (onTooltip) onTooltip('');
-                                            }}
+                                            onMouseLeave={() => report('')}
                                         />
                                     );
                                 })}
                                 {geographies.map((geo) => {
                                     const name = (geo.properties.name as string).toLowerCase();
                                     const value = dataMap[name];
-                                    if (value === undefined) return null;
+                                    if (value === undefined || !showLabels) return null;
 
                                     const centroid = geoCentroid(geo);
                                     if (!centroid) return null;
 
-                                    const shortName = isUSMap ? (STATE_CODES[name] || name.substring(0, 2).toUpperCase()) : name;
+                                    const shortName = isUSMap ? (STATE_CODES[name] || name.substring(0, 2).toUpperCase()) : String(geo.properties.name);
                                     const formattedVal = formatNumber(value, { numberFormat: 'compact' } as any); // Compact
 
                                     return (
@@ -140,10 +146,10 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
                                                 style={{
                                                     fontFamily: "Inter, sans-serif",
                                                     fontSize: isUSMap ? "8px" : "5px",
-                                                    fill: "#0f172a", // Slate-900
-                                                    fontWeight: "bold",
+                                                    fill: isDark ? '#e8eaef' : '#1f2430',
+                                                    fontWeight: 600,
                                                     pointerEvents: "none",
-                                                    textShadow: "0px 0px 3px rgba(255,255,255,0.9)"
+                                                    textShadow: isDark ? '0 0 3px rgba(0,0,0,0.8)' : '0 0 3px rgba(255,255,255,0.95)'
                                                 }}
                                             >
                                                 {labelContent === 'both' ? (
@@ -166,15 +172,15 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
                 </ZoomableGroup>
             </ComposableMap>
 
-            <div className="absolute bottom-4 left-4 bg-white/90 backdrop-blur p-2 rounded-lg shadow border border-slate-100 text-xs">
-                <div className="font-semibold text-slate-700 mb-1">{isUSMap ? 'US Sales' : 'Global Sales'}</div>
+            {hovered && (
+                <div className="qi-map-hover absolute top-3 left-3 rounded-md px-2.5 py-1.5 text-xs font-medium pointer-events-none">{hovered}</div>
+            )}
+            <div className="qi-map-legend absolute bottom-3 left-3 rounded-md px-2.5 py-2 text-[11px]">
+                <div className="qi-map-legend-title mb-1 font-semibold">{valueLabel || 'Value'}</div>
                 <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-[#E0F2FE] border border-slate-200"></div>
-                    <span className="text-slate-500">{formatNumber(min)}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-[#0284C7]"></div>
-                    <span className="text-slate-500">{formatNumber(max)}</span>
+                    <span className="tabular-nums">{formatNumber(min)}</span>
+                    <span className="h-2 w-20 rounded-full" style={{ background: `linear-gradient(90deg, ${colorScale(min)}, ${colorScale(max === min ? min + 1 : max)})` }} />
+                    <span className="tabular-nums">{formatNumber(max)}</span>
                 </div>
             </div>
         </div>
