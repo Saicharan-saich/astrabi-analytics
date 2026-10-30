@@ -3849,13 +3849,33 @@ body {
 }
 :root:is(.light, .dark) .qi-chart-type-trigger:hover { background: var(--bg-hover) !important; }
 :root:is(.light, .dark) .qi-chart-type-trigger * { color: inherit !important; }
-:root:is(.light, .dark) .qi-visual-toolbar > button,
-:root:is(.light, .dark) .qi-visual-toolbar > div > button:not(.qi-chart-type-trigger),
+:root:is(.light, .dark) .qi-visual-toolbar > button:not([class*='bg-indigo-6']):not([class*='bg-slate-7']),
+:root:is(.light, .dark) .qi-visual-toolbar > div > button:not(.qi-chart-type-trigger):not([class*='bg-indigo-6']):not([class*='bg-slate-7']),
 :root:is(.light, .dark) .qi-zoom-control {
   background: var(--bg-surface) !important;
   border: 1px solid var(--border-default) !important;
   box-shadow: none !important;
   border-radius: 8px !important;
 }
-:root:is(.light, .dark) .qi-visual-toolbar > button:hover,
-:root:is(.light, .dark) .qi-visual-toolbar > div > button:not(.qi-chart-type-trigger):hover { background: var(--bg-hover) !important; }
+:root:is(.light, .dark) .qi-visual-toolbar > button:not([class*='bg-indigo-6']):not([class*='bg-slate-7']):hover,
+:root:is(.light, .dark) .qi-visual-toolbar > div > button:not(.qi-chart-type-trigger):not([class*='bg-indigo-6']):not([class*='bg-slate-7']):hover { background: var(--bg-hover) !important; }
+/* Toggled-on toolbar buttons (e.g. Labels) read as a soft accent chip */
+:root:is(.light, .dark) .qi-visual-toolbar button[class*='bg-indigo-6'],
+:root:is(.light, .dark) .qi-visual-toolbar button[class*='bg-slate-7'] {
+  background: var(--accent) !important;
+  color: var(--accent-foreground) !important;
+  border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent) !important;
+  box-shadow: none !important;
+  --tw-ring-shadow: 0 0 #0000 !important;
+}
+:root:is(.light, .dark) .qi-visual-toolbar button[class*='bg-indigo-6'] *,
+:root:is(.light, .dark) .qi-visual-toolbar button[class*='bg-slate-7'] * { color: inherit !important; }
+
+/* Padding that the retired cockpit layer used to provide */
+:root:is(.light, .dark) .qi-ai-frame { padding: 1.5rem !important; }
+:root:is(.light, .dark) .qi-workspace-hero {
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
