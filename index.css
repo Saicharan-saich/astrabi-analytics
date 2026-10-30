@@ -3070,34 +3070,34 @@ html.light .qi-nav-active-pill {
 /* ── Tokens: light (default) ───────────────────────────────────────── */
 :root.light:is(.light),
 :root.light:is(.light) .qi-theme-analyst {
-  --bg-app: #f6f7f9;
+  --bg-app: #f2f4f7;
   --bg-surface: #ffffff;
   --bg-elevated: #ffffff;
-  --bg-hover: #f1f3f6;
+  --bg-hover: #eef1f5;
   --bg-sidebar: #ffffff;
   --text-primary: #1f2430;
   --text-secondary: #596275;
   --text-tertiary: #8a92a3;
   --text-muted: #a2a9b7;
-  --border-default: #e6e8ec;
-  --border-hover: #d4d9e1;
-  --border-strong: #d4d9e1;
+  --border-default: #dde1e8;
+  --border-hover: #c9cfd9;
+  --border-strong: #c9cfd9;
   --color-primary: #3565e8;
   --color-primary-light: #6d95ff;
   --color-primary-dark: #2c55c8;
   --accent-gradient: linear-gradient(180deg, #3565e8, #3565e8);
   --accent-glow: none;
   --glass-highlight: none;
-  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.04);
-  --shadow-md: 0 1px 3px rgba(16, 24, 40, 0.06), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md: 0 2px 6px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-lg: 0 12px 28px -12px rgba(16, 24, 40, 0.18);
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.05);
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
   --radius-xl: 12px;
   /* shadcn-style semantic tokens used by newer components */
-  --background: #f6f7f9;
+  --background: #f2f4f7;
   --foreground: #1f2430;
   --card: #ffffff;
   --card-foreground: #1f2430;
@@ -3105,14 +3105,14 @@ html.light .qi-nav-active-pill {
   --popover-foreground: #1f2430;
   --primary: #3565e8;
   --primary-foreground: #ffffff;
-  --secondary: #f1f3f6;
+  --secondary: #eef1f5;
   --secondary-foreground: #333a48;
-  --muted: #f1f3f6;
+  --muted: #eef1f5;
   --muted-foreground: #596275;
   --accent: #eef3ff;
   --accent-foreground: #2c55c8;
-  --border: #e6e8ec;
-  --input: #d9dde4;
+  --border: #dde1e8;
+  --input: #cdd3dc;
   --ring: #3565e8;
   --chart-1: #6e6fb8;
   --chart-2: #88bf4d;
@@ -3123,7 +3123,7 @@ html.light .qi-nav-active-pill {
   --sidebar-foreground: #333a48;
   --sidebar-primary: #3565e8;
   --sidebar-accent: #f1f3f6;
-  --sidebar-border: #e6e8ec;
+  --sidebar-border: #dde1e8;
   --radius: 0.625rem;
 }
 
@@ -3879,3 +3879,52 @@ body {
   background: transparent !important;
   box-shadow: none !important;
 }
+
+
+/* ── Light mode separation (2026-10-30) ───────────────────────────────
+   Cards are white on a grey canvas with a visible border and a soft
+   shadow, so every panel reads as its own surface. */
+:root.light:is(.light) .qi-builder-panel,
+:root.light:is(.light) .qi-builder-dock,
+:root.light:is(.light) .qi-builder-content,
+:root.light:is(.light) .qi-builder-workspace,
+:root.light:is(.light) .qi-question-builder {
+  background: var(--bg-app) !important;
+}
+:root.light:is(.light) .qi-builder-dock {
+  border-right: 1px solid var(--border-default) !important;
+  box-shadow: none !important;
+}
+@media (min-width: 1180px) {
+  :root.light:is(.light) .qi-builder-dock :is(
+    .qi-builder-aggregation,
+    .qi-builder-metric,
+    .qi-builder-dimension,
+    .qi-builder-time-grain,
+    .qi-builder-verb,
+    .qi-builder-by,
+    .qi-builder-where
+  ) {
+    background: var(--bg-surface) !important;
+    border: 1px solid var(--border-default) !important;
+    box-shadow: var(--shadow-card) !important;
+  }
+}
+:root.light:is(.light) .qi-builder-question-summary {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-default) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+:root.light:is(.light) .qi-builder-toolbar,
+:root.light:is(.light) .qi-builder-commandbar,
+:root.light:is(.light) .qi-visual-stage,
+:root.light:is(.light) .qi-answer-narrative {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-default) !important;
+  box-shadow: var(--shadow-card) !important;
+}
+:root.light:is(.light) .qi-visual-toolbar { border-bottom: 1px solid var(--border-default) !important; }
+:root.light:is(.light) .app-sidebar,
+:root.light:is(.light) .qi-sidebar-frame { border-right: 1px solid var(--border-default) !important; }
+:root.light:is(.light) .app-topbar,
+:root.light:is(.light) .qi-topbar-frame { border-bottom: 1px solid var(--border-default) !important; }
