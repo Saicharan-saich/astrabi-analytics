@@ -209,10 +209,6 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     return items.filter(item => item.datasetId === selectedDatasetId);
   }, [items, selectedDatasetId]);
 
-  const presentItems = useMemo(() => (presentOnlyReady
-    ? items.filter(item => isItemPresentable(item, dataset, availableDatasets, dashboardFilters.length))
-    : items), [items, presentOnlyReady, dataset, availableDatasets, dashboardFilters.length]);
-
   // Map dataset IDs to colours for badges
   const datasetColorMap = useMemo(() => {
     const map = new Map<string, typeof DATASET_COLORS[0]>();
@@ -595,6 +591,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
 
     return { totalVisuals, totalDataPoints, mostUsedChart };
   }, [items]);
+
+  // Slides for the current presentation (declared after the presentation
+  // state it reads, so it is initialised before first use).
+  const presentItems = useMemo(() => (presentOnlyReady
+    ? items.filter(item => isItemPresentable(item, dataset, availableDatasets, dashboardFilters.length))
+    : items), [items, presentOnlyReady, dataset, availableDatasets, dashboardFilters.length]);
 
   // Presentation Mode keyboard navigation
   useEffect(() => {
