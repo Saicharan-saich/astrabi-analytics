@@ -322,6 +322,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
       const isTimeDim = timeDims.includes(dimCol);
       const dateCol = source.timeContext?.anchorDateColumn || source.columns.find(c => c.type === 'DATE')?.name;
       const groups = new Map<string, number[]>();
+      // Earliest timestamp per period label, so time axes stay chronological.
+      const periodStart = new Map<string, number>();
       filteredSource.forEach((row: any) => {
         let dimVal = '(Total)';
         if (dimCol && !isTimeDim) {
@@ -334,6 +336,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             else if (dimCol === 'month') dimVal = `${d.toLocaleString('en', { month: 'short' })} ${d.getFullYear()}`;
             else if (dimCol === 'week') dimVal = `W${Math.ceil(((d.getTime() - new Date(d.getFullYear(), 0, 1).getTime()) / 86400000 + 1) / 7)} ${d.getFullYear()}`;
             else if (dimCol === 'day') dimVal = d.toISOString().slice(0, 10);
+            const seen = periodStart.get(dimVal);
+            if (seen === undefined || d.getTime() < seen) periodStart.set(dimVal, d.getTime());
           }
         }
         const metricVal = typeof row[metricCol] === 'number' ? row[metricCol] : parseFloat(row[metricCol]);
@@ -357,10 +361,16 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
         if (yKey !== 'metric') row.metric = result;
         reAggregated.push(row);
       });
-      const sort = cfg.sort || 'desc';
-      if (sort === 'desc') reAggregated.sort((a, b) => (b[yKey] || 0) - (a[yKey] || 0));
+      // Time periods default to chronological order (oldest first); only an
+      // explicit asc/desc ranks them by value. Other dimensions keep the
+      // previous default of largest first.
+      const sort = cfg.sort || (isTimeDim ? 'oldest' : 'desc');
+      if (isTimeDim && (sort === 'oldest' || sort === 'newest')) {
+        reAggregated.sort((a, b) => (periodStart.get(String(a[xKey])) ?? 0) - (periodStart.get(String(b[xKey])) ?? 0));
+        if (sort === 'newest') reAggregated.reverse();
+      } else if (sort === 'desc') reAggregated.sort((a, b) => (b[yKey] || 0) - (a[yKey] || 0));
       else if (sort === 'asc') reAggregated.sort((a, b) => (a[yKey] || 0) - (b[yKey] || 0));
-      else if (sort === 'newest') reAggregated.reverse();
+      else if (sort === 'newest' && !isTimeDim) reAggregated.reverse();
       const limit = cfg.limit || 0;
       if (limit > 0 && reAggregated.length > limit) return reAggregated.slice(0, limit);
       return reAggregated;

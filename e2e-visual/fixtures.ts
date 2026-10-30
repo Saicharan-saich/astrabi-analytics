@@ -11,7 +11,7 @@ export function salesRows(): Record<string, any>[] {
         const seasonal = 1 + 0.25 * Math.sin((month % 12) / 12 * 2 * Math.PI) + month * 0.012;
         for (let k = 0; k < 44; k++) {
             n++;
-            const category = CATEGORIES[(n * 7 + month) % 4];
+            const category = CATEGORIES[[0, 0, 0, 1, 1, 2, 2, 3][(n * 7 + month) % 8]];
             const qty = 1 + ((n * 13) % 5);
             const price = [180, 45, 70, 25][CATEGORIES.indexOf(category)] * (0.8 + ((n * 17) % 40) / 100);
             const revenue = +(qty * price * seasonal).toFixed(2);
@@ -70,17 +70,17 @@ export function dashboardFixture() {
     return {
         id: 'visual-dashboard', name: 'E-commerce insights', createdAt: 1767225600000,
         items: [
-            card('rev-orders', 'Revenue and units sold over time', 'combo', byQuarter, 'order_date', 'revenue', 'Revenue',
-                { metric: 'revenue', dimension: 'order_date', timeGrain: 'Quarter', sort: 'oldest', secondaryMetrics: ['quantity'], secondaryMetricVisuals: { quantity: 'line' }, axisMode: 'dual', chartType: 'combo' }),
+            card('rev-orders', 'Revenue and units sold over time', 'combo', byQuarter, 'quarter', 'revenue', 'Revenue',
+                { metric: 'revenue', dimension: 'quarter', sort: 'oldest', secondaryMetrics: ['quantity'], secondaryMetricVisuals: { quantity: 'line' }, axisMode: 'dual', chartType: 'combo' }),
             card('kpi-rev', 'Revenue this quarter', 'kpiCard', [{ dim: last.quarter, metric: last.revenue, previous_value: prev.revenue }], 'dim', 'metric', 'Revenue',
                 { metric: 'revenue', dimension: '', comparison: 'previous_period', comparisonMode: 'total', comparisonGrain: 'quarter' },
                 { colorMode: 'vibrant', numberFormat: 'auto', fontSize: 'md', headerSize: 'md', headerBold: true, showLabels: true, showDataLabels: false, tableCalculations: [], kpiGoal: 250000 }),
             card('orders-cat', 'Total orders by product category', 'doughnut', ordersByCategory, 'category', 'orders', 'Orders',
                 { metric: 'order_id', dimension: 'category', aggregation: 'COUNT_DISTINCT', chartType: 'doughnut' }),
-            card('rev-cat', 'Revenue by product category', 'stackedBar', stacked, 'order_date', 'revenue', 'Revenue',
-                { metric: 'revenue', dimension: 'order_date', timeGrain: 'Quarter', sort: 'oldest', secondaryDimensions: ['category'], chartStyle: 'stacked' }),
-            card('aov', 'Average order value by month', 'line', aov, 'order_date', 'revenue', 'Average order value',
-                { metric: 'revenue', dimension: 'order_date', aggregation: 'AVG', timeGrain: 'Month', sort: 'oldest', chartType: 'line' }),
+            card('rev-cat', 'Revenue by product category', 'stackedBar', stacked, 'quarter', 'revenue', 'Revenue',
+                { metric: 'revenue', dimension: 'quarter', sort: 'oldest', secondaryDimensions: ['category'], chartStyle: 'stacked' }),
+            card('aov', 'Average order value by month', 'line', aov, 'month', 'revenue', 'Average order value',
+                { metric: 'revenue', dimension: 'month', aggregation: 'AVG', sort: 'oldest', chartType: 'line' }),
             card('cities', 'Revenue by city', 'horizontalBar', cities, 'city', 'revenue', 'Revenue',
                 { metric: 'revenue', dimension: 'city', sort: 'desc', chartStyle: 'horizontal' }),
         ],

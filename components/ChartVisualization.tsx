@@ -16,7 +16,10 @@ import {
     Plugin, // Import Plugin type
     RadialLinearScale,
     DoughnutController,
-    PieController
+    PieController,
+    BarController,
+    LineController,
+    ScatterController,
 } from 'chart.js';
 import { Chart, Bar, Line, Pie, Doughnut, PolarArea, Radar, Scatter, Bubble } from 'react-chartjs-2';
 import { TreemapController, TreemapElement } from 'chartjs-chart-treemap';
@@ -41,6 +44,11 @@ ChartJS.register(
     RadialLinearScale,
     DoughnutController,
     PieController,
+    // Mixed charts (combo, lollipop) use the generic <Chart> and need every
+    // controller their datasets reference to be registered up front.
+    BarController,
+    LineController,
+    ScatterController,
     TreemapController,
     TreemapElement
 );
@@ -1165,7 +1173,13 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 qiDoughnutCenter: {
                     display: chartType === 'doughnut',
                     text: chartType === 'doughnut'
-                        ? formatCompactLabel((chartData?.datasets?.[0]?.data || []).reduce((a: number, v: any) => a + (Number(v) || 0), 0))
+                        ? (() => {
+                            const total = (chartData?.datasets?.[0]?.data || []).reduce((a: number, v: any) => a + (Number(v) || 0), 0);
+                            // Full figure (18,016) reads better than 18K until it gets long.
+                            return Math.abs(total) < 1_000_000 && Number.isInteger(total)
+                                ? total.toLocaleString()
+                                : formatCompactLabel(total);
+                        })()
                         : '',
                     caption: 'Total',
                     color: isDark ? '#e8eaef' : '#1f2430',
@@ -1659,9 +1673,28 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     // Label mode filtering: 'primary' = only dataset 0, 'all' = all datasets
                     if (!shouldRenderDataLabel(mode, i)) return;
 
+                    // Clean style: on long series, label only the points a reader
+                    // looks for — first, last, highest and lowest.
+                    const numeric = (dataset.data as any[]).map(v => Number(v));
+                    const keyPoints = new Set<number>();
+                    if (categoryCount > 14) {
+                        const finite = numeric.map((v, idx) => [v, idx] as const).filter(([v]) => Number.isFinite(v));
+                        if (finite.length) {
+                            keyPoints.add(finite[0][1]);
+                            keyPoints.add(finite[finite.length - 1][1]);
+                            keyPoints.add(finite.reduce((best, cur) => (cur[0] > best[0] ? cur : best))[1]);
+                            keyPoints.add(finite.reduce((best, cur) => (cur[0] < best[0] ? cur : best))[1]);
+                        }
+                    }
+                    const isStackedBarChart = chart.config.type === 'bar' && chart.options?.scales?.y?.stacked;
+
                     meta.data.forEach((element: any, index: number) => {
                         const value = dataset.data[index];
                         if (value === null || value === undefined) return;
+                        if (categoryCount > 14 && !keyPoints.has(index)) return;
+                        // Stacked segments too thin to hold a label stay unlabelled;
+                        // the stack total above the bar carries the number.
+                        if (isStackedBarChart && Math.abs((element.base ?? element.y) - element.y) < 16) return;
 
                         // Determine dataset type first
                         const isComparisonDs = i === 1 && latestData.some((d: any) => d.previous_value !== undefined);
@@ -2007,6 +2040,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         }
 
 
+        // The generic <Chart> (combo, lollipop) needs an explicit base type;
+        // each dataset then declares its own bar/line/scatter type.
+        if (ChartComponent === Chart) {
+            return <Chart type="bar" ref={chartRef as any} data={chartData as any} options={chartOptions as any} plugins={plugins} />;
+        }
         return <ChartComponent ref={chartRef} data={chartData as any} options={chartOptions} plugins={plugins} />;
     };
 
