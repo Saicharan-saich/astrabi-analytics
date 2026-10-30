@@ -61,7 +61,7 @@ for (const theme of ['light', 'dark'] as const) {
                 }
                 for (const field of ['country', 'funnel_stage']) {
                     await dimension.click().catch(() => {});
-                    await page.getByRole('option', { name: field, exact: true }).click().catch(() => {});
+                    await page.getByRole('option', { name: new RegExp(`^${field.replace('_', '[_ ]')}$`, 'i') }).first().click().catch(() => {});
                     await page.waitForTimeout(2500);
                     await shoot(page, `24-builder-${field}-${theme}`);
                 }

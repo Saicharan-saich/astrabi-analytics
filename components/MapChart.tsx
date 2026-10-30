@@ -10,6 +10,10 @@ const GEO_WORLD = "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m
 // US States TopoJSON
 const GEO_US = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
 
+// When every country with data is in Europe, zoom there instead of showing
+// a world of empty land.
+const EUROPE = new Set(['albania', 'austria', 'belarus', 'belgium', 'bosnia and herz.', 'bulgaria', 'croatia', 'cyprus', 'czechia', 'denmark', 'estonia', 'finland', 'france', 'germany', 'greece', 'hungary', 'iceland', 'ireland', 'italy', 'latvia', 'lithuania', 'luxembourg', 'moldova', 'montenegro', 'netherlands', 'north macedonia', 'norway', 'poland', 'portugal', 'romania', 'serbia', 'slovakia', 'slovenia', 'spain', 'sweden', 'switzerland', 'ukraine', 'united kingdom']);
+
 const US_STATES = new Set([
     'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado', 'connecticut', 'delaware', 'florida', 'georgia',
     'hawaii', 'idaho', 'illinois', 'indiana', 'iowa', 'kansas', 'kentucky', 'louisiana', 'maine', 'maryland', 'massachusetts',
@@ -86,15 +90,25 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
     const plotted = Object.keys(dataMap).length;
     // World maps get crowded: label countries only when there are few.
     const showLabels = isUSMap || plotted <= 12;
+    const europeOnly = !isUSMap && plotted > 0 && Object.keys(dataMap).every(name => EUROPE.has(name));
+    // Wide frames suit a chart card; the SVG then scales to fit both ways.
+    const frame = isUSMap ? { width: 800, height: 500 } : { width: 800, height: 440 };
+    const projectionConfig = isUSMap
+        ? { scale: 1000 }
+        : europeOnly ? { scale: 700, rotate: [-12, -53, 0] as [number, number, number] } : { scale: 150 };
+    const viewCentre: [number, number] = isUSMap ? [-97, 38] : europeOnly ? [12, 53] : [10, 18];
     const report = (text: string) => { setHovered(text); onTooltip?.(text); };
 
     return (
-        <div className="qi-map w-full h-full min-h-[320px] rounded-xl overflow-hidden relative">
+        <div className="qi-map w-full h-full min-h-[200px] rounded-xl overflow-hidden relative">
             <ComposableMap
-                projection={isUSMap ? "geoAlbersUsa" : "geoMercator"}
-                projectionConfig={isUSMap ? { scale: 1000 } : { scale: 100 }}
+                projection={isUSMap ? "geoAlbersUsa" : europeOnly ? "geoAzimuthalEqualArea" : "geoEqualEarth"}
+                projectionConfig={projectionConfig}
+                width={frame.width}
+                height={frame.height}
+                style={{ width: '100%', height: '100%', display: 'block' }}
             >
-                <ZoomableGroup center={isUSMap ? [0, 0] : [0, 20]} zoom={1}>
+                <ZoomableGroup center={viewCentre} zoom={1}>
                     <Geographies geography={geoUrl}>
                         {({ geographies }) => (
                             <>

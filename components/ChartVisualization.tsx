@@ -715,7 +715,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         font: [{ size: 12, weight: '600', family: CHART_FONT_FAMILY }, { size: 12, weight: '400', family: CHART_FONT_FAMILY }],
                         formatter: (ctx: any) => {
                             if (ctx.type !== 'data') return;
-                            return [String(ctx.raw.g ?? ''), formatNumber(ctx.raw.v)];
+                            return [String(ctx.raw.g ?? ''), formatCompactLabel(ctx.raw.v)];
                         }
                     }
                 }]
@@ -855,7 +855,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 labels,
                 datasets: [
                     { label: calculatedYLabel || 'Value', data: values, backgroundColor: generateColors(values), borderRadius: 2, borderSkipped: false, barPercentage: 0.15, maxBarThickness: 6, yAxisID: 'y', type: 'bar' as const },
-                    { label: '', data: values, backgroundColor: generateColors(values), borderColor: '#fff', borderWidth: 2, pointRadius: 8, pointHoverRadius: 10, showLine: false, type: 'scatter' as const, yAxisID: 'y' }
+                    { label: '', qiHelper: true, data: values, backgroundColor: generateColors(values), borderColor: isDark ? '#161920' : '#ffffff', borderWidth: 2, pointRadius: 7, pointHoverRadius: 9, showLine: false, type: 'scatter' as const, yAxisID: 'y' }
                 ]
             };
         }
@@ -1600,6 +1600,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     display: chartType === 'funnel' ? false : (xVisible ?? true),
                     stacked: isStacked,
                     ...(isHorizontal && !hasNegativeValues ? { beginAtZero: true, min: 0 } : {}),
+                    // Room for the value label past the longest bar.
+                    ...(isHorizontal && !axisRange ? { grace: '12%' } : {}),
                     grid: {
                         display: formatting?.showGridLines ?? false, // Clean: no X grid by default
                         drawBorder: false,
@@ -1633,7 +1635,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 y: {
                     display: yVisible ?? true,
                     ...(isHorizontal || hasNegativeValues ? {} : { min: 0, beginAtZero: true }),
-                    ...(axisRange ? { min: axisRange.min, max: axisRange.max } : {}),
+                    ...(axisRange ? { min: axisRange.min, max: axisRange.max } : (!isHorizontal ? { grace: '8%' } : {})),
                     stacked: isStacked,
                     grid: {
                         display: chartType === 'funnel' ? false : (formatting?.showGridLines ?? true),

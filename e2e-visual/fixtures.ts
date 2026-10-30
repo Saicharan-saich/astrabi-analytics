@@ -141,7 +141,13 @@ export function galleryDashboardFixture() {
         };
     };
     const months = group(r => r.order_date.slice(0, 7), 'revenue', 'SUM', 'month', 'revenue').sort((a, b) => String(a.month).localeCompare(String(b.month))).slice(-12);
-    const fmt = { colorMode: 'vibrant', numberFormat: 'auto', fontSize: 'md', headerSize: 'md', headerBold: true, showLabels: true, showDataLabels: true, tableCalculations: [] };
+    const fmt = { colorMode: 'vibrant', numberFormat: 'auto', fontSize: 'md', headerSize: 'md', headerBold: true, showLabels: true, showDataLabels: true, showXAxis: true, showYAxis: true, tableCalculations: [] };
+    const stackedByQuarter = rows.reduce((acc: any[], r) => {
+        const quarter = `Q${Math.floor((Number(r.order_date.slice(5, 7)) - 1) / 3) + 1} ${r.order_date.slice(0, 4)}`;
+        const hit = acc.find(x => x.quarter === quarter && x.category === r.category);
+        if (hit) hit.revenue = Math.round(hit.revenue + r.revenue); else acc.push({ quarter, category: r.category, revenue: Math.round(r.revenue) });
+        return acc;
+    }, []);
     const items = [
         card('g-area', 'Area · revenue by month', 'area', months, 'month', 'revenue', 'Revenue', { metric: 'revenue', dimension: 'month', sort: 'oldest' }),
         card('g-treemap', 'Treemap · revenue by city', 'treemap', group(r => r.city, 'revenue', 'SUM', 'city', 'revenue'), 'city', 'revenue', 'Revenue', { metric: 'revenue', dimension: 'city', sort: 'desc' }),
@@ -150,11 +156,11 @@ export function galleryDashboardFixture() {
         card('g-waterfall', 'Waterfall · profit by category', 'waterfall', group(r => r.category, 'profit', 'SUM', 'category', 'profit'), 'category', 'profit', 'Profit', { metric: 'profit', dimension: 'category', sort: 'desc' }, fmt),
         card('g-lollipop', 'Lollipop · average order value by city', 'lollipop', group(r => r.city, 'revenue', 'AVG', 'city', 'revenue'), 'city', 'revenue', 'Average order value', { metric: 'revenue', dimension: 'city', aggregation: 'AVG', sort: 'desc' }),
         card('g-radar', 'Radar · average units by city', 'radar', group(r => r.city, 'quantity', 'AVG', 'city', 'quantity'), 'city', 'quantity', 'Average units', { metric: 'quantity', dimension: 'city', aggregation: 'AVG' }),
-        card('g-polar', 'Polar area · orders by vendor', 'polarArea', group(r => r.vendor, null, 'COUNT', 'vendor', 'value'), 'vendor', 'value', 'Orders', { metric: 'order_id', dimension: 'vendor', aggregation: 'COUNT' }),
-        card('g-gauge', 'Gauge · revenue against goal', 'gauge', [{ dim: 'All', metric: Math.round(rows.reduce((a, r) => a + r.revenue, 0)) }], 'dim', 'metric', 'Revenue', { metric: 'revenue', dimension: '' }, { ...fmt, showDataLabels: false, kpiGoal: 3000000 }),
-        card('g-pie', 'Pie · orders by vendor', 'pie', group(r => r.vendor, null, 'COUNT', 'vendor', 'value'), 'vendor', 'value', 'Orders', { metric: 'order_id', dimension: 'vendor', aggregation: 'COUNT' }),
+        card('g-polar', 'Polar area · orders by category', 'polarArea', group(r => r.category, null, 'COUNT', 'category', 'value'), 'category', 'value', 'Orders', { metric: 'order_id', dimension: 'category', aggregation: 'COUNT' }),
+        card('g-gauge', 'Gauge · revenue against goal', 'gauge', [{ dim: 'All', metric: Math.round(rows.reduce((a, r) => a + r.revenue, 0)) }], 'dim', 'metric', 'Revenue', { metric: 'revenue', dimension: '' }, { ...fmt, showDataLabels: false, kpiGoal: 600000 }),
+        card('g-pie', 'Pie · sessions by stage', 'pie', group(r => r.funnel_stage, null, 'COUNT', 'funnel_stage', 'value'), 'funnel_stage', 'value', 'Sessions', { metric: 'order_id', dimension: 'funnel_stage', aggregation: 'COUNT' }),
         card('g-steps', 'Steps · average order value by month', 'steppedLine', group(r => r.order_date.slice(0, 7), 'revenue', 'AVG', 'month', 'revenue').sort((a, b) => String(a.month).localeCompare(String(b.month))).slice(-12), 'month', 'revenue', 'Average order value', { metric: 'revenue', dimension: 'month', aggregation: 'AVG', sort: 'oldest' }),
-        card('g-stacked-area', 'Stacked area · revenue by quarter and category', 'stackedArea', [], 'quarter', 'revenue', 'Revenue', { metric: 'revenue', dimension: 'quarter', sort: 'oldest', secondaryDimensions: ['category'] }),
+        card('g-stacked-area', 'Stacked area · revenue by quarter and category', 'stackedArea', stackedByQuarter, 'quarter', 'revenue', 'Revenue', { metric: 'revenue', dimension: 'quarter', sort: 'oldest', secondaryDimensions: ['category'] }),
     ];
     return {
         id: 'visual-gallery', name: 'Chart gallery', createdAt: 1767398400000,
