@@ -3834,3 +3834,28 @@ body {
     opacity: 1 !important;
   }
 }
+
+/* ── AI SQL banner + chart toolbars: quiet, neutral controls ──────── */
+:root:is(.light, .dark) .qi-early-access { background: var(--bg-hover); border-color: var(--border-default); }
+:root:is(.light, .dark) .qi-visual-toolbar {
+  background: transparent !important;
+  border-bottom-color: var(--border-default) !important;
+}
+:root:is(.light, .dark) .qi-chart-type-trigger {
+  background: var(--bg-surface) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-default) !important;
+  box-shadow: none !important;
+}
+:root:is(.light, .dark) .qi-chart-type-trigger:hover { background: var(--bg-hover) !important; }
+:root:is(.light, .dark) .qi-chart-type-trigger * { color: inherit !important; }
+:root:is(.light, .dark) .qi-visual-toolbar > button,
+:root:is(.light, .dark) .qi-visual-toolbar > div > button:not(.qi-chart-type-trigger),
+:root:is(.light, .dark) .qi-zoom-control {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-default) !important;
+  box-shadow: none !important;
+  border-radius: 8px !important;
+}
+:root:is(.light, .dark) .qi-visual-toolbar > button:hover,
+:root:is(.light, .dark) .qi-visual-toolbar > div > button:not(.qi-chart-type-trigger):hover { background: var(--bg-hover) !important; }

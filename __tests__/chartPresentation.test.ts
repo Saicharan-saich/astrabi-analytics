@@ -18,3 +18,14 @@ describe('chart presentation', () => {
         expect(readableChartTextColor('#5bd4c2', true, '#ecf4ff')).toBe('#5bd4c2');
     });
 });
+
+describe('friendly series names', () => {
+    it('shortens generated aggregate labels for legends and tooltips', async () => {
+        const { friendlySeriesLabel } = await import('../utils/chartPresentation');
+        expect(friendlySeriesLabel('SUM of revenue by quarter')).toBe('Revenue');
+        expect(friendlySeriesLabel('AVG of order_value by month')).toBe('Average order value');
+        expect(friendlySeriesLabel('COUNT_DISTINCT of order_id by category')).toBe('Distinct order id');
+        expect(friendlySeriesLabel('Total sales')).toBe('Total sales');
+        expect(friendlySeriesLabel(undefined)).toBe('Value');
+    });
+});

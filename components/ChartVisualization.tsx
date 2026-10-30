@@ -70,7 +70,7 @@ import { sanitizeRows } from '../utils/numberSafety';
 import { effectiveDataLabelMode, shouldRenderDataLabel } from '../utils/dataLabelVisibility';
 import { layoutChartLabels } from '../utils/chartLabelLayout';
 import { fitPieLabelText, layoutPieLabelRows } from '../utils/pieLabelLayout';
-import { extraTooltipMetricKeys, readableChartTextColor } from '../utils/chartPresentation';
+import { extraTooltipMetricKeys, friendlySeriesLabel, readableChartTextColor } from '../utils/chartPresentation';
 import { MapChart } from './MapChart';
 import { CHART_TYPE_OPTIONS } from './charts/chartRegistry';
 import { doughnutCenterPlugin, stackTotalsPlugin } from './charts/cleanChartPlugins';
@@ -173,21 +173,6 @@ const CATEGORICAL_CHART_TYPES = new Set([
 ]);
 // Absolute safety ceiling regardless of any user setting — prevents the freeze.
 const MAX_RENDER_CATEGORIES = 100;
-
-/**
- * Legend/tooltip name for a series: "SUM of revenue by quarter" → "Revenue",
- * "AVG of order value" → "Average order value". Titles elsewhere keep the
- * full wording; only series names are shortened.
- */
-const friendlySeriesLabel = (label: string | undefined): string => {
-    if (!label) return 'Value';
-    const match = label.match(/^(SUM|AVG|AVERAGE|COUNT_DISTINCT|COUNT|MIN|MAX|MEDIAN)\s+of\s+(.+?)(?:\s+by\s+.+)?$/i);
-    if (!match) return label;
-    const field = match[2].replace(/_/g, ' ').trim();
-    const prefix: Record<string, string> = { AVG: 'Average ', AVERAGE: 'Average ', COUNT_DISTINCT: 'Distinct ', COUNT: 'Count of ', MIN: 'Minimum ', MAX: 'Maximum ', MEDIAN: 'Median ' };
-    const text = `${prefix[match[1].toUpperCase()] || ''}${field}`;
-    return text.charAt(0).toUpperCase() + text.slice(1);
-};
 
 /** Chart types whose marks ARE the categories, so each keeps its own colour. */
 const PER_CATEGORY_COLOUR_TYPES = new Set(['pie', 'doughnut', 'polarArea', 'radar', 'treemap', 'funnel', 'waterfall', 'gauge']);
@@ -1125,6 +1110,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
             datasets.push({
                 label: humanLabel,
+                // Original column key: the tooltip uses it to recognise this
+                // series as already plotted (the label is a friendly name).
+                qiSourceKey: secKey,
                 qiSecondaryMetric: true,
                 data: secValues,
                 type: isBarType ? 'bar' as const : 'line' as const,
@@ -1415,6 +1403,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             const isCalcKey = (k: string) => /running_total|cumulative|percent_of_total|pct_of_total|rank|percentile|moving_avg|pct_diff|diff_from_prev|_sum$|_count$|_avg$|_min$|_max$/i.test(k);
                             const plottedLabels = [
                                 ...contexts.map(context => String(context.dataset?.label || '')),
+                                ...contexts.map(context => String((context.dataset as any)?.qiSourceKey || '')).filter(Boolean),
                                 ...(config?.secondaryMetrics || []),
                             ];
                             extraTooltipMetricKeys(dp, plottedLabels, metaKeys).forEach(k => {
@@ -1443,7 +1432,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     grid: {
                         display: formatting?.showGridLines ?? false, // Clean: no X grid by default
                         drawBorder: false,
-                        color: isDark ? 'rgba(255, 255, 255, 0.06)' : '#eef0f3',
+                        color: isDark ? 'rgba(255, 255, 255, 0.07)' : '#ebedf1',
                     },
                     border: {
                         display: false,
@@ -1477,7 +1466,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     stacked: isStacked,
                     grid: {
                         display: formatting?.showGridLines ?? true,
-                        color: isDark ? 'rgba(255, 255, 255, 0.06)' : '#eef0f3',
+                        color: isDark ? 'rgba(255, 255, 255, 0.07)' : '#ebedf1',
                         drawBorder: false,
                         tickLength: 0,
                     },

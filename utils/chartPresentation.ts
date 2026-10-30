@@ -30,3 +30,18 @@ export function extraTooltipMetricKeys(
         return true;
     });
 }
+
+/**
+ * Legend/tooltip name for a series: "SUM of revenue by quarter" → "Revenue",
+ * "AVG of order value" → "Average order value". Titles elsewhere keep the
+ * full wording; only series names are shortened.
+ */
+export const friendlySeriesLabel = (label: string | undefined): string => {
+    if (!label) return 'Value';
+    const match = label.match(/^(SUM|AVG|AVERAGE|COUNT_DISTINCT|COUNT|MIN|MAX|MEDIAN)\s+of\s+(.+?)(?:\s+by\s+.+)?$/i);
+    if (!match) return label;
+    const field = match[2].replace(/_/g, ' ').trim();
+    const prefix: Record<string, string> = { AVG: 'Average ', AVERAGE: 'Average ', COUNT_DISTINCT: 'Distinct ', COUNT: 'Count of ', MIN: 'Minimum ', MAX: 'Maximum ', MEDIAN: 'Median ' };
+    const text = `${prefix[match[1].toUpperCase()] || ''}${field}`;
+    return text.charAt(0).toUpperCase() + text.slice(1);
+};

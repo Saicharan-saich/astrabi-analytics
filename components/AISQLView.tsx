@@ -539,7 +539,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                 )}
 
                 {/* Early Access Banner */}
-                <div className="shrink-0 bg-gradient-to-r from-indigo-500/10 via-purple-500/10 to-pink-500/10 dark:from-indigo-500/15 dark:via-purple-500/15 dark:to-pink-500/15 border border-indigo-200/60 dark:border-indigo-500/20 rounded-xl px-4 py-2.5 flex items-center gap-3">
+                <div className="qi-early-access shrink-0 border rounded-lg px-4 py-2.5 flex items-center gap-3">
                     <span className="text-lg shrink-0">🚀</span>
                     <div className="flex-1 min-w-0">
                         <span className="text-[13px] font-semibold text-indigo-700 dark:text-indigo-300">
