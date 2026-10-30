@@ -121,5 +121,4 @@ for (const theme of ['light', 'dark'] as const) {
             if (await openNav(label)) await shoot(page, `${file}-${theme}`);
         }
     });
-});
 }
