@@ -694,13 +694,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               onClick={() => setActiveDashboard(db.id)}
               onContextMenu={(e) => handleTabContextMenu(e, db.id)}
               onDoubleClick={() => handleStartRename(db.id)}
-              className={`group relative flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all whitespace-nowrap ${
-                db.id === (activeDashboardId || dashboards[0]?.id)
-                  ? 'bg-gradient-to-r from-violet-500/15 to-indigo-500/10 text-violet-300 border border-violet-500/25 shadow-sm shadow-violet-500/10'
-                  : 'text-gray-400 hover:text-gray-200 hover:bg-white/[0.04] border border-transparent'
+              className={`qi-dash-tab group relative flex items-center gap-2 px-3 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+                db.id === (activeDashboardId || dashboards[0]?.id) ? 'is-active' : ''
               }`}
             >
-              <LayoutDashboard className="w-3.5 h-3.5 opacity-60" />
               {renamingDashboardId === db.id ? (
                 <input
                   autoFocus
@@ -714,17 +711,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               ) : (
                 <span>{db.name}</span>
               )}
-              <span className={`text-[11px] px-1.5 py-0.5 rounded-md font-bold ${
-                db.id === (activeDashboardId || dashboards[0]?.id)
-                  ? 'bg-violet-500/20 text-violet-300'
-                  : 'bg-white/[0.06] text-gray-500'
-              }`}>
+              <span className="qi-dash-tab-count text-[11px] px-1.5 py-0.5 rounded-md font-medium tabular-nums">
                 {db.items.length}
               </span>
               {/* More menu button */}
               <button
                 onClick={(e) => { e.stopPropagation(); handleTabContextMenu(e, db.id); }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-white/[0.1] transition-all"
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--bg-hover)] transition-opacity"
+                aria-label={`More options for ${db.name}`}
               >
                 <MoreHorizontal className="w-3.5 h-3.5" />
               </button>
@@ -734,7 +728,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
           {/* + New Dashboard */}
           <button
             onClick={handleCreateDashboard}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-medium text-gray-500 hover:text-violet-300 hover:bg-violet-500/10 border border-dashed border-white/[0.08] hover:border-violet-500/25 transition-all whitespace-nowrap"
+            className="qi-dash-ghost flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap"
           >
             <Plus className="w-3.5 h-3.5" />
             New
@@ -746,7 +740,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               onClick={onBuildDashboard}
               disabled={isBuildingDashboard}
               title="Auto-build a dashboard from the most useful insights"
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-sm font-semibold text-indigo-600 dark:text-indigo-300 bg-indigo-500/10 hover:bg-indigo-500/15 border border-indigo-500/25 transition-all whitespace-nowrap disabled:opacity-60 disabled:cursor-not-allowed"
+              className="qi-dash-ghost flex items-center gap-1.5 px-3 py-2 text-sm font-medium whitespace-nowrap"
             >
               <Sparkles className="w-3.5 h-3.5" />
               {isBuildingDashboard ? 'Building…' : 'Auto-build'}
@@ -811,18 +805,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
         <div className="flex flex-col gap-4 mb-6 print:hidden">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-md">
-                <LayoutDashboard className="w-5 h-5 text-white" />
-              </div>
               <div>
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white tracking-tight">{activeDashboard?.name || 'Dashboard'}</h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
+                <h2 className="qi-dash-title text-[22px] font-semibold tracking-tight">{activeDashboard?.name || 'Dashboard'}</h2>
+                <p className="qi-dash-subtitle text-[13px] mt-0.5">
                   {filteredItems.length > 0
                     ? `${filteredItems.length} visual${filteredItems.length !== 1 ? 's' : ''}${selectedDatasetId ? ` · Filtered by dataset` : ''} · Drag to rearrange`
                     : 'Create a visual in AI SQL or Question Builder, then pin it here'}
                 </p>
                 {dataset && (
-                  <span className="mt-2 inline-flex items-center gap-1.5 rounded-full border border-emerald-200 dark:border-emerald-500/20 bg-emerald-50 dark:bg-emerald-500/10 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                  <span className="qi-dash-meta mt-2 inline-flex items-center gap-1.5 text-xs font-medium">
                     <Database className="w-3 h-3" /> Current dataset · {dataset.totalRows?.toLocaleString() || 0} rows
                   </span>
                 )}
@@ -858,42 +849,27 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                 </div>
               )}
 
-              {/* Inline stats badges — adjacent to Dashboard title */}
-              {kpiSummary && (
-                <div className="flex items-center gap-2 ml-4">
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-violet-50 dark:bg-violet-500/10 border border-violet-200/50 dark:border-violet-500/20 rounded-lg">
-                    <Eye className="w-3.5 h-3.5 text-violet-500 dark:text-violet-400" />
-                    <span className="text-xs font-bold text-violet-700 dark:text-violet-300">{kpiSummary.totalVisuals}</span>
-                    <span className="text-[11px] text-violet-500/70 dark:text-violet-400/60 font-medium">visuals</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 dark:bg-amber-500/10 border border-amber-200/50 dark:border-amber-500/20 rounded-lg">
-                    {getChartIcon(kpiSummary.mostUsedChart)}
-                    <span className="text-xs font-bold text-amber-700 dark:text-amber-300 capitalize">{kpiSummary.mostUsedChart}</span>
-                    <span className="text-[11px] text-amber-500/70 dark:text-amber-400/60 font-medium">most used</span>
-                  </div>
-                </div>
-              )}
             </div>
 
             {items.length > 0 && (
               <div className="flex items-center gap-2 print:hidden">
                 <button
                   onClick={() => { setCurrentSlide(0); setPresentationMode(true); }}
-                  className="group flex items-center gap-2 px-3.5 py-2 bg-violet-50 dark:bg-violet-500/10 hover:bg-violet-100 dark:hover:bg-violet-500/20 text-violet-700 dark:text-violet-300 rounded-lg transition-all border border-violet-200 dark:border-violet-500/20 text-sm font-medium"
+                  className="qi-dash-button group flex items-center gap-2 px-3 py-2 text-sm font-medium"
                 >
                   <Presentation className="w-4 h-4" />
                   Present
                 </button>
                 <button
                   onClick={handleExportPDF}
-                  className="group flex items-center gap-2 px-3.5 py-2 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 text-emerald-700 dark:text-emerald-300 rounded-lg transition-all border border-emerald-200 dark:border-emerald-500/20 text-sm font-medium"
+                  className="qi-dash-button group flex items-center gap-2 px-3 py-2 text-sm font-medium"
                 >
                   <FileDown className="w-4 h-4" />
                   Export
                 </button>
                 <button
                   onClick={() => setShowClearModal(true)}
-                  className="group flex items-center gap-2 px-3.5 py-2 bg-red-50 dark:bg-red-500/10 hover:bg-red-100 dark:hover:bg-red-500/20 text-red-600 dark:text-red-300 rounded-lg transition-all border border-red-200 dark:border-red-500/20 text-sm font-medium"
+                  className="qi-dash-button is-danger group flex items-center gap-2 px-3 py-2 text-sm font-medium"
                 >
                   <Trash2 className="w-4 h-4" />
                   Clear All
@@ -980,10 +956,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               {/* Toggle button */}
               <button
                 onClick={() => setFilterOpen(!filterOpen)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border ${dashboardFilters.length > 0
-                  ? 'bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-500/40 hover:bg-indigo-100 dark:hover:bg-indigo-500/20'
-                  : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-slate-700'
-                  }`}
+                className={`qi-dash-button flex items-center gap-2 px-3 py-2 text-sm font-medium ${dashboardFilters.length > 0 ? 'is-active' : ''}`}
               >
                 <SlidersHorizontal className="w-4 h-4" />
                 Global Filters
@@ -1268,34 +1241,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
               return (
                 <div
                   key={item.id}
-                  className={`
-                    animate-card-entrance
-                    bg-white dark:bg-[#171c26]/80 dark:backdrop-blur-sm border border-gray-200 dark:border-white/[0.08] rounded-xl overflow-hidden
-                    shadow-sm hover:shadow-lg dark:hover:shadow-violet-500/5
-                    transition-all duration-300 group flex flex-col
-                    hover:border-gray-300 dark:hover:border-violet-500/20
-                    print:break-inside-avoid
-                  `}
+                  className="qi-dash-card animate-card-entrance overflow-hidden group flex flex-col print:break-inside-avoid"
                   onMouseEnter={() => setHoveredCard(item.id)}
                   onMouseLeave={() => setHoveredCard(null)}
                 >
                   {/* ── Card Header — drag handle ── */}
-                  <div className="drag-handle flex items-center justify-between px-3.5 py-2.5 border-b border-gray-100 dark:border-white/[0.06] bg-gray-50/80 dark:bg-white/[0.02] flex-shrink-0 cursor-grab active:cursor-grabbing">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      {/* Grip dots visible on hover */}
-                      <div className="opacity-0 group-hover:opacity-40 transition-opacity">
-                        <GripVertical className="w-4 h-4 text-slate-400" />
-                      </div>
-
-                      {/* Chart type badge */}
-                      <div
-                        className="w-6 h-6 rounded-md flex items-center justify-center shrink-0"
-                        style={{ backgroundColor: accent.accent + '20', color: accent.accent }}
-                      >
-                        {getChartIcon(vis)}
-                      </div>
-
-                      <h3 className="font-semibold text-gray-900 dark:text-white text-sm truncate">
+                  <div className="qi-dash-card-header drag-handle flex items-center justify-between pl-4 pr-2.5 pt-3 pb-1 flex-shrink-0 cursor-grab active:cursor-grabbing">
+                    <div className="flex items-center gap-1.5 min-w-0 flex-1">
+                      <h3 className="qi-dash-card-title text-sm font-semibold truncate">
                         <EditableTitle
                           value={item.title}
                           onSave={(t) => updateItem({ ...item, title: t })}
@@ -1317,7 +1270,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all print:hidden shrink-0 ml-2">
+                    <div className="qi-dash-card-actions flex items-center gap-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity print:hidden shrink-0 ml-2">
                       {/* Global filter toggle — only shown when filters are active */}
                       {dashboardFilters.length > 0 && (
                         <button
@@ -1325,10 +1278,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                             e.stopPropagation();
                             updateItem({ ...item, ignoreGlobalFilter: !item.ignoreGlobalFilter });
                           }}
-                          className={`p-1.5 rounded-lg transition-all ${item.ignoreGlobalFilter
-                            ? 'bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-600'
-                            : 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-100 dark:hover:bg-indigo-500/25'
-                            }`}
+                          className={`qi-dash-icon-button p-1.5 ${item.ignoreGlobalFilter ? '' : 'is-active'}`}
                           title={item.ignoreGlobalFilter ? 'Global filter OFF — click to enable' : 'Global filter ON — click to disable'}
                         >
                           <Filter className="w-3.5 h-3.5" />
@@ -1343,20 +1293,14 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                           const newFmt = toggleDataLabels(fmt);
                           updateItem({ ...item, result: { ...item.result, formatting: newFmt } });
                         }}
-                        className={`p-1.5 rounded-lg transition-all ${
-                          (item.result.formatting || formatting)?.showDataLabels
-                            ? effectiveDataLabelMode(item.result.formatting || formatting) === 'all'
-                              ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-300 hover:bg-indigo-200'
-                              : 'bg-sky-50 dark:bg-sky-500/15 text-sky-600 dark:text-sky-300 hover:bg-sky-100'
-                            : 'bg-gray-50 dark:bg-gray-700 text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-600'
-                        }`}
+                        className={`qi-dash-icon-button p-1.5 ${(item.result.formatting || formatting)?.showDataLabels ? 'is-active' : ''}`}
                         title={`Labels: ${effectiveDataLabelMode(item.result.formatting || formatting) === 'off' ? 'Off — click to show all' : effectiveDataLabelMode(item.result.formatting || formatting) === 'all' ? 'All — click to turn off' : 'First series only — click to show all'}`}
                       >
                         <Tag className="w-3.5 h-3.5" />
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); onEdit?.(item); }}
-                        className="p-1.5 rounded-lg bg-violet-50 dark:bg-violet-500/15 hover:bg-violet-100 dark:hover:bg-violet-500/25 text-violet-600 dark:text-violet-300 transition-all"
+                        className="qi-dash-icon-button p-1.5"
                         title="Edit in Workbench"
                       >
                         <Edit className="w-3.5 h-3.5" />
@@ -1365,7 +1309,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       {dataset && (!item.datasetId || item.datasetId === dataset.id) && item.result?.queryConfig && (
                         <button
                           onClick={(e) => { e.stopPropagation(); handleRefreshCard(item); }}
-                          className={`p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-500/15 hover:bg-emerald-100 dark:hover:bg-emerald-500/25 text-emerald-600 dark:text-emerald-300 transition-all ${refreshingCards.has(item.id) ? 'animate-spin' : ''}`}
+                          className={`qi-dash-icon-button p-1.5 ${refreshingCards.has(item.id) ? 'animate-spin' : ''}`}
                           title="Refresh with current data"
                           disabled={refreshingCards.has(item.id)}
                         >
@@ -1374,7 +1318,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       )}
                       <button
                         onClick={(e) => { e.stopPropagation(); removeItem(item.id); }}
-                        className="p-1.5 rounded-lg bg-red-50 dark:bg-red-500/15 hover:bg-red-100 dark:hover:bg-red-500/25 text-red-500 dark:text-red-300 transition-all"
+                        className="qi-dash-icon-button is-danger p-1.5"
                         title="Remove from Dashboard"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -1386,8 +1330,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       Pinned visuals intentionally use the same light canvas as Question Builder.
                       ChartVisualization is transparent, so the explicit surface keeps stored
                       axis/data-label colours legible in both light and dark dashboard themes. ── */}
-                  <div className="flex-1 p-2 min-h-0 overflow-hidden flex items-center justify-center bg-white">
-                    <div className="w-full h-full min-h-0 overflow-hidden rounded-xl bg-white">
+                  <div className="flex-1 px-2 pb-1 min-h-0 overflow-hidden flex items-center justify-center">
+                    <div className="w-full h-full min-h-0 overflow-hidden">
                       <ErrorBoundary compact label={item.title || 'Chart'}>
                         {item.result.needsLocalData ? missingDataView(item) : sqlFilterView(item) || <DashboardResultVisualization
                           result={visibleResult(item)}
@@ -1399,11 +1343,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                   </div>
 
                   {/* ── Card Footer — Metric Summary ── */}
-                  <div className="px-3.5 py-2 border-t border-gray-100 dark:border-white/[0.06] bg-gray-50 dark:bg-white/[0.02] flex items-center justify-between text-[11px] shrink-0">
-                    <span className="text-gray-500 dark:text-gray-400 font-medium truncate">
+                  <div className="qi-dash-card-footer px-4 pb-2.5 pt-0.5 flex items-center justify-between text-[11px] shrink-0">
+                    <span className="truncate">
                       {item.result.yLabel || item.result.yKey}
                     </span>
-                    <span className="text-gray-400 dark:text-gray-500 font-mono">
+                    <span className="tabular-nums">
                       {item.result.needsLocalData ? 'Data stays local' : `${item.result.data?.length || 0} rows`}
                     </span>
                   </div>

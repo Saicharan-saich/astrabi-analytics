@@ -53,6 +53,10 @@ async function boot(page: Page, theme: 'light' | 'dark', activeTab: string) {
         });
         db.close();
     }, { userId: user.id, rows: salesRows() });
+    if (theme === 'light') {
+        await page.getByRole('button', { name: /skip tour/i }).waitFor();
+        await page.screenshot({ path: path.join(OUT, `01-tour-${theme}.png`) });
+    }
     await page.getByRole('button', { name: /skip tour/i }).click();
     if (theme === 'light') await page.screenshot({ path: path.join(OUT, `00-login-${theme}.png`) });
     await page.getByLabel('Email Address').fill(user.email);

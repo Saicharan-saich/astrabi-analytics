@@ -1,6 +1,7 @@
 import React from 'react';
 import { Palette, X, CheckCircle2, Type, Eye, Grid, Hash } from 'lucide-react';
 import { FormattingConfig } from '../types';
+import { PALETTES } from '../utils/chartUtils';
 
 interface FormatPanelProps {
   formatting: FormattingConfig;
@@ -148,7 +149,7 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
             onChange={value => update({ colorEncoding: value as NonNullable<FormattingConfig['colorEncoding']> })}
           />
           <p className="mt-1.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-            Auto uses a low-to-high shade for time periods and distinct colours for named categories. Multi-series colours stay distinct.
+            Auto uses one colour for a single series, and distinct colours for slices and for multiple series. Choose Low → high to shade by value, or Categories to colour each bar.
           </p>
         </div>
         <div>
@@ -166,17 +167,40 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
                     : 'border-transparent hover:scale-105 hover:shadow-sm'
                 }`}
                 style={{
-                  background:
-                    mode === 'vibrant' ? '#3b82f6' :
-                    mode === 'electric' ? '#6366f1' :
-                    mode === 'neon' ? '#22c55e' :
-                    mode === 'sunset' ? '#f97316' : '#0ea5e9',
+                  // Preview the first four series colours of each palette.
+                  background: `linear-gradient(90deg, ${PALETTES[mode].slice(0, 4)
+                    .map((colour, index) => `${colour} ${index * 25}% ${(index + 1) * 25}%`).join(', ')})`,
                 }}
-                title={mode.charAt(0).toUpperCase() + mode.slice(1)}
+                title={mode === 'vibrant' ? 'Clean (default)' : mode.charAt(0).toUpperCase() + mode.slice(1)}
+                aria-label={`${mode === 'vibrant' ? 'Clean (default)' : mode} palette`}
               />
             ))}
           </div>
         </div>
+
+        {chartType === 'kpiCard' && (
+          <div>
+            <label htmlFor="qi-kpi-goal" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
+              Goal
+            </label>
+            <input
+              id="qi-kpi-goal"
+              type="number"
+              inputMode="decimal"
+              placeholder="e.g. 250000"
+              value={formatting.kpiGoal ?? ''}
+              onChange={e => {
+                const raw = e.target.value.trim();
+                const goal = raw === '' ? undefined : Number(raw);
+                update({ kpiGoal: goal !== undefined && Number.isFinite(goal) && goal > 0 ? goal : undefined });
+              }}
+              className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100"
+            />
+            <p className="mt-1.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
+              Shows progress towards this target under the KPI. Leave empty to hide.
+            </p>
+          </div>
+        )}
 
         {/* ═══ SECTION: Numbers ══════════════════════════════ */}
         <SectionHeader icon={<Hash className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />} label="Numbers" />

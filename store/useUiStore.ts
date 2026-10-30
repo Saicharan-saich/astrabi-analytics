@@ -32,7 +32,7 @@ export const useUiStore = create<UIState>()(
             showAbout: false,
             appFontSize: 14,
             appFontBold: false,
-            theme: 'dark',
+            theme: 'light',
 
             setActiveTab: (tab) => set({ activeTab: tab }),
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),

@@ -21,7 +21,11 @@ export const PALETTES = {
     // Multi-series categorical palette — validated (lightness band, chroma floor,
     // colour-blind adjacent separation, and contrast on a dark surface all PASS).
     // Order is significant: adjacent slots are guaranteed distinguishable.
-    vibrant: ['#3987e5', '#008300', '#d55181', '#c98500', '#199e70', '#d95926', '#9085e9', '#e66767', '#3b82f6', '#14b8a6'],
+    // Clean default (2026-10): soft, mid-lightness hues in the style of
+    // modern BI dashboards. Slot 1 (indigo) is the single-series colour.
+    // Adjacent slots differ in hue family (indigo, green, blue, lilac, teal,
+    // coral, amber, orange) so stacked/legend colours stay distinguishable.
+    vibrant: ['#6e6fb8', '#88bf4d', '#4a90e2', '#a989c5', '#5fbfbf', '#ef8c8c', '#f2c25c', '#f2a86f', '#8c95a8', '#2f7f7f'],
     electric: ['#4f46e5', '#0891b2', '#059669', '#d97706', '#dc2626', '#7c3aed', '#0e7490', '#c026d3', '#2563eb', '#ea580c'],
     neon: ['#00b4d8', '#00cc6a', '#e63946', '#e6b800', '#a855f7', '#e11d48', '#14b8a6', '#84cc16', '#3b82f6', '#f97316'],
     sunset: ['#f43f5e', '#fb923c', '#fbbf24', '#a3e635', '#34d399', '#22d3ee', '#818cf8', '#e879f9', '#f472b6', '#fb7185'],

@@ -59,6 +59,12 @@ export default {
   darkMode: 'class',
   theme: {
     extend: {
+      // The app shell uses Tailwind's `font-sans`; without this it fell back
+      // to the OS font (Segoe UI / DejaVu) while the login page used Manrope.
+      fontFamily: {
+        sans: ['Inter', 'system-ui', '-apple-system', 'Segoe UI', 'Roboto', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
+      },
       colors: {
         brand: azure,
         violet: azure,

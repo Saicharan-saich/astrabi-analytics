@@ -327,7 +327,7 @@ export const useAppStore = create<AppStore>()(
             showAbout: false,
             appFontSize: 14,
             appFontBold: false,
-            theme: 'dark',
+            theme: 'light',
             hiddenTabs: [],
             setActiveTab: (tab) => set({ activeTab: tab }),
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),

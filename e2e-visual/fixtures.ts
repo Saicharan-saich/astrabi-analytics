@@ -57,24 +57,32 @@ export function dashboardFixture() {
     const cities = [...new Set(rows.map(r => r.city))].map(city => ({ city, revenue: Math.round(sum(rows.filter(r => r.city === city), 'revenue')) }))
         .sort((a, b) => b.revenue - a.revenue);
 
-    const card = (id: string, title: string, vis: string, data: any[], xKey: string, yKey: string, yLabel: string, config: any = {}) => ({
-        id, title, width: 'half', datasetId: 'visual-sales', datasetName: 'Sales.csv',
-        result: {
-            data, xKey, yKey, yLabel, vis, insight: '', sql: '',
-            config: { questionId: 'custom_builder', metric: yKey, dimension: xKey, aggregation: 'SUM', ...config },
-            queryConfig: { questionId: 'custom_builder', metric: yKey, dimension: xKey, aggregation: 'SUM', ...config },
-        },
-    });
+    // Cards carry real Question Builder configs: the dashboard re-runs each
+    // card against the dataset, so `data` is only the first paint.
+    const card = (id: string, title: string, vis: string, data: any[], xKey: string, yKey: string, yLabel: string, config: any, formatting?: any) => {
+        const full = { questionId: 'custom_builder', aggregation: 'SUM', timeGrain: 'Raw Date', analysisType: 'Standard', ...config };
+        return {
+            id, title, width: 'half', datasetId: 'visual-sales', datasetName: 'Sales.csv',
+            result: { data, xKey, yKey, yLabel, vis, insight: '', sql: '', config: full, queryConfig: full, ...(formatting ? { formatting } : {}) },
+        };
+    };
 
     return {
         id: 'visual-dashboard', name: 'E-commerce insights', createdAt: 1767225600000,
         items: [
-            card('rev-orders', 'Revenue and orders over time', 'combo', byQuarter, 'quarter', 'revenue', 'Revenue', { secondaryMetrics: ['orders'] }),
-            card('kpi-rev', 'Revenue this quarter', 'kpiCard', [{ dim: last.quarter, metric: last.revenue, previous_value: prev.revenue }], 'dim', 'metric', 'Revenue', { comparison: 'previous_period' }),
-            card('orders-cat', 'Total orders by product category', 'doughnut', ordersByCategory, 'category', 'orders', 'Orders'),
-            card('rev-cat', 'Revenue by product category', 'stackedBar', stacked, 'month', 'revenue', 'Revenue', { dimension: 'month', secondaryDimensions: ['category'] }),
-            card('aov', 'Average order value by month', 'line', aov, 'month', 'avg_order_value', 'Average order value', { aggregation: 'AVG' }),
-            card('cities', 'Revenue by city', 'horizontalBar', cities, 'city', 'revenue', 'Revenue'),
+            card('rev-orders', 'Revenue and units sold over time', 'combo', byQuarter, 'order_date', 'revenue', 'Revenue',
+                { metric: 'revenue', dimension: 'order_date', timeGrain: 'Quarter', sort: 'oldest', secondaryMetrics: ['quantity'], secondaryMetricVisuals: { quantity: 'line' }, axisMode: 'dual', chartType: 'combo' }),
+            card('kpi-rev', 'Revenue this quarter', 'kpiCard', [{ dim: last.quarter, metric: last.revenue, previous_value: prev.revenue }], 'dim', 'metric', 'Revenue',
+                { metric: 'revenue', dimension: '', comparison: 'previous_period', comparisonMode: 'total', comparisonGrain: 'quarter' },
+                { colorMode: 'vibrant', numberFormat: 'auto', fontSize: 'md', headerSize: 'md', headerBold: true, showLabels: true, showDataLabels: false, tableCalculations: [], kpiGoal: 250000 }),
+            card('orders-cat', 'Total orders by product category', 'doughnut', ordersByCategory, 'category', 'orders', 'Orders',
+                { metric: 'order_id', dimension: 'category', aggregation: 'COUNT_DISTINCT', chartType: 'doughnut' }),
+            card('rev-cat', 'Revenue by product category', 'stackedBar', stacked, 'order_date', 'revenue', 'Revenue',
+                { metric: 'revenue', dimension: 'order_date', timeGrain: 'Quarter', sort: 'oldest', secondaryDimensions: ['category'], chartStyle: 'stacked' }),
+            card('aov', 'Average order value by month', 'line', aov, 'order_date', 'revenue', 'Average order value',
+                { metric: 'revenue', dimension: 'order_date', aggregation: 'AVG', timeGrain: 'Month', sort: 'oldest', chartType: 'line' }),
+            card('cities', 'Revenue by city', 'horizontalBar', cities, 'city', 'revenue', 'Revenue',
+                { metric: 'revenue', dimension: 'city', sort: 'desc', chartStyle: 'horizontal' }),
         ],
         layout: [
             { i: 'rev-orders', x: 0, y: 0, w: 8, h: 6 },

@@ -45,9 +45,9 @@ ChartJS.register(
     TreemapElement
 );
 
-// Charts use the same typeface as the rest of the UI (Manrope, see index.css)
+// Charts use the same typeface as the rest of the UI (Inter, see index.css)
 // so axis ticks, legends and tooltips read as part of the interface.
-const CHART_FONT_FAMILY = "'Manrope', 'Inter', system-ui, -apple-system, sans-serif";
+const CHART_FONT_FAMILY = "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif";
 ChartJS.defaults.font.family = CHART_FONT_FAMILY;
 
 import { Dataset, ColumnType, AggregationType, QueryConfig, AnalysisResult, TimeGrain, AnalysisType, ChartConfig, FormattingConfig } from '../types';
@@ -65,6 +65,7 @@ import { fitPieLabelText, layoutPieLabelRows } from '../utils/pieLabelLayout';
 import { extraTooltipMetricKeys, readableChartTextColor } from '../utils/chartPresentation';
 import { MapChart } from './MapChart';
 import { CHART_TYPE_OPTIONS } from './charts/chartRegistry';
+import { doughnutCenterPlugin, stackTotalsPlugin } from './charts/cleanChartPlugins';
 
 interface ChartVisualizationProps {
     data: any[];
@@ -164,6 +165,9 @@ const CATEGORICAL_CHART_TYPES = new Set([
 ]);
 // Absolute safety ceiling regardless of any user setting — prevents the freeze.
 const MAX_RENDER_CATEGORIES = 100;
+
+/** Chart types whose marks ARE the categories, so each keeps its own colour. */
+const PER_CATEGORY_COLOUR_TYPES = new Set(['pie', 'doughnut', 'polarArea', 'radar', 'treemap', 'funnel', 'waterfall', 'gauge']);
 
 function capCategoriesForRender(rows: any[], chartType: string, yKey: string, maxCategories?: number): { rows: any[]; truncatedFrom: number } {
     const cap = Math.min(maxCategories && maxCategories > 0 ? maxCategories : MAX_RENDER_CATEGORIES, MAX_RENDER_CATEGORIES);
@@ -657,8 +661,17 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
         // Time periods encode a low-to-high measure; named categories encode
         // identity. The appearance panel can explicitly override this choice.
-        const useSequential = resolveColorEncoding(formatting, xKey, transformedData, chartType) === 'sequential';
-        let palette = selectPalette(formatting, xKey, transformedData, chartType);
+        // Clean style: a single-series chart uses ONE colour by default, as in
+        // most BI tools — colour then only ever means "a different series".
+        // Choosing "Low → high" or "Categories" in Appearance still applies a
+        // value ramp or per-category colours; part-to-whole charts keep
+        // per-category colours because the slices are the series.
+        const encodingIsAuto = !formatting?.colorEncoding || (formatting.colorEncoding as string) === 'auto';
+        const singleHue = encodingIsAuto && !PER_CATEGORY_COLOUR_TYPES.has(chartType);
+        const useSequential = !singleHue && resolveColorEncoding(formatting, xKey, transformedData, chartType) === 'sequential';
+        let palette = singleHue
+            ? [selectPalette({ ...formatting, colorEncoding: 'discrete' } as any, xKey, transformedData, chartType)[0]]
+            : selectPalette(formatting, xKey, transformedData, chartType);
 
         // Keep the auto blue value ramp visible on both surfaces: high values
         // become darker on light charts and brighter on dark charts.
@@ -713,7 +726,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 labels: [...labels, 'Total'],
                 datasets: [
                     { label: 'Base', data: [...waterfallBase, 0], backgroundColor: 'transparent', borderWidth: 0, borderSkipped: false, barPercentage: 0.5, stack: 'waterfall' },
-                    { label: calculatedYLabel || 'Value', data: [...waterfallData, cumulative], backgroundColor: [...bgColors, baseColor], borderWidth: 0, borderRadius: 9, borderSkipped: false, barPercentage: 0.5, stack: 'waterfall' }
+                    { label: calculatedYLabel || 'Value', data: [...waterfallData, cumulative], backgroundColor: [...bgColors, baseColor], borderWidth: 0, borderRadius: 3, borderSkipped: false, barPercentage: 0.5, stack: 'waterfall' }
                 ]
             };
         }
@@ -729,13 +742,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 datasets: [{
                     label: calculatedYLabel || 'Value',
                     data: sorted.map(d => d.value),
-                    backgroundColor: (context: any) => createBarGradient(
-                        context.chart.ctx,
-                        funnelColors[context.dataIndex] || baseColor,
-                        context.chart.chartArea,
-                        true,
-                    ),
-                    borderRadius: 10,
+                    backgroundColor: sorted.map((_, index) => funnelColors[index] || baseColor),
+                    borderRadius: 3,
                     borderSkipped: false,
                     barPercentage: 0.85,
                     categoryPercentage: 0.95,
@@ -802,8 +810,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     backgroundColor: isFillChart ? `${color}30` : isBarVariant ? color : `${color}DD`,
                     // Stacked bars: a 2px surface-coloured border reads as a clean
                     // gap between segments (premium "floating segment" look).
-                    borderColor: (isBarVariant && chartType === 'stackedBar') ? (isDark ? '#12151d' : '#ffffff') : color,
-                    borderWidth: (isBarVariant && chartType === 'stackedBar') ? 2 : (isLineVariant ? 3 : isBarVariant ? 0 : 1.5),
+                    borderColor: (isBarVariant && chartType === 'stackedBar') ? (isDark ? '#161920' : '#ffffff') : color,
+                    borderWidth: (isBarVariant && chartType === 'stackedBar') ? 1 : (isLineVariant ? 2.5 : isBarVariant ? 0 : 1.5),
                     borderSkipped: false,
                     fill: isFillChart,
                     tension: isCurved ? 0.4 : isStepped ? 0 : (isLineVariant ? 0.35 : 0),
@@ -813,7 +821,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     pointBackgroundColor: '#fff',
                     pointBorderColor: color,
                     pointBorderWidth: 2,
-                    borderRadius: isBarVariant ? 9 : 0,
+                    borderRadius: isBarVariant && chartType !== 'stackedBar' ? 3 : 0,
                     maxBarThickness: isBarVariant ? Math.max(20, Math.floor(200 / seriesValues.length)) : undefined,
                     yAxisID: 'y',
                     spanGaps: true,
@@ -841,12 +849,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     label: calculatedYLabel || 'Value',
                     data: values,
                     backgroundColor: bgColors,
-                    borderColor: isDark ? '#111b31' : '#ffffff',
+                    borderColor: isDark ? '#161920' : '#ffffff',
                     borderWidth: 2,
-                    hoverOffset: 10,
-                    hoverBorderColor: isDark ? '#111b31' : '#ffffff',
+                    hoverOffset: 4,
+                    hoverBorderColor: isDark ? '#161920' : '#ffffff',
                     hoverBorderWidth: 2,
-                    spacing: 2,
+                    spacing: 0,
                 }]
             };
         }
@@ -863,7 +871,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             borderColor: isBarVariant
                 ? 'transparent'
                 : borderColor,
-            borderWidth: isLineVariant ? 3 : isBarVariant ? 0 : 2,
+            borderWidth: isLineVariant ? 2.5 : isBarVariant ? 0 : 2,
             fill: isFillChart,
             tension: isCurved ? 0.45 : isStepped ? 0 : (chartType === 'line' ? 0.4 : 0),
             stepped: isStepped ? 'middle' as const : false,
@@ -877,8 +885,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             segment: isLineVariant && useSequential
                 ? { borderColor: (context: any) => primaryColors[context.p1DataIndex] || baseColor }
                 : undefined,
-            borderRadius: isBarVariant ? 7 : 0,
-            borderSkipped: false,
+            borderRadius: isBarVariant ? 3 : 0,
+            borderSkipped: isBarVariant ? 'start' as const : false,
             maxBarThickness: 64,
             barPercentage: isBarVariant ? 0.72 : undefined,
             categoryPercentage: isBarVariant ? 0.82 : undefined,
@@ -1054,9 +1062,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             : [];
 
         const SECONDARY_COLORS = [
-            { border: isDark ? '#5bd4c2' : '#0f9c8f', bg: isDark ? '#5bd4c240' : '#0f9c8f30' },
-            { border: isDark ? '#e8b576' : '#c47c33', bg: isDark ? '#e8b57640' : '#c47c3330' },
-            { border: isDark ? '#dc9eb5' : '#bc668a', bg: isDark ? '#dc9eb540' : '#bc668a30' },
+            { border: isDark ? '#9ccc65' : '#7cb342', bg: isDark ? '#9ccc6540' : '#7cb34230' },
+            { border: isDark ? '#f2c25c' : '#e0a82e', bg: isDark ? '#f2c25c40' : '#e0a82e30' },
+            { border: isDark ? '#ef8c8c' : '#e06b6b', bg: isDark ? '#ef8c8c40' : '#e06b6b30' },
         ];
 
         // Determine axis mode: compare primary vs secondary max values
@@ -1147,11 +1155,30 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             maintainAspectRatio: false,
             indexAxis: isHorizontal ? 'y' as const : 'x' as const,
             layout: {
-                padding: isPieChart ? { top: 40, left: 60, right: 60, bottom: 40 } : { top: 50, left: 16, right: 16, bottom: 16 }
+                padding: isPieChart
+                    ? (formatting?.showDataLabels ? { top: 30, left: 56, right: 56, bottom: 30 } : { top: 8, left: 8, right: 8, bottom: 8 })
+                    : { top: isStacked && chartType !== 'waterfall' ? 28 : 20, left: 8, right: 12, bottom: 4 }
             },
-            ...(chartType === 'doughnut' ? { cutout: '62%' } : {}),
+            ...(chartType === 'doughnut' ? { cutout: '64%' } : {}),
             ...(chartType === 'gauge' ? { cutout: '70%' } : {}),
             plugins: {
+                qiDoughnutCenter: {
+                    display: chartType === 'doughnut',
+                    text: chartType === 'doughnut'
+                        ? formatCompactLabel((chartData?.datasets?.[0]?.data || []).reduce((a: number, v: any) => a + (Number(v) || 0), 0))
+                        : '',
+                    caption: 'Total',
+                    color: isDark ? '#e8eaef' : '#1f2430',
+                    captionColor: isDark ? '#8c94a4' : '#8a92a3',
+                    fontFamily: CHART_FONT_FAMILY,
+                },
+                qiStackTotals: {
+                    display: chartType === 'stackedBar' && (formatting?.showLabels ?? true),
+                    formatter: (value: number) => formatCompactLabel(value),
+                    color: isDark ? '#e8eaef' : '#1f2430',
+                    fontFamily: CHART_FONT_FAMILY,
+                    horizontal: isHorizontal,
+                },
                 // Custom Data Labels Plugin
                 customDataLabels: { // Namespace for our custom plugin
                     display: formatting ? formatting.showDataLabels : false,
@@ -1163,7 +1190,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         return formatCompactMetricLabel(val, metricName);
                     },
                     primaryLabel: yLabel || yKey || '',
-                    color: readableChartTextColor(formatting?.dataLabelColor, isDark, isDark ? '#ecf4ff' : '#000000'),
+                    color: readableChartTextColor(formatting?.dataLabelColor, isDark, isDark ? '#c9ced8' : '#4b5363'),
                     font: {
                         weight: formatting?.dataLabelBold !== false ? 'bold' : 'normal',
                         size: dataLabelFontSize
@@ -1177,20 +1204,34 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     display: (formatting?.showLabels ?? true)
                         && !(isPieChart && formatting?.showDataLabels)
                         && (isPieChart || (chartData?.datasets?.length ?? 0) > 1),
-                    position: 'bottom' as const,
-                    align: 'center' as const,
+                    // Clean style: legend above the plot, left-aligned (or beside a
+                    // pie/donut), small dots, quiet text.
+                    position: isPieChart ? 'right' as const : 'top' as const,
+                    align: isPieChart ? 'center' as const : 'start' as const,
                     labels: {
                         font: {
-                            size: Math.max(fontSize, 11),
+                            size: Math.max(fontSize, 12),
                             family: CHART_FONT_FAMILY,
-                            weight: '600' as any,
+                            weight: '500' as any,
                         },
                         usePointStyle: true,
                         pointStyle: 'circle',
-                        padding: isPieChart ? 22 : 20,
-                        color: isDark ? '#cbd5e1' : '#50617c',
-                        boxWidth: 10,
-                        boxHeight: 10,
+                        padding: isPieChart ? 14 : 16,
+                        color: isDark ? '#a4abb9' : '#596275',
+                        boxWidth: 7,
+                        boxHeight: 7,
+                        ...(isPieChart ? {
+                            // "Electronics  27%" — share sits in the legend, as in the reference
+                            generateLabels: (chart: any) => {
+                                const base = ChartJS.overrides.doughnut.plugins.legend.labels.generateLabels(chart);
+                                const values: number[] = (chart.data.datasets?.[0]?.data || []).map((v: any) => Number(v) || 0);
+                                const total = values.reduce((a, b) => a + b, 0) || 1;
+                                return base.map((item: any, index: number) => ({
+                                    ...item,
+                                    text: `${item.text}  ${Math.round((values[index] / total) * 100)}%`,
+                                }));
+                            },
+                        } : {}),
                     },
                 },
                 title: {
@@ -1210,28 +1251,30 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     }
                 },
                 tooltip: {
-                    backgroundColor: 'rgba(17, 27, 49, 0.97)',
-                    titleColor: '#f8fafc',
-                    bodyColor: '#d7e0ef',
-                    borderColor: 'rgba(160, 178, 230, 0.28)',
+                    // Clean style: a light card on light charts, dark on dark.
+                    backgroundColor: isDark ? '#1b1f27' : '#ffffff',
+                    titleColor: isDark ? '#e8eaef' : '#1f2430',
+                    bodyColor: isDark ? '#a4abb9' : '#596275',
+                    borderColor: isDark ? 'rgba(255, 255, 255, 0.10)' : '#e6e8ec',
                     borderWidth: 1,
-                    padding: { top: 15, bottom: 15, left: 18, right: 18 },
-                    cornerRadius: 16,
+                    padding: { top: 10, bottom: 10, left: 12, right: 12 },
+                    cornerRadius: 8,
+                    caretSize: 5,
                     titleFont: {
-                        size: 14,
-                        weight: 'bold' as const,
+                        size: 12,
+                        weight: 600 as any,
                         family: CHART_FONT_FAMILY
                     },
                     bodyFont: {
-                        size: 13,
+                        size: 12,
                         family: CHART_FONT_FAMILY
                     },
-                    bodySpacing: 8,
-                    titleMarginBottom: 11,
+                    bodySpacing: 5,
+                    titleMarginBottom: 6,
                     displayColors: true,
-                    boxWidth: 10,
-                    boxHeight: 10,
-                    boxPadding: 8,
+                    boxWidth: 7,
+                    boxHeight: 7,
+                    boxPadding: 5,
                     usePointStyle: true,
                     mode: 'index' as const,
                     intersect: false,
@@ -1371,7 +1414,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     grid: {
                         display: formatting?.showGridLines ?? false, // Clean: no X grid by default
                         drawBorder: false,
-                        color: isDark ? 'rgba(203, 213, 225, 0.09)' : 'rgba(114, 134, 170, 0.10)',
+                        color: isDark ? 'rgba(255, 255, 255, 0.06)' : '#eef0f3',
                     },
                     border: {
                         display: false,
@@ -1383,10 +1426,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         font: {
                             size: axisLabelFontSize,
                             family: CHART_FONT_FAMILY,
-                            weight: formatting?.axisBold !== false ? '600' as const : ('500' as any)
+                            weight: formatting?.axisBold === true ? '600' as const : ('400' as any)
                         },
-                        color: readableChartTextColor(formatting?.axisColor, isDark, isDark ? '#c5d3e5' : '#52637d'),
-                        padding: 11,
+                        color: readableChartTextColor(formatting?.axisColor, isDark, isDark ? '#8c94a4' : '#8a92a3'),
+                        padding: 8,
                         // For horizontal bars, X-axis is the VALUE axis — format numbers
                         // For vertical bars, X-axis is the CATEGORY axis — no callback needed
                         ...(isHorizontal ? {
@@ -1403,7 +1446,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     stacked: isStacked,
                     grid: {
                         display: formatting?.showGridLines ?? true,
-                        color: isDark ? 'rgba(203, 213, 225, 0.12)' : 'rgba(114, 134, 170, 0.16)',
+                        color: isDark ? 'rgba(255, 255, 255, 0.06)' : '#eef0f3',
                         drawBorder: false,
                         tickLength: 0,
                     },
@@ -1416,10 +1459,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         font: {
                             size: axisLabelFontSize,
                             family: CHART_FONT_FAMILY,
-                            weight: formatting?.axisBold !== false ? '600' as const : ('500' as any)
+                            weight: formatting?.axisBold === true ? '600' as const : ('400' as any)
                         },
-                        color: readableChartTextColor(formatting?.axisColor, isDark, isDark ? '#c5d3e5' : '#52637d'),
-                        padding: 11,
+                        color: readableChartTextColor(formatting?.axisColor, isDark, isDark ? '#8c94a4' : '#8a92a3'),
+                        padding: 8,
                         ...(!isHorizontal ? {
                             callback: function (value: any) {
                                 return formatAxisNumber(value);
@@ -1767,7 +1810,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         }
     }), []); // Empty deps — uses ref internally for latest data
 
-    const plugins = useMemo(() => [dataLabelsPlugin, growthLabelsPlugin], [dataLabelsPlugin, growthLabelsPlugin]);
+    const plugins = useMemo(() => [dataLabelsPlugin, growthLabelsPlugin, doughnutCenterPlugin, stackTotalsPlugin], [dataLabelsPlugin, growthLabelsPlugin]);
 
     const handleClick = onDrillDown ? (_event: any, elements: any[]) => {
         if (elements.length > 0) {
@@ -1827,6 +1870,27 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     }
 
 
+    /** Optional goal bar under a KPI (Appearance → Goal). */
+    const renderKpiGoal = (value: number) => {
+        const goal = formatting?.kpiGoal;
+        if (!goal || !Number.isFinite(goal) || goal <= 0) return null;
+        const progress = Math.max(0, value / goal);
+        const shown = Math.min(1, progress);
+        return (
+            <div className="qi-kpi-goal" aria-label={`${Math.round(progress * 100)}% of goal ${formatNumber(goal)}`}>
+                <div className="qi-kpi-goal-track">
+                    <div className={`qi-kpi-goal-fill ${progress >= 1 ? 'is-met' : ''}`} style={{ width: `${shown * 100}%` }} />
+                    <span className="qi-kpi-goal-marker" style={{ left: `${shown * 100}%` }} />
+                </div>
+                <div className="qi-kpi-goal-scale">
+                    <span>0</span>
+                    <span>{Math.round(progress * 100)}% of goal</span>
+                    <span>Goal {formatNumber(goal)}</span>
+                </div>
+            </div>
+        );
+    };
+
     const renderChart = () => {
         // KPI Card — pure HTML, no Chart.js
         if (chartType === 'kpiCard') {
@@ -1844,39 +1908,16 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     ? `Last ${config.comparisonOffset || 1} ${config.comparisonGrain || 'day'}${(config.comparisonOffset || 1) > 1 ? 's' : ''}`
                     : config?.comparison === 'same_period_last_year' ? 'Last Year' : 'Previous Period';
 
+                const goalBar = renderKpiGoal(currentVal);
                 return (
-                    <div className="qi-kpi qi-kpi-comparison flex flex-col items-center justify-center h-full gap-5 p-6">
-                        {/* Growth Badge */}
-                        <div className={`inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-bold ${isPositive ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                            <span>{isPositive ? '▲' : '▼'}</span>
-                            <span>{isPositive ? '+' : ''}{growthPct.toFixed(1)}%</span>
+                    <div className="qi-kpi qi-kpi-comparison qi-kpi-clean flex flex-col justify-center h-full px-6 py-5">
+                        <div className="qi-kpi-value qi-kpi-number">{formatNumber(currentVal)}</div>
+                        <div className="qi-kpi-label qi-kpi-caption">{calculatedYLabel || 'Current period'}</div>
+                        <div className={`qi-kpi-delta ${isPositive ? 'is-up' : 'is-down'}`}>
+                            <span className="qi-kpi-delta-change">{isPositive ? '↑' : '↓'} {Math.abs(growthPct).toFixed(2)}%</span>
+                            <span className="qi-kpi-delta-context">vs. {compLabel.toLowerCase()}: {formatNumber(prevVal)}</span>
                         </div>
-
-                        {/* Two-column comparison */}
-                        <div className="flex gap-8 items-end">
-                            {/* Current Period */}
-                            <div className="qi-kpi-metric flex flex-col items-center gap-2">
-                                <div className="text-3xl font-black text-indigo-600">{formatNumber(currentVal)}</div>
-                                <div className="w-24 bg-slate-100 rounded-full overflow-hidden h-3">
-                                    <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${(currentVal / maxVal) * 100}%` }}></div>
-                                </div>
-                                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Current Period</div>
-                            </div>
-
-                            {/* VS divider */}
-                            <div className="text-lg font-bold text-slate-300 pb-6">vs</div>
-
-                            {/* Previous Period */}
-                            <div className="qi-kpi-metric flex flex-col items-center gap-2">
-                                <div className="text-3xl font-black text-amber-600">{formatNumber(prevVal)}</div>
-                                <div className="w-24 bg-slate-100 rounded-full overflow-hidden h-3">
-                                    <div className="h-full bg-amber-500 rounded-full transition-all" style={{ width: `${(prevVal / maxVal) * 100}%` }}></div>
-                                </div>
-                                <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider">{compLabel}</div>
-                            </div>
-                        </div>
-
-                        <div className="text-sm font-medium text-slate-400 uppercase tracking-wider">{calculatedYLabel || 'Comparison'}</div>
+                        {goalBar}
                     </div>
                 );
             }
@@ -1887,14 +1928,17 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             const avg = count > 0 ? total / count : 0;
             const max = Math.max(...(transformedData?.map((d: any) => Number(d[yKey]) || 0) ?? [0]));
             return (
-                <div className="qi-kpi flex flex-col items-center justify-center h-full gap-4 p-6">
-                    <div className="qi-kpi-value text-5xl font-black text-indigo-600">{formatNumber(total)}</div>
-                    <div className="qi-kpi-label text-sm font-medium text-slate-500 uppercase tracking-wider">{calculatedYLabel || 'Total'}</div>
-                    <div className="qi-kpi-context flex gap-6 mt-2">
-                        <div className="text-center"><div className="text-lg font-bold text-slate-700">{count}</div><div className="text-[11px] text-slate-400">Records</div></div>
-                        <div className="text-center"><div className="text-lg font-bold text-slate-700">{formatNumber(avg)}</div><div className="text-[11px] text-slate-400">Average</div></div>
-                        <div className="text-center"><div className="text-lg font-bold text-slate-700">{formatNumber(max)}</div><div className="text-[11px] text-slate-400">Max</div></div>
-                    </div>
+                <div className="qi-kpi qi-kpi-clean flex flex-col justify-center h-full px-6 py-5">
+                    <div className="qi-kpi-value qi-kpi-number">{formatNumber(total)}</div>
+                    <div className="qi-kpi-label qi-kpi-caption">{calculatedYLabel || 'Total'}</div>
+                    {count > 1 && (
+                        <div className="qi-kpi-context qi-kpi-facts">
+                            <span><strong>{count.toLocaleString()}</strong> records</span>
+                            <span>Avg <strong>{formatNumber(avg)}</strong></span>
+                            <span>Max <strong>{formatNumber(max)}</strong></span>
+                        </div>
+                    )}
+                    {renderKpiGoal(total)}
                 </div>
             );
         }
