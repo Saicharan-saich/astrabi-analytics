@@ -174,6 +174,21 @@ const CATEGORICAL_CHART_TYPES = new Set([
 // Absolute safety ceiling regardless of any user setting — prevents the freeze.
 const MAX_RENDER_CATEGORIES = 100;
 
+/**
+ * Legend/tooltip name for a series: "SUM of revenue by quarter" → "Revenue",
+ * "AVG of order value" → "Average order value". Titles elsewhere keep the
+ * full wording; only series names are shortened.
+ */
+const friendlySeriesLabel = (label: string | undefined): string => {
+    if (!label) return 'Value';
+    const match = label.match(/^(SUM|AVG|AVERAGE|COUNT_DISTINCT|COUNT|MIN|MAX|MEDIAN)\s+of\s+(.+?)(?:\s+by\s+.+)?$/i);
+    if (!match) return label;
+    const field = match[2].replace(/_/g, ' ').trim();
+    const prefix: Record<string, string> = { AVG: 'Average ', AVERAGE: 'Average ', COUNT_DISTINCT: 'Distinct ', COUNT: 'Count of ', MIN: 'Minimum ', MAX: 'Maximum ', MEDIAN: 'Median ' };
+    const text = `${prefix[match[1].toUpperCase()] || ''}${field}`;
+    return text.charAt(0).toUpperCase() + text.slice(1);
+};
+
 /** Chart types whose marks ARE the categories, so each keeps its own colour. */
 const PER_CATEGORY_COLOUR_TYPES = new Set(['pie', 'doughnut', 'polarArea', 'radar', 'treemap', 'funnel', 'waterfall', 'gauge']);
 
@@ -854,7 +869,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             return {
                 labels,
                 datasets: [{
-                    label: calculatedYLabel || 'Value',
+                    label: friendlySeriesLabel(calculatedYLabel),
                     data: values,
                     backgroundColor: bgColors,
                     borderColor: isDark ? '#161920' : '#ffffff',
@@ -869,7 +884,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
         const primaryColors = generateColors(values);
         const datasets: any[] = [{
-            label: calculatedYLabel || 'Value',
+            label: friendlySeriesLabel(calculatedYLabel),
             data: values,
             backgroundColor: isFillChart
                     ? (context: any) => createGradient(context.chart.ctx, baseColor, context.chart.chartArea)
@@ -1106,7 +1121,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             const isAreaType = visType === 'area';
 
             // Human-readable label: "discount" → "Discount", "unit_price" → "Unit Price"
-            const humanLabel = secKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            const humanLabel = rawColName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 
             datasets.push({
                 label: humanLabel,
@@ -1164,7 +1179,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             indexAxis: isHorizontal ? 'y' as const : 'x' as const,
             layout: {
                 padding: isPieChart
-                    ? (formatting?.showDataLabels ? { top: 30, left: 56, right: 56, bottom: 30 } : { top: 8, left: 8, right: 8, bottom: 8 })
+                    ? (formatting?.showDataLabels && chartType !== 'doughnut' ? { top: 30, left: 56, right: 56, bottom: 30 } : { top: 8, left: 8, right: 8, bottom: 8 })
                     : { top: isStacked && chartType !== 'waterfall' ? 28 : 20, left: 8, right: 12, bottom: 4 }
             },
             ...(chartType === 'doughnut' ? { cutout: '64%' } : {}),
@@ -1216,7 +1231,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 legend: {
                     // Hide legend on pie/doughnut when data labels are on — labels already show "Category: XX.X%"
                     display: (formatting?.showLabels ?? true)
-                        && !(isPieChart && formatting?.showDataLabels)
+                        && !(chartType !== 'doughnut' && isPieChart && formatting?.showDataLabels)
                         && (isPieChart || (chartData?.datasets?.length ?? 0) > 1),
                     // Clean style: legend above the plot, left-aligned (or beside a
                     // pie/donut), small dots, quiet text.
@@ -1435,7 +1450,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     },
                     ticks: {
                         display: xVisible ?? true,
-                        maxRotation: isHorizontal ? 0 : categoryCount > 10 ? 38 : 45,
+                        maxRotation: isHorizontal ? 0 : categoryCount > 24 ? 40 : 0,
+                        autoSkip: true,
+                        autoSkipPadding: 12,
                         minRotation: 0,
                         font: {
                             size: axisLabelFontSize,
@@ -1554,7 +1571,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             const { ctx } = chart;
             ctx.save();
 
-            const isPie = chart.config.type === 'pie' || chart.config.type === 'doughnut';
+            // Donuts carry their shares in the legend (clean style), so the
+            // outside leader-line labels are drawn for pies only.
+            if (chart.config.type === 'doughnut') { ctx.restore(); return; }
+            const isPie = chart.config.type === 'pie';
 
             if (isPie) {
                 // ── OUTSIDE LABELS WITH LEADER LINES ──
@@ -1694,7 +1714,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         if (categoryCount > 14 && !keyPoints.has(index)) return;
                         // Stacked segments too thin to hold a label stay unlabelled;
                         // the stack total above the bar carries the number.
-                        if (isStackedBarChart && Math.abs((element.base ?? element.y) - element.y) < 16) return;
+                        if (isStackedBarChart) return; // the stack total above each bar carries the number
+                        if (dataset.qiSecondaryMetric === true && categoryCount > 8) return;
 
                         // Determine dataset type first
                         const isComparisonDs = i === 1 && latestData.some((d: any) => d.previous_value !== undefined);

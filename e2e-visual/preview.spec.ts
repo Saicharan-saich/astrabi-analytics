@@ -89,17 +89,37 @@ for (const theme of ['light', 'dark'] as const) {
 
     test(`workspaces ${theme}`, async ({ page }) => {
         await boot(page, theme, 'DASHBOARD');
+        const openNav = async (label: string) => {
+            let nav = page.getByRole('button', { name: label, exact: true }).first();
+            if (!(await nav.isVisible().catch(() => false))) {
+                const toggle = page.getByRole('button', { name: 'Open navigation', exact: true });
+                if (await toggle.isVisible().catch(() => false)) await toggle.click();
+                nav = page.getByRole('button', { name: label, exact: true }).first();
+            }
+            if (!(await nav.isVisible().catch(() => false))) return false;
+            await nav.click();
+            return true;
+        };
+
+        if (await openNav('Question Builder')) {
+            await shoot(page, `20-question-builder-${theme}`);
+            const dimension = page.locator('.qi-builder-dimension button[aria-haspopup="listbox"]').first();
+            if (await dimension.isVisible().catch(() => false)) {
+                await dimension.click();
+                await shoot(page, `21-builder-dropdown-${theme}`);
+                await page.getByRole('option', { name: 'category', exact: true }).click().catch(() => {});
+                await page.waitForTimeout(2500);
+                await shoot(page, `22-builder-result-${theme}`);
+            }
+        }
         for (const [label, file] of [
-            ['Question Builder', '20-question-builder'],
             ['AI SQL', '30-ai-sql'],
             ['Discover', '40-discover'],
             ['Dataset Workspace', '50-dataset-workspace'],
+            ['Data Source', '60-data-source'],
         ] as const) {
-            const nav = page.getByRole('button', { name: label, exact: true }).first();
-            if (await nav.isVisible().catch(() => false)) {
-                await nav.click();
-                await shoot(page, `${file}-${theme}`);
-            }
+            if (await openNav(label)) await shoot(page, `${file}-${theme}`);
         }
     });
+});
 }

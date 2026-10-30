@@ -699,8 +699,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         <Tooltip text="Choose which date column defines the analysis time anchor." position="bottom">
                             <div className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2 py-1 shadow-sm">
                                 <span
-                                    className="text-[11px] font-extrabold uppercase tracking-wide whitespace-nowrap"
-                                    style={{ color: '#000000', fontWeight: 800 }}
+                                    className="qi-anchor-label text-[11px] font-semibold uppercase tracking-wide whitespace-nowrap"
                                 >
                                     Date field
                                 </span>
@@ -723,8 +722,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         <label className="flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 shadow-sm cursor-pointer hover:border-indigo-300 transition-colors">
                             <Calendar className="w-3.5 h-3.5 text-indigo-500" />
                             <span
-                                className="text-[11px] font-extrabold uppercase tracking-wide"
-                                style={{ color: '#000000', fontWeight: 800 }}
+                                className="qi-anchor-label text-[11px] font-semibold uppercase tracking-wide"
                             >
                                 As of
                             </span>

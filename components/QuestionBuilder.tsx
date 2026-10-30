@@ -977,7 +977,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                             className="rounded-lg border border-indigo-400/20 bg-indigo-500/10 px-2 py-1 text-[11px] font-bold text-indigo-300"
                             title={`Dataset capability contract ${capabilityContract?.contractId}: ${capabilityRuleFor(metric)?.evidence.join(' · ')}`}
                         >
-                            Contract-safe: {capabilityRuleFor(metric)?.allowedAggregations.map(value => value.replace('_', ' ')).join(', ')}
+                            Works with: {capabilityRuleFor(metric)?.allowedAggregations.map(value => value.replace('_', ' ')).join(', ')}
                         </span>
                     )}
 

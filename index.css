@@ -3698,3 +3698,139 @@ body {
   border-radius: 8px;
   opacity: 1 !important;
 }
+
+/* Chart plot areas sit directly on the card (no tinted panel) */
+:root:is(.light, .dark) .qi-visual-plot,
+:root:is(.light, .dark) .qi-visual[data-appearance='dark'] .qi-visual-plot {
+  background: transparent !important;
+}
+
+/* ── Pre-login tour in light mode ─────────────────────────────────────
+   The tour is authored for a dark stage. In light mode it is re-mapped
+   onto the clean tokens here (dark mode keeps the original look). */
+:root.light:is(.light) .qi-prelogin-tour,
+:root.light:is(.light) .qi-prelogin-tour footer {
+  background: var(--bg-app) !important;
+  color: var(--text-primary) !important;
+}
+:root.light:is(.light) .qi-prelogin-tour footer {
+  background: var(--bg-surface) !important;
+  border-color: var(--border-default) !important;
+}
+:root.light:is(.light) .qi-prelogin-tour [class*='blur-['],
+:root.light:is(.light) .qi-prelogin-tour [class*='blur-2xl'],
+:root.light:is(.light) .qi-prelogin-tour .bg-dot-grid {
+  display: none !important;
+}
+:root.light:is(.light) .qi-prelogin-tour h1,
+:root.light:is(.light) .qi-prelogin-tour h2,
+:root.light:is(.light) .qi-prelogin-tour h3,
+:root.light:is(.light) .qi-prelogin-tour .text-white:not([class*='bg-gradient'] *):not([class*='bg-gradient']),
+:root.light:is(.light) .qi-prelogin-tour .text-sky-100 {
+  color: var(--text-primary) !important;
+}
+:root.light:is(.light) .qi-prelogin-tour .text-slate-200,
+:root.light:is(.light) .qi-prelogin-tour .text-slate-300 {
+  color: var(--text-secondary) !important;
+}
+:root.light:is(.light) .qi-prelogin-tour .text-slate-400,
+:root.light:is(.light) .qi-prelogin-tour .text-slate-500,
+:root.light:is(.light) .qi-prelogin-tour .text-slate-600 {
+  color: var(--text-tertiary) !important;
+}
+:root.light:is(.light) .qi-prelogin-tour .text-cyan-300,
+:root.light:is(.light) .qi-prelogin-tour .text-sky-300,
+:root.light:is(.light) .qi-prelogin-tour .text-violet-200,
+:root.light:is(.light) .qi-prelogin-tour .text-violet-300 {
+  color: var(--color-primary) !important;
+}
+:root.light:is(.light) .qi-prelogin-tour .text-emerald-300 { color: #3f8f2a !important; }
+:root.light:is(.light) .qi-prelogin-tour [class*='bg-white/'],
+:root.light:is(.light) .qi-prelogin-tour [class*='bg-slate-900'],
+:root.light:is(.light) .qi-prelogin-tour [class*='bg-slate-950'] {
+  background: var(--bg-surface) !important;
+  border-color: var(--border-default) !important;
+  box-shadow: var(--shadow-card) !important;
+  backdrop-filter: none !important;
+}
+:root.light:is(.light) .qi-prelogin-tour [class*='border-white/'] { border-color: var(--border-default) !important; }
+:root.light:is(.light) .qi-prelogin-tour button[class*='bg-gradient'] {
+  background: var(--color-primary) !important;
+  color: #fff !important;
+  box-shadow: none !important;
+}
+:root.light:is(.light) .qi-prelogin-tour button[class*='bg-gradient'] * { color: #fff !important; }
+:root.light:is(.light) .qi-prelogin-tour [aria-label='Tour progress'] .bg-cyan-300 { background: var(--color-primary) !important; }
+:root.light:is(.light) .qi-prelogin-tour [aria-label='Tour progress'] [class*='bg-white/'] { background: #d4d9e1 !important; box-shadow: none !important; }
+:root:is(.light, .dark) .qi-auth .qi-auth-muted.flex { color: var(--text-secondary) !important; }
+
+/* ── Builder chrome: light time-anchor pill, light popovers, calm header ── */
+:root:is(.light, .dark) .qi-time-anchor-bar {
+  background: var(--bg-surface) !important;
+  border: 1px solid var(--border-default) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+:root:is(.light, .dark) .qi-time-anchor-bar label,
+:root:is(.light, .dark) .qi-time-anchor-bar > div > div {
+  border: 0 !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+:root:is(.light, .dark) .qi-anchor-label { color: var(--text-tertiary); }
+:root.dark:is(.dark) .qi-time-anchor-bar input[type='date'] { color: var(--text-primary) !important; color-scheme: dark; }
+
+:root.light:is(.light) .qi-dropdown-surface {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-default) !important;
+  box-shadow: 0 12px 28px -12px rgba(16, 24, 40, 0.18), 0 2px 6px rgba(16, 24, 40, 0.06) !important;
+}
+:root.light:is(.light) .qi-dropdown-surface .qi-dropdown-option { background: #ffffff !important; color: var(--text-primary) !important; }
+:root.light:is(.light) .qi-dropdown-surface .qi-dropdown-option:hover,
+:root.light:is(.light) .qi-dropdown-surface label:hover,
+:root.light:is(.light) .qi-dropdown-surface > button:hover { background: var(--bg-hover) !important; color: var(--text-primary) !important; }
+:root.light:is(.light) .qi-dropdown-surface .qi-dropdown-option--selected { background: var(--accent) !important; color: var(--accent-foreground) !important; }
+:root.light:is(.light) .qi-dropdown-surface input,
+:root.light:is(.light) .qi-dropdown-surface input[type='text'] {
+  background: var(--bg-surface) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--input) !important;
+}
+:root.light:is(.light) .qi-dropdown-surface input::placeholder { color: var(--text-muted) !important; }
+
+@media (min-width: 1180px) {
+  :root:is(.light, .dark) .qi-builder-dock .qi-question-builder { padding-top: 3.9rem !important; }
+  :root:is(.light, .dark) .qi-builder-dock .qi-question-builder::before {
+    content: 'Question Builder' !important;
+    display: block !important;
+    position: absolute;
+    top: 1.3rem !important;
+    left: 3.55rem !important;
+    padding: 0 !important;
+    border: 0 !important;
+    background: none !important;
+    box-shadow: none !important;
+    color: var(--text-primary) !important;
+    font-size: 15px !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.01em !important;
+    text-transform: none !important;
+  }
+  :root:is(.light, .dark) .qi-builder-dock .qi-question-builder > .flex > .flex-wrap > img[alt='QuickInsight'] {
+    top: 1rem !important;
+    left: 1rem !important;
+    width: 1.9rem !important;
+    height: 1.9rem !important;
+    min-width: 1.9rem !important;
+    max-width: 1.9rem !important;
+    padding: 0 !important;
+    border-radius: 0.5rem !important;
+    border: 1px solid var(--border-default) !important;
+    box-shadow: none !important;
+    animation: none !important;
+    opacity: 1 !important;
+  }
+}
