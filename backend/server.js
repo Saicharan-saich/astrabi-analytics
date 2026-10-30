@@ -265,6 +265,12 @@ async function initAuthDatabase() {
 }
 
 const app = express();
+// Railway (and any CDN in front of it) terminates the connection and passes
+// the visitor's address in X-Forwarded-For. Without trusting that first hop,
+// every request appears to come from the proxy, so all users shared ONE
+// rate-limit budget and express-rate-limit logged ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+// TRUST_PROXY_HOPS can raise this if more proxies are added in front.
+app.set('trust proxy', Number(process.env.TRUST_PROXY_HOPS || 1));
 const PORT = process.env.PORT || 5002;
 const operationalState = {
     startedAt: Date.now(),
@@ -286,14 +292,21 @@ const allowedOrigins = [
     process.env.FRONTEND_URL // Custom override URL
 ].filter(Boolean);
 
+const blockedCorsOrigins = new Set();
 app.use(cors({
     origin: function (origin, callback) {
         // allow requests with no origin (like mobile apps or curl requests)
         if (!origin) return callback(null, true);
 
         if (allowedOrigins.indexOf(origin) === -1) {
-            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-            return callback(new Error(msg), false);
+            // Reject quietly: no CORS headers are sent, so the browser still
+            // blocks the request, but Express no longer throws a 500 with a
+            // stack trace for every attempt. Each blocked origin is logged once.
+            if (!blockedCorsOrigins.has(origin)) {
+                blockedCorsOrigins.add(origin);
+                console.warn(`[CORS] Blocked request from origin not on the allow-list: ${origin}`);
+            }
+            return callback(null, false);
         }
         return callback(null, true);
     },

@@ -38,6 +38,9 @@ jobs:
           mkdir -p /tmp/shots && cp -r visual-preview/. /tmp/shots/ 2>/dev/null || true
           cd /tmp/shots
           printf "Screenshots for %s @ %s\n" "$GITHUB_REF_NAME" "$GITHUB_SHA" > README.md
+          # Screenshot-only branch: tell Vercel not to deploy it (there is no
+          # app to build here, so a deploy would fail with "vite: not found").
+          printf '{\n  "git": { "deploymentEnabled": false }\n}\n' > vercel.json
           git init -q -b "$BRANCH"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
