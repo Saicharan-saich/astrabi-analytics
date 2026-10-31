@@ -1,7 +1,8 @@
 import React, { useMemo } from 'react';
 import { ComposableMap, Geographies, Geography, ZoomableGroup, Marker } from 'react-simple-maps';
 import { scaleLinear } from 'd3-scale';
-import { geoCentroid } from 'd3-geo';
+import { geoCentroid, geoEqualEarth } from 'd3-geo';
+import { frameCountries } from '../utils/countryCentroids';
 import { formatNumber } from '../utils/chartUtils';
 import { COUNTRY_ALIASES } from '../utils/chartSuggestions';
 
@@ -9,10 +10,6 @@ import { COUNTRY_ALIASES } from '../utils/chartSuggestions';
 const GEO_WORLD = "https://cdn.jsdelivr.net/npm/world-atlas@2.0.2/countries-110m.json";
 // US States TopoJSON
 const GEO_US = "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json";
-
-// When every country with data is in Europe, zoom there instead of showing
-// a world of empty land.
-const EUROPE = new Set(['albania', 'austria', 'belarus', 'belgium', 'bosnia and herz.', 'bulgaria', 'croatia', 'cyprus', 'czechia', 'denmark', 'estonia', 'finland', 'france', 'germany', 'greece', 'hungary', 'iceland', 'ireland', 'italy', 'latvia', 'lithuania', 'luxembourg', 'moldova', 'montenegro', 'netherlands', 'north macedonia', 'norway', 'poland', 'portugal', 'romania', 'serbia', 'slovakia', 'slovenia', 'spain', 'sweden', 'switzerland', 'ukraine', 'united kingdom']);
 
 const US_STATES = new Set([
     'alabama', 'alaska', 'arizona', 'arkansas', 'california', 'colorado', 'connecticut', 'delaware', 'florida', 'georgia',
@@ -90,25 +87,29 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
     const plotted = Object.keys(dataMap).length;
     // World maps get crowded: label countries only when there are few.
     const showLabels = isUSMap || plotted <= 12;
-    const europeOnly = !isUSMap && plotted > 0 && Object.keys(dataMap).every(name => EUROPE.has(name));
     // Wide frames suit a chart card; the SVG then scales to fit both ways.
     const frame = isUSMap ? { width: 800, height: 500 } : { width: 800, height: 440 };
-    const projectionConfig = isUSMap
-        ? { scale: 1000 }
-        : europeOnly ? { scale: 700, rotate: [-12, -53, 0] as [number, number, number] } : { scale: 150 };
-    const viewCentre: [number, number] = isUSMap ? [-97, 38] : europeOnly ? [12, 53] : [10, 18];
+    const projectionConfig = isUSMap ? { scale: 1000 } : { scale: 150 };
+    // Frame the countries that have data (all of Europe, say) instead of
+    // always showing a world of empty land.
+    const view = useMemo(() => {
+        if (isUSMap) return { center: [-97, 38] as [number, number], zoom: 1 };
+        const projection = geoEqualEarth().scale(150).translate([frame.width / 2, frame.height / 2]);
+        return frameCountries(Object.keys(dataMap), point => projection(point) as [number, number] | null, frame.width, frame.height)
+            || { center: [10, 18] as [number, number], zoom: 1 };
+    }, [isUSMap, dataMap, frame.width, frame.height]);
     const report = (text: string) => { setHovered(text); onTooltip?.(text); };
 
     return (
         <div className="qi-map w-full h-full min-h-[200px] rounded-xl overflow-hidden relative">
             <ComposableMap
-                projection={isUSMap ? "geoAlbersUsa" : europeOnly ? "geoAzimuthalEqualArea" : "geoEqualEarth"}
+                projection={isUSMap ? "geoAlbersUsa" : "geoEqualEarth"}
                 projectionConfig={projectionConfig}
                 width={frame.width}
                 height={frame.height}
                 style={{ width: '100%', height: '100%', display: 'block' }}
             >
-                <ZoomableGroup center={viewCentre} zoom={1}>
+                <ZoomableGroup center={view.center} zoom={view.zoom} minZoom={1} maxZoom={8}>
                     <Geographies geography={geoUrl}>
                         {({ geographies }) => (
                             <>
@@ -123,7 +124,7 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
                                             geography={geo}
                                             fill={hasData ? colorScale(value) : emptyFill}
                                             stroke={strokeColour}
-                                            strokeWidth={0.6}
+                                            strokeWidth={0.6 / view.zoom}
                                             style={{
                                                 default: { outline: "none" },
                                                 hover: {
@@ -156,10 +157,10 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
                                         <Marker coordinates={centroid} key={geo.rsmKey + "-label"}>
                                             <text
                                                 textAnchor="middle"
-                                                y={isUSMap ? 0 : 4}
+                                                y={isUSMap ? 0 : 4 / view.zoom}
                                                 style={{
                                                     fontFamily: "Inter, sans-serif",
-                                                    fontSize: isUSMap ? "8px" : "5px",
+                                                    fontSize: isUSMap ? "8px" : `${(12 / view.zoom).toFixed(2)}px`,
                                                     fill: isDark ? '#e8eaef' : '#1f2430',
                                                     fontWeight: 600,
                                                     pointerEvents: "none",
@@ -169,7 +170,7 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
                                                 {labelContent === 'both' ? (
                                                     <>
                                                         <tspan x="0" dy="-0.4em">{shortName}</tspan>
-                                                        <tspan x="0" dy="1.0em" fontSize={isUSMap ? "7px" : "4px"} fontWeight="normal">{formattedVal}</tspan>
+                                                        <tspan x="0" dy="1.0em" fontSize={isUSMap ? "7px" : `${(10 / view.zoom).toFixed(2)}px`} fontWeight="normal">{formattedVal}</tspan>
                                                     </>
                                                 ) : labelContent === 'name' ? (
                                                     shortName

@@ -1601,7 +1601,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     stacked: isStacked,
                     ...(isHorizontal && !hasNegativeValues ? { beginAtZero: true, min: 0 } : {}),
                     // Room for the value label past the longest bar.
-                    ...(isHorizontal && !axisRange ? { grace: '12%' } : {}),
+                    ...(isHorizontal && !axisRange ? { grace: chartType === 'funnel' ? '30%' : '12%' } : {}),
                     grid: {
                         display: formatting?.showGridLines ?? false, // Clean: no X grid by default
                         drawBorder: false,

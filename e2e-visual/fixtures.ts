@@ -142,7 +142,7 @@ export function galleryDashboardFixture() {
     };
     const months = group(r => r.order_date.slice(0, 7), 'revenue', 'SUM', 'month', 'revenue').sort((a, b) => String(a.month).localeCompare(String(b.month))).slice(-12);
     const fmt = { colorMode: 'vibrant', numberFormat: 'auto', fontSize: 'md', headerSize: 'md', headerBold: true, showLabels: true, showDataLabels: true, showXAxis: true, showYAxis: true, tableCalculations: [] };
-    const stackedByQuarter = rows.reduce((acc: any[], r) => {
+    const stackedByQuarter = rows.reduce<any[]>((acc, r) => {
         const quarter = `Q${Math.floor((Number(r.order_date.slice(5, 7)) - 1) / 3) + 1} ${r.order_date.slice(0, 4)}`;
         const hit = acc.find(x => x.quarter === quarter && x.category === r.category);
         if (hit) hit.revenue = Math.round(hit.revenue + r.revenue); else acc.push({ quarter, category: r.category, revenue: Math.round(r.revenue) });

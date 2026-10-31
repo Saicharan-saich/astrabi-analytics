@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { aiSqlPresentationChart, chartShapeSignature, profileChartShape, refineGenericChart, resolveCountryName, suggestCharts } from '../utils/chartSuggestions';
 import { gaugeScale, niceCeiling } from '../utils/chartPresentation';
+import { frameCountries } from '../utils/countryCentroids';
 
 const rows = (labels: string[], values: number[], x = 'label', y = 'value') =>
     labels.map((label, index) => ({ [x]: label, [y]: values[index] }));
@@ -120,5 +121,14 @@ describe('chart suggestions', () => {
         expect(gaugeScale([42], undefined, 'margin_pct').max).toBe(100);
         expect(gaugeScale([8400], undefined, 'revenue').max).toBe(10000);
         expect(niceCeiling(230)).toBe(250);
+    });
+
+    it('frames a map around the countries with data', () => {
+        const project = ([lon, lat]: [number, number]) => [400 + lon * 2.2, 220 - lat * 2.2] as [number, number];
+        const europe = frameCountries(['united kingdom', 'germany', 'france', 'spain'], project, 800, 440);
+        expect(europe?.zoom).toBeGreaterThan(2);
+        expect(europe?.center[1]).toBeGreaterThan(40);
+        expect(frameCountries(['united states of america', 'australia', 'brazil', 'russia'], project, 800, 440)).toBeNull();
+        expect(frameCountries(['atlantis'], project, 800, 440)).toBeNull();
     });
 });
