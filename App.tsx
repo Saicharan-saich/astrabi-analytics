@@ -2101,6 +2101,7 @@ function App() {
                     onPin={(title, result, note) => handlePin({ ...result, insight: title }, note)}
                     onBuildDashboard={handleBuildDashboard}
                     isBuildingDashboard={isBuildingDashboard}
+                    isActive={activeTab === Tab.QUICK_INSIGHTS}
                     onOpenInBuilder={(config) => {
                       setWorkbenchConfig(config);
                       setWorkbenchResult(undefined);

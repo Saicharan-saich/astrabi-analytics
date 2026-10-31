@@ -17,6 +17,8 @@ interface QuickInsightsViewProps {
     /** Build a dashboard from this report. */
     onBuildDashboard?: () => void;
     isBuildingDashboard?: boolean;
+    /** The view stays mounted while hidden; analyse only when it is on screen. */
+    isActive?: boolean;
 }
 
 const TONE: Record<AutoFinding['tone'], { label: string; className: string; Icon: any }> = {
@@ -68,7 +70,7 @@ const FindingChart: React.FC<{ finding: AutoFinding; height: number }> = ({ find
 };
 
 export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({
-    dataset, onPin, onOpenInBuilder, onAskQuestion, onBuildDashboard, isBuildingDashboard,
+    dataset, onPin, onOpenInBuilder, onAskQuestion, onBuildDashboard, isBuildingDashboard, isActive = true,
 }) => {
     const [report, setReport] = useState<AutoReport | null>(null);
     const [loading, setLoading] = useState(false);
@@ -77,8 +79,11 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({
     const [questionDraft, setQuestionDraft] = useState('');
     const [runKey, setRunKey] = useState(0);
 
+    const datasetKey = dataset ? `${dataset.id}:${dataset.version ?? ''}:${dataset.rows?.length ?? 0}:${runKey}` : '';
+    const [analysedKey, setAnalysedKey] = useState('');
     useEffect(() => {
         if (!dataset) { setReport(null); return; }
+        if (!isActive || analysedKey === datasetKey) return;
         let cancelled = false;
         setLoading(true);
         setError(null);
@@ -87,7 +92,7 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({
             const start = performance.now();
             try {
                 const next = buildAutoReport(dataset);
-                if (!cancelled) setReport(next);
+                if (!cancelled) { setReport(next); setAnalysedKey(datasetKey); }
             } catch (err) {
                 console.error('[Discover] analysis failed:', err);
                 if (!cancelled) { setReport(null); setError('The automatic analysis could not run on this dataset.'); }
@@ -96,7 +101,7 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({
             }
         }, 30);
         return () => { cancelled = true; window.clearTimeout(timer); };
-    }, [dataset?.id, dataset?.version, dataset?.rows?.length, runKey]);
+    }, [datasetKey, isActive]);
 
     const submitQuestion = () => {
         const question = questionDraft.trim();
@@ -104,6 +109,9 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({
         onAskQuestion(question);
         setQuestionDraft('');
     };
+
+    // Hidden: keep the report in memory but render nothing (no charts in the background).
+    if (!isActive) return <div className="qi-report h-full" />;
 
     if (!dataset) {
         return (

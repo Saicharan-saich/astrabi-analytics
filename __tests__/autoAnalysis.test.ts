@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildAutoReport, recomputeAutoCard } from '../services/autoAnalysis';
-import { chooseFocus, prepare, parseDate } from '../services/autoAnalysis/core';
+import { chooseFocus, chooseGrain, prepare, parseDate } from '../services/autoAnalysis/core';
 import { analyzeConcentration, analyzeDrivers, analyzeMix, compareWindows, latestPair } from '../services/autoAnalysis/analyzers';
 import { sanitizeDashboard } from '../shared/dashboardPrivacy.mjs';
 
@@ -49,6 +49,17 @@ describe('auto analysis — preparation', () => {
         expect(parseDate('28/03/2025')).toBe(Date.UTC(2025, 2, 28));
         expect(parseDate('2025-03')).toBe(Date.UTC(2025, 2, 1));
         expect(Number.isNaN(parseDate(''))).toBe(true);
+    });
+
+    it('chooses a grain whose periods are reasonably full', () => {
+        const day = (iso: string) => Date.UTC(+iso.slice(0, 4), +iso.slice(5, 7) - 1, +iso.slice(8, 10));
+        // Four sales over three months: weekly buckets would mostly be empty.
+        expect(chooseGrain(['2025-06-30', '2025-07-01', '2025-09-30', '2025-10-01'].map(day))).toBe('month');
+        // Several orders every day for six weeks: weekly works.
+        const dense: number[] = [];
+        for (let d = 0; d < 42; d++) for (let k = 0; k < 4; k++) dense.push(Date.UTC(2025, 0, 6) + d * 86_400_000);
+        expect(chooseGrain(dense)).toBe('week');
+        expect(chooseGrain([day('2025-01-01')])).toBeNull();
     });
 
     it('picks revenue, an order count, average order value and margin', () => {

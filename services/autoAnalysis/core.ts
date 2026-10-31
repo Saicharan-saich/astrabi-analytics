@@ -336,22 +336,42 @@ export function chooseFocus(dataset: Dataset): Focus {
         || null;
     let grain: Grain | null = null;
     if (dateColumn) {
-        let min = Infinity, max = -Infinity;
-        const days = new Set<number>();
+        const times: number[] = [];
         for (const r of rows) {
             const t = parseDate(r?.[dateColumn]);
-            if (!Number.isFinite(t)) continue;
-            if (t < min) min = t;
-            if (t > max) max = t;
-            if (days.size < 400) days.add(Math.floor(t / DAY));
+            if (Number.isFinite(t)) times.push(t);
         }
-        const span = (max - min) / DAY;
-        if (Number.isFinite(span)) {
-            grain = span >= 120 ? 'month' : span >= 28 ? 'week' : span >= 6 && days.size >= 5 ? 'day' : null;
-        }
+        grain = chooseGrain(times);
     }
 
     return { dateColumn: grain ? dateColumn : null, grain, metrics, dims: dims.slice(0, 5), noun, entityColumn };
+}
+
+/**
+ * The finest grain whose periods are reasonably full. Sparse data (a few rows
+ * a month) is analysed by month even over a short span, so a "latest week"
+ * is never an empty bucket.
+ */
+export function chooseGrain(times: number[]): Grain | null {
+    if (times.length < 4) return null;
+    let min = Infinity, max = -Infinity;
+    for (const t of times) { if (t < min) min = t; if (t > max) max = t; }
+    const spanDays = (max - min) / DAY;
+    const fill = (grain: Grain) => {
+        const used = new Set<number>();
+        for (const t of times) used.add(startOfPeriod(t, grain));
+        let total = 0;
+        for (let s = startOfPeriod(min, grain); s <= max && total < 5000; s = nextPeriod(s, grain)) total++;
+        return { periods: total, filled: used.size / Math.max(1, total), perPeriod: times.length / Math.max(1, total) };
+    };
+    const candidates: Grain[] = spanDays >= 120 ? ['month'] : spanDays >= 28 ? ['week', 'month'] : spanDays >= 6 ? ['day', 'week'] : [];
+    for (const grain of candidates) {
+        const f = fill(grain);
+        if (f.periods >= 3 && f.filled >= 0.8 && f.perPeriod >= 3) return grain;
+    }
+    // Fall back to months when there are at least a few of them.
+    const months = fill('month');
+    return months.periods >= 3 ? 'month' : null;
 }
 
 // ───────────────────────────────────────────────────────────────────
