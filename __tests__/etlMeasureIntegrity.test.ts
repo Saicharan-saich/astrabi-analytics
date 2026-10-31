@@ -138,11 +138,11 @@ describe('numbers are read the way the file means them', () => {
 });
 
 describe('measures are derived and aggregated correctly', () => {
-    it('derives line totals from quantity × unit price when there is no amount', () => {
+    it('leaves revenue = quantity × unit price to the governed metric, and says so', () => {
         const raw = Array.from({ length: 10 }, (_, i) => ({ order_id: `O${i}`, quantity: i + 1, unit_price: 2.5 }));
         const etl = runETLPipeline(raw, 'no-total.csv');
-        expect(sum(etl.rows, 'line_total')).toBeCloseTo(2.5 * 55, 6);
-        expect(typeOf(etl, 'line_total')).toBe('METRIC');
+        expect(etl.columns.some(c => c.name === 'line_total')).toBe(false);
+        expect(logText(etl.logs)).toMatch(/Revenue From Price × Quantity/);
     });
 
     it('averages unit cost, derives line cost, and never builds profit from a unit cost', () => {

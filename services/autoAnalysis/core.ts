@@ -36,6 +36,8 @@ export interface MetricDef {
     label: string;
     kind: 'sum' | 'count' | 'ratio';
     column?: string;
+    /** Sum of column × this column per row (revenue = quantity × unit price). */
+    multiplyBy?: string;
     distinctColumn?: string;
     /** Ratio numerator: a column to sum. */
     numerator?: string;
@@ -271,7 +273,15 @@ export function chooseFocus(dataset: Dataset): Focus {
     const nonAdditive = usable.filter(m => !isAdditiveMeasure(m));
 
     const metrics: MetricDef[] = [];
-    const primary = additive[0];
+    // No revenue column but a unit price and a quantity: revenue is their
+    // product per row (never the sum or average of the price).
+    const hasRevenueColumn = additive.some(m => REVENUE_NAME.test(m.column));
+    const unitPrice = usable.find(m => /(^|_)(unit_?price|price_?per_?unit|price_?each|selling_?price|sale_?price|list_?price|price)($|_)/i.test(m.column));
+    const quantity = additive.find(m => /(^|_)(qty|quantity|units|units_sold|unit_count|pieces|items|volume)($|_)/i.test(m.column));
+    if (!hasRevenueColumn && unitPrice && quantity) {
+        metrics.push({ id: `sum:${quantity.column}*${unitPrice.column}`, label: 'Revenue', kind: 'sum', column: quantity.column, multiplyBy: unitPrice.column, format: 'currency_usd', higherIsBetter: true });
+    }
+    const primary = metrics.length ? undefined : additive[0];
     if (primary) {
         metrics.push({ id: `sum:${primary.column}`, label: metricLabel(primary.column), kind: 'sum', column: primary.column, format: measureFormat(primary), higherIsBetter: direction(primary.column) ?? true });
     }
@@ -287,6 +297,10 @@ export function chooseFocus(dataset: Dataset): Focus {
             format: measureFormat(primary), higherIsBetter: true,
         });
     }
+    // Quantity in its own right when revenue is computed from it.
+    if (!primary && quantity) {
+        metrics.push({ id: `sum:${quantity.column}`, label: metricLabel(quantity.column), kind: 'sum', column: quantity.column, format: 'number', higherIsBetter: true });
+    }
     // Margin when there is profit and revenue.
     const profit = additive.find(m => PROFIT_NAME.test(m.column));
     const revenue = additive.find(m => REVENUE_NAME.test(m.column) && m !== profit);
@@ -294,7 +308,7 @@ export function chooseFocus(dataset: Dataset): Focus {
         metrics.push({ id: `ratio:${profit.column}/${revenue.column}`, label: `${metricLabel(profit.column)} margin`, kind: 'ratio', numerator: profit.column, denominator: revenue.column, asPercent: true, format: 'percent', higherIsBetter: true });
     }
     // A second additive measure (profit, quantity…).
-    const secondary = additive.find(m => m !== primary);
+    const secondary = additive.find(m => m !== primary && !metrics.some(x => x.column === m.column && !x.multiplyBy));
     if (secondary) {
         metrics.push({ id: `sum:${secondary.column}`, label: metricLabel(secondary.column), kind: 'sum', column: secondary.column, format: measureFormat(secondary), higherIsBetter: direction(secondary.column) ?? true });
     }
@@ -431,7 +445,7 @@ export function newAcc(metric: MetricDef): Acc {
 export function addRow(acc: Acc, metric: MetricDef, row: Record<string, any>): void {
     acc.rows++;
     if (metric.kind === 'sum') {
-        const v = toNumber(row?.[metric.column!]);
+        const v = toNumber(row?.[metric.column!]) * (metric.multiplyBy ? toNumber(row?.[metric.multiplyBy]) : 1);
         if (Number.isFinite(v)) acc.num += v;
         return;
     }

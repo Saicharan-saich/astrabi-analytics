@@ -45,7 +45,7 @@ const autoAnalysis = {
     ...fields('v analyzer metricId dim'),
     focus: {
         ...fields('dateColumn grain entityColumn'),
-        metrics: list(fields('id label kind column distinctColumn numerator denominator asPercent format higherIsBetter')),
+        metrics: list(fields('id label kind column multiplyBy distinctColumn numerator denominator asPercent format higherIsBetter')),
         dims: list(fields('column label cardinality')),
         noun: fields('one many'),
     },

@@ -175,4 +175,15 @@ describe('auto analysis — findings', () => {
         expect(clean.items[0].result.autoAnalysis).toMatchObject({ analyzer: finding.analyzer, metricId: finding.spec.metricId });
         expect(clean.items[0].result.autoAnalysis.focus.metrics[0]).toMatchObject({ column: 'revenue' });
     });
+
+    it('computes revenue as quantity × unit price when there is no revenue column', () => {
+        const rows = Array.from({ length: 40 }, (_, i) => ({ order_id: `O${i}`, order_date: `2025-0${1 + (i % 6)}-10`, category: ['A', 'B'][i % 2], quantity: 2, unit_price: 5 }));
+        const report = buildAutoReport({ id: 'p', name: 'Lines', rows, totalRows: rows.length, etlLogs: [], columns: [
+            { name: 'order_id', type: 'ID' }, { name: 'order_date', type: 'DATE' }, { name: 'category', type: 'DIMENSION' },
+            { name: 'quantity', type: 'METRIC' }, { name: 'unit_price', type: 'METRIC' },
+        ] } as any);
+        expect(report.focus.metrics[0]).toMatchObject({ label: 'Revenue', column: 'quantity', multiplyBy: 'unit_price' });
+        const total = report.findings.find(f => f.analyzer === 'concentration');
+        if (total) expect(total.card.data.reduce((s: number, r: any) => s + r.value, 0)).toBe(400);
+    });
 });

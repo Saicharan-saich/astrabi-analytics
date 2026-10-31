@@ -75,7 +75,9 @@ function toneFor(metric: MetricDef, change: number): Tone {
 }
 
 /** Builder config for opening a card in the Question Builder. */
-function builderFor(prep: Prepared, metric: MetricDef, dimension: string, extra: Partial<QueryConfig> = {}): Partial<QueryConfig> {
+function builderFor(prep: Prepared, metric: MetricDef, dimension: string, extra: Partial<QueryConfig> = {}): Partial<QueryConfig> | undefined {
+    // A computed metric (quantity × price) has no single Builder column; no link beats a wrong one.
+    if (metric.multiplyBy) return undefined;
     const column = metric.kind === 'sum' ? metric.column : metric.kind === 'count' ? (metric.distinctColumn || '') : metric.numerator;
     const aggregation = metric.kind === 'sum' ? 'SUM' : metric.kind === 'count' ? (metric.distinctColumn ? 'COUNT_DISTINCT' : 'COUNT') : 'AVG';
     return {

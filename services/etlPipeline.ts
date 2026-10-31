@@ -1508,15 +1508,12 @@ function layer5b_hardening(
     {
         const line = findLineColumns(metricNames());
         if (line.quantity && line.unitPrice && !line.lineAmount) {
-            const target = columns.some(c => c.name === 'line_total') ? 'line_total_derived' : 'line_total';
-            for (const row of rows) {
-                const q = row[line.quantity], p = row[line.unitPrice];
-                row[target] = typeof q === 'number' && typeof p === 'number' ? Math.round(q * p * 100) / 100 : null;
-            }
-            addColumn(target, ColumnType.METRIC);
-            logs.push(log('Line Total Derived', 5, 'applied',
-                `No line amount column, so '${target}' = ${line.quantity} × ${line.unitPrice} was added. Sum this for sales; averaging or summing the unit price alone gives the wrong total.`,
-                { affectedColumns: [line.quantity, line.unitPrice, target] }));
+            // Not materialised: AI SQL governs "revenue = price × quantity" as a
+            // composite metric, and the automatic analysis computes it the same
+            // way. A second, physical revenue column would bypass that guard.
+            logs.push(log('Revenue From Price × Quantity', 6, 'info',
+                `There is no line amount column, so revenue is ${line.quantity} × ${line.unitPrice}. AI SQL and the automatic analysis compute it that way; never sum or average '${line.unitPrice}' on its own for sales.`,
+                { affectedColumns: [line.quantity, line.unitPrice] }));
         } else if (line.quantity && line.unitPrice && line.lineAmount) {
             const r = reconcileLineTotals(rows, line.quantity, line.unitPrice, line.lineAmount);
             if (r.checked > 0 && r.mismatched / r.checked >= 0.05) {
