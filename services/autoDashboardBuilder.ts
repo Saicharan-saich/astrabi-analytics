@@ -11,9 +11,9 @@
  * recompute it with exactly the same logic that built it.
  */
 
-import { Dataset, AnalysisResult, DashboardItem, FormattingConfig } from '../types';
+import { Dataset, AnalysisResult, DashboardItem } from '../types';
 import { useAppStore } from '../store/useAppStore';
-import { buildAutoReport, cardTitle, type AutoFinding } from './autoAnalysis';
+import { autoCardFormatting, buildAutoReport, cardTitle, type AutoFinding } from './autoAnalysis';
 
 function genId(): string {
     return `auto_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -22,26 +22,6 @@ function genId(): string {
 export interface AutoDashboardResult {
     dashboardId: string;
     count: number;
-}
-
-function formattingFor(finding: AutoFinding): FormattingConfig {
-    const { card } = finding;
-    return {
-        colorMode: 'vibrant',
-        numberFormat: card.numberFormat,
-        fontSize: 'md',
-        headerSize: 'md',
-        headerBold: true,
-        showLabels: true,
-        showDataLabels: card.showDataLabels,
-        dataLabelMode: card.showDataLabels ? 'all' : 'off',
-        showAxis: true,
-        showXAxis: true,
-        showYAxis: card.chartType !== 'horizontalBar' || card.data.length > 6,
-        axisLabelSize: 'sm',
-        dataLabelSize: 'sm',
-        tableCalculations: [],
-    } as FormattingConfig;
 }
 
 function itemFor(finding: AutoFinding, dataset: Dataset): DashboardItem {
@@ -58,7 +38,7 @@ function itemFor(finding: AutoFinding, dataset: Dataset): DashboardItem {
         ...(card.builder ? { queryConfig: { ...card.builder, questionLabel: cardTitle(finding) } } : {}),
         vis: card.chartType as any,
         kpi: card.chartType === 'kpiCard' ? card.data[0]?.value : undefined,
-        formatting: formattingFor(finding),
+        formatting: autoCardFormatting(finding),
         autoAnalysis: finding.spec,
     };
     return {

@@ -3,8 +3,8 @@ import {
     AlertTriangle, ArrowRight, CheckCircle2, Database, Info, LayoutDashboard, Loader2, Maximize2,
     MessageSquare, Pin, RotateCcw, Search, Send, Sparkles, TrendingDown, TrendingUp,
 } from 'lucide-react';
-import type { AnalysisResult, Dataset, FormattingConfig } from '../types';
-import { buildAutoReport, cardTitle, type AutoFinding, type AutoReport } from '../services/autoAnalysis';
+import type { AnalysisResult, Dataset } from '../types';
+import { autoCardFormatting, buildAutoReport, cardTitle, type AutoFinding, type AutoReport } from '../services/autoAnalysis';
 import { ChartVisualization } from './ChartVisualization';
 import { ErrorBoundary } from './ErrorBoundary';
 
@@ -26,25 +26,6 @@ const TONE: Record<AutoFinding['tone'], { label: string; className: string; Icon
     neutral: { label: 'Worth knowing', className: 'is-neutral', Icon: Info },
 };
 
-function formattingFor(finding: AutoFinding): FormattingConfig {
-    return {
-        colorMode: 'vibrant',
-        numberFormat: finding.card.numberFormat,
-        fontSize: 'md',
-        headerSize: 'md',
-        headerBold: true,
-        showLabels: true,
-        showDataLabels: finding.card.showDataLabels,
-        dataLabelMode: finding.card.showDataLabels ? 'all' : 'off',
-        showAxis: true,
-        showXAxis: true,
-        showYAxis: true,
-        axisLabelSize: 'sm',
-        dataLabelSize: 'sm',
-        tableCalculations: [],
-    } as FormattingConfig;
-}
-
 /** The same result a dashboard card uses, so a pinned finding recomputes on refresh. */
 function resultFor(finding: AutoFinding): AnalysisResult {
     const { card } = finding;
@@ -59,7 +40,7 @@ function resultFor(finding: AutoFinding): AnalysisResult {
         ...(card.builder ? { queryConfig: { ...card.builder, questionLabel: cardTitle(finding) } } : {}),
         vis: card.chartType as any,
         kpi: card.chartType === 'kpiCard' ? card.data[0]?.value : undefined,
-        formatting: formattingFor(finding),
+        formatting: autoCardFormatting(finding),
         autoAnalysis: finding.spec,
     };
 }
@@ -146,7 +127,7 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({
                     <div className="min-w-0">
                         <h2 className="qi-report-heading text-[22px] font-semibold tracking-tight">Discover</h2>
                         <p className="qi-report-muted text-[13px] mt-0.5">
-                            {report ? `${report.scope} · analysed in ${elapsed.toFixed(1)}s` : 'Reading your data…'}
+                            {report ? `${report.scope} · analysed in ${elapsed < 0.1 ? 'under 0.1' : elapsed.toFixed(1)}s` : 'Reading your data…'}
                         </p>
                     </div>
                     <div className="flex items-center gap-2">

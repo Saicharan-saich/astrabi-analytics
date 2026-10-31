@@ -14,7 +14,7 @@
  * carries a spec so it can be recomputed on refresh or under dashboard filters.
  */
 
-import type { Dataset } from '../../types';
+import type { Dataset, FormattingConfig } from '../../types';
 import { chooseFocus, prepare, toNumber, type Focus, type MetricDef, type Prepared } from './core';
 import {
     ANALYZERS, analyzeConcentration, analyzeDistribution, analyzeDrivers, analyzeGrowth, analyzeKpi, analyzeMix,
@@ -138,17 +138,58 @@ function rank(findings: AutoFinding[]): AutoFinding[] {
     // A trend reads best first: it sets the scene for the rest.
     const trendIndex = out.findIndex(f => f.analyzer === 'trend');
     if (trendIndex > 0) out.unshift(...out.splice(trendIndex, 1));
+    return packForGrid(out);
+}
+
+/**
+ * Two-column grids: keep the ranking, but when a half-width card would sit
+ * alone before a full-width one, pull the next half-width card up beside it.
+ */
+export function packForGrid(list: AutoFinding[]): AutoFinding[] {
+    const rest = [...list];
+    const out: AutoFinding[] = [];
+    let open = false;
+    while (rest.length) {
+        let next = rest[0];
+        if (open && next.card.width === 'full') {
+            const half = rest.find(f => f.card.width !== 'full');
+            if (half) next = half;
+        }
+        rest.splice(rest.indexOf(next), 1);
+        out.push(next);
+        open = next.card.width === 'full' ? false : !open;
+    }
     return out;
+}
+
+/** Chart formatting for an auto-analysis card (shared by Discover and the dashboard). */
+export function autoCardFormatting(finding: AutoFinding): FormattingConfig {
+    const { card } = finding;
+    const currency = card.numberFormat === 'currency_usd' || card.numberFormat === 'currency_eur';
+    return {
+        colorMode: 'vibrant',
+        numberFormat: card.numberFormat,
+        fontSize: 'md',
+        headerSize: 'md',
+        headerBold: true,
+        showLabels: true,
+        showDataLabels: card.showDataLabels,
+        dataLabelMode: card.showDataLabels ? 'all' : 'off',
+        showAxis: true,
+        showXAxis: true,
+        showYAxis: true,
+        axisLabelSize: 'sm',
+        dataLabelSize: 'sm',
+        // Whole currency units read cleaner on summaries ($19,848 not $19,848.26).
+        ...(currency ? { decimals: 0 } : {}),
+        tableCalculations: [],
+    } as FormattingConfig;
 }
 
 function summarise(prep: Prepared, kpis: AutoFinding[], findings: AutoFinding[], notes: string[]): string[] {
     const sentences: string[] = [];
     if (kpis[0]) sentences.push(kpis[0].sentence);
     for (const f of findings.slice(0, 4)) sentences.push(f.sentence);
-    const attention = findings.filter(f => f.tone === 'attention' || f.tone === 'bad').length;
-    if (attention > 0 && findings.length > 4) {
-        sentences.push(`${attention} of the ${findings.length} findings below need attention.`);
-    }
     if (notes[0] && /incomplete/.test(notes[0])) sentences.push(notes[0]);
     if (sentences.length === 0) {
         sentences.push(`${prep.rows.length.toLocaleString('en-US')} ${prep.focus.noun.many} analysed; nothing stood out strongly enough to report.`);
