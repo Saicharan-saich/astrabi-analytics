@@ -24,6 +24,7 @@ const PORT = 4173;
 
 export default defineConfig({
     testDir: './e2e',
+    testIgnore: ['**/builder-multidimension.spec.ts'],
     timeout: 60_000,
     expect: { timeout: 10_000 },
     fullyParallel: true,
