@@ -26,7 +26,16 @@ export function restoreDashboardItems(cloudItems: DashboardItem[], localItems: D
 export async function rebuildDashboardItem(item: DashboardItem, dataset: Dataset, sourceRows: Record<string, any>[] = dataset.rows): Promise<DashboardItem> {
     const previous = item.result;
     let fresh: AnalysisResult;
-    if (previous.aiSqlRefresh || previous.queryConfig?.aiSql) {
+    let note = item.note;
+    if (previous.autoAnalysis) {
+        // Auto-analysis cards recompute locally from their column choices, so
+        // refreshes and dashboard filters use exactly the same logic.
+        const { recomputeAutoCard } = await import('./autoAnalysis');
+        const finding = recomputeAutoCard(previous.autoAnalysis, sourceRows);
+        if (!finding) throw new Error('Not enough data left to compute this insight. Try widening the filters.');
+        fresh = { ...previous, data: finding.card.data, xKey: finding.card.xKey, yKey: finding.card.yKey, insight: finding.title };
+        note = finding.title;
+    } else if (previous.aiSqlRefresh || previous.queryConfig?.aiSql) {
         const sql = previous.aiSqlRefresh?.sql || previous.queryConfig.aiSql;
         const safe = validateReadOnlySQL(sql);
         if (!safe.ok) throw new Error(safe.reason);
@@ -59,7 +68,7 @@ export async function rebuildDashboardItem(item: DashboardItem, dataset: Dataset
         fresh = { ...fresh, vis: previous.vis || fresh.vis, formatting: previous.formatting, visualizationMode: previous.visualizationMode, queryConfig: config };
     }
     return {
-        ...item, result: { ...fresh, needsLocalData: false },
+        ...item, ...(note !== undefined ? { note } : {}), result: { ...fresh, needsLocalData: false },
         datasetId: dataset.id, datasetName: dataset.name, datasetVersion: dataset.version, pinnedAt: Date.now(),
     };
 }

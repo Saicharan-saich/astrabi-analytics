@@ -29,6 +29,32 @@ for (const theme of ['light', 'dark'] as const) {
         }
     });
 
+    test(`auto analysis ${theme}`, async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({ width: 1440, height: 3400 });
+        await boot(page, theme, 'DASHBOARD');
+        const nav = async (label: string) => {
+            let button = page.getByRole('button', { name: label, exact: true }).first();
+            if (!(await button.isVisible().catch(() => false))) {
+                const toggle = page.getByRole('button', { name: 'Open navigation', exact: true });
+                if (await toggle.isVisible().catch(() => false)) await toggle.click();
+                button = page.getByRole('button', { name: label, exact: true }).first();
+            }
+            if (await button.isVisible().catch(() => false)) { await button.click(); return true; }
+            return false;
+        };
+        if (await nav('Discover')) {
+            await page.getByText('What the data says').first().waitFor({ timeout: 20_000 }).catch(() => {});
+            await shoot(page, `14-discover-report-${theme}`);
+            const build = page.getByRole('button', { name: /Build dashboard from this/ }).first();
+            if (await build.isVisible().catch(() => false)) {
+                await build.click();
+                await page.waitForTimeout(3500);
+                await shoot(page, `15-auto-dashboard-${theme}`);
+            }
+        }
+    });
+
     test(`workspaces ${theme}`, async ({ page }) => {
         await boot(page, theme, 'DASHBOARD');
         const openNav = async (label: string) => {

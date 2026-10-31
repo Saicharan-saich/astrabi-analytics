@@ -1371,10 +1371,11 @@ function App() {
     setTimeout(() => setToastMsg(null), 3000);
   };
 
-  const handlePin = (result: AnalysisResult) => {
+  const handlePin = (result: AnalysisResult, note?: string) => {
     const newItem = {
       id: generateId(),
       title: result.insight || "New Analysis",
+      ...(note ? { note } : {}),
       result: result,
       width: 'half' as 'half' | 'full',
       datasetVersion: dataset?.version,
@@ -2097,7 +2098,9 @@ function App() {
                 <div className={`qi-view h-full w-full ${activeTab === Tab.QUICK_INSIGHTS ? '' : 'hidden'}`}>
                   <QuickInsightsView
                     dataset={dataset}
-                    onPin={(title, result) => handlePin({ ...result, insight: title })}
+                    onPin={(title, result, note) => handlePin({ ...result, insight: title }, note)}
+                    onBuildDashboard={handleBuildDashboard}
+                    isBuildingDashboard={isBuildingDashboard}
                     onOpenInBuilder={(config) => {
                       setWorkbenchConfig(config);
                       setWorkbenchResult(undefined);

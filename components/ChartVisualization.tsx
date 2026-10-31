@@ -414,6 +414,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         minimumFractionDigits: fractionDigits,
                         maximumFractionDigits: fractionDigits
                     }).format(value);
+                case 'percent_points':
+                    // Values already in percent units (12.5 = 12.5%): never rescale.
+                    return `${value.toFixed(formatting?.decimals ?? 1)}%`;
                 case 'percent': {
                     // Fractional percents (e.g. 0.073) are stored as 0–1; scale to 7.3%.
                     // Matches formatForMetricName so every surface is consistent.
@@ -550,6 +553,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 metricRef.includes('ratio') || metricRef.includes('share') ||
                 /\bdiscount\b/.test(metricRef) || metricRef.includes('markdown')));
 
+        if (activeNumberFormat === 'percent_points') {
+            return `${Number(value.toFixed(1))}%`;
+        }
         if (isPercent) {
             // Scale fractional percents (0.073 → 7.3%) so axis ticks read correctly.
             const pctVal = (Math.abs(value) <= 1 && Math.abs(value) > 0) ? value * 100 : value;
@@ -786,21 +792,33 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             const colours: string[] = [];
             const stepLabels: string[] = [];
             let cumulative = 0;
-            values.forEach(v => {
+            // A bridge ("Feb total → changes → Mar total") marks its totals with
+            // __kind: 'total'; those bars start at zero and reset the running total.
+            const isBridge = transformedData.some(row => row?.__kind === 'total');
+            values.forEach((v, i) => {
+                if (transformedData[i]?.__kind === 'total') {
+                    pairs.push([0, v]);
+                    cumulative = v;
+                    colours.push(totalColour);
+                    stepLabels.push(formatCompactLabel(v));
+                    return;
+                }
                 pairs.push([cumulative, cumulative + v]);
                 cumulative += v;
                 colours.push(v >= 0 ? up : down);
                 stepLabels.push(`${v >= 0 ? '+' : '\u2212'}${formatCompactLabel(Math.abs(v))}`);
             });
+            const withTotal = !isBridge;
             return {
-                labels: [...labels, 'Total'],
+                labels: withTotal ? [...labels, 'Total'] : labels,
                 datasets: [{
                     label: friendlySeriesLabel(calculatedYLabel) || 'Value',
-                    data: [...pairs, [0, cumulative]],
-                    qiValues: [...values, cumulative],
-                    qiLabels: [...stepLabels, formatCompactLabel(cumulative)],
-                    backgroundColor: [...colours, totalColour],
-                    hoverBackgroundColor: [...colours, totalColour].map(colour => lightenColor(colour, 8)),
+                    data: withTotal ? [...pairs, [0, cumulative]] : pairs,
+                    qiValues: withTotal ? [...values, cumulative] : values,
+                    qiLabels: withTotal ? [...stepLabels, formatCompactLabel(cumulative)] : stepLabels,
+                    qiTotals: transformedData.map(row => row?.__kind === 'total').concat(withTotal ? [true] : []),
+                    backgroundColor: withTotal ? [...colours, totalColour] : colours,
+                    hoverBackgroundColor: (withTotal ? [...colours, totalColour] : colours).map(colour => lightenColor(colour, 8)),
                     borderWidth: 0,
                     borderRadius: 3,
                     borderSkipped: false,
@@ -1262,6 +1280,19 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const isRadial = chartType === 'radar' || chartType === 'polarArea';
         const isArcLegend = isPieChart || chartType === 'polarArea';
         const plottedDatasetCount = (chartData?.datasets || []).filter((dataset: any) => !dataset.qiHelper).length;
+        // Bridge waterfalls (total → changes → total): when the changes are small
+        // next to the totals, start the value axis near the lowest level so the
+        // changes are visible. Totals keep their labels, so nothing is hidden.
+        const bridgeMin = (() => {
+            if (chartType !== 'waterfall' || axisRange) return undefined;
+            const ds: any = chartData?.datasets?.[0];
+            if (!Array.isArray(ds?.qiTotals) || !ds.qiTotals.some(Boolean)) return undefined;
+            const levels = (ds.data as [number, number][]).flatMap((pair, i) => (ds.qiTotals[i] ? [pair[1]] : pair));
+            const lo = Math.min(...levels), hi = Math.max(...levels);
+            if (!(lo > 0) || lo < hi * 0.5) return undefined;
+            const step = 10 ** Math.floor(Math.log10(Math.max(1e-9, hi - lo)));
+            return Math.max(0, Math.floor((lo - (hi - lo) * 0.6) / step) * step);
+        })();
         const gaugeInfo = chartType === 'gauge'
             ? gaugeScale(transformedData.map(row => Number(row[yKey]) || 0), formatting?.kpiGoal, yKey)
             : null;
@@ -1471,9 +1502,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             // geometry is an offset, not the measure).
                             if (Array.isArray(context.dataset?.qiValues)) {
                                 const stepValue = Number(context.dataset.qiValues[context.dataIndex]) || 0;
-                                const isTotal = context.dataIndex === context.dataset.qiValues.length - 1;
+                                const isTotal = Array.isArray(context.dataset.qiTotals)
+                                    ? Boolean(context.dataset.qiTotals[context.dataIndex])
+                                    : context.dataIndex === context.dataset.qiValues.length - 1;
                                 const name = context.dataset.label || 'Value';
-                                return isTotal ? `  Total: ${formatNumber(stepValue)}` : `  ${name}: ${stepValue >= 0 ? '+' : ''}${formatNumber(stepValue)}`;
+                                return isTotal ? `  ${name}: ${formatNumber(stepValue)}` : `  Change: ${stepValue >= 0 ? '+' : ''}${formatNumber(stepValue)}`;
                             }
                             if (Array.isArray(context.dataset?.qiLabels) && context.dataset?.qiRowOrder) {
                                 return `  ${context.dataset.label || 'Value'}: ${context.dataset.qiLabels[context.dataIndex]}`;
@@ -1636,6 +1669,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     display: yVisible ?? true,
                     ...(isHorizontal || hasNegativeValues ? {} : { min: 0, beginAtZero: true }),
                     ...(axisRange ? { min: axisRange.min, max: axisRange.max } : (!isHorizontal ? { grace: '8%' } : {})),
+                    ...(bridgeMin !== undefined ? { min: bridgeMin, beginAtZero: false } : {}),
                     stacked: isStacked,
                     grid: {
                         display: chartType === 'funnel' ? false : (formatting?.showGridLines ?? true),
@@ -2140,9 +2174,17 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 const maxVal = Math.max(currentVal, prevVal) || 1;
 
                 // Build period labels from config
-                const compLabel = config?.comparison === 'same_period_last_n'
+                const namedPrevious = transformedData?.find((d: any) => typeof d.previous_label === 'string')?.previous_label as string | undefined;
+                const compLabel = namedPrevious
+                    ? namedPrevious
+                    : config?.comparison === 'same_period_last_n'
                     ? `Last ${config.comparisonOffset || 1} ${config.comparisonGrain || 'day'}${(config.comparisonOffset || 1) > 1 ? 's' : ''}`
                     : config?.comparison === 'same_period_last_year' ? 'Last Year' : 'Previous Period';
+                // Rates change in points (21.5% → 23.0% is +1.5 pts), not percent of a percent.
+                const inPoints = activeNumberFormat === 'percent_points';
+                const deltaText = inPoints
+                    ? `${Math.abs(currentVal - prevVal).toFixed(1)} pts`
+                    : `${Math.abs(growthPct).toFixed(Math.abs(growthPct) < 10 ? 1 : 0)}%`;
 
                 const goalBar = renderKpiGoal(currentVal);
                 return (
@@ -2150,8 +2192,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         <div className="qi-kpi-value qi-kpi-number">{formatNumber(currentVal)}</div>
                         <div className="qi-kpi-label qi-kpi-caption">{calculatedYLabel || 'Current period'}</div>
                         <div className={`qi-kpi-delta ${isPositive ? 'is-up' : 'is-down'}`}>
-                            <span className="qi-kpi-delta-change">{isPositive ? '↑' : '↓'} {Math.abs(growthPct).toFixed(2)}%</span>
-                            <span className="qi-kpi-delta-context">vs. {compLabel.toLowerCase()}: {formatNumber(prevVal)}</span>
+                            <span className="qi-kpi-delta-change">{(inPoints ? currentVal >= prevVal : isPositive) ? '↑' : '↓'} {deltaText}</span>
+                            <span className="qi-kpi-delta-context">vs {namedPrevious ? compLabel : compLabel.toLowerCase()}: {formatNumber(prevVal)}</span>
                         </div>
                         {goalBar}
                     </div>

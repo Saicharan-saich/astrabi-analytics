@@ -1,190 +1,121 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { Zap, RotateCcw, Loader2, Database, Pin, Maximize2, X, TrendingUp, BarChart3, PieChart, Activity, Search, Send, ChevronDown } from 'lucide-react';
-import { Bar, Line, Doughnut } from 'react-chartjs-2';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
-    Chart as ChartJS,
-    CategoryScale, LinearScale, BarElement, LineElement,
-    PointElement, ArcElement, Filler, Tooltip as ChartTooltip,
-} from 'chart.js';
-import { Dataset, AnalysisResult, AggregationType, AnalysisType, TimeGrain } from '../types';
-import { generateAutoInsights, AutoInsight } from '../services/autoInsightsEngine';
-import { discoverInsights, Finding } from '../services/insightDiscoveryEngine';
-import { FindingsFeed } from './FindingsFeed';
-import { ExecutiveSummary } from './ExecutiveSummary';
-import { InvestigationPanel } from './InvestigationPanel';
-
-ChartJS.register(CategoryScale, LinearScale, BarElement, LineElement, PointElement, ArcElement, Filler, ChartTooltip);
-
-// ═══════════════════════════════════════════════════════════════════
-// CONSTANTS
-// ═══════════════════════════════════════════════════════════════════
-
-const CHART_COLORS = [
-    'rgba(99, 102, 241, 0.85)',
-    'rgba(16, 185, 129, 0.85)',
-    'rgba(245, 158, 11, 0.85)',
-    'rgba(239, 68, 68, 0.85)',
-    'rgba(139, 92, 246, 0.85)',
-    'rgba(6, 182, 212, 0.85)',
-    'rgba(236, 72, 153, 0.85)',
-    'rgba(34, 197, 94, 0.85)',
-];
-
-const CATEGORY_STYLES: Record<string, { bg: string; text: string; icon: any; label: string }> = {
-    kpi: { bg: 'bg-blue-500/15', text: 'text-blue-400', icon: Activity, label: 'KPI' },
-    ranking: { bg: 'bg-indigo-500/15', text: 'text-indigo-400', icon: BarChart3, label: 'Ranking' },
-    trend: { bg: 'bg-emerald-500/15', text: 'text-emerald-400', icon: TrendingUp, label: 'Trend' },
-    distribution: { bg: 'bg-purple-500/15', text: 'text-purple-400', icon: PieChart, label: 'Distribution' },
-    diagnostic: { bg: 'bg-amber-500/15', text: 'text-amber-400', icon: Activity, label: 'Diagnostic' },
-    comparative: { bg: 'bg-rose-500/15', text: 'text-rose-400', icon: BarChart3, label: 'Comparative' },
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════════════
-
-function formatKpiValue(value: number | string | undefined, format?: string): string {
-    if (value === undefined || value === null) return '—';
-    const num = typeof value === 'string' ? parseFloat(value) : value;
-    if (isNaN(num)) return String(value);
-
-    if (format === 'currency_usd') {
-        if (Math.abs(num) >= 1e6) return `$${(num / 1e6).toFixed(1)}M`;
-        if (Math.abs(num) >= 1e3) return `$${(num / 1e3).toFixed(1)}K`;
-        return `$${num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-    }
-    if (format === 'percent') return `${num.toFixed(1)}%`;
-    if (format === 'compact') {
-        if (Math.abs(num) >= 1e6) return `${(num / 1e6).toFixed(1)}M`;
-        if (Math.abs(num) >= 1e3) return `${(num / 1e3).toFixed(1)}K`;
-    }
-    if (Math.abs(num) >= 1e6) return `${(num / 1e6).toFixed(1)}M`;
-    if (Math.abs(num) >= 1e3) return `${(num / 1e3).toFixed(1)}K`;
-    return num.toLocaleString(undefined, { maximumFractionDigits: 1 });
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// KPI GRADIENTS
-// ═══════════════════════════════════════════════════════════════════
-
-const KPI_GRADIENTS = [
-    'from-indigo-500/20 to-blue-500/10',
-    'from-emerald-500/20 to-teal-500/10',
-    'from-amber-500/20 to-orange-500/10',
-    'from-violet-500/20 to-purple-500/10',
-];
-
-// ═══════════════════════════════════════════════════════════════════
-// COMPONENT
-// ═══════════════════════════════════════════════════════════════════
+    AlertTriangle, ArrowRight, CheckCircle2, Database, Info, LayoutDashboard, Loader2, Maximize2,
+    MessageSquare, Pin, RotateCcw, Search, Send, Sparkles, TrendingDown, TrendingUp,
+} from 'lucide-react';
+import type { AnalysisResult, Dataset, FormattingConfig } from '../types';
+import { buildAutoReport, cardTitle, type AutoFinding, type AutoReport } from '../services/autoAnalysis';
+import { ChartVisualization } from './ChartVisualization';
+import { ErrorBoundary } from './ErrorBoundary';
 
 interface QuickInsightsViewProps {
     dataset: Dataset | null;
-    onPin?: (title: string, result: AnalysisResult) => void;
+    onPin?: (title: string, result: AnalysisResult, note?: string) => void;
     onOpenInBuilder?: (config: any) => void;
     /** Route a natural-language follow-up into the AI SQL pipeline. */
     onAskQuestion?: (question: string) => void;
+    /** Build a dashboard from this report. */
+    onBuildDashboard?: () => void;
+    isBuildingDashboard?: boolean;
 }
 
-export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, onPin, onOpenInBuilder, onAskQuestion }) => {
-    const [insights, setInsights] = useState<AutoInsight[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [elapsed, setElapsed] = useState('0.0');
-    const [dismissedIds, setDismissedIds] = useState<Set<string>>(new Set());
-    const [activeLens, setActiveLens] = useState<'all' | 'trend' | 'ranking' | 'breakdown'>('all');
-    const [showAllCharts, setShowAllCharts] = useState(false);
+const TONE: Record<AutoFinding['tone'], { label: string; className: string; Icon: any }> = {
+    good: { label: 'Good news', className: 'is-good', Icon: TrendingUp },
+    bad: { label: 'Needs attention', className: 'is-bad', Icon: TrendingDown },
+    attention: { label: 'Worth watching', className: 'is-attention', Icon: AlertTriangle },
+    neutral: { label: 'Worth knowing', className: 'is-neutral', Icon: Info },
+};
+
+function formattingFor(finding: AutoFinding): FormattingConfig {
+    return {
+        colorMode: 'vibrant',
+        numberFormat: finding.card.numberFormat,
+        fontSize: 'md',
+        headerSize: 'md',
+        headerBold: true,
+        showLabels: true,
+        showDataLabels: finding.card.showDataLabels,
+        dataLabelMode: finding.card.showDataLabels ? 'all' : 'off',
+        showAxis: true,
+        showXAxis: true,
+        showYAxis: true,
+        axisLabelSize: 'sm',
+        dataLabelSize: 'sm',
+        tableCalculations: [],
+    } as FormattingConfig;
+}
+
+/** The same result a dashboard card uses, so a pinned finding recomputes on refresh. */
+function resultFor(finding: AutoFinding): AnalysisResult {
+    const { card } = finding;
+    return {
+        data: card.data,
+        xKey: card.xKey,
+        yKey: card.yKey,
+        yLabel: card.yLabel,
+        insight: cardTitle(finding),
+        sql: '',
+        config: { ...(card.builder || {}), questionLabel: cardTitle(finding) } as any,
+        ...(card.builder ? { queryConfig: { ...card.builder, questionLabel: cardTitle(finding) } } : {}),
+        vis: card.chartType as any,
+        kpi: card.chartType === 'kpiCard' ? card.data[0]?.value : undefined,
+        formatting: formattingFor(finding),
+        autoAnalysis: finding.spec,
+    };
+}
+
+const FindingChart: React.FC<{ finding: AutoFinding; height: number }> = ({ finding, height }) => {
+    const result = useMemo(() => resultFor(finding), [finding]);
+    return (
+        <div style={{ height }} className="w-full">
+            <ErrorBoundary compact label={finding.title}>
+                <ChartVisualization
+                    data={result.data}
+                    xKey={result.xKey}
+                    yKey={result.yKey}
+                    yLabel={result.yLabel}
+                    config={result.config}
+                    chartType={result.vis as any}
+                    onChartTypeChange={() => {}}
+                    formatting={result.formatting}
+                    hideControls
+                    disableAutoSeries
+                />
+            </ErrorBoundary>
+        </div>
+    );
+};
+
+export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({
+    dataset, onPin, onOpenInBuilder, onAskQuestion, onBuildDashboard, isBuildingDashboard,
+}) => {
+    const [report, setReport] = useState<AutoReport | null>(null);
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const [elapsed, setElapsed] = useState(0);
     const [questionDraft, setQuestionDraft] = useState('');
-    const cachedDatasetId = useRef<string | null>(null);
-
-    // ── Insight Discovery: findings + executive summary (shared) ──
-    const [findings, setFindings] = useState<Finding[]>([]);
-    const [findingsLoading, setFindingsLoading] = useState(false);
-    const [investigating, setInvestigating] = useState<Finding | null>(null);
-    const findingsRanFor = useRef<string | null>(null);
+    const [runKey, setRunKey] = useState(0);
 
     useEffect(() => {
-        if (!dataset || dataset.id === findingsRanFor.current) return;
+        if (!dataset) { setReport(null); return; }
         let cancelled = false;
-        (async () => {
-            setFindingsLoading(true);
+        setLoading(true);
+        setError(null);
+        // Yield so the loading state paints before the analysis runs.
+        const timer = window.setTimeout(() => {
+            const start = performance.now();
             try {
-                const f = await discoverInsights(dataset);
-                if (!cancelled) { setFindings(f); findingsRanFor.current = dataset.id; }
+                const next = buildAutoReport(dataset);
+                if (!cancelled) setReport(next);
             } catch (err) {
-                console.error('[QuickInsights] discovery failed:', err);
-                if (!cancelled) setFindings([]);
+                console.error('[Discover] analysis failed:', err);
+                if (!cancelled) { setReport(null); setError('The automatic analysis could not run on this dataset.'); }
             } finally {
-                if (!cancelled) setFindingsLoading(false);
+                if (!cancelled) { setElapsed((performance.now() - start) / 1000); setLoading(false); }
             }
-        })();
-        return () => { cancelled = true; };
-    }, [dataset?.id]);
-
-    // Generate insights when dataset changes
-    useEffect(() => {
-        if (!dataset || dataset.id === cachedDatasetId.current) return;
-        runAnalysis();
-    }, [dataset?.id]);
-
-    const runAnalysis = async () => {
-        if (!dataset) return;
-        setIsLoading(true);
-        setDismissedIds(new Set());
-        setShowAllCharts(false);
-        const start = performance.now();
-
-        try {
-            const results = await generateAutoInsights(dataset);
-            setInsights(results);
-            cachedDatasetId.current = dataset.id;
-        } catch (err) {
-            console.error('[QuickInsights] Failed:', err);
-            setInsights([]);
-        } finally {
-            setElapsed(((performance.now() - start) / 1000).toFixed(1));
-            setIsLoading(false);
-        }
-    };
-
-    const handleDismiss = (id: string) => {
-        setDismissedIds(prev => new Set([...prev, id]));
-    };
-
-    const handlePin = (insight: AutoInsight) => {
-        const result: AnalysisResult = {
-            data: insight.data,
-            xKey: insight.xKey,
-            yKey: insight.yKey,
-            yLabel: insight.title,
-            insight: insight.subtitle,
-            sql: insight.sql,
-            config: {
-                metric: insight.yKey,
-                dimension: insight.xKey,
-                aggregation: AggregationType.SUM,
-                timeGrain: TimeGrain.RAW,
-                analysisType: AnalysisType.STANDARD,
-                questionId: insight.id,
-                questionLabel: insight.title,
-            },
-            vis: insight.chartType as any,
-            kpi: insight.kpiValue,
-        };
-        onPin?.(insight.title, result);
-    };
-
-    const visibleInsights = insights.filter(i => !dismissedIds.has(i.id));
-    const kpiInsights = visibleInsights.filter(i => i.category === 'kpi');
-    const chartInsights = visibleInsights.filter(i => i.category !== 'kpi');
-    const filteredChartInsights = chartInsights.filter(insight => {
-        if (activeLens === 'trend') return insight.category === 'trend';
-        if (activeLens === 'ranking') return insight.category === 'ranking';
-        if (activeLens === 'breakdown') return ['distribution', 'comparative', 'diagnostic'].includes(insight.category);
-        return true;
-    });
-    const displayedChartInsights = showAllCharts ? filteredChartInsights : filteredChartInsights.slice(0, 6);
-    const hasMoreCharts = filteredChartInsights.length > displayedChartInsights.length;
-    const domain = (dataset as any)?.domainProfile?.domain || 'General';
+        }, 30);
+        return () => { cancelled = true; window.clearTimeout(timer); };
+    }, [dataset?.id, dataset?.version, dataset?.rows?.length, runKey]);
 
     const submitQuestion = () => {
         const question = questionDraft.trim();
@@ -193,361 +124,164 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({ dataset, o
         setQuestionDraft('');
     };
 
-    // ── EMPTY STATE ──
     if (!dataset) {
         return (
-            <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
-                <Database className="w-16 h-16 text-slate-600" />
-                <h3 className="text-xl font-bold text-slate-300">No Dataset Loaded</h3>
-                <p className="text-sm text-slate-500">Upload a dataset to see automatic insights.</p>
+            <div className="flex flex-col items-center justify-center h-full gap-4 qi-report-muted">
+                <Database className="w-12 h-12" />
+                <h3 className="text-lg font-semibold qi-report-heading">No dataset loaded</h3>
+                <p className="text-sm">Upload a dataset to get an automatic analysis.</p>
             </div>
         );
     }
 
-    // ── LOADING STATE ──
-    if (isLoading) {
-        return (
-            <div className="flex flex-col h-full bg-gray-50 dark:bg-slate-900 p-6 overflow-y-auto">
-                <div className="max-w-6xl mx-auto w-full">
-                    {/* Header skeleton */}
-                    <div className="mb-6">
-                        <div className="h-8 w-48 bg-slate-700/50 rounded-lg animate-pulse mb-2" />
-                        <div className="h-4 w-96 bg-slate-700/30 rounded animate-pulse" />
-                    </div>
-                    {/* KPI skeletons */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        {[1,2,3,4].map(i => (
-                            <div key={i} className="bg-slate-800/60 rounded-xl p-5 animate-pulse">
-                                <div className="h-8 w-24 bg-slate-700/50 rounded mb-2" />
-                                <div className="h-4 w-32 bg-slate-700/30 rounded" />
-                            </div>
-                        ))}
-                    </div>
-                    {/* Chart skeletons */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {[1,2,3,4,5,6].map(i => (
-                            <div key={i} className="bg-slate-800/60 rounded-xl p-5 animate-pulse" style={{ height: 280 }}>
-                                <div className="h-5 w-48 bg-slate-700/50 rounded mb-4" />
-                                <div className="h-40 bg-slate-700/30 rounded" />
-                            </div>
-                        ))}
-                    </div>
-                    <div className="flex flex-col items-center justify-center mt-12 gap-3">
-                        <Loader2 className="w-8 h-8 text-amber-400 animate-spin" />
-                        <p className="text-slate-400 text-sm font-medium">Analyzing your data...</p>
-                    </div>
-                </div>
-            </div>
-        );
-    }
+    const findings = report?.findings || [];
+    const full = findings.filter(f => f.card.width === 'full');
+    const attentionCount = findings.filter(f => f.tone === 'bad' || f.tone === 'attention').length;
 
     return (
-        <div className="flex flex-col h-full bg-gray-50 dark:bg-slate-900 p-6 overflow-y-auto">
-            <div className="max-w-6xl mx-auto w-full">
-
-                {/* ── HEADER ── */}
-                <div className="flex items-start justify-between mb-6">
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2.5">
-                            <span className="text-xl">⚡</span>
-                            Discover
-                            <span className={`text-xs font-medium px-2.5 py-1 rounded-full border ${
-                                domain === 'Sales' ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20' :
-                                domain === 'Healthcare' ? 'bg-red-500/15 text-red-400 border-red-500/20' :
-                                domain === 'HR' ? 'bg-blue-500/15 text-blue-400 border-blue-500/20' :
-                                domain === 'Finance' ? 'bg-amber-500/15 text-amber-400 border-amber-500/20' :
-                                'bg-slate-500/15 text-slate-400 border-slate-500/20'
-                            }`}>
-                                {domain} Domain
-                            </span>
-                        </h2>
-                        <p className="text-gray-500 dark:text-slate-400 text-sm mt-1">
-                            Generated <strong className="text-gray-700 dark:text-white">{visibleInsights.length}</strong> insights in <strong className="text-gray-700 dark:text-white">{elapsed}s</strong> — Based on <strong className="text-gray-700 dark:text-white">{dataset.rows.length.toLocaleString()}</strong> records
+        <div className="qi-report flex flex-col h-full overflow-y-auto">
+            <div className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-6">
+                {/* ── Header ── */}
+                <header className="flex flex-wrap items-start justify-between gap-4 mb-5">
+                    <div className="min-w-0">
+                        <h2 className="qi-report-heading text-[22px] font-semibold tracking-tight">Discover</h2>
+                        <p className="qi-report-muted text-[13px] mt-0.5">
+                            {report ? `${report.scope} · analysed in ${elapsed.toFixed(1)}s` : 'Reading your data…'}
                         </p>
                     </div>
-                    <button
-                        onClick={runAnalysis}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/10 hover:border-amber-400/50 text-gray-600 dark:text-slate-300 text-sm font-medium transition-all hover:bg-amber-50 dark:hover:bg-amber-500/10"
-                    >
-                        <RotateCcw className="w-3.5 h-3.5" />
-                        Refresh
-                    </button>
-                </div>
-
-                {/* ── DISCOVERY CONTROLS ── */}
-                <section className="mb-6 rounded-2xl border border-gray-200 dark:border-white/[0.08] bg-white dark:bg-[#141a28] shadow-sm overflow-hidden">
-                    <div className="p-4 sm:p-5 border-b border-gray-100 dark:border-white/[0.06]">
-                        <div className="flex flex-col xl:flex-row xl:items-center gap-4 justify-between">
-                            <div>
-                                <p className="text-xs font-bold uppercase tracking-[0.12em] text-indigo-600 dark:text-indigo-300">Explore with intent</p>
-                                <p className="text-sm text-gray-600 dark:text-slate-300 mt-1">Start with the strongest signals, then ask a follow-up in your own words.</p>
-                            </div>
-                            <form
-                                onSubmit={(event) => { event.preventDefault(); submitQuestion(); }}
-                                className="flex w-full xl:w-[420px] items-center gap-2 rounded-xl border border-gray-200 dark:border-white/[0.10] bg-gray-50 dark:bg-slate-900/70 px-3 py-1.5 focus-within:border-indigo-400 dark:focus-within:border-indigo-400/70 focus-within:ring-2 focus-within:ring-indigo-500/10 transition-all"
-                            >
-                                <Search className="w-4 h-4 text-slate-400 shrink-0" />
-                                <input
-                                    value={questionDraft}
-                                    onChange={(event) => setQuestionDraft(event.target.value)}
-                                    placeholder="Ask about this dataset…"
-                                    className="min-w-0 flex-1 bg-transparent py-1.5 text-sm text-gray-900 dark:text-white placeholder:text-slate-400 outline-none"
-                                    disabled={!onAskQuestion}
-                                />
-                                <button
-                                    type="submit"
-                                    disabled={!questionDraft.trim() || !onAskQuestion}
-                                    className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600 text-white hover:bg-indigo-500 disabled:bg-slate-300 dark:disabled:bg-white/[0.08] disabled:text-slate-500 transition-colors"
-                                    aria-label="Ask question"
-                                >
-                                    <Send className="w-3.5 h-3.5" />
-                                </button>
-                            </form>
-                        </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 px-4 sm:px-5 py-3">
-                        <span className="text-xs font-semibold text-gray-500 dark:text-slate-400 mr-1">Show:</span>
-                        <button onClick={() => { setActiveLens('all'); setShowAllCharts(false); }} className={activeLens === 'all' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm shadow-indigo-500/20' : 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/[0.05] text-gray-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/[0.12]'}>All visuals ({chartInsights.length})</button>
-                        <button onClick={() => { setActiveLens('trend'); setShowAllCharts(false); }} className={activeLens === 'trend' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm shadow-indigo-500/20' : 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/[0.05] text-gray-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/[0.12]'}>Trends</button>
-                        <button onClick={() => { setActiveLens('ranking'); setShowAllCharts(false); }} className={activeLens === 'ranking' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm shadow-indigo-500/20' : 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/[0.05] text-gray-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/[0.12]'}>Rankings</button>
-                        <button onClick={() => { setActiveLens('breakdown'); setShowAllCharts(false); }} className={activeLens === 'breakdown' ? 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 text-white shadow-sm shadow-indigo-500/20' : 'px-3 py-1.5 rounded-lg text-xs font-semibold bg-gray-100 dark:bg-white/[0.05] text-gray-600 dark:text-slate-300 hover:bg-indigo-50 dark:hover:bg-indigo-500/[0.12]'}>Breakdowns</button>
-                        {findings.length > 0 && (
-                            <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">
-                                {findings.filter(f => f.severity === 'critical' || f.severity === 'warning').length} signals need attention
-                            </span>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setRunKey(k => k + 1)} className="qi-dash-button inline-flex items-center gap-1.5 px-3 py-2 text-[13px] font-medium" disabled={loading}>
+                            <RotateCcw className="w-3.5 h-3.5" /> Re-run
+                        </button>
+                        {onBuildDashboard && (
+                            <button onClick={onBuildDashboard} disabled={isBuildingDashboard || !report || findings.length === 0} className="qi-report-primary inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-[13px] font-semibold disabled:opacity-50">
+                                {isBuildingDashboard ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LayoutDashboard className="w-3.5 h-3.5" />}
+                                {isBuildingDashboard ? 'Building…' : 'Build dashboard from this'}
+                            </button>
                         )}
                     </div>
-                </section>
+                </header>
 
-                {/* ── EXECUTIVE SUMMARY (findings → business English) ── */}
-                <ExecutiveSummary findings={findings} dataset={dataset} />
+                {/* ── Ask ── */}
+                <form
+                    onSubmit={event => { event.preventDefault(); submitQuestion(); }}
+                    className="qi-report-ask mb-6 flex items-center gap-2 rounded-xl px-3 py-1.5"
+                >
+                    <Search className="w-4 h-4 shrink-0 qi-report-muted" />
+                    <input
+                        value={questionDraft}
+                        onChange={event => setQuestionDraft(event.target.value)}
+                        placeholder="Ask a follow-up about this dataset…"
+                        className="min-w-0 flex-1 bg-transparent py-1.5 text-sm outline-none"
+                        disabled={!onAskQuestion}
+                        aria-label="Ask a follow-up question"
+                    />
+                    <button type="submit" disabled={!questionDraft.trim() || !onAskQuestion} className="qi-report-primary inline-flex items-center justify-center w-8 h-8 rounded-lg disabled:opacity-40" aria-label="Ask">
+                        <Send className="w-3.5 h-3.5" />
+                    </button>
+                </form>
 
-                {/* ── DISCOVERED FINDINGS (the "analyst beside you" feed) ── */}
-                <FindingsFeed
-                    findings={findings}
-                    loading={findingsLoading}
-                    onInvestigate={setInvestigating}
-                    onAskQuestion={onAskQuestion}
-                />
-
-                {/* ── KPI ROW ── */}
-                {kpiInsights.length > 0 && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        {kpiInsights.map((kpi, idx) => (
-                            <div
-                                key={kpi.id}
-                                className={`relative bg-gradient-to-br ${KPI_GRADIENTS[idx % KPI_GRADIENTS.length]} bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/10 rounded-xl p-5 group hover:border-indigo-500/30 transition-all`}
-                            >
-                                <button
-                                    onClick={() => handleDismiss(kpi.id)}
-                                    className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all"
-                                >
-                                    <X className="w-3.5 h-3.5" />
-                                </button>
-                                <div className="text-2xl md:text-3xl font-black text-gray-900 dark:text-white mb-1 tabular-nums">
-                                    {formatKpiValue(kpi.kpiValue, kpi.kpiFormat)}
-                                </div>
-                                <div className="text-xs font-medium text-gray-500 dark:text-slate-400 uppercase tracking-wider">
-                                    {kpi.title}
-                                </div>
-                                <div className="mt-2 flex gap-1.5 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
-                                    <button onClick={() => handlePin(kpi)} className="p-1 rounded bg-slate-700/40 hover:bg-indigo-500/30 text-slate-400 hover:text-indigo-300" title="Pin to Dashboard">
-                                        <Pin className="w-3 h-3" />
-                                    </button>
-                                    {onOpenInBuilder && kpi.config && (
-                                        <button onClick={() => onOpenInBuilder(kpi.config)} className="p-1 rounded bg-slate-700/40 hover:bg-emerald-500/30 text-slate-400 hover:text-emerald-300" title="Open in Builder">
-                                            <Maximize2 className="w-3 h-3" />
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
+                {loading && (
+                    <div className="flex flex-col items-center justify-center py-24 gap-3 qi-report-muted">
+                        <Loader2 className="w-7 h-7 animate-spin" />
+                        <p className="text-sm">Analysing trends, drivers and segments…</p>
                     </div>
                 )}
 
-                {/* ── CHART GRID ── */}
-                {filteredChartInsights.length > 0 ? (
+                {!loading && error && (
+                    <div className="qi-report-card rounded-xl p-6 text-sm flex items-center gap-2"><AlertTriangle className="w-4 h-4" /> {error}</div>
+                )}
+
+                {!loading && report && (
                     <>
-                        <div className="flex items-center justify-between mb-3">
-                            <div>
-                                <h3 className="text-base font-bold text-gray-900 dark:text-white">Visual exploration</h3>
-                                <p className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">Open a card in Builder to adapt its fields, filters, or chart.</p>
+                        {/* ── Summary ── */}
+                        <section className="qi-report-summary rounded-xl px-5 py-4 mb-6" aria-label="Summary">
+                            <div className="flex items-center gap-2 mb-2">
+                                <Sparkles className="w-4 h-4 qi-report-accent" />
+                                <h3 className="qi-report-heading text-[15px] font-semibold">What the data says</h3>
+                                {attentionCount > 0 && <span className="qi-report-chip is-attention ml-auto">{attentionCount} need{attentionCount === 1 ? 's' : ''} attention</span>}
                             </div>
-                            <span className="text-xs font-medium text-slate-400 dark:text-slate-500">{filteredChartInsights.length} visual{filteredChartInsights.length === 1 ? '' : 's'}</span>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {displayedChartInsights.map(insight => (
-                        <InsightCard
-                            key={insight.id}
-                            insight={insight}
-                            onPin={() => handlePin(insight)}
-                            onDismiss={() => handleDismiss(insight.id)}
-                            onOpenInBuilder={onOpenInBuilder}
-                        />
-                    ))}
-                        </div>
-                        {hasMoreCharts && (
-                            <div className="flex justify-center mt-5">
-                                <button onClick={() => setShowAllCharts(true)} className="inline-flex items-center gap-2 px-4 py-2 rounded-xl border border-indigo-200 dark:border-indigo-500/25 bg-indigo-50 dark:bg-indigo-500/[0.08] text-sm font-semibold text-indigo-700 dark:text-indigo-200 hover:bg-indigo-100 dark:hover:bg-indigo-500/[0.14] transition-colors">
-                                    Show {filteredChartInsights.length - displayedChartInsights.length} more visual{filteredChartInsights.length - displayedChartInsights.length === 1 ? '' : 's'}
-                                    <ChevronDown className="w-4 h-4" />
-                                </button>
+                            <ul className="space-y-1.5">
+                                {report.summary.map((sentence, index) => (
+                                    <li key={index} className="qi-report-body text-[14px] leading-relaxed flex gap-2">
+                                        <span className="qi-report-bullet mt-[9px] h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden="true" />
+                                        <span>{sentence}</span>
+                                    </li>
+                                ))}
+                            </ul>
+                            {report.notes.length > 0 && (
+                                <div className="qi-report-notes mt-3 pt-3 text-[12.5px] space-y-1">
+                                    {report.notes.map((note, index) => <p key={index} className="flex gap-1.5"><Info className="w-3.5 h-3.5 mt-0.5 shrink-0" /> {note}</p>)}
+                                </div>
+                            )}
+                        </section>
+
+                        {/* ── KPIs ── */}
+                        {report.kpis.length > 0 && (
+                            <div className={`grid gap-4 mb-6 grid-cols-1 sm:grid-cols-2 ${report.kpis.length >= 4 ? 'lg:grid-cols-4' : report.kpis.length === 3 ? 'lg:grid-cols-3' : ''}`}>
+                                {report.kpis.map(kpi => (
+                                    <div key={kpi.id} className="qi-report-card rounded-xl overflow-hidden group relative">
+                                        <FindingChart finding={kpi} height={150} />
+                                        <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
+                                            {onPin && <button onClick={() => onPin(cardTitle(kpi), resultFor(kpi))} className="qi-dash-icon-button p-1.5" title="Pin to dashboard" aria-label={`Pin ${kpi.title}`}><Pin className="w-3.5 h-3.5" /></button>}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+
+                        {/* ── Findings ── */}
+                        {findings.length > 0 ? (
+                            <>
+                                <div className="flex items-baseline justify-between mb-3">
+                                    <h3 className="qi-report-heading text-[15px] font-semibold">Findings</h3>
+                                    <span className="qi-report-muted text-xs">{findings.length} ranked by how much they matter</span>
+                                </div>
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                    {findings.map(finding => {
+                                        const tone = TONE[finding.tone];
+                                        const wide = finding.card.width === 'full' || (full.length === 0 && findings.length === 1);
+                                        return (
+                                            <article key={finding.id} className={`qi-report-card rounded-xl p-4 flex flex-col ${wide ? 'lg:col-span-2' : ''}`}>
+                                                <div className="flex items-center gap-2 mb-1.5">
+                                                    <span className={`qi-report-chip ${tone.className}`}><tone.Icon className="w-3 h-3" /> {tone.label}</span>
+                                                    <span className="qi-report-muted text-[11.5px] truncate">{cardTitle(finding)}</span>
+                                                </div>
+                                                <h4 className="qi-report-heading text-[15px] font-semibold leading-snug">{finding.title}</h4>
+                                                <p className="qi-report-body text-[13px] leading-relaxed mt-1">{finding.detail}</p>
+                                                <div className="mt-3">
+                                                    <FindingChart finding={finding} height={wide ? 280 : 240} />
+                                                </div>
+                                                <div className="flex flex-wrap items-center gap-2 mt-3">
+                                                    {onPin && (
+                                                        <button onClick={() => onPin(cardTitle(finding), resultFor(finding), finding.title)} className="qi-chip-button inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-medium">
+                                                            <Pin className="w-3.5 h-3.5" /> Pin
+                                                        </button>
+                                                    )}
+                                                    {onOpenInBuilder && finding.card.builder && (
+                                                        <button onClick={() => onOpenInBuilder(finding.card.builder)} className="qi-chip-button inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[12px] font-medium">
+                                                            <Maximize2 className="w-3.5 h-3.5" /> Explore in Builder
+                                                        </button>
+                                                    )}
+                                                    {onAskQuestion && finding.question && (
+                                                        <button onClick={() => onAskQuestion(finding.question!)} className="qi-report-link inline-flex items-center gap-1 text-[12px] font-medium ml-auto">
+                                                            <MessageSquare className="w-3.5 h-3.5" /> {finding.question} <ArrowRight className="w-3 h-3" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </article>
+                                        );
+                                    })}
+                                </div>
+                            </>
+                        ) : (
+                            <div className="qi-report-card rounded-xl p-8 text-center">
+                                <CheckCircle2 className="w-6 h-6 mx-auto mb-2 qi-report-accent" />
+                                <p className="qi-report-heading text-sm font-semibold">No strong patterns stood out</p>
+                                <p className="qi-report-muted text-[13px] mt-1">This dataset may need a date or numeric column for trend and driver analysis. Try asking a question above.</p>
                             </div>
                         )}
                     </>
-                ) : chartInsights.length > 0 ? (
-                    <div className="rounded-xl border border-dashed border-gray-200 dark:border-white/[0.10] py-10 text-center">
-                        <BarChart3 className="w-8 h-8 text-slate-400 mx-auto mb-3" />
-                        <p className="text-sm font-semibold text-gray-700 dark:text-slate-200">No matching visuals for this view</p>
-                        <button onClick={() => setActiveLens('all')} className="mt-2 text-xs font-semibold text-indigo-600 dark:text-indigo-300 hover:underline">Show all visuals</button>
-                    </div>
-                ) : null}
-
-                {visibleInsights.length === 0 && !isLoading && (
-                    <div className="flex flex-col items-center justify-center py-20 text-slate-400">
-                        <Zap className="w-12 h-12 text-slate-600 mb-4" />
-                        <p className="text-lg font-medium">All insights dismissed</p>
-                        <button onClick={runAnalysis} className="mt-3 text-sm text-amber-400 hover:text-amber-300 underline">
-                            Regenerate insights
-                        </button>
-                    </div>
-                )}
-            </div>
-
-            {/* ── ROOT-CAUSE INVESTIGATION PANEL ── */}
-            {investigating && (
-                <InvestigationPanel
-                    finding={investigating}
-                    dataset={dataset}
-                    onClose={() => setInvestigating(null)}
-                    onAskQuestion={onAskQuestion ? (qn) => { setInvestigating(null); onAskQuestion(qn); } : undefined}
-                />
-            )}
-        </div>
-    );
-};
-
-// ═══════════════════════════════════════════════════════════════════
-// INSIGHT CARD
-// ═══════════════════════════════════════════════════════════════════
-
-const InsightCard: React.FC<{
-    insight: AutoInsight;
-    onPin: () => void;
-    onDismiss: () => void;
-    onOpenInBuilder?: (config: any) => void;
-}> = ({ insight, onPin, onDismiss, onOpenInBuilder }) => {
-    const style = CATEGORY_STYLES[insight.category] || CATEGORY_STYLES.kpi;
-    const IconComp = style.icon;
-
-    const chartData = useMemo(() => {
-        const labels = insight.data.map(d => {
-            const raw = String(d[insight.xKey] ?? '');
-            // Truncate long labels
-            return raw.length > 18 ? raw.substring(0, 16) + '…' : raw;
-        });
-        const values = insight.data.map(d => Number(d[insight.yKey]) || 0);
-        const colors = labels.map((_, i) => CHART_COLORS[i % CHART_COLORS.length]);
-        const borderColors = colors.map(c => c.replace('0.85', '1'));
-
-        const isBar = insight.chartType === 'bar' || insight.chartType === 'horizontalBar';
-        const isLine = insight.chartType === 'line' || insight.chartType === 'area';
-        const isDoughnut = insight.chartType === 'donut' || insight.chartType === 'pie';
-
-        return {
-            labels,
-            datasets: [{
-                data: values,
-                // Bars: each bar gets a unique vibrant color
-                backgroundColor: isDoughnut ? colors : isBar ? colors : 'rgba(16, 185, 129, 0.25)',
-                borderColor: isDoughnut ? borderColors : isLine ? 'rgba(16, 185, 129, 1)' : borderColors,
-                borderWidth: isLine ? 2.5 : isDoughnut ? 2 : 0,
-                fill: insight.chartType === 'area',
-                tension: 0.4,
-                pointRadius: isLine ? 3 : 0,
-                pointHoverRadius: isLine ? 6 : 0,
-                pointBackgroundColor: isLine ? '#10b981' : '#fff',
-                pointBorderColor: '#fff',
-                pointBorderWidth: 2,
-                borderRadius: isBar ? 6 : 0,
-                hoverBackgroundColor: isDoughnut ? borderColors : undefined,
-            }]
-        };
-    }, [insight]);
-
-    const chartOptions: any = useMemo(() => {
-        const isHorizontal = insight.chartType === 'horizontalBar';
-        const isDoughnut = insight.chartType === 'donut' || insight.chartType === 'pie';
-
-        if (isDoughnut) {
-            return {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: true, position: 'right' as const, labels: { color: 'rgba(148,163,184,0.8)', font: { size: 10 }, boxWidth: 10, padding: 8 } }, tooltip: { enabled: true } },
-            };
-        }
-
-        return {
-            responsive: true,
-            maintainAspectRatio: false,
-            indexAxis: isHorizontal ? 'y' as const : 'x' as const,
-            plugins: { legend: { display: false }, tooltip: { enabled: true } },
-            scales: {
-                x: { display: true, grid: { display: false, color: 'rgba(148,163,184,0.08)' }, ticks: { color: 'rgba(148,163,184,0.6)', font: { size: 9 }, maxRotation: 45, maxTicksLimit: 8 } },
-                y: { display: true, grid: { color: 'rgba(148,163,184,0.08)' }, ticks: { color: 'rgba(148,163,184,0.6)', font: { size: 9 }, maxTicksLimit: 6 } }
-            }
-        };
-    }, [insight.chartType]);
-
-    const ChartComponent = useMemo(() => {
-        if (insight.chartType === 'donut' || insight.chartType === 'pie') return Doughnut;
-        if (insight.chartType === 'line' || insight.chartType === 'area') return Line;
-        return Bar;
-    }, [insight.chartType]);
-
-    return (
-        <div className="bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/10 rounded-xl overflow-hidden group hover:border-indigo-500/30 transition-all shadow-sm hover:shadow-md">
-            {/* Card Header */}
-            <div className="flex items-center justify-between px-4 pt-4 pb-2">
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                        <span className={`text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full ${style.bg} ${style.text}`}>
-                            {style.label}
-                        </span>
-                    </div>
-                    <h3 className="text-sm font-bold text-gray-900 dark:text-white truncate">{insight.title}</h3>
-                    <p className="text-[11px] text-gray-400 dark:text-slate-500 truncate">{insight.subtitle}</p>
-                </div>
-                <button
-                    onClick={onDismiss}
-                    className="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-red-400 transition-all p-1"
-                >
-                    <X className="w-3.5 h-3.5" />
-                </button>
-            </div>
-
-            {/* Chart */}
-            <div className="px-4 py-2" style={{ height: 200 }}>
-                <ChartComponent data={chartData} options={chartOptions} />
-            </div>
-
-            {/* Actions */}
-            <div className="flex items-center gap-2 px-4 pb-3 pt-1 opacity-100 md:opacity-0 md:group-hover:opacity-100 transition-all">
-                <button
-                    onClick={onPin}
-                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-[11px] font-medium transition-all"
-                >
-                    <Pin className="w-3 h-3" />
-                    Pin
-                </button>
-                {onOpenInBuilder && insight.config && (
-                    <button
-                        onClick={() => onOpenInBuilder(insight.config)}
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 text-[11px] font-medium transition-all"
-                    >
-                        <Maximize2 className="w-3 h-3" />
-                        Builder
-                    </button>
                 )}
             </div>
         </div>

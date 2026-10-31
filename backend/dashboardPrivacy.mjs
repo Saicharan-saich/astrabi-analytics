@@ -40,11 +40,22 @@ const chart = {
     secondaryYKeys: list(scalar),
     // reason and growth are derived answers, not required to replay the query.
 };
+// Auto-analysis cards replay from column choices only (no values, no headlines).
+const autoAnalysis = {
+    ...fields('v analyzer metricId dim'),
+    focus: {
+        ...fields('dateColumn grain entityColumn'),
+        metrics: list(fields('id label kind column distinctColumn numerator denominator asPercent format higherIsBetter')),
+        dims: list(fields('column label cardinality')),
+        noun: fields('one many'),
+    },
+};
 const result = {
     ...fields('xKey yKey yLabel sql calculatedSql vis axisMode visualizationMode'),
     config: query, queryConfig: query, formatting,
     secondaryYKeys: list(scalar),
     aiSqlRefresh: { ...fields('version source question sql'), plan, chart },
+    autoAnalysis,
 };
 const item = {
     ...fields('id title width pinnedAt datasetId datasetName datasetVersion ignoreGlobalFilter'),
@@ -104,7 +115,7 @@ export function dashboardRecipeKey(item) {
         datasetId: scalar, datasetVersion: scalar,
         result: {
             xKey: scalar, yKey: scalar, sql: scalar, calculatedSql: scalar, secondaryYKeys: list(scalar),
-            config: query, queryConfig: query, aiSqlRefresh: { sql: scalar, plan, chart },
+            config: query, queryConfig: query, aiSqlRefresh: { sql: scalar, plan, chart }, autoAnalysis,
         },
     });
     return JSON.stringify(clean);

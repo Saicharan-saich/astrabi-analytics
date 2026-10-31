@@ -242,12 +242,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     const missing = dashboardFilters.find(filter => !dashboardFilterColumnExists(source, filter.column));
     return missing ? `The card’s source dataset does not have “${missing.column}”. This filter cannot be applied to this card.` : null;
   };
-  const isSqlCard = (item: DashboardItem) => Boolean(item.result.aiSqlRefresh
+  const isSqlCard = (item: DashboardItem) => Boolean(item.result.aiSqlRefresh || item.result.autoAnalysis
     || item.result.queryConfig?.aiSql || (!item.result.queryConfig && item.result.sql));
   const usesSqlFilter = (item: DashboardItem) => dashboardFilters.length > 0 && !item.ignoreGlobalFilter
     && !item.result.needsLocalData && isSqlCard(item) && !filterSourceError(item);
   const sqlFilterKey = (item: DashboardItem) => [activeDashboardId, filterSource(item)?.id, filterSource(item)?.version,
-    filterSignature, item.id, item.pinnedAt, item.result.aiSqlRefresh?.sql || item.result.queryConfig?.aiSql || item.result.sql].join(':');
+    filterSignature, item.id, item.pinnedAt, item.result.aiSqlRefresh?.sql || item.result.queryConfig?.aiSql || item.result.sql
+      || (item.result.autoAnalysis ? JSON.stringify([item.result.autoAnalysis.analyzer, item.result.autoAnalysis.metricId, item.result.autoAnalysis.dim]) : '')].join(':');
 
   // Saved SQL must be evaluated at the source grain. Filtering its already
   // aggregated chart rows would leave KPIs unchanged or corrupt multi-metric
@@ -1240,6 +1241,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
           </div>
         )}
 
+        {/* ─── Auto-built dashboards: the story in a few sentences ─── */}
+        {filteredItems.length > 0 && activeDashboard?.summary && activeDashboard.summary.length > 0 && (
+          <section className="qi-dash-summary mb-4 rounded-xl px-5 py-4" aria-label="Summary">
+            <p className="qi-dash-summary-label text-[11px] font-semibold uppercase tracking-wide">Summary</p>
+            <ul className="mt-1.5 space-y-1">
+              {activeDashboard.summary.map((sentence, index) => (
+                <li key={index} className="qi-dash-summary-line text-[13.5px] leading-relaxed">{sentence}</li>
+              ))}
+            </ul>
+            {activeDashboard.summaryNotes && activeDashboard.summaryNotes.length > 0 && (
+              <p className="qi-dash-summary-note mt-2 text-[12px]">{activeDashboard.summaryNotes.join(' ')}</p>
+            )}
+            {dashboardFilters.length > 0 && (
+              <p className="qi-dash-summary-note mt-1 text-[12px]">The summary describes all data; the cards below follow your filters.</p>
+            )}
+          </section>
+        )}
+
         {/* ─── Drag-Drop Grid Layout ─── */}
         {filteredItems.length > 0 && (
           <ResponsiveGridLayout
@@ -1349,6 +1368,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                       </button>
                     </div>
                   </div>
+
+                  {/* Auto-analysis finding: what this card shows, in one line */}
+                  {(() => {
+                    const shown = visibleResult(item);
+                    const note = shown.autoAnalysis && shown !== item.result ? (shown.insight || item.note) : item.note;
+                    return note ? <p className="qi-dash-card-note px-4 pb-1 text-[12px] leading-snug line-clamp-2" title={note}>{note}</p> : null;
+                  })()}
 
                   {/* ── Chart Area ──
                       Pinned visuals intentionally use the same light canvas as Question Builder.

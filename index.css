@@ -4090,3 +4090,51 @@ body {
 }
 :root:is(.light, .dark) .qi-map-legend-title,
 :root:is(.light, .dark) .qi-map-hover { color: var(--text-primary); }
+
+/* ── Automatic analysis: Discover report + auto-built dashboard ───── */
+:root:is(.light, .dark) .qi-report { background: var(--bg-app); }
+:root:is(.light, .dark) .qi-report-heading { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-report-body { color: var(--text-secondary); }
+:root:is(.light, .dark) .qi-report-muted { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-report-accent { color: var(--color-primary); }
+:root:is(.light, .dark) .qi-report-card,
+:root:is(.light, .dark) .qi-report-summary,
+:root:is(.light, .dark) .qi-report-ask {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-card);
+}
+:root:is(.light, .dark) .qi-report-ask { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-report-ask:focus-within { border-color: var(--color-primary); }
+:root:is(.light, .dark) .qi-report-ask input::placeholder { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-report-summary { border-left: 3px solid var(--color-primary); }
+:root:is(.light, .dark) .qi-report-bullet { background: var(--color-primary); }
+:root:is(.light, .dark) .qi-report-notes { border-top: 1px solid var(--border-default); color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-report-primary { background: var(--color-primary); color: #fff; }
+:root:is(.light, .dark) .qi-report-primary:hover:not(:disabled) { filter: brightness(1.06); }
+:root:is(.light, .dark) .qi-report-link { color: var(--accent-foreground); }
+:root:is(.light, .dark) .qi-report-link:hover { text-decoration: underline; }
+:root:is(.light, .dark) .qi-report-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 600; line-height: 16px; white-space: nowrap;
+}
+:root.light:is(.light) .qi-report-chip.is-good { color: #2f7a43; background: #e8f5ec; }
+:root.light:is(.light) .qi-report-chip.is-bad { color: #b42318; background: #fdecea; }
+:root.light:is(.light) .qi-report-chip.is-attention { color: #b45309; background: #fff4e5; }
+:root.light:is(.light) .qi-report-chip.is-neutral { color: #2c55c8; background: #eef3ff; }
+:root.dark:is(.dark) .qi-report-chip.is-good { color: #8ad3a0; background: rgba(95, 174, 110, 0.16); }
+:root.dark:is(.dark) .qi-report-chip.is-bad { color: #f5a3a3; background: rgba(229, 120, 122, 0.16); }
+:root.dark:is(.dark) .qi-report-chip.is-attention { color: #fbc66b; background: rgba(245, 158, 11, 0.14); }
+:root.dark:is(.dark) .qi-report-chip.is-neutral { color: #a9c3ff; background: rgba(79, 128, 255, 0.16); }
+
+:root:is(.light, .dark) .qi-dash-card-note { color: var(--text-secondary); }
+:root:is(.light, .dark) .qi-dash-summary {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--color-primary);
+  box-shadow: var(--shadow-card);
+}
+:root:is(.light, .dark) .qi-dash-summary-label { color: var(--accent-foreground); }
+:root:is(.light, .dark) .qi-dash-summary-line { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-dash-summary-note { color: var(--text-tertiary); }

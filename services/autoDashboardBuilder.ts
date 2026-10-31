@@ -1,33 +1,22 @@
 /**
  * Auto-Dashboard Builder
  * ──────────────────────
- * Turns the auto-generated insights into a ready-to-use dashboard with zero
- * manual pinning. Powers the "do very little, get a lot" journey:
- *   - auto-built on the first upload, and
- *   - one-click "Build / Rebuild" everywhere after.
+ * Turns the automatic analysis (services/autoAnalysis) into a dashboard that
+ * tells a story: headline KPIs for the latest complete period, then the
+ * findings — trend, what drove the change, mix vs rate, concentration, growth
+ * by segment, segments that stand out — each card titled plainly with its
+ * finding written underneath, and a short summary at the top.
  *
- * It reuses the existing autoInsightsEngine (chart-ready AutoInsights) and the
- * dashboard store actions — it invents no new analysis.
+ * Every card keeps an autoAnalysis spec, so refreshes and dashboard filters
+ * recompute it with exactly the same logic that built it.
  */
 
 import { Dataset, AnalysisResult, DashboardItem, FormattingConfig } from '../types';
-import { generateAutoInsights } from './autoInsightsEngine';
 import { useAppStore } from '../store/useAppStore';
-
-/** Max cards on an auto-built dashboard — enough to be rich, not overwhelming. */
-const MAX_CARDS = 12;
-/** Cap on KPI tiles so the top row stays scannable. */
-const MAX_KPIS = 4;
+import { buildAutoReport, cardTitle, type AutoFinding } from './autoAnalysis';
 
 function genId(): string {
     return `auto_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-/** Is an insight worth putting on the dashboard? */
-function isUsable(i: { chartType: string; status: string; data: any[]; kpiValue?: any }): boolean {
-    if (i.status === 'error') return false;
-    if (i.chartType === 'kpiCard') return i.kpiValue !== undefined && i.kpiValue !== null;
-    return Array.isArray(i.data) && i.data.length > 0;
 }
 
 export interface AutoDashboardResult {
@@ -35,130 +24,113 @@ export interface AutoDashboardResult {
     count: number;
 }
 
+function formattingFor(finding: AutoFinding): FormattingConfig {
+    const { card } = finding;
+    return {
+        colorMode: 'vibrant',
+        numberFormat: card.numberFormat,
+        fontSize: 'md',
+        headerSize: 'md',
+        headerBold: true,
+        showLabels: true,
+        showDataLabels: card.showDataLabels,
+        dataLabelMode: card.showDataLabels ? 'all' : 'off',
+        showAxis: true,
+        showXAxis: true,
+        showYAxis: card.chartType !== 'horizontalBar' || card.data.length > 6,
+        axisLabelSize: 'sm',
+        dataLabelSize: 'sm',
+        tableCalculations: [],
+    } as FormattingConfig;
+}
+
+function itemFor(finding: AutoFinding, dataset: Dataset): DashboardItem {
+    const { card } = finding;
+    const result: AnalysisResult = {
+        data: card.data,
+        xKey: card.xKey,
+        yKey: card.yKey,
+        yLabel: card.yLabel,
+        insight: finding.title,
+        sql: '',
+        config: { ...(card.builder || {}), questionLabel: cardTitle(finding) } as any,
+        // Lets "Edit" open the card's starting point in the Question Builder.
+        ...(card.builder ? { queryConfig: { ...card.builder, questionLabel: cardTitle(finding) } } : {}),
+        vis: card.chartType as any,
+        kpi: card.chartType === 'kpiCard' ? card.data[0]?.value : undefined,
+        formatting: formattingFor(finding),
+        autoAnalysis: finding.spec,
+    };
+    return {
+        id: genId(),
+        title: cardTitle(finding),
+        // KPI cards carry their own caption; findings get their headline underneath.
+        ...(finding.analyzer === 'kpi' ? {} : { note: finding.title }),
+        result,
+        width: card.width,
+        datasetVersion: dataset.version,
+        datasetId: dataset.id,
+        datasetName: dataset.name,
+    };
+}
+
+/** KPIs four across, then findings: full-width cards on their own row, half-width cards in pairs. */
+function layoutFor(items: { item: DashboardItem; kpi: boolean }[]): any[] {
+    const layout: any[] = [];
+    const kpis = items.filter(x => x.kpi);
+    const kpiWidth = kpis.length ? Math.max(3, Math.floor(12 / kpis.length)) : 3;
+    kpis.forEach((x, i) => layout.push({ i: x.item.id, x: (i * kpiWidth) % 12, y: Math.floor((i * kpiWidth) / 12) * 3, w: kpiWidth, h: 3, minW: 2, minH: 3 }));
+    let y = kpis.length ? Math.ceil((kpis.length * kpiWidth) / 12) * 3 : 0;
+    let x = 0;
+    for (const { item } of items.filter(entry => !entry.kpi)) {
+        if (item.width === 'full') {
+            if (x > 0) { y += 6; x = 0; }
+            layout.push({ i: item.id, x: 0, y, w: 12, h: 7, minW: 4, minH: 4 });
+            y += 7;
+        } else {
+            layout.push({ i: item.id, x, y, w: 6, h: 6, minW: 4, minH: 4 });
+            if (x === 0) x = 6; else { x = 0; y += 6; }
+        }
+    }
+    return layout;
+}
+
 /**
- * Generate insights for the dataset and assemble them into a fresh dashboard.
- * Returns the new dashboard id and how many cards were added (0 if none).
+ * Analyse the dataset and assemble a fresh dashboard. Rebuilding replaces the
+ * previous auto-built overview for the same dataset instead of stacking copies.
  */
 export async function buildAutoDashboard(
     dataset: Dataset,
     opts?: { name?: string; onProgress?: (msg: string) => void }
 ): Promise<AutoDashboardResult> {
-    opts?.onProgress?.('Analyzing your data…');
-    const insights = await generateAutoInsights(dataset);
-
-    const usable = insights
-        .filter(isUsable)
-        .sort((a, b) => (a.priority ?? 999) - (b.priority ?? 999));
-
-    // Keep KPI tiles up top (capped) then the highest-priority charts.
-    const kpis = usable.filter(i => i.chartType === 'kpiCard').slice(0, MAX_KPIS);
-    // Dedupe charts: two cards showing the same metric × dimension × chart type
-    // (e.g. two identical "SUM of sales by ship_mode") is the #1 thing that makes
-    // an auto-dashboard look broken. Keep the first (highest-priority) of each.
-    const seen = new Set<string>();
-    const charts = usable.filter(i => i.chartType !== 'kpiCard').filter(i => {
-        const cfg: any = i.config || {};
-        const sig = [
-            i.chartType,
-            (cfg.metric || i.yKey || '').toString().toLowerCase(),
-            (cfg.dimension || i.xKey || '').toString().toLowerCase(),
-            (cfg.aggregation || '').toString().toLowerCase(),
-            (i.title || '').toString().toLowerCase().trim(),
-        ].join('|');
-        if (seen.has(sig)) return false;
-        seen.add(sig);
-        return true;
-    });
-    const chosen = [...kpis, ...charts].slice(0, MAX_CARDS);
+    opts?.onProgress?.('Analysing your data…');
+    // Let the progress message paint before the (synchronous) analysis runs.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    const report = buildAutoReport(dataset);
+    const chosen = [...report.kpis, ...report.findings];
+    if (chosen.length === 0) return { dashboardId: '', count: 0 };
 
     opts?.onProgress?.('Building your dashboard…');
-
     const store = useAppStore.getState();
-    const dashName = opts?.name || `${dataset.name || 'Dataset'} — Overview`;
+    const dashName = opts?.name || report.title;
 
-    // ── IDEMPOTENT BUILD ──────────────────────────────────────────────
-    // Building is opt-in (user clicks "Build my dashboard"), but a user may click
-    // it more than once, across sessions, or on the same dataset. createDashboard
-    // ALWAYS appends a new tab, so without this guard every click leaves another
-    // "<dataset> — Overview" tab behind — the pile-up that looks like runaway
-    // auto-creation. Remove any prior Overview for this exact dataset first so a
-    // rebuild REPLACES it in place instead of stacking duplicates.
     const stale = store.dashboards.filter(
         d => d.name === dashName || (d.autoGenerated && d.sourceDatasetId === dataset.id),
     );
     for (const d of stale) store.deleteDashboard(d.id);
 
     const dashboardId = store.createDashboard(dashName);
-    // Tag it so future rebuilds can find and replace it even if the dataset is renamed.
-    store.setDashboardMeta(dashboardId, { autoGenerated: true, sourceDatasetId: dataset.id });
+    store.setDashboardMeta(dashboardId, {
+        autoGenerated: true,
+        sourceDatasetId: dataset.id,
+        summary: report.summary,
+        summaryNotes: report.notes.filter(note => !report.summary.includes(note)),
+    });
 
-    let chartIndex = 0;
-    for (const insight of chosen) {
-        // Per-card formatting: only label charts that stay readable. Dense
-        // time-series (line/area) and many-bar charts get NO per-point labels;
-        // small bars / donuts keep them. This is what stops the "brainless",
-        // label-smothered visuals.
-        const pointCount = Array.isArray(insight.data) ? insight.data.length : 0;
-        const isBar = insight.chartType === 'bar' || insight.chartType === 'horizontalBar';
-        const showLabels = insight.chartType === 'donut' || insight.chartType === 'pie'
-            || (isBar && pointCount <= 8);
-        const formatting: FormattingConfig = {
-            colorMode: 'vibrant',
-            numberFormat: insight.kpiFormat === 'currency_usd' ? 'currency_usd'
-                : insight.kpiFormat === 'percent' ? 'percent' : 'auto',
-            fontSize: 'md',
-            headerSize: 'xl',
-            headerBold: true,
-            showLabels: true,
-            showDataLabels: showLabels,
-            dataLabelMode: showLabels ? 'all' : 'off',
-            showAxis: true,
-            showXAxis: true,
-            showYAxis: true,
-            headerColor: '#000000',
-            axisColor: '#000000',
-            axisBold: true,
-            axisLabelSize: 'md',
-            dataLabelColor: '#000000',
-            dataLabelBold: true,
-            dataLabelSize: 'md',
-            tableCalculations: [],
-        };
-
-        const result: AnalysisResult = {
-            data: insight.data,
-            xKey: insight.xKey,
-            yKey: insight.yKey,
-            yLabel: insight.title,
-            insight: insight.subtitle,
-            sql: insight.sql,
-            // Real config so the card opens/edits in the Question Builder.
-            config: { ...(insight.config || {}), questionId: insight.id, questionLabel: insight.title } as any,
-            vis: insight.chartType as any,
-            kpi: insight.kpiValue,
-            formatting,
-        };
-
-        // KPIs are half-width tiles; give the first couple of charts full width
-        // as "hero" rows, the rest half so they pair up neatly.
-        let width: 'full' | 'half' = 'half';
-        if (insight.chartType !== 'kpiCard') {
-            width = chartIndex < 2 ? 'full' : 'half';
-            chartIndex++;
-        }
-
-        const item: DashboardItem = {
-            id: genId(),
-            title: insight.title,
-            result,
-            width,
-            datasetVersion: dataset.version,
-            datasetId: dataset.id,
-            datasetName: dataset.name,
-        };
-        store.addItemToDashboard(dashboardId, item);
-    }
+    const entries = chosen.map(finding => ({ item: itemFor(finding, dataset), kpi: finding.analyzer === 'kpi' }));
+    for (const { item } of entries) store.addItemToDashboard(dashboardId, item);
+    store.setDashboardLayout(dashboardId, layoutFor(entries));
 
     store.setActiveDashboard(dashboardId);
-    return { dashboardId, count: chosen.length };
+    return { dashboardId, count: entries.length };
 }
