@@ -1,5 +1,7 @@
 // --- REFACTORED: analysisEngine.ts ---
 // Re-exports from extracted modules for backward compatibility
+import { parseDelimitedText } from './delimitedText';
+export { parseDelimitedText } from './delimitedText';
 import { AggregationType, AnalysisResult, AnalysisType, ColumnDefinition, ColumnProfile, ColumnType, Dataset, ETLLog, QueryConfig, TimeContext, TimeGrain, SchemaType, CanonicalMapping, QuestionTemplate, QuestionGrain } from "../types";
 // xlsx is large (~1 MB) and only needed when a user actually parses a spreadsheet.
 // Load it lazily so it stays out of the initial bundle / critical path.
@@ -1658,53 +1660,7 @@ export const autoJoinDatasets = (
     return { mergedRows: merged, joinLogs: logs };
 };
 
-export const parseCSV = (text: string): any[] => {
-    const lines = text.trim().split('\n');
-    const headers = parseCSVLine(lines[0]);
-    return lines.slice(1)
-        .filter(line => line.trim() !== '')
-        .map(line => {
-            const v = parseCSVLine(line);
-            return headers.reduce((acc, h, i) => ({ ...acc, [h]: v[i]?.trim() ?? '' }), {});
-        });
-};
-
-/** Parse a single CSV line respecting quoted fields (RFC 4180) */
-function parseCSVLine(line: string): string[] {
-    const fields: string[] = [];
-    let current = '';
-    let inQuotes = false;
-
-    for (let i = 0; i < line.length; i++) {
-        const ch = line[i];
-        if (inQuotes) {
-            if (ch === '"') {
-                // Check for escaped quote ("")
-                if (i + 1 < line.length && line[i + 1] === '"') {
-                    current += '"';
-                    i++; // skip next quote
-                } else {
-                    inQuotes = false; // end of quoted field
-                }
-            } else {
-                current += ch;
-            }
-        } else {
-            if (ch === '"') {
-                inQuotes = true;
-            } else if (ch === ',') {
-                fields.push(current.trim());
-                current = '';
-            } else if (ch === '\r') {
-                // skip carriage return
-            } else {
-                current += ch;
-            }
-        }
-    }
-    fields.push(current.trim());
-    return fields;
-}
+export const parseCSV = (text: string): any[] => parseDelimitedText(text).rows;
 
 export const parseExcel = async (file: File): Promise<any[]> => {
     const XLSX = await getXLSX();

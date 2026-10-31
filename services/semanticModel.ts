@@ -378,10 +378,14 @@ export function buildSemanticModel(
     const derivedMeasures: DerivedMeasure[] = [];
     const measureNames = measures.map(m => m.column.toLowerCase());
 
-    // profit = revenue - cost
-    const hasRevenue = measureNames.find(n => /revenue|sales|amount/.test(n));
-    const hasCost = measureNames.find(n => /cost|cogs|expense/.test(n));
-    if (hasRevenue && hasCost) {
+    // profit = revenue - cost, only from line-level (additive) totals: a unit
+    // cost or unit price minus a line total is meaningless, and a dataset that
+    // already has a profit column must not get a second, different "Profit".
+    const additiveNames = measures.filter(m => m.behavior === 'additive').map(m => m.column.toLowerCase());
+    const hasRevenue = additiveNames.find(n => /revenue|sales|amount|line_total/.test(n) && !/(unit|price|per_|_each|discount|tax|refund|shipping)/.test(n));
+    const hasCost = additiveNames.find(n => /cost|cogs|expense/.test(n) && !/(unit|per_|_each|shipping)/.test(n));
+    const hasProfitColumn = measureNames.some(n => /(^|_)(profit|margin_amount|gross_profit|net_profit)($|_)/.test(n));
+    if (hasRevenue && hasCost && !hasProfitColumn) {
         const revCol = measures.find(m => m.column.toLowerCase() === hasRevenue)!.column;
         const costCol = measures.find(m => m.column.toLowerCase() === hasCost)!.column;
         derivedMeasures.push({ id: 'profit', label: 'Profit', formula: 'subtract', numerator: revCol, denominator: costCol, format: 'currency_usd' });
@@ -395,7 +399,7 @@ export function buildSemanticModel(
     }
 
     // Margin % = profit / revenue × 100 (only if profit derived exists)
-    if (hasRevenue && hasCost) {
+    if (hasRevenue && hasCost && !hasProfitColumn) {
         const revCol = measures.find(m => m.column.toLowerCase() === hasRevenue)!.column;
         derivedMeasures.push({ id: 'margin_pct', label: 'Profit Margin %', formula: 'divide', numerator: 'profit', denominator: revCol, multiply: 100, format: 'percent' });
     }

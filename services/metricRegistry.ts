@@ -48,6 +48,15 @@ export interface DimensionClassification {
  */
 const METRIC_RULES: { pattern: RegExp; result: MetricClassification }[] = [
     // ──────────────────────────────────────────────────────────
+    // PER-UNIT VALUES FIRST: "unit_cost" also contains "cost" and "price_per_unit"
+    // contains "price"; a per-unit figure is an average, never a total.
+    // ──────────────────────────────────────────────────────────
+    {
+        pattern: /(?:^|[_\s])(unit_cost|cost_per_unit|cost_each|cost_price|unit_price|price_per_unit|price_each|unit_rate|rate_per_unit|avg_cost|average_cost)(?:[_\s]|$)/i,
+        result: { aggregation: AggregationType.AVG, behavior: 'non_additive', format: 'currency_usd', requiresWeighting: true, weightColumn: 'quantity' },
+    },
+
+    // ──────────────────────────────────────────────────────────
     // ADDITIVE METRICS (can be SUMmed across all dimensions)
     // ──────────────────────────────────────────────────────────
 

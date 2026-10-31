@@ -19,7 +19,13 @@ import {
     buildCanonicalCategoryMap, findNearDuplicateGroups, pivotTwoDigitYear,
     looksLikeLeadingZeroCode, detectMixedScale,
     detectSignAnomalies, detectRangeAnomalies, detectDelimitedCells, detectDateOrderViolations,
+    detectNumberStyle, parseNumberWithUnit, parseDurationMinutes, detectCurrencies, currencyOf,
+    detectPlaceholderValues, type NumberStyle,
 } from './etlHardening';
+import {
+    dedupeRows, removeTotalRows, unpivotPeriodColumns, addPeriodFromYearMonth,
+    findRepeatedHeaderAmounts, allocateAcrossLines, findLineColumns, reconcileLineTotals,
+} from './etlMeasureIntegrity';
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  TYPES                                                          ║
@@ -61,6 +67,14 @@ export interface ColumnProfileData {
     messyCasing?: boolean;
     /** True when numeric-looking values are really codes with significant leading zeros (zip 01234, SKU 007) — keep as text, never sum. */
     leadingZeroCode?: boolean;
+    /** Column-wide decimal/thousands convention, when the data shows one. */
+    numberStyle?: NumberStyle | null;
+    /** Share of values that are numbers written with a unit ("3 units", "~5"). */
+    unitNumberRate?: number;
+    /** Share of values that are durations ("01:30:00"). */
+    durationRate?: number;
+    /** 'points' when "12%" cells sit beside plain fractions (0.12) that must be scaled to match. */
+    percentMode?: 'points' | null;
 }
 
 export interface TransformStep {
@@ -72,6 +86,8 @@ export interface TransformPlan {
     column: string;
     type: ColumnType;
     steps: TransformStep[];
+    /** Logs describing what the steps did, produced after they run. */
+    notes?: () => ETLLog[];
 }
 
 export interface ContractViolation {
@@ -112,72 +128,16 @@ const WORD_NUMBERS: Record<string, number> = {
 };
 
 
-// Product/value synonym normalization dictionary
+// Value synonyms — only expansions that cannot change meaning. Business
+// vocabularies (Wholesale vs Retail, Closed vs Inactive, Phone vs Smart Phone)
+// are the user's to merge; guessing silently moved sales between categories.
 const CATEGORY_SYNONYMS: Record<string, Record<string, string>> = {
-    // Product name synonyms (applied after Title Case)
-    product_name: {
-        'Tab': 'Tablet',
-        'Tabs': 'Tablet',
-        'Cell Phone': 'Phone',
-        'Cellphone': 'Phone',
-        'Smartphone': 'Phone',
-        'Mobile': 'Phone',
-        'Mobile Phone': 'Phone',
-        'Phone': 'Smart Phone',
-        'Notebook': 'Laptop',
-        'Pc': 'Desktop',
-        'Personal Computer': 'Desktop',
-        'Console': 'Gaming Console',
-        'Ultra-Laptop': 'Ultra Laptop',
-        'Earbuds': 'Wireless Earbuds',
-    },
-    // Channel synonyms
-    channel: {
-        'Web': 'Online',
-        'Website': 'Online',
-        'Ecommerce': 'Online',
-        'E-Commerce': 'Online',
-        'In-Store': 'Store',
-        'In Store': 'Store',
-        'Brick And Mortar': 'Store',
-        'Wholesale': 'Retail',
-    },
-    // Region synonyms
     region: {
-        'No': 'North',
-        'So': 'South',
-        'Ea': 'East',
-        'We': 'West',
-        'N': 'North',
-        'S': 'South',
-        'E': 'East',
-        'W': 'West',
-        'Ne': 'Northeast',
-        'Nw': 'Northwest',
-        'Se': 'Southeast',
-        'Sw': 'Southwest',
+        'N': 'North', 'S': 'South', 'E': 'East', 'W': 'West',
+        'Ne': 'Northeast', 'Nw': 'Northwest', 'Se': 'Southeast', 'Sw': 'Southwest',
     },
-    // Gender / sex synonyms (applied after Title Case, so "m" becomes "M")
-    gender: {
-        'M': 'Male', 'm': 'Male',
-        'F': 'Female', 'f': 'Female',
-        'Male ': 'Male', 'Female ': 'Female',
-        'Man': 'Male', 'Woman': 'Female',
-        'Boy': 'Male', 'Girl': 'Female',
-    },
-    sex: {
-        'M': 'Male', 'm': 'Male',
-        'F': 'Female', 'f': 'Female',
-        'Man': 'Male', 'Woman': 'Female',
-    },
-    // Status synonyms
-    status: {
-        'Active': 'Active', 'Inactive': 'Inactive',
-        'Y': 'Active', 'N': 'Inactive',
-        'Yes': 'Active', 'No': 'Inactive',
-        'Enabled': 'Active', 'Disabled': 'Inactive',
-        'Open': 'Active', 'Closed': 'Inactive',
-    },
+    gender: { 'M': 'Male', 'F': 'Female' },
+    sex: { 'M': 'Male', 'F': 'Female' },
 };
 
 // Date formats ordered by specificity
@@ -222,7 +182,7 @@ const ID_PATTERNS = /(?:^id$|_id$|^id_|order_?id|cust(?:omer)?_?id|product_?id|t
 const METRIC_NAME_EXACT = /^(quantity|qty|amount|amt|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|avg|average|num|number)$/i;
 
 // Metric keyword fragments — for compound names like txn_amount, total_sales, net_revenue
-const METRIC_KEYWORDS = /(?:^|[_\s])(amount|amt|qty|quantity|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|average|avg|number|num|charge|payment|spend|earning|payout|funding|debt|credit|debit|turnover|premium|commission|bonus|interest|deposit|withdrawal|refund|surcharge|tariff|fare|toll|rent|royalty|stipend)(?:[_\s]|$)/i;
+const METRIC_KEYWORDS = /(?:^|[_\s])(amount|amt|qty|quantity|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|average|avg|number|num|charge|payment|spend|earning|payout|funding|debt|credit|debit|turnover|premium|commission|bonus|interest|deposit|withdrawal|refund|surcharge|tariff|fare|toll|rent|royalty|stipend|hours|hrs|minutes|mins|seconds|secs|days|duration|visits|clicks|impressions|views|sessions|calls|tickets|items|pieces|downloads|signups|installs|leads|conversions|kg|kgs|lbs|km|miles|distance)(?:[_\s]|$)/i;
 
 // Date name patterns (strong signal for date classification)
 const DATE_NAME_PATTERNS = /^(date|sale_?date|order_?date|purchase_?date|created_?at|updated_?at|ship_?date|delivery_?date|birth_?date|dob|start_?date|end_?date|due_?date|invoice_?date|payment_?date|registration_?date|timestamp|datetime|created|modified|posted|expired|effective)$/i;
@@ -259,8 +219,12 @@ export type RoleDecision = { type: ColumnType; note?: { label: string; message: 
 export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
     const isMetricName = METRIC_NAME_EXACT.test(p.name) || METRIC_KEYWORDS.test(p.name);
     const isDateName = DATE_NAME_PATTERNS.test(p.name);
-    const effectiveNumericRate = p.numericParseRate + (p.wordNumberRate || 0);
+    const effectiveNumericRate = p.numericParseRate + (p.wordNumberRate || 0) + (p.unitNumberRate || 0);
     const keySig = keySignalFor(p, isMetricName);
+    // R0 — Durations ("01:30:00") are measures (minutes), not text.
+    if ((p.durationRate || 0) >= 0.8) {
+        return { type: ColumnType.METRIC, note: { label: 'Duration Detection', message: `Column '${p.name}' holds durations (h:mm:ss); converted to minutes so it can be summed and averaged.` } };
+    }
 
     // R1 — ID by name pattern (order_id, sku, *_code …).
     if (ID_PATTERNS.test(p.name)) return { type: ColumnType.ID };
@@ -305,6 +269,13 @@ export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  HELPER FUNCTIONS                                               ║
 // ╚══════════════════════════════════════════════════════════════════╝
+
+/** Day-first dates everywhere except US-style locales (and when no locale is known). */
+export function prefersDayFirst(): boolean {
+    const lang = typeof navigator !== 'undefined' && typeof navigator.language === 'string' ? navigator.language : '';
+    if (!lang) return false;
+    return !/^(en-US|es-US|en-PH|fil|en-CA)$/i.test(lang);
+}
 
 function monthFromText(s: string): number | null {
     return MONTH_MAP[s.toLowerCase().slice(0, 3)] || null;
@@ -569,13 +540,25 @@ function layer1_structuralNormalization(
     {
         const headerMap: Record<string, string> = {};
         let renamedCount = 0;
-        Object.keys(rows[0]).forEach(h => {
+        const used = new Map<string, number>();
+        const collisions: string[] = [];
+        Object.keys(rows[0]).forEach((h, index) => {
             // Insert underscore before camelCase boundaries: SaleDate → Sale_Date, OrderID → Order_ID
             const camelSplit = h.replace(/([a-z])([A-Z])/g, '$1_$2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2');
-            const normalized = camelSplit.trim().toLowerCase().replace(/[\s\W]+/g, '_').replace(/^_+|_+$/g, '') || `col_${Math.random().toString(36).substr(2, 5)}`;
+            // Deterministic name for a blank header, so a re-upload maps to the same column.
+            let normalized = camelSplit.trim().toLowerCase().replace(/[\s\W]+/g, '_').replace(/^_+|_+$/g, '') || `column_${index + 1}`;
+            // "Sales" and "sales " normalise to the same name: keep both columns.
+            const n = (used.get(normalized) || 0) + 1;
+            used.set(normalized, n);
+            if (n > 1) { collisions.push(`${h} → ${normalized}_${n}`); normalized = `${normalized}_${n}`; }
             headerMap[h] = normalized;
             if (h !== normalized) renamedCount++;
         });
+        if (collisions.length > 0) {
+            logs.push(log('Header Collision', 1, 'applied',
+                `${collisions.length} header(s) became identical after normalising and were kept separately: ${collisions.join(', ')}.`,
+                { affectedColumns: collisions.map(c => c.split(' → ')[1]) }));
+        }
         rows = rows.map(row => {
             const newRow: any = {};
             Object.keys(row).forEach(k => newRow[headerMap[k] || k] = row[k]);
@@ -642,10 +625,9 @@ function layer1_structuralNormalization(
     // ── 1d: Empty Column Removal ──
     {
         const allKeys = Object.keys(rows[0]);
-        const emptyCols = allKeys.filter(key => {
-            const filled = rows.filter(r => !isNullish(r[key])).length;
-            return filled / rows.length < 0.05;
-        });
+        // Only columns with no values at all. A sparse column (refunds on 3% of
+        // orders, a rarely-used discount code) is real data, not padding.
+        const emptyCols = allKeys.filter(key => !rows.some(r => !isNullish(r[key])));
         if (emptyCols.length > 0) {
             rows = rows.map(row => {
                 const nr: any = {};
@@ -653,9 +635,9 @@ function layer1_structuralNormalization(
                 return nr;
             });
             columnsRemoved += emptyCols.length;
-            logs.push(log('Empty Column Removal', 1, 'applied', `Removed ${emptyCols.length} column(s) with >95% empty.`, { affectedColumns: emptyCols }));
+            logs.push(log('Empty Column Removal', 1, 'applied', `Removed ${emptyCols.length} completely empty column(s): ${emptyCols.join(', ')}.`, { affectedColumns: emptyCols }));
         } else {
-            logs.push(log('Empty Column Removal', 1, 'skipped', 'All columns have >5% fill rate.'));
+            logs.push(log('Empty Column Removal', 1, 'skipped', 'No completely empty columns.'));
         }
     }
 
@@ -681,60 +663,97 @@ function layer1_structuralNormalization(
         }
     }
 
-    // ── 1f: Duplicate Row Removal (using truly unique ID/PK columns only) ──
+    // ── 1e1: Header rows repeated inside the data (concatenated exports) ──
+    {
+        const keys = Object.keys(rows[0] || {});
+        const before = rows.length;
+        const isHeaderEcho = (row: Record<string, any>) => {
+            let filled = 0, echoes = 0;
+            for (const k of keys) {
+                const v = row[k];
+                if (isNullish(v)) continue;
+                filled++;
+                if (String(v).trim().toLowerCase().replace(/[\s\W]+/g, '_') === k) echoes++;
+            }
+            return filled >= 2 && echoes / filled >= 0.8;
+        };
+        rows = rows.filter(row => !isHeaderEcho(row));
+        if (rows.length < before) {
+            logs.push(log('Repeated Header Rows', 1, 'applied',
+                `Removed ${before - rows.length} row(s) that repeat the column headers (files joined together).`,
+                { rowsBefore: before, rowsAfter: rows.length }));
+        }
+    }
+
+    // ── 1e2: Total / subtotal rows from report exports ──
+    {
+        const t = removeTotalRows(rows);
+        if (t.removed.length > 0) {
+            rows = t.rows;
+            logs.push(log('Total Row Removal', 1, 'applied',
+                `Removed ${t.removed.length} total/subtotal row(s) — their figures equal the rows they total, so keeping them would double-count.`,
+                { rowsBefore: rows.length + t.removed.length, rowsAfter: rows.length, removedRowSamples: t.removed.slice(0, 10) }));
+        }
+        if (t.suspicious.length > 0) {
+            logs.push(log('Total Row Flag', 6, 'info',
+                `${t.suspicious.length} row(s) are labelled like totals but their numbers don't match the rows above, so they were kept. Check whether they should be counted.`,
+                { removedRowSamples: t.suspicious.slice(0, 10), affectedRows: t.suspicious.length }));
+        }
+    }
+
+    // ── 1e3: Wide tables — one column per period → one row per period ──
+    {
+        const u = unpivotPeriodColumns(rows);
+        if (u) {
+            const before = rows.length;
+            rows = u.rows;
+            logs.push(log('Unpivot Period Columns', 1, 'applied',
+                `Reshaped ${u.periodColumns.length} period columns (${u.periodColumns.slice(0, 4).join(', ')}${u.periodColumns.length > 4 ? ', …' : ''}) into 'period'${u.dated ? ' (as dates)' : ''} and 'value' so time can be trended and totals summed once. ${before} rows → ${rows.length}.`,
+                { rowsBefore: before, rowsAfter: rows.length, affectedColumns: [...u.periodColumns, 'period', 'value'] }));
+        }
+    }
+
+    // ── 1e4: Year + month columns but no date → a period date ──
+    {
+        const keys = Object.keys(rows[0] || {});
+        const hasDate = keys.some(k => DATE_NAME_PATTERNS.test(k) || /(_date|_at|_time|^period)$/i.test(k)
+            || rows.slice(0, 50).filter(r => /^\d{4}-\d{2}-\d{2}/.test(String(r[k] ?? '')) || r[k] instanceof Date).length >= 25);
+        const added = addPeriodFromYearMonth(rows, hasDate);
+        if (added) {
+            logs.push(log('Period From Year And Month', 1, 'applied',
+                `No date column found; built '${added}' (first day of each month) from the year and month columns so trends work.`,
+                { affectedColumns: [added] }));
+        }
+    }
+
+    // ── 1f: Duplicate Row Removal (exact copies under a unique key only) ──
     {
         if (preserveRowMultiplicity) {
             logs.push(log('Duplicate Row Removal', 1, 'skipped',
                 'Skipped for a relational source table so fact multiplicity and duplicate-key evidence remain intact.'));
         } else {
         const before = rows.length;
-        const allCols = Object.keys(rows[0] || {});
-
-        // Find candidate ID columns by name pattern
-        const candidateIdCols = allCols.filter(col => ID_PATTERNS.test(col));
-
-        // Validate candidates: only use columns with high uniqueness (≥90% distinct)
-        // This prevents foreign keys (branch_id, product_id) from being used as primary keys
-        const trueIdCols = candidateIdCols.filter(col => {
-            const vals = rows.map(r => r[col]);
-            const distinct = new Set(vals.map(v => JSON.stringify(v))).size;
-            return distinct / rows.length >= 0.9;
-        });
-
-        const dedupCols = trueIdCols.length > 0 ? trueIdCols : allCols;
-        const strategy = trueIdCols.length > 0
-            ? `primary key match on ${trueIdCols.length} unique ID column(s): ${trueIdCols.join(', ')}`
-            : `exact match across all ${allCols.length} columns`;
-
-        const seen = new Set<string>();
-        const duplicateRows: Record<string, any>[] = [];
-        const uniqueRows: Record<string, any>[] = [];
-        for (const row of rows) {
-            const key = dedupCols.map(c => JSON.stringify(row[c])).join('|');
-            if (seen.has(key)) {
-                if (duplicateRows.length < 10) duplicateRows.push(row);
-            } else {
-                seen.add(key);
-                uniqueRows.push(row);
-            }
-        }
-
-        // Safety guard: if dedup removes >50% of rows, it's likely a false positive
-        const wouldRemove = before - uniqueRows.length;
-        if (wouldRemove > before * 0.5 && trueIdCols.length > 0) {
-            // Don't apply — too aggressive, likely using wrong keys
-            logs.push(log('Duplicate Row Removal', 1, 'skipped',
-                `Skipped: dedup on ${trueIdCols.join(', ')} would remove ${wouldRemove} of ${before} rows (${Math.round(wouldRemove / before * 100)}%). Likely foreign keys, not primary keys.`));
+        const d = dedupeRows(rows, ID_PATTERNS);
+        rows = d.rows;
+        duplicatesRemoved = d.removed.length;
+        if (duplicatesRemoved > 0) {
+            logs.push(log('Duplicate Row Removal', 1, 'applied',
+                `Removed ${duplicatesRemoved} exact duplicate row(s). '${d.keyColumn}' is unique once copies are removed, so the repeats were re-exported copies.`,
+                { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: d.removed.slice(0, 10), affectedColumns: d.keyColumn ? [d.keyColumn] : [] }));
         } else {
-            rows = uniqueRows;
-            duplicatesRemoved = before - rows.length;
-            if (duplicatesRemoved > 0) {
-                logs.push(log('Duplicate Row Removal', 1, 'applied',
-                    `Removed ${duplicatesRemoved} duplicate row(s). Strategy: ${strategy}.`,
-                    { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: duplicateRows, affectedColumns: dedupCols }));
-            } else {
-                logs.push(log('Duplicate Row Removal', 1, 'skipped', `No duplicate rows found (strategy: ${strategy}).`));
-            }
+            logs.push(log('Duplicate Row Removal', 1, 'skipped', d.keyColumn
+                ? `No duplicate rows ('${d.keyColumn}' is unique).`
+                : 'No unique key column to prove duplicates, so no rows were removed.'));
+        }
+        if (d.repeatedKept > 0) {
+            logs.push(log('Repeated Rows Kept', 6, 'info',
+                `${d.repeatedKept} row(s) exactly repeat another row. With no unique ID they may be genuine repeat transactions, so they were kept. If they are accidental copies, remove them in Data Studio.`,
+                { affectedRows: d.repeatedKept }));
+        }
+        if (d.repeatingIdColumns.length > 0) {
+            logs.push(log('Repeating ID Note', 6, 'info',
+                `${d.repeatingIdColumns.map(c => `'${c}'`).join(', ')} repeat across rows with different values (for example several lines per order). Each row is kept as its own line.`,
+                { affectedColumns: d.repeatingIdColumns }));
         }
         }
     }
@@ -811,7 +830,9 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
     for (const col of keys) {
         const values = rows.map(r => r[col]);
         const total = values.length;
-        const nonNull = values.filter(v => v !== null && v !== undefined);
+        // Blank cells are missing values, not text: a sparse numeric column
+        // (refunds on 3% of rows) must still profile as numeric.
+        const nonNull = values.filter(v => v !== null && v !== undefined && !(typeof v === 'string' && v.trim() === ''));
         const nullRate = total > 0 ? (total - nonNull.length) / total : 0;
         const strValues = nonNull.map(v => String(v).trim()).filter(s => s !== '');
         const distinctCount = new Set(strValues.map(s => s.toLowerCase())).size;
@@ -824,8 +845,14 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
         let percentageDetected = false;
         let wordNumberCount = 0;
         let integerCount = 0;
+        let unitNumberCount = 0;
+        let durationCount = 0;
+        const numberStyle = detectNumberStyle(nonNull);
+        const percentValues: number[] = [];
+        let plainFractions = 0;
 
         for (const v of nonNull) {
+            if (typeof v === 'string' && parseDurationMinutes(v) !== null) { durationCount++; continue; }
             const s = String(v);
             if (hasCurrencyMarker(v)) currencyDetected = true;
             if (s.includes('%')) percentageDetected = true;
@@ -842,14 +869,29 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
             // Profile with the exact parser used by Layer 5. This prevents a
             // value such as "387.00 GBP" from being classified as text and
             // later reaching DuckDB as SUM(VARCHAR).
-            const num = parseLocaleNumber(v);
+            const num = parseLocaleNumber(v, numberStyle || undefined);
             if (num !== null) {
                 numericCount++;
                 if (Number.isInteger(num)) integerCount++;
                 if (num < min) min = num;
                 if (num > max) max = num;
+                if (s.includes('%')) percentValues.push(num);
+                else if (Math.abs(num) <= 1 && num !== 0) plainFractions++;
+            } else {
+                const withUnit = parseNumberWithUnit(v, numberStyle || undefined);
+                if (withUnit) {
+                    unitNumberCount++;
+                    if (withUnit.value < min) min = withUnit.value;
+                    if (withUnit.value > max) max = withUnit.value;
+                }
             }
         }
+        // "12%" cells next to plain 0.12 cells: the plain ones are fractions of
+        // the same rate and must be scaled to points, or averages mix scales.
+        const sortedPct = [...percentValues].sort((a, b) => a - b);
+        const percentMode: 'points' | null = percentValues.length >= 1 && plainFractions >= 1
+            && percentValues.length >= (percentValues.length + plainFractions) * 0.1
+            && (sortedPct[Math.floor(sortedPct.length / 2)] ?? 0) > 1 ? 'points' : null;
         // Key-shape signals (relationship/uniqueness): integer-heaviness and whether the
         // integer values form a near-contiguous run (auto-increment / serial key).
         const integerRate = numericCount > 0 ? integerCount / numericCount : 0;
@@ -903,6 +945,17 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
         } else if (hasMonthOver12 && !hasDayOver12) {
             delete formatCounts['DD/MM/YYYY'];
             delete formatCounts['DD/MM/YY'];
+        } else if (!hasDayOver12 && !hasMonthOver12) {
+            // Nothing in the data decides it (every part ≤ 12): follow the
+            // user's locale — day first everywhere except the US.
+            // Ambiguous values were counted under the US reading (it is tried
+            // first), so move those counts rather than just dropping them.
+            const move = (from: string, to: string) => {
+                if (formatCounts[from]) formatCounts[to] = (formatCounts[to] || 0) + formatCounts[from];
+                delete formatCounts[from];
+            };
+            if (prefersDayFirst()) { move('MM/DD/YYYY', 'DD/MM/YYYY'); move('MM/DD/YY', 'DD/MM/YY'); }
+            else { move('DD/MM/YYYY', 'MM/DD/YYYY'); move('DD/MM/YY', 'MM/DD/YY'); }
         }
         // Pick format with most matches (for actual parsing later)
         let bestDateRate = 0;
@@ -934,6 +987,10 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
             looksSequential,
             messyCasing: isMessyCasedColumn(strValues),
             leadingZeroCode: looksLikeLeadingZeroCode(nonNull),
+            numberStyle,
+            unitNumberRate: nonNull.length > 0 ? unitNumberCount / nonNull.length : 0,
+            durationRate: nonNull.length > 0 ? durationCount / nonNull.length : 0,
+            percentMode,
         };
 
         profiles.push(profile);
@@ -1084,8 +1141,53 @@ function layer4_rulePlanner(
             // negatives, K/M/B suffixes, and US *and* EU decimal/thousands
             // separators — recovering values the old comma-strip turned into null.
             if (p.wordNumberRate > 0) steps.push({ name: 'WORD_TO_NUMBER', fn: (v: any) => { if (typeof v !== 'string') return v; const n = wordToNumber(v); return n !== null ? n : v; } });
-            steps.push({ name: 'PARSE_NUMBER(locale-aware)', fn: (v: any) => parseLocaleNumber(v) });
+            const style = p.numberStyle || undefined;
+            const seen = { units: new Map<string, number>(), approximate: 0, scaled: 0, durations: 0 };
+            steps.push({
+                name: `PARSE_NUMBER(${style === 'eu' ? 'European format' : style === 'us' ? 'US format' : 'locale-aware'})`,
+                fn: (v: any) => {
+                    if (typeof v === 'string' && (p.durationRate || 0) >= 0.5) {
+                        const minutes = parseDurationMinutes(v);
+                        if (minutes !== null) { seen.durations++; return Math.round(minutes * 100) / 100; }
+                    }
+                    let n = parseLocaleNumber(v, style);
+                    if (n === null) {
+                        const withUnit = parseNumberWithUnit(v, style);
+                        if (withUnit) {
+                            n = withUnit.value;
+                            if (withUnit.unit) seen.units.set(withUnit.unit, (seen.units.get(withUnit.unit) || 0) + 1);
+                            if (withUnit.approximate) seen.approximate++;
+                        }
+                    }
+                    if (n !== null && p.percentMode === 'points' && !(typeof v === 'string' && v.includes('%')) && Math.abs(n) <= 1 && n !== 0) {
+                        seen.scaled++;
+                        return Math.round(n * 100 * 1e6) / 1e6;
+                    }
+                    return n;
+                },
+            });
             steps.push({ name: 'IMPUTE_NULL', fn: (v: any) => (v === null || v === undefined || (typeof v === 'number' && isNaN(v))) ? null : v });
+            const column = p.name;
+            const plan: TransformPlan = { column, type, steps, notes: () => {
+                const out: ETLLog[] = [];
+                if (seen.units.size > 0 || seen.approximate > 0) {
+                    const units = [...seen.units.entries()].map(([u, n]) => `${u} (${n})`).join(', ');
+                    out.push(log('Units Removed', 5, 'applied',
+                        `Column '${column}': read numbers written with text${units ? ` (units seen: ${units})` : ''}${seen.approximate ? `; ${seen.approximate} marked approximate` : ''}.`
+                        + (seen.units.size > 1 ? ' More than one unit appears; check they are the same scale before summing.' : ''),
+                        { affectedColumns: [column] }));
+                }
+                if (seen.scaled > 0) out.push(log('Percent Scale Standardized', 5, 'applied',
+                    `Column '${column}': ${seen.scaled} value(s) written as fractions (0.12) were scaled to percent points (12) to match the cells written as "12%".`,
+                    { affectedColumns: [column], affectedRows: seen.scaled }));
+                if (seen.durations > 0) out.push(log('Durations Converted', 5, 'applied',
+                    `Column '${column}': ${seen.durations} duration(s) (h:mm:ss) converted to minutes.`,
+                    { affectedColumns: [column], affectedRows: seen.durations }));
+                return out;
+            } };
+            columns.push({ name: p.name, type, originalType: 'string' });
+            plans.push(plan);
+            continue;
         } else if (type === ColumnType.DATE) {
             const fmt = p.dateFormatCandidate || 'YYYY-MM-DD';
             steps.push({ name: `PARSE_DATE(${fmt})`, fn: (v: any) => tryParseDateWithFormat(v, fmt) || tryParseDateAny(v)?.iso || null });
@@ -1134,8 +1236,11 @@ function layer4_rulePlanner(
                     // Preserve significant leading zeros (zip 01234, SKU 007) —
                     // rounding would silently corrupt the code to "1234"/"7".
                     if (/^0\d+$/.test(s)) return s;
+                    // Long numeric IDs (card, account, order numbers) lose digits as
+                    // JS numbers; keep the text exactly as uploaded.
+                    if (/^\d{16,}$/.test(s)) return s;
                     const n = Number(v);
-                    if (!isNaN(n) && Number.isFinite(n)) return String(Math.round(n));
+                    if (!isNaN(n) && Number.isFinite(n) && Math.abs(n) <= Number.MAX_SAFE_INTEGER && /^-?\d+(\.0+)?$/.test(s)) return String(Math.round(n));
                     return s;
                 }
             });
@@ -1239,6 +1344,7 @@ function layer5_transformationEngine(
         }
 
         lineage.push({ column: plan.column, chain });
+        if (plan.notes) logs.push(...plan.notes());
     }
 
     logs.push(log('Transformation Engine', 5, 'applied',
@@ -1332,10 +1438,109 @@ function attachConversionProfiles(
 
 function layer5b_hardening(
     rows: Record<string, any>[],
-    columns: ColumnDefinition[],
-): { rows: Record<string, any>[]; logs: ETLLog[] } {
+    inputColumns: ColumnDefinition[],
+    sourceRows: Record<string, any>[] = [],
+): { rows: Record<string, any>[]; logs: ETLLog[]; columns: ColumnDefinition[] } {
     const logs: ETLLog[] = [];
+    const columns = [...inputColumns];
     const valuesOf = (col: string) => rows.map(r => r[col]);
+    const metricNames = () => columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
+    const addColumn = (name: string, type: ColumnType) => {
+        if (!columns.some(c => c.name === name)) columns.push({ name, type, originalType: type === ColumnType.METRIC ? 'number' : 'string' });
+    };
+
+    // ── 0a. Placeholder codes (999999, -1) in measures → missing, not huge numbers. ──
+    for (const c of columns.filter(c => c.type === ColumnType.METRIC)) {
+        const placeholders = detectPlaceholderValues(valuesOf(c.name));
+        if (placeholders.size === 0) continue;
+        let changed = 0;
+        for (const row of rows) if (typeof row[c.name] === 'number' && placeholders.has(row[c.name])) { row[c.name] = null; changed++; }
+        logs.push(log('Placeholder Values Removed', 5, 'applied',
+            `Column '${c.name}': ${changed} placeholder value(s) (${[...placeholders].join(', ')}) treated as missing — they sit far outside every real value and would distort sums and averages.`,
+            { affectedColumns: [c.name], affectedRows: changed }));
+    }
+
+    // ── 0b. Several currencies in one measure: never add them together blindly. ──
+    for (const c of columns.filter(c => c.type === ColumnType.METRIC)) {
+        const raw = sourceRows.length === rows.length ? sourceRows.map(r => r[c.name]) : [];
+        const currencies = detectCurrencies(raw);
+        const marked = currencies.reduce((s, x) => s + x.count, 0);
+        if (currencies.length < 2 || currencies[1].count < Math.max(2, marked * 0.05)) continue;
+        const target = `${c.name}_currency`;
+        rows.forEach((row, i) => { row[target] = currencyOf(raw[i]) || 'Unspecified'; });
+        addColumn(target, ColumnType.DIMENSION);
+        logs.push(log('Mixed Currency Flag', 6, 'info',
+            `Column '${c.name}' mixes ${currencies.map(x => `${x.currency} (${x.count})`).join(', ')}. Totals across currencies are not meaningful, so '${target}' was added — filter or group by it, or convert to one currency before summing.`,
+            { affectedColumns: [c.name, target] }));
+    }
+
+    // ── 0c. Order-level amounts repeated on every line → counted once. ──
+    {
+        const keyColumns = columns.filter(c => c.type === ColumnType.ID).map(c => c.name);
+        for (const hit of findRepeatedHeaderAmounts(rows, keyColumns, metricNames())) {
+            const target = `${hit.column}_allocated`;
+            allocateAcrossLines(rows, hit.column, hit.key, target);
+            addColumn(target, ColumnType.METRIC);
+            logs.push(log('Repeated Order-Level Amount', 6, 'info',
+                `Column '${hit.column}' repeats the same value on every line of each '${hit.key}' (${hit.groups} multi-line groups), so summing it counts it once per line. '${target}' spreads it across the lines so totals count it once — use that for sums.`,
+                { affectedColumns: [hit.column, target] }));
+        }
+    }
+
+    // ── 0c2. Placeholder dates (1900-01-01, 9999-12-31) → missing. ──
+    for (const c of columns.filter(c => c.type === ColumnType.DATE)) {
+        const values = rows.map(r => r[c.name]).filter((v): v is string => typeof v === 'string');
+        const isEpochZero = (v: string) => v.startsWith('1970-01-01');
+        const real = values.filter(v => !isEpochZero(v) && !/^(1899|1900|9999|2099|2999|3000)-/.test(v)).map(v => v.slice(0, 4));
+        const realMin = real.length ? real.reduce((a, b) => (a < b ? a : b)) : '0000';
+        // 1970-01-01 (epoch zero) only counts as a placeholder when real dates are much later.
+        const isPlaceholder = (v: any) => typeof v === 'string'
+            && (/^(1900-01-0[01]|1899-12-3[01]|9999-12-31|2099-12-31|2999-12-31|3000-01-01)/.test(v) || (isEpochZero(v) && realMin > '1975'));
+        const hits = rows.filter(r => isPlaceholder(r[c.name])).length;
+        if (hits === 0) continue;
+        for (const row of rows) if (isPlaceholder(row[c.name])) row[c.name] = null;
+        logs.push(log('Placeholder Dates Removed', 5, 'applied',
+            `Column '${c.name}': ${hits} placeholder date(s) such as 1900-01-01 or 9999-12-31 treated as missing, so they don't stretch every time range.`,
+            { affectedColumns: [c.name], affectedRows: hits }));
+    }
+
+    // ── 0d. Line totals: derive when missing, reconcile when present. ──
+    {
+        const line = findLineColumns(metricNames());
+        if (line.quantity && line.unitPrice && !line.lineAmount) {
+            const target = columns.some(c => c.name === 'line_total') ? 'line_total_derived' : 'line_total';
+            for (const row of rows) {
+                const q = row[line.quantity], p = row[line.unitPrice];
+                row[target] = typeof q === 'number' && typeof p === 'number' ? Math.round(q * p * 100) / 100 : null;
+            }
+            addColumn(target, ColumnType.METRIC);
+            logs.push(log('Line Total Derived', 5, 'applied',
+                `No line amount column, so '${target}' = ${line.quantity} × ${line.unitPrice} was added. Sum this for sales; averaging or summing the unit price alone gives the wrong total.`,
+                { affectedColumns: [line.quantity, line.unitPrice, target] }));
+        } else if (line.quantity && line.unitPrice && line.lineAmount) {
+            const r = reconcileLineTotals(rows, line.quantity, line.unitPrice, line.lineAmount);
+            if (r.checked > 0 && r.mismatched / r.checked >= 0.05) {
+                logs.push(log('Line Total Mismatch Flag', 6, 'info',
+                    `'${line.lineAmount}' differs from ${line.quantity} × ${line.unitPrice} on ${Math.round((r.mismatched / r.checked) * 100)}% of rows (e.g. ${r.examples.join('; ')}). This is normal when discounts, tax or shipping are included — otherwise check the source.`,
+                    { affectedColumns: [line.lineAmount, line.quantity, line.unitPrice], affectedRows: r.mismatched }));
+            } else if (r.checked > 0) {
+                logs.push(log('Line Totals Verified', 6, 'info',
+                    `'${line.lineAmount}' equals ${line.quantity} × ${line.unitPrice} on ${r.checked - r.mismatched} of ${r.checked} rows.`,
+                    { affectedColumns: [line.lineAmount] }));
+            }
+        }
+        if (line.quantity && line.unitCost && !line.totalCost) {
+            const target = columns.some(c => c.name === 'line_cost') ? 'line_cost_derived' : 'line_cost';
+            for (const row of rows) {
+                const q = row[line.quantity], u = row[line.unitCost];
+                row[target] = typeof q === 'number' && typeof u === 'number' ? Math.round(q * u * 100) / 100 : null;
+            }
+            addColumn(target, ColumnType.METRIC);
+            logs.push(log('Line Cost Derived', 5, 'applied',
+                `'${target}' = ${line.quantity} × ${line.unitCost} was added so cost and profit add up per line (the unit cost alone must not be summed).`,
+                { affectedColumns: [line.quantity, line.unitCost, target] }));
+        }
+    }
 
     // ── 1. Category canonicalization (SAFE auto-merge: same string, different
     //       punctuation/diacritics/spacing → the most frequent surface form). ──
@@ -1428,7 +1633,7 @@ function layer5b_hardening(
             { affectedColumns: [startCol, endCol], affectedRows: bad }));
     }
 
-    return { rows, logs };
+    return { rows, logs, columns };
 }
 
 // ╔══════════════════════════════════════════════════════════════════╗
@@ -1764,18 +1969,19 @@ export function runETLPipeline(
     console.log(`[ETL L5] Transformed: ${l5.typeCastCount} cell changes`);
 
     // ── LAYER 5b: Correctness Hardening (canonical merges + quality flags) ──
-    const l5b = layer5b_hardening(rows, l4.columns);
+    const l5b = layer5b_hardening(rows, l4.columns, preTransformRows);
     rows = l5b.rows;
+    const finalColumns = l5b.columns;
     allLogs.push(...l5b.logs);
     console.log(`[ETL L5b] Hardening: ${l5b.logs.filter(l => l.status === 'applied').length} merge(s), ${l5b.logs.filter(l => l.status === 'info').length} flag(s)`);
 
     // ── LAYER 6: Data Contract Validation ──
-    const l6 = layer6_dataContractValidation(rows, l4.columns);
+    const l6 = layer6_dataContractValidation(rows, finalColumns);
     allLogs.push(...l6.logs);
     console.log(`[ETL L6] Contract: ${l6.contract.status} (${l6.contract.violations.length} violations)`);
 
     // ── POST: TimeContext ──
-    const tc = buildTimeContext(rows, l4.columns);
+    const tc = buildTimeContext(rows, finalColumns);
     allLogs.push(...tc.logs);
 
     // ── POST: DimDate ──
@@ -1818,7 +2024,7 @@ export function runETLPipeline(
 
     // ── POST: Column Ordering (ID → Date → Dimension → Metric) ──
     const typeOrder: Record<string, number> = { ID: 0, DATE: 1, DIMENSION: 2, METRIC: 3 };
-    const profiledColumns = attachConversionProfiles(l4.columns, preTransformRows, rows);
+    const profiledColumns = attachConversionProfiles(finalColumns, preTransformRows, rows);
     const sortedColumns = [...profiledColumns].sort((a, b) => (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99));
     const columnOrder = sortedColumns.map(c => c.name);
     rows = rows.map(row => {

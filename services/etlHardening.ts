@@ -36,8 +36,18 @@ export function hasCurrencyMarker(raw: any): boolean {
 
 /** Decide which of '.'/',' is the decimal separator and return a JS-parseable
  *  string with '.' as decimal and no thousands separators. */
-function disambiguateSeparators(s: string): string {
+function disambiguateSeparators(s: string, style?: NumberStyle): string {
     const hasDot = s.includes('.'), hasComma = s.includes(',');
+    // A column-level decision settles the single-separator cases that a lone
+    // cell cannot: "€1.234" is 1234 in a European column, 1.234 in a US one.
+    if (style === 'eu' && !(hasDot && hasComma)) {
+        if (hasComma) return s.replace(/\./g, '').replace(',', '.');
+        if (hasDot) {
+            const parts = s.split('.');
+            return parts.slice(1).every(p => p.length === 3) ? s.replace(/\./g, '') : s;
+        }
+    }
+    if (style === 'us' && hasComma && !hasDot) return s.replace(/,/g, '');
     if (hasDot && hasComma) {
         // The separator that appears LAST is the decimal one.
         return s.lastIndexOf('.') > s.lastIndexOf(',')
@@ -71,7 +81,7 @@ function disambiguateSeparators(s: string): string {
  * magnitude suffixes, ISO currency codes ("387 GBP", "USD 10") and US/EU
  * decimal & thousands separators.
  */
-export function parseLocaleNumber(raw: any): number | null {
+export function parseLocaleNumber(raw: any, style?: NumberStyle): number | null {
     if (raw === null || raw === undefined) return null;
     if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
     if (typeof raw === 'boolean') return null;
@@ -81,6 +91,8 @@ export function parseLocaleNumber(raw: any): number | null {
     // Strip whitespace (incl. non-breaking/thin) AND zero-width / BOM / bidi marks
     // that otherwise make a real number fail to parse and vanish from sums.
     s = s.replace(/[\s\u00A0\u2007\u202F\u200B\u200C\u200D\u200E\u200F\uFEFF]/g, "").replace(CURRENCY_SYMBOLS, '');
+    // Typographic minus and dashes (Word, PDFs, finance tools) are minus signs.
+    s = s.replace(/^[\u2212\u2012\u2013\u2014\uFE63\uFF0D]/, '-').replace(/[\u2212\u2012\u2013\u2014\uFE63\uFF0D]$/, '-');
 
     let sign = 1;
     if (/^\(.*\)$/.test(s)) { sign = -1; s = s.slice(1, -1); }           // (500) → -500
@@ -107,7 +119,7 @@ export function parseLocaleNumber(raw: any): number | null {
 
     if (!/[0-9]/.test(s) || !/^[0-9.,]+$/.test(s)) return null;
 
-    const n = Number(disambiguateSeparators(s) + expPart);
+    const n = Number(disambiguateSeparators(s, style) + expPart);
     if (!Number.isFinite(n)) return null;
     return sign * n * mult;
 }
@@ -362,7 +374,7 @@ export function looksLikeLeadingZeroCode(values: any[]): boolean {
  * populations are present in force.
  */
 export function detectMixedScale(name: string, values: any[]): { ratioLike: number; pctLike: number } | null {
-    if (!/(rate|ratio|percent|pct|share|conversion|margin|%)/i.test(name)) return null;
+    if (!/(rate|ratio|percent|pct|share|conversion|margin|discount|markdown|%)/i.test(name)) return null;
     let ratioLike = 0, pctLike = 0, seen = 0;
     for (const v of values) {
         const x = typeof v === 'number' ? v : Number(v);
@@ -385,4 +397,176 @@ export function detectDateOrderViolations(startVals: any[], endVals: any[]): num
         if (Number.isFinite(a) && Number.isFinite(b) && b < a) n++;
     }
     return n;
+}
+
+
+// ════════════════════════════════════════════════════════════════════
+// MEASURE INTEGRITY — column-level number style, units, currencies,
+// totals rows, placeholder values, durations and wide tables.
+// ════════════════════════════════════════════════════════════════════
+
+export type NumberStyle = 'us' | 'eu';
+
+/**
+ * Decide a column's decimal/thousands convention from its unambiguous cells.
+ * "1.234,50", "12,5" and "1.234.567" are European evidence; "1,234.50",
+ * "12.50" and "1,234,567" are US evidence. Needs a clear majority.
+ */
+export function detectNumberStyle(values: any[]): NumberStyle | null {
+    let eu = 0, us = 0;
+    for (const v of values) {
+        if (typeof v !== 'string') continue;
+        const s = v.replace(/[^\d.,]/g, '');
+        if (!/\d/.test(s)) continue;
+        const dot = s.lastIndexOf('.'), comma = s.lastIndexOf(',');
+        if (dot >= 0 && comma >= 0) { if (comma > dot) eu++; else us++; continue; }
+        if (comma >= 0) {
+            const parts = s.split(',');
+            if (parts.length === 2 && parts[1].length >= 1 && parts[1].length <= 2) eu++;
+            else if (parts.length > 2 && parts.slice(1).every(p => p.length === 3)) us++;
+            continue;
+        }
+        if (dot >= 0) {
+            const parts = s.split('.');
+            if (parts.length > 2 && parts.slice(1).every(p => p.length === 3)) eu++;
+            else if (parts.length === 2 && parts[1].length >= 1 && parts[1].length <= 2) us++;
+        }
+    }
+    const total = eu + us;
+    if (total < 2) return null;
+    if (eu / total >= 0.8) return 'eu';
+    if (us / total >= 0.8) return 'us';
+    return null;
+}
+
+const APPROX_PREFIX = /^(?:approx(?:imately)?\.?|about|around|circa|ca\.?|~|≈|est\.?|estimated)\s*/i;
+const UNIT_SUFFIX = /^([-+(]?[\d.,\s]+\)?)\s*([a-zA-Z]{1,12}\.?|[a-zA-Z]{1,8}\/[a-zA-Z]{1,8})$/;
+
+/**
+ * Numbers written with a unit or an approximation marker: "3 units", "5 kg",
+ * "approx 5", "~120", "12 hrs". Returns the number and the unit text (lower
+ * case, '' when none), or null when the cell is not of that shape.
+ */
+export function parseNumberWithUnit(raw: any, style?: NumberStyle): { value: number; unit: string; approximate: boolean } | null {
+    if (typeof raw !== 'string') return null;
+    let s = raw.trim();
+    const approximate = APPROX_PREFIX.test(s);
+    s = s.replace(APPROX_PREFIX, '').replace(/\+$/, '').trim();
+    const direct = parseLocaleNumber(s, style);
+    if (direct !== null) return approximate ? { value: direct, unit: '', approximate } : null;
+    const m = s.match(UNIT_SUFFIX);
+    if (!m) return null;
+    const value = parseLocaleNumber(m[1].trim(), style);
+    if (value === null) return null;
+    const unit = m[2].toLowerCase().replace(/\.$/, '');
+    // A magnitude word is not a unit: "2 million" → 2,000,000.
+    const magnitude: Record<string, number> = { thousand: 1e3, k: 1e3, million: 1e6, mn: 1e6, m: 1e6, billion: 1e9, bn: 1e9 };
+    if (magnitude[unit]) return { value: value * magnitude[unit], unit: '', approximate };
+    return { value, unit, approximate };
+}
+
+const SYMBOL_TO_CODE: Record<string, string> = { '$': 'USD', '€': 'EUR', '£': 'GBP', '¥': 'JPY', '₹': 'INR', '₩': 'KRW', '₫': 'VND', '₽': 'RUB' };
+const CODE_IN_CELL = new RegExp(`(?:^|[^A-Z])(${CURRENCY_CODES.slice(3, -1)})(?:$|[^A-Z])`, 'i');
+
+/** Currency named in a cell ("€12", "12 GBP"), or null. "$" is read as USD. */
+export function currencyOf(raw: any): string | null {
+    if (typeof raw !== 'string') return null;
+    const code = raw.toUpperCase().match(CODE_IN_CELL);
+    if (code) return code[1].toUpperCase();
+    const symbol = raw.match(CURRENCY_SYMBOL_MARKER);
+    return symbol ? SYMBOL_TO_CODE[symbol[0]] || symbol[0] : null;
+}
+
+/** Currencies used in a column, most frequent first, with counts. */
+export function detectCurrencies(values: any[]): { currency: string; count: number }[] {
+    const counts = new Map<string, number>();
+    for (const v of values) {
+        const c = currencyOf(v);
+        if (c) counts.set(c, (counts.get(c) || 0) + 1);
+    }
+    return [...counts.entries()].map(([currency, count]) => ({ currency, count })).sort((a, b) => b.count - a.count);
+}
+
+/** A label that marks a report's total or subtotal line ("Total", "Grand total", "North Subtotal"). */
+export function isTotalLabel(raw: any): boolean {
+    if (typeof raw !== 'string') return false;
+    const s = raw.trim().toLowerCase().replace(/[:.]+$/, '');
+    if (!s || s.length > 60) return false;
+    return /^(grand[\s-]*)?(sub[\s-]?)?totals?$/.test(s)
+        || /^(grand[\s-]*|sub[\s-]?)totals?\b/.test(s)
+        || /^totals?\s+(for|of)\b/.test(s)
+        || /\b(sub[\s-]?)?totals?$/.test(s) && s.split(/\s+/).length <= 5
+        || /^(sum|summe|totaal|totale|gesamt|overall)$/.test(s);
+}
+
+/** Placeholder codes used for "unknown" in exports (9999, 999999, -1, -999). */
+export function isPlaceholderNumber(n: number): boolean {
+    return n === -1 || n === -9 || n === -99 || n === -999 || n === -9999 || /^9{4,}(\.0+)?$/.test(String(Math.abs(n))) && n > 0;
+}
+
+/**
+ * Placeholder values hiding in a measure: a 9999-style code far above every
+ * real value, or a negative code in an otherwise non-negative column.
+ */
+export function detectPlaceholderValues(values: (number | null)[]): Set<number> {
+    const nums = values.filter((v): v is number => typeof v === 'number' && Number.isFinite(v));
+    if (nums.length < 10) return new Set();
+    const real = nums.filter(n => !isPlaceholderNumber(n));
+    if (real.length < nums.length * 0.8 || real.length === 0) return new Set();
+    const sorted = [...real].sort((a, b) => a - b);
+    const p99 = sorted[Math.floor((sorted.length - 1) * 0.99)];
+    const nonNegative = sorted[0] >= 0;
+    // A code is used again and again; a single extreme value is more likely a
+    // typo, which is flagged as an outlier and left for the user to judge.
+    const counts = new Map<number, number>();
+    for (const n of nums) if (isPlaceholderNumber(n)) counts.set(n, (counts.get(n) || 0) + 1);
+    const out = new Set<number>();
+    for (const [n, count] of counts) {
+        if (count < 2) continue;
+        if (n > 0 && n >= Math.max(10 * Math.abs(p99), 999)) out.add(n);
+        if (n < 0 && nonNegative) out.add(n);
+    }
+    return out;
+}
+
+/** "01:30:00" / "1:30" / "90:00" → minutes; null when not a duration. */
+export function parseDurationMinutes(raw: any): number | null {
+    if (typeof raw !== 'string') return null;
+    const m = raw.trim().match(/^(\d{1,4}):([0-5]\d)(?::([0-5]\d)(?:\.\d+)?)?$/);
+    if (!m) return null;
+    const hasSeconds = m[3] !== undefined;
+    const a = +m[1], b = +m[2], c = hasSeconds ? +m[3] : 0;
+    return hasSeconds ? a * 60 + b + c / 60 : a * 60 + b;
+}
+
+const MONTH_NAMES = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+
+/**
+ * A column header that names a period: "Jan", "January 2024", "2024-03",
+ * "Q1 2024", "FY24", "2023". Returns an ISO start date when the header pins
+ * one down, '' for a period without a year ("Jan"), or null when not a period.
+ */
+export function periodFromHeader(header: string): string | null {
+    const h = header.trim().toLowerCase().replace(/[_]+/g, ' ');
+    let m = h.match(/^(\d{4})[-/ ](\d{1,2})$/);
+    if (m && +m[2] >= 1 && +m[2] <= 12) return `${m[1]}-${m[2].padStart(2, '0')}-01`;
+    m = h.match(/^([a-z]{3,9})[\s'-]*(\d{2}|\d{4})?$/);
+    if (m) {
+        const idx = MONTH_NAMES.indexOf(m[1].slice(0, 3));
+        if (idx >= 0 && (m[1].length === 3 || 'january february march april may june july august september october november december'.includes(m[1]))) {
+            if (!m[2]) return '';
+            const year = m[2].length === 2 ? 2000 + +m[2] : +m[2];
+            return `${year}-${String(idx + 1).padStart(2, '0')}-01`;
+        }
+    }
+    m = h.match(/^q([1-4])[\s'-]*(\d{2}|\d{4})?$/) || h.match(/^(\d{4})[\s-]*q([1-4])$/);
+    if (m) {
+        const [q, y] = /^q/.test(h) ? [+m[1], m[2]] : [+m[2], m[1]];
+        if (!y) return '';
+        const year = y.length === 2 ? 2000 + +y : +y;
+        return `${year}-${String((q - 1) * 3 + 1).padStart(2, '0')}-01`;
+    }
+    m = h.match(/^(?:fy\s*)?((?:19|20)\d{2})$/) || h.match(/^fy\s*(\d{2})$/);
+    if (m) return `${m[1].length === 2 ? 2000 + +m[1] : +m[1]}-01-01`;
+    return null;
 }
