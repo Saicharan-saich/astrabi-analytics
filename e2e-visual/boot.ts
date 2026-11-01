@@ -38,7 +38,16 @@ export async function boot(page: Page, theme: 'light' | 'dark', activeTab: strin
         await new Promise<void>((resolve, reject) => {
             const tx = db.transaction('datasets', 'readwrite');
             tx.objectStore('datasets').put({
-                id: 'visual-sales', name: 'Sales.csv', ownerId: userId, rows, totalRows: rows.length, etlLogs: [],
+                id: 'visual-sales', name: 'Sales.csv', ownerId: userId, rows, rawRows: rows, totalRows: rows.length, etlLogs: [
+                    { step: 'Null Token Standardization', stepNumber: 2, status: 'applied', timestamp: 1, details: 'Converted 14 null token(s) (N/A, null, -, etc.) to NULL in 2 column(s).', affectedColumns: ['vendor', 'city'], affectedRows: 14 },
+                    { step: 'Duplicate Row Removal', stepNumber: 1, status: 'applied', timestamp: 1, details: "Removed 3 exact duplicate row(s). 'order_id' is unique once copies are removed, so the repeats were re-exported copies.", rowsBefore: rows.length + 5, rowsAfter: rows.length + 2, removedRowSamples: rows.slice(0, 3), affectedColumns: ['order_id'], revert: { option: 'keepDuplicateRows', value: true, label: 'Keep the copies' } },
+                    { step: 'Total Row Removal', stepNumber: 1, status: 'applied', timestamp: 1, details: 'Removed 2 total/subtotal row(s) — their figures equal the rows they total, so keeping them would double-count.', rowsBefore: rows.length + 2, rowsAfter: rows.length, revert: { option: 'keepTotalRows', value: true, label: 'Keep these rows' } },
+                    { step: 'Units Removed', stepNumber: 5, status: 'applied', timestamp: 1, details: "Column 'quantity': read numbers written with text (units seen: units (6)).", affectedColumns: ['quantity'] },
+                    { step: 'Category Canonicalization', stepNumber: 5, status: 'applied', timestamp: 1, details: `Column 'city': merged 2 spelling variant(s) into canonical forms (9 cell(s)). "new york" → "New York"`, affectedColumns: ['city'], affectedRows: 9, revert: { option: 'keepCategorySpellings', value: true, label: 'Keep original spellings' } },
+                    { step: 'Coercion Loss Flag', stepNumber: 6, status: 'info', timestamp: 1, details: `Column 'revenue': 2 non-empty value(s) could not be parsed as numbers and were dropped (e.g. "TBC", "see note"). These are excluded from sums/averages — review them.`, affectedColumns: ['revenue'], affectedRows: 2 },
+                    { step: 'Ambiguous Date Flag', stepNumber: 6, status: 'info', timestamp: 1, details: "Column 'order_date': dates such as 03/04/2025 could be day/month or month/day, and nothing in the file decides it. They were read as day/month (DD/MM).", affectedColumns: ['order_date'], revert: { option: 'dateOrder', value: 'month_first', label: 'Read as month/day' } },
+                    { step: 'Final Summary', stepNumber: 7, status: 'applied', timestamp: 1, details: 'done', rowsBefore: rows.length + 5, rowsAfter: rows.length },
+                ],
                 columns: [
                     { name: 'order_id', type: 'ID', originalType: 'string' },
                     { name: 'order_date', type: 'DATE', originalType: 'string' },

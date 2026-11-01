@@ -4138,3 +4138,30 @@ body {
 :root:is(.light, .dark) .qi-dash-summary-label { color: var(--accent-foreground); }
 :root:is(.light, .dark) .qi-dash-summary-line { color: var(--text-primary); }
 :root:is(.light, .dark) .qi-dash-summary-note { color: var(--text-tertiary); }
+
+/* What we changed — cleaning summary after upload */
+:root:is(.light, .dark) .qi-clean-panel {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--color-primary);
+  box-shadow: var(--shadow-card);
+}
+:root:is(.light, .dark) .qi-clean-heading,
+:root:is(.light, .dark) .qi-clean-title { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-clean-sub,
+:root:is(.light, .dark) .qi-clean-detail { color: var(--text-secondary); }
+:root:is(.light, .dark) .qi-clean-section { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-clean-toggle { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-clean-toggle:hover { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-clean-link { color: var(--accent-foreground); }
+:root:is(.light, .dark) .qi-clean-link:hover { text-decoration: underline; }
+:root:is(.light, .dark) .qi-clean-item + .qi-clean-item { border-top: 1px solid var(--border-default); }
+:root:is(.light, .dark) .qi-clean-undo {
+  color: var(--accent-foreground);
+  border: 1px solid var(--border-default);
+  background: transparent;
+}
+:root:is(.light, .dark) .qi-clean-undo:hover:not(:disabled) { border-color: var(--color-primary); }
+:root:is(.light, .dark) .qi-clean-undo:disabled { opacity: 0.55; cursor: progress; }
+:root:is(.light, .dark) .qi-clean-samples { border: 1px solid var(--border-default); color: var(--text-secondary); }
+:root:is(.light, .dark) .qi-clean-samples th { color: var(--text-tertiary); border-bottom: 1px solid var(--border-default); }

@@ -32,6 +32,8 @@ export interface ColumnDefinition {
   derivedTemplateId?: string;
   derivedFormulaVersion?: number;
   derivedInputColumns?: Record<string, string>;
+  /** percent_points: the source wrote these as "12.5%", stored as 12.5 — never rescale ×100. */
+  valueUnit?: 'percent_points';
 }
 
 export interface ETLLog {
@@ -48,7 +50,24 @@ export interface ETLLog {
   removedRowSamples?: Record<string, any>[];
   /** Before/after value samples for column transforms */
   transformSamples?: { column: string; before: any; after: any }[];
+  /** Re-run the cleaning with this option to reverse (or restore) the step. */
+  revert?: { option: EtlUndoOption; value: boolean | 'day_first' | 'month_first' | null; label: string };
 }
+
+/** Cleaning steps a user can reverse after upload. Stored on the dataset so a re-run keeps the choice. */
+export interface EtlOptions {
+  keepDuplicateRows?: boolean;
+  keepTotalRows?: boolean;
+  keepWideLayout?: boolean;
+  keepNameColumns?: boolean;
+  keepPlaceholders?: boolean;
+  keepCategorySpellings?: boolean;
+  skipAllocation?: boolean;
+  skipLineCost?: boolean;
+  /** Reading of dates like 03/04/2025 when nothing in the data decides it. */
+  dateOrder?: 'day_first' | 'month_first';
+}
+export type EtlUndoOption = keyof EtlOptions;
 
 export interface TimeContext {
   minDate: string; // ISO Date string YYYY-MM-DD
@@ -171,6 +190,8 @@ export interface Dataset {
    */
   aiSqlSemanticModel?: import('./services/ai-sql/types').SemanticModel;
   aiSqlSemanticRevision?: string;
+  /** Cleaning steps the user reversed; re-applied whenever the ETL re-runs. */
+  etlOptions?: EtlOptions;
   version?: number;            // Incremented on every re-upload or re-ETL
   createdAt?: number;          // Timestamp of dataset creation
   refreshSchedule?: RefreshSchedule;     // Auto-refresh configuration for live connections

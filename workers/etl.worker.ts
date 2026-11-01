@@ -3,7 +3,7 @@ import { buildRelationalCatalog, materializeSubject, validateRelationship } from
 import { normalizeRelatedTables } from '../services/relationalNormalization';
 
 self.onmessage = async (e: MessageEvent) => {
-    const { type, file, fileName, rawData, isConnector, columnTypeOverrides, sourceColumnTypeOverrides, sourceSchema, joinEdges } = e.data;
+    const { type, file, fileName, rawData, isConnector, columnTypeOverrides, sourceColumnTypeOverrides, sourceSchema, joinEdges, etlOptions } = e.data;
     if (type !== 'PROCESS_FILE') return;
     try {
         let data: any[] = [];
@@ -79,7 +79,7 @@ self.onmessage = async (e: MessageEvent) => {
                 timeContext: subject.timeContext,
                 dimDate: undefined,
               }
-            : runAutomatedETL(data, fileName || file?.name || 'dataset', columnTypeOverrides);
+            : runAutomatedETL(data, fileName || file?.name || 'dataset', columnTypeOverrides, etlOptions);
         if (subject && catalog) {
             Object.assign(result, { relationalCatalog: catalog, subjectTable, fieldLineage: subject.lineage, fieldOrigins: subject.origins, sourceSchema: catalog.schema, relatedTables, timeContext: subject.timeContext, dimDate: undefined });
         } else if (sourceSchema) Object.assign(result, { sourceSchema });

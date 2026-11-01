@@ -585,9 +585,10 @@ import { runETLPipeline } from './etlPipeline';
 export const runAutomatedETL = (
     rawData: any[],
     fileName: string,
-    columnTypeOverrides?: Record<string, ColumnType>
+    columnTypeOverrides?: Record<string, ColumnType>,
+    etlOptions?: import('../types').EtlOptions,
 ): { rows: any[], logs: ETLLog[], columns: ColumnDefinition[], timeContext?: TimeContext, dimDate?: import('../types').DimDateRow[] } => {
-    const result = runETLPipeline(rawData, fileName, columnTypeOverrides);
+    const result = runETLPipeline(rawData, fileName, columnTypeOverrides, etlOptions);
     return {
         rows: result.rows,
         logs: result.logs,

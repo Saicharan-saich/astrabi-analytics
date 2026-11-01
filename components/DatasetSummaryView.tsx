@@ -4,7 +4,8 @@ import {
     TrendingUp, TrendingDown, ChevronDown, ChevronRight, Layers,
     FileText, Eye, Table2, Sparkles, Wand2, GitMerge
 } from 'lucide-react';
-import { Dataset, DatasetDomainProfile, ColumnType } from '../types';
+import { Dataset, DatasetDomainProfile, ColumnType, ETLLog } from '../types';
+import { CleaningChangesPanel } from './CleaningChangesPanel';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { DataExplorerView } from './DataExplorerView';
 import { ETLView } from './ETLView';
@@ -26,6 +27,9 @@ interface DatasetSummaryViewProps {
     onRowsRecovered?: (recoveredRows: Record<string, any>[]) => void;
     onDataCleaned?: (newRows: Record<string, any>[], log: CleaningLogEntry) => void;
     onSwitchToLive?: () => void;
+    /** Reverse or restore one automatic cleaning step. */
+    onEtlRevert?: (revert: NonNullable<ETLLog['revert']>) => void;
+    etlRevertPending?: string | null;
 }
 
 interface ColumnStats {
@@ -243,6 +247,8 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
     onRowsRecovered,
     onDataCleaned,
     onSwitchToLive,
+    onEtlRevert,
+    etlRevertPending,
 }) => {
     const [activeSection, setActiveSection] = useState<DatasetWorkspaceSection>(initialSection);
     const columnStats = useMemo(() => {
@@ -316,6 +322,10 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                         </button>
                     ))}
                 </div>
+
+                {(activeSection === 'overview' || activeSection === 'mapping' || activeSection === 'cleaned') && (
+                    <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} />
+                )}
 
                 {activeSection === 'overview' && (
                     <>

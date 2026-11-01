@@ -12,7 +12,7 @@
  *   Post:    TimeContext + DimDate + Quality Score
  */
 
-import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, PhysicalDataType, TimeContext } from '../types';
+import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, EtlOptions, PhysicalDataType, TimeContext } from '../types';
 import { generateDimDate } from './dimDateGenerator';
 import {
     parseLocaleNumber, hasCurrencyMarker, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
@@ -75,6 +75,8 @@ export interface ColumnProfileData {
     durationRate?: number;
     /** 'points' when "12%" cells sit beside plain fractions (0.12) that must be scaled to match. */
     percentMode?: 'points' | null;
+    /** Share of numeric cells written with a % sign ("12.5%"). */
+    percentCellRate?: number;
 }
 
 export interface TransformStep {
@@ -523,6 +525,11 @@ function log(step: string, layer: number, status: ETLLog['status'], details: str
     return { step, stepNumber: layer, details, status, timestamp: Date.now(), ...extra };
 }
 
+/** A step the user reversed: say what was left as uploaded, and offer to clean it again. */
+function keptLog(option: keyof EtlOptions, details: string, extra?: Partial<ETLLog>): ETLLog {
+    return log('Kept As Uploaded', 1, 'info', details, { ...extra, revert: { option, value: null, label: 'Clean this again' } });
+}
+
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  LAYER 1: STRUCTURAL NORMALIZATION                              ║
 // ╚══════════════════════════════════════════════════════════════════╝
@@ -530,6 +537,7 @@ function log(step: string, layer: number, status: ETLLog['status'], details: str
 function layer1_structuralNormalization(
     rawRows: Record<string, any>[],
     preserveRowMultiplicity = false,
+    opts: EtlOptions = {},
 ): { rows: Record<string, any>[]; logs: ETLLog[]; columnsRemoved: number; duplicatesRemoved: number } {
     const logs: ETLLog[] = [];
     let columnsRemoved = 0;
@@ -578,7 +586,9 @@ function layer1_structuralNormalization(
         const lastCol = keys.find((_, i) => ['last_name', 'lastname', 'last', 'surname', 'family_name'].includes(lk[i]));
         const middleCol = keys.find((_, i) => ['middle_name', 'middlename', 'middle', 'middle_initial'].includes(lk[i]));
 
-        if (firstCol && lastCol) {
+        if (firstCol && lastCol && opts.keepNameColumns) {
+            logs.push(keptLog('keepNameColumns', `'${firstCol}' and '${lastCol}' were kept as separate columns.`, { affectedColumns: [firstCol, lastCol] }));
+        } else if (firstCol && lastCol) {
             const isCust = firstCol.toLowerCase().includes('customer') || lastCol.toLowerCase().includes('customer');
             const mergedName = isCust ? 'customer_name' : 'full_name';
             rows = rows.map(row => {
@@ -596,7 +606,7 @@ function layer1_structuralNormalization(
             });
             logs.push(log('Auto-Merge Name Columns', 1, 'applied',
                 `Merged ${firstCol} + ${lastCol} → ${mergedName}.`,
-                { affectedColumns: [firstCol, lastCol, mergedName] }
+                { affectedColumns: [firstCol, lastCol, mergedName], revert: { option: 'keepNameColumns', value: true, label: 'Keep them separate' } }
             ));
         } else {
             logs.push(log('Auto-Merge Name Columns', 1, 'skipped', 'No first/last name pair detected.'));
@@ -688,11 +698,14 @@ function layer1_structuralNormalization(
     // ── 1e2: Total / subtotal rows from report exports ──
     {
         const t = removeTotalRows(rows);
-        if (t.removed.length > 0) {
+        if (t.removed.length > 0 && opts.keepTotalRows) {
+            logs.push(keptLog('keepTotalRows', `${t.removed.length} total/subtotal row(s) were kept. Sums that include them count those figures twice.`,
+                { removedRowSamples: t.removed.slice(0, 10), affectedRows: t.removed.length }));
+        } else if (t.removed.length > 0) {
             rows = t.rows;
             logs.push(log('Total Row Removal', 1, 'applied',
                 `Removed ${t.removed.length} total/subtotal row(s) — their figures equal the rows they total, so keeping them would double-count.`,
-                { rowsBefore: rows.length + t.removed.length, rowsAfter: rows.length, removedRowSamples: t.removed.slice(0, 10) }));
+                { rowsBefore: rows.length + t.removed.length, rowsAfter: rows.length, removedRowSamples: t.removed.slice(0, 10), revert: { option: 'keepTotalRows', value: true, label: 'Keep these rows' } }));
         }
         if (t.suspicious.length > 0) {
             logs.push(log('Total Row Flag', 6, 'info',
@@ -704,12 +717,15 @@ function layer1_structuralNormalization(
     // ── 1e3: Wide tables — one column per period → one row per period ──
     {
         const u = unpivotPeriodColumns(rows);
-        if (u) {
+        if (u && opts.keepWideLayout) {
+            logs.push(keptLog('keepWideLayout', `The ${u.periodColumns.length} period columns (${u.periodColumns.slice(0, 4).join(', ')}${u.periodColumns.length > 4 ? ', …' : ''}) were kept side by side, so trends over time are not available.`,
+                { affectedColumns: u.periodColumns }));
+        } else if (u) {
             const before = rows.length;
             rows = u.rows;
             logs.push(log('Unpivot Period Columns', 1, 'applied',
                 `Reshaped ${u.periodColumns.length} period columns (${u.periodColumns.slice(0, 4).join(', ')}${u.periodColumns.length > 4 ? ', …' : ''}) into 'period'${u.dated ? ' (as dates)' : ''} and 'value' so time can be trended and totals summed once. ${before} rows → ${rows.length}.`,
-                { rowsBefore: before, rowsAfter: rows.length, affectedColumns: [...u.periodColumns, 'period', 'value'] }));
+                { rowsBefore: before, rowsAfter: rows.length, affectedColumns: [...u.periodColumns, 'period', 'value'], revert: { option: 'keepWideLayout', value: true, label: 'Keep the original layout' } }));
         }
     }
 
@@ -731,6 +747,10 @@ function layer1_structuralNormalization(
         if (preserveRowMultiplicity) {
             logs.push(log('Duplicate Row Removal', 1, 'skipped',
                 'Skipped for a relational source table so fact multiplicity and duplicate-key evidence remain intact.'));
+        } else if (opts.keepDuplicateRows) {
+            const d = dedupeRows(rows, ID_PATTERNS);
+            if (d.removed.length > 0) logs.push(keptLog('keepDuplicateRows', `${d.removed.length} exact duplicate row(s) were kept, so they are counted more than once.`,
+                { removedRowSamples: d.removed.slice(0, 10), affectedRows: d.removed.length }));
         } else {
         const before = rows.length;
         const d = dedupeRows(rows, ID_PATTERNS);
@@ -739,7 +759,7 @@ function layer1_structuralNormalization(
         if (duplicatesRemoved > 0) {
             logs.push(log('Duplicate Row Removal', 1, 'applied',
                 `Removed ${duplicatesRemoved} exact duplicate row(s). '${d.keyColumn}' is unique once copies are removed, so the repeats were re-exported copies.`,
-                { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: d.removed.slice(0, 10), affectedColumns: d.keyColumn ? [d.keyColumn] : [] }));
+                { rowsBefore: before, rowsAfter: rows.length, removedRowSamples: d.removed.slice(0, 10), affectedColumns: d.keyColumn ? [d.keyColumn] : [], revert: { option: 'keepDuplicateRows', value: true, label: 'Keep the copies' } }));
         } else {
             logs.push(log('Duplicate Row Removal', 1, 'skipped', d.keyColumn
                 ? `No duplicate rows ('${d.keyColumn}' is unique).`
@@ -822,7 +842,7 @@ function layer2_canonicalValuePrep(
 // ║  LAYER 3: COLUMN PROFILING                                      ║
 // ╚══════════════════════════════════════════════════════════════════╝
 
-function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: ColumnProfileData[]; logs: ETLLog[] } {
+function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersDayFirst()): { profiles: ColumnProfileData[]; logs: ETLLog[] } {
     const logs: ETLLog[] = [];
     const keys = Object.keys(rows[0] || {});
     const profiles: ColumnProfileData[] = [];
@@ -954,7 +974,7 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
                 if (formatCounts[from]) formatCounts[to] = (formatCounts[to] || 0) + formatCounts[from];
                 delete formatCounts[from];
             };
-            if (prefersDayFirst()) { move('MM/DD/YYYY', 'DD/MM/YYYY'); move('MM/DD/YY', 'DD/MM/YY'); }
+            if (dayFirst) { move('MM/DD/YYYY', 'DD/MM/YYYY'); move('MM/DD/YY', 'DD/MM/YY'); }
             else { move('DD/MM/YYYY', 'MM/DD/YYYY'); move('DD/MM/YY', 'MM/DD/YY'); }
         }
         // Pick format with most matches (for actual parsing later)
@@ -991,6 +1011,7 @@ function layer3_columnProfiling(rows: Record<string, any>[]): { profiles: Column
             unitNumberRate: nonNull.length > 0 ? unitNumberCount / nonNull.length : 0,
             durationRate: nonNull.length > 0 ? durationCount / nonNull.length : 0,
             percentMode,
+            percentCellRate: numericCount > 0 ? percentValues.length / numericCount : 0,
         };
 
         profiles.push(profile);
@@ -1185,7 +1206,11 @@ function layer4_rulePlanner(
                     { affectedColumns: [column], affectedRows: seen.durations }));
                 return out;
             } };
-            columns.push({ name: p.name, type, originalType: 'string' });
+            // Cells written as "12.5%" are kept as 12.5, so charts must not rescale them.
+            const inPoints = p.percentMode === 'points' || (p.percentCellRate ?? 0) >= 0.5;
+            columns.push(inPoints
+                ? { name: p.name, type, originalType: 'string', valueUnit: 'percent_points' }
+                : { name: p.name, type, originalType: 'string' });
             plans.push(plan);
             continue;
         } else if (type === ColumnType.DATE) {
@@ -1440,6 +1465,8 @@ function layer5b_hardening(
     rows: Record<string, any>[],
     inputColumns: ColumnDefinition[],
     sourceRows: Record<string, any>[] = [],
+    opts: EtlOptions = {},
+    dayFirst = prefersDayFirst(),
 ): { rows: Record<string, any>[]; logs: ETLLog[]; columns: ColumnDefinition[] } {
     const logs: ETLLog[] = [];
     const columns = [...inputColumns];
@@ -1453,11 +1480,15 @@ function layer5b_hardening(
     for (const c of columns.filter(c => c.type === ColumnType.METRIC)) {
         const placeholders = detectPlaceholderValues(valuesOf(c.name));
         if (placeholders.size === 0) continue;
+        if (opts.keepPlaceholders) {
+            logs.push(keptLog('keepPlaceholders', `Column '${c.name}': placeholder value(s) ${[...placeholders].join(', ')} were kept as numbers and are included in sums and averages.`, { affectedColumns: [c.name] }));
+            continue;
+        }
         let changed = 0;
         for (const row of rows) if (typeof row[c.name] === 'number' && placeholders.has(row[c.name])) { row[c.name] = null; changed++; }
         logs.push(log('Placeholder Values Removed', 5, 'applied',
             `Column '${c.name}': ${changed} placeholder value(s) (${[...placeholders].join(', ')}) treated as missing — they sit far outside every real value and would distort sums and averages.`,
-            { affectedColumns: [c.name], affectedRows: changed }));
+            { affectedColumns: [c.name], affectedRows: changed, revert: { option: 'keepPlaceholders', value: true, label: 'Keep these values' } }));
     }
 
     // ── 0b. Several currencies in one measure: never add them together blindly. ──
@@ -1477,13 +1508,13 @@ function layer5b_hardening(
     // ── 0c. Order-level amounts repeated on every line → counted once. ──
     {
         const keyColumns = columns.filter(c => c.type === ColumnType.ID).map(c => c.name);
-        for (const hit of findRepeatedHeaderAmounts(rows, keyColumns, metricNames())) {
+        for (const hit of opts.skipAllocation ? [] : findRepeatedHeaderAmounts(rows, keyColumns, metricNames())) {
             const target = `${hit.column}_allocated`;
             allocateAcrossLines(rows, hit.column, hit.key, target);
             addColumn(target, ColumnType.METRIC);
             logs.push(log('Repeated Order-Level Amount', 6, 'info',
                 `Column '${hit.column}' repeats the same value on every line of each '${hit.key}' (${hit.groups} multi-line groups), so summing it counts it once per line. '${target}' spreads it across the lines so totals count it once — use that for sums.`,
-                { affectedColumns: [hit.column, target] }));
+                { affectedColumns: [hit.column, target], revert: { option: 'skipAllocation', value: true, label: `Don't add '${target}'` } }));
         }
     }
 
@@ -1498,10 +1529,14 @@ function layer5b_hardening(
             && (/^(1900-01-0[01]|1899-12-3[01]|9999-12-31|2099-12-31|2999-12-31|3000-01-01)/.test(v) || (isEpochZero(v) && realMin > '1975'));
         const hits = rows.filter(r => isPlaceholder(r[c.name])).length;
         if (hits === 0) continue;
+        if (opts.keepPlaceholders) {
+            logs.push(keptLog('keepPlaceholders', `Column '${c.name}': ${hits} placeholder date(s) such as 1900-01-01 were kept and stretch time ranges.`, { affectedColumns: [c.name], affectedRows: hits }));
+            continue;
+        }
         for (const row of rows) if (isPlaceholder(row[c.name])) row[c.name] = null;
         logs.push(log('Placeholder Dates Removed', 5, 'applied',
             `Column '${c.name}': ${hits} placeholder date(s) such as 1900-01-01 or 9999-12-31 treated as missing, so they don't stretch every time range.`,
-            { affectedColumns: [c.name], affectedRows: hits }));
+            { affectedColumns: [c.name], affectedRows: hits, revert: { option: 'keepPlaceholders', value: true, label: 'Keep these dates' } }));
     }
 
     // ── 0d. Line totals: derive when missing, reconcile when present. ──
@@ -1526,7 +1561,7 @@ function layer5b_hardening(
                     { affectedColumns: [line.lineAmount] }));
             }
         }
-        if (line.quantity && line.unitCost && !line.totalCost) {
+        if (line.quantity && line.unitCost && !line.totalCost && !opts.skipLineCost) {
             const target = columns.some(c => c.name === 'line_cost') ? 'line_cost_derived' : 'line_cost';
             for (const row of rows) {
                 const q = row[line.quantity], u = row[line.unitCost];
@@ -1535,13 +1570,13 @@ function layer5b_hardening(
             addColumn(target, ColumnType.METRIC);
             logs.push(log('Line Cost Derived', 5, 'applied',
                 `'${target}' = ${line.quantity} × ${line.unitCost} was added so cost and profit add up per line (the unit cost alone must not be summed).`,
-                { affectedColumns: [line.quantity, line.unitCost, target] }));
+                { affectedColumns: [line.quantity, line.unitCost, target], revert: { option: 'skipLineCost', value: true, label: `Don't add '${target}'` } }));
         }
     }
 
     // ── 1. Category canonicalization (SAFE auto-merge: same string, different
     //       punctuation/diacritics/spacing → the most frequent surface form). ──
-    for (const c of columns.filter(c => c.type === ColumnType.DIMENSION)) {
+    for (const c of opts.keepCategorySpellings ? [] : columns.filter(c => c.type === ColumnType.DIMENSION)) {
         const map = buildCanonicalCategoryMap(valuesOf(c.name));
         if (map.size === 0) continue;
         let changed = 0;
@@ -1556,7 +1591,7 @@ function layer5b_hardening(
         if (changed > 0) {
             logs.push(log('Category Canonicalization', 5, 'applied',
                 `Column '${c.name}': merged ${map.size} spelling variant(s) into canonical forms (${changed} cell(s)). ${samples.join(', ')}`,
-                { affectedColumns: [c.name], affectedRows: changed }));
+                { affectedColumns: [c.name], affectedRows: changed, revert: { option: 'keepCategorySpellings', value: true, label: 'Keep original spellings' } }));
         }
     }
 
@@ -1612,11 +1647,14 @@ function layer5b_hardening(
     }
     // 2d. Ambiguous date order (parsing defaulted; user should confirm).
     for (const c of columns.filter(c => c.type === ColumnType.DATE)) {
-        if (resolveDateOrder(valuesOf(c.name)) === 'ambiguous'
-            && valuesOf(c.name).some(v => /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(String(v ?? '').trim()))) {
+        // Judge the values as written: after parsing they are ISO dates.
+        const written = sourceRows.length === rows.length ? sourceRows.map(r => r[c.name]) : valuesOf(c.name);
+        if (resolveDateOrder(written) === 'ambiguous'
+            && written.some(v => /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(String(v ?? '').trim()))) {
+            const example = written.find(v => /^\d{1,2}[-/.]\d{1,2}[-/.]\d{2,4}$/.test(String(v ?? '').trim()));
             logs.push(log('Ambiguous Date Flag', 6, 'info',
-                `Column '${c.name}': day/month order can't be determined from the data (all parts ≤ 12); assumed the detected default. Confirm if these are DD/MM.`,
-                { affectedColumns: [c.name] }));
+                `Column '${c.name}': dates such as ${example} could be day/month or month/day, and nothing in the file decides it. They were read as ${dayFirst ? 'day/month (DD/MM)' : 'month/day (MM/DD)'}.`,
+                { affectedColumns: [c.name], revert: { option: 'dateOrder', value: dayFirst ? 'month_first' : 'day_first', label: dayFirst ? 'Read as month/day' : 'Read as day/month' } }));
         }
     }
     // 2e. End-before-start across a start/end date pair.
@@ -1903,7 +1941,7 @@ export function runETLPipeline(
     rawData: Record<string, any>[],
     _fileName: string,
     columnTypeOverrides?: Record<string, ColumnType>,
-    options?: { preserveRowMultiplicity?: boolean },
+    options?: { preserveRowMultiplicity?: boolean } & EtlOptions,
 ): {
     rows: Record<string, any>[];
     columns: ColumnDefinition[];
@@ -1935,7 +1973,9 @@ export function runETLPipeline(
     console.log(`[ETL] Starting 7-Layer Pipeline on ${totalRowsBefore} rows, ${totalColumnsOriginal} columns`);
 
     // ── LAYER 1: Structural Normalization ──
-    const l1 = layer1_structuralNormalization(rawData, options?.preserveRowMultiplicity);
+    const etlOptions: EtlOptions = options || {};
+    const dayFirst = etlOptions.dateOrder ? etlOptions.dateOrder === 'day_first' : prefersDayFirst();
+    const l1 = layer1_structuralNormalization(rawData, options?.preserveRowMultiplicity, etlOptions);
     let rows = l1.rows;
     allLogs.push(...l1.logs);
     console.log(`[ETL L1] Structural: ${rows.length} rows, ${Object.keys(rows[0] || {}).length} cols`);
@@ -1950,7 +1990,7 @@ export function runETLPipeline(
     console.log(`[ETL L2] Canonical: ${l2.nullsFixed} null tokens fixed`);
 
     // ── LAYER 3: Column Profiling ──
-    const l3 = layer3_columnProfiling(rows);
+    const l3 = layer3_columnProfiling(rows, dayFirst);
     allLogs.push(...l3.logs);
     console.log(`[ETL L3] Profiled ${l3.profiles.length} columns`);
 
@@ -1966,7 +2006,7 @@ export function runETLPipeline(
     console.log(`[ETL L5] Transformed: ${l5.typeCastCount} cell changes`);
 
     // ── LAYER 5b: Correctness Hardening (canonical merges + quality flags) ──
-    const l5b = layer5b_hardening(rows, l4.columns, preTransformRows);
+    const l5b = layer5b_hardening(rows, l4.columns, preTransformRows, etlOptions, dayFirst);
     rows = l5b.rows;
     const finalColumns = l5b.columns;
     allLogs.push(...l5b.logs);

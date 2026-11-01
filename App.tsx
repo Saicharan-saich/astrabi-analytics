@@ -8,7 +8,9 @@ import {
   ColumnType,
   DatasetDomainProfile,
   UserRole,
-  DashboardItem
+  DashboardItem,
+  ETLLog,
+  EtlOptions
 } from './types';
 import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, getSampleData } from './services/analysisEngine';
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
@@ -241,6 +243,7 @@ function App() {
   const [showUserMgmt, setShowUserMgmt] = useState(false);
   const [showTabManager, setShowTabManager] = useState(false);
   const [isAIProfiling, setIsAIProfiling] = useState(false);
+  const [etlRevertPending, setEtlRevertPending] = useState<string | null>(null);
   const [showDomainReview, setShowDomainReview] = useState(false);
   const [pendingProfile, setPendingProfile] = useState<any>(null);
   const [showSplash, setShowSplash] = useState(true);
@@ -756,6 +759,7 @@ function App() {
       subjectTable: dataset.subjectTable,
       columnTypeOverrides: overrides,
       sourceColumnTypeOverrides,
+      etlOptions: dataset.etlOptions,
     });
   };
 
@@ -806,6 +810,63 @@ function App() {
       rawData: dataset.rawRows || dataset.rows,
       fileName: dataset.name,
       columnTypeOverrides: overrides,
+      etlOptions: dataset.etlOptions,
+    });
+  };
+
+  // ── "What we changed": reverse (or restore) one cleaning step ──
+  const handleEtlRevert = (revert: NonNullable<ETLLog['revert']>) => {
+    if (!dataset?.rawRows?.length || dataset.relationalCatalog || etlRevertPending) return;
+    const nextOptions: EtlOptions = { ...(dataset.etlOptions || {}) };
+    if (revert.value === null || revert.value === false) delete nextOptions[revert.option];
+    else (nextOptions as any)[revert.option] = revert.value;
+    // Keep the column roles the user set by hand; everything else is re-detected.
+    const overrides: Record<string, ColumnType> = {};
+    for (const entry of dataset.etlLogs || []) {
+      if (entry.step !== 'User Override') continue;
+      for (const name of entry.affectedColumns || []) {
+        const column = dataset.columns.find(c => c.name === name);
+        if (column) overrides[name] = column.type;
+      }
+    }
+    setEtlRevertPending(revert.option);
+    const worker = new Worker(new URL('./workers/etl.worker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (event: MessageEvent) => {
+      if (event.data.type === 'SUCCESS') {
+        const { rows, logs, columns, timeContext, dimDate } = event.data.result;
+        const updated: Dataset = {
+          ...dataset,
+          rows,
+          columns,
+          totalRows: rows.length,
+          etlLogs: logs,
+          timeContext,
+          dimDate,
+          etlOptions: Object.keys(nextOptions).length ? nextOptions : undefined,
+          version: (dataset.version || 1) + 1,
+        };
+        try {
+          updated.semanticModel = buildSemanticModel(updated, dataset.semanticModel);
+        } catch (err) {
+          console.warn('[App] Semantic model rebuild failed after cleaning change:', err);
+        }
+        refreshAISQLSemanticSnapshot(updated, `cleaning step changed: ${revert.option}`);
+        setDataset(updated);
+        saveDatasetToDB(updated);
+        const delta = rows.length - dataset.rows.length;
+        showToast(`${revert.label} — done. ${delta === 0 ? 'Row count unchanged' : `${Math.abs(delta).toLocaleString()} row(s) ${delta > 0 ? 'added back' : 'removed'}`}.`);
+      } else if (event.data.type === 'ERROR') {
+        setError(event.data.error || 'Re-running the cleaning failed.');
+      }
+      setEtlRevertPending(null);
+      worker.terminate();
+    };
+    worker.postMessage({
+      type: 'PROCESS_FILE',
+      rawData: dataset.rawRows,
+      fileName: dataset.name,
+      columnTypeOverrides: Object.keys(overrides).length ? overrides : undefined,
+      etlOptions: nextOptions,
     });
   };
 
@@ -879,6 +940,8 @@ function App() {
     onRowsRecovered: handleDatasetRowsRecovered,
     onDataCleaned: handleDatasetDataCleaned,
     onSwitchToLive: () => setActiveTab(Tab.UPLOAD),
+    onEtlRevert: dataset?.rawRows?.length && !dataset.relationalCatalog ? handleEtlRevert : undefined,
+    etlRevertPending,
   };
 
   const handlePromoteToTitle = (columnName: string) => {

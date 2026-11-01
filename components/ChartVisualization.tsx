@@ -74,6 +74,8 @@ import { extraTooltipMetricKeys, friendlySeriesLabel, gaugeScale, readableChartT
 import { MapChart } from './MapChart';
 import { CHART_TYPE_OPTIONS } from './charts/chartRegistry';
 import { suggestCharts } from '../utils/chartSuggestions';
+import { percentScaleOf, percentScalesByKey, scaleForName, toPercentPoints } from '../utils/percentScale';
+import { useAppStore } from '../store/useAppStore';
 import { doughnutCenterPlugin, stackTotalsPlugin } from './charts/cleanChartPlugins';
 
 interface ChartVisualizationProps {
@@ -344,6 +346,30 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             : undefined;
     const activeNumberFormat = calculationNumberFormat || suggestedNumberFormat || formatting?.numberFormat || 'raw';
 
+    // Percent scale is decided per series, never per value: 0.5 must not read
+    // as 50% when the series beside it holds 1.2 (= 1.2%).
+    const datasetColumns = useAppStore(state => state.dataset?.columns);
+    const { primaryPercentScale, percentScales } = useMemo(() => {
+        const pointColumns = new Set((datasetColumns || []).filter(c => c.valueUnit === 'percent_points').map(c => c.name));
+        const agg = String(config?.aggregation || '').toUpperCase();
+        const counts = agg === 'COUNT' || agg === 'COUNT_DISTINCT';
+        const known = new Set<string>();
+        // Table calculations (% of total, % change, percentile) output points.
+        const primaryKnown = calculationNumberFormat === 'percent'
+            || (!primaryCalc && !counts && Boolean(config?.metric && pointColumns.has(config.metric)));
+        if (primaryKnown) known.add(yKey);
+        for (const metric of config?.secondaryMetrics || []) if (pointColumns.has(metric)) known.add(metric);
+        const rows = Array.isArray(transformedData) ? transformedData : [];
+        const primary = percentScaleOf(
+            rows.flatMap((row: any) => [row?.[yKey], row?.previous_value]),
+            primaryKnown ? 'points' : null,
+        );
+        const scales = percentScalesByKey(rows, known);
+        scales.set(yKey, primary);
+        if (calculatedYLabel) scales.set(calculatedYLabel, primary);
+        return { primaryPercentScale: primary, percentScales: scales };
+    }, [datasetColumns, config?.aggregation, config?.metric, config?.secondaryMetrics, calculationNumberFormat, primaryCalc, transformedData, yKey, calculatedYLabel]);
+
     // Helper for number formatting — uses activeNumberFormat which includes table calculation overrides
     const formatNumber = (value: number | undefined | null) => {
         if (value === undefined || value === null || isNaN(value)) return '0';
@@ -418,10 +444,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     // Values already in percent units (12.5 = 12.5%): never rescale.
                     return `${value.toFixed(formatting?.decimals ?? 1)}%`;
                 case 'percent': {
-                    // Fractional percents (e.g. 0.073) are stored as 0–1; scale to 7.3%.
-                    // Matches formatForMetricName so every surface is consistent.
-                    const pctVal = (Math.abs(value) <= 1 && Math.abs(value) > 0) ? value * 100 : value;
-                    return pctVal.toFixed(fractionDigits) + '%';
+                    // Fractions (0.073) scale to 7.3%; points (7.3) stay. Decided for the
+                    // whole series so small rates are not inflated 100×.
+                    return toPercentPoints(value, primaryPercentScale).toFixed(fractionDigits) + '%';
                 }
                 case 'compact': {
                     // Premium compact: one decimal for large values ($1.2M, 15.3K),
@@ -508,8 +533,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             switch (fmt) {
                 case 'currency_usd': return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
                 case 'percent': {
-                    const pctVal = (Math.abs(value) <= 1 && Math.abs(value) > 0) ? value * 100 : value;
-                    return pctVal.toFixed(fd) + '%';
+                    return toPercentPoints(value, scaleForName(percentScales, metricName, primaryPercentScale)).toFixed(fd) + '%';
                 }
                 case 'compact': return new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short' }).format(value);
                 case 'score': return new Intl.NumberFormat('en-US', { minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
@@ -557,9 +581,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             return `${Number(value.toFixed(1))}%`;
         }
         if (isPercent) {
-            // Scale fractional percents (0.073 → 7.3%) so axis ticks read correctly.
-            const pctVal = (Math.abs(value) <= 1 && Math.abs(value) > 0) ? value * 100 : value;
-            return pctVal.toFixed(1) + '%';
+            // Ticks follow the series' scale (0.073 → 7.3% only for fraction series).
+            return toPercentPoints(value, primaryPercentScale).toFixed(1) + '%';
         }
 
         if (axisFormat === 'short_currency' && isCurrency) {
