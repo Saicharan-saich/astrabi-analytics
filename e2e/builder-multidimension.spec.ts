@@ -18,7 +18,9 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.addInitScript(() => {
         const original = CanvasRenderingContext2D.prototype.fillText;
         (window as any).__qiValueLabelInks = [];
+        (window as any).__qiAllTexts = [];
         CanvasRenderingContext2D.prototype.fillText = function (this: CanvasRenderingContext2D, ...args: Parameters<typeof original>) {
+            (window as any).__qiAllTexts.push(String(args[0]) + '|' + String(this.fillStyle));
             if (String(args[0]) === '100' || String(args[0]) === '50') {
                 (window as any).__qiValueLabelInks.push(String(this.fillStyle));
             }
@@ -150,7 +152,13 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.getByRole('button', { name: 'Combined', exact: true }).click();
     await page.locator('.qi-visual-stage button[title="Hide labels"]').click();
     await page.evaluate(() => { (window as any).__qiValueLabelInks = []; });
+    await page.evaluate(() => { (window as any).__qiAllTexts = []; });
     await page.locator('.qi-visual-stage button[title="Show labels for all series"]').click();
+    await page.waitForTimeout(3000);
+    console.log('DIAG texts', JSON.stringify([...new Set(await page.evaluate(() => (window as any).__qiAllTexts as string[]))].slice(0, 120)));
+    console.log('DIAG stage', (await page.locator('.qi-visual-stage').innerText()).slice(0, 600));
+    console.log('DIAG buttons', JSON.stringify(await page.locator('.qi-visual-stage button').evaluateAll(bs => bs.map(b => (b as HTMLElement).title || b.textContent))));
+    await page.screenshot({ path: 'test-results/diag-combined.png', fullPage: false });
     await expect.poll(() => page.evaluate(() => (window as any).__qiValueLabelInks.length)).toBeGreaterThanOrEqual(8);
     const inks = await page.evaluate(() => (window as any).__qiValueLabelInks as string[]);
     expect(inks.every(color => color === '#000000' || color === 'rgb(0, 0, 0)'), `Light label colors: ${inks.join(', ')}`).toBe(true);
