@@ -99,16 +99,16 @@ for (const theme of ['light', 'dark'] as const) {
             ['Dataset Workspace', '50-dataset-workspace'],
             ['Data Source', '60-data-source'],
         ] as const) {
-            if (await openNav(label)) await shoot(page, `${file}-${theme}`);
-        }
-        // What we changed: expand a removed-rows item, then reverse a step.
-        if (await openNav('Dataset Workspace')) {
+            if (!(await openNav(label))) continue;
+            await shoot(page, `${file}-${theme}`);
+            if (file !== '50-dataset-workspace') continue;
+            // What we changed: expand a removed-rows item, then reverse a step.
             const panel = page.locator('.qi-clean-panel');
             if (await panel.isVisible().catch(() => false)) {
                 await panel.getByRole('button', { name: 'Removed 3 duplicate rows' }).click().catch(() => {});
                 await panel.screenshot({ path: path.join(OUT, `51-what-we-changed-${theme}.png`) });
                 await panel.getByRole('button', { name: 'Keep the copies' }).click().catch(() => {});
-                await page.waitForTimeout(3000);
+                await page.waitForTimeout(4000);
                 await shoot(page, `52-after-undo-${theme}`);
             }
         }
