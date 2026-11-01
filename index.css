@@ -4259,3 +4259,17 @@ body {
 :root:is(.light, .dark) .qi-step-chip { color: var(--text-secondary); background: var(--bg-hover); border-radius: 6px; padding: 3px 8px; }
 :root:is(.light, .dark) .qi-step-tech { background: var(--bg-hover); border: 1px solid var(--border-default); }
 .line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }
+:root:is(.light, .dark) .qi-ws-toolbar.is-bottom { border-bottom: 0; border-top: 1px solid var(--border-default); }
+:root:is(.light, .dark) .qi-ws-field { background: var(--bg-surface); border: 1px solid var(--border-default); color: var(--text-primary); }
+:root:is(.light, .dark) .qi-ws-field:focus-within { border-color: var(--color-primary); }
+:root:is(.light, .dark) .qi-ws-field input::placeholder { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-ws-field select option { color: #0f172a; background: #fff; }
+:root:is(.light, .dark) .qi-ws-thead th .qi-role { font-size: 11.5px; color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-ws-subcard { background: var(--bg-app); border: 1px solid var(--border-default); }
+:root:is(.light, .dark) .qi-tool-chip { color: var(--text-secondary); border: 1px solid var(--border-default); background: transparent; }
+:root:is(.light, .dark) .qi-tool-chip:hover { color: var(--text-primary); background: var(--bg-hover); }
+:root:is(.light, .dark) .qi-tool-chip.is-active { color: #fff; background: var(--color-primary); border-color: var(--color-primary); }
+:root:is(.light, .dark) .qi-issue { color: var(--text-secondary); }
+:root:is(.light, .dark) .qi-issue svg { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-issue.is-warning svg { color: #d08a1a; }
+:root:is(.light, .dark) .qi-issue.is-critical svg { color: #d14343; }

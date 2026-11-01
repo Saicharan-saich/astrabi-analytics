@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Filter, ArrowUpDown, Download, Table as TableIcon, BarChart2, FileText, Sparkles } from 'lucide-react';
+import { Search, Filter, ArrowUpDown, Download, Table as TableIcon } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
 
 interface DataExplorerViewProps {
@@ -98,16 +98,6 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
         return col?.type || ColumnType.UNKNOWN;
     };
 
-    const typeColor = (type: ColumnType) => {
-        switch (type) {
-            case ColumnType.METRIC: return 'text-emerald-400 bg-emerald-500/10';
-            case ColumnType.DATE: return 'text-amber-400 bg-amber-500/10';
-            case ColumnType.DIMENSION: return 'text-blue-400 bg-blue-500/10';
-            case ColumnType.ID: return 'text-purple-400 bg-purple-500/10';
-            default: return 'text-slate-400 bg-slate-500/10';
-        }
-    };
-
     const handleExportCSV = () => {
         const header = columns.join(',');
         const body = filteredRows.map(row =>
@@ -135,163 +125,109 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
         setSearchTerm('');
     };
 
+    const roleClass = (type: ColumnType) => `qi-role is-${type}`;
+
     return (
-        <div className="flex flex-col h-full overflow-hidden p-6 gap-4">
-            {/* Raw / Clean Toggle Tabs */}
-            <div className="flex items-center gap-1 bg-slate-800/60 border border-white/10 rounded-xl p-1 w-fit">
-                <button
-                    onClick={() => handleTabSwitch('clean')}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200
-                        ${viewMode === 'clean'
-                            ? 'bg-gradient-to-r from-emerald-500/20 to-teal-500/20 text-emerald-300 border border-emerald-500/30 shadow-sm shadow-emerald-500/10'
-                            : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                        }`}
-                >
-                    <Sparkles className="w-4 h-4" />
-                    Cleaned Data
-                    <span className={`text-xs px-1.5 py-0.5 rounded-full ${viewMode === 'clean' ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-700 text-slate-500'}`}>
-                        {dataset.rows.length}
-                    </span>
-                </button>
-                <button
-                    onClick={() => handleTabSwitch('raw')}
-                    disabled={!hasRawData}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-200
-                        ${!hasRawData ? 'text-slate-600 cursor-not-allowed opacity-50' :
-                            viewMode === 'raw'
-                                ? 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/30 shadow-sm shadow-amber-500/10'
-                                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'
-                        }`}
-                >
-                    <FileText className="w-4 h-4" />
-                    Raw Data
-                    {hasRawData && (
-                        <span className={`text-xs px-1.5 py-0.5 rounded-full ${viewMode === 'raw' ? 'bg-amber-500/20 text-amber-300' : 'bg-slate-700 text-slate-500'}`}>
-                            {dataset.rawRows!.length}
-                        </span>
-                    )}
-                </button>
-            </div>
-
-            {/* Info Bar */}
-            {viewMode === 'raw' && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg text-amber-300 text-xs">
-                    <FileText className="w-3.5 h-3.5" />
-                    Showing original uploaded data before ETL cleaning. Column headers are as-uploaded.
+        <div className="qi-ws-card flex flex-col h-full overflow-hidden rounded-xl">
+            {/* One toolbar: which version, search, filter, export */}
+            <div className="qi-ws-toolbar flex flex-wrap items-center gap-2 px-3 py-2.5">
+                <div className="qi-ws-segmented inline-flex rounded-lg p-0.5" role="group" aria-label="Which version of the data">
+                    <button
+                        type="button"
+                        onClick={() => handleTabSwitch('clean')}
+                        aria-pressed={viewMode === 'clean'}
+                        title="Cleaned data: tidy headers, standardised values and typed columns"
+                        className={`px-2.5 py-1 rounded-md text-[12.5px] font-semibold ${viewMode === 'clean' ? 'is-active' : ''}`}
+                    >
+                        Cleaned <span className="qi-ws-count">{dataset.rows.length.toLocaleString()}</span>
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => handleTabSwitch('raw')}
+                        disabled={!hasRawData}
+                        aria-pressed={viewMode === 'raw'}
+                        title={hasRawData ? 'The file exactly as uploaded, before cleaning' : 'The original upload is not stored for this dataset'}
+                        className={`px-2.5 py-1 rounded-md text-[12.5px] font-semibold disabled:opacity-40 disabled:cursor-not-allowed ${viewMode === 'raw' ? 'is-active' : ''}`}
+                    >
+                        As uploaded {hasRawData && <span className="qi-ws-count">{dataset.rawRows!.length.toLocaleString()}</span>}
+                    </button>
                 </div>
-            )}
-            {viewMode === 'clean' && (
-                <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-300 text-xs">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Showing ETL-cleaned data with normalized headers, standardized values, and type-safe columns.
-                </div>
-            )}
 
-            {/* Toolbar */}
-            <div className="flex items-center gap-3 flex-wrap">
-                <div className="flex items-center gap-2 flex-1 min-w-[200px] bg-slate-800/60 border border-white/10 rounded-xl px-3 py-2">
-                    <Search className="w-4 h-4 text-slate-500 shrink-0" />
+                <label className="qi-ws-field flex items-center gap-2 flex-1 min-w-[180px] rounded-lg px-2.5 py-1.5">
+                    <Search className="qi-ws-muted w-4 h-4 shrink-0" />
                     <input
                         type="text"
-                        placeholder="Search all columns..."
+                        placeholder="Search all columns"
                         value={searchTerm}
                         onChange={e => { setSearchTerm(e.target.value); setCurrentPage(0); }}
-                        className="bg-transparent outline-none text-sm text-white placeholder-slate-500 flex-1"
+                        className="bg-transparent outline-none text-[13px] flex-1 min-w-0"
+                        aria-label="Search all columns"
                     />
-                </div>
+                </label>
 
-                <div className="flex items-center gap-2 bg-slate-800/60 border border-white/10 rounded-xl px-3 py-2">
-                    <Filter className="w-4 h-4 text-slate-500 shrink-0" />
+                <div className="qi-ws-field flex items-center gap-2 rounded-lg px-2.5 py-1.5">
+                    <Filter className="qi-ws-muted w-4 h-4 shrink-0" />
                     <select
                         value={filterCol || ''}
                         onChange={e => { setFilterCol(e.target.value || null); setFilterVal(''); setCurrentPage(0); }}
-                        className="bg-slate-800 text-sm text-slate-300 outline-none cursor-pointer"
+                        className="bg-transparent text-[13px] outline-none cursor-pointer"
+                        aria-label="Filter by column"
                     >
-                        <option value="" className="bg-slate-800 text-slate-300">Filter column</option>
-                        {columns.map(c => <option key={c} value={c} className="bg-slate-800 text-slate-200">{c}</option>)}
+                        <option value="">Filter column</option>
+                        {columns.map(c => <option key={c} value={c}>{c}</option>)}
                     </select>
                     {filterCol && (
                         <input
                             type="text"
-                            placeholder={`Filter ${filterCol}...`}
+                            placeholder={`Value in ${filterCol}`}
                             value={filterVal}
                             onChange={e => { setFilterVal(e.target.value); setCurrentPage(0); }}
-                            className="bg-transparent outline-none text-sm text-white placeholder-slate-500 w-28"
+                            className="bg-transparent outline-none text-[13px] w-32"
+                            aria-label={`Filter value for ${filterCol}`}
                         />
                     )}
                 </div>
 
-                <button
-                    onClick={handleExportCSV}
-                    className="flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-xl border border-white/10 hover:border-indigo-500/30 bg-slate-800/60 hover:bg-indigo-500/10 text-slate-300 hover:text-indigo-300 transition-all"
-                >
-                    <Download className="w-4 h-4" />
-                    Export {viewMode === 'raw' ? 'Raw' : 'Clean'} CSV
+                <button type="button" onClick={handleExportCSV} className="qi-ws-ghost inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold">
+                    <Download className="w-4 h-4" /> Export {viewMode === 'raw' ? 'as uploaded' : 'cleaned'}
                 </button>
 
-                <div className="flex items-center gap-2 text-xs text-slate-500">
-                    <BarChart2 className="w-3.5 h-3.5" />
-                    <span>{filteredRows.length.toLocaleString()} of {activeRows.length.toLocaleString()} rows</span>
-                </div>
+                <span className="qi-ws-muted text-[12px] tabular-nums ml-auto">{filteredRows.length.toLocaleString()} of {activeRows.length.toLocaleString()} rows</span>
             </div>
 
-            {/* Column Types Legend (only in clean mode) */}
-            {viewMode === 'clean' && (
-                <div className="flex items-center gap-3 text-[11px] uppercase tracking-wider text-slate-500">
-                    {[ColumnType.METRIC, ColumnType.DATE, ColumnType.DIMENSION, ColumnType.ID].map(t => (
-                        <span key={t} className={`px-2 py-0.5 rounded-full ${typeColor(t)} font-bold`}>{t}</span>
-                    ))}
-                </div>
-            )}
-
             {/* Table */}
-            <div className="flex-1 overflow-auto rounded-xl border border-white/10 bg-slate-800/30">
-                <table className="w-full text-sm">
-                    <thead className="sticky top-0 z-10 bg-slate-800/95 backdrop-blur-sm">
-                        <tr>
-                            <th className="px-3 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-white/5 w-12">#</th>
+            <div className="flex-1 overflow-auto">
+                <table className="w-full text-[13px]">
+                    <thead className="sticky top-0 z-10">
+                        <tr className="qi-ws-thead">
+                            <th className="px-3 py-2 text-left w-12">#</th>
                             {columns.map(col => (
                                 <th
                                     key={col}
                                     onClick={() => handleSort(col)}
-                                    className="px-3 py-3 text-left text-[11px] font-bold uppercase tracking-wider border-b border-white/5 cursor-pointer hover:bg-white/5 transition-colors group whitespace-nowrap"
+                                    className="px-3 py-2 text-left cursor-pointer whitespace-nowrap group"
+                                    aria-sort={sortCol === col ? (sortAsc ? 'ascending' : 'descending') : undefined}
                                 >
-                                    <div className="flex items-center gap-1.5">
-                                        {viewMode === 'clean' && (
-                                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${typeColor(getColType(col))}`}>
-                                                {getColType(col).charAt(0)}
-                                            </span>
-                                        )}
-                                        <span className="text-slate-400">{col}</span>
-                                        <ArrowUpDown className={`w-3 h-3 transition-opacity ${sortCol === col ? 'text-indigo-400 opacity-100' : 'text-slate-600 opacity-0 group-hover:opacity-50'
-                                            }`} />
-                                        {sortCol === col && (
-                                            <span className="text-indigo-400 text-[10px]">{sortAsc ? '↑' : '↓'}</span>
-                                        )}
-                                    </div>
+                                    <span className="inline-flex items-center gap-1.5">
+                                        {viewMode === 'clean' ? <span className={roleClass(getColType(col))} title={getColType(col)}>{col}</span> : col}
+                                        {sortCol === col
+                                            ? <span className="qi-ws-strong text-[11px]">{sortAsc ? '↑' : '↓'}</span>
+                                            : <ArrowUpDown className="w-3 h-3 opacity-0 group-hover:opacity-60" />}
+                                    </span>
                                 </th>
                             ))}
                         </tr>
                     </thead>
-                    <tbody className="divide-y divide-white/3">
+                    <tbody>
                         {pageRows.map((row, idx) => (
-                            <tr
-                                key={idx}
-                                className="hover:bg-white/3 transition-colors"
-                            >
-                                <td className="px-3 py-2 text-[11px] text-slate-600 font-mono">{currentPage * pageSize + idx + 1}</td>
+                            <tr key={idx} className="qi-ws-row is-static">
+                                <td className="qi-ws-muted px-3 py-1.5 text-[11.5px] tabular-nums">{currentPage * pageSize + idx + 1}</td>
                                 {columns.map(col => {
                                     const val = row[col];
                                     const isEmpty = val === null || val === undefined || val === '';
                                     return (
-                                        <td
-                                            key={col}
-                                            className={`px-3 py-2 max-w-[200px] truncate font-mono text-xs ${isEmpty
-                                                ? 'text-red-400/50 italic'
-                                                : viewMode === 'raw' ? 'text-amber-200/80' : 'text-slate-300'
-                                                }`}
-                                        >
-                                            {isEmpty ? '∅' : String(val)}
+                                        <td key={col} className={`px-3 py-1.5 max-w-[220px] truncate ${isEmpty ? 'qi-ws-muted italic' : 'qi-ws-strong'}`}>
+                                            {isEmpty ? 'blank' : String(val)}
                                         </td>
                                     );
                                 })}
@@ -303,25 +239,11 @@ export const DataExplorerView: React.FC<DataExplorerViewProps> = ({ dataset }) =
 
             {/* Pagination */}
             {totalPages > 1 && (
-                <div className="flex items-center justify-between text-sm text-slate-400">
-                    <span>
-                        Page {currentPage + 1} of {totalPages}
-                    </span>
+                <div className="qi-ws-toolbar is-bottom flex items-center justify-between px-3 py-2 text-[12.5px]">
+                    <span className="qi-ws-muted">Page {currentPage + 1} of {totalPages.toLocaleString()}</span>
                     <div className="flex gap-2">
-                        <button
-                            disabled={currentPage === 0}
-                            onClick={() => setCurrentPage(p => p - 1)}
-                            className="px-3 py-1.5 rounded-lg bg-slate-800/60 border border-white/10 hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        >
-                            Previous
-                        </button>
-                        <button
-                            disabled={currentPage >= totalPages - 1}
-                            onClick={() => setCurrentPage(p => p + 1)}
-                            className="px-3 py-1.5 rounded-lg bg-slate-800/60 border border-white/10 hover:bg-white/5 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                        >
-                            Next
-                        </button>
+                        <button type="button" disabled={currentPage === 0} onClick={() => setCurrentPage(p => p - 1)} className="qi-ws-ghost px-2.5 py-1 rounded-md disabled:opacity-40 disabled:cursor-not-allowed">Previous</button>
+                        <button type="button" disabled={currentPage >= totalPages - 1} onClick={() => setCurrentPage(p => p + 1)} className="qi-ws-ghost px-2.5 py-1 rounded-md disabled:opacity-40 disabled:cursor-not-allowed">Next</button>
                     </div>
                 </div>
             )}

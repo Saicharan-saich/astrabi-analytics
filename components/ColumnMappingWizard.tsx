@@ -341,11 +341,8 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                 <div className="max-w-7xl mx-auto px-6 py-3">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center shadow-lg shadow-violet-500/20">
-                                <Brain className="w-5 h-5 text-white" />
-                            </div>
                             <div>
-                                <h1 className="text-base font-bold text-white">Column Mapping Review</h1>
+                                <h1 className="text-base font-bold text-white">Review column mapping</h1>
                                 <p className="text-xs text-gray-400">
                                     {isAIProfiling ? (
                                         <span className="flex items-center gap-2">
@@ -362,21 +359,6 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                             <button onClick={resetToAI} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] text-gray-400 hover:text-gray-200 text-xs transition-all border border-white/[0.06]" title="Reset to AI/ETL defaults">
                                 <RotateCcw className="w-3 h-3" /> Reset
                             </button>
-                            <button onClick={onDismiss} className="px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] text-gray-300 text-xs transition-all border border-white/[0.06]">
-                                Skip
-                            </button>
-                            <button
-                                onClick={handleApply}
-                                disabled={showErrors && !canApply}
-                                className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all shadow-lg ${showErrors && !canApply
-                                    ? 'bg-gray-600/50 text-gray-400 cursor-not-allowed shadow-none'
-                                    : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-violet-500/20'
-                                    }`}
-                            >
-                                <CheckCircle2 className="w-4 h-4" />
-                                Apply & Continue
-                                <ArrowRight className="w-3.5 h-3.5" />
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -387,7 +369,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                 <div className="max-w-7xl mx-auto px-6 py-5 space-y-4">
 
                     {/* ══ SECTION 1: INFERRED ROW DETAIL + DOMAIN ══ */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-start">
                         {/* Row grain is inferred automatically; correction is optional. */}
                         <div className="col-span-2 rounded-xl p-4 border border-white/[0.06] bg-[#171c26]">
                             <div className="flex items-center justify-between gap-3 mb-2">
@@ -609,23 +591,21 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                         </div>
                     )}
 
-                    {/* ══ STATS BAR ══ */}
-                    <div className="flex gap-2">
+                    {/* ══ COUNTS (one line; required roles turn red when missing) ══ */}
+                    <p className="text-xs text-gray-400">
                         {[
-                            { label: 'Metrics', count: stats.metrics, color: 'text-emerald-400', bg: 'bg-emerald-500/10', req: true },
-                            { label: 'Dimensions', count: stats.dimensions, color: 'text-violet-400', bg: 'bg-violet-500/10', req: true },
-                            { label: 'Dates', count: stats.dates, color: 'text-blue-400', bg: 'bg-blue-500/10', req: false },
-                            { label: 'Booleans', count: stats.booleans, color: 'text-rose-400', bg: 'bg-rose-500/10', req: false },
-                            { label: 'IDs', count: stats.ids, color: 'text-amber-400', bg: 'bg-amber-500/10', req: false },
-                            { label: 'Hidden', count: stats.hidden, color: 'text-gray-400', bg: 'bg-gray-500/10', req: false },
-                        ].map(s => (
-                            <div key={s.label} className={`${s.bg} border rounded-lg px-3 py-2 text-center flex-1 ${showErrors && s.req && s.count === 0 ? 'border-red-500/40' : 'border-white/[0.05]'
-                                }`}>
-                                <p className={`text-base font-bold ${showErrors && s.req && s.count === 0 ? 'text-red-400' : s.color}`}>{s.count}</p>
-                                <p className="text-[11px] text-gray-500">{s.label}{s.req ? ' *' : ''}</p>
-                            </div>
+                            { label: 'metrics', count: stats.metrics, req: true },
+                            { label: 'dimensions', count: stats.dimensions, req: true },
+                            { label: 'dates', count: stats.dates, req: false },
+                            { label: 'yes/no', count: stats.booleans, req: false },
+                            { label: 'IDs', count: stats.ids, req: false },
+                            { label: 'hidden', count: stats.hidden, req: false },
+                        ].filter(item => item.req || item.count > 0).map((item, i) => (
+                            <span key={item.label} className={showErrors && item.req && item.count === 0 ? 'text-red-400 font-semibold' : ''}>
+                                {i > 0 ? ' · ' : ''}<b className="text-white font-semibold">{item.count}</b> {item.label}{showErrors && item.req && item.count === 0 ? ' (at least 1 needed)' : ''}
+                            </span>
                         ))}
-                    </div>
+                    </p>
 
                     {/* ══ SEARCH & FILTER ══ */}
                     <div className="flex items-center gap-2">

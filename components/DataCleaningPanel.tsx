@@ -110,6 +110,11 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
     }, [dataset?.rows]);
 
     const columns = dataset?.columns || [];
+    // "Good candidate for a category" is only news when the column isn't one already.
+    const visibleIssues = (qualityReport?.issues || []).filter(issue => !(
+        issue.severity === 'info' && /low cardinality/i.test(issue.message)
+        && columns.some(c => c.name === issue.column && (c.type === ColumnType.DIMENSION || c.type === ColumnType.ID))
+    ));
     const metricCols = columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
     const dimCols = columns.filter(c => c.type === ColumnType.DIMENSION).map(c => c.name);
     const allColNames = columns.map(c => c.name);
@@ -134,53 +139,40 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
 
     const selectClass = "w-full px-3 py-2 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all";
     const inputClass = "w-full px-3 py-2 bg-white dark:bg-slate-900/60 border border-slate-200 dark:border-white/10 rounded-xl text-sm text-slate-800 dark:text-slate-100 font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500/30 focus:border-indigo-400 transition-all";
-    const btnPrimary = "flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-sm font-bold rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none hover:shadow-xl hover:scale-[1.02] transition-all duration-200";
+    const btnPrimary = "qi-ws-button flex items-center gap-2 px-4 py-2 text-sm font-semibold rounded-lg";
     const labelClass = "block text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mb-1.5";
 
     return (
-        <div className="bg-white dark:bg-slate-800/60 rounded-2xl border border-slate-200 dark:border-white/10 shadow-sm overflow-hidden">
-            {/* ── Header ── */}
-            <div className="px-6 py-4 border-b border-slate-100 dark:border-white/10 bg-gradient-to-r from-slate-50 to-indigo-50/40 dark:from-white/[0.03] dark:to-indigo-500/[0.06]">
+        <div className="qi-ws-card rounded-xl overflow-hidden">
+            {/* ── Tools + data quality score ── */}
+            <div className="qi-ws-toolbar px-4 pt-3 pb-3">
                 <div className="flex items-center gap-3">
-                    <div className="p-2 bg-gradient-to-br from-violet-500 to-indigo-600 rounded-xl shadow-lg shadow-indigo-200 dark:shadow-none">
-                        <Sparkles className="w-5 h-5 text-white" />
-                    </div>
-                    <div className="flex-1">
-                        <h3 className="text-lg font-bold text-slate-900 dark:text-white">Cleaning Tools</h3>
-                        <p className="text-xs text-slate-500 dark:text-slate-400">Pick a tool below — fix, transform, and refine your data by hand</p>
+                    <div className="flex gap-1.5 overflow-x-auto scrollbar-none flex-1" role="tablist" aria-label="Cleaning tools">
+                        {tools.map(tool => {
+                            const active = activeTool === tool.key;
+                            return (
+                                <button
+                                    key={tool.key}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={active}
+                                    onClick={() => setActiveTool(tool.key)}
+                                    className={`qi-tool-chip flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12.5px] font-semibold whitespace-nowrap ${active ? 'is-active' : ''}`}
+                                >
+                                    {tool.icon}
+                                    {tool.label}
+                                </button>
+                            );
+                        })}
                     </div>
                     {qualityReport && (
-                        <div className="text-right">
-                            <div className="text-[11px] text-slate-400 uppercase tracking-wider font-bold">Quality Score</div>
-                            <QualityBadge score={qualityReport.overallScore} size="lg" />
+                        <div className="shrink-0 text-right" title="Average of completeness, consistency and outlier checks across columns">
+                            <div className="qi-ws-muted text-[11px]">Data quality</div>
+                            <QualityBadge score={qualityReport.overallScore} />
                         </div>
                     )}
                 </div>
-            </div>
-
-            {/* ── Tool Selector (pills) + active description ── */}
-            <div className="px-4 pt-4 pb-3 border-b border-slate-100 dark:border-white/10">
-                <div className="flex gap-2 overflow-x-auto scrollbar-none pb-1">
-                    {tools.map(tool => {
-                        const active = activeTool === tool.key;
-                        const meta = TOOL_META[tool.key];
-                        return (
-                            <button
-                                key={tool.key}
-                                onClick={() => setActiveTool(tool.key)}
-                                className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap border transition-all ${
-                                    active
-                                        ? `${meta.active} shadow-sm`
-                                        : 'bg-slate-50 dark:bg-white/5 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10'
-                                }`}
-                            >
-                                <span className={active ? 'text-white' : meta.icon}>{tool.icon}</span>
-                                {tool.label}
-                            </button>
-                        );
-                    })}
-                </div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-2.5 px-1">{TOOL_META[activeTool].desc}</p>
+                <p className="qi-ws-muted text-[12.5px] mt-2 px-0.5">{TOOL_META[activeTool].desc}</p>
             </div>
 
             {/* ── Tool Content ── */}
@@ -189,29 +181,27 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                 {activeTool === 'quality' && qualityReport && (
                     <div className="space-y-4">
                         {/* Issues */}
-                        {qualityReport.issues.length > 0 && (
-                            <div className="space-y-2">
-                                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200">Issues Found</h4>
-                                {qualityReport.issues.slice(0, 10).map((issue, i) => (
-                                    <div key={i} className={`flex items-start gap-2 px-3 py-2 rounded-lg text-xs ${
-                                        issue.severity === 'critical' ? 'bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 text-red-700 dark:text-red-300' :
-                                        issue.severity === 'warning' ? 'bg-amber-50 dark:bg-amber-500/10 border border-amber-200 dark:border-amber-500/20 text-amber-700 dark:text-amber-300' :
-                                        'bg-blue-50 dark:bg-blue-500/10 border border-blue-200 dark:border-blue-500/20 text-blue-700 dark:text-blue-300'
-                                    }`}>
-                                        {issue.severity === 'critical' ? <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> :
-                                         issue.severity === 'warning' ? <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> :
-                                         <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
-                                        {issue.message}
-                                    </div>
-                                ))}
+                        {visibleIssues.length > 0 && (
+                            <div>
+                                <h4 className="qi-ws-strong text-[13px] font-semibold mb-1">Issues found</h4>
+                                <ul className="qi-ws-list">
+                                    {visibleIssues.slice(0, 10).map((issue, i) => (
+                                        <li key={i} className={`qi-issue is-${issue.severity} flex items-start gap-2 py-2 text-[12.5px]`}>
+                                            {issue.severity === 'critical' ? <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> :
+                                             issue.severity === 'warning' ? <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> :
+                                             <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
+                                            <span>{issue.message}</span>
+                                        </li>
+                                    ))}
+                                </ul>
                             </div>
                         )}
                         {/* Per-column quality */}
                         <div>
-                            <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-3">Column Quality</h4>
+                            <h4 className="qi-ws-strong text-[13px] font-semibold mb-3">Column quality</h4>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                                 {qualityReport.columns.map(col => (
-                                    <div key={col.column} className="bg-slate-50 dark:bg-white/5 rounded-xl p-4 border border-slate-100 dark:border-white/10">
+                                    <div key={col.column} className="qi-ws-subcard rounded-lg p-4">
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="text-sm font-bold text-slate-800 dark:text-slate-100 capitalize">{col.column.replace(/_/g, ' ')}</span>
                                             <QualityBadge score={col.overallScore} />
