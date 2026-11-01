@@ -87,6 +87,9 @@ test('a date filter recalculates a pinned KPI after the same workbook was re-imp
   await page.getByRole('button', { name: 'Sign In', exact: true }).click();
 
   await expect(page.getByText('order_date', { exact: true }).last()).toBeVisible();
+  page.on('console', msg => { if (/rebuild|Analysis|Error|error|filter/i.test(msg.text())) console.log('BROWSER', msg.type(), msg.text().slice(0, 300)); });
+  await page.waitForTimeout(8000);
+  console.log('DIAG cards', JSON.stringify(await page.locator('.react-grid-item').evaluateAll(cards => cards.map(c => (c as HTMLElement).innerText.slice(0, 400)))));
   await expect(page.locator('.qi-kpi-value')).toHaveText(['$50.00', '$50.00'], { timeout: 30_000 });
   await page.getByRole('button', { name: 'Clear all', exact: true }).click();
   await expect(page.locator('.qi-kpi-value')).toHaveText(['$100.00', '$100.00']);
