@@ -25,6 +25,8 @@ export interface ChartPointSelection {
     facetKey?: string;
     facetValue?: string;
     metricValue?: number;
+    /** Name of the measure the clicked mark shows ("Revenue", "Quantity"). */
+    metricLabel?: string;
     /** Screen position of the click, for the menu. */
     anchor: { x: number; y: number };
 }

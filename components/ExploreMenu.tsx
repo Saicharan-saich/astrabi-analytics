@@ -88,7 +88,7 @@ export const ExploreMenu: React.FC<ExploreMenuProps> = ({ anchor, title, context
     return createPortal(
         <div
             ref={ref}
-            className="qi-explore-menu fixed z-[400] w-[264px] rounded-xl py-1.5"
+            className="qi-explore-menu fixed z-[400] w-[284px] rounded-xl py-1.5"
             style={{ left: position.left, top: position.top }}
             role="menu"
             aria-label={`Explore ${title}`}
@@ -103,7 +103,7 @@ export const ExploreMenu: React.FC<ExploreMenuProps> = ({ anchor, title, context
                 return (
                     <button key={action.id} type="button" role="menuitem" onClick={pick(action.onSelect)} className="qi-explore-item w-full flex items-center gap-2.5 px-3.5 py-2 text-left text-[13px]">
                         {Icon ? <Icon className="qi-explore-icon w-4 h-4 shrink-0" /> : <span className="w-4" />}
-                        <span className="flex-1 min-w-0 truncate">{action.label}</span>
+                        <span className="flex-1 min-w-0 leading-[18px] break-words">{action.label}</span>
                         {action.hint && <span className="qi-explore-hint text-[11.5px] shrink-0">{action.hint}</span>}
                     </button>
                 );

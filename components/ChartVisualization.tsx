@@ -2166,13 +2166,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 onPointSelect({
                     xKey, value: raw, label, anchor,
                     metricValue: Number.isFinite(metricValue) ? metricValue : undefined,
+                    metricLabel: friendlySeriesLabel(dataset?.qiSeriesKey ? calculatedYLabel : (dataset?.label || calculatedYLabel)),
                     ...(dataset?.qiSeriesKey ? { seriesKey: dataset.qiSeriesKey, seriesValue: String(dataset.qiSeriesValue) } : {}),
                 });
                 return;
             }
         }
         if (onPointSelect) {
-            onPointSelect({ xKey, value: raw!, label: label!, anchor, metricValue: Number.isFinite(metricValue) ? metricValue : undefined });
+            onPointSelect({ xKey, value: raw!, label: label!, anchor, metricValue: Number.isFinite(metricValue) ? metricValue : undefined, metricLabel: friendlySeriesLabel(calculatedYLabel) });
             return;
         }
         if (label) onDrillDown?.(String(label));
@@ -2385,7 +2386,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         isDark={isDark}
                         onSelectLocation={onPointSelect ? (value, anchor) => {
                             const row = (transformedData || []).find((r: any) => String(r?.[xKey] ?? '').trim() === value);
-                            onPointSelect({ xKey, value, label: value, anchor, metricValue: row ? Number(row[yKey]) : undefined });
+                            onPointSelect({ xKey, value, label: value, anchor, metricValue: row ? Number(row[yKey]) : undefined, metricLabel: friendlySeriesLabel(calculatedYLabel) });
                         } : undefined}
                     />
                 </div>

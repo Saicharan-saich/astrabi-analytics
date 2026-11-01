@@ -503,7 +503,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         const { selection, targets, options, rowCount } = explore;
         const title = targets.map(t => t.label).join(' · ');
         const metricText = Number.isFinite(selection.metricValue)
-            ? `${(words(lastRunConfig.metric || '') || 'Value').replace(/^./, c => c.toUpperCase())}: ${Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(selection.metricValue!)}`
+            ? `${selection.metricLabel || (words(lastRunConfig.metric || '') || 'Value').replace(/^./, c => c.toUpperCase())}: ${Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(selection.metricValue!)}`
             : undefined;
         const xTarget = targets[0];
         const onlyOne = (result?.data?.length || 0) <= 1;

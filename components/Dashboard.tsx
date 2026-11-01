@@ -316,7 +316,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     const base = onOpenInBuilder ? builderBaseConfig(item, source) : null;
     const options = base ? drillOptions(source, base, targets) : [];
     const metricText = Number.isFinite(selection.metricValue)
-      ? `${item.result.yLabel || 'Value'}: ${Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(selection.metricValue!)}`
+      ? `${selection.metricLabel || item.result.yLabel || 'Value'}: ${Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(selection.metricValue!)}`
       : undefined;
     return (
       <ExploreMenu
@@ -351,8 +351,12 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     );
   })();
 
+  // Cards whose question can be re-run on the filtered rows (SQL, automatic
+  // analysis and Question Builder cards) are recomputed by the real engine,
+  // so dashboard filters give the same numbers the question itself would.
   const isSqlCard = (item: DashboardItem) => Boolean(item.result.aiSqlRefresh || item.result.autoAnalysis
-    || item.result.queryConfig?.aiSql || (!item.result.queryConfig && item.result.sql));
+    || item.result.queryConfig?.aiSql || (!item.result.queryConfig && item.result.sql)
+    || (item.result.queryConfig || item.result.config)?.questionId);
   const usesSqlFilter = (item: DashboardItem) => dashboardFilters.length > 0 && !item.ignoreGlobalFilter
     && !item.result.needsLocalData && isSqlCard(item) && !filterSourceError(item);
   const sqlFilterKey = (item: DashboardItem) => [activeDashboardId, filterSource(item)?.id, filterSource(item)?.version,
@@ -456,7 +460,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             if (seen === undefined || d.getTime() < seen) periodStart.set(dimVal, d.getTime());
           }
         }
-        const metricVal = typeof row[metricCol] === 'number' ? row[metricCol] : parseFloat(row[metricCol]);
+        // Counts work on any value (order IDs are text); sums and averages need numbers.
+        const rawMetric = row[metricCol];
+        if (agg === 'COUNT' || agg === 'COUNT_DISTINCT' || agg === 'COUNT_ALL') {
+          if (rawMetric === null || rawMetric === undefined || rawMetric === '') return;
+          if (!groups.has(dimVal)) groups.set(dimVal, []);
+          groups.get(dimVal)!.push(rawMetric as any);
+          return;
+        }
+        const metricVal = typeof rawMetric === 'number' ? rawMetric : parseFloat(rawMetric);
         if (!isNaN(metricVal)) {
           if (!groups.has(dimVal)) groups.set(dimVal, []);
           groups.get(dimVal)!.push(metricVal);
@@ -467,14 +479,13 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
         let result = 0;
         if (agg === 'SUM') result = vals.reduce((a, b) => a + b, 0);
         else if (agg === 'AVG') result = vals.reduce((a, b) => a + b, 0) / vals.length;
-        else if (agg === 'COUNT') result = vals.length;
-        else if (agg === 'COUNT_DISTINCT') result = new Set(vals).size;
+        else if (agg === 'COUNT' || agg === 'COUNT_ALL') result = vals.length;
+        else if (agg === 'COUNT_DISTINCT') result = new Set(vals.map(v => String(v))).size;
         else if (agg === 'MAX') result = Math.max(...vals);
         else if (agg === 'MIN') result = Math.min(...vals);
         else result = vals.reduce((a, b) => a + b, 0);
+        // Only the chart's own keys: an extra text column would be read as a series.
         const row: any = { [xKey]: dim, [yKey]: result };
-        if (xKey !== 'dim') row.dim = dim;
-        if (yKey !== 'metric') row.metric = result;
         reAggregated.push(row);
       });
       // Time periods default to chronological order (oldest first); only an

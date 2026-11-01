@@ -61,7 +61,9 @@ export async function rebuildDashboardItem(item: DashboardItem, dataset: Dataset
         const config = previous.queryConfig || previous.config;
         if (!config?.questionId) throw new Error('This visual needs its original analysis to be pinned again.');
         const { runAnalysis } = await import('./analysisEngine');
-        fresh = await runAnalysis(dataset, {
+        // Dashboard filters hand over a subset of rows: the question runs on exactly those.
+        const scoped = sourceRows === dataset.rows ? dataset : { ...dataset, rows: sourceRows, totalRows: sourceRows.length };
+        fresh = await runAnalysis(scoped, {
             ...config, asOfDate: dataset.timeContext?.defaultAnchorDate || dataset.timeContext?.maxDate || '',
         });
         if (fresh.error) throw new Error(fresh.error);
