@@ -111,6 +111,15 @@ for (const theme of ['light', 'dark'] as const) {
                 await page.waitForTimeout(4000);
                 await shoot(page, `52-after-undo-${theme}`);
             }
+            // Every workspace section, full page, for layout review.
+            const sections: [string, string][] = [['Overview', 'overview'], ['Explore Data', 'explore'], ['Cleaned Data', 'cleaned'], ['Data Studio', 'studio'], ['Column Mapping', 'mapping'], ['Schema', 'schema']];
+            for (const [tab, slug] of sections) {
+                const button = page.locator('.qi-workspace-tabs:visible button, [role="tablist"]:visible [role="tab"]').filter({ hasText: tab }).first();
+                if (!(await button.isVisible().catch(() => false))) continue;
+                await button.click().catch(() => {});
+                await page.waitForTimeout(1500);
+                await page.screenshot({ path: path.join(OUT, `53-ws-${slug}-${theme}.png`), fullPage: true });
+            }
         }
     });
 }
