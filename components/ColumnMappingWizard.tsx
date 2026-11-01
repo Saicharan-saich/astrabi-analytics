@@ -1,9 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
 import {
-    Brain, CheckCircle2, Eye, EyeOff, Sparkles, ArrowRight,
-    AlertTriangle, PenLine, RotateCcw, ShieldCheck, Layers, Search,
-    ChevronDown, XCircle
+    CheckCircle2, Eye, EyeOff, AlertTriangle, RotateCcw, Search, ChevronDown, XCircle,
 } from 'lucide-react';
 import { DatasetDomainProfile, ColumnSemantic, ColumnType, ColumnDefinition } from '../types';
 import { inferDefaultAggregation } from '../services/smartAggregation';
@@ -54,6 +51,9 @@ const ROLE_DISPLAY: Record<string, { icon: string; label: string; color: string 
     other: { icon: '📋', label: 'Other', color: 'text-gray-500' },
 };
 
+const AGG_WORD: Record<string, string> = { SUM: 'Sum', AVG: 'Average', COUNT: 'Count', COUNT_DISTINCT: 'Count distinct', MIN: 'Minimum', MAX: 'Maximum' };
+const FORMAT_WORD: Record<string, string> = { currency_usd: 'US dollars', currency_eur: 'Euros', percent: 'Percent', raw: 'Plain number', count: 'Count', date_iso: 'Date' };
+
 const TYPE_COLORS: Record<string, string> = {
     METRIC: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
     DIMENSION: 'bg-violet-500/15 text-violet-400 border-violet-500/25',
@@ -66,11 +66,11 @@ const TYPE_COLORS: Record<string, string> = {
 // ─── Per-column confidence computation ───
 function computeColumnConfidence(col: ColumnDefinition, sem: ColumnSemantic, aiProfile: DatasetDomainProfile): number {
     const aiSem = aiProfile.columnSemantics?.[col.name];
-    if (!aiSem) return 0.3; // No AI data → low confidence
-    // Perfect match = high confidence
-    let score = aiProfile.confidence;
+    // Without an AI opinion the role comes from the cleaning's own profiling,
+    // which is usually right: start in the middle and let the name decide.
+    let score = aiSem ? aiProfile.confidence : 0.55;
     // Type match bonus
-    if (aiSem.role === sem.role) score = Math.min(1, score + 0.1);
+    if (aiSem && aiSem.role === sem.role) score = Math.min(1, score + 0.1);
     // Name pattern bonus (known patterns are more reliable)
     const lower = col.name.toLowerCase();
     const strongPatterns = ['revenue', 'sales', 'salary', 'price', 'cost', 'total', 'amount', 'date', 'id', 'name', 'category', 'department', 'qty', 'quantity'];
@@ -334,610 +334,268 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
         updateColumn(colName, { aggregation: next });
     };
 
+    const toCheck = columns.filter(col => (columnConfidences[col.name] ?? 0) < 0.45);
+    const lookRight = columns.length - toCheck.length;
+    const ROLE_WORD: Record<string, string> = { METRIC: 'Measure', DIMENSION: 'Dimension', DATE: 'Date', BOOLEAN: 'Yes/No', ID: 'ID', UNKNOWN: 'Unknown' };
+    const FILTER_WORD: Record<string, string> = { METRIC: 'Measures', DIMENSION: 'Dimensions', DATE: 'Dates', BOOLEAN: 'Yes/No', ID: 'IDs' };
+
     return (
-        <div className="h-full flex flex-col bg-[#0f1219] overflow-hidden">
-            {/* ── TOP HEADER ── */}
-            <div className="flex-shrink-0 border-b border-white/[0.06] bg-[#141824]">
-                <div className="max-w-7xl mx-auto px-6 py-3">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <div>
-                                <h1 className="text-base font-bold text-white">Review column mapping</h1>
-                                <p className="text-xs text-gray-400">
-                                    {isAIProfiling ? (
-                                        <span className="flex items-center gap-2">
-                                            <Sparkles className="w-3 h-3 text-violet-400 animate-pulse" />
-                                            AI is analyzing your dataset...
-                                        </span>
-                                    ) : (
-                                        <>Verify how <span className="text-violet-400 font-medium">{fileName}</span> columns are classified</>
-                                    )}
-                                </p>
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button onClick={resetToAI} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/[0.05] hover:bg-white/[0.08] text-gray-400 hover:text-gray-200 text-xs transition-all border border-white/[0.06]" title="Reset to AI/ETL defaults">
-                                <RotateCcw className="w-3 h-3" /> Reset
-                            </button>
-                        </div>
-                    </div>
+        <div className="qi-map h-full flex flex-col overflow-hidden">
+            {/* ── Header ── */}
+            <div className="qi-ws-toolbar flex-shrink-0 px-5 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                    <h3 className="qi-ws-strong text-[15px] font-semibold">Review column mapping</h3>
+                    <p className="qi-ws-muted text-[12.5px] mt-0.5 truncate">
+                        {isAIProfiling
+                            ? 'Working out what each column means…'
+                            : 'Check what each column is. Measures are added up; dimensions group and filter; dates drive trends.'}
+                    </p>
                 </div>
+                <button type="button" onClick={resetToAI} className="qi-ws-ghost inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[12.5px] font-semibold" title="Undo your edits and go back to the detected mapping">
+                    <RotateCcw className="w-3.5 h-3.5" /> Reset
+                </button>
             </div>
 
-            {/* ── MAIN CONTENT ── */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar">
-                <div className="max-w-7xl mx-auto px-6 py-5 space-y-4">
-
-                    {/* ══ SECTION 1: INFERRED ROW DETAIL + DOMAIN ══ */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 items-start">
-                        {/* Row grain is inferred automatically; correction is optional. */}
-                        <div className="col-span-2 rounded-xl p-4 border border-white/[0.06] bg-[#171c26]">
-                            <div className="flex items-center justify-between gap-3 mb-2">
-                                <div className="flex items-center gap-2">
-                                <Layers className="w-4 h-4 text-violet-400" />
-                                    <span className="text-xs text-gray-400 uppercase tracking-wider font-semibold">Row detail inferred automatically</span>
-                                </div>
-                                <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${(initialProfile.grainConfidence ?? inferredGrain.confidence) >= 0.75
-                                    ? 'bg-emerald-500/15 text-emerald-300'
-                                    : 'bg-amber-500/15 text-amber-300'
-                                    }`}>
-                                    {(initialProfile.grainConfidence ?? inferredGrain.confidence) >= 0.75 ? 'High confidence' : 'Best match'}
-                                </span>
-                            </div>
-                            <div className="flex items-center justify-between gap-3">
-                                <div>
-                                    <div className="text-base font-semibold text-white">One row = {grain || inferredGrain.label}</div>
-                                    <p className="mt-1 text-[11px] leading-relaxed text-gray-500">
-                                        QuickInsight uses identifiers, uniqueness, and source metadata to assign this automatically.
-                                    </p>
-                                </div>
-                                <button
-                                    type="button"
-                                    onClick={() => setShowGrainOverride(value => !value)}
-                                    className="shrink-0 rounded-lg border border-white/[0.08] bg-white/[0.04] px-3 py-1.5 text-xs font-medium text-gray-300 hover:bg-white/[0.08]"
-                                >
+            {/* ── Body ── */}
+            <div className="flex-1 overflow-y-auto">
+                <div className="px-5 py-4 space-y-4">
+                    {/* Summary: row detail · domain · how many columns look right */}
+                    <div className="qi-ws-subcard qi-ws-facts rounded-lg grid grid-cols-1 md:grid-cols-3">
+                        <div className="px-4 py-3">
+                            <div className="qi-ws-muted text-[12px]">Each row is</div>
+                            <div className="flex items-center gap-2 mt-0.5">
+                                <span className="qi-ws-strong text-[14px] font-semibold">One {grain || inferredGrain.label}</span>
+                                <button type="button" onClick={() => setShowGrainOverride(value => !value)} className="qi-ws-link text-[12.5px] font-semibold">
                                     {showGrainOverride ? 'Done' : 'Change'}
                                 </button>
                             </div>
                             {showGrainOverride && (
-                                <div className="mt-3 border-t border-white/[0.06] pt-3">
-                                    <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-gray-500">Advanced override</label>
+                                <div className="mt-2">
                                     <input
                                         type="text"
                                         value={grain}
                                         onChange={event => { setGrain(event.target.value); setGrainWasEdited(true); }}
                                         placeholder="e.g. Order, line item, trade summary"
-                                        className="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/50"
+                                        className="qi-ws-select w-full rounded-md px-2.5 py-1.5 text-[13px]"
+                                        aria-label="What one row represents"
                                     />
-                                    <div className="mt-2 flex flex-wrap gap-1.5">
+                                    <div className="mt-1.5 flex flex-wrap gap-1">
                                         {grainOptions.map(option => (
-                                            <button
-                                                type="button"
-                                                key={option}
-                                                onClick={() => { setGrain(option); setGrainWasEdited(true); }}
-                                                className="rounded border border-white/[0.06] bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium text-gray-400 hover:text-gray-200"
-                                            >{option}</button>
+                                            <button type="button" key={option} onClick={() => { setGrain(option); setGrainWasEdited(true); }} className="qi-tool-chip rounded-md px-2 py-0.5 text-[11.5px] font-medium">{option}</button>
                                         ))}
                                     </div>
                                 </div>
                             )}
                         </div>
-
-                        {/* Domain */}
-                        <div className="bg-[#171c26] border border-white/[0.06] rounded-xl p-4">
-                            <label className="text-xs text-gray-400 uppercase tracking-wider font-semibold block mb-2">Domain</label>
-                            <select
-                                value={domain}
-                                onChange={e => setDomain(e.target.value)}
-                                className="w-full bg-white/[0.05] border border-white/[0.08] rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-violet-500/50"
-                            >
-                                {ALL_DOMAINS.map(d => (
-                                    <option key={d} value={d} className="bg-[#171c26]">{d}</option>
-                                ))}
+                        <div className="px-4 py-3">
+                            <label className="qi-ws-muted text-[12px] block" htmlFor="qi-map-domain">Subject</label>
+                            <select id="qi-map-domain" value={domain} onChange={e => setDomain(e.target.value)} className="qi-ws-select mt-1 w-full rounded-md px-2.5 py-1.5 text-[13px]">
+                                {ALL_DOMAINS.map(d => <option key={d} value={d}>{d.replace(/_/g, ' ')}</option>)}
                             </select>
-                            {subDomain && <p className="text-[11px] text-gray-500 mt-1">Sub: {subDomain}</p>}
+                            {subDomain && <p className="qi-ws-muted text-[11.5px] mt-1">{subDomain}</p>}
                         </div>
+                        <div className="px-4 py-3">
+                            <div className="qi-ws-muted text-[12px]">Columns</div>
+                            <div className="qi-ws-strong text-[14px] font-semibold mt-0.5">
+                                {toCheck.length === 0 ? `All ${columns.length} look right` : `${lookRight} of ${columns.length} look right`}
+                            </div>
+                            {toCheck.length > 0 && (
+                                <button type="button" onClick={() => setShowDetails(v => !v)} className="qi-ws-link text-[12.5px] font-semibold">
+                                    {showDetails ? 'Hide' : `${toCheck.length} to check`}
+                                </button>
+                            )}
+                            {showDetails && toCheck.length > 0 && (
+                                <ul className="mt-1.5 space-y-0.5 text-[12px]">
+                                    {toCheck.slice(0, 8).map(col => (
+                                        <li key={col.name}>
+                                            <button type="button" className="qi-ws-link" onClick={() => { setSearchFilter(col.name); setTypeFilter('ALL'); setExpandedCol(col.name); }}>{col.name}</button>
+                                            <span className="qi-ws-muted"> — {columnSemantics[col.name]?.role === ColumnType.ID ? 'may not be an ID' : 'unusual name; confirm its role'}</span>
+                                        </li>
+                                    ))}
+                                    {toCheck.length > 8 && <li className="qi-ws-muted">and {toCheck.length - 8} more</li>}
+                                </ul>
+                            )}
+                        </div>
+                    </div>
 
-                        {/* ── Classification Status (user-friendly framing) ── */}
-                        {(() => {
-                            const conf = initialProfile.confidence;
-                            const lowConfCols = Object.entries(columnConfidences).filter(([, v]) => v < 0.45);
-                            const highConfCols = Object.entries(columnConfidences).filter(([, v]) => v >= 0.75);
-                            const totalCols = columns.length;
-                            const classifiedCount = totalCols - lowConfCols.length;
+                    {/* Validation */}
+                    {showErrors && (hardErrors.length > 0 || warnings.length > 0) && (
+                        <ul className="space-y-1">
+                            {(hardErrors.length > 0 ? hardErrors : warnings).map(e => (
+                                <li key={e.id} className={`qi-issue is-${e.severity === 'error' ? 'critical' : 'warning'} flex items-start gap-2 text-[12.5px]`}>
+                                    {e.severity === 'error' ? <XCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> : <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
+                                    <span>{e.message}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
 
-                            // Qualitative tiers — no scary percentages
-                            const status = conf >= 0.8
-                                ? { label: 'Ready', icon: '✓', color: 'text-emerald-400', bg: 'bg-emerald-500/15', border: 'border-emerald-500/25', barColor: 'bg-emerald-500' }
-                                : conf >= 0.5
-                                    ? { label: 'Review Suggested', icon: '👀', color: 'text-amber-400', bg: 'bg-amber-500/15', border: 'border-amber-500/25', barColor: 'bg-amber-500' }
-                                    : { label: 'Setup Needed', icon: '⚙️', color: 'text-violet-400', bg: 'bg-violet-500/15', border: 'border-violet-500/25', barColor: 'bg-violet-500' };
-
-
-                            return (
-                                <div className="bg-[#171c26] border border-white/[0.06] rounded-xl p-4">
-                                    {/* Status badge + columns classified */}
-                                    <div className="flex items-center justify-between mb-3">
-                                        <label className="text-sm text-gray-400 uppercase tracking-wider font-semibold">Classification Status</label>
-                                        <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold ${status.bg} ${status.color} border ${status.border}`}>
-                                            {status.icon} {status.label}
-                                        </span>
-                                    </div>
-
-                                    {/* Columns classified progress bar */}
-                                    <div className="flex items-center gap-2 mb-1.5">
-                                        <span className="text-xs text-gray-400 font-medium">{classifiedCount} of {totalCols} columns auto-classified</span>
-                                        {lowConfCols.length > 0 && (
-                                            <span className="text-xs text-amber-400 font-medium">· {lowConfCols.length} need review</span>
-                                        )}
-                                    </div>
-                                    <div className="h-2 bg-white/[0.06] rounded-full overflow-hidden mb-3">
-                                        <motion.div
-                                            initial={{ width: 0 }}
-                                            animate={{ width: `${(classifiedCount / Math.max(1, totalCols)) * 100}%` }}
-                                            transition={{ duration: 0.8, ease: 'easeOut' }}
-                                            className={`h-full rounded-full ${status.barColor}`}
-                                        />
-                                    </div>
-
-                                    {/* Actionable summary */}
-                                    <p className="text-xs text-gray-400 leading-relaxed">
-                                        {conf >= 0.8
-                                            ? `AI recognized this as ${domain} data and classified all columns. You can apply directly or review.`
-                                            : conf >= 0.5
-                                                ? `AI detected ${domain} domain. Some columns may need manual review — check the ${lowConfCols.length > 0 ? `${lowConfCols.length} flagged column${lowConfCols.length > 1 ? 's' : ''}` : 'yellow indicators'} below.`
-                                                : `This dataset has uncommon column names. The AI did its best to classify them — please review the column types below to ensure accuracy.`
-                                        }
-                                    </p>
-
-                                    {/* Expandable technical details */}
-                                    <button
-                                        onClick={() => setShowDetails(!showDetails)}
-                                        className="mt-3 text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1.5"
-                                    >
-                                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${showDetails ? 'rotate-180' : ''}`} />
-                                        {showDetails ? 'Hide details' : 'Show details'}
+                    {/* Search, role filter and counts */}
+                    <div className="flex flex-wrap items-center gap-2">
+                        <label className="qi-ws-field flex items-center gap-2 flex-1 min-w-[180px] rounded-lg px-2.5 py-1.5">
+                            <Search className="qi-ws-muted w-4 h-4 shrink-0" />
+                            <input type="text" value={searchFilter} onChange={e => setSearchFilter(e.target.value)} placeholder="Search columns" className="bg-transparent outline-none text-[13px] flex-1 min-w-0" aria-label="Search columns" />
+                        </label>
+                        <div className="qi-ws-segmented inline-flex flex-wrap rounded-lg p-0.5" role="group" aria-label="Show columns by role">
+                            <button type="button" aria-pressed={typeFilter === 'ALL'} onClick={() => setTypeFilter('ALL')} className={`px-2.5 py-1 rounded-md text-[12px] font-semibold ${typeFilter === 'ALL' ? 'is-active' : ''}`}>
+                                All <span className="qi-ws-count">{columns.length}</span>
+                            </button>
+                            {([ColumnType.METRIC, ColumnType.DIMENSION, ColumnType.DATE, ColumnType.BOOLEAN, ColumnType.ID] as ColumnType[]).map(t => {
+                                const n = t === ColumnType.METRIC ? stats.metrics : t === ColumnType.DIMENSION ? stats.dimensions : t === ColumnType.DATE ? stats.dates : t === ColumnType.BOOLEAN ? stats.booleans : stats.ids;
+                                const required = t === ColumnType.METRIC || t === ColumnType.DIMENSION;
+                                if (n === 0 && !required) return null;
+                                const missing = showErrors && required && n === 0;
+                                return (
+                                    <button key={t} type="button" aria-pressed={typeFilter === t} onClick={() => setTypeFilter(typeFilter === t ? 'ALL' : t)} className={`px-2.5 py-1 rounded-md text-[12px] font-semibold ${typeFilter === t ? 'is-active' : ''} ${missing ? 'qi-ws-warn' : ''}`} title={missing ? 'At least one is needed' : undefined}>
+                                        {FILTER_WORD[t]} <span className="qi-ws-count">{n}</span>
                                     </button>
-
-                                    <AnimatePresence>
-                                        {showDetails && (
-                                            <motion.div
-                                                initial={{ height: 0, opacity: 0 }}
-                                                animate={{ height: 'auto', opacity: 1 }}
-                                                exit={{ height: 0, opacity: 0 }}
-                                                transition={{ duration: 0.15 }}
-                                                className="overflow-hidden"
-                                            >
-                                                <div className="mt-2 pt-2 border-t border-white/[0.04] space-y-2">
-                                                    {/* Factor bars */}
-                                                    {[
-                                                        { label: 'Domain Detection', pct: conf >= 0.8 ? 100 : conf >= 0.5 ? 60 : 30, desc: conf >= 0.8 ? `Detected: ${domain}` : `Uncertain: ${domain}` },
-                                                        { label: 'Column Name Clarity', pct: totalCols > 0 ? Math.round((highConfCols.length / totalCols) * 100) : 0, desc: `${highConfCols.length} of ${totalCols} columns have clear names` },
-                                                        { label: 'Type Balance', pct: stats.metrics > 0 && stats.dimensions > 0 ? 100 : 30, desc: `${stats.metrics} metrics, ${stats.dimensions} dimensions` },
-                                                    ].map(f => (
-                                                        <div key={f.label}>
-                                                            <div className="flex items-center justify-between mb-0.5">
-                                                                <span className="text-[11px] font-medium text-gray-500">{f.label}</span>
-                                                                <span className={`text-[11px] font-bold ${f.pct >= 80 ? 'text-emerald-400' : f.pct >= 50 ? 'text-amber-400' : 'text-gray-400'}`}>{f.pct}%</span>
-                                                            </div>
-                                                            <div className="h-1 rounded-full bg-white/[0.06] overflow-hidden">
-                                                                <div className={`h-full rounded-full ${f.pct >= 80 ? 'bg-emerald-500' : f.pct >= 50 ? 'bg-amber-500' : 'bg-gray-500'}`} style={{ width: `${f.pct}%` }} />
-                                                            </div>
-                                                            <p className="text-[10px] text-gray-600 mt-0.5">{f.desc}</p>
-                                                        </div>
-                                                    ))}
-
-                                                    {/* Columns needing review */}
-                                                    {lowConfCols.length > 0 && (
-                                                        <div className="mt-1 pt-2 border-t border-white/[0.04]">
-                                                            <p className="text-[11px] font-medium text-amber-400 mb-1">Columns to review:</p>
-                                                            <div className="space-y-0.5">
-                                                                {lowConfCols.slice(0, 5).map(([name]) => {
-                                                                    const sem = columnSemantics[name];
-                                                                    const reason = sem?.role === ColumnType.ID ? 'May not be an ID' : 'Uncommon name pattern';
-                                                                    return (
-                                                                        <div key={name} className="flex items-center gap-1.5 text-[11px]">
-                                                                            <span className="text-amber-400">•</span>
-                                                                            <span className="text-gray-400 font-mono">{name}</span>
-                                                                            <span className="text-gray-600">— {reason}</span>
-                                                                        </div>
-                                                                    );
-                                                                })}
-                                                                {lowConfCols.length > 5 && <p className="text-[10px] text-gray-600">...and {lowConfCols.length - 5} more</p>}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </motion.div>
-                                        )}
-                                    </AnimatePresence>
-                                </div>
-                            );
-                        })()}
+                                );
+                            })}
+                        </div>
+                        {stats.hidden > 0 && <span className="qi-ws-muted text-[12px]">{stats.hidden} hidden</span>}
                     </div>
 
-                    {/* ══ REVIEW SUGGESTED BANNER (gentle, no scary numbers) ══ */}
-                    {initialProfile.confidence < 0.7 && (
-                        <div className="flex items-start gap-3 bg-violet-500/10 border border-violet-500/20 rounded-xl p-3">
-                            <div className="w-7 h-7 rounded-lg bg-violet-500/20 flex items-center justify-center flex-shrink-0">
-                                <Sparkles className="w-3.5 h-3.5 text-violet-400" />
-                            </div>
-                            <div>
-                                <p className="text-xs font-medium text-violet-300">Quick review recommended</p>
-                                <p className="text-[11px] text-violet-400/70 mt-0.5">Some columns have uncommon names — a quick check of the types below will help the AI give you better results.</p>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* ══ VALIDATION ERRORS ══ */}
-                    {showErrors && hardErrors.length > 0 && (
-                        <div className="bg-red-500/10 border border-red-500/25 rounded-xl p-3 space-y-1.5">
-                            {hardErrors.map(e => (
-                                <div key={e.id} className="flex items-center gap-2 text-sm text-red-300">
-                                    <XCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
-                                    {e.message}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-                    {showErrors && warnings.length > 0 && hardErrors.length === 0 && (
-                        <div className="bg-amber-500/10 border border-amber-500/25 rounded-xl p-3 space-y-1.5">
-                            {warnings.map(e => (
-                                <div key={e.id} className="flex items-center gap-2 text-sm text-amber-300">
-                                    <AlertTriangle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />
-                                    {e.message}
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {/* ══ COUNTS (one line; required roles turn red when missing) ══ */}
-                    <p className="text-xs text-gray-400">
-                        {[
-                            { label: 'metrics', count: stats.metrics, req: true },
-                            { label: 'dimensions', count: stats.dimensions, req: true },
-                            { label: 'dates', count: stats.dates, req: false },
-                            { label: 'yes/no', count: stats.booleans, req: false },
-                            { label: 'IDs', count: stats.ids, req: false },
-                            { label: 'hidden', count: stats.hidden, req: false },
-                        ].filter(item => item.req || item.count > 0).map((item, i) => (
-                            <span key={item.label} className={showErrors && item.req && item.count === 0 ? 'text-red-400 font-semibold' : ''}>
-                                {i > 0 ? ' · ' : ''}<b className="text-white font-semibold">{item.count}</b> {item.label}{showErrors && item.req && item.count === 0 ? ' (at least 1 needed)' : ''}
-                            </span>
-                        ))}
-                    </p>
-
-                    {/* ══ SEARCH & FILTER ══ */}
-                    <div className="flex items-center gap-2">
-                        <div className="flex-1 relative">
-                            <Search className="w-3.5 h-3.5 text-gray-600 absolute left-3 top-1/2 -translate-y-1/2" />
-                            <input
-                                type="text"
-                                value={searchFilter}
-                                onChange={e => setSearchFilter(e.target.value)}
-                                placeholder="Search columns..."
-                                className="w-full bg-[#171c26] border border-white/[0.06] rounded-lg pl-9 pr-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-2 focus:ring-violet-500/30"
-                            />
-                        </div>
-                        <div className="flex gap-1">
-                            <button onClick={() => setTypeFilter('ALL')}
-                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${typeFilter === 'ALL' ? 'bg-violet-500/20 text-violet-300 border border-violet-500/30' : 'bg-white/[0.04] text-gray-500 hover:text-gray-300 border border-white/[0.06]'
-                                    }`}
-                            >All</button>
-                            {COLUMN_TYPES.filter(t => t !== ColumnType.UNKNOWN).map(t => (
-                                <button key={t} onClick={() => setTypeFilter(typeFilter === t ? 'ALL' : t)}
-                                    className={`px-2.5 py-1.5 rounded-lg text-[11px] font-medium transition-all ${typeFilter === t ? TYPE_COLORS[t] + ' border' : 'bg-white/[0.04] text-gray-500 hover:text-gray-300 border border-white/[0.06]'
-                                        }`}
-                                >{t}</button>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* ══ COLUMN TABLE (SIMPLIFIED — critical fields only in main row) ══ */}
-                    <div className="bg-[#171c26] border border-white/[0.06] rounded-xl overflow-hidden">
-                        {/* Header */}
-                        <div className="grid grid-cols-[2.5fr_0.8fr_1.2fr_0.6fr_0.4fr] gap-2 px-4 py-2.5 bg-white/[0.02] border-b border-white/[0.06] text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+                    {/* Column table */}
+                    <div className="qi-ws-subcard rounded-lg overflow-hidden">
+                        <div className="qi-ws-thead grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)_3rem] gap-3 px-4 py-2 text-[11.5px] font-semibold">
                             <span>Column</span>
                             <span>Role</span>
-                            <span>Aggregation</span>
+                            <span>Combine by</span>
                             <span>Confidence</span>
                             <span className="text-center">Show</span>
                         </div>
-
-                        {/* Rows */}
-                        <div className="divide-y divide-white/[0.04]">
-                            {filteredColumns.map((col) => {
+                        <div className="qi-ws-list">
+                            {filteredColumns.map(col => {
                                 const sem = columnSemantics[col.name];
                                 if (!sem) return null;
                                 const isExpanded = expandedCol === col.name;
-                                const roleInfo = ROLE_DISPLAY[sem.semanticRole || 'other'] || ROLE_DISPLAY.other;
                                 const conf = columnConfidences[col.name] || 0;
                                 const confInfo = confidenceIndicator(conf);
                                 const hasAggError = showErrors && sem.role === ColumnType.METRIC && sem.aggregation === 'NONE';
-
                                 return (
-                                    <div key={col.name} className={`transition-colors ${sem.isHidden ? 'opacity-40' : ''}`}>
-                                        {/* Main row — CRITICAL fields only */}
+                                    <div key={col.name} className={sem.isHidden ? 'opacity-50' : ''}>
                                         <div
-                                            className={`grid grid-cols-[2.5fr_0.8fr_1.2fr_0.6fr_0.4fr] gap-2 px-4 py-2.5 items-center hover:bg-white/[0.02] cursor-pointer transition-all ${isExpanded ? 'bg-white/[0.03]' : ''
-                                                } ${hasAggError ? 'bg-red-500/5' : ''}`}
+                                            className={`qi-ws-row grid grid-cols-[minmax(0,2.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)_3rem] gap-3 px-4 py-2 items-center ${isExpanded ? 'is-open' : ''}`}
                                             onClick={() => setExpandedCol(isExpanded ? null : col.name)}
                                         >
-                                            {/* Column Name + Label */}
                                             <div className="flex items-center gap-2 min-w-0">
-                                                <span className="text-xs">{roleInfo.icon}</span>
+                                                <ChevronDown className={`qi-ws-muted w-3.5 h-3.5 shrink-0 transition-transform ${isExpanded ? '' : '-rotate-90'}`} />
                                                 <div className="min-w-0">
-                                                    <p className="text-sm font-medium text-white truncate">{col.name}</p>
-                                                    <p className="text-[11px] text-gray-500 truncate">{sem.humanLabel}</p>
+                                                    <p className="qi-ws-strong text-[13px] font-medium truncate">{col.name}</p>
+                                                    {sem.humanLabel && sem.humanLabel.toLowerCase().replace(/\s+/g, '_') !== col.name.toLowerCase() && (
+                                                        <p className="qi-ws-muted text-[11.5px] truncate">{sem.humanLabel}</p>
+                                                    )}
                                                 </div>
                                             </div>
-
-                                            {/* Type — inline dropdown */}
-                                            <div>
+                                            <select
+                                                value={sem.role}
+                                                onClick={e => e.stopPropagation()}
+                                                onChange={e => {
+                                                    const newType = e.target.value as ColumnType;
+                                                    updateColumn(col.name, {
+                                                        role: newType,
+                                                        aggregation: newType === ColumnType.METRIC ? (sem.aggregation === 'NONE' ? 'SUM' : sem.aggregation) : 'NONE',
+                                                    });
+                                                }}
+                                                className="qi-ws-select w-full rounded-md px-2 py-1 text-[12.5px]"
+                                                aria-label={`Role of ${col.name}`}
+                                            >
+                                                {COLUMN_TYPES.map(t => <option key={t} value={t}>{ROLE_WORD[t] || t}</option>)}
+                                            </select>
+                                            {sem.role === ColumnType.METRIC ? (
                                                 <select
-                                                    value={sem.role}
-                                                    onChange={e => {
-                                                        e.stopPropagation();
-                                                        const newType = e.target.value as ColumnType;
-                                                        updateColumn(col.name, {
-                                                            role: newType,
-                                                            aggregation: newType === ColumnType.METRIC ? (sem.aggregation === 'NONE' ? 'SUM' : sem.aggregation) : 'NONE',
-                                                        });
-                                                    }}
+                                                    value={sem.aggregation}
                                                     onClick={e => e.stopPropagation()}
-                                                    className={`w-full px-1.5 py-1 rounded text-[11px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/50 ${TYPE_COLORS[sem.role] || TYPE_COLORS.UNKNOWN}`}
+                                                    onChange={e => updateColumn(col.name, { aggregation: e.target.value as any })}
+                                                    className={`qi-ws-select w-full rounded-md px-2 py-1 text-[12.5px] ${hasAggError ? 'is-error' : ''}`}
+                                                    aria-label={`How to combine ${col.name}`}
                                                 >
-                                                    {COLUMN_TYPES.map(t => (
-                                                        <option key={t} value={t} className="bg-[#171c26] text-white font-normal">{t}</option>
-                                                    ))}
+                                                    {AGGREGATIONS.filter(a => a !== 'NONE').map(a => <option key={a} value={a}>{AGG_WORD[a] || a}</option>)}
                                                 </select>
-                                            </div>
-
-                                            {/* Aggregation — inline, prominent for metrics */}
-                                            <div>
-                                                {sem.role === ColumnType.METRIC ? (
-                                                    <select
-                                                        value={sem.aggregation}
-                                                        onChange={e => { e.stopPropagation(); updateColumn(col.name, { aggregation: e.target.value as any }); }}
-                                                        onClick={e => e.stopPropagation()}
-                                                        className={`w-full px-1.5 py-1 rounded text-[11px] font-bold border cursor-pointer focus:outline-none focus:ring-1 focus:ring-violet-500/50 ${hasAggError
-                                                            ? 'bg-red-500/15 text-red-400 border-red-500/30'
-                                                            : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
-                                                            }`}
-                                                    >
-                                                        {AGGREGATIONS.filter(a => a !== 'NONE').map(a => (
-                                                            <option key={a} value={a} className="bg-[#171c26] text-white font-normal">{a}</option>
-                                                        ))}
-                                                    </select>
-                                                ) : (
-                                                    <span className="text-[11px] text-gray-600 px-1.5">—</span>
-                                                )}
-                                            </div>
-
-                                            {/* Confidence */}
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-xs">{confInfo.emoji}</span>
-                                                <span className={`text-[11px] ${confInfo.color}`}>{confInfo.label}</span>
-                                            </div>
-
-                                            {/* Visibility toggle */}
+                                            ) : <span className="qi-ws-muted text-[12px]">—</span>}
+                                            <span className={`qi-conf is-${confInfo.label.toLowerCase()} text-[12px]`}>{confInfo.label}</span>
                                             <div className="text-center">
                                                 <button
+                                                    type="button"
                                                     onClick={e => { e.stopPropagation(); toggleHidden(col.name); }}
-                                                    className={`p-1 rounded-lg transition-all ${sem.isHidden
-                                                        ? 'text-red-400/60 hover:text-red-400 hover:bg-red-500/10'
-                                                        : 'text-emerald-400/60 hover:text-emerald-400 hover:bg-emerald-500/10'
-                                                        }`}
+                                                    className="qi-step-chevron p-1 rounded-md"
+                                                    aria-label={sem.isHidden ? `Show ${col.name}` : `Hide ${col.name}`}
+                                                    title={sem.isHidden ? 'Hidden from questions and charts — click to show' : 'Hide from questions and charts'}
                                                 >
-                                                    {sem.isHidden ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                                    {sem.isHidden ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                                                 </button>
                                             </div>
                                         </div>
-
-                                        {/* Expanded — SECONDARY fields */}
-                                        <AnimatePresence>
-                                            {isExpanded && (
-                                                <motion.div
-                                                    initial={{ height: 0, opacity: 0 }}
-                                                    animate={{ height: 'auto', opacity: 1 }}
-                                                    exit={{ height: 0, opacity: 0 }}
-                                                    transition={{ duration: 0.15 }}
-                                                    className="overflow-hidden"
-                                                >
-                                                    <div className="px-6 py-3 bg-white/[0.02] border-t border-white/[0.04]">
-                                                        <div className="flex items-center gap-2 mb-2">
-                                                            <PenLine className="w-3 h-3 text-violet-400" />
-                                                            <span className="text-[11px] font-semibold text-violet-400 uppercase tracking-wider">Advanced Settings</span>
-                                                        </div>
-                                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                                                            <div className="md:col-span-4 grid grid-cols-2 md:grid-cols-4 gap-2 rounded-lg border border-white/[0.06] bg-black/10 p-2.5">
-                                                                <div>
-                                                                    <label className="text-[10px] text-gray-600 uppercase tracking-wider block">Source storage</label>
-                                                                    <span className="text-xs font-mono text-gray-300">{col.conversion?.sourceType || col.originalType || 'unknown'}</span>
-                                                                </div>
-                                                                <div>
-                                                                    <label className="text-[10px] text-gray-600 uppercase tracking-wider block">Current storage</label>
-                                                                    <span className="text-xs font-mono text-gray-300">{col.physicalType || 'unknown'}</span>
-                                                                </div>
-                                                                <div>
-                                                                    <label className="text-[10px] text-gray-600 uppercase tracking-wider block">Normalized as</label>
-                                                                    <span className="text-xs font-mono text-violet-300">{col.conversion?.normalizedType || 'not audited'}</span>
-                                                                </div>
-                                                                <div>
-                                                                    <label className="text-[10px] text-gray-600 uppercase tracking-wider block">Conversion quality</label>
-                                                                    <span className={`text-xs font-semibold ${(col.conversion?.invalidCount || 0) > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
-                                                                        {col.conversion ? `${Math.round(col.conversion.parseSuccessRate * 100)}% · ${col.conversion.invalidCount} rejected` : 'Awaiting ETL audit'}
-                                                                    </span>
-                                                                </div>
-                                                            </div>
-                                                            {/* Semantic Role */}
-                                                            <div>
-                                                                <label className="text-[11px] text-gray-600 uppercase tracking-wider block mb-1">Semantic Role</label>
-                                                                <select
-                                                                    value={sem.semanticRole || 'other'}
-                                                                    onChange={e => updateColumn(col.name, { semanticRole: e.target.value })}
-                                                                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-violet-500/50"
-                                                                >
-                                                                    {SEMANTIC_ROLES.map(r => (
-                                                                        <option key={r} value={r} className="bg-[#171c26]">{ROLE_DISPLAY[r]?.label || r}</option>
-                                                                    ))}
-                                                                </select>
-                                                            </div>
-                                                            {/* Format */}
-                                                            <div>
-                                                                <label className="text-[11px] text-gray-600 uppercase tracking-wider block mb-1">Format</label>
-                                                                <select
-                                                                    value={sem.format}
-                                                                    onChange={e => updateColumn(col.name, { format: e.target.value as any })}
-                                                                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-violet-500/50"
-                                                                >
-                                                                    {FORMATS.map(f => (
-                                                                        <option key={f} value={f} className="bg-[#171c26]">{f}</option>
-                                                                    ))}
-                                                                </select>
-                                                            </div>
-                                                            {/* Label */}
-                                                            <div>
-                                                                <label className="text-[11px] text-gray-600 uppercase tracking-wider block mb-1">Display Label</label>
-                                                                <input type="text" value={sem.humanLabel}
-                                                                    onChange={e => updateColumn(col.name, { humanLabel: e.target.value })}
-                                                                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-xs text-white focus:outline-none focus:ring-1 focus:ring-violet-500/50"
-                                                                />
-                                                            </div>
-                                                            {/* Description */}
-                                                            <div>
-                                                                <label className="text-[11px] text-gray-600 uppercase tracking-wider block mb-1">Description</label>
-                                                                <input type="text" value={sem.description}
-                                                                    onChange={e => updateColumn(col.name, { description: e.target.value })}
-                                                                    placeholder="What does this column represent?"
-                                                                    className="w-full bg-white/[0.04] border border-white/[0.08] rounded-lg px-2 py-1.5 text-xs text-white placeholder-gray-600 focus:outline-none focus:ring-1 focus:ring-violet-500/50"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </motion.div>
-                                            )}
-                                        </AnimatePresence>
+                                        {isExpanded && (
+                                            <div className="qi-ws-detail px-4 pb-4 pt-2 pl-10">
+                                                <dl className="grid grid-cols-2 md:grid-cols-4 gap-3 text-[12px] mb-3">
+                                                    <div><dt className="qi-ws-muted">Uploaded as</dt><dd className="font-mono">{col.conversion?.sourceType || col.originalType || 'unknown'}</dd></div>
+                                                    <div><dt className="qi-ws-muted">Stored as</dt><dd className="font-mono">{col.physicalType || 'unknown'}</dd></div>
+                                                    <div><dt className="qi-ws-muted">Read as</dt><dd className="font-mono">{col.conversion?.normalizedType || 'not checked'}</dd></div>
+                                                    <div><dt className="qi-ws-muted">Read correctly</dt><dd className={(col.conversion?.invalidCount || 0) > 0 ? 'qi-ws-warn' : ''}>{col.conversion ? `${Math.round(col.conversion.parseSuccessRate * 100)}%${col.conversion.invalidCount ? ` · ${col.conversion.invalidCount} not read` : ''}` : '—'}</dd></div>
+                                                </dl>
+                                                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Importance</span>
+                                                        <select value={sem.semanticRole || 'other'} onChange={e => updateColumn(col.name, { semanticRole: e.target.value })} className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]">
+                                                            {SEMANTIC_ROLES.map(r => <option key={r} value={r}>{ROLE_DISPLAY[r]?.label || r}</option>)}
+                                                        </select>
+                                                    </label>
+                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Format</span>
+                                                        <select value={sem.format} onChange={e => updateColumn(col.name, { format: e.target.value as any })} className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]">
+                                                            {FORMATS.map(f => <option key={f} value={f}>{FORMAT_WORD[f] || f}</option>)}
+                                                        </select>
+                                                    </label>
+                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Display name</span>
+                                                        <input type="text" value={sem.humanLabel} onChange={e => updateColumn(col.name, { humanLabel: e.target.value })} className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" />
+                                                    </label>
+                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Description</span>
+                                                        <input type="text" value={sem.description} onChange={e => updateColumn(col.name, { description: e.target.value })} placeholder="What does this column represent?" className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" />
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}
-
                             {filteredColumns.length === 0 && (
-                                <div className="px-4 py-6 text-center text-gray-500 text-sm">
-                                    No columns match the current filter.
-                                </div>
+                                <div className="qi-ws-muted px-4 py-6 text-center text-[13px]">No columns match.</div>
                             )}
                         </div>
                     </div>
 
-
-
-                    {/* ══ PREVIEW BEFORE COMMIT ══ */}
-                    <div className="bg-[#171c26] border border-white/[0.06] rounded-xl overflow-hidden">
-                        <button
-                            onClick={() => setShowPreview(!showPreview)}
-                            className="w-full flex items-center justify-between px-4 py-3 bg-white/[0.02] hover:bg-white/[0.04] transition-colors"
-                        >
-                            <div className="flex items-center gap-2">
-                                <ShieldCheck className="w-4 h-4 text-violet-400" />
-                                <span className="text-sm font-medium text-gray-300">Preview — What will happen</span>
-                            </div>
-                            <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showPreview ? 'rotate-180' : ''}`} />
+                    {/* Preview */}
+                    <div className="qi-ws-subcard rounded-lg">
+                        <button type="button" onClick={() => setShowPreview(!showPreview)} className="w-full flex items-center justify-between px-4 py-2.5" aria-expanded={showPreview}>
+                            <span className="qi-ws-strong text-[13px] font-semibold">What questions will use</span>
+                            <ChevronDown className={`qi-ws-muted w-4 h-4 transition-transform ${showPreview ? 'rotate-180' : ''}`} />
                         </button>
-                        <AnimatePresence>
-                            {showPreview && (
-                                <motion.div
-                                    initial={{ height: 0, opacity: 0 }}
-                                    animate={{ height: 'auto', opacity: 1 }}
-                                    exit={{ height: 0, opacity: 0 }}
-                                    transition={{ duration: 0.15 }}
-                                    className="overflow-hidden"
-                                >
-                                    <div className="px-4 pb-4 pt-2 space-y-3">
-                                        {/* Grain */}
-                                        <div className="flex items-center gap-2">
-                                            <Layers className="w-3.5 h-3.5 text-violet-400" />
-                                            <span className="text-xs text-gray-400">Grain:</span>
-                                            <span className="text-xs text-white font-medium">{previewData.grain || '(not set)'}</span>
-                                        </div>
-
-                                        {/* Metrics */}
-                                        <div>
-                                            <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Metrics ({previewData.metricList.length})</p>
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {previewData.metricList.map(m => (
-                                                    <span key={m} className="px-2 py-0.5 rounded text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">{m}</span>
-                                                ))}
-                                                {previewData.metricList.length === 0 && <span className="text-[11px] text-red-400">None — at least 1 required</span>}
-                                            </div>
-                                        </div>
-
-                                        {/* Dimensions */}
-                                        <div>
-                                            <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Dimensions ({previewData.dimensionList.length})</p>
-                                            <div className="flex flex-wrap gap-1.5">
-                                                {previewData.dimensionList.map(d => (
-                                                    <span key={d} className="px-2 py-0.5 rounded text-[11px] font-medium bg-violet-500/10 text-violet-400 border border-violet-500/20">{d}</span>
-                                                ))}
-                                                {previewData.dimensionList.length === 0 && <span className="text-[11px] text-red-400">None — at least 1 required</span>}
-                                            </div>
-                                        </div>
-
-                                        {/* Dates */}
-                                        {previewData.dateList.length > 0 && (
-                                            <div>
-                                                <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Dates ({previewData.dateList.length})</p>
-                                                <div className="flex flex-wrap gap-1.5">
-                                                    {previewData.dateList.map(d => (
-                                                        <span key={d} className="px-2 py-0.5 rounded text-[11px] font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">{d}</span>
-                                                    ))}
-                                                </div>
-                                            </div>
-                                        )}
-
-                                        {/* Sample question */}
-                                        {previewData.sampleQuestion && (
-                                            <div className="bg-violet-500/10 border border-violet-500/20 rounded-lg p-3">
-                                                <p className="text-[11px] text-gray-500 uppercase tracking-wider mb-1">Sample question that will work</p>
-                                                <p className="text-sm text-violet-300 font-medium">"{previewData.sampleQuestion}"</p>
-                                            </div>
-                                        )}
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
+                        {showPreview && (
+                            <div className="px-4 pb-4 space-y-2 text-[12.5px]">
+                                <p><span className="qi-ws-muted">Measures: </span>{previewData.metricList.join(', ') || <span className="qi-ws-warn">none — at least one is needed</span>}</p>
+                                <p><span className="qi-ws-muted">Dimensions: </span>{previewData.dimensionList.join(', ') || <span className="qi-ws-warn">none — at least one is needed</span>}</p>
+                                {previewData.dateList.length > 0 && <p><span className="qi-ws-muted">Dates: </span>{previewData.dateList.join(', ')}</p>}
+                                {previewData.sampleQuestion && <p><span className="qi-ws-muted">A question that will work: </span><span className="qi-ws-strong">“{previewData.sampleQuestion}”</span></p>}
+                            </div>
+                        )}
                     </div>
-
-                    <div className="h-4" />
                 </div>
             </div>
 
-            {/* ── BOTTOM ACTION BAR ── */}
-            <div className="flex-shrink-0 border-t border-white/[0.06] bg-[#141824] px-6 py-3">
-                <div className="max-w-7xl mx-auto flex items-center justify-between">
-                    <div className="text-xs text-gray-400">
-                        {columns.length} columns · <span className="text-violet-400 font-medium">{domain}</span>
-                        {grain && <> · Grain: <span className="text-white">{grain}</span></>}
-                        {hardErrors.length > 0 && <span className="text-red-400 ml-2">· {hardErrors.length} error{hardErrors.length > 1 ? 's' : ''}</span>}
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button onClick={onDismiss}
-                            className="px-3 py-2 rounded-xl bg-white/[0.05] hover:bg-white/[0.08] text-gray-300 font-medium text-xs transition-all border border-white/[0.06]"
-                        >Skip</button>
-                        <button
-                            onClick={handleApply}
-                            disabled={showErrors && !canApply}
-                            className={`flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium transition-all shadow-lg ${showErrors && !canApply
-                                ? 'bg-gray-600/50 text-gray-400 cursor-not-allowed shadow-none'
-                                : 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white shadow-violet-500/20'
-                                }`}
-                        >
-                            <CheckCircle2 className="w-4 h-4" />
-                            Apply & Continue
-                            <ArrowRight className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-                </div>
+            {/* ── Actions ── */}
+            <div className="qi-ws-toolbar is-bottom flex-shrink-0 px-5 py-3 flex items-center gap-3">
+                <p className="qi-ws-muted text-[12.5px] flex-1 min-w-0 truncate">
+                    {columns.length} columns · {domain.replace(/_/g, ' ')} · each row is one {grain || inferredGrain.label}
+                    {hardErrors.length > 0 && showErrors && <span className="qi-ws-warn"> · {hardErrors.length} to fix</span>}
+                </p>
+                <button type="button" onClick={onDismiss} className="qi-ws-ghost px-3 py-1.5 rounded-lg text-[13px] font-semibold">Skip</button>
+                <button
+                    type="button"
+                    onClick={handleApply}
+                    disabled={showErrors && !canApply}
+                    className="qi-ws-button inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-[13px] font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    <CheckCircle2 className="w-4 h-4" /> Apply & Continue
+                </button>
             </div>
         </div>
     );

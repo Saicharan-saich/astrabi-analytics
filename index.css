@@ -4273,3 +4273,18 @@ body {
 :root:is(.light, .dark) .qi-issue svg { color: var(--text-tertiary); }
 :root:is(.light, .dark) .qi-issue.is-warning svg { color: #d08a1a; }
 :root:is(.light, .dark) .qi-issue.is-critical svg { color: #d14343; }
+/* Column mapping review */
+:root:is(.light, .dark) .qi-map { background: var(--bg-surface); color: var(--text-secondary); }
+:root:is(.light, .dark) div.qi-ws-thead { color: var(--text-tertiary); background: var(--bg-app); border-bottom: 1px solid var(--border-default); }
+:root:is(.light, .dark) .qi-ws-row.is-open { background: var(--bg-hover); }
+:root:is(.light, .dark) .qi-ws-select.is-error { border-color: #d14343; }
+:root:is(.light, .dark) .qi-ws-select option { color: #0f172a; background: #fff; }
+:root:is(.light, .dark) .qi-conf { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); }
+:root:is(.light, .dark) .qi-conf::before { content: ''; width: 7px; height: 7px; border-radius: 999px; background: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-conf.is-high::before { background: #2f9e6a; }
+:root:is(.light, .dark) .qi-conf.is-medium::before { background: #d08a1a; }
+:root:is(.light, .dark) .qi-conf.is-low::before { background: #d14343; }
+:root:is(.light, .dark) .qi-map .qi-ws-facts > div + div { border-left: 1px solid var(--border-default); }
+@media (max-width: 767px) {
+  :root:is(.light, .dark) .qi-map .qi-ws-facts > div + div { border-left: 0; border-top: 1px solid var(--border-default); }
+}

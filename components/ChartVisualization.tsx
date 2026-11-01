@@ -1901,6 +1901,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     preferredDirection?: 'above' | 'below';
                 }> = [];
                 const mode = options.labelMode || 'all';
+                // Stacked segments labelled inside the bar (drawn after the outside labels).
+                const insideLabels: Array<{ text: string; font: string; x: number; y: number }> = [];
                 const categoryCount = chart.data.labels?.length || 0;
                 const categoryWidth = categoryCount > 0 ? chart.chartArea.width / categoryCount : 0;
                 const denseCategories = categoryCount > 10 && categoryWidth < 78;
@@ -1926,15 +1928,38 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             keyPoints.add(finite.reduce((best, cur) => (cur[0] < best[0] ? cur : best))[1]);
                         }
                     }
-                    const isStackedBarChart = chart.config.type === 'bar' && chart.options?.scales?.y?.stacked;
+                    const isStackedBarChart = chart.config.type === 'bar'
+                        && (chart.options?.indexAxis === 'y' ? chart.options?.scales?.x?.stacked : chart.options?.scales?.y?.stacked);
 
                     meta.data.forEach((element: any, index: number) => {
                         const value = Array.isArray(dataset.qiValues) ? dataset.qiValues[index] : dataset.data[index];
                         if (value === null || value === undefined) return;
                         if (categoryCount > 14 && !keyPoints.has(index)) return;
-                        // Stacked segments too thin to hold a label stay unlabelled;
-                        // the stack total above the bar carries the number.
-                        if (isStackedBarChart && !Array.isArray(dataset.qiLabels)) return; // the stack total above each bar carries the number
+                        // Stacked bars: the total sits above each stack. With every series
+                        // labelled, a segment big enough to hold its number gets it inside;
+                        // thin segments stay unlabelled rather than overlap.
+                        if (isStackedBarChart && !Array.isArray(dataset.qiLabels)) {
+                            if (mode !== 'all' || Math.abs(Number(value)) < 0.01) return;
+                            const horizontalBar = chart.options.indexAxis === 'y';
+                            const length = horizontalBar ? Math.abs(element.x - element.base) : Math.abs(element.base - element.y);
+                            const thickness = horizontalBar ? element.height : element.width;
+                            const segmentText = options.formatter ? options.formatter(value, { dataset }) : String(value);
+                            const segmentSize = denseCategories ? Math.min(options.font.size || 12, 11) : (options.font.size || 12);
+                            const segmentFont = `${options.font.weight} ${segmentSize}px "Inter", sans-serif`;
+                            ctx.font = segmentFont;
+                            const textWidth = ctx.measureText(segmentText).width;
+                            const fits = horizontalBar
+                                ? length >= textWidth + 8 && thickness >= segmentSize + 4
+                                : length >= segmentSize + 6 && thickness >= textWidth + 4;
+                            if (!fits) return;
+                            insideLabels.push({
+                                text: segmentText,
+                                font: segmentFont,
+                                x: horizontalBar ? (element.x + element.base) / 2 : element.x,
+                                y: horizontalBar ? element.y : (element.y + element.base) / 2,
+                            });
+                            return;
+                        }
                         if (dataset.qiSecondaryMetric === true && categoryCount > 8) return;
 
                         // Determine dataset type first
@@ -1994,6 +2019,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     if (!point) return;
                     ctx.font = label.font;
                     ctx.fillText(label.text, point.x, point.y);
+                });
+                insideLabels.forEach(label => {
+                    ctx.font = label.font;
+                    ctx.fillText(label.text, label.x, label.y);
                 });
             }
             ctx.restore();

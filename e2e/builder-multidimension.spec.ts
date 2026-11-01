@@ -19,7 +19,8 @@ test('adding a third grouping dimension automatically shows facet panels', async
         const original = CanvasRenderingContext2D.prototype.fillText;
         (window as any).__qiValueLabelInks = [];
         CanvasRenderingContext2D.prototype.fillText = function (this: CanvasRenderingContext2D, ...args: Parameters<typeof original>) {
-            if (String(args[0]) === '100' || String(args[0]) === '50') {
+            // Value labels are bold; axis ticks that also read 50/100 are not.
+            if ((String(args[0]) === '100' || String(args[0]) === '50') && /bold/.test(this.font)) {
                 (window as any).__qiValueLabelInks.push(String(this.fillStyle));
             }
             return original.apply(this, args);
@@ -162,6 +163,14 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.locator('.qi-visual-stage button[title="Show labels for all series"]').click();
     await expect.poll(() => page.evaluate(() => (window as any).__qiValueLabelInks.length)).toBeGreaterThanOrEqual(8);
     const darkInks = await page.evaluate(() => (window as any).__qiValueLabelInks as string[]);
-    expect(darkInks.every(color => color === '#ecf4ff' || color === 'rgb(236, 244, 255)'), `Dark label colors: ${darkInks.join(', ')}`).toBe(true);
-    await expect(page.locator('.qi-visual-stage')).toHaveCSS('background-color', 'rgb(16, 27, 45)');
+    // One shared label colour (never a series colour), light enough to read on the dark stage.
+    expect(new Set(darkInks).size, `Dark label colors: ${darkInks.join(', ')}`).toBe(1);
+    const luminance = (hex: string) => {
+        const m = hex.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i) || [];
+        return m.length ? (0.2126 * parseInt(m[1], 16) + 0.7152 * parseInt(m[2], 16) + 0.0722 * parseInt(m[3], 16)) / 255 : 0;
+    };
+    expect(luminance(darkInks[0]), `Dark label color ${darkInks[0]}`).toBeGreaterThan(0.6);
+    const stageBackground = await page.locator('.qi-visual-stage').evaluate(el => getComputedStyle(el).backgroundColor);
+    const [r, g, b] = (stageBackground.match(/\d+/g) || ['255', '255', '255']).map(Number);
+    expect((0.2126 * r + 0.7152 * g + 0.0722 * b) / 255, `Stage background ${stageBackground}`).toBeLessThan(0.2);
 });

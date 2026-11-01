@@ -1,4 +1,5 @@
 import { aiSqlPresentationChart } from '../utils/chartSuggestions';
+import { percentScaleFromSql } from '../utils/sqlPercentScale';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, Shield, ShieldCheck, LayoutDashboard, Table2, Target } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
@@ -263,8 +264,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
             const axisFormatMap: Record<string, FormattingConfig['numberFormat']> = {
                 percent: 'percent', currency_usd: 'currency_usd', compact: 'compact',
             };
-            const detectedFormat = result.chart.leftAxisFormat
+            const axisFormat = result.chart.leftAxisFormat
                 ? (axisFormatMap[result.chart.leftAxisFormat] ?? 'auto') : 'auto';
+            // A rate the SQL already multiplied by 100 must never be rescaled,
+            // even when every value is below 1 (0.5 = 0.5%, not 50%).
+            const detectedFormat: FormattingConfig['numberFormat'] = axisFormat === 'percent'
+                && percentScaleFromSql(result.sql, result.chart.yKey) === 'points' ? 'percent_points' : axisFormat;
 
             // Presentation defaults follow the recommended visual instead of
             // applying one label threshold to every chart. Ranked horizontal
