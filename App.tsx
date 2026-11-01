@@ -244,6 +244,9 @@ function App() {
   const [showTabManager, setShowTabManager] = useState(false);
   const [isAIProfiling, setIsAIProfiling] = useState(false);
   const [etlRevertPending, setEtlRevertPending] = useState<string | null>(null);
+  const [workspaceRequest, setWorkspaceRequest] = useState(0);
+  // Each navigation into the workspace re-selects the view its route asks for.
+  useEffect(() => { setWorkspaceRequest(n => n + 1); }, [activeTab]);
   const [showDomainReview, setShowDomainReview] = useState(false);
   const [pendingProfile, setPendingProfile] = useState<any>(null);
   const [showSplash, setShowSplash] = useState(true);
@@ -930,6 +933,13 @@ function App() {
     setPendingProfile(null);
     showToast(`Mapping applied: ${updatedProfile.domain} domain · Grain: ${updatedProfile.grain || 'unset'}`);
   };
+
+  // One Dataset Workspace serves every legacy route; each route opens its view.
+  const WORKSPACE_SECTIONS: Partial<Record<Tab, 'overview' | 'explore' | 'cleaned' | 'studio' | 'mapping' | 'schema'>> = {
+    [Tab.DATASET_SUMMARY]: 'overview', [Tab.COLUMN_MAPPING]: 'mapping', [Tab.ETL]: 'cleaned',
+    [Tab.DATA_STUDIO]: 'studio', [Tab.SCHEMA]: 'schema', [Tab.DATA]: 'explore',
+  };
+  const workspaceSection = WORKSPACE_SECTIONS[activeTab];
 
   const datasetWorkspaceProps = {
     mappingProfile: pendingProfile || dataset?.domainProfile || null,
@@ -1976,8 +1986,8 @@ function App() {
                 </AnimatePresence>
 
                 {/* Dataset preparation tools live inside Dataset Workspace. Legacy routes preserve deep links. */}
-                <div className={`qi-view h-full w-full ${activeTab === Tab.COLUMN_MAPPING ? '' : 'hidden'}`}>
-                  <DatasetSummaryView dataset={dataset} initialSection="mapping" {...datasetWorkspaceProps} />
+                <div className={`qi-view h-full w-full ${workspaceSection ? '' : 'hidden'}`}>
+                  <DatasetSummaryView dataset={dataset} initialSection={workspaceSection || 'overview'} sectionRequest={workspaceRequest} {...datasetWorkspaceProps} />
                 </div>
 
                 <div className={`qi-view h-full w-full ${activeTab === Tab.UPLOAD ? '' : 'hidden'}`}>
@@ -1992,27 +2002,6 @@ function App() {
                     onDeleteDataset={handleDeleteDataset}
                     activeDatasetId={dataset?.id}
                   />
-                </div>
-
-                <div className={`qi-view h-full w-full ${activeTab === Tab.ETL ? '' : 'hidden'}`}>
-                  <DatasetSummaryView dataset={dataset} initialSection="cleaned" {...datasetWorkspaceProps} />
-                </div>
-
-                <div className={`qi-view h-full w-full ${activeTab === Tab.DATA_STUDIO ? '' : 'hidden'}`}>
-                  <DatasetSummaryView dataset={dataset} initialSection="studio" {...datasetWorkspaceProps} />
-                </div>
-
-                <div className={`qi-view h-full w-full ${activeTab === Tab.SCHEMA ? '' : 'hidden'}`}>
-                  <DatasetSummaryView dataset={dataset} initialSection="schema" {...datasetWorkspaceProps} />
-                </div>
-
-                {/* Legacy Data Explorer links open the Explorer section of Dataset Workspace. */}
-                <div className={`qi-view h-full w-full ${activeTab === Tab.DATA ? '' : 'hidden'}`}>
-                  <DatasetSummaryView dataset={dataset} initialSection="explore" {...datasetWorkspaceProps} />
-                </div>
-
-                <div className={`qi-view h-full w-full ${activeTab === Tab.DATASET_SUMMARY ? '' : 'hidden'}`}>
-                  <DatasetSummaryView dataset={dataset} {...datasetWorkspaceProps} />
                 </div>
 
                 <div className={`qi-view h-full w-full ${activeTab === Tab.NLQ ? '' : 'hidden'}`}>

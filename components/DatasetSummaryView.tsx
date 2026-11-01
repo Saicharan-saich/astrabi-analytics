@@ -1,24 +1,25 @@
-import React, { useMemo, useState } from 'react';
-import {
-    Database, Columns, BarChart3, Hash, Calendar, Type, Key,
-    TrendingUp, TrendingDown, ChevronDown, ChevronRight, Layers,
-    FileText, Eye, Table2, Sparkles, Wand2, GitMerge
-} from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight, Database, Download, Upload, Zap } from 'lucide-react';
 import { Dataset, DatasetDomainProfile, ColumnType, ETLLog } from '../types';
-import { CleaningChangesPanel } from './CleaningChangesPanel';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
+import { CleaningChangesPanel } from './CleaningChangesPanel';
 import { DataExplorerView } from './DataExplorerView';
 import { ETLView } from './ETLView';
-import { DataStudioView } from './DataStudioView';
+import { DataCleaningPanel } from './DataCleaningPanel';
 import { SchemaView } from './SchemaView';
 import { ColumnMappingWizard } from './ColumnMappingWizard';
 
+/** Entry points kept for the app's routes; they map onto the four views below. */
 type DatasetWorkspaceSection = 'overview' | 'explore' | 'cleaned' | 'studio' | 'mapping' | 'schema';
+type View = 'overview' | 'data' | 'columns' | 'cleaning' | 'relationships';
+type CleaningMode = 'log' | 'fix';
 
 interface DatasetSummaryViewProps {
     dataset: Dataset | null;
     /** Lets legacy entry points open the corresponding workspace section directly. */
     initialSection?: DatasetWorkspaceSection;
+    /** Changes on every navigation into the workspace, so the route's view is re-selected. */
+    sectionRequest?: number;
     mappingProfile?: DatasetDomainProfile | null;
     isAIProfiling?: boolean;
     onApplyMapping?: (updatedProfile: DatasetDomainProfile, columnTypeOverrides: Record<string, ColumnType>) => void;
@@ -32,13 +33,22 @@ interface DatasetSummaryViewProps {
     etlRevertPending?: string | null;
 }
 
+const viewFor = (section: DatasetWorkspaceSection): View =>
+    section === 'explore' ? 'data'
+        : section === 'mapping' ? 'columns'
+            : section === 'cleaned' || section === 'studio' ? 'cleaning'
+                : section === 'schema' ? 'relationships'
+                    : 'overview';
+
+const ROLE_LABEL: Record<string, string> = { METRIC: 'Measure', DIMENSION: 'Dimension', DATE: 'Date', ID: 'ID', BOOLEAN: 'Yes/No' };
+const roleLabel = (type: string) => ROLE_LABEL[type] || type.charAt(0) + type.slice(1).toLowerCase();
+
 interface ColumnStats {
     name: string;
     type: string;
     count: number;
     unique: number;
     nullCount: number;
-    nullPct: number;
     min?: number | string;
     max?: number | string;
     sum?: number;
@@ -48,197 +58,194 @@ interface ColumnStats {
     topValues?: { value: string; count: number }[];
 }
 
-const TYPE_ICONS: Record<string, React.ReactNode> = {
-    METRIC: <Hash className="w-3.5 h-3.5" />,
-    DIMENSION: <Type className="w-3.5 h-3.5" />,
-    DATE: <Calendar className="w-3.5 h-3.5" />,
-    ID: <Key className="w-3.5 h-3.5" />,
-};
-
-const TYPE_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-    METRIC: { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20' },
-    DIMENSION: { bg: 'bg-violet-500/10', text: 'text-violet-400', border: 'border-violet-500/20' },
-    DATE: { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20' },
-    ID: { bg: 'bg-slate-500/10', text: 'text-slate-400', border: 'border-slate-500/20' },
-};
-
 function computeColumnStats(rows: Record<string, any>[], colName: string, colType: string): ColumnStats {
     const values = rows.map(r => r[colName]);
     const nonNull = values.filter(v => v !== null && v !== undefined && v !== '');
     const count = values.length;
-    const nullCount = count - nonNull.length;
-    const nullPct = count > 0 ? (nullCount / count) * 100 : 0;
-    const uniqueSet = new Set(nonNull.map(String));
-    const unique = uniqueSet.size;
-
-    const stats: ColumnStats = { name: colName, type: colType, count, unique, nullCount, nullPct };
+    const stats: ColumnStats = { name: colName, type: colType, count, unique: new Set(nonNull.map(String)).size, nullCount: count - nonNull.length };
 
     if (colType === 'METRIC') {
-        const nums = nonNull.map(Number).filter(n => !isNaN(n));
+        const nums = nonNull.map(Number).filter(n => !isNaN(n)).sort((a, b) => a - b);
         if (nums.length > 0) {
-            nums.sort((a, b) => a - b);
             stats.min = nums[0];
             stats.max = nums[nums.length - 1];
             stats.sum = nums.reduce((s, n) => s + n, 0);
             stats.mean = stats.sum / nums.length;
             const mid = Math.floor(nums.length / 2);
             stats.median = nums.length % 2 !== 0 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2;
-            const variance = nums.reduce((s, n) => s + Math.pow(n - stats.mean!, 2), 0) / nums.length;
-            stats.stdDev = Math.sqrt(variance);
+            stats.stdDev = Math.sqrt(nums.reduce((s, n) => s + Math.pow(n - stats.mean!, 2), 0) / nums.length);
         }
     } else if (colType === 'DATE') {
-        const dates = nonNull.map(v => new Date(v)).filter(d => !isNaN(d.getTime()));
+        const dates = nonNull.map(v => new Date(v)).filter(d => !isNaN(d.getTime())).sort((a, b) => a.getTime() - b.getTime());
         if (dates.length > 0) {
-            dates.sort((a, b) => a.getTime() - b.getTime());
             stats.min = dates[0].toISOString().split('T')[0];
             stats.max = dates[dates.length - 1].toISOString().split('T')[0];
         }
     }
-
-    // Top values for categorical
     if (colType === 'DIMENSION' || colType === 'ID') {
         const freq = new Map<string, number>();
-        nonNull.forEach(v => {
-            const s = String(v);
-            freq.set(s, (freq.get(s) || 0) + 1);
-        });
-        stats.topValues = Array.from(freq.entries())
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 5)
-            .map(([value, count]) => ({ value, count }));
+        nonNull.forEach(v => { const s = String(v); freq.set(s, (freq.get(s) || 0) + 1); });
+        stats.topValues = Array.from(freq.entries()).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([value, n]) => ({ value, count: n }));
     }
-
     return stats;
 }
 
 function formatNum(n: number | undefined): string {
-    if (n === undefined) return '—';
+    if (n === undefined || !Number.isFinite(n)) return '—';
     if (Math.abs(n) >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
-    if (Math.abs(n) >= 1_000) return (n / 1_000).toFixed(2) + 'K';
-    return n.toFixed(2);
+    if (Math.abs(n) >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+    return Number.isInteger(n) ? String(n) : n.toFixed(2);
 }
 
-const ColumnCard: React.FC<{ stat: ColumnStats; totalRows: number }> = ({ stat, totalRows }) => {
-    const [expanded, setExpanded] = useState(false);
-    const color = TYPE_COLORS[stat.type] || TYPE_COLORS.DIMENSION;
-    const icon = TYPE_ICONS[stat.type] || <Type className="w-3.5 h-3.5" />;
-    const fillPct = totalRows > 0 ? ((totalRows - stat.nullCount) / totalRows) * 100 : 0;
+const formatDay = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
+    return isNaN(d.getTime()) ? iso : d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' });
+};
 
+/** One line that says what is in a column. */
+function columnSummary(stat: ColumnStats): string {
+    if (stat.type === 'METRIC' && stat.min !== undefined) return `${formatNum(stat.min as number)} – ${formatNum(stat.max as number)} · avg ${formatNum(stat.mean)}`;
+    if (stat.type === 'DATE' && stat.min) return `${formatDay(String(stat.min))} – ${formatDay(String(stat.max))}`;
+    if (stat.topValues?.length) {
+        const filled = stat.count - stat.nullCount;
+        const top = stat.topValues[0];
+        if (stat.type === 'ID' && stat.unique === filled) return 'Unique on every row';
+        return `Most common: ${top.value} (${filled ? Math.round((top.count / filled) * 100) : 0}%)`;
+    }
+    return '—';
+}
+
+const ColumnRow: React.FC<{ stat: ColumnStats }> = ({ stat }) => {
+    const [open, setOpen] = useState(false);
+    const filledPct = stat.count > 0 ? ((stat.count - stat.nullCount) / stat.count) * 100 : 0;
     return (
-        <div
-            className={`bg-white dark:bg-[#171c26] border ${color.border} rounded-xl overflow-hidden hover:shadow-md transition-all duration-200`}
-        >
-            {/* Header */}
-            <button
-                onClick={() => setExpanded(!expanded)}
-                className="w-full flex items-center justify-between px-4 py-3 text-left hover:bg-slate-50 dark:hover:bg-white/[0.02] transition-colors"
-            >
-                <div className="flex items-center gap-3 min-w-0">
-                    <div className={`w-7 h-7 rounded-lg ${color.bg} flex items-center justify-center shrink-0 ${color.text}`}>
-                        {icon}
-                    </div>
-                    <div className="min-w-0">
-                        <h4 className="text-sm font-bold text-gray-900 dark:text-white truncate">{stat.name}</h4>
-                        <span className={`text-[11px] font-semibold uppercase tracking-wider ${color.text}`}>{stat.type}</span>
-                    </div>
-                </div>
-                <div className="flex items-center gap-3 shrink-0">
-                    <span className="text-xs font-medium text-slate-400">
-                        {stat.unique} unique
-                    </span>
-                    {expanded
-                        ? <ChevronDown className="w-4 h-4 text-slate-400" />
-                        : <ChevronRight className="w-4 h-4 text-slate-400" />}
-                </div>
-            </button>
-
-            {/* Data completeness bar */}
-            <div className="px-4 pb-2">
-                <div className="flex items-center justify-between text-[11px] text-slate-400 mb-1">
-                    <span>{fillPct.toFixed(0)}% filled</span>
-                    <span>{stat.nullCount} nulls</span>
-                </div>
-                <div className="h-1.5 bg-slate-100 dark:bg-slate-700/50 rounded-full overflow-hidden">
-                    <div
-                        className={`h-full rounded-full transition-all duration-500 ${fillPct > 90 ? 'bg-emerald-500' : fillPct > 70 ? 'bg-amber-500' : 'bg-red-500'
-                            }`}
-                        style={{ width: `${fillPct}%` }}
-                    />
-                </div>
-            </div>
-
-            {/* Expanded details */}
-            {expanded && (
-                <div className="px-4 pb-4 pt-2 border-t border-slate-100 dark:border-white/5 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
-                    {stat.type === 'METRIC' && (
-                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                            {[
-                                { label: 'Min', value: formatNum(stat.min as number) },
-                                { label: 'Max', value: formatNum(stat.max as number) },
-                                { label: 'Sum', value: formatNum(stat.sum) },
-                                { label: 'Mean', value: formatNum(stat.mean) },
-                                { label: 'Median', value: formatNum(stat.median) },
-                                { label: 'Std Dev', value: formatNum(stat.stdDev) },
-                            ].map(item => (
-                                <div key={item.label} className="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-2.5 py-2 text-center">
-                                    <div className="text-[11px] text-slate-400 font-medium">{item.label}</div>
-                                    <div className="text-xs font-bold text-gray-900 dark:text-white">{item.value}</div>
-                                </div>
-                            ))}
-                        </div>
-                    )}
-
-                    {stat.type === 'DATE' && (
-                        <div className="grid grid-cols-2 gap-2">
-                            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2">
-                                <div className="text-[11px] text-slate-400 font-medium">Earliest</div>
-                                <div className="text-xs font-bold text-gray-900 dark:text-white">{stat.min || '—'}</div>
+        <>
+            <tr className="qi-ws-row" onClick={() => setOpen(v => !v)} aria-expanded={open}>
+                <td className="py-2.5 pl-4 pr-2 w-6">
+                    {open ? <ChevronDown className="qi-ws-muted w-3.5 h-3.5" /> : <ChevronRight className="qi-ws-muted w-3.5 h-3.5" />}
+                </td>
+                <td className="py-2.5 pr-3">
+                    <span className="qi-ws-strong font-medium">{stat.name}</span>
+                </td>
+                <td className="py-2.5 pr-3 whitespace-nowrap">
+                    <span className={`qi-role is-${stat.type}`}>{roleLabel(stat.type)}</span>
+                </td>
+                <td className="py-2.5 pr-3 whitespace-nowrap tabular-nums">
+                    <span className={filledPct < 90 ? 'qi-ws-warn' : ''}>{filledPct.toFixed(filledPct === 100 ? 0 : 1)}%</span>
+                </td>
+                <td className="py-2.5 pr-3 whitespace-nowrap tabular-nums qi-ws-muted hidden sm:table-cell">{stat.unique.toLocaleString()}</td>
+                <td className="py-2.5 pr-4 qi-ws-muted truncate max-w-[22rem] hidden md:table-cell">{columnSummary(stat)}</td>
+            </tr>
+            {open && (
+                <tr className="qi-ws-detail">
+                    <td />
+                    <td colSpan={5} className="pb-4 pr-4">
+                        {stat.type === 'METRIC' && (
+                            <dl className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+                                {[['Min', stat.min], ['Max', stat.max], ['Sum', stat.sum], ['Average', stat.mean], ['Median', stat.median], ['Std dev', stat.stdDev]].map(([label, value]) => (
+                                    <div key={label as string}>
+                                        <dt className="qi-ws-muted text-[11px]">{label}</dt>
+                                        <dd className="qi-ws-strong text-[13px] font-semibold tabular-nums">{formatNum(value as number)}</dd>
+                                    </div>
+                                ))}
+                            </dl>
+                        )}
+                        {stat.type === 'DATE' && (
+                            <p className="text-[13px]">From <b>{formatDay(String(stat.min || ''))}</b> to <b>{formatDay(String(stat.max || ''))}</b></p>
+                        )}
+                        {stat.topValues && stat.topValues.length > 0 && (
+                            <div className="space-y-1.5 max-w-xl">
+                                {stat.topValues.map(tv => (
+                                    <div key={tv.value} className="flex items-center gap-3 text-[12.5px]">
+                                        <span className="w-40 truncate">{tv.value}</span>
+                                        <span className="qi-ws-bar flex-1 h-1.5 rounded-full overflow-hidden">
+                                            <span className="block h-full rounded-full" style={{ width: `${(tv.count / stat.topValues![0].count) * 100}%` }} />
+                                        </span>
+                                        <span className="qi-ws-muted w-12 text-right tabular-nums">{tv.count.toLocaleString()}</span>
+                                    </div>
+                                ))}
                             </div>
-                            <div className="bg-slate-50 dark:bg-slate-800/60 rounded-lg px-3 py-2">
-                                <div className="text-[11px] text-slate-400 font-medium">Latest</div>
-                                <div className="text-xs font-bold text-gray-900 dark:text-white">{stat.max || '—'}</div>
-                            </div>
-                        </div>
-                    )}
-
-                    {stat.topValues && stat.topValues.length > 0 && (
-                        <div>
-                            <div className="text-[11px] text-slate-400 font-bold uppercase tracking-wider mb-2">Top Values</div>
-                            <div className="space-y-1.5">
-                                {stat.topValues.map((tv, i) => {
-                                    const barW = stat.topValues![0].count > 0
-                                        ? (tv.count / stat.topValues![0].count) * 100
-                                        : 0;
-                                    return (
-                                        <div key={i} className="flex items-center gap-2">
-                                            <span className="text-xs text-gray-700 dark:text-slate-300 font-medium truncate min-w-[80px] max-w-[140px]">
-                                                {tv.value}
-                                            </span>
-                                            <div className="flex-1 h-4 bg-slate-100 dark:bg-slate-700/40 rounded-full overflow-hidden">
-                                                <div
-                                                    className="h-full bg-violet-500/30 dark:bg-violet-500/20 rounded-full flex items-center justify-end pr-1"
-                                                    style={{ width: `${barW}%`, minWidth: '20px' }}
-                                                >
-                                                    <span className="text-[10px] font-bold text-violet-600 dark:text-violet-300">
-                                                        {tv.count}
-                                                    </span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-                </div>
+                        )}
+                        <p className="qi-ws-muted text-[11.5px] mt-2">{stat.nullCount.toLocaleString()} blank of {stat.count.toLocaleString()} rows</p>
+                    </td>
+                </tr>
             )}
-        </div>
+        </>
     );
 };
+
+/** Column roles and how each was read, with the role editable in place. */
+const ColumnTypesTable: React.FC<{ dataset: Dataset; onSchemaOverride?: (columnName: string, newType: ColumnType) => void }> = ({ dataset, onSchemaOverride }) => (
+    <div className="qi-ws-card rounded-xl overflow-hidden">
+        <div className="px-4 py-3">
+            <h3 className="qi-ws-strong text-[14px] font-semibold">Column types</h3>
+            <p className="qi-ws-muted text-[12.5px] mt-0.5">Change a role and the data is re-read with it. Measures are added up; dimensions group and filter.</p>
+        </div>
+        <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+                <thead>
+                    <tr className="qi-ws-thead">
+                        <th className="py-2 pl-4 pr-3 text-left">Column</th>
+                        <th className="py-2 pr-3 text-left">Role</th>
+                        <th className="py-2 pr-3 text-left">Stored as</th>
+                        <th className="py-2 pr-4 text-right">Read correctly</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {dataset.columns.map(column => {
+                        const conversion = column.conversion;
+                        const rejected = conversion?.invalidCount || 0;
+                        return (
+                            <tr key={column.name} className="qi-ws-row is-static">
+                                <td className="py-2 pl-4 pr-3 qi-ws-strong font-medium">{column.name}</td>
+                                <td className="py-2 pr-3">
+                                    <select
+                                        value={column.type}
+                                        disabled={!onSchemaOverride}
+                                        onChange={e => onSchemaOverride?.(column.name, e.target.value as ColumnType)}
+                                        className="qi-ws-select rounded-md px-2 py-1 text-[12.5px]"
+                                        aria-label={`Role of ${column.name}`}
+                                    >
+                                        {(['METRIC', 'DIMENSION', 'DATE', 'ID'] as const).map(t => <option key={t} value={t}>{roleLabel(t)}</option>)}
+                                    </select>
+                                </td>
+                                <td className="py-2 pr-3 qi-ws-muted font-mono text-[12px] whitespace-nowrap">
+                                    {(conversion?.sourceType || column.originalType || 'unknown')} → {conversion?.normalizedType || column.physicalType || 'unknown'}
+                                </td>
+                                <td className={`py-2 pr-4 text-right tabular-nums whitespace-nowrap ${rejected > 0 ? 'qi-ws-warn' : 'qi-ws-muted'}`}>
+                                    {conversion ? `${Math.round(conversion.parseSuccessRate * 100)}%${rejected ? ` · ${rejected} not read` : ''}` : '—'}
+                                </td>
+                            </tr>
+                        );
+                    })}
+                </tbody>
+            </table>
+        </div>
+    </div>
+);
+
+function downloadCleaned(dataset: Dataset) {
+    if (!dataset.rows.length) return;
+    const columns = dataset.columns.map(c => c.name);
+    const escapeCSV = (val: any) => {
+        if (val == null) return '';
+        const str = String(val);
+        return /[",\n]/.test(str) ? '"' + str.replace(/"/g, '""') + '"' : str;
+    };
+    const csv = [columns.map(escapeCSV).join(','), ...dataset.rows.map(row => columns.map(col => escapeCSV(row[col])).join(','))].join('\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${dataset.name.replace(/\.[^.]+$/, '')}_cleaned.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
 
 export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
     dataset,
     initialSection = 'overview',
+    sectionRequest,
     mappingProfile,
     isAIProfiling = false,
     onApplyMapping,
@@ -250,179 +257,227 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
     onEtlRevert,
     etlRevertPending,
 }) => {
-    const [activeSection, setActiveSection] = useState<DatasetWorkspaceSection>(initialSection);
-    const columnStats = useMemo(() => {
-        if (!dataset?.rows || !dataset?.columns) return [];
-        return dataset.columns.map(col =>
-            computeColumnStats(dataset.rows, col.name, col.type)
-        );
-    }, [dataset]);
+    const [view, setView] = useState<View>(viewFor(initialSection));
+    const [cleaningMode, setCleaningMode] = useState<CleaningMode>(initialSection === 'studio' ? 'fix' : 'log');
+    // Opening the workspace from another route (e.g. after upload) selects that view.
+    useEffect(() => {
+        setView(viewFor(initialSection));
+        if (initialSection === 'studio') setCleaningMode('fix');
+        if (initialSection === 'cleaned') setCleaningMode('log');
+    }, [initialSection, sectionRequest]);
 
-    const overviewStats = useMemo(() => {
+    const columnStats = useMemo(() => {
+        if (view !== 'overview' || !dataset?.rows || !dataset?.columns) return [];
+        return dataset.columns.map(col => computeColumnStats(dataset.rows, col.name, col.type));
+    }, [dataset, view]);
+
+    const facts = useMemo(() => {
         if (!dataset) return null;
+        const count = (type: string) => dataset.columns.filter(c => c.type === type).length;
         const rows = dataset.rows?.length || 0;
-        const cols = dataset.columns?.length || 0;
-        const metrics = dataset.columns?.filter(c => c.type === 'METRIC').length || 0;
-        const dimensions = dataset.columns?.filter(c => c.type === 'DIMENSION').length || 0;
-        const dates = dataset.columns?.filter(c => c.type === 'DATE').length || 0;
-        const ids = dataset.columns?.filter(c => c.type === 'ID').length || 0;
-        const totalCells = rows * cols;
+        const totalCells = rows * dataset.columns.length;
         const nullCells = columnStats.reduce((s, c) => s + c.nullCount, 0);
-        const completeness = totalCells > 0 ? ((totalCells - nullCells) / totalCells) * 100 : 100;
-        return { rows, cols, metrics, dimensions, dates, ids, completeness };
+        const uploaded = dataset.etlLogs?.find(l => l.step === 'Final Summary')?.rowsBefore;
+        const roles = [
+            [count('METRIC'), 'measure', 'measures'], [count('DIMENSION'), 'dimension', 'dimensions'],
+            [count('DATE'), 'date', 'dates'], [count('ID'), 'ID', 'IDs'],
+        ].filter(([n]) => (n as number) > 0).map(([n, one, many]) => `${n} ${n === 1 ? one : many}`).join(' · ');
+        return { rows, uploaded, cols: dataset.columns.length, roles, completeness: totalCells > 0 ? ((totalCells - nullCells) / totalCells) * 100 : 100 };
     }, [dataset, columnStats]);
 
     if (!dataset) {
         return (
-            <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
-                <Database className="w-16 h-16 text-slate-600" />
-                <h3 className="text-xl font-bold text-slate-300">No Dataset Loaded</h3>
-                <p className="text-sm text-slate-500">Please load a dataset to see its summary.</p>
+            <div className="flex flex-col items-center justify-center h-full gap-3">
+                <Database className="qi-ws-muted w-12 h-12" />
+                <h3 className="qi-ws-strong text-lg font-semibold">No dataset loaded</h3>
+                <p className="qi-ws-muted text-sm">Load a dataset to see its summary.</p>
             </div>
         );
     }
 
-    return (
-        <div className="qi-workspace-page h-full overflow-y-auto bg-gray-50 dark:bg-slate-900">
-            <div className="max-w-6xl mx-auto px-6 py-6 space-y-6">
+    const profile = mappingProfile || dataset.domainProfile;
+    const hasRelationships = Boolean(dataset.sourceSchema);
+    const time = dataset.timeContext;
+    const tabs: { id: View; label: string }[] = [
+        { id: 'overview', label: 'Overview' },
+        { id: 'data', label: 'Data' },
+        { id: 'columns', label: 'Columns' },
+        { id: 'cleaning', label: 'Cleaning' },
+        ...(hasRelationships || view === 'relationships' ? [{ id: 'relationships' as const, label: 'Relationships' }] : []),
+    ];
 
-                {/* Header */}
-                <div className="qi-workspace-hero flex items-center gap-4">
-                    <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg">
-                        <Database className="w-6 h-6 text-white" />
-                    </div>
-                    <div>
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
-                            Dataset Workspace
-                        </h2>
-                        <p className="text-sm text-gray-500 dark:text-slate-400">
-                            {dataset.name || 'Unnamed Dataset'} · {overviewStats?.rows.toLocaleString()} rows · {overviewStats?.cols} columns
+    return (
+        <div className="qi-workspace-page qi-ws h-full overflow-y-auto">
+            <div className="qi-ws-inner max-w-[72rem] mx-auto px-6 pt-6 pb-10">
+                {/* Header: what this dataset is, and the dataset-level actions */}
+                <header className="flex flex-wrap items-end gap-x-6 gap-y-3">
+                    <div className="min-w-0 flex-1">
+                        <h2 className="qi-ws-strong text-[22px] font-semibold tracking-tight">Dataset Workspace</h2>
+                        <p className="qi-ws-muted text-[13px] mt-1 truncate">
+                            <span className="qi-ws-strong font-medium">{dataset.name || 'Unnamed dataset'}</span>
+                            {` · ${dataset.rows.length.toLocaleString()} rows · ${dataset.columns.length} columns`}
+                            {time?.minDate && time?.maxDate ? ` · ${formatDay(time.minDate)} – ${formatDay(time.maxDate)}` : ''}
                         </p>
                     </div>
-                </div>
+                    <div className="flex items-center gap-2">
+                        {dataset.connectionMode === 'live' && (
+                            <span className="qi-ws-badge inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium" title={`Real-time data from ${dataset.liveConnection?.dbType || 'database'}`}>
+                                <Zap className="w-3.5 h-3.5" /> Live
+                            </span>
+                        )}
+                        {dataset.connectionMode === 'import' && (
+                            <span className="qi-ws-badge inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] font-medium" title="A snapshot taken at import">
+                                <Upload className="w-3.5 h-3.5" /> Snapshot
+                            </span>
+                        )}
+                        {dataset.connectionMode === 'import' && onSwitchToLive && (
+                            <button type="button" onClick={onSwitchToLive} className="qi-ws-ghost rounded-md px-2.5 py-1 text-[12px] font-semibold" title="Reconnect to the database in Live mode for real-time data">
+                                Switch to live
+                            </button>
+                        )}
+                        <button type="button" onClick={() => downloadCleaned(dataset)} className="qi-ws-button inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[13px] font-semibold" title="Download the cleaned data as CSV">
+                            <Download className="w-4 h-4" /> Download cleaned CSV
+                        </button>
+                    </div>
+                </header>
 
-                {/* Workspace Sections */}
-                <div className="qi-workspace-tabs flex flex-wrap items-center gap-1 p-1 rounded-xl bg-white dark:bg-[#171c26] border border-gray-200 dark:border-white/[0.06] shadow-sm">
-                    {[
-                        { id: 'overview' as const, label: 'Overview', icon: BarChart3, active: 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300' },
-                        { id: 'explore' as const, label: 'Explore Data', icon: Table2, active: 'bg-emerald-50 dark:bg-emerald-500/15 text-emerald-700 dark:text-emerald-300' },
-                        { id: 'cleaned' as const, label: 'Cleaned Data', icon: Sparkles, active: 'bg-teal-50 dark:bg-teal-500/15 text-teal-700 dark:text-teal-300' },
-                        { id: 'studio' as const, label: 'Data Studio', icon: Wand2, active: 'bg-violet-50 dark:bg-violet-500/15 text-violet-700 dark:text-violet-300' },
-                        { id: 'mapping' as const, label: 'Column Mapping', icon: Eye, active: 'bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300' },
-                        { id: 'schema' as const, label: 'Schema', icon: GitMerge, active: 'bg-sky-50 dark:bg-sky-500/15 text-sky-700 dark:text-sky-300' },
-                    ].map(({ id, label, icon: Icon, active }) => (
+                <nav className="qi-ws-tabs mt-5 flex gap-1 overflow-x-auto" role="tablist" aria-label="Dataset workspace">
+                    {tabs.map(tab => (
                         <button
-                            key={id}
-                            onClick={() => setActiveSection(id)}
-                            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold transition-all ${activeSection === id
-                                ? `${active} shadow-sm`
-                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-white/[0.04]'}`}
+                            key={tab.id}
+                            type="button"
+                            role="tab"
+                            aria-selected={view === tab.id}
+                            onClick={() => setView(tab.id)}
+                            className={`qi-ws-tab px-3 py-2.5 text-[13.5px] font-medium ${view === tab.id ? 'is-active' : ''}`}
                         >
-                            <Icon className="w-4 h-4" /> {label}
+                            {tab.label}
                         </button>
                     ))}
-                </div>
+                </nav>
 
-                {(activeSection === 'overview' || activeSection === 'mapping' || activeSection === 'cleaned') && (
-                    <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} />
-                )}
+                <div className="mt-6 space-y-5">
+                    {view === 'overview' && facts && (
+                        <>
+                            <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} />
 
-                {activeSection === 'overview' && (
-                    <>
-                {/* Overview KPI Cards */}
-                {overviewStats && (
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                        {[
-                            { label: 'Total Rows', value: overviewStats.rows.toLocaleString(), icon: <Layers className="w-4 h-4" />, color: 'from-blue-500 to-cyan-500' },
-                            { label: 'Columns', value: String(overviewStats.cols), icon: <Columns className="w-4 h-4" />, color: 'from-violet-500 to-purple-500' },
-                            { label: 'Metrics', value: String(overviewStats.metrics), icon: <Hash className="w-4 h-4" />, color: 'from-emerald-500 to-teal-500' },
-                            { label: 'Dimensions', value: String(overviewStats.dimensions), icon: <Type className="w-4 h-4" />, color: 'from-amber-500 to-orange-500' },
-                            { label: 'Date Fields', value: String(overviewStats.dates), icon: <Calendar className="w-4 h-4" />, color: 'from-rose-500 to-pink-500' },
-                            { label: 'Completeness', value: `${overviewStats.completeness.toFixed(1)}%`, icon: <Eye className="w-4 h-4" />, color: overviewStats.completeness > 90 ? 'from-emerald-500 to-green-500' : 'from-amber-500 to-red-500' },
-                        ].map(kpi => (
-                            <div key={kpi.label} className="bg-white dark:bg-[#171c26] rounded-xl border border-gray-200 dark:border-white/[0.06] p-4 hover:shadow-md transition-all">
-                                <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${kpi.color} flex items-center justify-center text-white mb-2`}>
-                                    {kpi.icon}
+                            <dl className="qi-ws-card qi-ws-facts rounded-xl grid grid-cols-2 md:grid-cols-4">
+                                <div className="px-5 py-4">
+                                    <dt className="qi-ws-muted text-[12px]">Rows</dt>
+                                    <dd className="qi-ws-strong text-[22px] font-semibold tabular-nums">{facts.rows.toLocaleString()}</dd>
+                                    {facts.uploaded !== undefined && facts.uploaded !== facts.rows && (
+                                        <dd className="qi-ws-muted text-[12px]">of {facts.uploaded.toLocaleString()} uploaded</dd>
+                                    )}
                                 </div>
-                                <div className="text-xl font-black text-gray-900 dark:text-white">{kpi.value}</div>
-                                <div className="text-[11px] text-slate-400 font-semibold uppercase tracking-wider">{kpi.label}</div>
+                                <div className="px-5 py-4">
+                                    <dt className="qi-ws-muted text-[12px]">Columns</dt>
+                                    <dd className="qi-ws-strong text-[22px] font-semibold tabular-nums">{facts.cols}</dd>
+                                    <dd className="qi-ws-muted text-[12px]">{facts.roles}</dd>
+                                </div>
+                                <div className="px-5 py-4">
+                                    <dt className="qi-ws-muted text-[12px]">Filled in</dt>
+                                    <dd className="qi-ws-strong text-[22px] font-semibold tabular-nums">{facts.completeness.toFixed(facts.completeness === 100 ? 0 : 1)}%</dd>
+                                    <dd className="qi-ws-muted text-[12px]">of all cells</dd>
+                                </div>
+                                <div className="px-5 py-4">
+                                    <dt className="qi-ws-muted text-[12px]">Time range</dt>
+                                    {time?.minDate ? (
+                                        <>
+                                            <dd className="qi-ws-strong text-[15px] font-semibold mt-1.5">{formatDay(time.minDate)} – {formatDay(time.maxDate)}</dd>
+                                            {time.defaultAnchorDate && <dd className="qi-ws-muted text-[12px]">“Latest” means {formatDay(time.defaultAnchorDate)}</dd>}
+                                        </>
+                                    ) : (
+                                        <dd className="qi-ws-muted text-[13px] mt-1.5">No date column</dd>
+                                    )}
+                                </div>
+                            </dl>
+
+                            <section className="qi-ws-card rounded-xl overflow-hidden">
+                                <div className="flex items-baseline justify-between px-4 py-3">
+                                    <h3 className="qi-ws-strong text-[14px] font-semibold">Columns</h3>
+                                    <button type="button" onClick={() => setView('columns')} className="qi-ws-link text-[12.5px] font-semibold">Change types</button>
+                                </div>
+                                <div className="overflow-x-auto">
+                                    <table className="w-full text-[13px]">
+                                        <thead>
+                                            <tr className="qi-ws-thead">
+                                                <th className="py-2 pl-4 pr-2" />
+                                                <th className="py-2 pr-3 text-left">Name</th>
+                                                <th className="py-2 pr-3 text-left">Role</th>
+                                                <th className="py-2 pr-3 text-left">Filled</th>
+                                                <th className="py-2 pr-3 text-left hidden sm:table-cell">Distinct</th>
+                                                <th className="py-2 pr-4 text-left hidden md:table-cell">What's in it</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {columnStats.map(stat => <ColumnRow key={stat.name} stat={stat} />)}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </section>
+                        </>
+                    )}
+
+                    {view === 'data' && (
+                        <div className="h-[calc(100vh-15rem)] min-h-[520px] overflow-hidden">
+                            <DataExplorerView dataset={dataset} />
+                        </div>
+                    )}
+
+                    {view === 'columns' && (
+                        profile ? (
+                            <div className="qi-ws-card h-[calc(100vh-15rem)] min-h-[560px] overflow-hidden rounded-xl">
+                                <ColumnMappingWizard
+                                    profile={profile}
+                                    columns={dataset.columns}
+                                    fileName={dataset.name}
+                                    isAIProfiling={isAIProfiling}
+                                    onApply={(next, overrides) => {
+                                        onApplyMapping?.(next, overrides);
+                                        setView('overview');
+                                    }}
+                                    onDismiss={() => {
+                                        onDismissMapping?.();
+                                        setView('overview');
+                                    }}
+                                />
                             </div>
-                        ))}
-                    </div>
-                )}
-
-                {/* Column breakdown */}
-                <div>
-                    <h3 className="text-sm font-bold text-gray-500 dark:text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                        <FileText className="w-4 h-4" />
-                        Column Details — Click to expand
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {columnStats.map(stat => (
-                            <ColumnCard key={stat.name} stat={stat} totalRows={overviewStats?.rows || 0} />
-                        ))}
-                    </div>
-                </div>
-                    </>
-                )}
-
-                {activeSection === 'explore' && (
-                    <div className="h-[calc(100vh-12rem)] min-h-[520px] bg-slate-900 rounded-xl border border-white/[0.06] overflow-hidden">
-                        <DataExplorerView dataset={dataset} />
-                    </div>
-                )}
-
-                {activeSection === 'cleaned' && (
-                    <div className="h-[calc(100vh-12rem)] min-h-[520px] overflow-hidden">
-                        <ETLView
-                            dataset={dataset}
-                            onSchemaOverride={onSchemaOverride}
-                            onRowsRecovered={onRowsRecovered}
-                            onDataCleaned={onDataCleaned}
-                            onSwitchToLive={onSwitchToLive}
-                        />
-                    </div>
-                )}
-
-                {activeSection === 'studio' && (
-                    <div className="h-[calc(100vh-12rem)] min-h-[520px] overflow-hidden">
-                        <DataStudioView dataset={dataset} onDataCleaned={onDataCleaned} />
-                    </div>
-                )}
-
-                {activeSection === 'mapping' && (
-                    <div className="h-[calc(100vh-12rem)] min-h-[520px] overflow-hidden rounded-xl border border-white/[0.06]">
-                        {(mappingProfile || dataset.domainProfile) ? (
-                            <ColumnMappingWizard
-                                profile={mappingProfile || dataset.domainProfile!}
-                                columns={dataset.columns}
-                                fileName={dataset.name}
-                                isAIProfiling={isAIProfiling}
-                                onApply={(profile, overrides) => {
-                                    onApplyMapping?.(profile, overrides);
-                                    setActiveSection('overview');
-                                }}
-                                onDismiss={() => {
-                                    onDismissMapping?.();
-                                    setActiveSection('overview');
-                                }}
-                            />
                         ) : (
-                            <div className="h-full flex flex-col items-center justify-center text-center px-6">
-                                <Eye className="w-10 h-10 text-slate-500 mb-3" />
-                                <h3 className="text-lg font-bold text-slate-700 dark:text-white">Column mapping is not ready yet</h3>
-                                <p className="max-w-md text-sm text-slate-500 dark:text-slate-400 mt-2">Finish profiling this dataset, then return here to review its semantic roles and formats.</p>
+                            <>
+                                {isAIProfiling && <p className="qi-ws-muted text-[13px]">Working out what each column means… you can change roles below meanwhile.</p>}
+                                <ColumnTypesTable dataset={dataset} onSchemaOverride={onSchemaOverride} />
+                            </>
+                        )
+                    )}
+
+                    {view === 'cleaning' && (
+                        <>
+                            <div className="flex flex-wrap items-center gap-3">
+                                <div className="qi-ws-segmented inline-flex rounded-lg p-0.5" role="group" aria-label="Cleaning">
+                                    <button type="button" aria-pressed={cleaningMode === 'log'} onClick={() => setCleaningMode('log')} className={`px-3 py-1.5 rounded-md text-[13px] font-semibold ${cleaningMode === 'log' ? 'is-active' : ''}`}>What was done</button>
+                                    <button type="button" aria-pressed={cleaningMode === 'fix'} onClick={() => setCleaningMode('fix')} className={`px-3 py-1.5 rounded-md text-[13px] font-semibold ${cleaningMode === 'fix' ? 'is-active' : ''}`}>Fix by hand</button>
+                                </div>
+                                <p className="qi-ws-muted text-[12.5px]">
+                                    {cleaningMode === 'log' ? 'Every automatic step, with the reason for it. Open a step for samples.' : 'Remove duplicates, fill blanks, fix text, split or merge columns.'}
+                                </p>
                             </div>
-                        )}
-                    </div>
-                )}
+                            {cleaningMode === 'log' ? (
+                                <>
+                                    <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} persistent />
+                                    <ETLView dataset={dataset} onSchemaOverride={onSchemaOverride} onRowsRecovered={onRowsRecovered} onDataCleaned={onDataCleaned} />
+                                </>
+                            ) : (
+                                <DataCleaningPanel dataset={dataset} onDataCleaned={(rows, entry) => onDataCleaned?.(rows, entry)} />
+                            )}
+                        </>
+                    )}
 
-                {activeSection === 'schema' && (
-                    <div className="h-[calc(100vh-12rem)] min-h-[520px] overflow-hidden">
-                        <SchemaView dataset={dataset} />
-                    </div>
-                )}
-
+                    {view === 'relationships' && (
+                        <div className="h-[calc(100vh-15rem)] min-h-[520px] overflow-hidden">
+                            <SchemaView dataset={dataset} />
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
     );

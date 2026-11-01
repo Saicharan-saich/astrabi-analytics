@@ -196,14 +196,15 @@ const PAGE_INFO: Record<PageKey, PageInfo> = {
         ],
     },
     DATASET_SUMMARY: {
-        title: 'Dataset Summary',
-        description: 'A high-level overview of your entire dataset. See key statistics, distributions, and patterns at a glance before diving into specific questions.',
+        title: 'Dataset Workspace',
+        description: 'Everything about the data you uploaded, in four places: an overview, the rows themselves, the column types, and the cleaning that was done.',
         features: [
-            'Row and column counts',
-            'Statistical summaries (min, max, mean, median)',
-            'Data completeness overview',
-            'Automatic insight highlights',
+            'Overview: what the cleaning changed (with undo), row and column counts, time range, and a summary of every column',
+            'Data: browse the cleaned or the original rows, search, filter and export',
+            'Columns: review and change what each column is (measure, dimension, date or ID)',
+            'Cleaning: every automatic step with its reason, and tools to fix data by hand',
         ],
+        tips: ['Download the cleaned data as CSV from the top right.'],
     },
     SMART_QUESTIONS: {
         title: 'AI-Generated Smart Questions',

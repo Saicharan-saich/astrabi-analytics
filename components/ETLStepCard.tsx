@@ -1,6 +1,6 @@
 import React from 'react';
 import {
-    ChevronDown, Check, SkipForward, Edit3, Eye, Table, Wrench,
+    ChevronDown, Check, SkipForward, Edit3, Eye, Table,
 } from 'lucide-react';
 import { ETLLog } from '../types';
 import { getStepGuide } from './etlStepGuide';
@@ -89,90 +89,55 @@ export const ETLStepCard: React.FC<Props> = ({
         (entry.transformSamples && entry.transformSamples.length > 0) || isTransformPlans
     );
 
+    const open = isExpanded;
+    const summary = isFlag && !isTransformPlans ? entry.details : guide.what;
     return (
-        <div className={`group relative rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white dark:bg-slate-800/60 shadow-sm transition-all
-            before:absolute before:left-0 before:top-4 before:bottom-4 before:w-1 before:rounded-full ${s.rail} ${s.ring} hover:shadow-md`}>
-            <div className="p-4 pl-5">
-                {/* Header */}
-                <div className="flex items-start gap-3">
-                    <div className={`flex-shrink-0 w-11 h-11 rounded-xl border flex items-center justify-center text-xl ${s.tile}`}>
-                        <span aria-hidden>{guide.emoji}</span>
+        <div className={`qi-step is-${status}`}>
+            <div className="flex items-start gap-3 px-4 py-3">
+                <span className="qi-step-dot mt-[7px]" aria-hidden />
+                <button type="button" onClick={() => onToggle(entry._key)} className="flex-1 min-w-0 text-left" aria-expanded={open}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                        <span className="qi-step-title text-[13px] font-semibold">{guide.title}</span>
+                        <span className="qi-step-status text-[11px] font-semibold">{s.label}</span>
                     </div>
-                    <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <h4 className="font-bold text-slate-900 dark:text-white leading-tight">{guide.title}</h4>
-                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-bold uppercase tracking-wide ${s.pill}`}>{s.label}</span>
-                        </div>
-                        <p className="text-[11px] font-mono text-slate-400 dark:text-slate-500 mt-0.5 truncate">{entry.step}</p>
-                    </div>
-                </div>
-
-                {/* What it does */}
-                <p className="text-sm text-slate-600 dark:text-slate-300 mt-3 leading-relaxed">{guide.what}</p>
-
-                {/* For flags: the specific finding from the pipeline */}
-                {isFlag && !isTransformPlans && (
-                    <div className="mt-2.5 text-xs rounded-lg px-3 py-2 bg-amber-50/80 dark:bg-amber-500/10 text-amber-800 dark:text-amber-200 border border-amber-200/60 dark:border-amber-500/20">
-                        {entry.details}
-                    </div>
-                )}
-
-                {/* Why it matters */}
-                <div className="mt-3 rounded-lg bg-indigo-50/70 dark:bg-indigo-500/10 border border-indigo-100 dark:border-indigo-500/15 px-3 py-2">
-                    <p className="text-xs text-indigo-900 dark:text-indigo-200 leading-relaxed">
-                        <span className="font-semibold">Why it matters: </span>{guide.why}
-                    </p>
-                </div>
-
-                {/* Example + (for applied) the risk if skipped */}
-                <div className="mt-2.5 flex flex-col gap-1.5">
-                    <div className="flex items-start gap-1.5 text-xs text-slate-500 dark:text-slate-400">
-                        <span className="font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wide text-[11px] mt-0.5">Example</span>
-                        <span className="font-mono text-slate-600 dark:text-slate-300">{guide.example}</span>
-                    </div>
-                    {status === 'applied' && (
-                        <p className="text-[11px] text-rose-500/90 dark:text-rose-300/80 leading-snug">
-                            <span className="font-semibold">Without this: </span>{guide.ifSkipped}
-                        </p>
-                    )}
-                </div>
-
-                {/* Manual-mode actions */}
+                    <p className={`qi-step-summary text-[12.5px] leading-5 mt-0.5 ${open ? '' : 'line-clamp-1'}`}>{summary}</p>
+                </button>
                 {etlMode === 'manual' && status === 'applied' && (
-                    <div className="flex items-center gap-2 mt-3" onClick={e => e.stopPropagation()}>
+                    <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                         {isApproved ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-500/15 px-3 py-1 rounded-full"><Check className="w-3.5 h-3.5" /> Approved</span>
+                            <span className="qi-step-chip inline-flex items-center gap-1 text-[11px] font-semibold"><Check className="w-3 h-3" /> Approved</span>
                         ) : isSkipped ? (
-                            <span className="inline-flex items-center gap-1 text-xs font-bold text-slate-500 bg-slate-100 dark:bg-white/10 px-3 py-1 rounded-full"><SkipForward className="w-3.5 h-3.5" /> Skipped</span>
+                            <span className="qi-step-chip inline-flex items-center gap-1 text-[11px] font-semibold"><SkipForward className="w-3 h-3" /> Skipped</span>
                         ) : (
                             <>
-                                <button onClick={() => onApprove(entry._key)} className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-500/10 hover:bg-emerald-100 dark:hover:bg-emerald-500/20 border border-emerald-300/70 dark:border-emerald-500/30 px-3 py-1.5 rounded-lg transition-all"><Check className="w-3.5 h-3.5" /> Approve</button>
-                                <button onClick={() => onSkip(entry._key)} className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-300/70 dark:border-white/15 px-3 py-1.5 rounded-lg transition-all"><SkipForward className="w-3.5 h-3.5" /> Skip</button>
+                                <button onClick={() => onApprove(entry._key)} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><Check className="w-3 h-3" /> Approve</button>
+                                <button onClick={() => onSkip(entry._key)} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><SkipForward className="w-3 h-3" /> Skip</button>
                                 {entry.removedRowSamples && entry.removedRowSamples.length > 0 && (
-                                    <button onClick={() => onEditRemoved(entry._key, entry.removedRowSamples!)} className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-500/10 hover:bg-indigo-100 border border-indigo-300/70 dark:border-indigo-500/30 px-3 py-1.5 rounded-lg transition-all"><Edit3 className="w-3.5 h-3.5" /> Edit rows</button>
+                                    <button onClick={() => onEditRemoved(entry._key, entry.removedRowSamples!)} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><Edit3 className="w-3 h-3" /> Edit rows</button>
                                 )}
                             </>
                         )}
                     </div>
                 )}
-
-                {/* Technical details toggle */}
-                {hasDetails && (
-                    <button
-                        onClick={() => onToggle(entry._key)}
-                        className="mt-3 inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
-                    >
-                        <Wrench className="w-3 h-3" />
-                        {isExpanded ? 'Hide' : 'Show'} technical details
-                        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                    </button>
-                )}
+                <button type="button" onClick={() => onToggle(entry._key)} className="qi-step-chevron shrink-0 mt-0.5" aria-label={open ? 'Hide details' : 'Show details'}>
+                    <ChevronDown className={`w-4 h-4 transition-transform ${open ? 'rotate-180' : ''}`} />
+                </button>
             </div>
+
+            {open && (
+                <div className="qi-step-body px-4 pb-4 pl-[38px] space-y-2 text-[12.5px] leading-5">
+                    {isFlag && !isTransformPlans && <p className="qi-step-muted">{guide.what}</p>}
+                    <p><span className="font-semibold">Why it matters: </span>{guide.why}</p>
+                    <p className="qi-step-muted"><span className="font-semibold">Example: </span><span className="font-mono">{guide.example}</span></p>
+                    {status === 'applied' && <p className="qi-step-muted"><span className="font-semibold">Without this: </span>{guide.ifSkipped}</p>}
+                    <p className="qi-step-muted font-mono text-[11px]">{entry.step}{!isFlag && !isTransformPlans && entry.details ? ` — ${entry.details}` : ''}</p>
+                </div>
+            )}
 
             {/* Expanded technical panel */}
             {isExpanded && hasDetails && (
-                <div className="px-5 pb-4">
-                    <div className="rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200/70 dark:border-white/10 p-3.5 space-y-3">
+                <div className="px-4 pb-4 pl-[38px]">
+                    <div className="qi-step-tech rounded-lg p-3 space-y-3">
                         {(entry.rowsBefore !== undefined && entry.rowsAfter !== undefined) && (
                             <div className="flex items-center gap-3 text-xs">
                                 <span className="text-slate-500 dark:text-slate-400 font-medium">Rows</span>

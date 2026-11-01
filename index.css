@@ -4165,3 +4165,97 @@ body {
 :root:is(.light, .dark) .qi-clean-undo:disabled { opacity: 0.55; cursor: progress; }
 :root:is(.light, .dark) .qi-clean-samples { border: 1px solid var(--border-default); color: var(--text-secondary); }
 :root:is(.light, .dark) .qi-clean-samples th { color: var(--text-tertiary); border-bottom: 1px solid var(--border-default); }
+
+/* Dataset workspace — one surface level, one accent, quiet type */
+:root:is(.light, .dark) .qi-ws { color: var(--text-secondary); }
+:root:is(.light, .dark) .qi-ws-strong { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-ws-muted { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-ws-warn { color: #b45309; }
+:root.dark:is(.dark) .qi-ws-warn { color: #fbc66b; }
+:root:is(.light, .dark) .qi-ws-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  box-shadow: var(--shadow-card);
+}
+:root:is(.light, .dark) .qi-ws-facts > div + div { border-left: 1px solid var(--border-default); }
+@media (max-width: 767px) {
+  :root:is(.light, .dark) .qi-ws-facts > div:nth-child(3) { border-left: 0; }
+  :root:is(.light, .dark) .qi-ws-facts > div:nth-child(n + 3) { border-top: 1px solid var(--border-default); }
+}
+:root:is(.light, .dark) .qi-ws-tabs { border-bottom: 1px solid var(--border-default); }
+:root:is(.light, .dark) .qi-ws-tab {
+  color: var(--text-tertiary);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  white-space: nowrap;
+  background: transparent;
+}
+:root:is(.light, .dark) .qi-ws-tab:hover { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-ws-tab.is-active { color: var(--text-primary); border-bottom-color: var(--color-primary); font-weight: 600; }
+:root:is(.light, .dark) .qi-ws-tab:focus-visible,
+:root:is(.light, .dark) .qi-ws-segmented button:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+:root:is(.light, .dark) .qi-ws-button { background: var(--color-primary); color: #fff; }
+:root:is(.light, .dark) .qi-ws-button:hover { filter: brightness(1.06); }
+:root:is(.light, .dark) .qi-ws-ghost { color: var(--text-secondary); border: 1px solid var(--border-default); background: transparent; }
+:root:is(.light, .dark) .qi-ws-ghost:hover { color: var(--text-primary); background: var(--bg-hover); }
+:root:is(.light, .dark) .qi-ws-ghost[aria-pressed="true"] { color: var(--accent-foreground); border-color: var(--color-primary); }
+:root:is(.light, .dark) .qi-ws-badge { color: var(--text-secondary); background: var(--bg-hover); }
+:root:is(.light, .dark) .qi-ws-link { color: var(--accent-foreground); }
+:root:is(.light, .dark) .qi-ws-link:hover { text-decoration: underline; }
+:root:is(.light, .dark) .qi-ws-segmented { background: var(--bg-hover); }
+:root:is(.light, .dark) .qi-ws-segmented button { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-ws-segmented button:hover { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-ws-segmented button.is-active { color: var(--text-primary); background: var(--bg-surface); box-shadow: var(--shadow-card); }
+:root:is(.light, .dark) .qi-ws-count { color: var(--text-tertiary); font-weight: 500; margin-left: 2px; }
+:root:is(.light, .dark) .qi-ws-toolbar { border-bottom: 1px solid var(--border-default); }
+:root:is(.light, .dark) .qi-ws-thead th {
+  color: var(--text-tertiary);
+  font-size: 11.5px; font-weight: 600;
+  border-top: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-app);
+}
+:root:is(.light, .dark) .qi-ws-row { cursor: pointer; }
+:root:is(.light, .dark) .qi-ws-row.is-static { cursor: default; }
+:root:is(.light, .dark) .qi-ws-row + .qi-ws-row,
+:root:is(.light, .dark) .qi-ws-detail + .qi-ws-row { border-top: 1px solid var(--border-default); }
+:root:is(.light, .dark) .qi-ws-row:hover { background: var(--bg-hover); }
+:root:is(.light, .dark) .qi-ws-row.is-static:hover { background: transparent; }
+:root:is(.light, .dark) .qi-ws-detail { background: var(--bg-hover); color: var(--text-secondary); }
+:root:is(.light, .dark) .qi-ws-bar { background: var(--border-default); }
+:root:is(.light, .dark) .qi-ws-bar > span { background: var(--color-primary); opacity: 0.7; }
+:root:is(.light, .dark) .qi-ws-select {
+  color: var(--text-primary);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+}
+:root:is(.light, .dark) .qi-ws-select:focus { outline: 2px solid var(--color-primary); outline-offset: 1px; }
+:root:is(.light, .dark) .qi-ws-list > * + * { border-top: 1px solid var(--border-default); }
+
+/* Column roles: a small dot carries the colour, the word carries the meaning */
+:root:is(.light, .dark) .qi-role { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-secondary); }
+:root:is(.light, .dark) .qi-role::before { content: ''; width: 7px; height: 7px; border-radius: 999px; background: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-role.is-METRIC::before { background: #2f9e6a; }
+:root:is(.light, .dark) .qi-role.is-DIMENSION::before { background: #4f7cff; }
+:root:is(.light, .dark) .qi-role.is-DATE::before { background: #d08a1a; }
+:root:is(.light, .dark) .qi-role.is-ID::before { background: #8a94a3; }
+
+/* Cleaning log rows */
+:root:is(.light, .dark) .qi-step-dot { width: 8px; height: 8px; border-radius: 999px; flex-shrink: 0; background: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-step.is-applied .qi-step-dot { background: #2f9e6a; }
+:root:is(.light, .dark) .qi-step.is-info .qi-step-dot { background: #d08a1a; }
+:root:is(.light, .dark) .qi-step.is-skipped { opacity: 0.72; }
+:root:is(.light, .dark) .qi-step-title { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-step-status { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-step.is-info .qi-step-status { color: #b45309; }
+:root.dark:is(.dark) .qi-step.is-info .qi-step-status { color: #fbc66b; }
+:root:is(.light, .dark) .qi-step-summary,
+:root:is(.light, .dark) .qi-step-body { color: var(--text-secondary); }
+:root:is(.light, .dark) .qi-step-muted { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-step-chevron { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-step-chevron:hover { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-step-action { color: var(--accent-foreground); border: 1px solid var(--border-default); border-radius: 6px; padding: 3px 8px; background: transparent; }
+:root:is(.light, .dark) .qi-step-action:hover { border-color: var(--color-primary); }
+:root:is(.light, .dark) .qi-step-chip { color: var(--text-secondary); background: var(--bg-hover); border-radius: 6px; padding: 3px 8px; }
+:root:is(.light, .dark) .qi-step-tech { background: var(--bg-hover); border: 1px solid var(--border-default); }
+.line-clamp-1 { display: -webkit-box; -webkit-line-clamp: 1; -webkit-box-orient: vertical; overflow: hidden; }

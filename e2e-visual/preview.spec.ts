@@ -112,13 +112,26 @@ for (const theme of ['light', 'dark'] as const) {
                 await shoot(page, `52-after-undo-${theme}`);
             }
             // Every workspace section, full page, for layout review.
-            const sections: [string, string][] = [['Overview', 'overview'], ['Explore Data', 'explore'], ['Cleaned Data', 'cleaned'], ['Data Studio', 'studio'], ['Column Mapping', 'mapping'], ['Schema', 'schema']];
+            const sections: [string, string][] = [['Overview', 'overview'], ['Data', 'data'], ['Columns', 'columns'], ['Cleaning', 'cleaning']];
             for (const [tab, slug] of sections) {
-                const button = page.locator('.qi-workspace-tabs:visible button, [role="tablist"]:visible [role="tab"]').filter({ hasText: tab }).first();
+                const button = page.locator('[role="tablist"]:visible [role="tab"]').filter({ hasText: new RegExp(`^${tab}$`) }).first();
                 if (!(await button.isVisible().catch(() => false))) continue;
                 await button.click().catch(() => {});
                 await page.waitForTimeout(1500);
-                await page.screenshot({ path: path.join(OUT, `53-ws-${slug}-${theme}.png`), fullPage: true });
+                await page.screenshot({ path: path.join(OUT, `53-ws-${slug}-${theme}.png`) });
+                if (slug === 'overview') {
+                    await page.locator('.qi-ws-row:visible').filter({ hasText: 'revenue' }).first().click().catch(() => {});
+                    await page.locator('.qi-ws-row:visible').filter({ hasText: 'category' }).first().click().catch(() => {});
+                    await page.locator('.qi-ws-card:visible').filter({ hasText: 'What\'s in it' }).first().screenshot({ path: path.join(OUT, `54-ws-columns-open-${theme}.png`) }).catch(() => {});
+                }
+                if (slug === 'cleaning') {
+                    await page.locator('.qi-step:visible button[aria-expanded]').first().click().catch(() => {});
+                    await page.waitForTimeout(500);
+                    await page.screenshot({ path: path.join(OUT, `55-ws-cleaning-step-${theme}.png`) });
+                    await page.getByRole('button', { name: 'Fix by hand' }).click().catch(() => {});
+                    await page.waitForTimeout(1200);
+                    await page.screenshot({ path: path.join(OUT, `56-ws-fix-by-hand-${theme}.png`) });
+                }
             }
         }
     });

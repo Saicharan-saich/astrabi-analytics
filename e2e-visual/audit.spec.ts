@@ -76,8 +76,8 @@ test('light mode audit', async ({ page }) => {
     ] as const) {
         if (await nav(label)) await capture(state);
     }
-    for (const [tab, state] of [['Explore Data', 'ws-explore'], ['Cleaned Data', 'ws-cleaned'], ['Data Studio', 'ws-studio'], ['Column Mapping', 'ws-mapping'], ['Schema', 'ws-schema']] as const) {
-        if (await click(page.getByRole('button', { name: tab, exact: true }))) await capture(state);
+    for (const [tab, state] of [['Data', 'ws-explore'], ['Cleaning', 'ws-cleaned'], ['Columns', 'ws-mapping']] as const) {
+        if (await click(page.getByRole('tab', { name: tab, exact: true }))) await capture(state);
     }
     if (await nav('Manage Users')) { await capture('manage-users'); await page.keyboard.press('Escape'); }
 

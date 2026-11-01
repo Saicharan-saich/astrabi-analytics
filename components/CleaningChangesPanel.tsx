@@ -9,6 +9,8 @@ interface CleaningChangesPanelProps {
     onRevert?: (revert: NonNullable<ETLLog['revert']>) => void;
     /** The option currently being re-run, so its button shows progress. */
     pendingOption?: string | null;
+    /** Always shown (no dismiss), e.g. at the top of the full cleaning log. */
+    persistent?: boolean;
 }
 
 const SECTIONS: { kind: ChangeKind; label: string; tone: string }[] = [
@@ -80,7 +82,7 @@ function ChangeRow({ item, onRevert, pending, busy }: { item: ChangeItem; onReve
  * way to reverse each reversible step. Shown at the top of the dataset
  * workspace until dismissed for this version of the data.
  */
-export const CleaningChangesPanel: React.FC<CleaningChangesPanelProps> = ({ dataset, onRevert, pendingOption }) => {
+export const CleaningChangesPanel: React.FC<CleaningChangesPanelProps> = ({ dataset, onRevert, pendingOption, persistent = false }) => {
     const summary = useMemo(() => summariseEtlChanges(dataset.etlLogs), [dataset.etlLogs]);
     const key = dismissKey(dataset);
     const [dismissed, setDismissed] = useState(() => readDismissed(key));
@@ -88,7 +90,7 @@ export const CleaningChangesPanel: React.FC<CleaningChangesPanelProps> = ({ data
     const [expanded, setExpanded] = useState(true);
     if (key !== lastKey) { setLastKey(key); setDismissed(readDismissed(key)); }
 
-    if (dismissed || summary.items.length === 0) return null;
+    if ((dismissed && !persistent) || summary.items.length === 0) return null;
     const { rowsBefore, rowsAfter } = summary;
 
     return (
@@ -106,9 +108,11 @@ export const CleaningChangesPanel: React.FC<CleaningChangesPanelProps> = ({ data
                 <button type="button" onClick={() => setExpanded(v => !v)} className="qi-clean-link text-[12px] font-semibold px-2 py-1">
                     {expanded ? 'Collapse' : 'Show'}
                 </button>
-                <button type="button" onClick={() => { writeDismissed(key); setDismissed(true); }} className="qi-clean-toggle p-1 rounded-md" aria-label="Dismiss">
-                    <X className="w-4 h-4" />
-                </button>
+                {!persistent && (
+                    <button type="button" onClick={() => { writeDismissed(key); setDismissed(true); }} className="qi-clean-toggle p-1 rounded-md" aria-label="Dismiss" title="Hide until the data changes (still under Cleaning)">
+                        <X className="w-4 h-4" />
+                    </button>
+                )}
             </header>
             {expanded && (
                 <div className="grid gap-x-8 gap-y-1 px-5 pb-4 md:grid-cols-2">
