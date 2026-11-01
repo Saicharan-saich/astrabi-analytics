@@ -125,7 +125,7 @@ for (const theme of ['light', 'dark'] as const) {
                     await page.locator('.qi-ws-card:visible').filter({ hasText: 'What\'s in it' }).first().screenshot({ path: path.join(OUT, `54-ws-columns-open-${theme}.png`) }).catch(() => {});
                 }
                 if (slug === 'columns') {
-                    await page.locator('.qi-map:visible .qi-ws-row').filter({ hasText: 'revenue' }).first().click().catch(() => {});
+                    await page.locator('.qi-map:visible .qi-ws-row p').filter({ hasText: /^revenue$/ }).first().click().catch(() => {});
                     await page.waitForTimeout(500);
                     await page.screenshot({ path: path.join(OUT, `57-ws-mapping-row-${theme}.png`) });
                 }
