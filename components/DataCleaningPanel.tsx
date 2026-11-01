@@ -49,8 +49,9 @@ const QualityBadge: React.FC<{ score: number; size?: 'sm' | 'lg' }> = ({ score, 
 };
 
 // ─── Column Quality Bar ──────────────────────────────────────────
-const QualityBar: React.FC<{ value: number; label: string }> = ({ value, label }) => {
-    const color = value >= 90 ? 'bg-emerald-500' : value >= 70 ? 'bg-amber-500' : 'bg-red-500';
+const QualityBar: React.FC<{ value: number; label: string; judged?: boolean }> = ({ value, label, judged = true }) => {
+    // Uniqueness is descriptive (categories repeat by design), so it is not coloured as good/bad.
+    const color = !judged ? 'bg-slate-400 dark:bg-slate-500' : value >= 90 ? 'bg-emerald-500' : value >= 70 ? 'bg-amber-500' : 'bg-red-500';
     return (
         <div className="flex items-center gap-2">
             <span className="text-[11px] text-slate-500 dark:text-slate-400 w-20 shrink-0">{label}</span>
@@ -208,7 +209,7 @@ export const DataCleaningPanel: React.FC<DataCleaningPanelProps> = ({ dataset, o
                                         </div>
                                         <div className="space-y-1.5">
                                             <QualityBar value={col.completeness} label="Complete" />
-                                            <QualityBar value={Math.min(col.uniqueness, 100)} label="Unique" />
+                                            <QualityBar value={Math.min(col.uniqueness, 100)} label="Unique" judged={false} />
                                             <QualityBar value={col.consistency} label="Consistent" />
                                         </div>
                                         <div className="flex gap-3 mt-2 text-[11px] text-slate-400 dark:text-slate-500">
