@@ -239,7 +239,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   const [filterMeasureValue, setFilterMeasureValue] = useState<string>('');
   const [refreshingCards, setRefreshingCards] = useState<Set<string>>(new Set());
   const [filteredSqlCards, setFilteredSqlCards] = useState<Record<string, {
-    key: string; result?: AnalysisResult; error?: string;
+    key: string; result?: AnalysisResult; error?: string; fallback?: boolean;
   }>>({});
   const filterQueue = useRef<Promise<void>>(Promise.resolve());
   const filterSignature = JSON.stringify(dashboardFilters);
@@ -354,9 +354,10 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
   // Cards whose question can be re-run on the filtered rows (SQL, automatic
   // analysis and Question Builder cards) are recomputed by the real engine,
   // so dashboard filters give the same numbers the question itself would.
+  const isBuilderCard = (item: DashboardItem) => !item.result.aiSqlRefresh && !item.result.autoAnalysis
+    && !item.result.queryConfig?.aiSql && Boolean((item.result.queryConfig || item.result.config)?.questionId);
   const isSqlCard = (item: DashboardItem) => Boolean(item.result.aiSqlRefresh || item.result.autoAnalysis
-    || item.result.queryConfig?.aiSql || (!item.result.queryConfig && item.result.sql)
-    || (item.result.queryConfig || item.result.config)?.questionId);
+    || item.result.queryConfig?.aiSql || (!item.result.queryConfig && item.result.sql)) || isBuilderCard(item);
   const usesSqlFilter = (item: DashboardItem) => dashboardFilters.length > 0 && !item.ignoreGlobalFilter
     && !item.result.needsLocalData && isSqlCard(item) && !filterSourceError(item);
   const sqlFilterKey = (item: DashboardItem) => [activeDashboardId, filterSource(item)?.id, filterSource(item)?.version,
@@ -383,7 +384,9 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
           const refreshed = await rebuildDashboardItem(item, source, rows);
           if (!cancelled) setFilteredSqlCards(previous => ({ ...previous, [item.id]: { key, result: refreshed.result } }));
         } catch (error) {
-          if (!cancelled) setFilteredSqlCards(previous => ({ ...previous, [item.id]: {
+          // A Builder question the engine declines on the filtered rows (for
+          // example below its confidence gate) falls back to re-aggregating.
+          if (!cancelled) setFilteredSqlCards(previous => ({ ...previous, [item.id]: isBuilderCard(item) ? { key, fallback: true } : {
             key, error: error instanceof Error ? error.message : 'Could not apply this filter to the saved query.',
           } }));
         }
@@ -395,7 +398,11 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     return () => { cancelled = true; };
   }, [activeDashboardId, dashboardFilters, dataset, availableDatasets, filteredItems]);
 
-  const sqlFilterState = (item: DashboardItem) => usesSqlFilter(item)
+  const engineFallback = (item: DashboardItem) => {
+    const entry = filteredSqlCards[item.id];
+    return Boolean(entry?.fallback && entry.key === sqlFilterKey(item));
+  };
+  const sqlFilterState = (item: DashboardItem) => usesSqlFilter(item) && !engineFallback(item)
     ? filteredSqlCards[item.id]?.key === sqlFilterKey(item) ? filteredSqlCards[item.id] : null
     : undefined;
   const visibleResult = (item: DashboardItem) => sqlFilterState(item)?.result || item.result;
@@ -415,7 +422,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
 
   // ── Reusable helper: apply global filters to a dashboard card's data ──
   const getFilteredData = useCallback((item: DashboardItem) => {
-    if (usesSqlFilter(item)) {
+    if (usesSqlFilter(item) && !engineFallback(item)) {
       const entry = filteredSqlCards[item.id];
       return entry?.key === sqlFilterKey(item) ? entry.result?.data || [] : [];
     }
