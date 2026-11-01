@@ -103,7 +103,7 @@ for (const theme of ['light', 'dark'] as const) {
             await shoot(page, `${file}-${theme}`);
             if (file !== '50-dataset-workspace') continue;
             // What we changed: expand a removed-rows item, then reverse a step.
-            const panel = page.locator('.qi-clean-panel');
+            const panel = page.locator('.qi-clean-panel:visible').first();
             if (await panel.isVisible().catch(() => false)) {
                 await panel.getByRole('button', { name: 'Removed 3 duplicate rows' }).click().catch(() => {});
                 await panel.screenshot({ path: path.join(OUT, `51-what-we-changed-${theme}.png`) });
