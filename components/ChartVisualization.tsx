@@ -57,6 +57,7 @@ ChartJS.register(
 // so axis ticks, legends and tooltips read as part of the interface.
 const CHART_FONT_FAMILY = "'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif";
 ChartJS.defaults.font.family = CHART_FONT_FAMILY;
+if (typeof window !== "undefined") (window as any).Chart = ChartJS; // TEMP diag
 
 import { Dataset, ColumnType, AggregationType, QueryConfig, AnalysisResult, TimeGrain, AnalysisType, ChartConfig, FormattingConfig } from '../types';
 import { applyTableCalculation } from '../utils/tableCalculations';

@@ -18,7 +18,9 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.addInitScript(() => {
         const original = CanvasRenderingContext2D.prototype.fillText;
         (window as any).__qiValueLabelInks = [];
+        (window as any).__qiAllTexts = [];
         CanvasRenderingContext2D.prototype.fillText = function (this: CanvasRenderingContext2D, ...args: Parameters<typeof original>) {
+            (window as any).__qiAllTexts.push(String(args[0]) + '|' + String(this.fillStyle) + '|' + this.font);
             // Value labels are bold; axis ticks that also read 50/100 are not.
             if ((String(args[0]) === '100' || String(args[0]) === '50') && /bold/.test(this.font)) {
                 (window as any).__qiValueLabelInks.push(String(this.fillStyle));
@@ -151,7 +153,16 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await page.getByRole('button', { name: 'Combined', exact: true }).click();
     await page.locator('.qi-visual-stage button[title="Hide labels"]').click();
     await page.evaluate(() => { (window as any).__qiValueLabelInks = []; });
+    await page.evaluate(() => { (window as any).__qiAllTexts = []; });
     await page.locator('.qi-visual-stage button[title="Show labels for all series"]').click();
+    await page.waitForTimeout(3000);
+    console.log('DIAG texts', JSON.stringify([...new Set(await page.evaluate(() => (window as any).__qiAllTexts as string[]))].slice(0, 60)));
+    console.log('DIAG charts', JSON.stringify(await page.evaluate(() => {
+        const charts = Object.values((window as any).Chart?.instances || {});
+        return charts.map((c: any) => ({ type: c.config.type, idx: c.options.indexAxis, ys: c.options.scales?.y?.stacked, xs: c.options.scales?.x?.stacked,
+            plugin: c.options.plugins?.customDataLabels ? { d: c.options.plugins.customDataLabels.display, m: c.options.plugins.customDataLabels.labelMode, w: c.options.plugins.customDataLabels.font?.weight } : null,
+            ds: c.data.datasets.map((d: any, i: number) => ({ l: d.label, n: d.data, qiL: Array.isArray(d.qiLabels), el: c.getDatasetMeta(i).data.slice(0, 2).map((e: any) => ({ x: Math.round(e.x), y: Math.round(e.y), b: Math.round(e.base), w: Math.round(e.width), h: Math.round(e.height) })) })) }));
+    })));
     await expect.poll(() => page.evaluate(() => (window as any).__qiValueLabelInks.length)).toBeGreaterThanOrEqual(8);
     const inks = await page.evaluate(() => (window as any).__qiValueLabelInks as string[]);
     expect(inks.every(color => color === '#000000' || color === 'rgb(0, 0, 0)'), `Light label colors: ${inks.join(', ')}`).toBe(true);
