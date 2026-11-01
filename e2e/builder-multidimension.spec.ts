@@ -149,6 +149,10 @@ test('adding a third grouping dimension automatically shows facet panels', async
     // Combined creates four color series. Value labels for the third and
     // fourth series must remain black, not inherit pink/orange bar colors.
     await page.getByRole('button', { name: 'Combined', exact: true }).click();
+    // Combined opens as stacked bars (totals labelled); the per-series label
+    // colours are checked on the grouped view, where every bar has a label.
+    await page.locator('.qi-visual-stage button[title^="Grouped bars"]').click();
+    await expect(page.locator('.qi-visual-stage button[title^="Grouped bars"]')).toHaveAttribute('aria-pressed', 'true');
     await page.locator('.qi-visual-stage button[title="Hide labels"]').click();
     await page.evaluate(() => { (window as any).__qiValueLabelInks = []; });
     await page.locator('.qi-visual-stage button[title="Show labels for all series"]').click();
