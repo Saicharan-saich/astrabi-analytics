@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import { ChartVisualization } from './ChartVisualization';
 import { FormattingConfig } from '../types';
+import type { ChartPointSelection } from '../utils/explore';
 
 interface SmallMultiplesGridProps {
     data: any[];
@@ -12,6 +13,8 @@ interface SmallMultiplesGridProps {
     chartType: string;
     formatting?: FormattingConfig;
     config?: any;
+    /** Click-to-explore; the panel's value is passed as the facet. */
+    onPointSelect?: (selection: ChartPointSelection) => void;
 }
 
 /**
@@ -20,7 +23,7 @@ interface SmallMultiplesGridProps {
  * Works generically with any dimension + any measure + any time grain.
  */
 export const SmallMultiplesGrid: React.FC<SmallMultiplesGridProps> = ({
-    data, xKey, yKey, yLabel, splitKey, seriesKey, chartType, formatting, config
+    data, xKey, yKey, yLabel, splitKey, seriesKey, chartType, formatting, config, onPointSelect
 }) => {
     // 1) Group data by the split dimension
     const { groups, globalMin, globalMax, sortedKeys } = useMemo(() => {
@@ -147,6 +150,7 @@ export const SmallMultiplesGrid: React.FC<SmallMultiplesGridProps> = ({
                                     formatting={facetFormatting}
                                     hideControls={true}
                                     compact={true}
+                                    onPointSelect={onPointSelect ? (selection) => onPointSelect({ ...selection, facetKey: splitKey, facetValue: dimensionValue }) : undefined}
                                 />
                             </div>
                         </div>

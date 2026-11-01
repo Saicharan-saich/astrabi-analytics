@@ -2118,6 +2118,13 @@ function App() {
                     onScheduleChange={updateRefreshSchedule}
                     onBuildDashboard={handleBuildDashboard}
                     isBuildingDashboard={isBuildingDashboard}
+                    onOpenInBuilder={(config) => {
+                      setWorkbenchConfig({ ...config, _handoffId: `explore_${Date.now()}` });
+                      setWorkbenchResult(undefined);
+                      clearDashboardEdit();
+                      setActiveTab(Tab.BUILDER);
+                      showToast('Opened the break-down in Question Builder. Undo steps back.');
+                    }}
                   />
                 </div>
 
@@ -2155,7 +2162,8 @@ function App() {
                     isBuildingDashboard={isBuildingDashboard}
                     isActive={activeTab === Tab.QUICK_INSIGHTS}
                     onOpenInBuilder={(config) => {
-                      setWorkbenchConfig(config);
+                      // A handoff id makes the Builder rebuild its controls and run the question.
+                      setWorkbenchConfig({ ...config, _handoffId: `discover_${Date.now()}` });
                       setWorkbenchResult(undefined);
                       clearDashboardEdit();
                       setActiveTab(Tab.BUILDER);

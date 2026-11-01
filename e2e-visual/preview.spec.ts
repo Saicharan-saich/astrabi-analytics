@@ -3,6 +3,21 @@ import path from 'path';
 
 import { boot, shoot, OUT } from './boot';
 
+/** Click across a chart until a mark is hit and the explore menu opens. */
+async function openExploreMenu(page: Page, canvas: ReturnType<Page['locator']>) {
+    if (!(await canvas.isVisible().catch(() => false))) return false;
+    const box = await canvas.boundingBox();
+    if (!box) return false;
+    const menu = page.locator('.qi-explore-menu');
+    for (const fy of [0.75, 0.6, 0.45, 0.85, 0.3]) {
+        for (const fx of [0.2, 0.35, 0.5, 0.65, 0.8]) {
+            await page.mouse.click(box.x + box.width * fx, box.y + box.height * fy);
+            if (await menu.isVisible().catch(() => false)) return true;
+        }
+    }
+    return false;
+}
+
 for (const theme of ['light', 'dark'] as const) {
     test(`dashboard ${theme}`, async ({ page }) => {
         await page.setViewportSize({ width: 1440, height: 1700 });
@@ -12,6 +27,20 @@ for (const theme of ['light', 'dark'] as const) {
         const count = await cards.count();
         for (let i = 0; i < count; i++) {
             await cards.nth(i).screenshot({ path: path.join(OUT, `11-card-${i + 1}-${theme}.png`) }).catch(() => {});
+        }
+        // Click a bar on a card: cross-filter the whole dashboard.
+        for (let i = 0; i < count; i++) {
+            if (await openExploreMenu(page, cards.nth(i).locator('canvas').first())) {
+                await page.waitForTimeout(300);
+                await page.screenshot({ path: path.join(OUT, `16-dashboard-click-menu-${theme}.png`) });
+                const filter = page.locator('.qi-explore-menu [role="menuitem"]').filter({ hasText: 'Filter dashboard to' }).first();
+                if (await filter.isVisible().catch(() => false)) {
+                    await filter.click();
+                    await page.waitForTimeout(2500);
+                    await shoot(page, `17-dashboard-cross-filtered-${theme}`);
+                }
+                break;
+            }
         }
     });
 
@@ -90,6 +119,23 @@ for (const theme of ['light', 'dark'] as const) {
                     await page.getByRole('option', { name: new RegExp(`^${field.replace('_', '[_ ]')}$`, 'i') }).first().click().catch(() => {});
                     await page.waitForTimeout(2500);
                     await shoot(page, `24-builder-${field}-${theme}`);
+                }
+                // Click to explore: menu → break down → trail → rows.
+                await dimension.click().catch(() => {});
+                await page.getByRole('option', { name: 'category', exact: true }).click().catch(() => {});
+                await page.waitForTimeout(2500);
+                if (await openExploreMenu(page, page.locator('.qi-visual-stage canvas').first())) {
+                    await page.waitForTimeout(300);
+                    await page.screenshot({ path: path.join(OUT, `25-builder-click-menu-${theme}.png`) });
+                    await page.locator('.qi-explore-menu [role="menuitem"]').filter({ hasText: /^by / }).first().click().catch(() => {});
+                    await page.waitForTimeout(2500);
+                    await shoot(page, `26-builder-drilled-${theme}`);
+                    if (await openExploreMenu(page, page.locator('.qi-visual-stage canvas').first())) {
+                        await page.locator('.qi-explore-menu [role="menuitem"]').filter({ hasText: /^See the/ }).first().click().catch(() => {});
+                        await page.waitForTimeout(800);
+                        await shoot(page, `27-builder-rows-${theme}`);
+                        await page.keyboard.press('Escape');
+                    }
                 }
             }
         }

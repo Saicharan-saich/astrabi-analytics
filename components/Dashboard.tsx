@@ -18,6 +18,13 @@ import { AnalysisResult, Dataset, DashboardItem, RefreshSchedule } from '../type
 import { DashboardFilter } from '../store/useAppStore';
 import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 import { DashboardDateFilter } from './DashboardDateFilter';
+import { ExploreMenu } from './ExploreMenu';
+import { UnderlyingRowsDrawer } from './UnderlyingRowsDrawer';
+import {
+  dashboardExcludeFilter, dashboardFilterFor, dashboardFilterIsActive, describeTarget, drillConfig, drillOptions,
+  resolveTargets, rowMatchesTargets,
+  type ChartPointSelection, type ExploreTarget, type GrainKey,
+} from '../utils/explore';
 import { dashboardDateFilterLabel } from '../utils/dashboardDateFilter';
 import { filterDashboardRows } from '../utils/dashboardFilterRows';
 import { dashboardFilterColumnExists, resolveDashboardFilterSource } from '../utils/dashboardFilterSource';
@@ -34,6 +41,8 @@ interface DashboardProps {
   onScheduleChange?: (schedule: RefreshSchedule) => void;
   onBuildDashboard?: () => void;
   isBuildingDashboard?: boolean;
+  /** Open a question (a break-down of a clicked value) in the Question Builder. */
+  onOpenInBuilder?: (config: any) => void;
 }
 
 // Format large numbers compactly
@@ -120,7 +129,7 @@ const DATASET_COLORS = [
   { bg: 'bg-orange-500/15', text: 'text-orange-400', dot: 'bg-orange-400' },
 ];
 
-export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange, onBuildDashboard, isBuildingDashboard }) => {
+export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange, onBuildDashboard, isBuildingDashboard, onOpenInBuilder }) => {
   const {
     dashboards, activeDashboardId, setActiveDashboard, createDashboard, renameDashboard, deleteDashboard, duplicateDashboard, dedupeOverviewDashboards,
     items, removeItem, updateItem, formatting, clearAllItems,
@@ -242,6 +251,106 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
     const missing = dashboardFilters.find(filter => !dashboardFilterColumnExists(source, filter.column));
     return missing ? `The card’s source dataset does not have “${missing.column}”. This filter cannot be applied to this card.` : null;
   };
+  // ── Click a card's bar / slice / point: cross-filter the dashboard ──
+  const [cardExplore, setCardExplore] = useState<{ item: DashboardItem; selection: ChartPointSelection; targets: ExploreTarget[]; source: Dataset } | null>(null);
+  const [cardRows, setCardRows] = useState<{ title: string; conditions: string[]; rows: Record<string, any>[]; columns: string[] } | null>(null);
+
+  /** The grouping a card's x-axis shows, when it can be mapped back to the data. */
+  const cardDimension = (item: DashboardItem): { dimension: string; grain?: GrainKey | null } | null => {
+    const auto = item.result.autoAnalysis;
+    if (auto) {
+      if (auto.analyzer === 'trend' && auto.focus?.dateColumn && auto.focus?.grain) return { dimension: auto.focus.dateColumn, grain: auto.focus.grain as GrainKey };
+      if (auto.dim && ['concentration', 'growth', 'segmentRatio'].includes(auto.analyzer)) return { dimension: auto.dim };
+      return null;
+    }
+    const dimension = item.result.config?.dimension || item.result.queryConfig?.dimension;
+    return dimension ? { dimension } : null;
+  };
+
+  const handleCardPointSelect = (item: DashboardItem) => (selection: ChartPointSelection) => {
+    const source = filterSource(item);
+    const dim = cardDimension(item);
+    if (!source || !dim) return;
+    const targets = resolveTargets(source, dim.dimension, selection, { grain: dim.grain })
+      // "Other" and similar roll-ups are not values in the data.
+      .filter(t => t.kind !== 'column' || source.rows.some(r => String(r[t.column] ?? '') === t.value));
+    if (targets.length === 0) return;
+    setCardExplore({ item, selection, targets, source });
+  };
+
+  const builderBaseConfig = (item: DashboardItem, source: Dataset): any | null => {
+    if (!dataset || source.id !== dataset.id) return null;
+    const q = item.result.queryConfig;
+    const base = q && !q.aiSql
+      ? { ...q }
+      : (item.result.config?.metric && source.columns.some(c => c.name === item.result.config.metric)
+        ? { metric: item.result.config.metric, aggregation: item.result.config.aggregation || 'SUM', dimension: item.result.config.dimension }
+        : null);
+    if (!base) return null;
+    delete base.aiSql;
+    // Carry the dashboard's own filters into the question.
+    if (!item.ignoreGlobalFilter) {
+      for (const f of dashboardFilters) {
+        if (f.dateMode === 'range' && f.dateRange) {
+          base.dateFilters = [...(base.dateFilters || []), { column: f.column, timeGrain: 'day', values: [`${f.dateRange.from}__${f.dateRange.to}`] }];
+        } else if (f.type === 'measure' && f.operator && f.numericValue !== undefined) {
+          base.measureFilters = [...(base.measureFilters || []), { column: f.column, operator: f.operator, value: f.numericValue }];
+        } else if (!f.dateMode && f.values.length) {
+          base.filters = { ...(base.filters || {}), [f.column]: f.values };
+        }
+      }
+    }
+    return base;
+  };
+
+  const cardExploreMenu = (() => {
+    if (!cardExplore) return null;
+    const { item, selection, targets, source } = cardExplore;
+    const title = targets.map(t => t.label).join(' · ');
+    const active = targets.every(t => dashboardFilterIsActive(dashboardFilters, t));
+    const columnsOf = (t: ExploreTarget) => (t.kind === 'column' ? t.column : t.dateColumn);
+    const withoutTargets = dashboardFilters.filter(f => !targets.some(t => columnsOf(t) === f.column));
+    const scopeRows = filterDashboardRows(source.rows, source.columns, item.ignoreGlobalFilter ? [] : dashboardFilters)
+      .filter(row => rowMatchesTargets(row, targets));
+    const first = targets[0];
+    const base = onOpenInBuilder ? builderBaseConfig(item, source) : null;
+    const options = base ? drillOptions(source, base, targets) : [];
+    const metricText = Number.isFinite(selection.metricValue)
+      ? `${item.result.yLabel || 'Value'}: ${Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(selection.metricValue!)}`
+      : undefined;
+    return (
+      <ExploreMenu
+        anchor={selection.anchor}
+        title={title}
+        context={metricText}
+        actions={[
+          active
+            ? { id: 'clear', icon: 'clear' as const, label: `Clear the ${title} filter`, onSelect: () => setDashboardFilters(withoutTargets) }
+            : { id: 'keep', icon: 'keep' as const, label: `Filter dashboard to ${title}`, hint: 'all cards', onSelect: () => setDashboardFilters([...withoutTargets, ...targets.map(dashboardFilterFor)]) },
+          ...(first.kind === 'column' && !active ? [{
+            id: 'exclude', icon: 'exclude' as const, label: `Exclude ${first.label}`, hint: 'all cards',
+            onSelect: () => setDashboardFilters([...dashboardFilters.filter(f => f.column !== first.column), dashboardExcludeFilter(source.rows, first)]),
+          }] : []),
+          {
+            id: 'rows', icon: 'rows' as const, label: `See the ${scopeRows.length.toLocaleString()} row${scopeRows.length === 1 ? '' : 's'}`,
+            onSelect: () => setCardRows({
+              title: `Rows behind ${title}`,
+              conditions: [...targets.map(describeTarget), ...(item.ignoreGlobalFilter || !dashboardFilters.length ? [] : ['the dashboard filters apply'])],
+              rows: scopeRows,
+              columns: source.columns.map(c => c.name),
+            }),
+          },
+        ]}
+        drill={base && options.length ? {
+          heading: `Break ${title} down in Question Builder`,
+          options,
+          onSelect: option => onOpenInBuilder!(drillConfig(base, targets, option)),
+        } : undefined}
+        onClose={() => setCardExplore(null)}
+      />
+    );
+  })();
+
   const isSqlCard = (item: DashboardItem) => Boolean(item.result.aiSqlRefresh || item.result.autoAnalysis
     || item.result.queryConfig?.aiSql || (!item.result.queryConfig && item.result.sql));
   const usesSqlFilter = (item: DashboardItem) => dashboardFilters.length > 0 && !item.ignoreGlobalFilter
@@ -1387,6 +1496,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                           result={visibleResult(item)}
                           data={getFilteredData(item)}
                           formatting={item.result.formatting || formatting}
+                          onPointSelect={handleCardPointSelect(item)}
                         />}
                       </ErrorBoundary>
                     </div>
@@ -1459,6 +1569,17 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
           </div>
         )}
       </div>
+      {cardExploreMenu}
+      {cardRows && (
+        <UnderlyingRowsDrawer
+          title={cardRows.title}
+          conditions={cardRows.conditions}
+          rows={cardRows.rows}
+          columns={cardRows.columns}
+          fileName={cardRows.title}
+          onClose={() => setCardRows(null)}
+        />
+      )}
     </div>
   );
 };

@@ -3,15 +3,17 @@ import { AnalysisResult, FormattingConfig } from '../types';
 import { resolveDimensionVisualization } from '../utils/dimensionVisualization';
 import { ChartVisualization } from './ChartVisualization';
 import { SmallMultiplesGrid } from './SmallMultiplesGrid';
+import type { ChartPointSelection } from '../utils/explore';
 
 interface DashboardResultVisualizationProps {
     result: AnalysisResult;
     data: Record<string, any>[];
     formatting?: FormattingConfig;
+    onPointSelect?: (selection: ChartPointSelection) => void;
 }
 
 /** Replays the same dimensional layout in dashboard cards and presentation. */
-export const DashboardResultVisualization: React.FC<DashboardResultVisualizationProps> = ({ result, data, formatting }) => {
+export const DashboardResultVisualization: React.FC<DashboardResultVisualizationProps> = ({ result, data, formatting, onPointSelect }) => {
     const layout = useMemo(() => resolveDimensionVisualization(
         data, result.xKey, result.yKey, result.config,
         result.visualizationMode || 'auto',
@@ -30,6 +32,7 @@ export const DashboardResultVisualization: React.FC<DashboardResultVisualization
                 seriesKey={layout.seriesKey}
                 chartType={chartType}
                 formatting={formatting}
+                onPointSelect={onPointSelect}
             />
         );
     }
@@ -47,6 +50,7 @@ export const DashboardResultVisualization: React.FC<DashboardResultVisualization
             onChartTypeChange={() => {}}
             formatting={formatting}
             hideControls
+            onPointSelect={onPointSelect}
         />
     );
 };

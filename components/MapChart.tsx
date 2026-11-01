@@ -38,16 +38,19 @@ interface MapChartProps {
     /** Legend title, e.g. "Revenue". */
     valueLabel?: string;
     isDark?: boolean;
+    /** Click on a country/state with data: its value as written in the data. */
+    onSelectLocation?: (rawValue: string, anchor: { x: number; y: number }) => void;
 }
 
-export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey, labelContent = 'value', onTooltip, valueLabel, isDark = false }) => {
+export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey, labelContent = 'value', onTooltip, valueLabel, isDark = false, onSelectLocation }) => {
     const [hovered, setHovered] = React.useState('');
     // 1. Geography Mode Detection & Data Processing
-    const { isUSMap, dataMap, min, max } = useMemo(() => {
+    const { isUSMap, dataMap, rawNames, min, max } = useMemo(() => {
         let usMatches = 0;
         let minVal = Infinity;
         let maxVal = -Infinity;
         const map: Record<string, number> = {};
+        const raw: Record<string, string> = {};
 
         data.forEach(row => {
             const rawLoc = String(row[locationKey] || '').trim().toLowerCase();
@@ -65,6 +68,7 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
             }
 
             map[loc] = (map[loc] || 0) + val;
+            if (!(loc in raw)) raw[loc] = String(row[locationKey] ?? '').trim();
         });
 
         const isUS = (data.length > 0 && usMatches / data.length > 0.3) || locationKey.toLowerCase().includes('state');
@@ -72,6 +76,7 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
         return {
             isUSMap: isUS,
             dataMap: map,
+            rawNames: raw,
             min: minVal === Infinity ? 0 : minVal,
             max: maxVal === -Infinity ? 100 : maxVal
         };
@@ -139,6 +144,10 @@ export const MapChart: React.FC<MapChartProps> = ({ data, locationKey, valueKey,
                                                 report(hasData ? `${dispName}: ${formatNumber(value)}` : `${dispName}: no data`);
                                             }}
                                             onMouseLeave={() => report('')}
+                                            onClick={(event: React.MouseEvent) => {
+                                                const key = (geo.properties.name as string).toLowerCase();
+                                                if (onSelectLocation && dataMap[key] !== undefined) onSelectLocation(rawNames[key] || String(geo.properties.name), { x: event.clientX, y: event.clientY });
+                                            }}
                                         />
                                     );
                                 })}

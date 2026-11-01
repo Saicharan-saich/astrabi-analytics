@@ -4288,3 +4288,41 @@ body {
 @media (max-width: 767px) {
   :root:is(.light, .dark) .qi-map .qi-ws-facts > div + div { border-left: 0; border-top: 1px solid var(--border-default); }
 }
+
+/* Click-to-explore menu, breadcrumb and rows drawer */
+:root:is(.light, .dark) .qi-explore-menu {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-default);
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.16), 0 2px 6px rgba(15, 23, 42, 0.08);
+  color: var(--text-secondary);
+  animation: qi-explore-in 120ms ease-out;
+}
+:root.dark:is(.dark) .qi-explore-menu { box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5); }
+@keyframes qi-explore-in { from { opacity: 0; transform: translateY(-3px) scale(0.98); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .qi-explore-menu { animation: none !important; } }
+:root:is(.light, .dark) .qi-explore-title { color: var(--text-primary); }
+:root:is(.light, .dark) .qi-explore-context,
+:root:is(.light, .dark) .qi-explore-hint,
+:root:is(.light, .dark) .qi-explore-heading { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-explore-divider { height: 1px; background: var(--border-default); margin: 4px 0; }
+:root:is(.light, .dark) .qi-explore-item { color: var(--text-primary); background: transparent; }
+:root:is(.light, .dark) .qi-explore-item:hover,
+:root:is(.light, .dark) .qi-explore-item:focus-visible { background: var(--bg-hover); outline: none; }
+:root:is(.light, .dark) .qi-explore-icon { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-explore-item:hover .qi-explore-icon { color: var(--color-primary); }
+
+:root:is(.light, .dark) .qi-crumbs { color: var(--text-tertiary); }
+:root:is(.light, .dark) .qi-crumb { color: var(--accent-foreground); background: transparent; }
+:root:is(.light, .dark) .qi-crumb:hover { text-decoration: underline; }
+:root:is(.light, .dark) .qi-crumb.is-current { color: var(--text-primary); font-weight: 600; cursor: default; text-decoration: none; }
+:root:is(.light, .dark) .qi-explore-hint-line { color: var(--text-tertiary); }
+
+:root:is(.light, .dark) .qi-drawer-scrim { background: rgba(15, 23, 42, 0.28); }
+:root:is(.light, .dark) .qi-drawer {
+  background: var(--bg-surface);
+  border-left: 1px solid var(--border-default);
+  box-shadow: -12px 0 32px rgba(15, 23, 42, 0.18);
+  animation: qi-drawer-in 160ms ease-out;
+}
+@keyframes qi-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .qi-drawer { animation: none !important; } }

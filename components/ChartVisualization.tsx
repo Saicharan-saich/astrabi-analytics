@@ -75,6 +75,7 @@ import { MapChart } from './MapChart';
 import { CHART_TYPE_OPTIONS } from './charts/chartRegistry';
 import { suggestCharts } from '../utils/chartSuggestions';
 import { percentScaleOf, percentScalesByKey, scaleForName, toPercentPoints } from '../utils/percentScale';
+import type { ChartPointSelection } from '../utils/explore';
 import { useAppStore } from '../store/useAppStore';
 import { doughnutCenterPlugin, stackTotalsPlugin } from './charts/cleanChartPlugins';
 
@@ -95,6 +96,8 @@ interface ChartVisualizationProps {
     hideControls?: boolean;
     compact?: boolean;
     onDrillDown?: (dimensionValue: string) => void;
+    /** Click-to-explore: a mark was clicked (takes precedence over onDrillDown). */
+    onPointSelect?: (selection: ChartPointSelection) => void;
     onGoBack?: () => void;
     onAIInsight?: () => void;
     isAIInsightOpen?: boolean;
@@ -207,6 +210,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     hideControls = false,
     compact = false,
     onDrillDown,
+    onPointSelect,
     onGoBack,
     onAIInsight,
     isAIInsightOpen,
@@ -945,6 +949,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
                 return {
                     label: sv,
+                    qiSeriesKey: seriesCol,
+                    qiSeriesValue: sv,
                     data: seriesData,
                     backgroundColor: isFillChart ? `${color}30` : isBarVariant ? color : `${color}DD`,
                     // Stacked bars: a 2px surface-coloured border reads as a clean
@@ -2117,27 +2123,71 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
     const plugins = useMemo(() => [dataLabelsPlugin, growthLabelsPlugin, doughnutCenterPlugin, stackTotalsPlugin], [dataLabelsPlugin, growthLabelsPlugin]);
 
-    const handleClick = onDrillDown ? (_event: any, elements: any[]) => {
-        if (elements.length > 0) {
-            const idx = elements[0].index;
-            // For Treemap, elements might not have index property directly mapping to chartData.labels
-            // ChartJS Treemap uses 'context'
-            if (elements[0].element && elements[0].element.$context) {
-                const ctx = elements[0].element.$context;
-                if (ctx.type === 'data') {
-                    onDrillDown(ctx.raw.g);
-                    return;
-                }
+    // The value as stored in the result row for a label shown on the axis.
+    const rawValueForLabel = (label: string, index: number): string => {
+        const rows: any[] = transformedData || [];
+        const shown = (row: any) => String(row?.[xKey] ?? '');
+        const labels = (chartData?.labels || []) as any[];
+        const sameOrder = labels.length === rows.length;
+        if (sameOrder && rows[index] !== undefined) return shown(rows[index]);
+        const exact = rows.find(row => shown(row) === label);
+        if (exact) return shown(exact);
+        // Multi-series charts show formatted dates; match by position in the distinct list.
+        const distinct = [...new Set(rows.map(shown))];
+        return distinct.length === labels.length && distinct[index] !== undefined ? distinct[index] : label;
+    };
+
+    const clickable = Boolean(onPointSelect || onDrillDown);
+    const handleClick = clickable ? (event: any, elements: any[]) => {
+        if (elements.length === 0) return;
+        const first = elements[0];
+        const native = event?.native as MouseEvent | undefined;
+        const anchor = { x: native?.clientX ?? 0, y: native?.clientY ?? 0 };
+        let label: string | undefined;
+        let raw: string | undefined;
+        let metricValue: number | undefined;
+        // Treemap tiles carry their group in the element context.
+        if (first.element && first.element.$context && first.element.$context.raw?.g !== undefined) {
+            const ctx = first.element.$context;
+            if (ctx.type !== 'data') return;
+            label = String(ctx.raw.g);
+            raw = label;
+            metricValue = Number(ctx.raw.v);
+        } else {
+            const idx = first.index;
+            const labelValue = chartData?.labels?.[idx];
+            if (labelValue === undefined || labelValue === null) return;
+            label = Array.isArray(labelValue) ? labelValue.join(' ') : String(labelValue);
+            raw = rawValueForLabel(label, idx);
+            const dataset: any = chartData?.datasets?.[first.datasetIndex];
+            const v = dataset?.data?.[idx];
+            metricValue = typeof v === 'number' ? v : Number(v?.y ?? v);
+            if (onPointSelect) {
+                onPointSelect({
+                    xKey, value: raw, label, anchor,
+                    metricValue: Number.isFinite(metricValue) ? metricValue : undefined,
+                    ...(dataset?.qiSeriesKey ? { seriesKey: dataset.qiSeriesKey, seriesValue: String(dataset.qiSeriesValue) } : {}),
+                });
+                return;
             }
-            const label = chartData?.labels?.[idx];
-            if (label) onDrillDown(String(label));
         }
+        if (onPointSelect) {
+            onPointSelect({ xKey, value: raw!, label: label!, anchor, metricValue: Number.isFinite(metricValue) ? metricValue : undefined });
+            return;
+        }
+        if (label) onDrillDown?.(String(label));
+    } : undefined;
+    // A pointer over clickable marks says "this does something".
+    const handleHover = clickable ? (event: any, elements: any[]) => {
+        const target = event?.native?.target as HTMLElement | undefined;
+        if (target) target.style.cursor = elements.length > 0 ? 'pointer' : 'default';
     } : undefined;
 
     const treemapOptions = useMemo(() => ({
         responsive: true,
         maintainAspectRatio: false,
         onClick: handleClick,
+        ...(handleHover ? { onHover: handleHover } : {}),
         layout: { padding: 4 },
         plugins: {
             legend: { display: false }, // tiles carry their own labels
@@ -2162,13 +2212,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 }
             }
         }
-    }), [handleClick, isDark, yKey]);
+    }), [handleClick, handleHover, isDark, yKey]);
 
     // Merge onClick into the main options for non-treemap charts
     const chartOptions = useMemo(() => ({
         ...options,
         onClick: handleClick,
-    }), [options, handleClick]);
+        ...(handleHover ? { onHover: handleHover } : {}),
+    }), [options, handleClick, handleHover]);
 
     // ── EARLY RETURN — must be AFTER all hooks to avoid "fewer hooks" crash ──
     if (!data || data.length === 0 || !chartData) {
@@ -2332,6 +2383,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         labelContent={formatting?.mapLabelContent || 'value'}
                         valueLabel={friendlySeriesLabel(calculatedYLabel)}
                         isDark={isDark}
+                        onSelectLocation={onPointSelect ? (value, anchor) => {
+                            const row = (transformedData || []).find((r: any) => String(r?.[xKey] ?? '').trim() === value);
+                            onPointSelect({ xKey, value, label: value, anchor, metricValue: row ? Number(row[yKey]) : undefined });
+                        } : undefined}
                     />
                 </div>
             );

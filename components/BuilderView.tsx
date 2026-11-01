@@ -18,6 +18,13 @@ import { BUILDER_SPLIT_DEFAULT, BUILDER_SPLIT_MIN, builderSplitMaximum, clampBui
 import { chartShapeSignature, suggestCharts } from '../utils/chartSuggestions';
 
 import { AIInsightPanel } from './AIInsightPanel';
+import { ExploreMenu } from './ExploreMenu';
+import { UnderlyingRowsDrawer } from './UnderlyingRowsDrawer';
+import {
+    describeTarget, drillConfig, drillOptions, excludeConfig, isGrainKey, keepConfig, resolveTargets,
+    rowMatchesTargets, rowsForBuilderConfig,
+    type ChartPointSelection, type DrillOption, type ExploreTarget,
+} from '../utils/explore';
 import { TransparencyPanel } from './TransparencyPanel';
 
 import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers, Calendar, Undo2, GripVertical } from 'lucide-react';
@@ -152,9 +159,6 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [forceGridMode, setForceGridMode] = useState<'auto' | 'grid' | 'combined'>('auto');
     const hasAutoRestoredRef = useRef(false);
 
-    // Pre-drill state — saved before drill-down so user can revert
-    const [preDrillConfig, setPreDrillConfig] = useState<any>(null);
-    const [preDrillResult, setPreDrillResult] = useState<any>(null);
 
     // Export CSV helper
     const exportToCSV = () => {
@@ -438,48 +442,93 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         return () => window.removeEventListener('keydown', onUndoShortcut);
     }, [isActive, isLoading, undoDepth]);
 
-    // --- Click-to-Drill ---
-    const handleDrillDown = useCallback((dimensionValue: string) => {
+    // --- Click to explore: show only, exclude, break down, see rows ---
+    const [explore, setExplore] = useState<{ selection: ChartPointSelection; targets: ExploreTarget[]; options: DrillOption[]; rowCount: number } | null>(null);
+    const [rowsView, setRowsView] = useState<{ title: string; conditions: string[]; rows: Record<string, any>[] } | null>(null);
+    // The trail of views that led here; shown while the visible question is the one it leads to.
+    const [drillTrail, setDrillTrail] = useState<{ levels: Array<{ label: string; config: any }>; current: string; leadsTo: string } | null>(null);
+    const configSignature = (config: any) => JSON.stringify(config || {});
+    const words = (name: string) => String(name || '').replace(/_/g, ' ');
+    const viewLabel = (config: any) => {
+        const dim = config?.dimension;
+        return dim ? `By ${isGrainKey(dim) ? dim : words(dim)}` : 'Total';
+    };
+
+    const runExplored = (next: any, currentLabel: string) => {
+        if (!lastRunConfig) return;
+        const levels = drillTrail && drillTrail.leadsTo === configSignature(lastRunConfig)
+            ? [...drillTrail.levels, { label: drillTrail.current, config: lastRunConfig }]
+            : [{ label: viewLabel(lastRunConfig), config: lastRunConfig }];
+        setDrillTrail({ levels, current: currentLabel, leadsTo: configSignature(next) });
+        // Rebuild the controls from the new question so they always match the chart.
+        setUndoRestoreConfig(next);
+        setBuilderResetVersion(version => version + 1);
+        setContentTab('visual');
+        void handleRun(next);
+    };
+
+    const goToTrailLevel = (index: number) => {
+        if (!drillTrail) return;
+        const level = drillTrail.levels[index];
+        if (!level) return;
+        setDrillTrail(index === 0 ? null : { levels: drillTrail.levels.slice(0, index), current: level.label, leadsTo: configSignature(level.config) });
+        setUndoRestoreConfig(level.config);
+        setBuilderResetVersion(version => version + 1);
+        void handleRun(level.config);
+    };
+
+    const handlePointSelect = useCallback((selection: ChartPointSelection) => {
         if (!result || !lastRunConfig) return;
+        const targets = resolveTargets(dataset, lastRunConfig.dimension, selection);
+        if (targets.length === 0) return;
+        const scope = rowsForBuilderConfig(dataset, lastRunConfig).filter(row => rowMatchesTargets(row, targets));
+        setExplore({ selection, targets, options: drillOptions(dataset, lastRunConfig, targets), rowCount: scope.length });
+    }, [result, lastRunConfig, dataset]);
 
-        // Save pre-drill state so user can go back
-        setPreDrillConfig(lastRunConfig);
-        setPreDrillResult(result);
+    const exploreMenu = (() => {
+        if (!explore || !lastRunConfig) return null;
+        const { selection, targets, options, rowCount } = explore;
+        const title = targets.map(t => t.label).join(' · ');
+        const metricText = Number.isFinite(selection.metricValue)
+            ? `${(words(lastRunConfig.metric || '') || 'Value').replace(/^./, c => c.toUpperCase())}: ${Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: 1 }).format(selection.metricValue!)}`
+            : undefined;
+        const xTarget = targets[0];
+        const onlyOne = (result?.data?.length || 0) <= 1;
+        const actions = [
+            ...(!onlyOne || targets.length > 1 ? [{
+                id: 'keep', icon: 'keep' as const, label: `Show only ${title}`,
+                onSelect: () => runExplored(keepConfig(lastRunConfig, targets), `Only ${title}`),
+            }] : []),
+            ...(xTarget.kind === 'column' && !onlyOne ? [{
+                id: 'exclude', icon: 'exclude' as const, label: `Exclude ${xTarget.label}`,
+                onSelect: () => runExplored(excludeConfig(dataset, lastRunConfig, xTarget), `Without ${xTarget.label}`),
+            }] : []),
+            {
+                id: 'rows', icon: 'rows' as const, label: `See the ${rowCount.toLocaleString()} row${rowCount === 1 ? '' : 's'}`,
+                onSelect: () => setRowsView({
+                    title: `Rows behind ${title}`,
+                    conditions: targets.map(describeTarget),
+                    rows: rowsForBuilderConfig(dataset, lastRunConfig).filter(row => rowMatchesTargets(row, targets)),
+                }),
+            },
+        ];
+        return (
+            <ExploreMenu
+                anchor={selection.anchor}
+                title={title}
+                context={metricText}
+                actions={actions}
+                drill={{
+                    heading: `Break ${title} down`,
+                    options,
+                    onSelect: option => runExplored(drillConfig(lastRunConfig, targets, option), `${title} · ${option.label}`),
+                }}
+                onClose={() => setExplore(null)}
+            />
+        );
+    })();
 
-        // Use the original dimension from config, not the calculated xKey
-        // (% of Total pie uses a calculated xKey that doesn't map to raw data)
-        const dimCol = lastRunConfig.dimension || result.xKey;
-        if (!dimCol) return;
-
-        const currentFilters = lastRunConfig.filters || {};
-        const existingFilter = currentFilters[dimCol] || [];
-
-        // Toggle: if already filtering on this value, remove it (Power BI-style deselect)
-        if (existingFilter.includes(dimensionValue)) {
-            const remaining = existingFilter.filter((v: string) => v !== dimensionValue);
-            const updatedFilters = { ...currentFilters };
-            if (remaining.length === 0) {
-                delete updatedFilters[dimCol];
-            } else {
-                updatedFilters[dimCol] = remaining;
-            }
-            handleRun({ ...lastRunConfig, filters: updatedFilters });
-        } else {
-            // Add filter on this dimension value
-            const updatedFilters = { ...currentFilters, [dimCol]: [dimensionValue] };
-            handleRun({ ...lastRunConfig, filters: updatedFilters });
-        }
-    }, [result, lastRunConfig]);
-
-    // --- Go Back from empty drill-down ---
-    const handleGoBack = useCallback(() => {
-        if (preDrillResult && preDrillConfig) {
-            setResult(preDrillResult);
-            setLastRunConfig(preDrillConfig);
-            setPreDrillConfig(null);
-            setPreDrillResult(null);
-        }
-    }, [preDrillResult, preDrillConfig]);
+    const trailVisible = Boolean(drillTrail && lastRunConfig && drillTrail.leadsTo === configSignature(lastRunConfig));
 
     const tableData = useMemo(() => {
         if (!result) return { data: [], columns: [] as CalculatedColumn[] };
@@ -537,8 +586,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         setError(null);
         setIsLoading(false);
         setLastRunConfig(null);
-        setPreDrillConfig(null);
-        setPreDrillResult(null);
+        setDrillTrail(null);
+        setExplore(null);
         setShowGrowthChart(false);
         setIsAnalyticsExplorer(false);
         setIsAIInsightOpen(false);
@@ -1039,6 +1088,19 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         {/* â”€â”€â”€ VISUAL TAB â”€â”€â”€ */}
                         {contentTab === 'visual' && (
                           <>
+                            {trailVisible && drillTrail ? (
+                                <nav className="qi-crumbs mb-2 flex flex-wrap items-center gap-1 text-[12.5px]" aria-label="How you got here">
+                                    {drillTrail.levels.map((level, index) => (
+                                        <React.Fragment key={index}>
+                                            <button type="button" className="qi-crumb rounded px-1 py-0.5 font-medium" onClick={() => goToTrailLevel(index)} title="Go back to this view">{level.label}</button>
+                                            <span aria-hidden>›</span>
+                                        </React.Fragment>
+                                    ))}
+                                    <span className="qi-crumb is-current px-1 py-0.5" aria-current="page">{drillTrail.current}</span>
+                                </nav>
+                            ) : (result.data?.length || 0) > 1 && !['kpiCard', 'gauge', 'waterfall'].includes(chartType) && (
+                                <p className="qi-explore-hint-line mb-2 text-[12px]">Click a {['line', 'area', 'curvedLine', 'steppedLine', 'stackedArea', 'scatter'].includes(chartType) ? 'point' : ['pie', 'doughnut', 'polarArea'].includes(chartType) ? 'slice' : chartType === 'map' ? 'region' : chartType === 'treemap' ? 'tile' : 'bar'} to filter it, break it down or see its rows.</p>
+                            )}
                             <div className={`qi-visual-stage ${isFormatPanelOpen || isAnalyticsPanelOpen ? 'qi-visual-stage--inspector-open' : ''} relative bg-white flex-1 min-h-[350px] rounded-xl border border-slate-200 shadow-sm overflow-visible`}>
                                 {/* Growth toggle */}
                                 {tableData.columns.length > 0 && (
@@ -1105,8 +1167,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                 onToggleAnalytics={onUpdateFormatting ? () => setIsAnalyticsPanelOpen(!isAnalyticsPanelOpen) : undefined}
                                                 isAnalyticsOpen={isAnalyticsPanelOpen}
                                                 onToggleLabels={undefined}
-                                                onDrillDown={handleDrillDown}
-                                                onGoBack={preDrillConfig ? handleGoBack : undefined}
+                                                onPointSelect={handlePointSelect}
                                                 onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)}
                                                 isAIInsightOpen={isAIInsightOpen}
                                                 chartContainerRef={chartContainerRef}
@@ -1123,6 +1184,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                 splitKey={dimensionLayout.facetKey}
                                                 seriesKey={dimensionLayout.seriesKey}
                                                 chartType={chartType}
+                                                onPointSelect={handlePointSelect}
                                                 formatting={{ ...formatting, tableCalculations: [] }}
                                                 config={result.config}
                                             />
@@ -1149,8 +1211,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                             onToggleLabels={onUpdateFormatting && formatting ? () => {
                                               onUpdateFormatting(toggleDataLabels(formatting));
                                             } : undefined}
-                                            onDrillDown={handleDrillDown}
-                                            onGoBack={preDrillConfig ? handleGoBack : undefined}
+                                            onPointSelect={handlePointSelect}
                                             onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)}
                                             isAIInsightOpen={isAIInsightOpen}
                                             chartContainerRef={chartContainerRef}
@@ -1373,6 +1434,17 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     </>
                 )}
             </div>
+            {exploreMenu}
+            {rowsView && (
+                <UnderlyingRowsDrawer
+                    title={rowsView.title}
+                    conditions={rowsView.conditions}
+                    rows={rowsView.rows}
+                    columns={dataset.columns.map(c => c.name)}
+                    fileName={rowsView.title}
+                    onClose={() => setRowsView(null)}
+                />
+            )}
         </div>
     );
 };
