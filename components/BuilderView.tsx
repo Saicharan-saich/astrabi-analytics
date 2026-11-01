@@ -447,7 +447,20 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     const [rowsView, setRowsView] = useState<{ title: string; conditions: string[]; rows: Record<string, any>[] } | null>(null);
     // The trail of views that led here; shown while the visible question is the one it leads to.
     const [drillTrail, setDrillTrail] = useState<{ levels: Array<{ label: string; config: any }>; current: string; leadsTo: string } | null>(null);
-    const configSignature = (config: any) => JSON.stringify(config || {});
+    // What defines a view: grouping, measure and filters. Defaults the controls
+    // add when they rebuild (sort, limit, empty lists) must not break the trail.
+    const configSignature = (config: any) => {
+        const c = config || {};
+        const filters = Object.entries(c.filters || {})
+            .filter(([, v]) => Array.isArray(v) && v.length > 0)
+            .map(([k, v]) => [k, [...(v as string[])].map(String).sort()])
+            .sort(([a], [b]) => String(a).localeCompare(String(b)));
+        const dates = (c.dateFilters || []).filter((d: any) => d?.values?.length)
+            .map((d: any) => [d.column || '', d.timeGrain || '', [...d.values].sort()]);
+        const measures = (c.measureFilters || []).map((m: any) => [m.column, m.operator, m.value]);
+        return JSON.stringify([c.metric || '', c.dimension || '', filters, dates, measures,
+            [...(c.secondaryDimensions || [])].sort(), String(c.aggregation || '').toUpperCase()]);
+    };
     const words = (name: string) => String(name || '').replace(/_/g, ' ');
     const viewLabel = (config: any) => {
         const dim = config?.dimension;
