@@ -236,6 +236,9 @@ const NOT_MONEY = /(count|number|num_|qty|quantity|units|orders|customers|pct|pe
 export function resultCurrency(sql: string, measure: string | undefined, columns: Dataset['columns']): string | undefined {
     if (!measure || NOT_MONEY.test(measure)) return undefined;
     const text = sql.toLowerCase();
+    // A count of rows is never money, whatever column the query filters on.
+    const alias = measure.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`count\\s*\\([^)]*\\)\\s+as\\s+"?${alias}"?(?![a-z0-9_])`).test(text)) return undefined;
     const used = new Set(
         (columns || [])
             .filter(column => column.currency && (text.includes(`"${column.name.toLowerCase()}"`) || new RegExp(`\\b${column.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(text)))

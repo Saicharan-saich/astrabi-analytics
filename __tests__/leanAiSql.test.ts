@@ -129,7 +129,7 @@ describe('lean AI SQL — money and periods', () => {
     });
 
     it('fills missing months month by month, not day by day', () => {
-        const rows = [{ month: '2024-01-01', v: 1 }, { month: '2024-04-01', v: 2 }];
+        const rows = [{ month: '2024-01-01', v: 1 }, { month: '2024-04-01', v: 2 }, { month: '2024-10-01', v: 2 }];
         expect(inferSpineStep(rows.map(row => row.month))).toBe('quarter');
         expect(fillTimeSpine([{ month: '2024-01-01', v: 1 }, { month: '2024-02-01', v: 3 }, { month: '2024-05-01', v: 2 }], 'month', ['v']).map(row => row.month))
             .toEqual(['2024-01-01', '2024-02-01', '2024-03-01', '2024-04-01', '2024-05-01']);
