@@ -2507,24 +2507,26 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         {chartSelectorOpen && (
                             <>
                                 <div className="fixed inset-0 z-40" onClick={() => setChartSelectorOpen(false)} />
-                                <div className="qi-chart-menu absolute top-full left-0 mt-2 z-50 bg-white rounded-2xl border border-slate-200 p-3 w-[420px] max-h-[500px] overflow-y-auto">
+                                <div className="qi-chart-menu absolute top-full left-0 mt-2 z-50 rounded-2xl p-3 w-[460px] max-w-[calc(100vw-2rem)] max-h-[500px] overflow-y-auto" role="menu" aria-label="Chart type">
                                     {CHART_TYPE_OPTIONS.map(group => (
                                         <div key={group.category} className="mb-3 last:mb-0">
-                                            <div className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1 mb-1.5">{group.category}</div>
-                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                                            <div className="qi-chart-menu-group text-[11px] font-bold uppercase tracking-wider px-1 mb-1.5">{group.category}</div>
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
                                                 {group.items.map(type => (
                                                     <button
                                                         key={type.id}
+                                                        type="button"
+                                                        role="menuitemradio"
+                                                        aria-checked={chartType === type.id}
+                                                        aria-label={type.label}
+                                                        title={suggestedTypes.has(type.id) ? `${type.label} — fits this data` : type.label}
                                                         onClick={() => { onChartTypeChange(type.id); setChartSelectorOpen(false); }}
-                                                        className={`flex items-center gap-2 px-3 py-2.5 rounded-lg text-[13px] font-semibold transition-all ${chartType === type.id
-                                                            ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300'
-                                                            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-800'
-                                                            }`}
+                                                        className={`qi-chart-menu-item flex items-center gap-2 px-2.5 py-2 rounded-lg text-[13px] font-medium ${chartType === type.id ? 'is-active' : ''}`}
                                                     >
                                                         <type.icon className="w-4 h-4 shrink-0" />
                                                         <span className="truncate">{type.label}</span>
                                                         {suggestedTypes.has(type.id) && chartType !== type.id && (
-                                                            <span className="qi-chart-menu-fit ml-auto h-1.5 w-1.5 shrink-0 rounded-full" title="Fits this data" aria-label="Fits this data" />
+                                                            <span className="qi-chart-menu-fit ml-auto h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden />
                                                         )}
                                                     </button>
                                                 ))}

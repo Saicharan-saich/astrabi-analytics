@@ -99,7 +99,9 @@ for (const theme of ['light', 'dark'] as const) {
         const quick = { timeout: 5000 };
         const chooseChart = async (label: string) => {
             await page.locator('.qi-chart-type-trigger').first().click(quick).catch(() => {});
-            await page.getByRole('button', { name: label, exact: true }).first().click(quick).catch(() => {});
+            await page.getByRole('menuitemradio', { name: label, exact: true }).first().click(quick).catch(() => {});
+            // Never leave the menu open over the chart.
+            if (await page.locator('.qi-chart-menu').isVisible().catch(() => false)) await page.locator('.qi-chart-type-trigger').first().click(quick).catch(() => {});
             await page.waitForTimeout(1500);
         };
         for (const [field, file] of [['city', '28-format-city'], ['product', '29-format-product']] as const) {
