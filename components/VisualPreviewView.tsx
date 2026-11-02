@@ -296,35 +296,35 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
 
   return (
     <div data-appearance={isDark ? 'dark' : 'light'} className={`qi-answer-workspace relative flex flex-col h-full ${isDark ? 'bg-slate-900 text-white' : 'bg-gray-50 text-gray-900'}`}>
-      {/* ── Result navigation stays visible above the chart ── */}
+      {/* ── Result navigation: the question as a headline, quiet actions ── */}
       {workspaceMode === 'result' && (
-        <div className={`qi-answer-navigation flex min-h-16 shrink-0 items-center justify-between gap-4 border-b px-4 py-2.5 sm:px-6 ${isDark ? 'border-white/[0.08] bg-[#0d1117]' : 'border-slate-200 bg-white'}`}>
+        <div className="qi-answer-navigation">
           <div className="flex min-w-0 items-center gap-3">
             <button
               onClick={() => { if (drillDown) { setDrillDown(null); } else { onBack(); } }}
-              className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors ${isDark ? 'border-white/10 bg-white/[0.05] text-white hover:bg-white/10' : 'border-slate-200 bg-slate-50 text-slate-700 hover:bg-slate-100'}`}
+              className="qi-answer-action qi-answer-action-icon"
               aria-label="Back"
-              title="Back to AI SQL"
+              title={drillDown ? 'Back to the original answer' : 'Back to AI SQL'}
             >
-              <ArrowLeft className="h-5 w-5" />
+              <ArrowLeft className="h-4 w-4" />
             </button>
             <div className="min-w-0">
-              <div className="qi-answer-title text-sm font-extrabold sm:text-base">{activeQuery}</div>
-              <div className="mt-0.5 text-[11px] font-medium text-slate-400">
-                {activeTableData.length.toLocaleString()} rows
-                {activePipeline?.executionTimeMs ? ` · ${activePipeline.executionTimeMs.toLocaleString()}ms` : ''}
+              <h1 className="qi-answer-title">{activePipeline?.narrative?.headline || activeQuery}</h1>
+              <div className="qi-answer-meta">
+                {(activePipeline?.narrative?.headline && activePipeline.narrative.headline !== activeQuery) && <span className="qi-answer-asked">“{activeQuery}”</span>}
+                <span>{activeTableData.length.toLocaleString()} {activeTableData.length === 1 ? 'row' : 'rows'}{activePipeline?.executionTimeMs ? ` · ${activePipeline.executionTimeMs.toLocaleString()}ms` : ''}</span>
               </div>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1.5">
             {onOpenInBuilder && activePipeline && (
               <button
                 onClick={handleOpenInBuilder}
                 aria-label="Continue this analysis in Question Builder"
-                className={`flex h-12 items-center gap-2 rounded-xl border px-4 text-sm font-extrabold transition-all ${isDark ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100'}`}
+                className="qi-answer-action"
                 title="Open editable measures, dimensions, filters and calculations in Question Builder"
               >
-                <SlidersHorizontal className="h-5 w-5" /> <span className="hidden md:inline">Edit in </span>Builder
+                <SlidersHorizontal className="h-4 w-4" /> <span className="hidden lg:inline">Edit in Builder</span>
               </button>
             )}
             {activePipeline?.traceStory && (
@@ -332,9 +332,10 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 onClick={() => { setDetailsSection('trace'); setWorkspaceMode('details'); }}
                 aria-label="Open calculation trace"
                 aria-controls="ai-sql-trace-story"
-                className={`flex h-12 items-center gap-2 rounded-xl border px-4 text-sm font-extrabold transition-all ${isDark ? 'border-violet-500/30 bg-violet-500/10 text-violet-300 hover:bg-violet-500/20' : 'border-violet-200 bg-violet-50 text-violet-700 hover:bg-violet-100'}`}
+                className="qi-answer-action"
+                title="How the number was calculated"
               >
-                <ListChecks className="h-5 w-5" /> Trace
+                <ListChecks className="h-4 w-4" /> <span className="hidden lg:inline">Trace</span>
               </button>
             )}
             {activePipeline?.analysisCertificate && (
@@ -342,28 +343,28 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 onClick={() => { setDetailsSection('certificate'); setWorkspaceMode('details'); }}
                 aria-label="Open analysis certificate"
                 aria-controls="ai-sql-analysis-certificate"
-                className={`flex h-12 items-center gap-2 rounded-xl border px-4 text-sm font-extrabold transition-all ${activePipeline.analysisCertificate.status === 'certified' ? isDark ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20' : 'border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : isDark ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+                className={`qi-answer-action ${activePipeline.analysisCertificate.status === 'certified' ? 'qi-answer-action-good' : 'qi-answer-action-warn'}`}
               >
-                <ShieldCheck className="h-5 w-5" /> {activePipeline.analysisCertificate.status === 'certified' ? 'Certified' : 'Review'}
+                <ShieldCheck className="h-4 w-4" /> <span className="hidden lg:inline">{activePipeline.analysisCertificate.status === 'certified' ? 'Certified' : 'Review'}</span>
               </button>
             )}
             {onPin && (
               <button
                 onClick={handlePin}
                 aria-label="Pin this visual to a dashboard"
-                className={`flex h-12 items-center gap-2 rounded-xl border px-4 text-sm font-extrabold transition-all ${isDark ? 'border-amber-500/30 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20' : 'border-amber-200 bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+                className="qi-answer-action"
                 title="Pin this visual with its chart type, series and label settings"
               >
-                <Pin className="h-5 w-5" /> <span className="hidden sm:inline">{isPinned ? 'Pinned!' : 'Pin'}</span>
+                <Pin className="h-4 w-4" /> <span className="hidden sm:inline">{isPinned ? 'Pinned!' : 'Pin'}</span>
               </button>
             )}
             <button
               onClick={() => { setDetailsSection('overview'); setWorkspaceMode('details'); }}
               aria-label="Open answer details"
               aria-controls="ai-sql-details-workspace"
-              className="flex h-12 items-center gap-2.5 rounded-xl bg-indigo-600 px-5 text-sm font-extrabold text-white shadow-lg shadow-indigo-600/20 transition-all hover:bg-indigo-500 hover:shadow-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 focus-visible:ring-offset-2"
+              className="qi-answer-action qi-answer-action-primary"
             >
-              <Database className="h-5 w-5" /> <span className="hidden sm:inline">View </span>Details
+              <Database className="h-4 w-4" /> <span className="hidden sm:inline">Details</span>
             </button>
           </div>
         </div>
@@ -522,37 +523,10 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
         <div className="flex-1 min-w-0 overflow-hidden">
           {/* Chart Tab */}
           {activeTab === 'chart' && (
-            <div className="flex h-full min-h-0 flex-col overflow-hidden">
-              {activePipeline?.narrative && (
-                <section
-                  aria-label="Answer in words"
-                  className={`qi-answer-narrative mx-3 mt-3 shrink-0 rounded-2xl border px-4 py-3 sm:mx-5 sm:mt-4 ${isDark ? 'border-indigo-500/20 bg-indigo-500/[0.07]' : 'border-indigo-100 bg-indigo-50/80'}`}
-                >
-                  <div className="flex items-start gap-3">
-                    <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-indigo-500" />
-                    <div className="min-w-0">
-                      <div className={`text-[11px] font-black uppercase tracking-wider ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`}>Answer in words</div>
-                      <p className={`mt-1 text-sm leading-5 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{activePipeline.narrative.summary}</p>
-                      {(activePipeline.narrative.insights?.length || 0) > 0 && (
-                        <ul aria-label="Insights" className={`qi-answer-insights mt-2 space-y-1 text-[13px] leading-5 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
-                          {activePipeline.narrative.insights!.map(insight => (
-                            <li key={insight} className="flex gap-2">
-                              <span aria-hidden className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${isDark ? 'bg-indigo-300' : 'bg-indigo-500'}`} />
-                              <span>{insight}</span>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                      {activePipeline.explanation && activePipeline.engine === 'llm-sql' && activePipeline.provenance?.strategy === 'llm-plan' && (
-                        <p className={`mt-2 text-[12px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>How it was worked out: {activePipeline.explanation}</p>
-                      )}
-                    </div>
-                  </div>
-                </section>
-              )}
+            <div className="qi-answer-layout h-full min-h-0">
               <div className={activeDimensionOnly
-                ? `relative min-h-0 flex-1 overflow-hidden ${workspaceMode === 'result' ? 'mx-3 mb-3 mt-2 sm:mx-5 sm:mb-5' : 'p-4'}`
-                : `qi-answer-canvas relative min-h-0 flex-1 overflow-hidden border border-slate-200 bg-white shadow-xl ${workspaceMode === 'result' ? 'mx-3 mb-3 mt-2 rounded-[24px] p-4 sm:mx-5 sm:mb-5 sm:p-5' : 'm-4 mt-2 rounded-2xl p-6'}`
+                ? 'qi-answer-chart relative overflow-hidden'
+                : 'qi-answer-chart qi-answer-canvas relative overflow-hidden rounded-2xl p-3 sm:p-4'
               } ref={chartContainerRef}>
               {activeDimensionOnly ? (
                 <DimensionResultView
@@ -585,14 +559,30 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 disableAutoSeries={Boolean(activePipeline) && !['stackedBar', 'groupedBar', 'multiLine'].includes(activePipeline?.chart?.chartType || '')}
               />
               )}
-              {/* Drill-down hint */}
-              {!activeDimensionOnly && (workspaceMode === 'result' || detailsSection === 'workspace') && !drillDown && !isDrilling && (
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 text-[11px] text-gray-400 dark:text-slate-500 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm px-3 py-1 rounded-full border border-gray-200/50 dark:border-white/5 opacity-60 hover:opacity-100 transition-opacity pointer-events-none">
-                  <MousePointerClick className="w-3 h-3" /> Click any data point to drill down
-                </div>
-              )}
               {!activeDimensionOnly && (workspaceMode === 'result' || detailsSection === 'workspace') && <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={activeResult.yLabel} chartContext={{ chartType: activeResult.vis, xKey: activeResult.xKey, yKey: activeResult.yKey, comparisonMode: (activeResult.config as any)?.comparison || undefined }} />}
               </div>
+              {activePipeline?.narrative && (
+                <aside aria-label="Answer in words" className="qi-answer-panel">
+                  <div className="qi-answer-panel-label"><Sparkles className="h-3.5 w-3.5" aria-hidden /> The answer</div>
+                  <p className="qi-answer-panel-summary">{activePipeline.narrative.summary}</p>
+                  {(activePipeline.narrative.insights?.length || 0) > 0 && (
+                    <>
+                      <div className="qi-answer-panel-label mt-4">Key points</div>
+                      <ul aria-label="Insights" className="qi-answer-insights">
+                        {activePipeline.narrative.insights!.map(insight => (
+                          <li key={insight}>{insight}</li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
+                  {activePipeline.explanation && activePipeline.provenance?.strategy === 'llm-plan' && (
+                    <p className="qi-answer-panel-how"><span>How it was worked out:</span> {activePipeline.explanation}</p>
+                  )}
+                  {!activeDimensionOnly && !drillDown && (
+                    <p className="qi-answer-panel-how">Click a bar or point to break it down.</p>
+                  )}
+                </aside>
+              )}
             </div>
           )}
 

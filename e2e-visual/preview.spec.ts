@@ -128,6 +128,48 @@ for (const theme of ['light', 'dark'] as const) {
         await stage.screenshot({ path: path.join(OUT, `2C-format-axis-titles-${theme}.png`), ...quick }).catch(() => {});
     });
 
+    test(`ai sql answer ${theme}`, async ({ page }) => {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await boot(page, theme, 'DASHBOARD');
+        // Stand-ins for the two AI calls; everything else runs for real
+        // (SQL on the local data, chart choice, insights).
+        const json = (body: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: { 'Access-Control-Allow-Origin': '*' } });
+        await page.route('**/api/ai-sql/resolve-turn', async route => {
+            const { currentQuestion } = route.request().postDataJSON();
+            await route.fulfill(json({ model: 'stub', usage: { total_tokens: 1 }, resolution: { route: 'analysis', turnType: 'new_question', resolvedQuestion: currentQuestion, confidence: 0.95 } }));
+        });
+        await page.route('**/api/llm/chat', async route => {
+            const asked = JSON.stringify(route.request().postDataJSON()?.messages?.slice(-1));
+            const reply = /month/i.test(asked)
+                ? { action: 'answer', title: 'Revenue by month', sql: 'SELECT DATE_TRUNC(\'month\', CAST("order_date" AS DATE)) AS month, ROUND(SUM("revenue"), 2) AS total_revenue FROM "data" GROUP BY 1 ORDER BY 1', dimensions: ['month'], measures: ['total_revenue'], explanation: 'Added up revenue for each calendar month.' }
+                : { action: 'answer', title: 'Top products by revenue', sql: 'SELECT "product", ROUND(SUM("revenue"), 2) AS total_revenue FROM "data" GROUP BY 1 ORDER BY 2 DESC LIMIT 10', dimensions: ['product'], measures: ['total_revenue'], explanation: 'Added up revenue for each product and kept the top 10.' };
+            await route.fulfill(json({ choices: [{ message: { content: JSON.stringify(reply) } }], usage: { total_tokens: 100 } }));
+        });
+        let nav = page.getByRole('button', { name: 'AI SQL', exact: true }).first();
+        if (!(await nav.isVisible().catch(() => false))) {
+            await page.getByRole('button', { name: 'Open navigation', exact: true }).click().catch(() => {});
+            nav = page.getByRole('button', { name: 'AI SQL', exact: true }).first();
+        }
+        await nav.click();
+        const quick = { timeout: 8000 };
+        const ask = async (question: string, file: string) => {
+            const box = page.getByLabel('Ask a question about your data');
+            await box.fill(question, quick).catch(() => {});
+            await box.press('Enter', quick).catch(() => {});
+            await page.locator('#ai-sql-result-workspace').waitFor(quick).catch(() => {});
+            await page.waitForTimeout(2500);
+            await shoot(page, `35-ai-sql-answer-${file}-${theme}`);
+        };
+        await ask('What are my best selling products by revenue?', 'ranking');
+        await page.setViewportSize({ width: 900, height: 1100 });
+        await page.waitForTimeout(1200);
+        await shoot(page, `36-ai-sql-answer-narrow-${theme}`);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await page.getByRole('button', { name: 'Back', exact: true }).click(quick).catch(() => {});
+        await page.waitForTimeout(800);
+        await ask('Monthly revenue trend', 'trend');
+    });
+
     test(`workspaces ${theme}`, async ({ page }) => {
         await boot(page, theme, 'DASHBOARD');
         const openNav = async (label: string) => {
