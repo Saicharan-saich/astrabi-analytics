@@ -128,7 +128,7 @@ describe('lean AI SQL — end to end with the AI and DuckDB stubbed', () => {
             expect(error.options.map(option => option.label)).toEqual(['Total sales', 'Cars sold', 'Average price']);
         });
         const sent = JSON.stringify(vi.mocked(fetchWithFallback).mock.calls[0][0]);
-        expect(sent).toContain('"price"');
+        expect(sent).toContain('price DOUBLE');
         expect(sent).not.toContain('M5');          // no row values
         expect(executeSQLViaDuckDB).not.toHaveBeenCalled();
     });
