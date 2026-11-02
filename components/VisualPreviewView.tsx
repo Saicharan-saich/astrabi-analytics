@@ -11,7 +11,8 @@ import { DimensionResultView } from './DimensionResultView';
 import { FormatPanel } from './FormatPanel';
 import { AIInsightPanel } from './AIInsightPanel';
 import { getCalculationDisplayName, type TableCalculation } from '../utils/tableCalculations';
-import { createAISQLBuilderHandoff, runAISQLPipeline, AISQLPipelineResult, type AISQLBuilderHandoff } from '../services/ai-sql';
+import { createAISQLBuilderHandoff, AISQLPipelineResult, type AISQLBuilderHandoff } from '../services/ai-sql';
+import { runLeanAISQL, AISQLClarificationError, type ClarificationOption } from '../services/ai-sql/leanPipeline';
 import { useTheme } from './ThemeProvider';
 import TrustBadge from './TrustBadge';
 import { PipelineReport } from './PipelineReport';
@@ -79,6 +80,8 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   const [followUpQuery, setFollowUpQuery] = useState('');
   const [isFollowUpLoading, setIsFollowUpLoading] = useState(false);
   const [followUpError, setFollowUpError] = useState<string | null>(null);
+  /** Choices offered when the next question was too vague to answer directly. */
+  const [followUpChoices, setFollowUpChoices] = useState<ClarificationOption[]>([]);
   const followUpRef = useRef<HTMLInputElement>(null);
 
   // ── Sync internal state when new query results arrive ──
@@ -153,7 +156,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
     setIsDrilling(true);
     const drillQuery = `Show breakdown of ${pipeline?.plan?.metrics?.[0]?.field || 'sales'} for "${dimensionValue}"`;
     try {
-      const res = await runAISQLPipeline(drillQuery, dataset);
+      const res = await runLeanAISQL(drillQuery, dataset, { autoChoose: true });
       if (res.rawData.length === 0) { setIsDrilling(false); return; }
       setDrillDown({
         query: drillQuery,
@@ -174,15 +177,18 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
   }, [dataset, isDrilling, pipeline, query]);
 
   // ── Ask-Another-Question Handler (standalone) ──
-  const handleFollowUp = useCallback(async () => {
-    if (!dataset || !followUpQuery.trim() || isFollowUpLoading) return;
+  const handleFollowUp = useCallback(async (chosen?: unknown) => {
+    // A chosen follow-up option arrives as a string; a click event does not.
+    const q = (typeof chosen === 'string' ? chosen : followUpQuery).trim();
+    if (!dataset || !q || isFollowUpLoading) return;
     setIsFollowUpLoading(true);
-    const q = followUpQuery.trim();
+    if (typeof chosen === 'string') setFollowUpQuery(chosen);
     setFollowUpError(null);
+    setFollowUpChoices([]);
     try {
       // Standalone: a follow-up is treated as a brand-new question, with no
       // memory of earlier ones.
-      const res = await runAISQLPipeline(q, dataset);
+      const res = await runLeanAISQL(q, dataset);
       if (res.rawData.length === 0) { setIsFollowUpLoading(false); return; }
       // Replace current result with follow-up result
       setDrillDown(null);
@@ -201,9 +207,13 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       setWorkspaceMode('result');
       setFollowUpQuery('');
     } catch (error: any) {
-      setFollowUpError(error?.kind === 'clarification_required'
-        ? `Please make this question more specific. ${error.message}`
-        : (error?.message || 'This question could not be completed. Please edit it and try again.'));
+      if (error instanceof AISQLClarificationError) {
+        setFollowUpError(error.message);
+        setFollowUpChoices(error.options);
+      } else {
+        setFollowUpChoices([]);
+        setFollowUpError(error?.message || 'This question could not be completed. Please edit it and try again.');
+      }
     } finally { setIsFollowUpLoading(false); }
   }, [dataset, followUpQuery, isFollowUpLoading, activeQuery, activePipeline]);
 
@@ -261,7 +271,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
     if (!dataset || isReloading) return;
     setIsReloading(true);
     try {
-      const res = await runAISQLPipeline(query, dataset, undefined, undefined, timeGrain, true);
+      const res = await runLeanAISQL(query, dataset, { grain: timeGrain as any, autoChoose: true });
       if (res.rawData.length === 0) { setIsReloading(false); return; }
       setPipeline(res);
       setResult({
@@ -523,6 +533,19 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                     <div className="min-w-0">
                       <div className={`text-[11px] font-black uppercase tracking-wider ${isDark ? 'text-indigo-300' : 'text-indigo-600'}`}>Answer in words</div>
                       <p className={`mt-1 text-sm leading-5 ${isDark ? 'text-slate-200' : 'text-slate-700'}`}>{activePipeline.narrative.summary}</p>
+                      {(activePipeline.narrative.insights?.length || 0) > 0 && (
+                        <ul aria-label="Insights" className={`qi-answer-insights mt-2 space-y-1 text-[13px] leading-5 ${isDark ? 'text-slate-300' : 'text-slate-600'}`}>
+                          {activePipeline.narrative.insights!.map(insight => (
+                            <li key={insight} className="flex gap-2">
+                              <span aria-hidden className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${isDark ? 'bg-indigo-300' : 'bg-indigo-500'}`} />
+                              <span>{insight}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {activePipeline.explanation && activePipeline.engine === 'llm-sql' && activePipeline.provenance?.strategy === 'llm-plan' && (
+                        <p className={`mt-2 text-[12px] ${isDark ? 'text-slate-400' : 'text-slate-500'}`}>How it was worked out: {activePipeline.explanation}</p>
+                      )}
                     </div>
                   </div>
                 </section>
@@ -899,7 +922,22 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
       )}
       {workspaceMode === 'details' && detailsSection === 'overview' && followUpError && (
         <div role="status" className={`shrink-0 border-t px-4 py-2 text-xs ${isDark ? 'border-violet-500/20 bg-violet-500/10 text-violet-200' : 'border-violet-200 bg-violet-50 text-violet-700'}`}>
-          {followUpError}
+          <span>{followUpError}</span>
+          {followUpChoices.length > 0 && (
+            <span className="mt-1.5 flex flex-wrap gap-1.5">
+              {followUpChoices.map(option => (
+                <button
+                  key={option.question}
+                  type="button"
+                  title={option.question}
+                  onClick={() => handleFollowUp(option.question)}
+                  className="qi-followup-option rounded-full px-2.5 py-1 text-[12px] font-semibold"
+                >
+                  {option.label}
+                </button>
+              ))}
+            </span>
+          )}
         </div>
       )}
       

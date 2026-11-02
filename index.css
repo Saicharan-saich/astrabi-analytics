@@ -4830,3 +4830,25 @@ body {
   color: var(--accent-foreground, #3730a3);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-primary, #4f46e5) 35%, transparent);
 }
+
+/* AI SQL follow-up question with one-click choices */
+.qi-followup {
+  background: color-mix(in srgb, var(--color-primary, #4f46e5) 6%, var(--bg-surface, #fff));
+  border-color: color-mix(in srgb, var(--color-primary, #4f46e5) 25%, var(--border-default, #e2e8f0));
+}
+.qi-followup-icon { color: var(--color-primary, #4f46e5); }
+.qi-followup-title { font-size: 15px; color: var(--text-primary, #0f172a); }
+.qi-followup-muted { color: var(--text-tertiary, #64748b); }
+.qi-followup-option {
+  background: var(--bg-surface, #fff);
+  color: var(--accent-foreground, #3730a3);
+  border: 1px solid color-mix(in srgb, var(--color-primary, #4f46e5) 40%, transparent);
+  transition: background-color 120ms ease, transform 120ms ease;
+}
+.qi-followup-option:hover { background: var(--accent, #eef2ff); transform: translateY(-1px); }
+.qi-followup-other {
+  color: var(--text-secondary, #475569);
+  border: 1px dashed var(--border-strong, #cbd5e1);
+}
+.qi-followup-other:hover { color: var(--text-primary, #0f172a); background: var(--bg-hover, #f1f5f9); }
+@media (prefers-reduced-motion: reduce) { .qi-followup-option:hover { transform: none; } }

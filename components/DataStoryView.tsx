@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { X, Loader2, ChevronLeft, ChevronRight, Play, Pause } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
-import { buildSummaryStoryQuestions, runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
+import { buildSummaryStoryQuestions, AISQLPipelineResult } from '../services/ai-sql';
+import { runLeanAISQL } from '../services/ai-sql/leanPipeline';
 import { resolveAISQLSemanticModel } from '../services/ai-sql/semanticLayer';
 import { ChartVisualization } from './ChartVisualization';
 
@@ -72,7 +73,7 @@ export const DataStoryView: React.FC<DataStoryViewProps> = ({ dataset, question,
         setSlides(prev => prev.map((s, idx) => idx === i ? { ...s, status: 'loading' } : s));
 
         try {
-          const res = await runAISQLPipeline(storyDefs[i].question, storyDataset);
+          const res = await runLeanAISQL(storyDefs[i].question, storyDataset, { autoChoose: true });
           if (cancelled) return;
           if (res.displaySafety?.allowed === false) {
             throw new Error(res.displaySafety.reasons.join(' ') || 'This result did not pass display-safety validation.');

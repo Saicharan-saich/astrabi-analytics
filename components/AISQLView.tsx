@@ -3,7 +3,8 @@ import { percentScaleFromSql } from '../utils/sqlPercentScale';
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, Shield, ShieldCheck, LayoutDashboard, Table2, Target } from 'lucide-react';
 import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
-import { resolveConversationTurnWithAI, runAISQLPipeline, AISQLPipelineResult } from '../services/ai-sql';
+import { resolveConversationTurnWithAI, AISQLPipelineResult } from '../services/ai-sql';
+import { runLeanAISQL, AISQLClarificationError, type ClarificationOption } from '../services/ai-sql/leanPipeline';
 import { MODEL_LADDER_LABEL } from '../services/ai-sql/modelConfig';
 import {
     getPrivacyMode, setPrivacyMode, PrivacyMode,
@@ -45,6 +46,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
     const [noDataSQL, setNoDataSQL] = useState<string | null>(null);
     const [scopeClarification, setScopeClarification] = useState<string | null>(null);
     const [clarificationMessage, setClarificationMessage] = useState<string | null>(null);
+    /** A follow-up question with one-click choices, asked before answering a vague question. */
+    const [followUp, setFollowUp] = useState<{ question: string; options: ClarificationOption[]; original: string } | null>(null);
     const [conversationReply, setConversationReply] = useState<{
         title: string;
         message: string;
@@ -189,6 +192,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
         setError(null);
         setScopeClarification(null);
         setClarificationMessage(null);
+        setFollowUp(null);
         setErrorTitle('Query could not be completed');
         setNoDataMsg(null);
         setNoDataSQL(null);
@@ -215,7 +219,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
             setConversationReply(null);
 
             if (turn.route === 'clarification') {
-                setScopeClarification(turn.clarificationQuestion || 'Please clarify the result you want.');
+                setFollowUp({ question: turn.clarificationQuestion || 'What would you like to know?', options: [], original: query });
                 incrementAiSqlUsage();
                 return;
             }
@@ -232,7 +236,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
 
             const timeoutMs = 60000;
             const result = await Promise.race([
-                runAISQLPipeline(analyticalQuestion, dataset),
+                runLeanAISQL(analyticalQuestion, dataset),
                 new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Query timed out after 60 seconds. Please try again.')), timeoutMs))
             ]);
 
@@ -333,9 +337,10 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                 setErrorTitle('AI conversation could not be planned');
                 setError(message);
                 return;
-            } else if (err?.kind === 'clarification_required') {
-                setClarificationMessage(message);
+            } else if (err instanceof AISQLClarificationError || err?.kind === 'clarification_required') {
+                setFollowUp({ question: message, options: (err as AISQLClarificationError).options || [], original: query });
                 setError(null);
+                incrementAiSqlUsage();
                 return;
             } else if (err?.kind === 'ai_sql_unavailable') setErrorTitle('AI SQL unavailable');
             else if (err?.kind === 'ai_sql_execution_failed') setErrorTitle('AI query could not run safely');
@@ -372,7 +377,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
 
                 {/* Header */}
                 <div className="flex flex-col gap-1 shrink-0">
-                    <Tooltip text="QuickInsight builds a local semantic and safety plan first. The AI then resolves conversational meaning and authors SQL within that governed context; local read-only validation and execution remain authoritative." position="right">
+                    <Tooltip text="The AI sees your column names and types, never your rows. It writes one read-only query, which runs in your browser." position="right">
                         <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
                             <img src="/ai-sql-logo.png" alt="AI SQL" className="w-7 h-7 rounded-lg object-cover" />
                             AI SQL
@@ -387,8 +392,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                     </Tooltip>
                     <div className="flex items-center gap-2">
                         <p className="text-gray-500 dark:text-slate-400 text-sm flex-1">
-                            Ask naturally about a metric, category, comparison, time period, or dataset summary. QuickInsight prepares a local governed plan, then the AI resolves whether your message is a new question, follow-up, summary, or clarification.
-                            Only your immediately previous business question may be supplied for context—not its answer, SQL, rows, or a full chat transcript. Every generated query is still validated as read-only and executed locally.
+                            Ask about your data in plain English. The AI reads only your column names and types, writes a query, and the query runs here on your computer — then you get a chart and the key points in words.
+                            If a question could mean different things, you'll get a quick follow-up with choices.
                         </p>
                         <Tooltip
                             position="left"
@@ -441,44 +446,36 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                     </div>
                 )}
 
-                {/* Dataset-wide requests need an output choice, not a guessed SQL query. */}
-                {scopeClarification && !isLoading && (
-                    <div role="dialog" aria-labelledby="scope-clarification-title" className="shrink-0 rounded-xl border border-violet-200 bg-violet-50 p-5 dark:border-violet-500/30 dark:bg-violet-500/10">
+                {/* A vague question gets a short follow-up with one-click choices. */}
+                {followUp && !isLoading && (
+                    <div role="dialog" aria-labelledby="qi-followup-title" className="qi-followup shrink-0 rounded-xl border p-5">
                         <div className="flex items-start gap-3">
-                            <Target className="mt-0.5 h-5 w-5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
+                            <Target className="qi-followup-icon mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
                             <div className="min-w-0 flex-1">
-                                <div id="scope-clarification-title" className="font-bold text-violet-900 dark:text-violet-200">Tell me a little more</div>
-                                <p className="mt-1 text-sm leading-relaxed text-violet-700 dark:text-violet-200/80">{scopeClarification}</p>
-                                <div className="mt-4 grid gap-2 sm:grid-cols-3">
-                                    <button type="button" onClick={() => { setScopeClarification(null); onOpenDatasetOverview?.(); }} className="rounded-xl border border-violet-300 bg-white p-3 text-left transition hover:border-violet-500 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-slate-900/60 dark:hover:bg-violet-500/15">
-                                        <span className="flex items-center gap-2 font-semibold text-violet-900 dark:text-violet-100"><LayoutDashboard className="h-4 w-4" /> Dataset overview</span>
-                                        <span className="mt-1 block text-xs text-violet-600 dark:text-violet-300/80">Recommended · tables, fields, quality, and coverage</span>
-                                    </button>
-                                    <button type="button" onClick={() => { setScopeClarification(null); onOpenAllRecords?.(); }} className="rounded-xl border border-violet-300 bg-white p-3 text-left transition hover:border-violet-500 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-slate-900/60 dark:hover:bg-violet-500/15">
-                                        <span className="flex items-center gap-2 font-semibold text-violet-900 dark:text-violet-100"><Table2 className="h-4 w-4" /> Browse records</span>
-                                        <span className="mt-1 block text-xs text-violet-600 dark:text-violet-300/80">Open the current table with all available columns</span>
-                                    </button>
-                                    <button type="button" onClick={() => { setQuery(buildFocusedQuestionSuggestion(dataset)); setScopeClarification(null); requestAnimationFrame(() => inputRef.current?.focus()); }} className="rounded-xl border border-violet-300 bg-white p-3 text-left transition hover:border-violet-500 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-slate-900/60 dark:hover:bg-violet-500/15">
-                                        <span className="flex items-center gap-2 font-semibold text-violet-900 dark:text-violet-100"><Sparkles className="h-4 w-4" /> Focus the analysis</span>
-                                        <span className="mt-1 block text-xs text-violet-600 dark:text-violet-300/80">Start from a dataset-specific example you can edit</span>
+                                <div id="qi-followup-title" className="qi-followup-title font-semibold">{followUp.question}</div>
+                                {followUp.original && <p className="qi-followup-muted mt-0.5 text-[12.5px]">You asked: “{followUp.original}”</p>}
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                    {followUp.options.map(option => (
+                                        <button
+                                            key={option.question}
+                                            type="button"
+                                            title={option.question}
+                                            onClick={() => { setFollowUp(null); pendingAutoSubmit.current = true; setQuery(option.question); }}
+                                            className="qi-followup-option rounded-full px-3 py-1.5 text-[13px] font-semibold"
+                                        >
+                                            {option.label}
+                                        </button>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        onClick={() => { setFollowUp(null); setQuery(followUp.original); requestAnimationFrame(() => inputRef.current?.focus()); }}
+                                        className="qi-followup-other rounded-full px-3 py-1.5 text-[13px] font-semibold"
+                                    >
+                                        {followUp.options.length ? 'Something else…' : 'Edit my question'}
                                     </button>
                                 </div>
                             </div>
-                            <button aria-label="Dismiss clarification" onClick={() => { setScopeClarification(null); inputRef.current?.focus(); }} className="shrink-0 text-violet-400 hover:text-violet-700 dark:hover:text-violet-200"><X className="h-4 w-4" /></button>
-                        </div>
-                    </div>
-                )}
-
-                {clarificationMessage && !isLoading && (
-                    <div role="status" aria-live="polite" className="shrink-0 rounded-xl border border-violet-200 bg-violet-50 p-5 text-sm dark:border-violet-500/30 dark:bg-violet-500/10">
-                        <div className="flex items-start gap-3">
-                            <Target className="mt-0.5 h-5 w-5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
-                            <div className="flex-1">
-                                <div className="font-bold text-violet-900 dark:text-violet-200">One detail is needed before calculating</div>
-                                <p className="mt-1 leading-relaxed text-violet-700 dark:text-violet-200/80">{clarificationMessage}</p>
-                                <button type="button" onClick={() => { setClarificationMessage(null); inputRef.current?.focus(); }} className="mt-3 rounded-lg bg-violet-600 px-3 py-1.5 font-semibold text-white hover:bg-violet-500">Edit question</button>
-                            </div>
-                            <button aria-label="Dismiss clarification" onClick={() => setClarificationMessage(null)} className="shrink-0 text-violet-400 hover:text-violet-700 dark:hover:text-violet-200"><X className="h-4 w-4" /></button>
+                            <button aria-label="Dismiss follow-up" onClick={() => { setFollowUp(null); inputRef.current?.focus(); }} className="qi-followup-muted shrink-0"><X className="h-4 w-4" /></button>
                         </div>
                     </div>
                 )}
@@ -546,7 +543,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                             Early Access Preview
                         </span>
                         <span className="text-[12px] text-indigo-600/70 dark:text-indigo-400/70 ml-1.5">
-                            — AI-authored queries, visible calculation paths, and private local execution with no local-answer fallback.
+                            — the AI writes the query from your column names; your rows stay on your computer.
                         </span>
                     </div>
                     <span className="shrink-0 text-[11px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-300/40 dark:border-indigo-500/30">
@@ -690,7 +687,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
 
 
                 {/* Example Suggestions */}
-                {!isLoading && !error && !noDataMsg && !scopeClarification && !clarificationMessage && !conversationReply && (
+                {!isLoading && !error && !noDataMsg && !followUp && !conversationReply && (
                     <div className="flex min-h-[220px] shrink-0 flex-col items-center justify-center py-5">
                         <div className="mb-5 max-w-2xl rounded-xl border border-cyan-200/70 bg-cyan-50/70 px-5 py-3 text-center dark:border-cyan-500/20 dark:bg-cyan-500/[0.07]">
                             <p className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">A useful question usually includes</p>

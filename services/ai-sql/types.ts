@@ -485,6 +485,8 @@ export interface ResultNarrative {
     headline: string;
     /** One concise, non-technical paragraph answering the question in words. */
     summary: string;
+    /** A few facts calculated from the returned rows in the browser. */
+    insights?: string[];
 }
 
 export interface AIQueryProvenance {
