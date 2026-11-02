@@ -833,6 +833,17 @@ function App() {
     const nextOptions: EtlOptions = { ...(dataset.etlOptions || {}) };
     if (revert.value === null || revert.value === false) delete nextOptions[revert.option];
     else (nextOptions as any)[revert.option] = revert.value;
+    rerunCleaning(nextOptions, revert.label, revert.option);
+  };
+
+  /** The cleaning review's "Apply changes": every decision in one re-run. */
+  const handleApplyCleaningDecisions = (nextOptions: EtlOptions, label: string) => {
+    if (!dataset?.rawRows?.length || dataset.relationalCatalog || etlRevertPending) return;
+    rerunCleaning(nextOptions, label, '__review__');
+  };
+
+  const rerunCleaning = (nextOptions: EtlOptions, label: string, pendingKey: string) => {
+    if (!dataset?.rawRows?.length) return;
     // Keep the column roles the user set by hand; everything else is re-detected.
     const overrides: Record<string, ColumnType> = {};
     for (const entry of dataset.etlLogs || []) {
@@ -842,7 +853,7 @@ function App() {
         if (column) overrides[name] = column.type;
       }
     }
-    setEtlRevertPending(revert.option);
+    setEtlRevertPending(pendingKey);
     const worker = new Worker(new URL('./workers/etl.worker.ts', import.meta.url), { type: 'module' });
     worker.onmessage = (event: MessageEvent) => {
       if (event.data.type === 'SUCCESS') {
@@ -863,11 +874,11 @@ function App() {
         } catch (err) {
           console.warn('[App] Semantic model rebuild failed after cleaning change:', err);
         }
-        refreshAISQLSemanticSnapshot(updated, `cleaning step changed: ${revert.option}`);
+        refreshAISQLSemanticSnapshot(updated, `cleaning step changed: ${pendingKey}`);
         setDataset(updated);
         saveDatasetToDB(updated);
         const delta = rows.length - dataset.rows.length;
-        showToast(`${revert.label} — done. ${delta === 0 ? 'Row count unchanged' : `${Math.abs(delta).toLocaleString()} row(s) ${delta > 0 ? 'added back' : 'removed'}`}.`);
+        showToast(`${label} — done. ${delta === 0 ? 'Row count unchanged' : `${Math.abs(delta).toLocaleString()} row(s) ${delta > 0 ? 'added back' : 'removed'}`}.`);
       } else if (event.data.type === 'ERROR') {
         setError(event.data.error || 'Re-running the cleaning failed.');
       }
@@ -961,6 +972,7 @@ function App() {
     onDataCleaned: handleDatasetDataCleaned,
     onSwitchToLive: () => setActiveTab(Tab.UPLOAD),
     onEtlRevert: dataset?.rawRows?.length && !dataset.relationalCatalog ? handleEtlRevert : undefined,
+    onApplyCleaningDecisions: dataset?.rawRows?.length && !dataset.relationalCatalog ? handleApplyCleaningDecisions : undefined,
     etlRevertPending,
   };
 

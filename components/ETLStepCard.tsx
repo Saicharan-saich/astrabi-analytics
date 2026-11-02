@@ -4,6 +4,7 @@ import {
 } from 'lucide-react';
 import { ETLLog } from '../types';
 import { getStepGuide } from './etlStepGuide';
+import type { StepDecision } from '../utils/cleaningReview';
 
 /**
  * ETLStepCard — one ETL step rendered as a sleek, self-explanatory card.
@@ -72,10 +73,23 @@ interface Props {
     onApprove: (key: string) => void;
     onSkip: (key: string) => void;
     onEditRemoved: (key: string, rows: Record<string, any>[]) => void;
+    /** The decision waiting for "Apply changes", if any. */
+    decision?: StepDecision;
+    onDecide?: (key: string, decision: StepDecision) => void;
+    onClearDecision?: (key: string) => void;
 }
 
+const decisionLabel = (decision: StepDecision): string => {
+    switch (decision.kind) {
+        case 'keep': return 'Kept';
+        case 'undo': return `Will undo — ${decision.revert.label}`;
+        case 'outlier': return decision.choice === 'keep' ? 'Will keep as correct' : decision.choice === 'remove' ? 'Will remove these rows' : 'Will cap to the usual range';
+        case 'typo': return decision.choice === 'merge' ? 'Will merge them' : 'Will keep them apart';
+    }
+};
+
 export const ETLStepCard: React.FC<Props> = ({
-    entry, isExpanded, onToggle, etlMode, isApproved, isSkipped, onApprove, onSkip, onEditRemoved,
+    entry, isExpanded, onToggle, etlMode, onApprove, onSkip, onEditRemoved, decision, onDecide, onClearDecision,
 }) => {
     const status = (entry.status as Status) in STATUS ? (entry.status as Status) : 'info';
     const s = STATUS[status];
@@ -102,20 +116,36 @@ export const ETLStepCard: React.FC<Props> = ({
                     </div>
                     <p className={`qi-step-summary text-[12.5px] leading-5 mt-0.5 ${open ? '' : 'line-clamp-1'}`}>{summary}</p>
                 </button>
-                {etlMode === 'manual' && status === 'applied' && (
-                    <div className="flex items-center gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
-                        {isApproved ? (
-                            <span className="qi-step-chip inline-flex items-center gap-1 text-[11px] font-semibold"><Check className="w-3 h-3" /> Approved</span>
-                        ) : isSkipped ? (
-                            <span className="qi-step-chip inline-flex items-center gap-1 text-[11px] font-semibold"><SkipForward className="w-3 h-3" /> Skipped</span>
-                        ) : (
+                {etlMode === 'manual' && (status === 'applied' || entry.decision) && (
+                    <div className="qi-step-actions flex flex-wrap items-center justify-end gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
+                        {decision ? (
                             <>
-                                <button onClick={() => onApprove(entry._key)} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><Check className="w-3 h-3" /> Approve</button>
-                                <button onClick={() => onSkip(entry._key)} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><SkipForward className="w-3 h-3" /> Skip</button>
+                                <span className={`qi-step-chip inline-flex items-center gap-1 text-[11px] font-semibold ${decision.kind === 'keep' ? '' : 'is-pending'}`}>
+                                    {decision.kind === 'undo' ? <SkipForward className="w-3 h-3" /> : <Check className="w-3 h-3" />} {decisionLabel(decision)}
+                                </span>
+                                <button type="button" onClick={() => onClearDecision?.(entry._key)} className="qi-step-link text-[11px] font-semibold">Change</button>
+                            </>
+                        ) : entry.decision?.kind === 'outlier' ? (
+                            <>
+                                <button type="button" onClick={() => onDecide?.(entry._key, { kind: 'outlier', column: entry.decision!.column, choice: 'keep' })} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><Check className="w-3 h-3" /> Values are correct</button>
+                                <button type="button" onClick={() => onDecide?.(entry._key, { kind: 'outlier', column: entry.decision!.column, choice: 'remove' })} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold">Remove these rows</button>
+                                <button type="button" onClick={() => onDecide?.(entry._key, { kind: 'outlier', column: entry.decision!.column, choice: 'cap' })} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold">Cap to usual range</button>
+                            </>
+                        ) : entry.decision?.kind === 'typo' ? (
+                            <>
+                                <button type="button" onClick={() => onDecide?.(entry._key, { kind: 'typo', column: entry.decision!.column, choice: 'merge' })} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><Check className="w-3 h-3" /> Merge them</button>
+                                <button type="button" onClick={() => onDecide?.(entry._key, { kind: 'typo', column: entry.decision!.column, choice: 'keep' })} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold">Keep separate</button>
+                            </>
+                        ) : entry.revert ? (
+                            <>
+                                <button type="button" onClick={() => onApprove(entry._key)} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><Check className="w-3 h-3" /> Keep</button>
+                                <button type="button" onClick={() => onSkip(entry._key)} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold" title={entry.revert.label}><SkipForward className="w-3 h-3" /> Undo</button>
                                 {entry.removedRowSamples && entry.removedRowSamples.length > 0 && (
-                                    <button onClick={() => onEditRemoved(entry._key, entry.removedRowSamples!)} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><Edit3 className="w-3 h-3" /> Edit rows</button>
+                                    <button type="button" onClick={() => onEditRemoved(entry._key, entry.removedRowSamples!)} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><Edit3 className="w-3 h-3" /> Edit rows</button>
                                 )}
                             </>
+                        ) : (
+                            <span className="qi-step-chip qi-step-required inline-flex items-center gap-1 text-[11px] font-semibold" title="Needed to read the file correctly, so it always runs">Always applied</span>
                         )}
                     </div>
                 )}

@@ -1,5 +1,6 @@
 // --- REFACTORED: analysisEngine.ts ---
 // Re-exports from extracted modules for backward compatibility
+import { averageCaution, groupedAverageMessage } from '../utils/averageCheck';
 import { parseDelimitedText } from './delimitedText';
 export { parseDelimitedText } from './delimitedText';
 import { AggregationType, AnalysisResult, AnalysisType, ColumnDefinition, ColumnProfile, ColumnType, Dataset, ETLLog, QueryConfig, TimeContext, TimeGrain, SchemaType, CanonicalMapping, QuestionTemplate, QuestionGrain } from "../types";
@@ -324,6 +325,28 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
     } else if (postValCheck.status === 'warning') {
         confidence -= 0.05;
         resultWarnings.push(...postValCheck.checks.filter(c => c.status === 'warn').map(c => c.message));
+    }
+
+    // An average of very uneven values (100, 0, 0, 0 → 25) misleads: say so,
+    // with the median. Only when no filter narrows the rows, so the median is
+    // computed on exactly the rows behind the answer.
+    if (query.aggregation === 'AVG' && query.metric && !Object.values(query.filters || {}).some(values => values?.length) && !query.measureFilters?.length && !query.dateFilters?.length && !query.timeFilter) {
+        const groups = new Map<string, unknown[]>();
+        const dimension = query.dimension && query.dimension !== 'None' ? query.dimension : '';
+        for (const row of activeRows) {
+            const key = dimension ? String(row[dimension] ?? '') : '';
+            const list = groups.get(key);
+            if (list) list.push(row[query.metric]); else groups.set(key, [row[query.metric]]);
+        }
+        const metricLabel = query.metric.replace(/_/g, ' ');
+        const flagged = [...groups.entries()]
+            .map(([key, values]) => ({ key, caution: averageCaution(values) }))
+            .filter((item): item is { key: string; caution: NonNullable<ReturnType<typeof averageCaution>> } => Boolean(item.caution));
+        if (flagged.length && !dimension) {
+            aggregationNotes.push(flagged[0].caution.message.replace('The average', `The average ${metricLabel}`));
+        } else if (flagged.length) {
+            aggregationNotes.push(groupedAverageMessage(metricLabel, dimension, groups.size, flagged));
+        }
     }
 
     analysisResult.confidence = Math.max(0, Math.min(1, confidence));

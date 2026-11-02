@@ -1,6 +1,7 @@
-import React, { useState, useMemo } from 'react';
-import { Database, ToggleLeft, ToggleRight, X, Save, Edit3 } from 'lucide-react';
-import { Dataset, ColumnType } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Database, ToggleLeft, ToggleRight, X, Save, Edit3, Loader2, CheckCircle2 } from 'lucide-react';
+import { Dataset, ColumnType, EtlOptions, ETLLog } from '../types';
+import { buildReviewOptions, describeReview, type StepDecision } from '../utils/cleaningReview';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { ETLStepCard } from './ETLStepCard';
 
@@ -10,6 +11,12 @@ interface ETLViewProps {
   onRowsRecovered?: (recoveredRows: Record<string, any>[]) => void;
   onDataCleaned?: (newRows: Record<string, any>[], log: CleaningLogEntry) => void;
   onSwitchToLive?: () => void;
+  /** Re-run the cleaning once with every decision from the review. */
+  onApplyDecisions?: (nextOptions: EtlOptions, label: string) => void;
+  /** The review's re-run is in progress. */
+  applying?: boolean;
+  /** Any cleaning re-run is in progress. */
+  busy?: boolean;
 }
 
 type LogFilter = 'all' | 'applied' | 'skipped' | 'info';
@@ -125,12 +132,24 @@ const RowEditorModal: React.FC<RowEditorProps> = ({ rows, onClose, onSave }) => 
  * facts (download, connection mode, column types, time range) live in the
  * workspace header and Columns tab, so this view is only the step log.
  */
-export const ETLView: React.FC<ETLViewProps> = ({ dataset, onRowsRecovered }) => {
+export const ETLView: React.FC<ETLViewProps> = ({ dataset, onRowsRecovered, onApplyDecisions, applying = false, busy = false }) => {
   const [logFilter, setLogFilter] = useState<LogFilter>('all');
   const [expandedSteps, setExpandedSteps] = useState<Set<string>>(new Set());
   const [etlMode, setEtlMode] = useState<ETLMode>('auto');
-  const [approvedSteps, setApprovedSteps] = useState<Set<string>>(new Set());
-  const [skippedSteps, setSkippedSteps] = useState<Set<string>>(new Set());
+  /** Review decisions waiting for "Apply changes", by step key. */
+  const [decisions, setDecisions] = useState<Record<string, StepDecision>>({});
+  const approvedSteps = useMemo(() => new Set(Object.entries(decisions).filter(([, d]) => d.kind === 'keep').map(([k]) => k)), [decisions]);
+  const skippedSteps = useMemo(() => new Set(Object.entries(decisions).filter(([, d]) => d.kind === 'undo').map(([k]) => k)), [decisions]);
+  // A finished re-run produces a new version of the data: start the review fresh.
+  const version = dataset?.version;
+  const [lastVersion, setLastVersion] = useState(version);
+  useEffect(() => {
+    if (version !== lastVersion) {
+      setLastVersion(version);
+      setDecisions({});
+      setEtlMode('auto');
+    }
+  }, [version, lastVersion]);
   const [editingRemovedRows, setEditingRemovedRows] = useState<{ stepKey: string; rows: Record<string, any>[] } | null>(null);
 
   const logs = dataset?.etlLogs || [];
@@ -195,19 +214,27 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onRowsRecovered }) =>
             ))}
           </div>
           <div className="flex-1" />
+          {etlMode === 'auto' && logs.some(l => l.decision) && (
+            <button
+              type="button"
+              onClick={() => { setEtlMode('manual'); setLogFilter('all'); }}
+              className="qi-review-cta inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-semibold"
+            >
+              Decide on {logs.filter(l => l.decision).length} flagged item{logs.filter(l => l.decision).length === 1 ? '' : 's'}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
               setEtlMode(prev => prev === 'auto' ? 'manual' : 'auto');
-              setApprovedSteps(new Set());
-              setSkippedSteps(new Set());
+              setDecisions({});
             }}
             aria-pressed={etlMode === 'manual'}
             className="qi-ws-ghost inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-semibold"
-            title={etlMode === 'auto' ? 'Review and approve each applied step' : 'Back to automatic cleaning'}
+            title={etlMode === 'auto' ? 'Keep or undo each change, and decide on flagged values' : 'Leave the review without changing anything'}
           >
             {etlMode === 'manual' ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-            Approve steps one by one
+            Review changes one by one
           </button>
         </div>
 
@@ -224,14 +251,45 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onRowsRecovered }) =>
                 etlMode={etlMode}
                 isApproved={approvedSteps.has(entry._key)}
                 isSkipped={skippedSteps.has(entry._key)}
-                onApprove={(k) => setApprovedSteps(prev => new Set([...prev, k]))}
-                onSkip={(k) => setSkippedSteps(prev => new Set([...prev, k]))}
+                decision={decisions[entry._key]}
+                onApprove={(k) => setDecisions(prev => ({ ...prev, [k]: { kind: 'keep' } }))}
+                onSkip={(k) => entry.revert && setDecisions(prev => ({ ...prev, [k]: { kind: 'undo', revert: entry.revert! } }))}
+                onDecide={(k, choice) => setDecisions(prev => ({ ...prev, [k]: choice }))}
+                onClearDecision={(k) => setDecisions(prev => { const next = { ...prev }; delete next[k]; return next; })}
                 onEditRemoved={(k, rows) => setEditingRemovedRows({ stepKey: k, rows })}
               />
             ))}
           </div>
         )}
+
       </div>
+
+        {etlMode === 'manual' && (() => {
+          const review = describeReview(decisions);
+          return (
+            <div className="qi-review-bar mt-2 rounded-xl" role="region" aria-label="Your review">
+              <div className="qi-review-bar-text">
+                <strong>{review.changes ? `${review.changes} change${review.changes === 1 ? '' : 's'} to apply` : review.reviewed ? 'Nothing to change' : 'Review each step'}</strong>
+                <span>{review.changes ? review.summary : review.reviewed ? `${review.reviewed} step${review.reviewed === 1 ? '' : 's'} kept as they are.` : 'Keep or undo each change, and decide what to do with flagged values. Nothing changes until you apply.'}</span>
+              </div>
+              <div className="qi-review-bar-actions">
+                <button type="button" className="qi-ws-ghost px-3 py-1.5 rounded-lg text-[13px] font-semibold" onClick={() => { setDecisions({}); setEtlMode('auto'); }} disabled={applying}>
+                  {review.changes ? 'Discard' : 'Close review'}
+                </button>
+                <button
+                  type="button"
+                  className="qi-review-apply"
+                  disabled={!review.changes || applying || busy || !onApplyDecisions}
+                  title={!onApplyDecisions ? 'This data source cannot be re-cleaned here' : undefined}
+                  onClick={() => onApplyDecisions?.(buildReviewOptions(dataset.etlOptions || {}, decisions), review.changes === 1 ? review.summary : `${review.changes} cleaning changes`)}
+                >
+                  {applying ? <Loader2 className="w-4 h-4 animate-spin" aria-hidden /> : <CheckCircle2 className="w-4 h-4" aria-hidden />}
+                  {applying ? 'Applying…' : 'Apply changes'}
+                </button>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* Row Editor Modal */}
       {editingRemovedRows && (
@@ -243,8 +301,8 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onRowsRecovered }) =>
               onRowsRecovered(keptRows);
             }
             setEditingRemovedRows(null);
-            // In manual mode, auto-approve the step after editing
-            setApprovedSteps(prev => new Set([...prev, editingRemovedRows.stepKey]));
+            // Editing the removed rows is the decision on that step.
+            setDecisions(prev => ({ ...prev, [editingRemovedRows.stepKey]: { kind: 'keep' } }));
           }}
         />
       )}

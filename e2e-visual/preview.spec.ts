@@ -279,6 +279,21 @@ for (const theme of ['light', 'dark'] as const) {
                 await button.click().catch(() => {});
                 await page.waitForTimeout(1500);
                 await page.screenshot({ path: path.join(OUT, `53-ws-${slug}-${theme}.png`) });
+                if (slug === 'cleaning') {
+                    // The review: decide on flagged values and undo a change, then the apply bar.
+                    const quick = { timeout: 5000 };
+                    await page.getByRole('button', { name: /Decide on \d+ flagged/ }).first().click(quick).catch(() => {});
+                    await page.waitForTimeout(500);
+                    await page.getByRole('button', { name: 'Values are correct' }).first().click(quick).catch(() => {});
+                    await page.getByRole('button', { name: 'Merge them' }).first().click(quick).catch(() => {});
+                    await page.getByRole('button', { name: 'Undo', exact: true }).first().click(quick).catch(() => {});
+                    await page.waitForTimeout(400);
+                    await page.screenshot({ path: path.join(OUT, `55-cleaning-review-${theme}.png`), fullPage: true });
+                    await page.locator('.qi-review-bar').first().screenshot({ path: path.join(OUT, `55-cleaning-review-bar-${theme}.png`), ...quick }).catch(() => {});
+                    await page.getByRole('button', { name: 'Apply changes' }).first().click(quick).catch(() => {});
+                    await page.waitForTimeout(5000);
+                    await page.screenshot({ path: path.join(OUT, `56-cleaning-applied-${theme}.png`), fullPage: true });
+                }
                 if (slug === 'overview') {
                     await page.locator('.qi-ws-row:visible').filter({ hasText: 'revenue' }).first().click().catch(() => {});
                     await page.locator('.qi-ws-row:visible').filter({ hasText: 'category' }).first().click().catch(() => {});

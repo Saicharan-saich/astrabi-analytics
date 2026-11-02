@@ -1659,21 +1659,90 @@ function layer5b_hardening(
     }
 
     // ── 2. FLAGS (surfaced for review; data is NOT changed) ──
-    // 2a. Numeric outliers per metric.
+    // 2a. Numeric outliers per metric — flagged, or handled as the user decided.
+    const outlierDecisions = opts.outlierDecisions || {};
+    /** The decisions without this column: what "undo" goes back to. */
+    const withoutDecision = <T extends string>(decisions: Record<string, T>, column: string) => {
+        const { [column]: _removed, ...rest } = decisions;
+        return Object.keys(rest).length ? rest : null;
+    };
     for (const c of columns.filter(c => c.type === ColumnType.METRIC)) {
         const r = detectOutliersIQR(valuesOf(c.name));
-        if (r) logs.push(log('Outlier Flag', 6, 'info',
-            `Column '${c.name}': ${r.count} value(s) outside the expected range [${r.lowerBound.toFixed(2)}, ${r.upperBound.toFixed(2)}] (e.g. ${r.examples.join(', ')}). Review before trusting sums/averages — not auto-removed.`,
-            { affectedColumns: [c.name], affectedRows: r.count }));
+        if (!r) continue;
+        const choice = outlierDecisions[c.name];
+        const range = `[${r.lowerBound.toFixed(2)}, ${r.upperBound.toFixed(2)}]`;
+        const isOutlier = (value: unknown) => {
+            if (value === null || value === undefined || value === '') return false;
+            const n = Number(value);
+            return Number.isFinite(n) && (n < r.lowerBound || n > r.upperBound);
+        };
+        const undo = { option: 'outlierDecisions' as const, value: withoutDecision(outlierDecisions, c.name), label: `Review '${c.name}' again` };
+        if (choice === 'keep') {
+            logs.push(log('Outlier Confirmed', 6, 'applied',
+                `Column '${c.name}': ${r.count} value(s) outside the usual range ${range} (e.g. ${r.examples.join(', ')}) were checked and kept as correct.`,
+                { affectedColumns: [c.name], affectedRows: r.count, revert: undo }));
+        } else if (choice === 'remove') {
+            const before = rows.length;
+            const removed = rows.filter(row => isOutlier(row[c.name]));
+            rows = rows.filter(row => !isOutlier(row[c.name]));
+            logs.push(log('Outlier Removal', 6, 'applied',
+                `Column '${c.name}': removed ${removed.length} row(s) with values outside the usual range ${range}, as you chose.`,
+                { affectedColumns: [c.name], rowsBefore: before, rowsAfter: rows.length, removedRowSamples: removed.slice(0, 10), revert: { ...undo, label: 'Put these rows back' } }));
+        } else if (choice === 'cap') {
+            const samples: { column: string; before: unknown; after: unknown }[] = [];
+            let changed = 0;
+            rows = rows.map(row => {
+                if (!isOutlier(row[c.name])) return row;
+                const n = Number(row[c.name]);
+                const capped = Math.round((n < r.lowerBound ? r.lowerBound : r.upperBound) * 100) / 100;
+                changed++;
+                if (samples.length < 6) samples.push({ column: c.name, before: row[c.name], after: capped });
+                return { ...row, [c.name]: capped };
+            });
+            logs.push(log('Outlier Capping', 6, 'applied',
+                `Column '${c.name}': ${changed} value(s) outside the usual range were set to the nearest edge of ${range}, as you chose.`,
+                { affectedColumns: [c.name], affectedRows: changed, transformSamples: samples as any, revert: { ...undo, label: 'Restore original values' } }));
+        } else {
+            logs.push(log('Outlier Flag', 6, 'info',
+                `Column '${c.name}': ${r.count} value(s) outside the expected range ${range} (e.g. ${r.examples.join(', ')}). Review before trusting sums/averages — not auto-removed.`,
+                { affectedColumns: [c.name], affectedRows: r.count, decision: { kind: 'outlier', column: c.name } }));
+        }
     }
     // 2b. Likely typos among category values (edit distance 1).
+    const typoDecisions = opts.typoDecisions || {};
     for (const c of columns.filter(c => c.type === ColumnType.DIMENSION)) {
         const groups = findNearDuplicateGroups(valuesOf(c.name));
+        const typoChoice = typoDecisions[c.name];
+        const typoUndo = { option: 'typoDecisions' as const, value: withoutDecision(typoDecisions, c.name), label: `Review '${c.name}' again` };
+        if (groups.length > 0 && typoChoice === 'merge') {
+            const map = new Map<string, string>();
+            for (const group of groups) for (const variant of group.variants) map.set(variant, group.canonical);
+            let changed = 0;
+            rows = rows.map(row => {
+                const value = row[c.name];
+                const key = value === null || value === undefined ? '' : String(value).trim();
+                const target = map.get(key);
+                if (target === undefined || target === value) return row;
+                changed++;
+                return { ...row, [c.name]: target };
+            });
+            const ex = groups.slice(0, 2).map(g => `"${g.variants[0]}" → "${g.canonical}"`).join(', ');
+            logs.push(log('Typo Merge', 6, 'applied',
+                `Column '${c.name}': merged ${groups.length} likely typo(s) into the common spelling (${ex}; ${changed} cell(s)), as you chose.`,
+                { affectedColumns: [c.name], affectedRows: changed, revert: { ...typoUndo, label: 'Keep original spellings' } }));
+            continue;
+        }
+        if (groups.length > 0 && typoChoice === 'keep') {
+            logs.push(log('Typo Review', 6, 'applied',
+                `Column '${c.name}': ${groups.length} similar value(s) were checked and kept as different values.`,
+                { affectedColumns: [c.name], revert: typoUndo }));
+            continue;
+        }
         if (groups.length > 0) {
             const ex = groups.slice(0, 2).map(g => `"${g.variants[0]}"≈"${g.canonical}"`).join(', ');
             logs.push(log('Possible Typo Flag', 6, 'info',
                 `Column '${c.name}': ${groups.length} near-duplicate value(s) that may be typos (${ex}). Not merged automatically — confirm to combine.`,
-                { affectedColumns: [c.name] }));
+                { affectedColumns: [c.name], decision: { kind: 'typo', column: c.name } }));
         }
     }
     // 2c. Sign / range / delimited-cell / completeness flags.

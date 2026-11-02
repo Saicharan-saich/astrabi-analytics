@@ -34,6 +34,7 @@ import { reshapeData } from './dataReshaper';
 import { buildResultNarrative } from './resultNarrative';
 import { formatSQL } from '../sqlFormatter';
 import { formatContextForPrompt, type ContextTurn } from './chatContext';
+import { averageCaution, groupedAverageMessage } from '../../utils/averageCheck';
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -336,6 +337,38 @@ export function buildInsights(rows: Record<string, any>[], profile: ResultProfil
         insights.push(`${last[dimension]} is lowest at ${formatNumber(Number(last[metric]))}${spread !== null && allPositive ? ` — ${pct(spread)} of the leader` : ''}.`);
     }
     return insights.slice(0, 3);
+}
+
+// ── Averages that mislead ────────────────────────────────────────────
+
+/**
+ * For a simple average query (AVG of one column, optionally grouped by one
+ * column, no WHERE), check the source rows here in the browser and warn when
+ * the average hides very uneven values (100, 0, 0, 0 → 25).
+ */
+export function averageCautionForSql(sql: string, sourceRows: Record<string, any>[], dimensions: string[] = []): string | null {
+    const text = sql.replace(/\s+/g, ' ');
+    const averages = [...text.matchAll(/\bAVG\s*\(\s*"?([A-Za-z0-9_ ]+?)"?\s*\)/gi)].map(match => match[1]);
+    if (averages.length !== 1 || /\bWHERE\b|\bHAVING\b|\bJOIN\b|\bQUALIFY\b/i.test(text) || !sourceRows.length) return null;
+    const column = Object.keys(sourceRows[0]).find(name => name.toLowerCase() === averages[0].toLowerCase());
+    if (!column) return null;
+    const groupBy = text.match(/\bGROUP BY (.+?)(?: ORDER BY| LIMIT|$)/i)?.[1];
+    const label = column.replace(/_/g, ' ');
+    if (!groupBy) {
+        const caution = averageCaution(sourceRows.map(row => row[column]));
+        return caution ? caution.message.replace('The average', `The average ${label}`) : null;
+    }
+    const dimension = dimensions.find(name => Object.prototype.hasOwnProperty.call(sourceRows[0], name));
+    if (!dimension || dimensions.length !== 1) return null;
+    const groups = new Map<string, unknown[]>();
+    for (const row of sourceRows) {
+        const key = String(row[dimension] ?? '');
+        const list = groups.get(key);
+        if (list) list.push(row[column]); else groups.set(key, [row[column]]);
+    }
+    const flagged = [...groups.entries()].map(([key, values]) => ({ key, caution: averageCaution(values) })).filter(item => item.caution);
+    if (!flagged.length) return null;
+    return groupedAverageMessage(label, dimension, groups.size, flagged as { key: string; caution: NonNullable<ReturnType<typeof averageCaution>> }[]);
 }
 
 // ── Highest / lowest per group ───────────────────────────────────────
@@ -654,7 +687,8 @@ function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
     }
     const narrativeBase = rows.length ? buildResultNarrative({ question, data: reshaped.data, profile, chart: reshaped.chart, plan, model, sourceRows: dataset.rows, currency }) : null;
     const extremesText = extremes ? extremesNarrative(extremes, currency) : null;
-    const insights = extremesText ? extremesText.insights : buildInsights(rows, profile, plan, currency);
+    const caution = averageCautionForSql(sql, dataset.rows, plan.dimensions.map(item => item.field));
+    const insights = [...(caution ? [caution] : []), ...(extremesText ? extremesText.insights : buildInsights(rows, profile, plan, currency))].slice(0, 4);
     const narrative: ResultNarrative | undefined = narrativeBase
         ? { ...narrativeBase, headline: parsed.title || narrativeBase.headline, insights, ...(extremesText ? { summary: extremesText.summary } : {}) }
         : undefined;

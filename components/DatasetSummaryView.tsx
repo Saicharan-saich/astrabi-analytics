@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ChevronDown, ChevronRight, Database, Download, Upload, Zap } from 'lucide-react';
-import { Dataset, DatasetDomainProfile, ColumnType, ETLLog } from '../types';
+import { Dataset, DatasetDomainProfile, ColumnType, ETLLog, EtlOptions } from '../types';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { CleaningChangesPanel } from './CleaningChangesPanel';
 import { DataExplorerView } from './DataExplorerView';
@@ -30,6 +30,8 @@ interface DatasetSummaryViewProps {
     onSwitchToLive?: () => void;
     /** Reverse or restore one automatic cleaning step. */
     onEtlRevert?: (revert: NonNullable<ETLLog['revert']>) => void;
+    /** Apply the cleaning review's decisions in one re-run. */
+    onApplyCleaningDecisions?: (nextOptions: EtlOptions, label: string) => void;
     etlRevertPending?: string | null;
 }
 
@@ -255,6 +257,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
     onDataCleaned,
     onSwitchToLive,
     onEtlRevert,
+    onApplyCleaningDecisions,
     etlRevertPending,
 }) => {
     const [view, setView] = useState<View>(viewFor(initialSection));
@@ -464,7 +467,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                             {cleaningMode === 'log' ? (
                                 <>
                                     <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} persistent />
-                                    <ETLView dataset={dataset} onSchemaOverride={onSchemaOverride} onRowsRecovered={onRowsRecovered} onDataCleaned={onDataCleaned} />
+                                    <ETLView dataset={dataset} onSchemaOverride={onSchemaOverride} onRowsRecovered={onRowsRecovered} onDataCleaned={onDataCleaned} onApplyDecisions={onApplyCleaningDecisions} applying={etlRevertPending === '__review__'} busy={Boolean(etlRevertPending)} />
                                 </>
                             ) : (
                                 <DataCleaningPanel dataset={dataset} onDataCleaned={(rows, entry) => onDataCleaned?.(rows, entry)} />

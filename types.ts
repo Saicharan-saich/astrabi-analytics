@@ -53,7 +53,9 @@ export interface ETLLog {
   /** Before/after value samples for column transforms */
   transformSamples?: { column: string; before: any; after: any }[];
   /** Re-run the cleaning with this option to reverse (or restore) the step. */
-  revert?: { option: EtlUndoOption; value: boolean | 'day_first' | 'month_first' | null; label: string };
+  revert?: { option: EtlUndoOption; value: boolean | 'day_first' | 'month_first' | Record<string, string> | null; label: string };
+  /** A flag the user can decide on in the cleaning review. */
+  decision?: { kind: 'outlier' | 'typo'; column: string };
 }
 
 /** Cleaning steps a user can reverse after upload. Stored on the dataset so a re-run keeps the choice. */
@@ -68,8 +70,16 @@ export interface EtlOptions {
   skipLineCost?: boolean;
   /** Reading of dates like 03/04/2025 when nothing in the data decides it. */
   dateOrder?: 'day_first' | 'month_first';
+  /** Per measure column: what to do with values outside the usual range. */
+  outlierDecisions?: Record<string, 'keep' | 'remove' | 'cap'>;
+  /** Per category column: merge likely typos into one spelling, or keep them. */
+  typoDecisions?: Record<string, 'merge' | 'keep'>;
 }
 export type EtlUndoOption = keyof EtlOptions;
+/** A choice the user makes on a flagged step in the cleaning review. */
+export type EtlDecision =
+  | { kind: 'outlier'; column: string; choice: 'keep' | 'remove' | 'cap' }
+  | { kind: 'typo'; column: string; choice: 'merge' | 'keep' };
 
 export interface TimeContext {
   minDate: string; // ISO Date string YYYY-MM-DD

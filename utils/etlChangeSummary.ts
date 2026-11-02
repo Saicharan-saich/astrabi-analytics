@@ -73,6 +73,12 @@ const RULES: Record<string, Rule> = {
     'Multi-Value Cell Flag': { kind: 'check', title: (_l, n, c) => `${plural(n ?? 0, 'cell')} in '${c}' hold several values` },
     'Missing Data Flag': { kind: 'check', title: (_l, _n, c) => `'${c}' is mostly empty` },
 
+    'Outlier Removal': { kind: 'removed', title: (l, _n, c) => `Removed ${plural(Math.max(0, (l.rowsBefore ?? 0) - (l.rowsAfter ?? 0)), 'row')} with unusual '${c}' values (your choice)` },
+    'Outlier Capping': { kind: 'converted', title: (_l, n, c) => `Capped ${plural(n ?? 0, 'unusual value')} in '${c}' to the usual range (your choice)` },
+    'Outlier Confirmed': { kind: 'kept', title: (_l, n, c) => `${plural(n ?? 0, 'unusual value')} in '${c}' confirmed as correct` },
+    'Typo Merge': { kind: 'converted', title: (_l, n, c) => `Merged likely typos in '${c}' (${plural(n ?? 0, 'cell')}, your choice)` },
+    'Typo Review': { kind: 'kept', title: (_l, _n, c) => `Similar values in '${c}' kept as different (your choice)` },
+
     'Kept As Uploaded': { kind: 'kept', title: l => keptTitle(l) },
 };
 
