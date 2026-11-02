@@ -4527,6 +4527,7 @@ body {
   .qi-builder-dock .qi-question-builder .qi-builder-question-summary { display: none !important; }
   .qi-builder-dock .qi-question-builder > .flex > .flex-wrap.qi-builder-modes {
     display: flex !important;
+    flex-direction: row !important;
     flex-wrap: nowrap !important;
     gap: 2px !important;
     width: 100%;
