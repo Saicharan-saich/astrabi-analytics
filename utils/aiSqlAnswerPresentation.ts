@@ -33,8 +33,10 @@ const CURRENCY_FORMAT: Record<string, FormattingConfig['numberFormat']> = { USD:
 const AXIS_FORMAT: Record<string, FormattingConfig['numberFormat']> = { percent: 'percent', currency_usd: 'currency_usd', compact: 'compact' };
 
 export function presentLeanAnswer(result: AISQLPipelineResult, questionLabel: string): { analysis: AnalysisResult; formatting: FormattingConfig } {
-    const axisFormat = result.chart.leftAxisFormat === 'currency_usd' && result.chart.currency
-        ? (CURRENCY_FORMAT[result.chart.currency] ?? 'auto')
+    // Money in the file's own currency (from the SQL's source columns).
+    const axisFormat = result.chart.currency && CURRENCY_FORMAT[result.chart.currency]
+        && (!result.chart.leftAxisFormat || result.chart.leftAxisFormat === 'currency_usd' || result.chart.leftAxisFormat === 'compact')
+        ? CURRENCY_FORMAT[result.chart.currency]
         : result.chart.leftAxisFormat
             ? (AXIS_FORMAT[result.chart.leftAxisFormat] ?? 'auto') : 'auto';
     // A rate the SQL already multiplied by 100 must never be rescaled,
