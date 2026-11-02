@@ -48,13 +48,12 @@ export const QuestionBuilderVideoGuide: React.FC = () => {
                 ref={triggerRef}
                 type="button"
                 onClick={() => setIsOpen(true)}
-                className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1.5 text-xs font-extrabold text-indigo-700 shadow-sm transition hover:border-indigo-300 hover:bg-indigo-100 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                className="qi-cmd-icon"
                 aria-haspopup="dialog"
                 aria-label="Watch how Question Builder works"
                 title="Watch the narrated Question Builder walkthrough"
             >
                 <CirclePlay className="h-4 w-4" aria-hidden="true" />
-                Watch guide
             </button>
 
             {isOpen && ReactDOM.createPortal(

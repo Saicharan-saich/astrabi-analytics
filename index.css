@@ -4326,3 +4326,353 @@ body {
 }
 @keyframes qi-drawer-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .qi-drawer { animation: none !important; } }
+
+/* ═══════════════════════════════════════════════════════
+   Compact Question Builder (2026-11-02) — presentation only.
+   A slim sentence dock, a one-row command bar and a chart
+   that fills the rest of the screen.
+   ═══════════════════════════════════════════════════════ */
+
+/* ── Command bar: one quiet row of small controls ───────── */
+:root:is(.light, .dark) .qi-builder-commandbar.qi-builder-toolbar {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  padding: 0.15rem 0 !important;
+  gap: 0.4rem !important;
+  align-items: center;
+}
+@media (min-width: 1180px) {
+  :root:is(.light, .dark) .qi-builder-commandbar.qi-builder-toolbar { margin: 0.6rem 0.75rem 0.1rem !important; }
+}
+:root:is(.light, .dark) .qi-builder-commandbar button { border-width: 1px !important; }
+
+.qi-cmd-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary, #475569);
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
+}
+.qi-cmd-icon:hover { background: var(--bg-hover, #f1f5f9); color: var(--text-primary, #0f172a); }
+.qi-cmd-icon:focus-visible,
+.qi-cmd-button:focus-visible,
+.qi-cmd-primary:focus-visible,
+.qi-cmd-segmented > button:focus-visible,
+.qi-quickstart:focus-visible { outline: 2px solid var(--color-primary, #4f46e5); outline-offset: 1px; }
+.qi-cmd-icon.is-live { color: #059669; }
+.qi-cmd-icon.is-danger:hover { color: #dc2626; background: color-mix(in srgb, #dc2626 10%, transparent); }
+:root.dark .qi-cmd-icon.is-live { color: #34d399; }
+:root.dark .qi-cmd-icon.is-danger:hover { color: #f87171; }
+
+.qi-cmd-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+  height: 2rem;
+  padding: 0 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-default, #e2e8f0);
+  background: var(--bg-surface, #fff);
+  color: var(--text-secondary, #475569);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+.qi-cmd-button:not(:disabled):hover { background: var(--bg-hover, #f1f5f9); color: var(--text-primary, #0f172a); }
+.qi-cmd-button.is-active {
+  background: var(--accent, #eef2ff);
+  color: var(--accent-foreground, #3730a3);
+  border-color: color-mix(in srgb, var(--color-primary, #4f46e5) 35%, transparent);
+}
+
+.qi-cmd-segmented {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 2px;
+  height: 2rem;
+  padding: 2px;
+  border-radius: 9px;
+  border: 1px solid var(--border-default, #e2e8f0);
+  background: var(--bg-hover, #f1f5f9);
+}
+:root:is(.light, .dark) .qi-builder-commandbar .qi-cmd-segmented > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  height: 100%;
+  padding: 0 0.6rem;
+  border: 0 !important;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary, #475569);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: none;
+}
+:root:is(.light, .dark) .qi-builder-commandbar .qi-cmd-segmented > button:hover { color: var(--text-primary, #0f172a); }
+:root:is(.light, .dark) .qi-builder-commandbar .qi-cmd-segmented > button.is-active {
+  background: var(--bg-surface, #fff);
+  color: var(--text-primary, #0f172a);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12), 0 0 0 1px var(--border-default, #e2e8f0);
+}
+:root.dark .qi-builder-commandbar .qi-cmd-segmented > button.is-active { box-shadow: 0 0 0 1px var(--border-default); }
+.qi-cmd-caption {
+  padding: 0 0.35rem 0 0.4rem;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-tertiary, #64748b);
+}
+
+.qi-cmd-primary {
+  height: 2rem;
+  padding: 0 0.85rem;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: var(--color-primary, #4f46e5);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.15);
+  transition: filter 120ms ease, transform 120ms ease;
+}
+.qi-cmd-primary:hover { filter: brightness(1.08); }
+.qi-cmd-primary:active { transform: scale(0.97); }
+.qi-cmd-primary.is-edit { background: #d97706; }
+.qi-cmd-primary * { color: inherit !important; }
+
+/* ── Result: a headline instead of a boxed paragraph ────── */
+.qi-builder-headline { padding: 0.15rem 0.1rem 0; }
+.qi-builder-headline-title {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.35;
+  font-weight: 650;
+  letter-spacing: -0.012em;
+  color: var(--text-primary, #0f172a);
+}
+.qi-builder-headline-finding {
+  margin: 0.15rem 0 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--text-secondary, #475569);
+}
+.qi-builder-quickstarts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+  font-size: 12px;
+  color: var(--text-tertiary, #64748b);
+}
+.qi-builder-quickstarts > svg { color: var(--color-primary, #4f46e5); }
+.qi-quickstart {
+  padding: 0.18rem 0.65rem;
+  border-radius: 999px;
+  border: 1px dashed color-mix(in srgb, var(--color-primary, #4f46e5) 50%, transparent);
+  background: transparent;
+  color: var(--accent-foreground, #3730a3);
+  font-size: 12px;
+  font-weight: 600;
+  transition: background-color 120ms ease, border-style 120ms ease, transform 120ms ease;
+}
+.qi-quickstart:hover { background: var(--accent, #eef2ff); border-style: solid; transform: translateY(-1px); }
+@media (prefers-reduced-motion: reduce) { .qi-quickstart:hover { transform: none; } }
+
+/* ── Canvas: the chart takes the rest of the screen ──────── */
+.qi-builder-content > .qi-visual-stage {
+  flex: 1 0 auto;
+  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  margin-left: 0;
+  margin-right: 0;
+}
+.qi-builder-content > .qi-visual-stage > .qi-visual,
+.qi-builder-content > .qi-visual-stage > div > .qi-visual { flex: 1 1 auto; min-height: 0; }
+:root:is(.light, .dark) .qi-builder-content > .qi-visual-stage { border-radius: 14px !important; }
+@media (min-width: 1180px) {
+  :root:is(.light, .dark) .qi-builder-content { padding-top: 0.45rem !important; }
+}
+
+/* ── Dock: a slim sentence instead of a wall of cards ───── */
+@media (min-width: 1180px) {
+  :root:is(.light, .dark) .qi-builder-dock .qi-question-builder {
+    padding: 2.7rem 0.85rem 1.25rem !important;
+  }
+  :root:is(.light, .dark) .qi-builder-dock .qi-question-builder::before {
+    top: 0.95rem !important;
+    left: 0.9rem !important;
+    font-size: 14px !important;
+  }
+
+  /* Header row: the mode switch only */
+  .qi-builder-dock .qi-question-builder > .flex:has(> .qi-builder-modes) {
+    margin-bottom: 0.85rem !important;
+    padding-bottom: 0 !important;
+    border-bottom: 0 !important;
+  }
+  .qi-builder-dock .qi-question-builder .qi-builder-question-summary { display: none !important; }
+  .qi-builder-dock .qi-question-builder .qi-builder-modes {
+    display: flex !important;
+    flex-wrap: nowrap !important;
+    gap: 2px !important;
+    width: 100%;
+    padding: 2px !important;
+    border-radius: 10px !important;
+    border: 1px solid var(--border-default) !important;
+    background: var(--bg-hover) !important;
+  }
+  .qi-builder-dock .qi-question-builder .qi-builder-modes > button {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    gap: 0.3rem !important;
+    padding: 0.32rem 0.3rem !important;
+    border-radius: 8px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    background: transparent !important;
+    color: var(--text-secondary) !important;
+    box-shadow: none !important;
+  }
+  .qi-builder-dock .qi-question-builder .qi-builder-modes > button > svg { display: none; }
+  .qi-builder-dock .qi-question-builder .qi-builder-modes > button:hover { color: var(--text-primary) !important; }
+  .qi-builder-dock .qi-question-builder .qi-builder-modes > button[aria-pressed='true'] {
+    background: var(--bg-surface) !important;
+    color: var(--text-primary) !important;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.12), 0 0 0 1px var(--border-default) !important;
+  }
+  .qi-builder-dock .qi-question-builder .qi-builder-modes > button[aria-pressed='true']::after {
+    content: '';
+    width: 5px;
+    height: 5px;
+    border-radius: 999px;
+    background: linear-gradient(135deg, #6366f1, #14b8a6);
+  }
+
+  /* The question reads as a sentence: word | choice | choice */
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap:is(:has(> .qi-builder-verb), :has(> .qi-builder-time-grain)) {
+    display: grid !important;
+    grid-template-columns: 3.5rem minmax(0, 0.85fr) minmax(0, 1.15fr) !important;
+    grid-auto-flow: row !important;
+    align-items: center !important;
+    column-gap: 0.4rem !important;
+    row-gap: 0.5rem !important;
+    padding: 0 !important;
+  }
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap:has(> .qi-builder-verb) > * { width: auto !important; }
+
+  :root:is(.light, .dark) .qi-builder-dock .qi-question-builder :is(
+    .qi-builder-aggregation,
+    .qi-builder-metric,
+    .qi-builder-dimension,
+    .qi-builder-time-grain,
+    .qi-builder-time-range,
+    .qi-builder-verb,
+    .qi-builder-by,
+    .qi-builder-where
+  ) {
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+  :root:is(.light, .dark) .qi-builder-dock .qi-question-builder :is(.qi-builder-verb, .qi-builder-by, .qi-builder-where) {
+    grid-column: 1 !important;
+    display: block !important;
+    font-size: 12.5px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+    color: var(--text-tertiary) !important;
+    white-space: nowrap;
+  }
+  .qi-builder-dock .qi-question-builder .qi-builder-aggregation { grid-column: 2 !important; }
+  .qi-builder-dock .qi-question-builder .qi-builder-metric { grid-column: 3 !important; }
+  .qi-builder-dock .qi-question-builder .qi-builder-dimension { grid-column: 2 / -1 !important; }
+  .qi-builder-dock .qi-question-builder .qi-builder-values { grid-column: 2 / -1 !important; justify-self: start; width: auto !important; }
+  .qi-builder-dock .qi-question-builder .flex-wrap:has(> .qi-builder-verb) > span.inline-flex { grid-column: 2 / -1 !important; justify-self: start; flex-wrap: wrap; }
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap:has(> .qi-builder-time-grain) > div:first-child { grid-column: 1 / -1 !important; max-width: none !important; margin: 0 0 0.2rem !important; }
+  .qi-builder-dock .qi-question-builder .qi-builder-time-grain { grid-column: 1 / -1 !important; }
+  .qi-builder-dock .qi-question-builder .qi-builder-time-range { grid-column: 2 / -1 !important; }
+
+  /* Field captions stay for screen readers; the sentence is the label. */
+  .qi-builder-dock .qi-question-builder :is(.qi-builder-aggregation, .qi-builder-metric, .qi-builder-dimension) > .qi-builder-caption {
+    position: absolute !important;
+    width: 1px !important;
+    height: 1px !important;
+    padding: 0 !important;
+    margin: -1px !important;
+    overflow: hidden !important;
+    clip: rect(0, 0, 0, 0) !important;
+    white-space: nowrap !important;
+    border: 0 !important;
+  }
+  .qi-builder-dock .qi-question-builder :is(.qi-builder-aggregation, .qi-builder-metric, .qi-builder-dimension, .qi-builder-time-grain) .relative.inline-block { width: 100%; }
+  .qi-builder-dock .qi-question-builder :is(.qi-builder-aggregation, .qi-builder-metric, .qi-builder-dimension, .qi-builder-time-grain) .relative.inline-block > button[aria-haspopup='listbox'] {
+    width: 100%;
+    min-height: 2.15rem !important;
+    gap: 0.4rem;
+    padding: 0.35rem 0.5rem 0.35rem 0.6rem !important;
+    border-radius: 9px !important;
+    border: 1px solid var(--border-default) !important;
+    background: var(--bg-surface) !important;
+    box-shadow: 0 1px 1px rgba(15, 23, 42, 0.04);
+    transition: border-color 120ms ease, box-shadow 120ms ease;
+  }
+  .qi-builder-dock .qi-question-builder :is(.qi-builder-aggregation, .qi-builder-metric, .qi-builder-dimension, .qi-builder-time-grain) .relative.inline-block > button[aria-haspopup='listbox']:hover {
+    border-color: color-mix(in srgb, var(--color-primary) 45%, var(--border-default)) !important;
+  }
+  .qi-builder-dock .qi-question-builder :is(.qi-builder-aggregation, .qi-builder-metric, .qi-builder-dimension, .qi-builder-time-grain) .relative.inline-block > button[aria-haspopup='listbox'] .text-sm { font-size: 13px; }
+  /* A coloured left edge says what kind of choice it is. */
+  .qi-builder-dock .qi-question-builder :is(.qi-builder-aggregation, .qi-builder-metric) .relative.inline-block > button[aria-haspopup='listbox'] { box-shadow: inset 3px 0 0 #8b5cf6 !important; }
+  .qi-builder-dock .qi-question-builder .qi-builder-dimension .relative.inline-block > button[aria-haspopup='listbox'] { box-shadow: inset 3px 0 0 #3b82f6 !important; }
+  .qi-builder-dock .qi-question-builder .qi-builder-time-grain .relative.inline-block > button[aria-haspopup='listbox'] { box-shadow: inset 3px 0 0 #06b6d4 !important; }
+
+  /* "Works with" is a hint, not a card */
+  :root:is(.light, .dark) .qi-builder-dock .qi-question-builder .qi-builder-capability {
+    grid-column: 2 / -1 !important;
+    margin-top: -0.25rem;
+    padding: 0 0.15rem !important;
+    border: 0 !important;
+    background: transparent !important;
+    font-size: 11px !important;
+    font-weight: 500 !important;
+    line-height: 1.35;
+    color: var(--text-tertiary) !important;
+  }
+
+  /* Options and filters: two small buttons on one line */
+  .qi-builder-dock .qi-question-builder .qi-builder-actions { margin-top: 0.75rem !important; padding-top: 0.75rem; border-top: 1px dashed var(--border-default); }
+  .qi-builder-dock .qi-question-builder .qi-builder-action-row {
+    display: flex !important;
+    flex-wrap: wrap;
+    gap: 0.4rem !important;
+    padding-left: 3.9rem;
+  }
+  .qi-builder-dock .qi-question-builder .qi-builder-action-row > button,
+  .qi-builder-dock .qi-question-builder .qi-builder-action-row > div,
+  .qi-builder-dock .qi-question-builder .qi-builder-action-row > div > button { width: auto !important; }
+  .qi-builder-dock .qi-question-builder .qi-builder-action-row button.qi-chip-button {
+    min-height: 1.85rem !important;
+    padding: 0 0.6rem !important;
+    border-radius: 8px !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    letter-spacing: 0 !important;
+    text-transform: none !important;
+  }
+}

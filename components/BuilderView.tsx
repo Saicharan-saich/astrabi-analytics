@@ -21,13 +21,13 @@ import { AIInsightPanel } from './AIInsightPanel';
 import { ExploreMenu } from './ExploreMenu';
 import { UnderlyingRowsDrawer } from './UnderlyingRowsDrawer';
 import {
-    describeTarget, drillConfig, drillOptions, excludeConfig, isGrainKey, keepConfig, resolveTargets,
+    describeTarget, drillConfig, drillOptions, excludeConfig, isGrainKey, keepConfig, primaryDateColumn, resolveTargets,
     rowMatchesTargets, rowsForBuilderConfig,
     type ChartPointSelection, type DrillOption, type ExploreTarget,
 } from '../utils/explore';
 import { TransparencyPanel } from './TransparencyPanel';
 
-import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers, Calendar, Undo2, GripVertical } from 'lucide-react';
+import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers, Calendar, Undo2, GripVertical, PanelLeftClose, PanelLeftOpen, Sparkles } from 'lucide-react';
 
 interface BuilderViewProps {
     dataset: Dataset;
@@ -48,12 +48,18 @@ interface BuilderViewProps {
     onReset?: () => void;
 }
 
+/** "You are viewing total sales by month." → "Total sales by month" */
+function headlineQuestion(sentence: string): string {
+    const text = sentence.replace(/^You are viewing\s+/i, '').replace(/\.$/, '');
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
 export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, onUpdateFormatting, onPin, initialConfig, editingItemId, onSaveBackToDashboard, onCancelEdit, onLiveRefresh, isLiveRefreshing, refreshSchedule, onScheduleChange, isActive = true, onReset }) => {
     const workspaceRef = useRef<HTMLDivElement>(null);
     const [workspaceWidth, setWorkspaceWidth] = useState(() => typeof window === 'undefined' ? 1200 : window.innerWidth);
     const [preferredBuilderWidth, setPreferredBuilderWidth] = useState(() => {
         try {
-            const saved = Number(localStorage.getItem('qi_builder_pane_width_v1'));
+            const saved = Number(localStorage.getItem('qi_builder_pane_width_v2'));
             return Number.isFinite(saved) && saved > 0 ? saved : BUILDER_SPLIT_DEFAULT;
         } catch { return BUILDER_SPLIT_DEFAULT; }
     });
@@ -73,7 +79,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
     React.useEffect(() => {
         const timer = window.setTimeout(() => {
-            try { localStorage.setItem('qi_builder_pane_width_v1', String(preferredBuilderWidth)); } catch { /* private storage unavailable */ }
+            try { localStorage.setItem('qi_builder_pane_width_v2', String(preferredBuilderWidth)); } catch { /* private storage unavailable */ }
         }, 250);
         return () => window.clearTimeout(timer);
     }, [preferredBuilderWidth]);
@@ -480,6 +486,32 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         void handleRun(next);
     };
 
+    /** One-click breakdowns offered when the question has no grouping yet. */
+    const quickStarts = useMemo(() => {
+        if (!result || !lastRunConfig || lastRunConfig.dimension || !lastRunConfig.metric) return [] as { value: string; label: string }[];
+        const sample = (dataset.rows || []).slice(0, 2000);
+        const options: { value: string; label: string }[] = [];
+        for (const column of dataset.columns) {
+            if (column.type !== ColumnType.DIMENSION) continue;
+            const distinct = new Set(sample.map(row => row[column.name]).filter(v => v !== null && v !== undefined && v !== ''));
+            if (distinct.size < 2 || distinct.size > 40) continue;
+            options.push({ value: column.name, label: `by ${column.name.replace(/_/g, ' ')}` });
+            if (options.length >= 3) break;
+        }
+        if (primaryDateColumn(dataset)) options.push({ value: 'month', label: 'over time' });
+        return options;
+    }, [result, lastRunConfig, dataset]);
+
+    const runQuickStart = (dimension: string) => {
+        if (!lastRunConfig) return;
+        const next = { ...lastRunConfig, dimension };
+        if (dimension === 'month') { next.sort = 'oldest'; delete next.limit; }
+        setUndoRestoreConfig(next);
+        setBuilderResetVersion(version => version + 1);
+        setContentTab('visual');
+        void handleRun(next);
+    };
+
     const goToTrailLevel = (index: number) => {
         if (!drillTrail) return;
         const level = drillTrail.levels[index];
@@ -763,12 +795,11 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 {/* Builder Toggle */}
                 <button
                     onClick={() => setIsBuilderCollapsed(!isBuilderCollapsed)}
-                    className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-indigo-600 bg-slate-100 hover:bg-indigo-50 px-2.5 py-1.5 rounded-lg transition-all border border-slate-200"
-                    title={isBuilderCollapsed ? 'Show Builder' : 'Hide Builder'}
+                    className="qi-cmd-icon"
+                    aria-label={isBuilderCollapsed ? 'Show Builder' : 'Hide Builder'}
+                    title={isBuilderCollapsed ? 'Show the question controls' : 'Hide the question controls for a bigger chart'}
                 >
-                    {isBuilderCollapsed ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                    {isBuilderCollapsed ? 'Show Builder' : 'Hide Builder'}
-
+                    {isBuilderCollapsed ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
                 </button>
 
                 <QuestionBuilderVideoGuide />
@@ -777,7 +808,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     type="button"
                     onClick={handleUndo}
                     disabled={undoDepth === 0 || isLoading}
-                    className="flex items-center gap-1.5 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-extrabold text-slate-700 shadow-sm transition enabled:hover:border-indigo-300 enabled:hover:bg-indigo-50 enabled:hover:text-indigo-700 disabled:cursor-not-allowed disabled:opacity-40"
+                    className="qi-cmd-button disabled:cursor-not-allowed disabled:opacity-40"
                     aria-label="Undo last Question Builder change"
                     title={undoDepth > 0 ? `Undo last Question Builder change (${undoDepth} available) · Ctrl/Cmd+Z` : 'Nothing to undo yet'}
                 >
@@ -835,17 +866,13 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 {/* Content Tabs */}
                 {result && !error && (
                     <>
-                        <div className="w-px h-5 bg-slate-200 mx-1" />
-                        <div className="qi-builder-view-tabs flex items-center gap-1" role="group" aria-label="Result view">
+                        <div className="qi-builder-view-tabs qi-cmd-segmented flex items-center" role="group" aria-label="Result view">
                             {(['visual', 'sql', 'data'] as const).map(tab => (
                                 <button
                                     key={tab}
                                     aria-pressed={contentTab === tab}
                                     onClick={() => setContentTab(tab)}
-                                    className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all border ${contentTab === tab
-                                        ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-300 border-indigo-300'
-                                        : 'text-slate-700 hover:text-indigo-700 bg-white hover:bg-indigo-50 border-slate-300 shadow-sm'
-                                        }`}
+                                    className={`flex items-center gap-1 ${contentTab === tab ? 'is-active' : ''}`}
                                 >
                                     {tab === 'visual' ? <><BarChart2 className="w-3 h-3" /> Visual</> :
                                         tab === 'sql' ? <><Code className="w-3 h-3" /> SQL</> :
@@ -862,15 +889,11 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                     const isGridActive = dimensionLayout.useGrid;
                     return (
                         <>
-                            <div className="w-px h-5 bg-slate-200 mx-1" />
-                            <div className="flex items-center gap-0.5 border border-slate-200 rounded-lg overflow-hidden">
+                            <div className="qi-cmd-segmented flex items-center">
                                 <button
                                     onClick={() => setForceGridMode('grid')}
-                                    className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold transition-all ${
-                                        isGridActive
-                                            ? 'bg-indigo-100 text-indigo-700'
-                                            : 'text-slate-500 hover:bg-slate-50'
-                                    }`}
+                                    aria-pressed={isGridActive}
+                                    className={`flex items-center gap-1 ${isGridActive ? 'is-active' : ''}`}
                                     title="Small Multiples Grid"
                                 >
                                     <LayoutGrid className="w-3.5 h-3.5" />
@@ -878,11 +901,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                 </button>
                                 <button
                                     onClick={() => setForceGridMode('combined')}
-                                    className={`flex items-center gap-1 px-2.5 py-1.5 text-xs font-bold transition-all ${
-                                        !isGridActive
-                                            ? 'bg-indigo-100 text-indigo-700'
-                                            : 'text-slate-500 hover:bg-slate-50'
-                                    }`}
+                                    aria-pressed={!isGridActive}
+                                    className={`flex items-center gap-1 ${!isGridActive ? 'is-active' : ''}`}
                                     title="Combined Chart"
                                 >
                                     <Layers className="w-3.5 h-3.5" />
@@ -896,31 +916,25 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 {result && !error && contentTab === 'visual' && dimensionLayout?.useGrid && formatting && onUpdateFormatting && (
                     <button
                         onClick={() => onUpdateFormatting(toggleDataLabels(formatting))}
-                        className={`px-2.5 py-1.5 rounded-lg text-xs font-bold border ${effectiveDataLabelMode(formatting) === 'all'
-                            ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                            : 'bg-white text-slate-600 border-slate-300 hover:bg-indigo-50'}`}
+                        className={`qi-cmd-button ${effectiveDataLabelMode(formatting) === 'all' ? 'is-active' : ''}`}
                         title={effectiveDataLabelMode(formatting) === 'all' ? 'Hide labels in every panel' : 'Show labels for all series in every panel'}
                     >Labels {effectiveDataLabelMode(formatting) === 'off' ? 'Off' : effectiveDataLabelMode(formatting) === 'all' ? 'All' : '1st'}</button>
                 )}
 
                 {/* X/Y Axis Toggles */}
                 {result && !error && contentTab === 'visual' && formatting && onUpdateFormatting && (
-                    <div className="flex items-center gap-1.5 ml-1 border border-slate-300 rounded-lg px-2 py-0.5 bg-white">
-                        <span className="text-xs text-slate-900 font-bold mr-0.5">Axis:</span>
+                    <div className="qi-cmd-segmented flex items-center" role="group" aria-label="Axes">
+                        <span className="qi-cmd-caption">Axes</span>
                         <button
                             onClick={() => onUpdateFormatting({ ...formatting, showXAxis: !(formatting.showXAxis ?? formatting.showAxis ?? false) })}
-                            className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border shadow-sm ${(formatting.showXAxis ?? formatting.showAxis ?? false)
-                                ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                                : 'bg-white text-slate-900 border-slate-300 hover:bg-indigo-50 hover:text-indigo-700'
-                                }`}
+                            aria-pressed={Boolean(formatting.showXAxis ?? formatting.showAxis ?? false)}
+                            className={(formatting.showXAxis ?? formatting.showAxis ?? false) ? 'is-active' : ''}
                             title="Toggle X-Axis visibility"
                         >X</button>
                         <button
                             onClick={() => onUpdateFormatting({ ...formatting, showYAxis: !(formatting.showYAxis ?? formatting.showAxis ?? false) })}
-                            className={`px-2.5 py-1 rounded-md text-xs font-bold transition-all border shadow-sm ${(formatting.showYAxis ?? formatting.showAxis ?? false)
-                                ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
-                                : 'bg-white text-slate-900 border-slate-300 hover:bg-indigo-50 hover:text-indigo-700'
-                                }`}
+                            aria-pressed={Boolean(formatting.showYAxis ?? formatting.showAxis ?? false)}
+                            className={(formatting.showYAxis ?? formatting.showAxis ?? false) ? 'is-active' : ''}
                             title="Toggle Y-Axis visibility"
                         >Y</button>
                     </div>
@@ -928,17 +942,17 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
                 {/* Compact KPI + Actions */}
                 {result && !error && (
-                    <div className="qi-builder-actions-toolbar flex flex-wrap items-center gap-2 min-w-0">
+                    <div className="qi-builder-actions-toolbar flex flex-wrap items-center gap-1.5 min-w-0 ml-auto">
                         {/* Actions stay beside the workspace tabs; the redundant summary now lives in the result view. */}
                         {/* Export */}
-                        <button onClick={exportToCSV} className="flex items-center text-sm font-bold text-slate-700 hover:text-indigo-700 bg-white hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-all border border-slate-300 shadow-sm whitespace-nowrap" title="Export CSV">
-                            <Download className="w-4 h-4 mr-1" /> Export
+                        <button onClick={exportToCSV} className="qi-cmd-icon" aria-label="Export CSV" title="Export the result as CSV">
+                            <Download className="w-4 h-4" />
                         </button>
 
                         {/* Cancel Edit button — only in edit mode */}
                         {editingItemId && onCancelEdit && (
-                            <button onClick={onCancelEdit} className="flex items-center text-sm font-bold text-slate-600 hover:text-slate-800 bg-white hover:bg-slate-50 px-3 py-1.5 rounded-lg transition-all border border-slate-300 shadow-sm whitespace-nowrap" title="Cancel editing and return to Dashboard">
-                                <X className="w-4 h-4 mr-1" /> Cancel
+                            <button onClick={onCancelEdit} className="qi-cmd-button" title="Cancel editing and return to Dashboard">
+                                <X className="w-4 h-4" /> Cancel
                             </button>
                         )}
                         {(onPin || (editingItemId && onSaveBackToDashboard)) && (
@@ -991,12 +1005,8 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                     // Normal mode: pin as new item
                                     onPin(pinTitle, pinResult);
                                 }
-                            }} className={`flex items-center text-sm font-bold text-white ${
-                                editingItemId
-                                    ? 'bg-amber-600 hover:bg-amber-700'
-                                    : showGrowthChart && tableData.columns.length > 0 ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-indigo-600 hover:bg-indigo-700'
-                            } px-3 py-1.5 rounded-lg shadow-sm transition-all active:scale-95 whitespace-nowrap`} title={editingItemId ? 'Save changes back to Dashboard' : showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated View to Dashboard' : 'Pin to Dashboard'}>
-                                <Pin className="w-4 h-4 mr-1" /> {editingItemId ? '💾 Save to Dashboard' : showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated' : 'Pin'}
+                            }} className={`qi-cmd-primary flex items-center whitespace-nowrap ${editingItemId ? 'is-edit' : ''}`} title={editingItemId ? 'Save changes back to Dashboard' : showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated View to Dashboard' : 'Pin to Dashboard'}>
+                                <Pin className="w-4 h-4 mr-1" /> {editingItemId ? 'Save to Dashboard' : showGrowthChart && tableData.columns.length > 0 ? 'Pin Calculated' : 'Pin'}
                             </button>
                         )}
                         <button
@@ -1012,22 +1022,14 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                 handleRun(lastRunConfig, { recordHistory: false });
                             }}
                             disabled={isLiveRefreshing}
-                            className={`flex items-center text-sm font-bold px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap ${
-                                dataset.connectionMode === 'live'
-                                    ? 'text-emerald-700 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300'
-                                    : 'text-slate-600 bg-slate-100 hover:bg-slate-200'
-                            }`}
+                            aria-label={isLiveRefreshing ? 'Refreshing' : 'Refresh'}
+                            className={`qi-cmd-icon ${dataset.connectionMode === 'live' ? 'is-live' : ''}`}
                             title={dataset.connectionMode === 'live'
                                 ? 'Refresh — fetch latest data from live database & re-run query'
                                 : 'Refresh — re-run current query'
                             }
                         >
-                            {isLiveRefreshing ? (
-                                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                            ) : (
-                                <RefreshCw className="w-4 h-4 mr-1" />
-                            )}
-                            {isLiveRefreshing ? 'Refreshing...' : (dataset.connectionMode === 'live' ? '⚡ Refresh' : 'Refresh')}
+                            {isLiveRefreshing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                         </button>
                         {dataset.connectionMode === 'live' && onScheduleChange && (
                             <RefreshSchedulerDropdown
@@ -1038,10 +1040,11 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                         )}
                         <button
                             onClick={handleReset}
-                            className="flex items-center text-sm font-bold text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg transition-all active:scale-95 whitespace-nowrap"
+                            className="qi-cmd-icon is-danger"
+                            aria-label="Reset"
                             title="Reset — clear all results and start fresh"
                         >
-                            <RotateCcw className="w-4 h-4 mr-1" /> Reset
+                            <RotateCcw className="w-4 h-4" />
                         </button>
                     </div>
                 )}
@@ -1082,7 +1085,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 {!result && !error && !isLoading && (
                     <div className="flex flex-col items-center justify-center h-full text-slate-400">
                         <Play className="w-12 h-12 mb-4 opacity-20" />
-                        <p className="text-lg font-medium">Configure your question above to see results</p>
+                        <p className="text-lg font-medium">Build your question on the left to see results</p>
                         <p className="text-sm mt-1 text-slate-300">Press <kbd className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-xs font-mono border border-slate-200">Ctrl+Enter</kbd> to run</p>
 
 
@@ -1091,11 +1094,19 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
 
                 {result && !error && !isLoading && (
                     <>
-                        <section className="qi-builder-answer mb-3 shrink-0 rounded-2xl border border-indigo-200 bg-indigo-50/80 px-4 py-3 text-slate-800 shadow-sm" aria-label="Your answer in words" aria-live="polite">
-                            <div className="text-[11px] font-extrabold uppercase tracking-[0.14em] text-indigo-700">Your answer in words</div>
-                            <p className="mt-1 text-sm font-semibold leading-6">{describeBuilderQuestion(lastRunConfig || result.config)}</p>
+                        <section className="qi-builder-answer qi-builder-headline mb-2 shrink-0" aria-label="Your answer in words" aria-live="polite">
+                            <h2 className="qi-builder-headline-title">{headlineQuestion(describeBuilderQuestion(lastRunConfig || result.config))}</h2>
                             {describeBuilderFinding(result, formatting) && (
-                                <p className="mt-1 text-sm leading-6 text-slate-600">{describeBuilderFinding(result, formatting)}</p>
+                                <p className="qi-builder-headline-finding">{describeBuilderFinding(result, formatting)}</p>
+                            )}
+                            {quickStarts.length > 0 && (
+                                <div className="qi-builder-quickstarts" role="group" aria-label="Try a breakdown">
+                                    <Sparkles className="w-3.5 h-3.5" aria-hidden />
+                                    <span>Try</span>
+                                    {quickStarts.map(option => (
+                                        <button key={option.value} type="button" className="qi-quickstart" onClick={() => runQuickStart(option.value)}>{option.label}</button>
+                                    ))}
+                                </div>
                             )}
                         </section>
                         {/* â”€â”€â”€ VISUAL TAB â”€â”€â”€ */}

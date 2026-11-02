@@ -1,5 +1,5 @@
-export const BUILDER_SPLIT_DEFAULT = 380;
-export const BUILDER_SPLIT_MIN = 320;
+export const BUILDER_SPLIT_DEFAULT = 320;
+export const BUILDER_SPLIT_MIN = 280;
 export const BUILDER_SPLIT_MAX = 680;
 export const BUILDER_RESULT_MIN = 480;
 export const BUILDER_SPLITTER_WIDTH = 24;

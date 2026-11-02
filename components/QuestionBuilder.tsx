@@ -840,28 +840,31 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         <div className="qi-question-builder max-w-7xl mx-auto px-6 pt-5 pb-4 bg-gradient-to-b from-slate-900 to-slate-800 rounded-2xl overflow-visible relative" style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.2)' }}>
 
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
-                <div className="flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-slate-950/35 p-1">
-                    {(gafsOnly ? [
+                <div className="qi-builder-modes flex flex-wrap items-center gap-1 rounded-xl border border-white/10 bg-slate-950/35 p-1">
+                    {((gafsOnly ? [
                         { id: 'build', label: 'GAFS Edit', icon: Blocks },
                     ] : [
                         { id: 'build', label: 'Build', icon: Blocks },
                         { id: 'time', label: 'Time', icon: Clock },
                         { id: 'compare', label: 'Compare', icon: GitCompareArrows },
-                        { id: 'calculations', label: 'Calculations', icon: Calculator },
-                    ] as Array<{ id: BuilderTab; label: string; icon: React.ComponentType<{ className?: string }> }>).map(tab => {
+                        { id: 'calculations', label: 'Calculations', short: 'Calc', icon: Calculator },
+                    ]) as Array<{ id: BuilderTab; label: string; short?: string; icon: React.ComponentType<{ className?: string }> }>).map(tab => {
                         const Icon = tab.icon;
                         const active = activeBuilderTab === tab.id;
                         return (
                             <button
                                 key={tab.id}
                                 type="button"
+                                aria-label={tab.label}
+                                aria-pressed={active}
+                                title={tab.label}
                                 onClick={() => setActiveBuilderTab(tab.id)}
                                 className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all ${active
                                     ? 'bg-indigo-500 text-white shadow-lg shadow-indigo-950/30'
                                     : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}
                             >
                                 <Icon className="h-3.5 w-3.5" />
-                                {tab.label}
+                                <span className="qi-builder-tab-label">{tab.short || tab.label}</span>
                                 {tab.id === 'compare' && comparison && <span className="h-1.5 w-1.5 rounded-full bg-amber-300" />}
                                 {tab.id === 'calculations' && tableCalculations.length > 0 && (
                                     <span className="rounded-full bg-white/15 px-1.5 text-[10px]">{tableCalculations.length}</span>
@@ -882,12 +885,11 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                 {/* ═══════════════ PRIMARY ROW: THE CORE QUESTION ═══════════════ */}
                 <div className="flex flex-wrap items-center gap-3 text-sm leading-snug flex-1 pr-4 pt-1 pb-1">
                     {activeBuilderTab === 'build' && (<>
-                    <img src="/logo.jpg" alt="QuickInsight" className="w-5 h-5 rounded-md opacity-80" />
                     <span className="qi-builder-verb text-slate-200 text-base font-bold tracking-wide">Show me</span>
 
                     {/* Aggregation Selector */}
                     <div className="qi-builder-aggregation flex flex-col gap-0.5">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Aggregation</span>
+                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Aggregation</span>
                         <Tooltip text={isDimensionMetric ? "Counting dimensions: Count tallies rows, Unique Count counts distinct values." : "How to aggregate the metric: Sum adds up values, Average calculates the mean, Count tallies rows, Unique Count counts distinct values."} position="bottom">
                             <QuerySelect
                                 menuPlacement="auto"
@@ -904,7 +906,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                     {/* Metric Selector */}
 <div className="qi-builder-metric flex flex-col gap-0.5">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Metric</span>
+                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-purple-400/70 pl-1">Metric</span>
                         <Tooltip text="Choose the measure to analyze. Pick a numeric metric (e.g. revenue) or a dimension to count (e.g. patient count)." position="bottom">
                             <QuerySelect
                                 menuPlacement="auto"
@@ -974,7 +976,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                     {metric && capabilityRuleFor(metric) && (
                         <span
-                            className="rounded-lg border border-indigo-400/20 bg-indigo-500/10 px-2 py-1 text-[11px] font-bold text-indigo-300"
+                            className="qi-builder-capability rounded-lg border border-indigo-400/20 bg-indigo-500/10 px-2 py-1 text-[11px] font-bold text-indigo-300"
                             title={`Dataset capability contract ${capabilityContract?.contractId}: ${capabilityRuleFor(metric)?.evidence.join(' · ')}`}
                         >
                             Works with: {capabilityRuleFor(metric)?.allowedAggregations.map(value => value.replace('_', ' ')).join(', ')}
@@ -999,7 +1001,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                     {/* Dimension Selector (columns only) */}
                     <div className="qi-builder-dimension flex flex-col gap-0.5">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-blue-400/70 pl-1">Dimension</span>
+                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-blue-400/70 pl-1">Dimension</span>
                         <Tooltip text="Group by a categorical column like product, region, or category." position="bottom">
                             <QuerySelect
                                 menuPlacement="auto"
@@ -1090,7 +1092,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         <div className="text-[11px] leading-4 text-slate-400">Choose the reporting grain and the period evaluated against the dataset’s AS OF date.</div>
                     </div>
                     <div className="qi-builder-time-grain flex flex-col gap-0.5">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-cyan-400/70 pl-1">Time Grain</span>
+                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-cyan-400/70 pl-1">Time Grain</span>
                         <Tooltip text="Group by a time grain to see trends over time. Can be combined with a dimension." position="bottom">
                             <QuerySelect
                                 menuPlacement="auto"
@@ -1123,7 +1125,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
                     {/* Time Filter */}
                     <div className="qi-builder-time-range flex flex-col gap-0.5">
-                        <span className="text-[11px] font-semibold uppercase tracking-wider text-green-400/70 pl-1">Time Range</span>
+                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-green-400/70 pl-1">Time Range</span>
                         <div className="flex items-center gap-2">
                             <Tooltip text="Filter data by time range relative to the AS OF date. 'Time is Anything' includes all data. 'Last...' lets you pick a custom window." position="bottom">
                                 <QuerySelect
@@ -1663,7 +1665,7 @@ const DimensionValuePicker: React.FC<{
         : `${selectedValues.length} of ${allValues.length}`;
 
     return (
-        <div className="relative inline-block">
+        <div className="qi-builder-values relative inline-block">
             <button
                 ref={btnRef}
                 onClick={() => setOpen(!open)}
