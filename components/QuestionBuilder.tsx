@@ -458,7 +458,6 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const capabilityRuleFor = (fieldName: string): CapabilityFieldRule | undefined => {
         const normalized = fieldName.trim().toLowerCase();
         const richRule = capabilityContract?.fields.find(rule => rule.field.trim().toLowerCase() === normalized);
-        if (richRule) return richRule;
 
         // User-created metrics are registered immediately in the local semantic
         // model, while the richer AI SQL snapshot is rebuilt separately. Honour
@@ -466,6 +465,18 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         const localMeasure = dataset.semanticModel?.measures.find(measure =>
             measure.column.trim().toLowerCase() === normalized
         );
+        // The engine answers with the semantic model. Never offer a Total the
+        // engine would then quietly turn into an average.
+        if (richRule) {
+            if (localMeasure?.behavior === 'non_additive' && richRule.allowedAggregations.includes('sum')) {
+                return {
+                    ...richRule,
+                    additivity: 'non_additive',
+                    allowedAggregations: richRule.allowedAggregations.filter(aggregation => aggregation !== 'sum'),
+                };
+            }
+            return richRule;
+        }
         if (!localMeasure) return undefined;
         const nonAdditive = localMeasure.behavior === 'non_additive';
         return {

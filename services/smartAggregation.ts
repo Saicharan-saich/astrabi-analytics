@@ -8,6 +8,9 @@
  * fallback blindly defaults everything to SUM.
  */
 
+import type { ColumnDefinition } from '../types';
+import { priceIsSaleAmount } from './semanticModel';
+
 // Columns whose values should be AVERAGED (non-additive / intensive)
 const AVG_PATTERNS = [
     'age', 'avg', 'average', 'mean',
@@ -61,4 +64,14 @@ export function inferDefaultAggregation(columnName: string, columnType: string):
 
     // Default: SUM (safe for most business metrics)
     return 'SUM';
+}
+
+/**
+ * Default aggregation that also respects what one row is: in raw sales data
+ * (one dated row per item sold, no quantity column) a price is the sale
+ * amount, so it is totalled rather than averaged.
+ */
+export function inferDefaultAggregationForGrain(columnName: string, columnType: string, columns: ColumnDefinition[]): string {
+    const byName = inferDefaultAggregation(columnName, columnType);
+    return byName === 'AVG' && columnType === 'METRIC' && priceIsSaleAmount(columnName, columns) ? 'SUM' : byName;
 }

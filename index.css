@@ -4711,3 +4711,11 @@ body {
 :root:is(.light, .dark) .qi-builder-filters select option { background: var(--bg-surface) !important; color: var(--text-primary) !important; }
 :root:is(.light, .dark) .qi-builder-filters > button { color: var(--text-tertiary) !important; }
 :root:is(.light, .dark) .qi-builder-filters > button:hover { color: #dc2626 !important; background: color-mix(in srgb, #dc2626 10%, transparent) !important; }
+.qi-builder-headline-notice {
+  margin: 0.25rem 0 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid #f59e0b;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-secondary, #475569);
+}

@@ -279,6 +279,9 @@ export function buildSemanticModel(
         }
     }
 
+    // ── Step 1b: Per-unit values against the row grain ──
+    warnings.push(...reconcileMeasuresWithGrain(measures, dataset.columns));
+
     // ── Step 2: Determine primary date column ──
     if (dataset.timeContext?.anchorDateColumn && dateColumns.some(column =>
         column.toLowerCase() === dataset.timeContext!.anchorDateColumn.toLowerCase()
@@ -417,6 +420,95 @@ export function buildSemanticModel(
         source: dataset.domainProfile ? 'ai_enriched' : 'etl',
         warnings,
     };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// GRAIN-AWARE PER-UNIT VALUES
+//
+// A name like "price" says nothing about what one row is. Next to a quantity
+// column it is a per-unit price, so totals must come from the amount (or a
+// quantity-weighted average). In raw sales data with one row per item sold
+// and no quantity column, the price IS the sale amount, and "Total" must add
+// it up. Averaging it there turns total sales into average sale value.
+// ═══════════════════════════════════════════════════════════════════
+
+const QUANTITY_NAME = /(?:^|_)(quantity|qty|units|units_sold|unit_sold|unit_count|units_ordered|volume|pieces|pcs|items|item_count|num_units|number_of_units)(?:_|$)/i;
+const PRICE_NAME = /(?:^|_)(price|msrp)(?:_|$)/i;
+const EXPLICIT_PER_UNIT = /(?:^|_)(unit_price|price_per_unit|price_each|per_unit|unit_cost|cost_per_unit|avg_price|average_price|mean_price)(?:_|$)/i;
+const SALES_AMOUNT_NAME = /(?:^|_)(revenue|sales|total_sales|net_sales|gross_sales|amount|sales_amount|total_amount|line_total|subtotal|sub_total|turnover|order_value|sales_value)(?:_|$)/i;
+
+const norm = (name: string) => name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+
+/**
+ * Settle how per-unit values (prices) aggregate for this dataset's grain.
+ * Mutates the measures in place and returns plain-English notes.
+ *
+ *  - A quantity column exists → keep the average, weighted by that column.
+ *  - No quantity column, no separate sales amount, and rows are dated events
+ *    (one row per sale) → the price is the sale amount: Total = SUM.
+ *  - Otherwise (a price list / catalogue) → keep the average.
+ */
+/** The quantity column that turns prices into per-unit values, if any. */
+function quantityColumnOf(columns: ColumnDefinition[]): string | undefined {
+    return columns.find(column => column.type === ColumnType.METRIC && QUANTITY_NAME.test(norm(column.name)))?.name;
+}
+
+/**
+ * True when a price-named column is really the amount of each sale: dated
+ * rows, no quantity column and no separate sales amount to total instead.
+ */
+export function priceIsSaleAmount(columnName: string, columns: ColumnDefinition[]): boolean {
+    const name = norm(columnName);
+    if (!PRICE_NAME.test(name) || EXPLICIT_PER_UNIT.test(name)) return false;
+    if (quantityColumnOf(columns)) return false;
+    if (!columns.some(column => column.type === ColumnType.DATE)) return false;
+    return !columns.some(column => column.type === ColumnType.METRIC && column.name !== columnName
+        && SALES_AMOUNT_NAME.test(norm(column.name)) && !PRICE_NAME.test(norm(column.name)));
+}
+
+export function reconcileMeasuresWithGrain(measures: SemanticMeasure[], columns: ColumnDefinition[]): string[] {
+    const notes: string[] = [];
+    const quantityColumn = quantityColumnOf(columns);
+
+    for (const measure of measures) {
+        const name = norm(measure.column);
+        if (!PRICE_NAME.test(name) || measure.format === 'percent') continue;
+        const perUnitByDefault = measure.behavior === 'non_additive' && measure.aggregation === AggregationType.AVG;
+        if (!perUnitByDefault) continue;
+
+        if (quantityColumn && quantityColumn !== measure.column) {
+            measure.requiresWeighting = true;
+            measure.weightColumn = quantityColumn;
+            continue;
+        }
+
+        if (!priceIsSaleAmount(measure.column, columns)) continue;
+
+        measure.aggregation = AggregationType.SUM;
+        measure.behavior = 'additive';
+        measure.requiresWeighting = false;
+        delete measure.weightColumn;
+        notes.push(`"${measure.column}" is the amount of each sale (one row per sale, no quantity column), so Total adds it up.`);
+    }
+    return notes;
+}
+
+/**
+ * Bring a stored model in line with the grain rule above. Returns the same
+ * object when nothing changes, so callers can skip a save.
+ */
+export function reconcileStoredModelGrain<T extends { semanticModel?: SemanticModel; columns: ColumnDefinition[] }>(dataset: T): T {
+    const model = dataset.semanticModel;
+    if (!model?.measures?.length) return dataset;
+    const measures = model.measures.map(measure => ({ ...measure }));
+    reconcileMeasuresWithGrain(measures, dataset.columns);
+    const changed = measures.some((measure, index) => {
+        const before = model.measures[index];
+        return measure.aggregation !== before.aggregation
+            || measure.behavior !== before.behavior
+            || measure.weightColumn !== before.weightColumn;
+    });
+    return changed ? { ...dataset, semanticModel: { ...model, measures } } : dataset;
 }
 
 // ═══════════════════════════════════════════════════════════════════

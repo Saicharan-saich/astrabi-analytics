@@ -3,7 +3,7 @@ import {
     CheckCircle2, Eye, EyeOff, AlertTriangle, RotateCcw, Search, ChevronDown, XCircle,
 } from 'lucide-react';
 import { DatasetDomainProfile, ColumnSemantic, ColumnType, ColumnDefinition } from '../types';
-import { inferDefaultAggregation } from '../services/smartAggregation';
+import { inferDefaultAggregationForGrain } from '../services/smartAggregation';
 import { inferRowGrain } from '../services/rowGrainInference';
 
 // ═══════════════════════════════════════════════════════════════════
@@ -178,7 +178,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             const existing = initialProfile.columnSemantics?.[col.name];
             merged[col.name] = existing || {
                 role: col.type,
-                aggregation: inferDefaultAggregation(col.name, col.type) as ColumnSemantic['aggregation'],
+                aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns) as ColumnSemantic['aggregation'],
                 format: 'raw',
                 humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
                 description: '',
@@ -272,7 +272,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             const existing = initialProfile.columnSemantics?.[col.name];
             merged[col.name] = existing || {
                 role: col.type,
-                aggregation: inferDefaultAggregation(col.name, col.type) as ColumnSemantic['aggregation'],
+                aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns) as ColumnSemantic['aggregation'],
                 format: 'raw',
                 humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
                 description: '',

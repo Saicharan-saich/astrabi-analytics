@@ -15,7 +15,7 @@ import {
 import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, getSampleData } from './services/analysisEngine';
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
 import { inferRowGrain } from './services/rowGrainInference';
-import { buildSemanticModel } from './services/semanticModel';
+import { buildSemanticModel, reconcileStoredModelGrain } from './services/semanticModel';
 import { resolveAISQLSemanticModel } from './services/ai-sql/semanticLayer';
 import { fetchGlobalHiddenTabs } from './services/tabVisibilityService';
 import { fetchAISQLEngineConfig } from './services/ai-sql/engineConfig';
@@ -48,7 +48,7 @@ import { DatasetSwitcher } from './components/DatasetSwitcher';
 import { saveDatasetToDB, loadAllDatasetsFromDB, deleteDatasetFromDB } from './services/datasetDB';
 import { repairLegacyProfitMarginDataset } from './services/legacyDerivedMetricMigration';
 import { buildRelationalCatalog, createSubjectDataset } from './services/relationalCatalog';
-import { inferDefaultAggregation } from './services/smartAggregation';
+import { inferDefaultAggregationForGrain } from './services/smartAggregation';
 import { DomainReviewModal } from './components/DomainReviewModal';
 import { SplashScreen } from './components/SplashScreen';
 import { SmartQuestionsView } from './components/SmartQuestionsView';
@@ -402,11 +402,16 @@ function App() {
     loadAllDatasetsFromDB(userId).then(saved => {
       if (useAuthStore.getState().currentUser?.id !== userId) return;
       const repaired = saved.map(original => {
-        const migrated = repairLegacyProfitMarginDataset(original);
-        if (migrated !== original) {
-          saveDatasetToDB(migrated);
-          console.log(`[App] Recomputed legacy Profit Margin % for ${migrated.name}`);
+        const repairedMargin = repairLegacyProfitMarginDataset(original);
+        if (repairedMargin !== original) {
+          console.log(`[App] Recomputed legacy Profit Margin % for ${repairedMargin.name}`);
         }
+        // Datasets saved before prices were judged against the row grain.
+        const migrated = reconcileStoredModelGrain(repairedMargin);
+        if (migrated !== repairedMargin) {
+          console.log(`[App] Re-checked price aggregation against the row grain for ${migrated.name}`);
+        }
+        if (migrated !== original) saveDatasetToDB(migrated);
         return migrated;
       });
       console.log(`[App] Loaded ${saved.length} datasets from IndexedDB for user: ${userId}`);
@@ -621,7 +626,7 @@ function App() {
             for (const col of columns) {
               colSem[col.name] = {
                 role: col.type,
-                aggregation: inferDefaultAggregation(col.name, col.type),
+                aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns),
                 format: 'raw',
                 humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
                 description: '',
@@ -659,7 +664,7 @@ function App() {
           for (const col of columns) {
             colSem[col.name] = {
               role: col.type,
-              aggregation: inferDefaultAggregation(col.name, col.type),
+              aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns),
               format: 'raw',
               humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
               description: '',
@@ -986,7 +991,7 @@ function App() {
         for (const col of columns) {
           colSem[col.name] = {
             role: col.type,
-            aggregation: inferDefaultAggregation(col.name, col.type),
+            aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns),
             format: 'raw',
             humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
             description: '',
@@ -1039,7 +1044,7 @@ function App() {
         for (const col of columns) {
           colSem[col.name] = {
             role: col.type,
-            aggregation: inferDefaultAggregation(col.name, col.type),
+            aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns),
             format: 'raw',
             humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
             description: '',

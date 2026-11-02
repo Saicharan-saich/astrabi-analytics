@@ -1095,7 +1095,10 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 {result && !error && !isLoading && (
                     <>
                         <section className="qi-builder-answer qi-builder-headline mb-2 shrink-0" aria-label="Your answer in words" aria-live="polite">
-                            <h2 className="qi-builder-headline-title">{headlineQuestion(describeBuilderQuestion(lastRunConfig || result.config))}</h2>
+                            <h2 className="qi-builder-headline-title">{headlineQuestion(describeBuilderQuestion({ ...(lastRunConfig || result.config), aggregation: result.config?.aggregation || lastRunConfig?.aggregation }))}</h2>
+                            {result.notices?.map(notice => (
+                                <p key={notice} className="qi-builder-headline-notice">{notice}</p>
+                            ))}
                             {describeBuilderFinding(result, formatting) && (
                                 <p className="qi-builder-headline-finding">{describeBuilderFinding(result, formatting)}</p>
                             )}

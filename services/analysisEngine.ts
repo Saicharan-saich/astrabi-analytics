@@ -160,6 +160,8 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
     // In particular, a materialised ratio such as profit/sales must be recomputed
     // as SUM(profit)/SUM(sales) at the requested grain. AVG(row_margin) is biased
     // because small and large rows otherwise receive equal weight.
+    // Any change to what the user asked for is reported on the result, never silent.
+    const aggregationNotes: string[] = [];
     if (dataset.semanticModel) {
         const metricWeightColumns = { ...(query.metricWeightColumns || {}) };
         const secondaryMetricAggregations = { ...(query.secondaryMetricAggregations || {}) };
@@ -171,11 +173,14 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
             if (!measure) return requested;
 
             let resolved = requested;
+            const label = metricName.replace(/_/g, ' ');
             if (measure.behavior === 'non_additive' && resolved === 'SUM') {
                 resolved = measure.aggregation;
+                aggregationNotes.push(`A total of "${label}" would not mean anything (it is a ${measure.format === 'percent' ? 'rate' : 'per-unit value'}), so this shows the ${resolved === 'AVG' ? 'average' : resolved.toLowerCase()} instead.`);
                 console.warn(`[runAnalysis] ⚠️ AGGREGATION GUARD: "${metricName}" is non-additive. Auto-correcting SUM → ${resolved}`);
             } else if (measure.behavior === 'semi_additive' && resolved === 'SUM' && dimIsTime) {
                 resolved = 'MAX';
+                aggregationNotes.push(`"${label}" is a balance, so adding it up across periods would double count; each period shows its highest value.`);
                 console.warn(`[runAnalysis] ⚠️ AGGREGATION GUARD: "${metricName}" is semi-additive over time. Auto-correcting SUM → MAX`);
             }
 
@@ -288,7 +293,7 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
     };
 
     // ── Compute confidence score ──
-    const resultWarnings: string[] = [];
+    const resultWarnings: string[] = [...aggregationNotes];
     let confidence = 1.0;
     const model = dataset.semanticModel;
 
@@ -378,10 +383,12 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
 
     analysisResult.confidence = Math.max(0, Math.min(1, confidence));
     analysisResult.warnings = resultWarnings;
+    if (aggregationNotes.length) analysisResult.notices = aggregationNotes;
 
     // ── Explainability ──
     if (query.metric && query.dimension) {
-        const aggLabel = model ? (findMeasure(model, query.metric)?.aggregation || query.aggregation || 'SUM') : (query.aggregation || 'SUM');
+        // What actually ran, not the measure's default.
+        const aggLabel = query.aggregation || (model ? findMeasure(model, query.metric)?.aggregation : undefined) || 'SUM';
         const filtersApplied: string[] = [];
         if (query.filters) {
             for (const [dim, vals] of Object.entries(query.filters)) {

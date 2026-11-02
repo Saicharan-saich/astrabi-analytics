@@ -466,6 +466,8 @@ export interface AnalysisResult {
   calculatedSql?: string; // Enriched SQL with table calculations (CTE + window functions)
   config: QueryConfig;
   error?: string; // If mapping failed
+  /** Plain-English notes when the engine had to answer differently from what was asked. */
+  notices?: string[];
   kpi?: number | string; // Optional override for the main KPI number
   /** Legacy dashboard compatibility; new results use `vis` and config.chartType. */
   chartType?: QueryConfig['chartType'];
