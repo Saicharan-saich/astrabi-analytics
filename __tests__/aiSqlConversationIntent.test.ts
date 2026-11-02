@@ -97,3 +97,39 @@ describe('AI SQL LLM-only conversational intent', () => {
             .rejects.toThrow(/context.*not available/i);
     });
 });
+
+describe('AI SQL vague questions', () => {
+    beforeEach(() => vi.mocked(requestAIConversationTurn).mockReset());
+
+    it('answers a vague analytical question instead of stopping to ask', async () => {
+        mockResolution({
+            route: 'clarification',
+            turnType: 'clarification',
+            resolvedQuestion: 'What is my best performing product?',
+            confidence: 0.6,
+            clarificationQuestion: 'Which performance metric should I use—revenue, units sold, profit, or another measure?',
+        });
+
+        const result = await resolveConversationTurnWithAI('What is my best performing product?', dataset);
+
+        expect(result.route).toBe('analysis');
+        expect(result.turnType).toBe('new_question');
+        expect(result.resolvedQuestion).toBe('What is my best performing product?');
+        expect(result.clarificationQuestion).toBeUndefined();
+    });
+
+    it('still asks when the message has nothing to act on', async () => {
+        mockResolution({
+            route: 'clarification',
+            turnType: 'clarification',
+            resolvedQuestion: 'Compare them',
+            confidence: 0.7,
+            clarificationQuestion: 'What would you like me to compare?',
+        });
+
+        const result = await resolveConversationTurnWithAI('Compare them', dataset);
+
+        expect(result.route).toBe('clarification');
+        expect(result.clarificationQuestion).toBe('What would you like me to compare?');
+    });
+});

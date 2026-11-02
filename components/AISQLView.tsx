@@ -447,7 +447,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                         <div className="flex items-start gap-3">
                             <Target className="mt-0.5 h-5 w-5 shrink-0 text-violet-600 dark:text-violet-300" aria-hidden="true" />
                             <div className="min-w-0 flex-1">
-                                <div id="scope-clarification-title" className="font-bold text-violet-900 dark:text-violet-200">What kind of complete view do you need?</div>
+                                <div id="scope-clarification-title" className="font-bold text-violet-900 dark:text-violet-200">Tell me a little more</div>
                                 <p className="mt-1 text-sm leading-relaxed text-violet-700 dark:text-violet-200/80">{scopeClarification}</p>
                                 <div className="mt-4 grid gap-2 sm:grid-cols-3">
                                     <button type="button" onClick={() => { setScopeClarification(null); onOpenDatasetOverview?.(); }} className="rounded-xl border border-violet-300 bg-white p-3 text-left transition hover:border-violet-500 hover:bg-violet-100 dark:border-violet-500/30 dark:bg-slate-900/60 dark:hover:bg-violet-500/15">
