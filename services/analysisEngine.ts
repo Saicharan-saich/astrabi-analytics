@@ -88,9 +88,9 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
         // AI-generated SQL bypasses the semantic model's aggregation guards.
         // Check if the SQL incorrectly uses SUM on non-additive metrics.
         const aiWarnings: string[] = [];
-        if (semModel) {
+        if (dataset.semanticModel) {
             const sqlUpper = aiSql.toUpperCase();
-            for (const measure of semModel.measures) {
+            for (const measure of dataset.semanticModel.measures) {
                 if (measure.behavior === 'non_additive') {
                     // Check if SUM is applied to this non-additive column
                     const colPattern = new RegExp(`SUM\\s*\\(\\s*["\`]?${measure.column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["\`]?\\s*\\)`, 'i');
