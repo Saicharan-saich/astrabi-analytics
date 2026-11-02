@@ -477,6 +477,14 @@ export function currencyOf(raw: any): string | null {
     return symbol ? SYMBOL_TO_CODE[symbol[0]] || symbol[0] : null;
 }
 
+/** Currency named in a column header: "Price (£)", "Revenue GBP", "amount_eur". */
+export function currencyOfHeader(header: string): string | null {
+    const symbol = header.match(CURRENCY_SYMBOL_MARKER);
+    if (symbol) return SYMBOL_TO_CODE[symbol[0]] || null;
+    const code = header.toUpperCase().match(new RegExp(`(?:^|[^A-Z])(${CURRENCY_CODES.slice(3, -1)})(?:$|[^A-Z])`));
+    return code ? code[1] : null;
+}
+
 /** Currencies used in a column, most frequent first, with counts. */
 export function detectCurrencies(values: any[]): { currency: string; count: number }[] {
     const counts = new Map<string, number>();

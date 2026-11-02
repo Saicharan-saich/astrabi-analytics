@@ -34,6 +34,8 @@ export interface ColumnDefinition {
   derivedInputColumns?: Record<string, string>;
   /** percent_points: the source wrote these as "12.5%", stored as 12.5 — never rescale ×100. */
   valueUnit?: 'percent_points';
+  /** ISO currency of a money column, from its header ("Price (£)") or its values ("£12"). */
+  currency?: string;
 }
 
 export interface ETLLog {
@@ -286,7 +288,7 @@ export type FormattingConfig = {
   /** Auto follows the question's grouping: time is sequential; categories are discrete. */
   colorEncoding?: 'auto' | 'sequential' | 'discrete';
   /** percent_points: values are already in percent units (12.5 = 12.5%), never rescaled. */
-  numberFormat: 'auto' | 'raw' | 'currency_usd' | 'currency_eur' | 'percent' | 'percent_points' | 'compact';
+  numberFormat: 'auto' | 'raw' | 'currency_usd' | 'currency_eur' | 'currency_gbp' | 'percent' | 'percent_points' | 'compact';
   fontSize: 'sm' | 'md' | 'lg';
   headerSize: 'sm' | 'md' | 'lg' | 'xl';
   headerBold: boolean;
@@ -316,6 +318,8 @@ export type FormattingConfig = {
   showYAxis?: boolean; // Individual Y-axis toggle (overrides showAxis when set)
   yAxisFormat?: 'compact' | 'full' | 'short_currency'; // Y-axis tick format: compact ($2.5K), full ($2,500.00), short_currency ($2.5K)
   showGridLines?: boolean; // Toggle grid lines visibility (default: auto based on chart type)
+  /** Name the axes (category name and measure name). */
+  showAxisTitles?: boolean;
   /** KPI cards: optional target; renders a progress bar towards it. */
   kpiGoal?: number;
   /** Internal: marks that stored formatting has had the one-off legibility upgrade applied. */

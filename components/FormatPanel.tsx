@@ -1,7 +1,8 @@
 import React from 'react';
-import { Palette, X, CheckCircle2, Type, Eye, Grid, Hash } from 'lucide-react';
+import { Palette, X, RotateCcw } from 'lucide-react';
 import { FormattingConfig } from '../types';
 import { PALETTES } from '../utils/chartUtils';
+import { useAppStore } from '../store/useAppStore';
 
 interface FormatPanelProps {
   formatting: FormattingConfig;
@@ -12,97 +13,89 @@ interface FormatPanelProps {
   embedded?: boolean;
 }
 
-// Size option maps
-const DATA_LABEL_SIZES: Record<string, number> = { xs: 9, sm: 10, md: 11, lg: 13 };
-const AXIS_LABEL_SIZES: Record<string, number> = { xs: 9, sm: 10, md: 12, lg: 14 };
+type Option<T extends string> = { label: string; value: T; title?: string };
 
-// Reusable checkbox component
-const FormatCheckbox: React.FC<{
-  checked: boolean;
-  onChange: (checked: boolean) => void;
+/** A row of mutually exclusive choices. */
+function Segmented<T extends string>({ label, value, options, onChange }: {
   label: string;
-}> = ({ checked, onChange, label }) => (
-  <label className="flex items-center gap-3 cursor-pointer group">
-    <div className="relative flex items-center">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={e => onChange(e.target.checked)}
-        className="peer h-5 w-5 cursor-pointer appearance-none rounded border border-slate-300 dark:border-slate-600 shadow-sm checked:border-indigo-500 checked:bg-indigo-500 hover:border-indigo-400 transition-all"
-      />
-      <CheckCircle2
-        className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-3.5 h-3.5 text-white opacity-0 peer-checked:opacity-100 transition-opacity"
-        strokeWidth={3}
-      />
+  value: T;
+  options: Option<T>[];
+  onChange: (value: T) => void;
+}) {
+  return (
+    <div className="qi-style-segmented" role="group" aria-label={label}>
+      {options.map(option => (
+        <button
+          key={option.value}
+          type="button"
+          title={option.title}
+          aria-pressed={value === option.value}
+          className={value === option.value ? 'is-active' : ''}
+          onClick={() => onChange(option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
-    <span className="text-sm font-medium text-slate-700 dark:text-slate-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-      {label}
+  );
+}
+
+/** An on/off switch with its label. */
+const Switch: React.FC<{ label: string; checked: boolean; onChange: (checked: boolean) => void; hint?: string }> = ({ label, checked, onChange, hint }) => (
+  <label className="qi-style-switch">
+    <span className="min-w-0">
+      <span className="qi-style-label">{label}</span>
+      {hint && <span className="qi-style-hint block">{hint}</span>}
     </span>
+    <input type="checkbox" role="switch" checked={checked} onChange={event => onChange(event.target.checked)} />
+    <span className="qi-style-switch-track" aria-hidden><span /></span>
   </label>
 );
 
-// Reusable toggle-button row
-const SizeToggle: React.FC<{
-  value: string | undefined;
-  options: { label: string; value: string }[];
-  onChange: (value: string) => void;
-}> = ({ value, options, onChange }) => (
-  <div className="flex bg-slate-100 dark:bg-slate-700/50 rounded-lg p-1 border border-slate-200 dark:border-slate-600">
-    {options.map(opt => (
-      <button
-        key={opt.value}
-        type="button"
-        onClick={() => onChange(opt.value)}
-        aria-pressed={value === opt.value}
-        className={`flex-1 text-xs py-2 rounded-md font-bold transition-all ${
-          value === opt.value
-            ? 'bg-white dark:bg-slate-600 text-indigo-600 dark:text-indigo-300 shadow-sm'
-            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-        }`}
-      >
-        {opt.label}
-      </button>
-    ))}
-  </div>
-);
-
-// Color picker row
-const ColorPickerRow: React.FC<{
-  label: string;
-  value: string | undefined;
-  defaultValue: string;
-  onChange: (color: string | undefined) => void;
-}> = ({ label, value, defaultValue, onChange }) => (
-  <div className="flex items-center gap-2">
-    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex-1">
-      {label}
-    </span>
-    <input
-      type="color"
-      value={value || defaultValue}
-      onChange={e => onChange(e.target.value)}
-      className="w-7 h-7 rounded-lg border border-slate-200 dark:border-slate-600 cursor-pointer p-0.5 shadow-sm hover:shadow-md transition-shadow"
-    />
-    {value && (
-      <button
-        onClick={() => onChange(undefined)}
-        className="text-[11px] text-slate-400 hover:text-indigo-500 transition-colors font-medium"
-      >
-        Reset
-      </button>
-    )}
-  </div>
-);
-
-// Section header
-const SectionHeader: React.FC<{ icon: React.ReactNode; label: string }> = ({ icon, label }) => (
-  <div className="flex items-center gap-2 pt-3 pb-1">
-    <div className="w-5 h-5 rounded bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center">
-      {icon}
+/** Automatic colour, or one the user picked. */
+const ColourChoice: React.FC<{ label: string; value?: string; fallback: string; onChange: (colour: string | undefined) => void }> = ({ label, value, fallback, onChange }) => (
+  <div className="qi-style-row">
+    <span className="qi-style-label">{label}</span>
+    <div className="flex items-center gap-1.5">
+      <button type="button" className={`qi-style-chip ${value ? '' : 'is-active'}`} aria-pressed={!value} onClick={() => onChange(undefined)}>Auto</button>
+      <label className={`qi-style-colour ${value ? 'is-active' : ''}`} title={`Pick a ${label.toLowerCase()}`}>
+        <input type="color" value={value || fallback} onChange={event => onChange(event.target.value)} aria-label={`${label} picker`} />
+        <span style={{ background: value || fallback }} />
+      </label>
     </div>
-    <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">{label}</span>
   </div>
 );
+
+const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
+  <section className="qi-style-section" aria-label={title}>
+    <h4 className="qi-style-section-title">{title}</h4>
+    <div className="space-y-3">{children}</div>
+  </section>
+);
+
+const Field: React.FC<{ label: string; htmlFor?: string; children: React.ReactNode }> = ({ label, htmlFor, children }) => (
+  <div className="space-y-1.5">
+    <label className="qi-style-label block" htmlFor={htmlFor}>{label}</label>
+    {children}
+  </div>
+);
+
+const SIZE_OPTIONS: Option<'xs' | 'sm' | 'md' | 'lg'>[] = [
+  { label: 'XS', value: 'xs', title: 'Extra small' },
+  { label: 'S', value: 'sm', title: 'Small' },
+  { label: 'M', value: 'md', title: 'Medium' },
+  { label: 'L', value: 'lg', title: 'Large' },
+];
+
+const PALETTE_NAMES: Record<string, string> = { vibrant: 'Clean (default)', electric: 'Electric', neon: 'Neon', sunset: 'Sunset', ocean: 'Ocean' };
+
+/** Style settings that Reset puts back; data choices (calculations, goals) are kept. */
+const STYLE_RESET: Partial<FormattingConfig> = {
+  colorEncoding: 'auto', colorMode: 'vibrant', numberFormat: 'auto', decimals: undefined, yAxisFormat: undefined,
+  dateFormat: undefined, dataLabelSize: undefined, dataLabelBold: undefined, dataLabelColor: undefined,
+  axisLabelSize: undefined, axisBold: undefined, axisColor: undefined, showGridLines: undefined,
+  showAxisTitles: undefined, fontSize: 'md',
+};
 
 export const FormatPanel: React.FC<FormatPanelProps> = ({
   formatting,
@@ -111,78 +104,87 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
   chartType,
   embedded = false,
 }) => {
-  const update = (patch: Partial<FormattingConfig>) =>
-    onUpdateFormatting({ ...formatting, ...patch });
+  const update = (patch: Partial<FormattingConfig>) => onUpdateFormatting({ ...formatting, ...patch });
+  const isArc = chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea' || chartType === 'radar' || chartType === 'gauge';
+  const isMap = chartType === 'map';
+  const hasAxes = !isArc && !isMap && chartType !== 'kpiCard' && chartType !== 'treemap' && chartType !== 'funnel';
 
-  const isPieType = chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea' || chartType === 'radar';
-  const isMapType = chartType === 'map';
+  // The file's own currency, so "Automatic" can say what it will use.
+  const datasetCurrency = useAppStore(state => state.dataset?.columns?.find(column => column.currency)?.currency);
+  const symbol = (() => {
+    if (!datasetCurrency) return '';
+    try {
+      return new Intl.NumberFormat('en-US', { style: 'currency', currency: datasetCurrency }).formatToParts(0).find(part => part.type === 'currency')?.value || '';
+    } catch { return ''; }
+  })();
+
+  const labelsOn = Boolean(formatting.showDataLabels) && formatting.dataLabelMode !== 'off';
+  const labelMode = formatting.dataLabelMode === 'primary' ? 'primary' : 'all';
 
   return (
-    <div className={`qi-format-panel overflow-y-auto bg-white dark:bg-slate-800/95 border-slate-200 dark:border-white/10 p-5 ${embedded
-      ? 'h-full w-full border-0 shadow-none'
-      : 'absolute top-4 right-4 w-[300px] max-h-[calc(100%_-_2rem)] backdrop-blur shadow-2xl border rounded-xl z-20 animate-in fade-in slide-in-from-right-4 ring-1 ring-black/5'
-    }`}>
-      {/* Header */}
-      <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-100 dark:border-white/5">
-        <h3 className="font-bold text-slate-800 dark:text-white flex items-center gap-2 text-sm">
-          <Palette className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-          Chart Appearance
+    <div
+      className={`qi-format-panel qi-style-panel overflow-y-auto ${embedded
+        ? 'h-full w-full'
+        : 'absolute top-4 right-4 w-[300px] max-h-[calc(100%_-_2rem)] rounded-xl z-20 animate-in fade-in slide-in-from-right-4'
+      }`}
+    >
+      <div className="qi-style-header">
+        <h3 className="flex items-center gap-2">
+          <Palette className="w-4 h-4" aria-hidden />
+          Style
         </h3>
-        <button
-          onClick={onClose}
-          aria-label="Close chart appearance"
-          className="text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-white/10 p-1 rounded-full transition-colors"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        <div className="flex items-center gap-1">
+          <button type="button" className="qi-style-icon" onClick={() => update(STYLE_RESET)} title="Reset style to the defaults" aria-label="Reset style">
+            <RotateCcw className="w-3.5 h-3.5" />
+          </button>
+          <button type="button" className="qi-style-icon" onClick={onClose} aria-label="Close chart appearance">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       </div>
 
-      <div className="space-y-4">
-        {/* ═══ SECTION: Color & Palette ══════════════════════ */}
-        <div role="group" aria-label="Colour meaning">
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
-            Colour meaning
-          </label>
-          <SizeToggle
-            value={formatting.colorEncoding || 'auto'}
-            options={[{ label: 'Auto', value: 'auto' }, { label: 'Low → high', value: 'sequential' }, { label: 'Categories', value: 'discrete' }]}
-            onChange={value => update({ colorEncoding: value as NonNullable<FormattingConfig['colorEncoding']> })}
+      <Section title="Colours">
+        <div role="group" aria-label="Colour meaning" className="space-y-1.5">
+          <span className="qi-style-label block">Colour by</span>
+          <Segmented
+            label="Colour by"
+            value={(formatting.colorEncoding || 'auto') as 'auto' | 'sequential' | 'discrete'}
+            options={[
+              { label: 'Auto', value: 'auto', title: 'One colour for a single series; distinct colours for slices and multiple series' },
+              { label: 'Low → high', value: 'sequential', title: 'Shade bars by their value' },
+              { label: 'Categories', value: 'discrete', title: 'A different colour for each bar' },
+            ]}
+            onChange={value => update({ colorEncoding: value })}
           />
-          <p className="mt-1.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-            Auto uses one colour for a single series, and distinct colours for slices and for multiple series. Choose Low → high to shade by value, or Categories to colour each bar.
-          </p>
         </div>
-        <div>
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
-            Color Palette
-          </label>
-          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2">
-            {(['vibrant', 'electric', 'neon', 'sunset', 'ocean'] as const).map(mode => (
-              <button
-                key={mode}
-                onClick={() => update({ colorMode: mode })}
-                className={`h-8 rounded-lg border-2 transition-all ${
-                  formatting.colorMode === mode
-                    ? 'ring-2 ring-indigo-500 ring-offset-1 border-transparent scale-110 shadow-md'
-                    : 'border-transparent hover:scale-105 hover:shadow-sm'
-                }`}
-                style={{
-                  // Preview the first four series colours of each palette.
-                  background: `linear-gradient(90deg, ${PALETTES[mode].slice(0, 4)
-                    .map((colour, index) => `${colour} ${index * 25}% ${(index + 1) * 25}%`).join(', ')})`,
-                }}
-                title={mode === 'vibrant' ? 'Clean (default)' : mode.charAt(0).toUpperCase() + mode.slice(1)}
-                aria-label={`${mode === 'vibrant' ? 'Clean (default)' : mode} palette`}
-              />
-            ))}
+        <div className="space-y-1.5">
+          <span className="qi-style-label block">Palette</span>
+          <div className="grid grid-cols-5 gap-1.5">
+            {(['vibrant', 'electric', 'neon', 'sunset', 'ocean'] as const).map(mode => {
+              const active = (formatting.colorMode || 'vibrant') === mode;
+              return (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => update({ colorMode: mode })}
+                  aria-pressed={active}
+                  className={`qi-style-palette ${active ? 'is-active' : ''}`}
+                  style={{
+                    background: `linear-gradient(90deg, ${PALETTES[mode].slice(0, 4)
+                      .map((colour, index) => `${colour} ${index * 25}% ${(index + 1) * 25}%`).join(', ')})`,
+                  }}
+                  title={PALETTE_NAMES[mode]}
+                  aria-label={`${PALETTE_NAMES[mode]} palette`}
+                />
+              );
+            })}
           </div>
         </div>
+      </Section>
 
-        {chartType === 'kpiCard' && (
-          <div>
-            <label htmlFor="qi-kpi-goal" className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
-              Goal
-            </label>
+      {chartType === 'kpiCard' && (
+        <Section title="Goal">
+          <Field label="Target value" htmlFor="qi-kpi-goal">
             <input
               id="qi-kpi-goal"
               type="number"
@@ -194,258 +196,125 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
                 const goal = raw === '' ? undefined : Number(raw);
                 update({ kpiGoal: goal !== undefined && Number.isFinite(goal) && goal > 0 ? goal : undefined });
               }}
-              className="w-full rounded-lg border border-slate-200 dark:border-white/10 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-800 dark:text-slate-100"
+              className="qi-ws-select w-full rounded-lg px-2.5 py-1.5 text-[13px]"
             />
-            <p className="mt-1.5 text-[11px] leading-4 text-slate-500 dark:text-slate-400">
-              Shows progress towards this target under the KPI. Leave empty to hide.
-            </p>
-          </div>
-        )}
+          </Field>
+          <p className="qi-style-hint">Shows progress towards this target under the number. Leave empty to hide.</p>
+        </Section>
+      )}
 
-        {/* ═══ SECTION: Numbers ══════════════════════════════ */}
-        <SectionHeader icon={<Hash className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />} label="Numbers" />
-
-        <div>
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
-            Number Format
-          </label>
+      <Section title="Numbers">
+        <Field label="Format" htmlFor="qi-style-number">
           <select
-            value={formatting.numberFormat}
-            onChange={e => update({ numberFormat: e.target.value as any })}
-            className="w-full text-sm text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg py-2.5 px-3 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-medium appearance-none cursor-pointer hover:bg-white dark:hover:bg-slate-600 hover:border-indigo-300 transition-all"
+            id="qi-style-number"
+            value={formatting.numberFormat || 'auto'}
+            onChange={e => update({ numberFormat: e.target.value as FormattingConfig['numberFormat'] })}
+            className="qi-ws-select w-full rounded-lg px-2.5 py-1.5 text-[13px]"
           >
-            <option value="auto">✨ Intelligent (Auto)</option>
-            <option value="raw">Raw Number (1200)</option>
-            <option value="currency_usd">Currency ($ USD)</option>
-            <option value="currency_eur">Currency (€ EUR)</option>
+            <option value="auto">Automatic{symbol ? ` (${symbol} from your file)` : ''}</option>
+            <option value="compact">Short (1.2K, 3.4M)</option>
+            <option value="raw">Plain number (1,200)</option>
+            <option value="currency_gbp">Pounds (£)</option>
+            <option value="currency_usd">Dollars ($)</option>
+            <option value="currency_eur">Euros (€)</option>
             <option value="percent">Percentage (%)</option>
-            <option value="compact">Compact (1k, 1M)</option>
           </select>
-        </div>
-
-        <div>
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
-            Decimal Places
-          </label>
-          <div className="flex bg-slate-100 dark:bg-slate-700/50 rounded-lg p-1 border border-slate-200 dark:border-slate-600">
-            {[
-              { label: 'Auto', val: undefined },
-              { label: '0', val: 0 },
-              { label: '1', val: 1 },
-              { label: '2', val: 2 },
-            ].map(opt => (
-              <button
-                key={opt.label}
-                onClick={() => update({ decimals: opt.val })}
-                className={`flex-1 text-xs py-2 rounded-md font-bold transition-all ${
-                  formatting.decimals === opt.val
-                    ? 'bg-white dark:bg-slate-600 text-indigo-600 dark:text-indigo-300 shadow-sm'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Y-Axis Format — hidden for pie/map */}
-        {!isPieType && !isMapType && (
-          <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
-              Y-Axis Tick Format
-            </label>
-            <SizeToggle
-              value={formatting.yAxisFormat || 'compact'}
+        </Field>
+        <Field label="Decimal places">
+          <Segmented
+            label="Decimal places"
+            value={formatting.decimals === undefined ? 'auto' : String(formatting.decimals)}
+            options={[{ label: 'Auto', value: 'auto' }, { label: '0', value: '0' }, { label: '1', value: '1' }, { label: '2', value: '2' }]}
+            onChange={value => update({ decimals: value === 'auto' ? undefined : Number(value) })}
+          />
+        </Field>
+        {hasAxes && (
+          <Field label="Large numbers">
+            <Segmented
+              label="Large numbers"
+              value={formatting.yAxisFormat === 'full' ? 'full' : 'compact'}
               options={[
-                { label: 'Compact', value: 'compact' },
-                { label: 'Full', value: 'full' },
-                { label: '$-Short', value: 'short_currency' },
+                { label: 'Short (1.2M)', value: 'compact' },
+                { label: 'Full (1,200,000)', value: 'full' },
               ]}
-              onChange={v => update({ yAxisFormat: v as any })}
+              onChange={value => update({ yAxisFormat: value })}
             />
-          </div>
+          </Field>
         )}
-
-        {/* Date Format */}
-        <div>
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
-            Date Format
-          </label>
+        <Field label="Dates" htmlFor="qi-style-date">
           <select
+            id="qi-style-date"
             value={formatting.dateFormat || 'auto'}
             onChange={e => update({ dateFormat: e.target.value === 'auto' ? undefined : e.target.value as any })}
-            className="w-full text-sm text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg py-2.5 px-3 shadow-sm focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none font-medium appearance-none cursor-pointer hover:bg-white dark:hover:bg-slate-600 hover:border-indigo-300 transition-all"
+            className="qi-ws-select w-full rounded-lg px-2.5 py-1.5 text-[13px]"
           >
-            <option value="auto">Auto (Smart)</option>
-            <option value="raw">Raw (as-is)</option>
+            <option value="auto">Automatic</option>
+            <option value="month_short_year">Jan '24</option>
+            <option value="month_name_year">January 2024</option>
+            <option value="month_name_only">January</option>
             <option value="yyyy-mm-dd">2024-01-15</option>
             <option value="mm/dd/yyyy">01/15/2024</option>
-            <option value="month_name_year">January 2024</option>
-            <option value="month_short_year">Jan '24</option>
-            <option value="month_name_only">January</option>
+            <option value="raw">As in the file</option>
           </select>
-        </div>
+        </Field>
+      </Section>
 
-        {/* ═══ SECTION: Typography ══════════════════════════ */}
-        <SectionHeader icon={<Type className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />} label="Typography" />
-
-        {/* Chart Title */}
-        <div className="bg-slate-50 dark:bg-slate-700/30 rounded-lg p-3 space-y-3 border border-slate-100 dark:border-slate-600/30">
-          <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Chart Title</span>
-          <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">Size</label>
-            <SizeToggle
-              value={formatting.headerSize || 'lg'}
-              options={[
-                { label: 'SM', value: 'sm' },
-                { label: 'MD', value: 'md' },
-                { label: 'LG', value: 'lg' },
-                { label: 'XL', value: 'xl' },
-              ]}
-              onChange={v => update({ headerSize: v as any })}
-            />
-          </div>
-          <FormatCheckbox
-            checked={formatting.headerBold}
-            onChange={v => update({ headerBold: v })}
-            label="Bold"
+      {chartType !== 'kpiCard' && (
+        <Section title="Value labels">
+          <Switch
+            label="Show values on the chart"
+            checked={labelsOn}
+            onChange={on => update({ showDataLabels: on, dataLabelMode: on ? labelMode : 'off' })}
           />
-          <ColorPickerRow
-            label="Color"
-            value={formatting.headerColor}
-            defaultValue="#1e293b"
-            onChange={v => update({ headerColor: v })}
-          />
-        </div>
-
-        {/* Data Labels */}
-        <div className="bg-slate-50 dark:bg-slate-700/30 rounded-lg p-3 space-y-3 border border-slate-100 dark:border-slate-600/30">
-          <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Data Labels</span>
-          <div>
-            <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">Size</label>
-            <SizeToggle
-              value={formatting.dataLabelSize || 'md'}
-              options={[
-                { label: 'XS', value: 'xs' },
-                { label: 'SM', value: 'sm' },
-                { label: 'MD', value: 'md' },
-                { label: 'LG', value: 'lg' },
-              ]}
-              onChange={v => update({ dataLabelSize: v as any })}
-            />
-          </div>
-          <FormatCheckbox
-            checked={formatting.dataLabelBold !== false}
-            onChange={v => update({ dataLabelBold: v })}
-            label="Bold"
-          />
-          <ColorPickerRow
-            label="Color"
-            value={formatting.dataLabelColor}
-            defaultValue="#334155"
-            onChange={v => update({ dataLabelColor: v })}
-          />
-        </div>
-
-        {/* Axis Labels — hidden for pie/map */}
-        {!isPieType && !isMapType && (
-          <div className="bg-slate-50 dark:bg-slate-700/30 rounded-lg p-3 space-y-3 border border-slate-100 dark:border-slate-600/30">
-            <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest">Axis Labels</span>
-            <div>
-              <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">Size</label>
-              <SizeToggle
-                value={formatting.axisLabelSize || 'md'}
-                options={[
-                  { label: 'XS', value: 'xs' },
-                  { label: 'SM', value: 'sm' },
-                  { label: 'MD', value: 'md' },
-                  { label: 'LG', value: 'lg' },
-                ]}
-                onChange={v => update({ axisLabelSize: v as any })}
-              />
-            </div>
-            <FormatCheckbox
-              checked={formatting.axisBold ?? false}
-              onChange={v => update({ axisBold: v })}
-              label="Bold"
-            />
-            <ColorPickerRow
-              label="Color"
-              value={formatting.axisColor}
-              defaultValue="#475569"
-              onChange={v => update({ axisColor: v })}
-            />
-          </div>
-        )}
-
-        {/* General Font Size (legacy — controls legend etc.) */}
-        <div>
-          <label className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-2 block">
-            General Font Size
-          </label>
-          <SizeToggle
-            value={formatting.fontSize || 'md'}
-            options={[
-              { label: 'SM', value: 'sm' },
-              { label: 'MD', value: 'md' },
-              { label: 'LG', value: 'lg' },
-            ]}
-            onChange={v => update({ fontSize: v as any })}
-          />
-        </div>
-
-        {/* ═══ SECTION: Display ═════════════════════════════ */}
-        <SectionHeader icon={<Eye className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />} label="Display" />
-
-        <div className="flex flex-col gap-3">
-          <FormatCheckbox
-            checked={formatting.showLabels}
-            onChange={v => update({ showLabels: v })}
-            label="Show Legend"
-          />
-          <FormatCheckbox
-            checked={formatting.showDataLabels}
-            onChange={v => update({ showDataLabels: v, dataLabelMode: v ? 'all' : 'off' })}
-            label="Show Data Labels"
-          />
-
-          {/* Axis toggles — hidden for pie/map */}
-          {!isPieType && !isMapType && (
+          {labelsOn && (
             <>
-              <div className="flex items-center gap-2 pt-1">
-                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider mr-1">Axes:</span>
-                <button
-                  onClick={() => update({ showXAxis: !formatting.showXAxis })}
-                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border ${
-                    formatting.showXAxis
-                      ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-500/30'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600'
-                  }`}
-                >
-                  X-Axis
-                </button>
-                <button
-                  onClick={() => update({ showYAxis: !formatting.showYAxis })}
-                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all border ${
-                    formatting.showYAxis
-                      ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-700 dark:text-indigo-300 border-indigo-300 dark:border-indigo-500/30'
-                      : 'bg-slate-100 dark:bg-slate-700 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-600 hover:bg-slate-200 dark:hover:bg-slate-600'
-                  }`}
-                >
-                  Y-Axis
-                </button>
-              </div>
-
-              <FormatCheckbox
-                checked={formatting.showGridLines ?? false}
-                onChange={v => update({ showGridLines: v })}
-                label="Show Grid Lines"
-              />
+              <Field label="Which series">
+                <Segmented
+                  label="Which series"
+                  value={labelMode}
+                  options={[{ label: 'All', value: 'all' }, { label: 'First only', value: 'primary' }]}
+                  onChange={value => update({ showDataLabels: true, dataLabelMode: value })}
+                />
+              </Field>
+              <Field label="Size">
+                <Segmented label="Value label size" value={formatting.dataLabelSize || 'md'} options={SIZE_OPTIONS} onChange={value => update({ dataLabelSize: value })} />
+              </Field>
+              <Switch label="Bold" checked={formatting.dataLabelBold !== false} onChange={value => update({ dataLabelBold: value })} />
+              <ColourChoice label="Colour" value={formatting.dataLabelColor} fallback="#334155" onChange={value => update({ dataLabelColor: value })} />
+              <p className="qi-style-hint">Numbers inside a bar switch to dark or light text so they stay readable.</p>
             </>
           )}
-        </div>
-      </div>
+        </Section>
+      )}
+
+      {hasAxes && (
+        <Section title="Axes">
+          <div className="grid grid-cols-2 gap-2">
+            <Switch label="Category axis" checked={Boolean(formatting.showXAxis ?? formatting.showAxis)} onChange={value => update({ showXAxis: value })} />
+            <Switch label="Value axis" checked={Boolean(formatting.showYAxis ?? formatting.showAxis)} onChange={value => update({ showYAxis: value })} />
+          </div>
+          <Switch label="Axis titles" hint="Name each axis, e.g. Manufacturer and Total price" checked={formatting.showAxisTitles === true} onChange={value => update({ showAxisTitles: value })} />
+          <Switch label="Grid lines" checked={formatting.showGridLines ?? false} onChange={value => update({ showGridLines: value })} />
+          <Field label="Label size">
+            <Segmented label="Axis label size" value={formatting.axisLabelSize || 'md'} options={SIZE_OPTIONS} onChange={value => update({ axisLabelSize: value })} />
+          </Field>
+          <Switch label="Bold labels" checked={formatting.axisBold ?? false} onChange={value => update({ axisBold: value })} />
+          <ColourChoice label="Label colour" value={formatting.axisColor} fallback="#475569" onChange={value => update({ axisColor: value })} />
+          <p className="qi-style-hint">Every category name is shown: long names wrap onto two lines, then shorten with "…" (hover a bar for the full name).</p>
+        </Section>
+      )}
+
+      <Section title="Legend">
+        <Switch label="Show legend" hint="Appears when there is more than one series or slice" checked={formatting.showLabels ?? true} onChange={value => update({ showLabels: value })} />
+        <Field label="Legend text size">
+          <Segmented
+            label="Legend text size"
+            value={formatting.fontSize || 'md'}
+            options={[{ label: 'S', value: 'sm' }, { label: 'M', value: 'md' }, { label: 'L', value: 'lg' }]}
+            onChange={value => update({ fontSize: value })}
+          />
+        </Field>
+      </Section>
     </div>
   );
 };

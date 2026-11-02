@@ -54,11 +54,12 @@ export async function boot(page: Page, theme: 'light' | 'dark', activeTab: strin
                     { name: 'category', type: 'DIMENSION', originalType: 'string' },
                     { name: 'vendor', type: 'DIMENSION', originalType: 'string' },
                     { name: 'city', type: 'DIMENSION', originalType: 'string' },
+                    { name: 'product', type: 'DIMENSION', originalType: 'string' },
                     { name: 'country', type: 'DIMENSION', originalType: 'string' },
                     { name: 'funnel_stage', type: 'DIMENSION', originalType: 'string' },
                     { name: 'quantity', type: 'METRIC', originalType: 'number' },
-                    { name: 'revenue', type: 'METRIC', originalType: 'number' },
-                    { name: 'profit', type: 'METRIC', originalType: 'number' },
+                    { name: 'revenue', type: 'METRIC', originalType: 'number', currency: 'GBP' },
+                    { name: 'profit', type: 'METRIC', originalType: 'number', currency: 'GBP' },
                 ],
             });
             tx.oncomplete = () => resolve();

@@ -46,6 +46,8 @@ export interface MetricDef {
     /** Ratio shown as a percentage (value × 100, shown in points). */
     asPercent?: boolean;
     format: MetricFormat;
+    /** ISO currency from the file (Price (£) → GBP); '$' when unknown. */
+    currency?: string;
     /** true = up is good, false = up is bad, null = neutral. */
     higherIsBetter: boolean | null;
 }
@@ -358,6 +360,14 @@ export function chooseFocus(dataset: Dataset): Focus {
         grain = chooseGrain(times);
     }
 
+    // Money is shown in the file's own currency.
+    for (const metric of metrics) {
+        if (!metric.format.startsWith('currency')) continue;
+        const source = metric.multiplyBy || metric.column || metric.numerator;
+        const currency = columns.find(c => c.name === source)?.currency || columns.find(c => c.name === metric.column)?.currency;
+        if (currency) metric.currency = currency;
+    }
+
     return { dateColumn: grain ? dateColumn : null, grain, metrics, dims: dims.slice(0, 5), noun, entityColumn };
 }
 
@@ -535,13 +545,20 @@ function compact(value: number, digits = 1): string {
     return `${sign}${abs.toFixed(abs === 0 || abs % 1 === 0 ? 0 : 2)}`;
 }
 
+function currencySymbolOf(code: string): string {
+    try {
+        return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).formatToParts(0).find(part => part.type === 'currency')?.value || '$';
+    } catch { return '$'; }
+}
+
 export function fmt(value: number, metric: MetricDef): string {
     if (!Number.isFinite(value)) return '—';
     if (metric.format === 'percent') {
         const v = metric.asPercent ? value : value; // ratios already in points when asPercent
         return `${v.toFixed(Math.abs(v) < 10 ? 1 : 1)}%`;
     }
-    const symbol = metric.format === 'currency_usd' ? '$' : metric.format === 'currency_eur' ? '€' : '';
+    const symbol = metric.currency ? currencySymbolOf(metric.currency)
+        : metric.format === 'currency_usd' ? '$' : metric.format === 'currency_eur' ? '€' : '';
     const text = compact(value);
     return text.startsWith('−') ? `−${symbol}${text.slice(1)}` : `${symbol}${text}`;
 }

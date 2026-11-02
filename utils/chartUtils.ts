@@ -164,14 +164,23 @@ export const generateColors = (
     const count = Array.isArray(input) ? input.length : input;
     if (useSequential) {
         if (Array.isArray(input)) {
-            const vals = input;
-            const max = Math.max(...vals);
-            const min = Math.min(...vals);
-            const range = max - min || 1;
-            return vals.map(v => {
-                const normalized = (v - min) / range;
-                const index = max === min ? Math.floor(palette.length / 2) : Math.floor(normalized * (palette.length - 1));
-                return palette[index];
+            // Shade by size measured from zero, so 122 vs 131 look alike (they
+            // are) instead of near-white vs full colour. The two palest shades
+            // are skipped: they vanish against a white or dark background.
+            const vals = input.map(v => (Number.isFinite(Number(v)) ? Number(v) : 0));
+            // Nothing to compare: one readable middle shade.
+            if (vals.every(v => v === vals[0])) return vals.map(() => palette[Math.floor(palette.length / 2)]);
+            const usable = palette.length > 4 ? palette.slice(2) : palette;
+            const allSameSign = vals.every(v => v >= 0) || vals.every(v => v <= 0);
+            const magnitudes = vals.map(v => Math.abs(v));
+            const top = Math.max(...magnitudes);
+            const low = allSameSign ? 0 : Math.min(...vals);
+            const span = allSameSign ? top : Math.max(...vals) - low;
+            return vals.map((v, i) => {
+                if (!span) return usable[usable.length - 1];
+                const normalized = allSameSign ? magnitudes[i] / span : (v - low) / span;
+                const index = Math.round(Math.max(0, Math.min(1, normalized)) * (usable.length - 1));
+                return usable[index];
             });
         }
         return Array.from({ length: count }, (_, i) => {
@@ -220,6 +229,8 @@ export const formatNumber = (
                 return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(value);
             case 'currency_eur':
                 return new Intl.NumberFormat('de-DE', { style: 'currency', currency: 'EUR', minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(value);
+            case 'currency_gbp':
+                return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: fractionDigits, maximumFractionDigits: fractionDigits }).format(value);
             case 'percent': {
                 // Scale fractional percents (0.073 → 7.3%) for consistency with charts.
                 const pctVal = (Math.abs(value) <= 1 && Math.abs(value) > 0) ? value * 100 : value;

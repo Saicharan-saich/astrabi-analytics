@@ -2,6 +2,8 @@
 export const CATEGORIES = ['Electronics', 'Apparel', 'Home & Living', 'Accessories'];
 const CITIES = ['London', 'Manchester', 'Birmingham', 'Leeds', 'Glasgow', 'Bristol', 'Liverpool', 'Edinburgh'];
 const VENDORS = ['Northwind', 'Contoso', 'Fabrikam', 'Tailspin'];
+// Long and short names together, to check every axis label is shown and readable.
+const PRODUCTS = ['Wireless Noise-Cancelling Headphones', 'Smart Watch Series 7', 'Ergonomic Office Chair', '4K Ultra HD Monitor', 'Bluetooth Speaker', 'Running Shoes', 'Stainless Steel Water Bottle', 'Yoga Mat', 'Laptop Backpack', 'Ceramic Coffee Mug', 'LED Desk Lamp'];
 const COUNTRIES = ['United Kingdom', 'United Kingdom', 'United Kingdom', 'Germany', 'Germany', 'France', 'USA', 'USA', 'Spain', 'Netherlands', 'Ireland', 'Canada'];
 // Declining frequency so the stages read as a funnel.
 const STAGES = ['Visited', 'Visited', 'Visited', 'Visited', 'Visited', 'Visited', 'Visited', 'Visited', 'Added to cart', 'Added to cart', 'Added to cart', 'Added to cart', 'Checkout', 'Checkout', 'Purchased'];
@@ -25,6 +27,7 @@ export function salesRows(): Record<string, any>[] {
                 category,
                 vendor: VENDORS[(n * 5) % 4],
                 city: CITIES[(n * 3 + month) % 8],
+                product: PRODUCTS[(n * 5 + month) % PRODUCTS.length],
                 country: COUNTRIES[(n * 7 + month) % COUNTRIES.length],
                 funnel_stage: STAGES[(n * 4 + month) % STAGES.length],
                 quantity: qty,

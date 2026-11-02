@@ -165,7 +165,7 @@ export function packForGrid(list: AutoFinding[]): AutoFinding[] {
 /** Chart formatting for an auto-analysis card (shared by Discover and the dashboard). */
 export function autoCardFormatting(finding: AutoFinding): FormattingConfig {
     const { card } = finding;
-    const currency = card.numberFormat === 'currency_usd' || card.numberFormat === 'currency_eur';
+    const currency = card.numberFormat === 'currency_usd' || card.numberFormat === 'currency_eur' || card.numberFormat === 'currency_gbp';
     return {
         colorMode: 'vibrant',
         numberFormat: card.numberFormat,

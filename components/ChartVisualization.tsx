@@ -28,6 +28,7 @@ import {
     Activity, Grid, Disc, Palette, Download, ZoomIn, ZoomOut, RotateCcw, Globe,
     LayoutGrid, Circle, Hexagon, ScatterChart, CircleDot, ChevronDown, Sparkles
 } from 'lucide-react';
+import { canvasMeasure, fitAxisLabel, readableInkOn, truncateToWidth } from '../utils/axisLabels';
 
 // Register Chart.js components
 ChartJS.register(
@@ -353,6 +354,19 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     // Percent scale is decided per series, never per value: 0.5 must not read
     // as 50% when the series beside it holds 1.2 (= 1.2%).
     const datasetColumns = useAppStore(state => state.dataset?.columns);
+    // Money is shown in the file's own currency (Price (£) → £), unless the
+    // user picked a currency in Style → Number format.
+    const currencyCodeFor = (name?: string) => (name ? datasetColumns?.find(column => column.name === name)?.currency : undefined);
+    const explicitCurrency = activeNumberFormat === 'currency_usd' ? 'USD'
+        : activeNumberFormat === 'currency_eur' ? 'EUR'
+            : activeNumberFormat === 'currency_gbp' ? 'GBP' : undefined;
+    const primaryCurrency = explicitCurrency || currencyCodeFor(config?.metric) || 'USD';
+    const currencySymbol = (code: string) => {
+        try {
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).formatToParts(0).find(part => part.type === 'currency')?.value || '$';
+        } catch { return '$'; }
+    };
+    const isCurrencyFormat = (format?: string) => format === 'currency' || format === 'currency_usd' || format === 'currency_eur' || format === 'currency_gbp';
     const { primaryPercentScale, percentScales } = useMemo(() => {
         const pointColumns = new Set((datasetColumns || []).filter(c => c.valueUnit === 'percent_points').map(c => c.name));
         const agg = String(config?.aggregation || '').toUpperCase();
@@ -412,8 +426,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 effectiveFormat = 'percent';
             }
             // Check for Currency indicators
-            else if (metricName.includes('sales') || metricName.includes('revenue') || metricName.includes('price') || metricName.includes('cost') || metricName.includes('amount') || metricName.includes('profit') || metricName.includes('margin')) {
-                effectiveFormat = 'currency_usd';
+            else if (metricName.includes('sales') || metricName.includes('revenue') || metricName.includes('price') || metricName.includes('cost') || metricName.includes('amount') || metricName.includes('profit') || metricName.includes('margin') || currencyCodeFor(config?.metric)) {
+                effectiveFormat = 'currency';
             }
             // Default fallbacks
             else {
@@ -421,7 +435,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             }
         }
 
-        const fractionDigits = formatting?.decimals !== undefined ? formatting.decimals : (effectiveFormat === 'currency_usd' || effectiveFormat === 'percent' ? 2 : 0);
+        const fractionDigits = formatting?.decimals !== undefined ? formatting.decimals : (isCurrencyFormat(effectiveFormat) || effectiveFormat === 'percent' ? 2 : 0);
 
         try {
             switch (effectiveFormat) {
@@ -430,10 +444,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         minimumFractionDigits: fractionDigits,
                         maximumFractionDigits: fractionDigits
                     }).format(value);
+                case 'currency':
                 case 'currency_usd':
+                case 'currency_gbp':
                     return new Intl.NumberFormat('en-US', {
                         style: 'currency',
-                        currency: 'USD',
+                        currency: effectiveFormat === 'currency_usd' ? 'USD' : effectiveFormat === 'currency_gbp' ? 'GBP' : primaryCurrency,
                         minimumFractionDigits: fractionDigits,
                         maximumFractionDigits: fractionDigits
                     }).format(value);
@@ -481,18 +497,22 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const abs = Math.abs(value);
         const metricRef = (config?.metric || yLabel || yKey || '').toLowerCase();
         const autoDetect = !activeNumberFormat || activeNumberFormat === 'auto';
-        const isCurrency = activeNumberFormat === 'currency_usd' || activeNumberFormat === 'currency_eur'
-            || (autoDetect && /(sales|revenue|price|cost|amount|profit|margin|spend|payment|balance|budget|salary)/.test(metricRef));
-        if (isCurrency && abs >= 1000) {
+        const isCurrency = isCurrencyFormat(activeNumberFormat)
+            || (autoDetect && (Boolean(currencyCodeFor(config?.metric)) || /(sales|revenue|price|cost|amount|profit|margin|spend|payment|balance|budget|salary)/.test(metricRef)));
+        // Decimal places chosen in Style apply to the labels too.
+        const labelDecimals = formatting?.decimals ?? 1;
+        // "Raw number" / "Full" means no K/M shortening on the bars either.
+        const wantsFull = formatting?.numberFormat === 'raw' || formatting?.yAxisFormat === 'full';
+        if (isCurrency && abs >= 1000 && !wantsFull) {
             return new Intl.NumberFormat('en-US', {
-                style: 'currency', currency: activeNumberFormat === 'currency_eur' ? 'EUR' : 'USD',
-                notation: 'compact', compactDisplay: 'short', minimumFractionDigits: 0, maximumFractionDigits: 1,
+                style: 'currency', currency: primaryCurrency,
+                notation: 'compact', compactDisplay: 'short', minimumFractionDigits: 0, maximumFractionDigits: labelDecimals,
             }).format(value);
         }
         // Non-currency large magnitudes → compact; everything else uses the
         // standard formatter (percent, small ints, etc.).
-        if (!isCurrency && abs >= 10000) {
-            return new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short', maximumFractionDigits: 1 }).format(value);
+        if (!isCurrency && abs >= 10000 && !wantsFull) {
+            return new Intl.NumberFormat('en-US', { notation: 'compact', compactDisplay: 'short', maximumFractionDigits: labelDecimals }).format(value);
         }
         return formatNumber(value);
     };
@@ -513,7 +533,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             fmt = 'percent';
             fd = 2;
         } else if (name.includes('sales') || name.includes('revenue') || name.includes('price') || name.includes('cost') || name.includes('amount') || name.includes('profit') || name.includes('margin') || name.includes('billing') || name.includes('payment') || name.includes('fee') || name.includes('charge') || name.includes('salary') || name.includes('income') || name.includes('expense')) {
-            fmt = 'currency_usd';
+            fmt = 'currency';
             fd = 2;
         } else if (name.includes('score') || name.includes('rating') || name.includes('index') || name.includes('grade') || name.includes('satisfaction') || name.includes('nps') || name.includes('csat')) {
             // Scores/ratings: show with 2 decimal places for precision
@@ -535,7 +555,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         }
         try {
             switch (fmt) {
-                case 'currency_usd': return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
+                case 'currency': return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCodeFor(metricName) || primaryCurrency, minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
                 case 'percent': {
                     return toPercentPoints(value, scaleForName(percentScales, metricName, primaryPercentScale)).toFixed(fd) + '%';
                 }
@@ -548,10 +568,10 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
     const formatCompactMetricLabel = (value: number, metricName: string): string => {
         const full = formatForMetricName(value, metricName);
-        if (Math.abs(value) >= 1000 && full.includes('$')) {
+        if (Math.abs(value) >= 1000 && /[$€£¥₹₩₫₽]/.test(full)) {
             return new Intl.NumberFormat('en-US', {
-                style: 'currency', currency: 'USD', notation: 'compact',
-                maximumFractionDigits: 1,
+                style: 'currency', currency: currencyCodeFor(metricName) || primaryCurrency, notation: 'compact',
+                maximumFractionDigits: formatting?.decimals ?? 1,
             }).format(value);
         }
         return full;
@@ -572,8 +592,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // source metric when no calculation (or user-selected format) specifies it.
         const metricRef = (config?.metric || yLabel || yKey || '').toLowerCase();
         const hasExplicitFormat = activeNumberFormat !== 'auto';
-        const isCurrency = activeNumberFormat === 'currency_usd' || activeNumberFormat === 'currency_eur' ||
-            (!hasExplicitFormat && (metricRef.includes('sales') || metricRef.includes('revenue') ||
+        const isCurrency = isCurrencyFormat(activeNumberFormat) ||
+            (!hasExplicitFormat && (Boolean(currencyCodeFor(config?.metric)) || metricRef.includes('sales') || metricRef.includes('revenue') ||
                 metricRef.includes('price') || metricRef.includes('cost') ||
                 metricRef.includes('amount') || metricRef.includes('profit')));
         const isPercent = activeNumberFormat === 'percent' ||
@@ -590,23 +610,24 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         }
 
         if (axisFormat === 'short_currency' && isCurrency) {
-            // $800K, $1.2M format
+            // £800K, £1.2M format
             const abs = Math.abs(value);
             const sign = value < 0 ? '-' : '';
-            if (abs >= 1e9) return `${sign}$${(abs / 1e9).toFixed(1)}B`;
-            if (abs >= 1e6) return `${sign}$${(abs / 1e6).toFixed(1)}M`;
-            if (abs >= 1e3) return `${sign}$${(abs / 1e3).toFixed(1)}K`;
-            return `$${value.toFixed(0)}`;
+            const symbol = currencySymbol(primaryCurrency);
+            if (abs >= 1e9) return `${sign}${symbol}${(abs / 1e9).toFixed(1)}B`;
+            if (abs >= 1e6) return `${sign}${symbol}${(abs / 1e6).toFixed(1)}M`;
+            if (abs >= 1e3) return `${sign}${symbol}${(abs / 1e3).toFixed(1)}K`;
+            return `${symbol}${value.toFixed(0)}`;
         }
 
         // Default compact: $800K / 1.2M / 500
         const abs = Math.abs(value);
         const sign = value < 0 ? '-' : '';
-        const prefix = isCurrency ? '$' : '';
+        const prefix = isCurrency ? currencySymbol(primaryCurrency) : '';
         if (abs >= 1e9) return `${sign}${prefix}${(abs / 1e9).toFixed(1)}B`;
         if (abs >= 1e6) return `${sign}${prefix}${(abs / 1e6).toFixed(1)}M`;
         if (abs >= 1e3) return `${sign}${prefix}${(abs / 1e3).toFixed(1)}K`;
-        if (isCurrency) return `$${value.toFixed(0)}`;
+        if (isCurrency) return `${prefix}${value.toFixed(0)}`;
         return value.toLocaleString();
     };
 
@@ -1332,14 +1353,44 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const xVisible = formatting?.showXAxis ?? formatting?.showAxis ?? false;
         const yVisible = formatting?.showYAxis ?? formatting?.showAxis ?? false;
         // Independent sizing maps for new formatting controls
-        const DATA_LABEL_SIZES: Record<string, number> = { xs: 10, sm: 12, md: 14, lg: 16 };
-        const AXIS_LABEL_SIZES: Record<string, number> = { xs: 10, sm: 12, md: 14, lg: 17 };
-        const dataLabelFontSize = DATA_LABEL_SIZES[formatting?.dataLabelSize || 'md'] || 11;
+        const DATA_LABEL_SIZES: Record<string, number> = { xs: 10, sm: 11, md: 12, lg: 14 };
+        const AXIS_LABEL_SIZES: Record<string, number> = { xs: 10, sm: 11, md: 12, lg: 14 };
+        const dataLabelFontSize = DATA_LABEL_SIZES[formatting?.dataLabelSize || 'md'] || 12;
         const categoryCount = chartData?.labels?.length || 0;
-        const axisLabelFontSize = Math.min(
-            AXIS_LABEL_SIZES[formatting?.axisLabelSize || 'md'] || 12,
-            categoryCount > 10 ? 11 : 17,
-        );
+        // A size the user picked is honoured; the automatic size steps down on busy axes.
+        const axisLabelFontSize = formatting?.axisLabelSize
+            ? AXIS_LABEL_SIZES[formatting.axisLabelSize] || 12
+            : categoryCount > 16 ? 11 : 12;
+        const axisFontWeight = formatting?.axisBold === true ? '600' : '400';
+        const measureAxis = canvasMeasure(`${axisFontWeight} ${axisLabelFontSize}px ${CHART_FONT_FAMILY}`, axisLabelFontSize);
+        // Category names: every one is shown (wrapped, then shortened, then
+        // angled when the slots get narrow). Only very long axes skip names.
+        const categoryTickCallback = (vertical: boolean) => function (this: any, value: any) {
+            const label = this.getLabelForValue ? this.getLabelForValue(value) : value;
+            if (this.type && this.type !== 'category') return label;
+            const count = Math.max(1, this.chart?.data?.labels?.length || categoryCount || 1);
+            if (vertical) {
+                const plotWidth = this.chart?.chartArea?.width || Math.max(120, (this.chart?.width || 600) - 80);
+                const slot = plotWidth / count - 6;
+                // Too narrow for two lines: shorten and let the axis angle the names.
+                if (slot < 48) return truncateToWidth(String(label ?? ''), 120, measureAxis);
+                return fitAxisLabel(label, slot, measureAxis, 2);
+            }
+            const maxWidth = Math.max(80, Math.min(220, (this.chart?.width || 600) * 0.3));
+            return fitAxisLabel(label, maxWidth, measureAxis, 1);
+        };
+        const showAxisTitles = formatting?.showAxisTitles === true;
+        const axisTitle = (text: string) => ({
+            display: showAxisTitles && Boolean(text),
+            text,
+            color: readableChartTextColor(formatting?.axisColor, isDark, isDark ? '#a4abb9' : '#596275'),
+            font: { size: axisLabelFontSize, family: CHART_FONT_FAMILY, weight: '600' as any },
+            padding: { top: 6, bottom: 6 },
+        });
+        const humanize = (text: string) => String(text || '').replace(/_/g, ' ').replace(/^\w/, char => char.toUpperCase());
+        const categoryTitle = humanize(config?.dimension || xKey || '');
+        const valueTitle = humanize(calculatedYLabel || yLabel || yKey || '');
+        const labelsOn = chartType === 'funnel' || Boolean(formatting?.showDataLabels);
         const prefersReducedMotion = typeof window !== 'undefined'
             && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
         const secondaryAxisColor = chartData?.datasets?.find((ds: any) => ds.yAxisID === 'y1')?.borderColor;
@@ -1392,8 +1443,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 // Custom Data Labels Plugin
                 customDataLabels: { // Namespace for our custom plugin
                     // A funnel without its numbers says nothing; always label it.
-                    display: chartType === 'funnel' || (formatting ? formatting.showDataLabels : false),
+                    display: labelsOn,
                     labelMode: effectiveDataLabelMode(formatting),
+                    contrastInk: isDark ? '#0b0f17' : '#111827',
                     formatter: (val: number) => {
                         return formatCompactLabel(val);
                     },
@@ -1422,7 +1474,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     align: isArcLegend ? 'center' as const : 'start' as const,
                     labels: {
                         font: {
-                            size: Math.max(fontSize, 12),
+                            size: formatting?.fontSize === 'sm' ? 11 : formatting?.fontSize === 'lg' ? 14 : 12,
                             family: CHART_FONT_FAMILY,
                             weight: '500' as any,
                         },
@@ -1663,7 +1715,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     stacked: isStacked,
                     ...(isHorizontal && !hasNegativeValues ? { beginAtZero: true, min: 0 } : {}),
                     // Room for the value label past the longest bar.
-                    ...(isHorizontal && !axisRange ? { grace: chartType === 'funnel' ? '30%' : '18%' } : {}),
+                    ...(isHorizontal && !axisRange ? { grace: chartType === 'funnel' ? '30%' : labelsOn ? '20%' : '8%' } : {}),
+                    title: axisTitle(isHorizontal ? valueTitle : categoryTitle),
                     grid: {
                         display: formatting?.showGridLines ?? false, // Clean: no X grid by default
                         drawBorder: false,
@@ -1674,30 +1727,29 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     },
                     ticks: {
                         display: xVisible ?? true,
-                        maxRotation: isHorizontal ? 0 : categoryCount > 24 ? 40 : 0,
-                        autoSkip: true,
-                        autoSkipPadding: 12,
+                        maxRotation: isHorizontal ? 0 : 50,
+                        autoSkip: isHorizontal || categoryCount > 60,
+                        autoSkipPadding: 8,
                         minRotation: 0,
                         font: {
                             size: axisLabelFontSize,
                             family: CHART_FONT_FAMILY,
-                            weight: formatting?.axisBold === true ? '600' as const : ('400' as any)
+                            weight: axisFontWeight as any,
                         },
                         color: readableChartTextColor(formatting?.axisColor, isDark, isDark ? '#8c94a4' : '#8a92a3'),
                         padding: 8,
                         // For horizontal bars, X-axis is the VALUE axis — format numbers
                         // For vertical bars, X-axis is the CATEGORY axis — no callback needed
-                        ...(isHorizontal ? {
-                            callback: function (value: any) {
-                                return formatAxisNumber(value);
-                            }
-                        } : {}),
+                        callback: isHorizontal
+                            ? function (value: any) { return formatAxisNumber(value); }
+                            : categoryTickCallback(true),
                     },
                 },
                 y: {
                     display: yVisible ?? true,
                     ...(isHorizontal || hasNegativeValues ? {} : { min: 0, beginAtZero: true }),
-                    ...(axisRange ? { min: axisRange.min, max: axisRange.max } : (!isHorizontal ? { grace: '8%' } : {})),
+                    ...(axisRange ? { min: axisRange.min, max: axisRange.max } : (!isHorizontal ? { grace: labelsOn ? '12%' : '8%' } : {})),
+                    title: axisTitle(isHorizontal ? categoryTitle : valueTitle),
                     ...(bridgeMin !== undefined ? { min: bridgeMin, beginAtZero: false } : {}),
                     stacked: isStacked,
                     grid: {
@@ -1712,18 +1764,18 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     },
                     ticks: {
                         display: yVisible ?? true,
+                        // Every category name on a horizontal bar chart, up to a long list.
+                        ...(isHorizontal ? { autoSkip: categoryCount > 50, autoSkipPadding: 4 } : {}),
                         font: {
                             size: axisLabelFontSize,
                             family: CHART_FONT_FAMILY,
-                            weight: formatting?.axisBold === true ? '600' as const : ('400' as any)
+                            weight: axisFontWeight as any,
                         },
                         color: readableChartTextColor(formatting?.axisColor, isDark, isDark ? '#8c94a4' : '#8a92a3'),
                         padding: 8,
-                        ...(!isHorizontal ? {
-                            callback: function (value: any) {
-                                return formatAxisNumber(value);
-                            }
-                        } : {}),
+                        callback: isHorizontal
+                            ? categoryTickCallback(false)
+                            : function (value: any) { return formatAxisNumber(value); },
                     }
                 },
                 // Dynamic y1 axis for dual-axis multi-metric charts
@@ -1784,7 +1836,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 intersect: (chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea' || chartType === 'gauge') ? true : false,
             },
         } as any; // Cast to any to allow custom scale ID 'y1'
-    }, [chartType, formatting, transformedData, chartData, calculatedYLabel, xKey, yKey, isDark, axisRange?.min, axisRange?.max]);
+    }, [chartType, formatting, transformedData, chartData, calculatedYLabel, xKey, yKey, yLabel, config?.dimension, isDark, axisRange?.min, axisRange?.max]);
 
 
 
@@ -1905,10 +1957,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     minX?: number;
                     maxX?: number;
                     preferredDirection?: 'above' | 'below';
+                    /** The bar under the label, so text drawn inside it gets readable ink. */
+                    bar?: { left: number; right: number; top: number; bottom: number; fill: unknown };
                 }> = [];
                 const mode = options.labelMode || 'all';
                 // Stacked segments labelled inside the bar (drawn after the outside labels).
-                const insideLabels: Array<{ text: string; font: string; x: number; y: number }> = [];
+                const insideLabels: Array<{ text: string; font: string; x: number; y: number; fill?: unknown }> = [];
                 const categoryCount = chart.data.labels?.length || 0;
                 const categoryWidth = categoryCount > 0 ? chart.chartArea.width / categoryCount : 0;
                 const denseCategories = categoryCount > 10 && categoryWidth < 78;
@@ -1963,6 +2017,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                 font: segmentFont,
                                 x: horizontalBar ? (element.x + element.base) / 2 : element.x,
                                 y: horizontalBar ? element.y : (element.y + element.base) / 2,
+                                fill: element.options?.backgroundColor,
                             });
                             return;
                         }
@@ -1997,6 +2052,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         ctx.font = font;
                         const isVerticalCategory = chart.options.indexAxis !== 'y' && chart.scales?.x?.type === 'category';
                         const categoryCenter = isVerticalCategory ? chart.scales.x.getPixelForTick(index) : null;
+                        const isBarElement = meta.type === 'bar' && Number.isFinite(element.base);
+                        const horizontalBar = chart.options.indexAxis === 'y';
+                        const bar = isBarElement ? (horizontalBar
+                            ? { left: Math.min(element.x, element.base), right: Math.max(element.x, element.base), top: element.y - element.height / 2, bottom: element.y + element.height / 2, fill: element.options?.backgroundColor }
+                            : { left: element.x - element.width / 2, right: element.x + element.width / 2, top: Math.min(element.y, element.base), bottom: Math.max(element.y, element.base), fill: element.options?.backgroundColor })
+                            : undefined;
                         renderables.push({
                             text,
                             font,
@@ -2012,21 +2073,33 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                 ? categoryCenter + categoryWidth * 0.49 : undefined,
                             preferredDirection: isSecondaryDs && (dataset.type === 'line' || meta.type === 'line')
                                 ? 'below' : undefined,
+                            bar,
                         });
                     });
                 });
 
-                const positions = layoutChartLabels(renderables, chart.chartArea);
-                ctx.fillStyle = options.color || '#000000';
+                // Labels may use the padding above the plot, so the tallest
+                // bars keep their numbers above them instead of losing them.
+                const area = chart.chartArea;
+                const positions = layoutChartLabels(renderables, {
+                    left: area.left,
+                    right: area.right,
+                    top: chart.legend?.options?.display ? area.top : Math.max(0, area.top - 18),
+                    bottom: area.bottom,
+                });
                 ctx.textAlign = 'center';
                 ctx.textBaseline = 'middle';
                 renderables.forEach((label, index) => {
                     const point = positions[index];
                     if (!point) return;
+                    const bar = label.bar;
+                    const insideBar = bar && point.x > bar.left && point.x < bar.right && point.y > bar.top && point.y < bar.bottom;
+                    ctx.fillStyle = (insideBar && readableInkOn(bar!.fill, options.contrastInk || '#111827')) || options.color || '#000000';
                     ctx.font = label.font;
                     ctx.fillText(label.text, point.x, point.y);
                 });
                 insideLabels.forEach(label => {
+                    ctx.fillStyle = (label.fill && readableInkOn(label.fill, options.contrastInk || '#111827')) || options.color || '#000000';
                     ctx.font = label.font;
                     ctx.fillText(label.text, label.x, label.y);
                 });

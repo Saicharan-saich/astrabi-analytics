@@ -50,6 +50,14 @@ describe('automatic colour encoding', () => {
         expect(resolveColorEncoding({ colorEncoding: 'sequential' }, 'city', cities, 'bar')).toBe('sequential');
     });
 
+    it('shades from zero and never uses the near-white shades', () => {
+        const shades = generateColors([122, 131, 60], PALETTES.greenSequential, true);
+        expect(shades[0]).toBe(shades[1]);
+        expect(shades).not.toContain(PALETTES.greenSequential[0]);
+        expect(shades).not.toContain(PALETTES.greenSequential[1]);
+        expect(shades[2]).not.toBe(shades[1]);
+    });
+
     it('uses a readable middle shade when every measure value is equal', () => {
         expect(generateColors([20, 20], PALETTES.blueSequential, true)).toEqual([
             PALETTES.blueSequential[4], PALETTES.blueSequential[4],

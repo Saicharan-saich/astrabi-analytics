@@ -19,7 +19,7 @@ import {
     buildCanonicalCategoryMap, findNearDuplicateGroups, pivotTwoDigitYear,
     looksLikeLeadingZeroCode, detectMixedScale,
     detectSignAnomalies, detectRangeAnomalies, detectDelimitedCells, detectDateOrderViolations,
-    detectNumberStyle, parseNumberWithUnit, parseDurationMinutes, detectCurrencies, currencyOf,
+    detectNumberStyle, parseNumberWithUnit, parseDurationMinutes, detectCurrencies, currencyOf, currencyOfHeader,
     detectPlaceholderValues, type NumberStyle,
 } from './etlHardening';
 import {
@@ -551,10 +551,7 @@ function layer1_structuralNormalization(
         const used = new Map<string, number>();
         const collisions: string[] = [];
         Object.keys(rows[0]).forEach((h, index) => {
-            // Insert underscore before camelCase boundaries: SaleDate → Sale_Date, OrderID → Order_ID
-            const camelSplit = h.replace(/([a-z])([A-Z])/g, '$1_$2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2');
-            // Deterministic name for a blank header, so a re-upload maps to the same column.
-            let normalized = camelSplit.trim().toLowerCase().replace(/[\s\W]+/g, '_').replace(/^_+|_+$/g, '') || `column_${index + 1}`;
+            let normalized = normalizeHeaderName(h, index);
             // "Sales" and "sales " normalise to the same name: keep both columns.
             const n = (used.get(normalized) || 0) + 1;
             used.set(normalized, n);
@@ -1410,6 +1407,41 @@ function isValidNormalizedValue(value: any, type: ColumnType): boolean {
     return true;
 }
 
+/** snake_case column name for a raw header ("Price (£)" → "price"). */
+export function normalizeHeaderName(header: string, index: number): string {
+    // Insert underscore before camelCase boundaries: SaleDate → Sale_Date, OrderID → Order_ID
+    const camelSplit = header.replace(/([a-z])([A-Z])/g, '$1_$2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2');
+    // Deterministic name for a blank header, so a re-upload maps to the same column.
+    return camelSplit.trim().toLowerCase().replace(/[\s\W]+/g, '_').replace(/^_+|_+$/g, '') || `column_${index + 1}`;
+}
+
+/**
+ * Money columns keep the currency the file used, from the header
+ * ("Price (£)") or, failing that, from most of the values ("£12,000").
+ */
+function attachCurrencies(
+    columns: ColumnDefinition[],
+    rawHeaders: string[],
+    sourceRows: Record<string, any>[],
+): ColumnDefinition[] {
+    const fromHeader = new Map<string, string>();
+    rawHeaders.forEach((header, index) => {
+        const currency = currencyOfHeader(header);
+        if (currency) fromHeader.set(normalizeHeaderName(header, index), currency);
+    });
+    const sample = sourceRows.length > 2000 ? sourceRows.slice(0, 2000) : sourceRows;
+    return columns.map(column => {
+        if (column.type !== ColumnType.METRIC) return column;
+        let currency = fromHeader.get(column.name) || null;
+        if (!currency) {
+            const values = sample.map(row => row[column.name]).filter(value => value !== null && value !== undefined && value !== '');
+            const top = detectCurrencies(values)[0];
+            if (top && top.count >= values.length * 0.5) currency = top.currency;
+        }
+        return currency ? { ...column, currency } : column;
+    });
+}
+
 function attachConversionProfiles(
     columns: ColumnDefinition[],
     sourceRows: Record<string, any>[],
@@ -2061,7 +2093,11 @@ export function runETLPipeline(
 
     // ── POST: Column Ordering (ID → Date → Dimension → Metric) ──
     const typeOrder: Record<string, number> = { ID: 0, DATE: 1, DIMENSION: 2, METRIC: 3 };
-    const profiledColumns = attachConversionProfiles(finalColumns, preTransformRows, rows);
+    const profiledColumns = attachCurrencies(
+        attachConversionProfiles(finalColumns, preTransformRows, rows),
+        Object.keys(rawData[0] || {}),
+        preTransformRows,
+    );
     const sortedColumns = [...profiledColumns].sort((a, b) => (typeOrder[a.type] ?? 99) - (typeOrder[b.type] ?? 99));
     const columnOrder = sortedColumns.map(c => c.name);
     rows = rows.map(row => {
