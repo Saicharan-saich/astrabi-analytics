@@ -280,7 +280,7 @@ export function buildSemanticModel(
     }
 
     // ── Step 1b: Per-unit values against the row grain ──
-    warnings.push(...reconcileMeasuresWithGrain(measures, dataset.columns));
+    warnings.push(...reconcileMeasuresWithGrain(measures, dataset.columns, dataset.name));
 
     // ── Step 2: Determine primary date column ──
     if (dataset.timeContext?.anchorDateColumn && dateColumns.some(column =>
@@ -373,9 +373,7 @@ export function buildSemanticModel(
             }
         }
     }
-    if (!grain) {
-        warnings.push('Grain not detected — each row\'s identity is ambiguous. Add an ID column for reliability.');
-    }
+    // No unique column is normal for exports; nothing to warn about.
 
     // ── Step 6: Build derived measures deterministically ──
     const derivedMeasures: DerivedMeasure[] = [];
@@ -453,20 +451,31 @@ function quantityColumnOf(columns: ColumnDefinition[]): string | undefined {
     return columns.find(column => column.type === ColumnType.METRIC && QUANTITY_NAME.test(norm(column.name)))?.name;
 }
 
+const SALES_FILE_NAME = /(?:^|[^a-z])(sales?|sold|orders?|transactions?|invoices?|purchases?|receipts?|deals?)(?:[^a-z]|$)/i;
+
 /**
- * True when a price-named column is really the amount of each sale: dated
- * rows, no quantity column and no separate sales amount to total instead.
+ * A plain price with no quantity beside it and no separate sales amount:
+ * one row is one item, so adding prices up is a real total (the value of
+ * everything in the file). Totals are always allowed for it.
  */
-export function priceIsSaleAmount(columnName: string, columns: ColumnDefinition[]): boolean {
+export function priceCanBeTotalled(columnName: string, columns: ColumnDefinition[]): boolean {
     const name = norm(columnName);
     if (!PRICE_NAME.test(name) || EXPLICIT_PER_UNIT.test(name)) return false;
     if (quantityColumnOf(columns)) return false;
-    if (!columns.some(column => column.type === ColumnType.DATE)) return false;
     return !columns.some(column => column.type === ColumnType.METRIC && column.name !== columnName
         && SALES_AMOUNT_NAME.test(norm(column.name)) && !PRICE_NAME.test(norm(column.name)));
 }
 
-export function reconcileMeasuresWithGrain(measures: SemanticMeasure[], columns: ColumnDefinition[]): string[] {
+/**
+ * ...and when the rows are sales (dated rows, or a file named for sales or
+ * orders) that price IS the sale amount, so Total is also the default.
+ */
+export function priceIsSaleAmount(columnName: string, columns: ColumnDefinition[], datasetName = ''): boolean {
+    if (!priceCanBeTotalled(columnName, columns)) return false;
+    return columns.some(column => column.type === ColumnType.DATE) || SALES_FILE_NAME.test(datasetName);
+}
+
+export function reconcileMeasuresWithGrain(measures: SemanticMeasure[], columns: ColumnDefinition[], datasetName = ''): string[] {
     const notes: string[] = [];
     const quantityColumn = quantityColumnOf(columns);
 
@@ -482,13 +491,16 @@ export function reconcileMeasuresWithGrain(measures: SemanticMeasure[], columns:
             continue;
         }
 
-        if (!priceIsSaleAmount(measure.column, columns)) continue;
+        if (!priceCanBeTotalled(measure.column, columns)) continue;
 
-        measure.aggregation = AggregationType.SUM;
+        // One row is one item, so Total is always allowed.
         measure.behavior = 'additive';
         measure.requiresWeighting = false;
         delete measure.weightColumn;
-        notes.push(`"${measure.column}" is the amount of each sale (one row per sale, no quantity column), so Total adds it up.`);
+        if (priceIsSaleAmount(measure.column, columns, datasetName)) {
+            measure.aggregation = AggregationType.SUM;
+            notes.push(`"${measure.column}" is the amount of each sale (one row per sale, no quantity column), so Total adds it up.`);
+        }
     }
     return notes;
 }
@@ -497,11 +509,11 @@ export function reconcileMeasuresWithGrain(measures: SemanticMeasure[], columns:
  * Bring a stored model in line with the grain rule above. Returns the same
  * object when nothing changes, so callers can skip a save.
  */
-export function reconcileStoredModelGrain<T extends { semanticModel?: SemanticModel; columns: ColumnDefinition[] }>(dataset: T): T {
+export function reconcileStoredModelGrain<T extends { semanticModel?: SemanticModel; columns: ColumnDefinition[]; name?: string }>(dataset: T): T {
     const model = dataset.semanticModel;
     if (!model?.measures?.length) return dataset;
     const measures = model.measures.map(measure => ({ ...measure }));
-    reconcileMeasuresWithGrain(measures, dataset.columns);
+    reconcileMeasuresWithGrain(measures, dataset.columns, dataset.name || '');
     const changed = measures.some((measure, index) => {
         const before = model.measures[index];
         return measure.aggregation !== before.aggregation

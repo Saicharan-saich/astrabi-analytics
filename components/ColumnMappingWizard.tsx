@@ -178,7 +178,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             const existing = initialProfile.columnSemantics?.[col.name];
             merged[col.name] = existing || {
                 role: col.type,
-                aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns) as ColumnSemantic['aggregation'],
+                aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns, fileName) as ColumnSemantic['aggregation'],
                 format: 'raw',
                 humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
                 description: '',
@@ -272,7 +272,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             const existing = initialProfile.columnSemantics?.[col.name];
             merged[col.name] = existing || {
                 role: col.type,
-                aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns) as ColumnSemantic['aggregation'],
+                aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns, fileName) as ColumnSemantic['aggregation'],
                 format: 'raw',
                 humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
                 description: '',

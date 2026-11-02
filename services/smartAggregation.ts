@@ -71,7 +71,7 @@ export function inferDefaultAggregation(columnName: string, columnType: string):
  * (one dated row per item sold, no quantity column) a price is the sale
  * amount, so it is totalled rather than averaged.
  */
-export function inferDefaultAggregationForGrain(columnName: string, columnType: string, columns: ColumnDefinition[]): string {
+export function inferDefaultAggregationForGrain(columnName: string, columnType: string, columns: ColumnDefinition[], datasetName = ''): string {
     const byName = inferDefaultAggregation(columnName, columnType);
-    return byName === 'AVG' && columnType === 'METRIC' && priceIsSaleAmount(columnName, columns) ? 'SUM' : byName;
+    return byName === 'AVG' && columnType === 'METRIC' && priceIsSaleAmount(columnName, columns, datasetName) ? 'SUM' : byName;
 }

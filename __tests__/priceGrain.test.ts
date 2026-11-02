@@ -55,8 +55,50 @@ describe('price aggregation follows what one row is', () => {
         const withSales = [col('sale_date', ColumnType.DATE), col('sale_price', ColumnType.METRIC), col('total_sales', ColumnType.METRIC)];
         expect(priceIsSaleAmount('sale_price', withSales)).toBe(false);
         const catalogue = [col('model', ColumnType.DIMENSION), col('price', ColumnType.METRIC)];
-        expect(priceIsSaleAmount('price', catalogue)).toBe(false);
+        expect(priceIsSaleAmount('price', catalogue, 'price_list.csv')).toBe(false);
         expect(priceIsSaleAmount('unit_price', [col('date', ColumnType.DATE), col('unit_price', ColumnType.METRIC)])).toBe(false);
+    });
+
+    // second_hand_car_sales.csv: Manufacturer, Model, Engine Size (L), Fuel Type,
+    // Year of Manufacture, Mileage, Price (£) — no sale date, no ID column.
+    const usedCarColumns = [
+        col('manufacturer', ColumnType.DIMENSION), col('model', ColumnType.DIMENSION), col('fuel_type', ColumnType.DIMENSION),
+        col('year_of_manufacture', ColumnType.DIMENSION), col('engine_size_l', ColumnType.METRIC),
+        col('mileage', ColumnType.METRIC), col('price', ColumnType.METRIC),
+    ];
+    const usedCars = (name: string): Dataset => {
+        const rows = Array.from({ length: 30 }, (_, i) => ({
+            manufacturer: makers[i % 4], model: `M${i % 5}`, fuel_type: i % 2 ? 'Petrol' : 'Electric',
+            year_of_manufacture: String(2000 + (i % 20)), engine_size_l: 1.2 + (i % 3), mileage: 20000 + i * 1000, price: 9000 + i * 500,
+        }));
+        const dataset = { id: name, name, rows, columns: usedCarColumns, totalRows: rows.length, version: 1 } as unknown as Dataset;
+        dataset.semanticModel = buildSemanticModel(dataset);
+        return dataset;
+    };
+
+    it('totals the price of a sales file with no sale date or ID column', async () => {
+        const dataset = usedCars('second_hand_car_sales.csv');
+        const price = dataset.semanticModel!.measures.find(m => m.column === 'price')!;
+        expect(price.aggregation).toBe(AggregationType.SUM);
+        const result = await runAnalysis(dataset, { questionId: 'custom_builder', metric: 'price', aggregation: AggregationType.SUM, dimension: 'manufacturer' } as any);
+        expect(result.sql).toContain('SUM("price")');
+        expect(result.notices).toBeUndefined();
+        expect((result.warnings || []).join(' ')).not.toMatch(/grain/i);
+    });
+
+    it('always allows a Total on a plain price, even in a price list', async () => {
+        const dataset = usedCars('car_listing.csv');
+        const price = dataset.semanticModel!.measures.find(m => m.column === 'price')!;
+        expect(price.aggregation).toBe(AggregationType.AVG);
+        expect(price.behavior).toBe('additive');
+        const result = await runAnalysis(dataset, { questionId: 'custom_builder', metric: 'price', aggregation: AggregationType.SUM, dimension: 'manufacturer' } as any);
+        expect(result.sql).toContain('SUM("price")');
+    });
+
+    it('averages mileage by default but still allows a total', () => {
+        const mileage = usedCars('second_hand_car_sales.csv').semanticModel!.measures.find(m => m.column === 'mileage')!;
+        expect(mileage.aggregation).toBe(AggregationType.AVG);
+        expect(mileage.behavior).toBe('additive');
     });
 
     it('says Total for the price in the column review of raw sales data', () => {

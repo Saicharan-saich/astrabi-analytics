@@ -45,14 +45,6 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
         return { data: [], xKey: '', yKey: '', yLabel: '', insight: '', sql: '', config: query };
     }
 
-    // ═══ GRAIN ENFORCEMENT ═══════════════════════════════════════════
-    // If semantic model exists but grain is undefined, warn strongly.
-    // This ensures every analysis knows what a row represents.
-    const semModel = dataset.semanticModel;
-    if (semModel && !semModel.grain) {
-        console.warn('[runAnalysis] ⚠️ Dataset grain is not defined in semantic model. Aggregation results may be unreliable.');
-    }
-
     // ═══ CONFIDENCE THRESHOLD ════════════════════════════════════════
     const CONFIDENCE_THRESHOLD = 0.7;
 
@@ -297,11 +289,8 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
     let confidence = 1.0;
     const model = dataset.semanticModel;
 
-    // Grain penalty
-    if (model && !model.grain) {
-        confidence -= 0.1;
-        resultWarnings.push('Dataset grain not defined — row identity is ambiguous');
-    }
+    // A file without an ID column is normal (most exports have none). It does
+    // not make an answer less reliable, so it is neither a warning nor a penalty.
 
     if (!model) {
         confidence -= 0.15;

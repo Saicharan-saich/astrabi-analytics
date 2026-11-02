@@ -56,6 +56,13 @@ const METRIC_RULES: { pattern: RegExp; result: MetricClassification }[] = [
         result: { aggregation: AggregationType.AVG, behavior: 'non_additive', format: 'currency_usd', requiresWeighting: true, weightColumn: 'quantity' },
     },
 
+    // Odometer readings: the average is the usual question, but a total
+    // (e.g. fleet distance) is still allowed, so the behaviour stays additive.
+    {
+        pattern: /(?:^|[_\s])(mileage|odometer|odometer_reading|km_driven|kms_driven|kilometers_driven|miles_driven)(?:[_\s]|$)/i,
+        result: { aggregation: AggregationType.AVG, behavior: 'additive', format: 'raw', requiresWeighting: false },
+    },
+
     // ──────────────────────────────────────────────────────────
     // ADDITIVE METRICS (can be SUMmed across all dimensions)
     // ──────────────────────────────────────────────────────────

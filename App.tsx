@@ -626,7 +626,7 @@ function App() {
             for (const col of columns) {
               colSem[col.name] = {
                 role: col.type,
-                aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns),
+                aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns, file.name),
                 format: 'raw',
                 humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
                 description: '',
@@ -664,7 +664,7 @@ function App() {
           for (const col of columns) {
             colSem[col.name] = {
               role: col.type,
-              aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns),
+              aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns, file.name),
               format: 'raw',
               humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
               description: '',
@@ -991,7 +991,7 @@ function App() {
         for (const col of columns) {
           colSem[col.name] = {
             role: col.type,
-            aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns),
+            aggregation: inferDefaultAggregationForGrain(col.name, col.type, columns, 'sample_sales_data.csv'),
             format: 'raw',
             humanLabel: col.name.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
             description: '',
