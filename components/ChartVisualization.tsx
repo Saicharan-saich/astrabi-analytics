@@ -2502,7 +2502,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                 }`}
                             title="Get smart interpretation of this chart (visual only — no data access)"
                         >
-                            <img src="/ai-insight-btn.png" alt="" className="w-5 h-5 object-contain" />
+                            <Sparkles className="w-4 h-4" aria-hidden />
                             <span className="text-[13px]">{isAIInsightOpen ? 'Smart Insight' : 'Smart Insight'}</span>
                         </button>
                     )}

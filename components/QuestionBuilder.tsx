@@ -1559,7 +1559,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
 
             {/* ═══ Active Filters Row ═══ */}
             {filters.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-white/10">
+                <div className="qi-builder-filters flex flex-wrap items-center gap-2 mt-2 pt-2 border-t border-white/10">
                     {filters.map(filter => {
                         if (!gafsOnly && filter.type === 'date') {
                             return (

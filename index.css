@@ -4510,6 +4510,7 @@ body {
 @media (min-width: 1180px) {
   :root:is(.light, .dark) .qi-builder-dock .qi-question-builder {
     padding: 2.7rem 0.85rem 1.25rem !important;
+    background: transparent !important;
   }
   :root:is(.light, .dark) .qi-builder-dock .qi-question-builder::before {
     top: 0.95rem !important;
@@ -4524,7 +4525,7 @@ body {
     border-bottom: 0 !important;
   }
   .qi-builder-dock .qi-question-builder .qi-builder-question-summary { display: none !important; }
-  .qi-builder-dock .qi-question-builder .qi-builder-modes {
+  .qi-builder-dock .qi-question-builder > .flex > .flex-wrap.qi-builder-modes {
     display: flex !important;
     flex-wrap: nowrap !important;
     gap: 2px !important;
@@ -4565,7 +4566,7 @@ body {
   /* The question reads as a sentence: word | choice | choice */
   .qi-builder-dock .qi-question-builder > .flex > .flex-wrap:is(:has(> .qi-builder-verb), :has(> .qi-builder-time-grain)) {
     display: grid !important;
-    grid-template-columns: 3.5rem minmax(0, 0.85fr) minmax(0, 1.15fr) !important;
+    grid-template-columns: 3.6rem minmax(0, 1fr) !important;
     grid-auto-flow: row !important;
     align-items: center !important;
     column-gap: 0.4rem !important;
@@ -4601,7 +4602,7 @@ body {
     white-space: nowrap;
   }
   .qi-builder-dock .qi-question-builder .qi-builder-aggregation { grid-column: 2 !important; }
-  .qi-builder-dock .qi-question-builder .qi-builder-metric { grid-column: 3 !important; }
+  .qi-builder-dock .qi-question-builder .qi-builder-metric { grid-column: 2 / -1 !important; }
   .qi-builder-dock .qi-question-builder .qi-builder-dimension { grid-column: 2 / -1 !important; }
   .qi-builder-dock .qi-question-builder .qi-builder-values { grid-column: 2 / -1 !important; justify-self: start; width: auto !important; }
   .qi-builder-dock .qi-question-builder .flex-wrap:has(> .qi-builder-verb) > span.inline-flex { grid-column: 2 / -1 !important; justify-self: start; flex-wrap: wrap; }
@@ -4676,3 +4677,36 @@ body {
     text-transform: none !important;
   }
 }
+
+/* Pin is the one primary action, so it sits at the far right. */
+.qi-builder-actions-toolbar > .qi-cmd-primary { order: 10; }
+
+/* Active filters under the question, in the same quiet style. */
+:root:is(.light, .dark) .qi-builder-filters {
+  gap: 0.4rem !important;
+  margin-top: 0.75rem !important;
+  padding-top: 0.75rem !important;
+  border-top: 1px dashed var(--border-default) !important;
+}
+:root:is(.light, .dark) .qi-builder-filters > span {
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  color: var(--text-tertiary) !important;
+}
+:root:is(.light, .dark) .qi-builder-filters select,
+:root:is(.light, .dark) .qi-builder-filters input,
+:root:is(.light, .dark) .qi-builder-filters .relative.inline-block > button {
+  min-height: 2rem;
+  background: var(--bg-surface) !important;
+  background-color: var(--bg-surface) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: 8px !important;
+  font-size: 12.5px !important;
+  font-weight: 600 !important;
+  box-shadow: none !important;
+}
+:root:is(.light, .dark) .qi-builder-filters .relative.inline-block > button * { color: inherit !important; }
+:root:is(.light, .dark) .qi-builder-filters select option { background: var(--bg-surface) !important; color: var(--text-primary) !important; }
+:root:is(.light, .dark) .qi-builder-filters > button { color: var(--text-tertiary) !important; }
+:root:is(.light, .dark) .qi-builder-filters > button:hover { color: #dc2626 !important; background: color-mix(in srgb, #dc2626 10%, transparent) !important; }
