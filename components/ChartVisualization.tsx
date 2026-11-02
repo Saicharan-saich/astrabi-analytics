@@ -1370,6 +1370,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             ? AXIS_LABEL_SIZES[formatting.axisLabelSize] || 12
             : categoryCount > 16 ? 11 : 12;
         const axisFontWeight = formatting?.axisBold === true ? '600' : '400';
+        const showAxisTitles = formatting?.showAxisTitles === true;
         const measureAxis = canvasMeasure(`${axisFontWeight} ${axisLabelFontSize}px ${CHART_FONT_FAMILY}`, axisLabelFontSize);
         // Category names: every one is shown (wrapped, then shortened, then
         // angled when the slots get narrow). Only very long axes skip names.
@@ -1378,7 +1379,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             if (this.type && this.type !== 'category') return label;
             const count = Math.max(1, this.chart?.data?.labels?.length || categoryCount || 1);
             if (vertical) {
-                const plotWidth = this.chart?.chartArea?.width || Math.max(120, (this.chart?.width || 600) - 80);
+                // The canvas width is current; chartArea can still hold the previous layout.
+                const plotWidth = Math.max(120, (this.chart?.width || 600) - (yVisible ?? true ? 72 : 16) - (showAxisTitles ? 22 : 0));
                 const slot = plotWidth / count - 6;
                 // Too narrow for two lines: shorten and let the axis angle the names.
                 if (slot < 48) return truncateToWidth(String(label ?? ''), 120, measureAxis);
@@ -1387,7 +1389,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             const maxWidth = Math.max(80, Math.min(220, (this.chart?.width || 600) * 0.3));
             return fitAxisLabel(label, maxWidth, measureAxis, 1);
         };
-        const showAxisTitles = formatting?.showAxisTitles === true;
+
         const axisTitle = (text: string) => ({
             display: showAxisTitles && Boolean(text),
             text,
@@ -1397,7 +1399,11 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         });
         const humanize = (text: string) => String(text || '').replace(/_/g, ' ').replace(/^\w/, char => char.toUpperCase());
         const categoryTitle = humanize(config?.dimension || xKey || '');
-        const valueTitle = humanize(calculatedYLabel || yLabel || yKey || '');
+        const AGG_WORD: Record<string, string> = { SUM: 'Total', AVG: 'Average', MAX: 'Highest', MIN: 'Lowest', MEDIAN: 'Median', COUNT: 'Number of', COUNT_DISTINCT: 'Unique', NONE: '' };
+        const aggregationWord = AGG_WORD[String(config?.aggregation || '').toUpperCase()];
+        const valueTitle = config?.metric && !primaryCalc
+            ? humanize(`${aggregationWord ? `${aggregationWord} ` : ''}${String(config.metric).replace(/_/g, ' ')}`.toLowerCase())
+            : humanize(calculatedYLabel || yLabel || yKey || '');
         const labelsOn = chartType === 'funnel' || Boolean(formatting?.showDataLabels);
         const prefersReducedMotion = typeof window !== 'undefined'
             && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
