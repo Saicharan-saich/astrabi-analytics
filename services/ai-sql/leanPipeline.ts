@@ -3,8 +3,8 @@
  * ─────────────────────────────────────────────────────────────────────
  * One clear path from a question to an answer:
  *
- *   1. Describe the dataset (column names, types, roles, short notes).
- *      Rows never leave the browser.
+ *   1. Describe the dataset: column names, types and roles only. No values,
+ *      counts, ranges or dates from the data leave the browser.
  *   2. One AI call reads that description and either
  *        – asks a short follow-up with concrete choices when the question is
  *          vague ("best performing" with several possible measures), or
@@ -18,15 +18,13 @@
 
 import type { Dataset } from '../../types';
 import type {
+    SemanticModel, SemanticField,
     AISQLPipelineResult, AnalysisIntent, AnalysisPlan, ConfidenceScore, PlanDimension, PlanMetric,
     ResultNarrative, ResultProfile, ChartRecommendation,
 } from './types';
 import { AISQLPipelineError } from './pipelineError';
 import { resolveAISQLSemanticModel } from './semanticLayer';
-import { serializeSemanticModelSchema, collectSafeDomains } from './schemaSerializer';
 import { discoverJoinContext } from './joinEngine';
-import { getEffectivePrivacyMode } from './privacyMode';
-import { getSelection, applySelection } from './privacySelection';
 import { fetchWithFallback, PLANNER_MODEL } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
 import { executeSQLViaDuckDB } from '../duckdbEngine';
@@ -89,7 +87,8 @@ STEP 2 — Otherwise answer (action "answer").
 - Totals use SUM, averages AVG, counts COUNT(*) or COUNT(DISTINCT ...). Round money and averages to 2 decimals with ROUND(x, 2).
 - Rankings ("top", "best", "highest"): ORDER BY the measure DESC with LIMIT 10 unless the user gave a number. For "which is the best X", still return the top 10 so the answer can be compared; the first row is the answer.
 - Changes over time: group by DATE_TRUNC('month', CAST(date_column AS DATE)) (or the grain asked for) AS period, ORDER BY period. Numeric year columns are compared as numbers.
-- Relative dates ("this year", "last month") are measured from the dataset reporting anchor given below. Never use CURRENT_DATE or NOW().
+- Relative dates ("this year", "last month", "recent") are measured from the latest date in the data, never from today: use (SELECT MAX(CAST(date_column AS DATE)) FROM "data") in the query. Never use CURRENT_DATE or NOW().
+- You do not know the values stored in text columns. Match text the user typed case-insensitively, e.g. LOWER("region") = LOWER('london'), or ILIKE '%term%' for partial names.
 - Listing records: return only the useful columns with LIMIT 200.
 - Never return more than 500 rows.
 
@@ -291,32 +290,76 @@ export function buildInsights(rows: Record<string, any>[], profile: ResultProfil
 
 // ── The pipeline ─────────────────────────────────────────────────────
 
+const sqlName = (name: string) => `"${name.replace(/"/g, '""')}"`;
+
+function columnType(field: SemanticField, storedAsNumber?: boolean): string {
+    if (storedAsNumber && field.physicalType !== 'date') return field.semanticType === 'date' || /year|month|quarter|week/i.test(field.name) ? 'INTEGER (a year or period number)' : 'NUMBER';
+    if (field.physicalType === 'number') return field.semanticType === 'date' ? 'INTEGER (a year or period number)' : 'NUMBER';
+    if (field.physicalType === 'date') return "TEXT date 'YYYY-MM-DD' — use CAST(col AS DATE) for date maths";
+    if (field.physicalType === 'boolean') return 'BOOLEAN';
+    return 'TEXT';
+}
+
+function columnRole(field: SemanticField): string {
+    if (field.keyRole && field.keyRole !== 'none') return field.keyRole === 'primary_key' ? 'identifier (unique per row)' : 'identifier';
+    if (field.semanticType === 'identifier') return 'identifier';
+    if (field.semanticType === 'date' || field.physicalType === 'date') return 'date';
+    if (field.role === 'metric') {
+        if (field.semanticType === 'currency') return 'measure (money)';
+        if (field.semanticType === 'percentage') return 'measure (percentage)';
+        if (field.semanticType === 'ratio') return 'measure (ratio)';
+        if (field.semanticType === 'count') return 'measure (count)';
+        return 'measure';
+    }
+    return 'category';
+}
+
+/**
+ * Metadata only: table and column names, storage types, roles and how
+ * tables join. Nothing derived from the values (no ranges, counts, sample
+ * values or dates) is included.
+ */
+export function describeColumnsOnly(
+    model: SemanticModel,
+    join?: { tables: { name: string; columns: { name: string; isPK?: boolean }[] }[]; links: { leftTable: string; leftColumn: string; rightTable: string; rightColumn: string; cardinality?: string }[] } | null,
+    numericColumns: Set<string> = new Set(),
+): string {
+    const lines = ['Table "data" columns:'];
+    for (const field of model.fields) {
+        lines.push(`- ${sqlName(field.name)}: ${columnType(field, numericColumns.has(field.name))}; ${columnRole(field)}`);
+    }
+    if (join?.tables?.length) {
+        lines.push('', 'The data came from several tables. "data" holds the main table. Related tables:');
+        for (const table of join.tables) {
+            lines.push(`- ${sqlName(table.name)}: ${table.columns.map(column => `${column.name}${column.isPK ? ' [key]' : ''}`).join(', ')}`);
+        }
+        if (join.links?.length) {
+            lines.push('Join on:');
+            for (const link of join.links) {
+                lines.push(`- ${link.leftTable}.${link.leftColumn} = ${link.rightTable}.${link.rightColumn}${link.cardinality ? ` (${link.cardinality.replace(/_/g, ':')})` : ''}`);
+            }
+            lines.push('Aggregate before joining one-to-many so totals are not double-counted.');
+        }
+    }
+    return lines.join('\n');
+}
+
 function describeData(dataset: Dataset) {
     const { model } = resolveAISQLSemanticModel(dataset);
-    const privacyMode = getEffectivePrivacyMode();
-    let domains = privacyMode === 'enhanced' ? collectSafeDomains(dataset.rows, model) : undefined;
-    if (domains) {
-        domains = applySelection(domains, getSelection(dataset.name || dataset.id));
-        if (domains.size === 0) domains = undefined;
-    }
-    let schema = serializeSemanticModelSchema(model, 'data', domains)
-        // The user decides how to aggregate; notes only describe the column.
-        .replace(/per-unit\/rate — do NOT SUM; use AVG/g, 'per-unit value or rate — usually averaged; total only when asked');
-    const joinCtx = discoverJoinContext(dataset.relatedTables, dataset.sourceSchema);
-    if (joinCtx) {
-        schema += `\n\nThe data came from several tables. "data" holds the main table; the related tables below can be joined on the listed keys:\n${joinCtx.description}`;
-    }
-    const anchor = model.timeContext?.anchorDate || model.timeContext?.maxDate;
-    if (anchor) schema += `\n\nDataset reporting anchor (treat as "today"): ${anchor}`;
-    schema += `\nPrivacy: ${domains ? 'schema plus approved category values' : 'schema only — no data values'}.`;
-    return { model, schema, privacyMode, domainsShared: Boolean(domains) };
+    const join = discoverJoinContext(dataset.relatedTables, dataset.sourceSchema);
+    // How each column is stored in the browser (a type, never a value).
+    const sample = dataset.rows.slice(0, 50);
+    const numericColumns = new Set(model.fields.map(field => field.name).filter(name =>
+        sample.some(row => row[name] !== null && row[name] !== undefined && row[name] !== '')
+        && sample.every(row => row[name] === null || row[name] === undefined || row[name] === '' || typeof row[name] === 'number')));
+    return { model, schema: describeColumnsOnly(model, join, numericColumns) };
 }
 
 export async function runLeanAISQL(question: string, dataset: Dataset, options: LeanRunOptions = {}): Promise<AISQLPipelineResult> {
     const started = performance.now();
     const asked = `${question}${options.grain ? `\n(Group dates by ${options.grain}.)` : ''}${options.autoChoose ? '\n(Do not ask a follow-up. Choose the most likely measure and name it in the explanation.)' : ''}`;
     options.onProgress?.('Reading your columns');
-    const { model, schema, privacyMode } = describeData(dataset);
+    const { model, schema } = describeData(dataset);
 
     // ── 1. One AI call: ask, or write the query ──
     options.onProgress?.('Writing the query');
@@ -407,8 +450,8 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         provenance: {
             strategy: 'llm-plan',
             model: reply.model,
-            summary: 'The AI read your column descriptions and wrote one query; it ran on your data in the browser.',
-            dataAccess: privacyMode === 'enhanced' ? 'approved_safe_values' : 'metadata_only',
+            summary: 'The AI saw only your question and your column names and types; the query it wrote ran on your data in the browser.',
+            dataAccess: 'metadata_only',
         },
     };
 }

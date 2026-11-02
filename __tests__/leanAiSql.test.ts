@@ -13,7 +13,7 @@ vi.mock('../services/duckdbEngine', async (importOriginal) => {
 import { fetchWithFallback } from '../services/ai-sql/modelConfig';
 import { executeSQLViaDuckDB } from '../services/duckdbEngine';
 import {
-    AISQLClarificationError, buildInsights, parseLeanReply, periodLabel, planFromResult, runLeanAISQL, scrubErrorForModel,
+    AISQLClarificationError, buildInsights, describeColumnsOnly, parseLeanReply, periodLabel, planFromResult, runLeanAISQL, scrubErrorForModel,
 } from '../services/ai-sql/leanPipeline';
 import { profileResult } from '../services/ai-sql/resultProfiler';
 import { resolveAISQLSemanticModel } from '../services/ai-sql/semanticLayer';
@@ -75,6 +75,16 @@ describe('lean AI SQL — privacy of repair requests', () => {
     });
 });
 
+describe('lean AI SQL — what the AI is sent', () => {
+    it('describes columns by name, type and role only', () => {
+        const { model } = resolveAISQLSemanticModel(dataset);
+        const text = describeColumnsOnly(model);
+        expect(text).toContain('"price": NUMBER; measure (money)');
+        expect(text).toContain('"manufacturer": TEXT; category');
+        expect(text).not.toMatch(/\d{3,}/);   // no numbers from the data at all
+    });
+});
+
 describe('lean AI SQL — chart shape and insights', () => {
     it('treats a numeric year as a grouping and spots a trend', () => {
         const plan = planFromResult('Total price by year', [{ year: 2020, total_price: 10 }, { year: 2021, total_price: 12 }]);
@@ -128,8 +138,11 @@ describe('lean AI SQL — end to end with the AI and DuckDB stubbed', () => {
             expect(error.options.map(option => option.label)).toEqual(['Total sales', 'Cars sold', 'Average price']);
         });
         const sent = JSON.stringify(vi.mocked(fetchWithFallback).mock.calls[0][0]);
-        expect(sent).toContain('price DOUBLE');
-        expect(sent).not.toContain('M5');          // no row values
+        expect(sent).toContain('price');
+        // Only names and types: no values, ranges, counts or dates from the data.
+        for (const leaked of ['M5', 'Ford', '9000', '28500', '2019', 'distinct', 'range', 'rows']) {
+            expect(String(vi.mocked(fetchWithFallback).mock.calls[0][0][1].content)).not.toContain(leaked);
+        }
         expect(executeSQLViaDuckDB).not.toHaveBeenCalled();
     });
 

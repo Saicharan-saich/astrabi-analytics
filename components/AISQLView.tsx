@@ -395,23 +395,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                             Ask about your data in plain English. The AI reads only your column names and types, writes a query, and the query runs here on your computer — then you get a chart and the key points in words.
                             If a question could mean different things, you'll get a quick follow-up with choices.
                         </p>
-                        <Tooltip
-                            position="left"
-                            text={!enhancedActive
-                                ? "Private mode: AI SQL uses your question, query text and schema information without sharing category catalogues or dataset rows. Text you type can include values. Tap to review what Better answers would additionally share."
-                                : "Better answers: AI SQL can additionally see selected category values, such as products or regions. Automated checks exclude likely personal and sensitive fields. Tap to review the exact selection or turn sharing off."}
+                        <span
+                            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-900/20 dark:text-emerald-300"
+                            title="The AI receives your question and your column names and types. Never values, counts or rows."
                         >
-                            <button
-                                onClick={togglePrivacyMode}
-                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${!enhancedActive
-                                    ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border-emerald-300 dark:border-emerald-500/30'
-                                    : 'bg-cyan-50 dark:bg-cyan-900/20 text-cyan-700 dark:text-cyan-300 border-cyan-300 dark:border-cyan-500/30'}`}
-                                title="See exactly what the AI is sent, and choose"
-                            >
-                                {!enhancedActive ? <ShieldCheck className="w-3.5 h-3.5" /> : <Shield className="w-3.5 h-3.5" />}
-                                {!enhancedActive ? 'Private mode' : 'Better answers'}
-                            </button>
-                        </Tooltip>
+                            <ShieldCheck className="h-3.5 w-3.5" /> Column names only
+                        </span>
                     </div>
                 </div>
 
@@ -480,31 +469,15 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
                     </div>
                 )}
 
-                {/* Always visible: what the AI is being sent from this file, and a way in. */}
+                {/* Always visible: exactly what the AI is sent. */}
                 {dataset && (
-                    <button
-                        onClick={() => setConsentDialog(enhancedActive ? 'review' : 'consent')}
-                        className="mt-2 inline-flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400 hover:text-gray-800 dark:hover:text-slate-200 transition-colors group"
-                    >
-                        {enhancedActive ? (
-                            <Shield className="w-3.5 h-3.5 text-cyan-500" />
-                        ) : (
-                            <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                        )}
+                    <p className="mt-2 inline-flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
+                        <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
                         <span>
                             AI SQL receives:{' '}
-                            <span className="font-semibold text-gray-700 dark:text-slate-200">
-                                {enhancedActive
-                                    ? sharingSummary.values === 0
-                                        ? 'column names only'
-                                        : `column names + ${sharingSummary.values} value${sharingSummary.values === 1 ? '' : 's'} from ${sharingSummary.columns} column${sharingSummary.columns === 1 ? '' : 's'}`
-                                    : 'column names only — no data values or rows'}
-                            </span>
+                            <span className="font-semibold text-gray-700 dark:text-slate-200">your question + column names and types — no values, counts or rows</span>
                         </span>
-                        <span className="underline decoration-dotted underline-offset-2 group-hover:decoration-solid">
-                            {enhancedActive ? 'Choose what to share' : 'See what could be shared'}
-                        </span>
-                    </button>
+                    </p>
                 )}
 
                 {/* Usage Badge — only for limited roles */}
