@@ -13,7 +13,7 @@ vi.mock('../services/duckdbEngine', async (importOriginal) => {
 import { fetchWithFallback } from '../services/ai-sql/modelConfig';
 import { executeSQLViaDuckDB } from '../services/duckdbEngine';
 import {
-    AISQLClarificationError, buildInsights, describeColumnsOnly, parseLeanReply, periodLabel, planFromResult, resultCurrency, runLeanAISQL, scrubErrorForModel,
+    AISQLClarificationError, buildInsights, describeColumnsOnly, parseLeanReply, periodLabel, planFromResult, rerunSavedAnswer, resultCurrency, runLeanAISQL, scrubErrorForModel,
 } from '../services/ai-sql/leanPipeline';
 import { profileResult } from '../services/ai-sql/resultProfiler';
 import { resolveAISQLSemanticModel } from '../services/ai-sql/semanticLayer';
@@ -221,6 +221,39 @@ describe('lean AI SQL — end to end with the AI and DuckDB stubbed', () => {
         const result = await runLeanAISQL('Best models', dataset, { autoChoose: true });
         expect(result.rawData).toHaveLength(2);
         expect(String(vi.mocked(fetchWithFallback).mock.calls[1][0][1].content)).toContain('Top 10 models by total price');
+    });
+
+    it('sends a new question with no chat history', async () => {
+        aiReplies({ action: 'answer', question: 'Total price by manufacturer', sql: 'SELECT "manufacturer", SUM("price") AS total_price FROM "data" GROUP BY 1', dimensions: ['manufacturer'], measures: ['total_price'] });
+        vi.mocked(executeSQLViaDuckDB).mockResolvedValueOnce({ data: [{ manufacturer: 'Ford', total_price: 3 }, { manufacturer: 'BMW', total_price: 2 }], columns: [], error: null } as any);
+        const result = await runLeanAISQL('Total price by manufacturer', dataset);
+        const [system, user] = vi.mocked(fetchWithFallback).mock.calls[0][0] as any[];
+        expect(String(user.content)).not.toContain('EARLIER IN THIS CHAT');
+        expect(String(system.content)).not.toContain('CONVERSATION');
+        expect(result.conversation).toEqual({ standaloneQuestion: 'Total price by manufacturer', contextTurns: 0, usedContext: false });
+    });
+
+    it('sends a follow-up with the earlier question and SQL only, and keeps the standalone question', async () => {
+        aiReplies({ action: 'answer', question: 'Total price by manufacturer for 2018 cars', follow_up: true, sql: 'SELECT "manufacturer", SUM("price") AS total_price FROM "data" WHERE "year_of_manufacture" = 2018 GROUP BY 1', dimensions: ['manufacturer'], measures: ['total_price'] });
+        vi.mocked(executeSQLViaDuckDB).mockResolvedValueOnce({ data: [{ manufacturer: 'Ford', total_price: 3 }, { manufacturer: 'BMW', total_price: 2 }], columns: [], error: null } as any);
+        const context = [{ question: 'Total price by manufacturer', sql: 'SELECT "manufacturer", SUM("price") AS total_price FROM "data" GROUP BY 1' }];
+        const result = await runLeanAISQL('only 2018 cars', dataset, { context });
+        const [system, user] = vi.mocked(fetchWithFallback).mock.calls[0][0] as any[];
+        expect(String(system.content)).toContain('CONVERSATION');
+        expect(String(user.content)).toContain('EARLIER IN THIS CHAT\n1. Asked: "Total price by manufacturer"');
+        expect(String(user.content)).toContain('NEW MESSAGE\nonly 2018 cars');
+        for (const leaked of ['Ford', 'BMW', '9000']) expect(String(user.content)).not.toContain(leaked);
+        expect(result.conversation).toEqual({ standaloneQuestion: 'Total price by manufacturer for 2018 cars', contextTurns: 1, usedContext: true });
+        expect(result.narrative?.headline).toBeTruthy();
+    });
+
+    it('reopens a saved answer by re-running its SQL, with no AI call', async () => {
+        vi.mocked(executeSQLViaDuckDB).mockResolvedValueOnce({ data: [{ manufacturer: 'Ford', total_price: 3 }, { manufacturer: 'BMW', total_price: 2 }], columns: [], error: null } as any);
+        const result = await rerunSavedAnswer({ question: 'Total price by manufacturer', sql: 'SELECT "manufacturer", SUM("price") AS total_price FROM "data" GROUP BY 1', dimensions: ['manufacturer'], measures: ['total_price'] }, dataset);
+        expect(fetchWithFallback).not.toHaveBeenCalled();
+        expect(result.rawData).toHaveLength(2);
+        expect(result.tokenUsage?.total).toBe(0);
+        await expect(rerunSavedAnswer({ question: 'x', sql: 'DROP TABLE "data"' }, dataset)).rejects.toMatchObject({ kind: 'sql_validation_failed' });
     });
 
     it('refuses anything that is not a read-only query', async () => {

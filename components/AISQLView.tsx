@@ -1,27 +1,24 @@
-import { aiSqlPresentationChart } from '../utils/chartSuggestions';
-import { percentScaleFromSql } from '../utils/sqlPercentScale';
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Sparkles, Play, AlertTriangle, X, Loader2, Lock, Clock, Shield, ShieldCheck, LayoutDashboard, Table2, Target } from 'lucide-react';
-import { Dataset, AnalysisResult, AnalysisType, AggregationType, TimeGrain, FormattingConfig } from '../types';
-import { resolveConversationTurnWithAI, AISQLPipelineResult } from '../services/ai-sql';
-import { runLeanAISQL, AISQLClarificationError, type ClarificationOption } from '../services/ai-sql/leanPipeline';
-import { MODEL_LADDER_LABEL } from '../services/ai-sql/modelConfig';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    getPrivacyMode, setPrivacyMode, PrivacyMode,
-    hasEnhancedConsent, grantEnhancedConsent, revokeEnhancedConsent,
-} from '../services/ai-sql/privacyMode';
-import { buildPrivacyDisclosure } from '../services/ai-sql/privacyDisclosure';
-import { resolveAISQLSemanticModel } from '../services/ai-sql/semanticLayer';
-import { PrivacyConsentDialog } from './PrivacyConsentDialog';
+    AlertTriangle, ArrowUp, Check, Code, Copy, CornerDownRight, History, Link2, Loader2, Lock, Maximize2,
+    MessageSquarePlus, PanelLeftClose, PanelLeftOpen, Pin, RotateCcw, ShieldCheck, Sparkles, Square, Trash2,
+} from 'lucide-react';
+import type { AnalysisResult, Dataset, FormattingConfig } from '../types';
+import type { AISQLPipelineResult } from '../services/ai-sql';
+import { runLeanAISQL, rerunSavedAnswer, AISQLClarificationError } from '../services/ai-sql/leanPipeline';
 import {
-    getSelection, setSelection, applySelection, countSharedValues,
-    type PrivacySelection, EMPTY_SELECTION,
-} from '../services/ai-sql/privacySelection';
-import { collectSafeDomains } from '../services/ai-sql/schemaSerializer';
-import { Tooltip } from './Tooltip';
+    classifyTurn, contextForFollowUp, estimateTokens, formatContextForPrompt, suggestFollowUps, type TurnKind,
+} from '../services/ai-sql/chatContext';
+import {
+    answeredTurns, chatStorageKey, loadConversations, newConversation, newId, saveConversations, titleFrom, whenLabel,
+    type ChatAnswer, type ChatTurn, type Conversation,
+} from '../services/ai-sql/chatStore';
+import { isDimensionOnlyResult } from '../services/ai-sql/resultPresentation';
+import { presentLeanAnswer } from '../utils/aiSqlAnswerPresentation';
+import { ChartVisualization } from './ChartVisualization';
 import { checkAiSqlLimit, formatResetTime } from '../services/aiSqlRateLimiter';
 import { useAuthStore } from '../store/useAuthStore';
-import { buildFocusedQuestionSuggestion, buildQuestionExamples } from '../services/ai-sql/scopeIntent';
+import { buildQuestionExamples } from '../services/ai-sql/scopeIntent';
 
 interface AISQLViewProps {
     dataset: Dataset | null;
@@ -33,672 +30,624 @@ interface AISQLViewProps {
     onOpenSummaryStory?: (question: string) => void;
 }
 
-export const AISQLView: React.FC<AISQLViewProps> = ({
-    dataset, onPin, initialQuery, onViewFullPage, onOpenDatasetOverview, onOpenAllRecords, onOpenSummaryStory,
-}) => {
-    const [query, setQuery] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const [errorTitle, setErrorTitle] = useState('Query could not be completed');
-    const inputRef = React.useRef<HTMLTextAreaElement>(null);
-    const errorRef = React.useRef<HTMLDivElement>(null);
-    const [noDataMsg, setNoDataMsg] = useState<string | null>(null);
-    const [noDataSQL, setNoDataSQL] = useState<string | null>(null);
-    const [scopeClarification, setScopeClarification] = useState<string | null>(null);
-    const [clarificationMessage, setClarificationMessage] = useState<string | null>(null);
-    /** A follow-up question with one-click choices, asked before answering a vague question. */
-    const [followUp, setFollowUp] = useState<{ question: string; options: ClarificationOption[]; original: string } | null>(null);
-    const [conversationReply, setConversationReply] = useState<{
-        title: string;
-        message: string;
-        suggestions: string[];
-    } | null>(null);
+const MEMORY_KEY = 'QuickInsight-ai-sql-memory';
+const MEMORY_OPTIONS = [
+    { value: 0, label: 'Off', hint: 'Every question is sent on its own' },
+    { value: 1, label: 'Last answer', hint: 'Follow-ups include the last question and its SQL' },
+    { value: 2, label: 'Last 2 answers', hint: 'Follow-ups include the last 2 questions and their SQL' },
+    { value: 3, label: 'Last 3 answers', hint: 'Follow-ups include the last 3 questions and their SQL' },
+];
+const readMemory = () => {
+    try {
+        const value = Number(localStorage.getItem(MEMORY_KEY));
+        return Number.isInteger(value) && value >= 0 && value <= 3 && localStorage.getItem(MEMORY_KEY) !== null ? value : 1;
+    } catch { return 1; }
+};
 
-    // ── AI SQL Privacy Mode ──
-    // "Better answers" sends values from the user's data, so it is gated on
-    // explicit consent. The stored preference alone is not permission: until
-    // the user has agreed to the disclosure, the effective mode is strict.
-    const [privacyMode, setPrivacyModeState] = useState<PrivacyMode>(getPrivacyMode());
-    const [consented, setConsented] = useState<boolean>(hasEnhancedConsent());
-    const [consentDialog, setConsentDialog] = useState<null | 'consent' | 'review'>(null);
-    const datasetKey = dataset?.name || dataset?.id || '';
-    const [selection, setSelectionState] = useState<PrivacySelection>(EMPTY_SELECTION);
-    useEffect(() => { setSelectionState(datasetKey ? getSelection(datasetKey) : EMPTY_SELECTION); }, [datasetKey]);
-    const [lastBusinessQuestion, setLastBusinessQuestion] = useState<string | null>(null);
-    useEffect(() => {
-        setLastBusinessQuestion(null);
-        setConversationReply(null);
-    }, [datasetKey]);
+const formatTokens = (tokens: number) => tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens);
 
-    // Better answers is only genuinely on when it has been agreed to.
-    const enhancedActive = privacyMode === 'enhanced' && consented;
+/** Where a run that is in flight writes its result (or is told to stop). */
+interface ActiveRun { turnId: string; conversationId: string; cancelled: boolean }
 
-    React.useEffect(() => {
-        if (error) errorRef.current?.focus();
-    }, [error]);
-
-    // Built only while the dialog is open — profiling the dataset is not free,
-    // and this is exactly the data the user is being asked to consent to.
-    const disclosure = useMemo(() => {
-        if (!consentDialog || !dataset?.rows?.length) return null;
-        try {
-            return buildPrivacyDisclosure(dataset.rows, resolveAISQLSemanticModel(dataset).model);
-        } catch (e) {
-            console.warn('[Privacy] Could not build disclosure:', e);
-            return null;
-        }
-    }, [consentDialog, dataset]);
-
-    // Same source as the pipeline, so the header line cannot disagree with it.
-    const sharingSummary = useMemo(() => {
-        if (!enhancedActive || !dataset?.rows?.length) return { values: 0, columns: 0 };
-        try {
-            const domains = collectSafeDomains(dataset.rows, resolveAISQLSemanticModel(dataset).model);
-            const kept = applySelection(domains, selection);
-            return { values: countSharedValues(domains, selection), columns: kept.size };
-        } catch {
-            return { values: 0, columns: 0 };
-        }
-    }, [enhancedActive, dataset, selection]);
-
-    const togglePrivacyMode = () => {
-        if (enhancedActive) {
-            // Already on and agreed — open it read-only so they can review or revoke.
-            setConsentDialog('review');
-            return;
-        }
-        // Turning it on always asks first, and asks again if the disclosure changed.
-        setConsentDialog('consent');
-    };
-
-    const acceptEnhanced = (chosen: PrivacySelection) => {
-        if (datasetKey) setSelection(datasetKey, chosen);
-        setSelectionState(chosen);
-        grantEnhancedConsent();
-        setPrivacyMode('enhanced');
-        setConsented(true);
-        setPrivacyModeState('enhanced');
-        setConsentDialog(null);
-    };
-
-    const declineEnhanced = () => {
-        revokeEnhancedConsent();
-        setPrivacyMode('strict');
-        setConsented(false);
-        setPrivacyModeState('strict');
-        setConsentDialog(null);
-    };
-
-    // Conversational memory is intentionally bounded to one previous business
-    // question. Answer text, SQL, result rows and older turns are never retained
-    // or sent as chat history.
-
-    // Rate limiting
+export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQuery, onViewFullPage, onOpenSummaryStory }) => {
     const currentUser = useAuthStore(s => s.currentUser);
     const incrementAiSqlUsage = useAuthStore(s => s.incrementAiSqlUsage);
     const limitStatus = checkAiSqlLimit(currentUser);
 
-    const defaultFormatting: FormattingConfig = {
-        colorMode: 'vibrant',
-        numberFormat: 'auto',
-        fontSize: 'md',
-        headerSize: 'xl',
-        headerBold: true,
-        headerColor: '#000000',
-        showLabels: true,
-        showDataLabels: true,
-        tableCalculations: [],
-        showAxis: true,
-        showXAxis: true,
-        showYAxis: true,
-        axisColor: '#000000',
-        axisBold: true,
-        axisLabelSize: 'md',
-        dataLabelColor: '#000000',
-        dataLabelBold: true,
-        dataLabelSize: 'md'
-    };
+    const datasetKey = dataset?.name || dataset?.id || '';
+    const storageKey = chatStorageKey(currentUser?.id, datasetKey);
+    const [conversations, setConversations] = useState<Conversation[]>([]);
+    const [activeId, setActiveId] = useState<string>('');
+    const [draft, setDraft] = useState('');
+    const [modeOverride, setModeOverride] = useState<TurnKind | null>(null);
+    const [memory, setMemory] = useState<number>(readMemory);
+    const [listOpen, setListOpen] = useState<boolean>(() => typeof window === 'undefined' || window.innerWidth >= 1100);
+    const [openSql, setOpenSql] = useState<Record<string, boolean>>({});
+    const [copied, setCopied] = useState<string | null>(null);
+    const [opening, setOpening] = useState<string | null>(null);
+    const activeRun = useRef<ActiveRun | null>(null);
+    const pipelines = useRef(new Map<string, AISQLPipelineResult>());
+    const inputRef = useRef<HTMLTextAreaElement>(null);
+    const threadRef = useRef<HTMLDivElement>(null);
+    const loadedKey = useRef<string>('');
 
-    // Auto-fill and auto-submit when initialQuery is set
-    const initialQueryProcessed = React.useRef<string | null>(null);
-    const pendingAutoSubmit = React.useRef(false);
-    React.useEffect(() => {
-        if (initialQuery && initialQuery !== initialQueryProcessed.current && dataset && !isLoading) {
-            initialQueryProcessed.current = initialQuery;
-            setQuery(initialQuery);
-            pendingAutoSubmit.current = true;
-        }
-    }, [initialQuery, dataset]);
+    // ── Load and save this dataset's chats ──
+    useEffect(() => {
+        if (!datasetKey) return;
+        const loaded = loadConversations(storageKey);
+        loadedKey.current = storageKey;
+        const fresh = newConversation();
+        setConversations([fresh, ...loaded]);
+        setActiveId(fresh.id);
+        pipelines.current.clear();
+    }, [storageKey, datasetKey]);
+    useEffect(() => {
+        if (loadedKey.current === storageKey && datasetKey) saveConversations(storageKey, conversations);
+    }, [conversations, storageKey, datasetKey]);
+    useEffect(() => { try { localStorage.setItem(MEMORY_KEY, String(memory)); } catch { /* per-visit only */ } }, [memory]);
 
+    const active = conversations.find(conversation => conversation.id === activeId);
+    const busy = Boolean(active?.turns.some(turn => turn.status === 'pending'));
+    const answered = useMemo(() => answeredTurns(active), [active]);
     const examples = useMemo(() => dataset ? buildQuestionExamples(dataset) : [], [dataset]);
-    const exampleQuestion = examples[0] || 'Show total sales by category';
 
-    const handleSubmit = async () => {
-        if (!query.trim() || !dataset || isLoading) return;
+    const updateConversation = useCallback((id: string, change: (conversation: Conversation) => Conversation) => {
+        setConversations(list => list.map(conversation => conversation.id === id ? change(conversation) : conversation));
+    }, []);
+    const updateTurn = useCallback((conversationId: string, turnId: string, change: Partial<ChatTurn>) => {
+        updateConversation(conversationId, conversation => ({
+            ...conversation,
+            updatedAt: Date.now(),
+            turns: conversation.turns.map(turn => turn.id === turnId ? { ...turn, ...change } : turn),
+        }));
+    }, [updateConversation]);
 
-        // ── Rate limit check ──
-        const currentStatus = checkAiSqlLimit(currentUser);
-        if (!currentStatus.allowed) {
-            setErrorTitle('AI SQL unavailable');
-            if (currentStatus.blocked) {
-                setError('Your account role does not have access to AI SQL.');
+    // Keep the newest message in view.
+    const turnCount = active?.turns.length || 0;
+    const lastProgress = active?.turns[turnCount - 1]?.progress;
+    useEffect(() => {
+        const thread = threadRef.current;
+        if (thread) thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
+    }, [turnCount, lastProgress, activeId]);
+
+    // ── What the next message will be sent as (shown live in the composer) ──
+    const detected = useMemo(() => classifyTurn(draft, answered.length > 0, dataset), [draft, answered.length, dataset]);
+    const sendKind: TurnKind = modeOverride && (detected.kind === 'new' || detected.kind === 'follow_up') ? modeOverride : detected.kind;
+    const pendingContext = sendKind === 'follow_up' ? contextForFollowUp(answered, memory) : [];
+    useEffect(() => { if (!draft.trim()) setModeOverride(null); }, [draft]);
+
+    // ── Send ──
+    const send = useCallback(async (rawText: string, forcedKind?: TurnKind) => {
+        const text = rawText.replace(/\s+$/g, '').trim();
+        if (!text || !dataset || !active || busy) return;
+        const conversationId = active.id;
+        const hasAnswer = answeredTurns(active).length > 0;
+        const decision = classifyTurn(text, hasAnswer, dataset);
+        const kind: TurnKind = forcedKind || decision.kind;
+        const context = kind === 'follow_up' ? contextForFollowUp(answeredTurns(active), memory) : [];
+
+        const userTurn: ChatTurn = { id: newId(), role: 'user', createdAt: Date.now(), text, kind, contextTurns: context.length };
+        const assistantId = newId();
+        const assistantTurn: ChatTurn = { id: assistantId, role: 'assistant', createdAt: Date.now(), status: 'pending', progress: 'Thinking' };
+        updateConversation(conversationId, conversation => ({
+            ...conversation,
+            title: conversation.turns.length ? conversation.title : titleFrom(text),
+            updatedAt: Date.now(),
+            turns: [...conversation.turns, userTurn, assistantTurn],
+        }));
+        setDraft('');
+        setModeOverride(null);
+
+        // Small talk is answered here: no AI call, no tokens, no quota.
+        if (kind === 'small_talk' && decision.reply) {
+            updateTurn(conversationId, assistantId, {
+                status: 'done', progress: undefined,
+                reply: { ...decision.reply, suggestions: hasAnswer ? [] : examples.slice(0, 3) },
+            });
+            return;
+        }
+        if (kind === 'summary') {
+            if (onOpenSummaryStory) {
+                updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, reply: { title: 'Opening your data story', message: 'An overview of the whole dataset opens in Data Story.' } });
+                onOpenSummaryStory(text);
+                incrementAiSqlUsage();
             } else {
-                setError(`You've used all ${currentStatus.limit} AI SQL queries. Your limit resets in ${formatResetTime(currentStatus.resetsInMs)}.`);
+                updateTurn(conversationId, assistantId, { status: 'error', progress: undefined, error: { title: 'Data story unavailable', message: 'Ask a specific question instead, for example a total or a trend.' } });
             }
             return;
         }
 
-        setIsLoading(true);
-        setError(null);
-        setScopeClarification(null);
-        setClarificationMessage(null);
-        setFollowUp(null);
-        setErrorTitle('Query could not be completed');
-        setNoDataMsg(null);
-        setNoDataSQL(null);
-
-        let analyticalQuestion = query.trim();
-        try {
-            // Conversational meaning is resolved exclusively by the dedicated,
-            // server-owned LLM prompt. It receives only this message and at
-            // most one prior resolved business question—never schema, answer
-            // text, SQL, result rows, local intent evidence or chat history.
-            const turn = await resolveConversationTurnWithAI(query, dataset, lastBusinessQuestion);
-            analyticalQuestion = turn.resolvedQuestion;
-            console.log(`[AI SQL Conversation] ${turn.turnType} → ${turn.route} (${Math.round(turn.confidence * 100)}%, ${turn.model}, ${turn.tokens} tokens)`);
-
-            if (turn.route === 'conversation') {
-                setConversationReply({
-                    title: turn.replyTitle || 'QuickInsight',
-                    message: turn.replyMessage || '',
-                    suggestions: turn.turnType === 'goodbye' ? [] : examples.slice(0, 3),
-                });
-                incrementAiSqlUsage();
-                return;
-            }
-            setConversationReply(null);
-
-            if (turn.route === 'clarification') {
-                setFollowUp({ question: turn.clarificationQuestion || 'What would you like to know?', options: [], original: query });
-                incrementAiSqlUsage();
-                return;
-            }
-
-            if (turn.route === 'summary_story') {
-                if (!onOpenSummaryStory) {
-                    throw new Error('The summary-story view is unavailable.');
-                }
-                setLastBusinessQuestion(analyticalQuestion);
-                onOpenSummaryStory(analyticalQuestion);
-                incrementAiSqlUsage();
-                return;
-            }
-
-            const timeoutMs = 60000;
-            const result = await Promise.race([
-                runLeanAISQL(analyticalQuestion, dataset),
-                new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Query timed out after 60 seconds. Please try again.')), timeoutMs))
-            ]);
-
-            // Fail closed: a query that executed but failed its answer contract
-            // must not navigate to the visual result as though it were verified.
-            if (result.displaySafety?.allowed === false) {
-                const reasons = result.displaySafety.reasons.length > 0
-                    ? ` ${result.displaySafety.reasons.join(' ')}`
-                    : '';
-                const recovery = result.displaySafety.recoverySuggestions.length > 0
-                    ? ` Try: ${result.displaySafety.recoverySuggestions.join(' ')}`
-                    : ' Please retry or review the SQL before using this answer.';
-                setErrorTitle('Answer withheld for your protection');
-                setError(`The calculation was withheld because verification failed.${reasons}${recovery}`);
-                setNoDataSQL(result.sql || null);
-                return;
-            }
-
-            // Empty-result handling — show banner, don't navigate
-            if (result.rawData.length === 0 && result.explanation) {
-                setNoDataMsg(result.explanation);
-                setNoDataSQL(result.sql);
-                setLastBusinessQuestion(analyticalQuestion);
-                setIsLoading(false);
-                return;
-            }
-
-            // Auto-detect axis format
-            const axisFormatMap: Record<string, FormattingConfig['numberFormat']> = {
-                percent: 'percent', currency_usd: 'currency_usd', compact: 'compact',
-            };
-            const currencyFormat: Record<string, FormattingConfig['numberFormat']> = { USD: 'currency_usd', GBP: 'currency_gbp', EUR: 'currency_eur' };
-            const axisFormat = result.chart.leftAxisFormat === 'currency_usd' && result.chart.currency
-                ? (currencyFormat[result.chart.currency] ?? 'auto')
-                : result.chart.leftAxisFormat
-                    ? (axisFormatMap[result.chart.leftAxisFormat] ?? 'auto') : 'auto';
-            // A rate the SQL already multiplied by 100 must never be rescaled,
-            // even when every value is below 1 (0.5 = 0.5%, not 50%).
-            const detectedFormat: FormattingConfig['numberFormat'] = axisFormat === 'percent'
-                && percentScaleFromSql(result.sql, result.chart.yKey) === 'points' ? 'percent_points' : axisFormat;
-
-            // Presentation defaults follow the recommended visual instead of
-            // applying one label threshold to every chart. Ranked horizontal
-            // bars can comfortably show more labels; dense/multi-series charts
-            // remain uncluttered by default.
-            const shownAs = aiSqlPresentationChart(result) as string;
-            const labelLimit = shownAs === 'horizontalBar' ? 15 : ['bar', 'pie', 'doughnut', 'donut'].includes(shownAs) ? 12 : 8;
-            const showRecommendedLabels = result.chart.chartType !== 'table'
-                && result.chart.chartType !== 'heatmap'
-                && !['line', 'area', 'multiLine', 'stackedArea'].includes(shownAs)
-                && result.chartData.length <= labelLimit;
-            const fmt: FormattingConfig = {
-                ...defaultFormatting,
-                numberFormat: detectedFormat,
-                showDataLabels: showRecommendedLabels,
-                dataLabelMode: showRecommendedLabels ? 'all' : 'off',
-                axisLabelSize: shownAs === 'horizontalBar' ? 'sm' : defaultFormatting.axisLabelSize,
-            };
-
-            // Build the analysis result
-            const finalResult: AnalysisResult = {
-                data: result.chartData,
-                xKey: result.chart.xKey,
-                yKey: result.chart.yKey,
-                yLabel: analyticalQuestion,
-                insight: result.explanation,
-                sql: result.sql,
-                config: {
-                    metric: result.plan.metrics[0]?.field || result.chart.yKey,
-                    dimension: result.plan.dimensions[0]?.field || result.chart.xKey,
-                    aggregation: AggregationType.SUM,
-                    timeGrain: TimeGrain.RAW,
-                    analysisType: AnalysisType.STANDARD,
-                    questionId: 'ai_sql_' + Date.now(),
-                    questionLabel: analyticalQuestion,
-                    secondaryMetrics: result.chart.secondaryYKeys,
-                    axisMode: result.chart.useDualAxis ? 'dual' : 'auto',
-                    limit: result.plan.limit || 0,
-                    sort: result.plan.sort?.[0]?.dir || 'desc',
+        const status = checkAiSqlLimit(currentUser);
+        if (!status.allowed) {
+            updateTurn(conversationId, assistantId, {
+                status: 'error', progress: undefined,
+                error: {
+                    title: 'AI SQL unavailable',
+                    message: status.blocked ? 'Your account role does not have access to AI SQL.' : `You've used all ${status.limit} AI SQL queries. Your limit resets in ${formatResetTime(status.resetsInMs)}.`,
                 },
-                vis: aiSqlPresentationChart(result) as any,
-                kpi: result.chart.chartType === 'kpiCard' && result.chartData.length > 0
-                    ? result.chartData[0][result.chart.yKey] : undefined,
-                growth: result.chart.growth
-                    ? { diff: result.chart.growth.diff, pct: result.chart.growth.pct } : undefined,
-                secondaryYKeys: result.chart.secondaryYKeys,
-                visualizationMode: result.chart.chartType === 'table' ? 'grid' : 'auto',
-            };
-
-            // Navigate to Visual Preview immediately
-            if (onViewFullPage) {
-                onViewFullPage(finalResult, result, analyticalQuestion, fmt);
-            }
-
-            // ── Increment usage AFTER successful query ──
-            setLastBusinessQuestion(analyticalQuestion);
-            incrementAiSqlUsage();
-
-        } catch (err: any) {
-            console.error('[AI SQL Pipeline] Error:', err);
-            const message = err.message || 'An unexpected error occurred.';
-            if (/conversation (?:planner|request|resolver)/i.test(message)) {
-                setErrorTitle('AI conversation could not be planned');
-                setError(message);
-                return;
-            } else if (err instanceof AISQLClarificationError || err?.kind === 'clarification_required') {
-                setFollowUp({ question: message, options: (err as AISQLClarificationError).options || [], original: query });
-                setError(null);
-                incrementAiSqlUsage();
-                return;
-            } else if (err?.kind === 'ai_sql_unavailable') setErrorTitle('AI SQL unavailable');
-            else if (err?.kind === 'ai_sql_execution_failed') setErrorTitle('AI query could not run safely');
-            else if (/timed out|timeout/i.test(message)) setErrorTitle('Query timed out');
-            else if (/network|failed to fetch|connect|offline/i.test(message)) setErrorTitle('Connection problem');
-            else setErrorTitle('Query could not be completed');
-            setError(message);
-        } finally {
-            setIsLoading(false);
+            });
+            return;
         }
+
+        const run: ActiveRun = { turnId: assistantId, conversationId, cancelled: false };
+        activeRun.current = run;
+        try {
+            const result = await Promise.race([
+                runLeanAISQL(text, dataset, { context, onProgress: step => { if (!run.cancelled) updateTurn(conversationId, assistantId, { progress: step }); } }),
+                new Promise<never>((_, reject) => setTimeout(() => reject(new Error('The answer took longer than 60 seconds. Please try again.')), 60_000)),
+            ]);
+            if (run.cancelled) return;
+            incrementAiSqlUsage();
+            const tokens = result.tokenUsage?.total || 0;
+            const standalone = result.conversation?.standaloneQuestion || text;
+            if (result.rawData.length === 0) {
+                updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, noData: { message: result.explanation || 'No rows matched.', sql: result.sql } });
+                updateConversation(conversationId, conversation => ({ ...conversation, tokens: conversation.tokens + tokens }));
+                return;
+            }
+            pipelines.current.set(assistantId, result);
+            const { analysis, formatting } = presentLeanAnswer(result, standalone);
+            const answer: ChatAnswer = {
+                title: result.narrative?.headline || titleFrom(standalone),
+                standaloneQuestion: standalone,
+                summary: result.narrative?.summary,
+                insights: result.narrative?.insights,
+                explanation: result.explanation,
+                sql: result.sql,
+                dimensions: result.plan.dimensions.map(item => item.field),
+                measures: result.plan.metrics.map(item => item.field),
+                rowCount: result.rawData.length,
+                // A list answer is shown as a table of the rows the query returned.
+                analysis: isDimensionOnlyResult(result.profile, result.rawData) ? { ...analysis, data: result.rawData.slice(0, 200) } : analysis,
+                formatting,
+                listOnly: isDimensionOnlyResult(result.profile, result.rawData),
+                tokens,
+                executionTimeMs: result.executionTimeMs,
+            };
+            updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, answer });
+            updateConversation(conversationId, conversation => ({ ...conversation, tokens: conversation.tokens + tokens }));
+        } catch (err: any) {
+            if (run.cancelled) return;
+            const message = String(err?.message || 'Something went wrong.');
+            if (err instanceof AISQLClarificationError || err?.kind === 'clarification_required') {
+                incrementAiSqlUsage();
+                updateTurn(conversationId, assistantId, {
+                    status: 'done', progress: undefined,
+                    clarify: { question: message, options: (err as AISQLClarificationError).options || [], original: text },
+                });
+                return;
+            }
+            const title = err?.kind === 'ai_sql_execution_failed' ? 'The query could not run'
+                : err?.kind === 'sql_validation_failed' ? 'Query blocked for safety'
+                    : /timed out|longer than|timeout/i.test(message) ? 'That took too long'
+                        : /network|failed to fetch|connect|offline/i.test(message) ? 'Connection problem'
+                            : /limit|quota/i.test(message) ? 'AI limit reached'
+                                : 'Could not answer that';
+            updateTurn(conversationId, assistantId, { status: 'error', progress: undefined, error: { title, message, retryText: text } });
+        } finally {
+            if (activeRun.current === run) activeRun.current = null;
+        }
+    }, [dataset, active, busy, memory, updateConversation, updateTurn, examples, onOpenSummaryStory, incrementAiSqlUsage, currentUser]);
+
+    const stop = () => {
+        const run = activeRun.current;
+        if (!run) return;
+        run.cancelled = true;
+        updateTurn(run.conversationId, run.turnId, { status: 'stopped', progress: undefined });
+        activeRun.current = null;
     };
 
-    // Auto-submit when pending (triggered by initialQuery)
-    React.useEffect(() => {
-        if (pendingAutoSubmit.current && query.trim() && dataset && !isLoading) {
-            pendingAutoSubmit.current = false;
-            handleSubmit();
+    // Questions sent here from other pages start a fresh chat.
+    const handledInitial = useRef<string | null>(null);
+    const waitingInitial = useRef<string | null>(null);
+    useEffect(() => {
+        if (!initialQuery || !dataset || !active || busy || handledInitial.current === initialQuery) return;
+        handledInitial.current = initialQuery;
+        if (active.turns.length) {
+            const fresh = newConversation();
+            waitingInitial.current = initialQuery;
+            setConversations(list => [fresh, ...list]);
+            setActiveId(fresh.id);
+            return;
         }
-    }, [query, dataset, isLoading]);
+        void send(initialQuery, 'new');
+    }, [initialQuery, dataset, active, busy, send]);
+    // After switching to the fresh chat above, send the waiting question.
+    useEffect(() => {
+        const waiting = waitingInitial.current;
+        if (waiting && active && !active.turns.length && !busy) {
+            waitingInitial.current = null;
+            void send(waiting, 'new');
+        }
+    }, [active, busy, send]);
+
+    const startNewChat = () => {
+        if (busy) stop();
+        const empty = conversations.find(conversation => !conversation.turns.length);
+        if (empty) { setActiveId(empty.id); } else {
+            const fresh = newConversation();
+            setConversations(list => [fresh, ...list]);
+            setActiveId(fresh.id);
+        }
+        setDraft('');
+        requestAnimationFrame(() => inputRef.current?.focus());
+        if (window.innerWidth < 1100) setListOpen(false);
+    };
+    const deleteChat = (id: string) => {
+        setConversations(list => {
+            const rest = list.filter(conversation => conversation.id !== id);
+            if (id === activeId) {
+                const fresh = newConversation();
+                setActiveId(fresh.id);
+                return [fresh, ...rest];
+            }
+            return rest;
+        });
+    };
+
+    const openFullScreen = async (turn: ChatTurn) => {
+        if (!turn.answer || !dataset || !onViewFullPage) return;
+        let pipeline = pipelines.current.get(turn.id);
+        if (!pipeline) {
+            // An answer from an earlier visit: re-run its SQL here, no AI call.
+            setOpening(turn.id);
+            try {
+                pipeline = await rerunSavedAnswer({
+                    question: turn.answer.standaloneQuestion, sql: turn.answer.sql, title: turn.answer.title,
+                    dimensions: turn.answer.dimensions, measures: turn.answer.measures, explanation: turn.answer.explanation,
+                }, dataset);
+                pipelines.current.set(turn.id, pipeline);
+            } catch (err: any) {
+                setOpening(null);
+                window.alert?.(String(err?.message || 'This answer could not be reopened.'));
+                return;
+            }
+            setOpening(null);
+        }
+        const { analysis, formatting } = presentLeanAnswer(pipeline, turn.answer.standaloneQuestion);
+        onViewFullPage(analysis, pipeline, turn.answer.standaloneQuestion, formatting);
+    };
+
+    const copyAnswer = async (turn: ChatTurn) => {
+        if (!turn.answer) return;
+        const text = [turn.answer.title, turn.answer.summary, ...(turn.answer.insights || []).map(item => `• ${item}`)].filter(Boolean).join('\n');
+        try { await navigator.clipboard.writeText(text); setCopied(turn.id); setTimeout(() => setCopied(null), 1500); } catch { /* clipboard blocked */ }
+    };
 
     if (!dataset) {
         return (
-            <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
-                <Sparkles className="w-16 h-16 text-slate-600" />
+            <div className="flex h-full flex-col items-center justify-center gap-4 text-slate-400">
+                <Sparkles className="h-16 w-16 text-slate-600" />
                 <h3 className="text-xl font-bold text-slate-300">No Dataset Loaded</h3>
                 <p className="text-sm text-slate-500">Please load a dataset to use AI SQL.</p>
             </div>
         );
     }
 
+    const lastAnswerTurn = [...(active?.turns || [])].reverse().find(turn => turn.role === 'assistant' && turn.answer);
+    const followUps = lastAnswerTurn?.answer && !busy ? suggestFollowUps(lastAnswerTurn.answer, dataset) : [];
+    const history = conversations.filter(conversation => conversation.turns.length > 0).sort((a, b) => b.updatedAt - a.updatedAt);
+    const groups = history.reduce<Record<string, Conversation[]>>((acc, conversation) => {
+        const label = whenLabel(conversation.updatedAt);
+        (acc[label] ||= []).push(conversation);
+        return acc;
+    }, {});
+    const memoryOption = MEMORY_OPTIONS.find(option => option.value === memory) || MEMORY_OPTIONS[1];
+    const contextCost = pendingContext.length ? estimateTokens(formatContextForPrompt(pendingContext)) : 0;
+    const modeCanFlip = draft.trim() && answered.length > 0 && (sendKind === 'new' || sendKind === 'follow_up') && memory > 0;
+
     return (
-        <div className="qi-ai-workspace h-full overflow-y-auto overscroll-contain bg-slate-50 p-3 dark:bg-[#07111f] sm:p-6">
-            <div className="qi-ai-frame mx-auto flex min-h-full w-full max-w-3xl flex-col gap-5 pb-6">
-
-                {/* Header */}
-                <div className="flex flex-col gap-1 shrink-0">
-                    <Tooltip text="The AI sees your column names and types, never your rows. It writes one read-only query, which runs in your browser." position="right">
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                            <img src="/ai-sql-logo.png" alt="AI SQL" className="w-7 h-7 rounded-lg object-cover" />
-                            AI SQL
-                            <span className="text-xs font-medium bg-blue-500/15 text-blue-600 dark:text-blue-400 px-2 py-0.5 rounded-full border border-blue-500/20">
-                                Private, governed analytics
-                            </span>
-                            <span className="text-xs font-medium bg-emerald-500/15 text-emerald-600 dark:text-emerald-400 px-2 py-0.5 rounded-full border border-emerald-500/20 flex items-center gap-1">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                {MODEL_LADDER_LABEL}
-                            </span>
-                        </h2>
-                    </Tooltip>
-                    <div className="flex items-center gap-2">
-                        <p className="text-gray-500 dark:text-slate-400 text-sm flex-1">
-                            Ask about your data in plain English. The AI reads only your column names and types, writes a query, and the query runs here on your computer — then you get a chart and the key points in words.
-                            If a question could mean different things, you'll get a quick follow-up with choices.
-                        </p>
-                        <span
-                            className="flex shrink-0 items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 dark:border-emerald-500/30 dark:bg-emerald-900/20 dark:text-emerald-300"
-                            title="The AI receives your question and your column names and types. Never values, counts or rows."
-                        >
-                            <ShieldCheck className="h-3.5 w-3.5" /> Column names only
-                        </span>
-                    </div>
+        <div className="qi-chat h-full">
+            {/* ── Chat list ── */}
+            <aside className={`qi-chat-list ${listOpen ? 'is-open' : ''}`} aria-label="Your AI SQL chats">
+                <div className="qi-chat-list-head">
+                    <button type="button" className="qi-chat-new" onClick={startNewChat}>
+                        <MessageSquarePlus className="h-4 w-4" aria-hidden /> New chat
+                    </button>
+                    <button type="button" className="qi-chat-icon-btn qi-chat-list-close" aria-label="Hide chat list" onClick={() => setListOpen(false)}>
+                        <PanelLeftClose className="h-4 w-4" />
+                    </button>
                 </div>
-
-                {conversationReply && !isLoading && (
-                    <div role="status" aria-live="polite" className="shrink-0 rounded-xl border border-cyan-200 bg-cyan-50 p-5 dark:border-cyan-500/30 dark:bg-cyan-500/10">
-                        <div className="flex items-start gap-3">
-                            <Sparkles className="mt-0.5 h-5 w-5 shrink-0 text-cyan-600 dark:text-cyan-300" aria-hidden="true" />
-                            <div className="min-w-0 flex-1">
-                                <div className="font-bold text-cyan-900 dark:text-cyan-100">{conversationReply.title}</div>
-                                <p className="mt-1 text-sm leading-relaxed text-cyan-800 dark:text-cyan-200/80">{conversationReply.message}</p>
-                                {conversationReply.suggestions.length > 0 && (
-                                    <div className="mt-3 flex flex-wrap gap-2">
-                                        {conversationReply.suggestions.map(suggestion => (
-                                            <button
-                                                key={suggestion}
-                                                type="button"
-                                                onClick={() => {
-                                                    setQuery(suggestion);
-                                                    setConversationReply(null);
-                                                    requestAnimationFrame(() => inputRef.current?.focus());
-                                                }}
-                                                className="rounded-full border border-cyan-300 bg-white px-3 py-1.5 text-xs font-semibold text-cyan-800 transition hover:border-cyan-500 hover:bg-cyan-100 dark:border-cyan-500/30 dark:bg-slate-900/60 dark:text-cyan-100 dark:hover:bg-cyan-500/15"
-                                            >
-                                                {suggestion}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                            <button aria-label="Dismiss response" onClick={() => { setConversationReply(null); inputRef.current?.focus(); }} className="shrink-0 text-cyan-500 hover:text-cyan-800 dark:hover:text-cyan-100"><X className="h-4 w-4" /></button>
-                        </div>
-                    </div>
-                )}
-
-                {/* A vague question gets a short follow-up with one-click choices. */}
-                {followUp && !isLoading && (
-                    <div role="dialog" aria-labelledby="qi-followup-title" className="qi-followup shrink-0 rounded-xl border p-5">
-                        <div className="flex items-start gap-3">
-                            <Target className="qi-followup-icon mt-0.5 h-5 w-5 shrink-0" aria-hidden="true" />
-                            <div className="min-w-0 flex-1">
-                                <div id="qi-followup-title" className="qi-followup-title font-semibold">{followUp.question}</div>
-                                {followUp.original && <p className="qi-followup-muted mt-0.5 text-[12.5px]">You asked: “{followUp.original}”</p>}
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    {followUp.options.map(option => (
-                                        <button
-                                            key={option.question}
-                                            type="button"
-                                            title={option.question}
-                                            onClick={() => { setFollowUp(null); pendingAutoSubmit.current = true; setQuery(option.question); }}
-                                            className="qi-followup-option rounded-full px-3 py-1.5 text-[13px] font-semibold"
-                                        >
-                                            {option.label}
-                                        </button>
-                                    ))}
+                <div className="qi-chat-list-body">
+                    {history.length === 0 && <p className="qi-chat-list-empty">Your chats about {dataset.name} appear here.</p>}
+                    {(['Today', 'Yesterday', 'Previous 7 days', 'Older'] as const).filter(label => groups[label]?.length).map(label => (
+                        <div key={label} className="qi-chat-list-group">
+                            <div className="qi-chat-list-label">{label}</div>
+                            {groups[label].map(conversation => (
+                                <div key={conversation.id} className={`qi-chat-list-item ${conversation.id === activeId ? 'is-active' : ''}`}>
                                     <button
                                         type="button"
-                                        onClick={() => { setFollowUp(null); setQuery(followUp.original); requestAnimationFrame(() => inputRef.current?.focus()); }}
-                                        className="qi-followup-other rounded-full px-3 py-1.5 text-[13px] font-semibold"
+                                        className="qi-chat-list-open"
+                                        onClick={() => { setActiveId(conversation.id); if (window.innerWidth < 1100) setListOpen(false); }}
+                                        aria-current={conversation.id === activeId ? 'page' : undefined}
+                                        title={conversation.title}
                                     >
-                                        {followUp.options.length ? 'Something else…' : 'Edit my question'}
+                                        {conversation.title}
+                                    </button>
+                                    <button type="button" className="qi-chat-icon-btn qi-chat-list-delete" aria-label={`Delete chat: ${conversation.title}`} onClick={() => deleteChat(conversation.id)}>
+                                        <Trash2 className="h-3.5 w-3.5" />
                                     </button>
                                 </div>
+                            ))}
+                        </div>
+                    ))}
+                </div>
+                <p className="qi-chat-list-foot"><History className="h-3.5 w-3.5" aria-hidden /> Saved in this browser only</p>
+            </aside>
+            {listOpen && <button type="button" className="qi-chat-scrim" aria-label="Close chat list" onClick={() => setListOpen(false)} />}
+
+            {/* ── Conversation ── */}
+            <section className="qi-chat-main" aria-label="AI SQL chat">
+                <header className="qi-chat-head">
+                    <div className="flex min-w-0 items-center gap-2">
+                        {!listOpen && (
+                            <button type="button" className="qi-chat-icon-btn" aria-label="Show chat list" onClick={() => setListOpen(true)}>
+                                <PanelLeftOpen className="h-4 w-4" />
+                            </button>
+                        )}
+                        <img src="/ai-sql-logo.png" alt="" className="h-6 w-6 rounded-md object-cover" />
+                        <div className="min-w-0">
+                            <h2 className="qi-chat-title">{active?.turns.length ? active.title : 'AI SQL'}</h2>
+                            <div className="qi-chat-subtitle">
+                                <span title="The AI receives your question and your column names and types. Never values, counts or rows."><ShieldCheck className="h-3.5 w-3.5" aria-hidden /> Column names only</span>
+                                {active && active.tokens > 0 && <span title="AI tokens used by this chat">· {formatTokens(active.tokens)} tokens</span>}
                             </div>
-                            <button aria-label="Dismiss follow-up" onClick={() => { setFollowUp(null); inputRef.current?.focus(); }} className="qi-followup-muted shrink-0"><X className="h-4 w-4" /></button>
                         </div>
                     </div>
-                )}
-
-                {/* Always visible: exactly what the AI is sent. */}
-                {dataset && (
-                    <p className="mt-2 inline-flex items-center gap-2 text-xs text-gray-500 dark:text-slate-400">
-                        <ShieldCheck className="h-3.5 w-3.5 text-emerald-500" />
-                        <span>
-                            AI SQL receives:{' '}
-                            <span className="font-semibold text-gray-700 dark:text-slate-200">your question + column names and types — no values, counts or rows</span>
-                        </span>
-                    </p>
-                )}
-
-                {/* Usage Badge — only for limited roles */}
-                {!limitStatus.blocked && limitStatus.limit !== Infinity && (
-                    <div className="shrink-0 flex items-center gap-3 bg-white dark:bg-slate-800 border border-gray-200 dark:border-white/10 rounded-xl px-4 py-2.5">
-                        <div className="relative w-9 h-9">
-                            <svg className="w-9 h-9 -rotate-90" viewBox="0 0 36 36">
-                                <circle cx="18" cy="18" r="15" fill="none" stroke="currentColor" className="text-gray-100 dark:text-slate-700" strokeWidth="3" />
-                                <circle cx="18" cy="18" r="15" fill="none"
-                                    stroke={limitStatus.remaining > 3 ? '#22c55e' : limitStatus.remaining > 0 ? '#f59e0b' : '#ef4444'}
-                                    strokeWidth="3" strokeLinecap="round"
-                                    strokeDasharray={`${(limitStatus.used / limitStatus.limit) * 94.2} 94.2`}
-                                />
-                            </svg>
-                            <span className="absolute inset-0 flex items-center justify-center text-[11px] font-bold text-gray-700 dark:text-slate-200">
-                                {limitStatus.remaining}
-                            </span>
-                        </div>
-                        <div className="flex flex-col">
-                            <span className="text-sm font-semibold text-gray-800 dark:text-white">
-                                {limitStatus.used}/{limitStatus.limit} queries used
-                            </span>
-                            <span className="text-xs text-gray-400 dark:text-slate-500 flex items-center gap-1">
-                                <Clock className="w-3 h-3" />
-                                Resets in {formatResetTime(limitStatus.resetsInMs)}
-                            </span>
-                        </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                        <label className="qi-chat-memory" title={memoryOption.hint}>
+                            <span>Memory</span>
+                            <select aria-label="How much of the chat follow-ups remember" value={memory} onChange={event => setMemory(Number(event.target.value))}>
+                                {MEMORY_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                            </select>
+                        </label>
+                        <button type="button" className="qi-chat-icon-btn" aria-label="New chat" title="New chat" onClick={startNewChat}>
+                            <MessageSquarePlus className="h-4 w-4" />
+                        </button>
                     </div>
-                )}
+                </header>
 
-                {/* Early Access Banner */}
-                <div className="qi-early-access shrink-0 border rounded-lg px-4 py-2.5 flex items-center gap-3">
-                    <span className="text-lg shrink-0">🚀</span>
-                    <div className="flex-1 min-w-0">
-                        <span className="text-[13px] font-semibold text-indigo-700 dark:text-indigo-300">
-                            Early Access Preview
-                        </span>
-                        <span className="text-[12px] text-indigo-600/70 dark:text-indigo-400/70 ml-1.5">
-                            — the AI writes the query from your column names; your rows stay on your computer.
-                        </span>
+                <div ref={threadRef} className="qi-chat-thread" role="log" aria-live="polite" aria-label="Conversation">
+                    <div className="qi-chat-thread-inner">
+                        {!active?.turns.length && (
+                            <div className="qi-chat-empty">
+                                <div className="qi-chat-empty-mark"><Sparkles className="h-6 w-6" aria-hidden /></div>
+                                <h3>What would you like to know about {dataset.name.replace(/\.[^.]+$/, '')}?</h3>
+                                <p>Ask in plain English. The AI sees only your column names and types, writes one query, and the query runs here on your computer. Ask follow-ups like “now by month” — only the last question and its SQL are sent with them.</p>
+                                <div className="qi-chat-examples">
+                                    {examples.map(example => (
+                                        <button key={example} type="button" onClick={() => void send(example, 'new')}>{example}</button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {active?.turns.map((turn, index) => turn.role === 'user' ? (
+                            <div key={turn.id} className="qi-chat-row is-user">
+                                <div className="qi-chat-bubble">{turn.text}</div>
+                                <div className="qi-chat-tag" title={turn.kind === 'follow_up' ? 'Sent with the earlier question(s) and SQL — never results' : turn.kind === 'new' ? 'Sent on its own, without chat history' : 'Answered without the AI'}>
+                                    {turn.kind === 'follow_up' && <><Link2 className="h-3 w-3" aria-hidden /> Follow-up{turn.contextTurns ? ` · used ${turn.contextTurns} earlier answer${turn.contextTurns === 1 ? '' : 's'}` : ' · memory off'}</>}
+                                    {turn.kind === 'new' && index > 0 && <>New question · no history sent</>}
+                                    {turn.kind === 'small_talk' && <>Answered instantly · no AI used</>}
+                                </div>
+                            </div>
+                        ) : (
+                            <div key={turn.id} className="qi-chat-row is-assistant">
+                                <div className="qi-chat-avatar" aria-hidden><Sparkles className="h-4 w-4" /></div>
+                                <div className="qi-chat-assistant">
+                                    {turn.status === 'pending' && (
+                                        <div className="qi-chat-thinking" role="status">
+                                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                                            <span>{turn.progress || 'Thinking'}…</span>
+                                            <button type="button" className="qi-chat-link" onClick={stop}>Stop</button>
+                                        </div>
+                                    )}
+                                    {turn.status === 'stopped' && <p className="qi-chat-muted">Stopped.</p>}
+                                    {turn.reply && (
+                                        <div className="qi-chat-reply">
+                                            <strong>{turn.reply.title}</strong>
+                                            <p>{turn.reply.message}</p>
+                                            {!!turn.reply.suggestions?.length && (
+                                                <div className="qi-chat-chips">
+                                                    {turn.reply.suggestions.map(suggestion => <button key={suggestion} type="button" onClick={() => void send(suggestion, 'new')}>{suggestion}</button>)}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                    {turn.clarify && (
+                                        <div className="qi-chat-clarify">
+                                            <p className="qi-chat-clarify-q">{turn.clarify.question}</p>
+                                            <div className="qi-chat-chips">
+                                                {turn.clarify.options.map(option => (
+                                                    <button key={option.question} type="button" title={option.question} disabled={busy} onClick={() => void send(option.question, 'new')}>{option.label}</button>
+                                                ))}
+                                                <button type="button" className="is-quiet" onClick={() => { setDraft(turn.clarify!.original); requestAnimationFrame(() => inputRef.current?.focus()); }}>
+                                                    {turn.clarify.options.length ? 'Something else…' : 'Edit my question'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
+                                    {turn.noData && (
+                                        <div className="qi-chat-reply">
+                                            <strong>No rows matched</strong>
+                                            <p>{turn.noData.message}</p>
+                                            {turn.noData.sql && <pre className="qi-chat-sql">{turn.noData.sql}</pre>}
+                                        </div>
+                                    )}
+                                    {turn.error && (
+                                        <div className="qi-chat-error" role="alert">
+                                            <AlertTriangle className="h-4 w-4 shrink-0" aria-hidden />
+                                            <div className="min-w-0">
+                                                <strong>{turn.error.title}</strong>
+                                                <p>{turn.error.message}</p>
+                                                {turn.error.retryText && (
+                                                    <button type="button" className="qi-chat-link" disabled={busy} onClick={() => void send(turn.error!.retryText!)}>
+                                                        <RotateCcw className="h-3.5 w-3.5" aria-hidden /> Try again
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                    {turn.answer && (
+                                        <article className="qi-chat-answer" aria-label={turn.answer.title}>
+                                            <header className="qi-chat-answer-head">
+                                                <h4>{turn.answer.title}</h4>
+                                                {turn.answer.standaloneQuestion && turn.answer.standaloneQuestion !== active.turns[index - 1]?.text && (
+                                                    <p className="qi-chat-understood" title="The complete question that was answered"><CornerDownRight className="h-3 w-3" aria-hidden /> {turn.answer.standaloneQuestion}</p>
+                                                )}
+                                            </header>
+                                            {turn.answer.summary && <p className="qi-chat-summary">{turn.answer.summary}</p>}
+                                            <div className={`qi-chat-figure ${turn.answer.listOnly ? 'is-table' : ''}`}>
+                                                {turn.answer.listOnly ? (
+                                                    <AnswerTable rows={turn.answer.analysis.data || []} />
+                                                ) : (
+                                                    <ChartVisualization
+                                                        data={turn.answer.analysis.data}
+                                                        xKey={turn.answer.analysis.xKey}
+                                                        yKey={turn.answer.analysis.yKey}
+                                                        yLabel={turn.answer.analysis.yLabel}
+                                                        config={turn.answer.analysis.config}
+                                                        seriesLabel={turn.answer.analysis.yKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                                        chartType={(turn.answer.analysis.vis as any) || 'bar'}
+                                                        onChartTypeChange={() => {}}
+                                                        formatting={turn.answer.formatting}
+                                                        hideControls
+                                                        disableAutoSeries
+                                                    />
+                                                )}
+                                            </div>
+                                            {!!turn.answer.insights?.length && (
+                                                <ul className="qi-chat-insights" aria-label="Key points">
+                                                    {turn.answer.insights.map(insight => <li key={insight}>{insight}</li>)}
+                                                </ul>
+                                            )}
+                                            <footer className="qi-chat-answer-foot">
+                                                <div className="qi-chat-actions">
+                                                    {onViewFullPage && (
+                                                        <button type="button" className="is-primary" onClick={() => void openFullScreen(turn)} disabled={opening === turn.id}>
+                                                            {opening === turn.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Maximize2 className="h-3.5 w-3.5" aria-hidden />} Full screen
+                                                        </button>
+                                                    )}
+                                                    <button type="button" aria-expanded={Boolean(openSql[turn.id])} onClick={() => setOpenSql(state => ({ ...state, [turn.id]: !state[turn.id] }))}>
+                                                        <Code className="h-3.5 w-3.5" aria-hidden /> SQL
+                                                    </button>
+                                                    {onPin && (
+                                                        <button type="button" onClick={() => onPin(turn.answer!.title, turn.answer!.analysis)}>
+                                                            <Pin className="h-3.5 w-3.5" aria-hidden /> Pin
+                                                        </button>
+                                                    )}
+                                                    <button type="button" onClick={() => void copyAnswer(turn)} aria-label="Copy the answer as text">
+                                                        {copied === turn.id ? <Check className="h-3.5 w-3.5" aria-hidden /> : <Copy className="h-3.5 w-3.5" aria-hidden />} {copied === turn.id ? 'Copied' : 'Copy'}
+                                                    </button>
+                                                </div>
+                                                <span className="qi-chat-meta">
+                                                    {turn.answer.rowCount.toLocaleString()} row{turn.answer.rowCount === 1 ? '' : 's'}
+                                                    {turn.answer.tokens ? ` · ${formatTokens(turn.answer.tokens)} tokens` : ''}
+                                                </span>
+                                            </footer>
+                                            {openSql[turn.id] && (
+                                                <div className="qi-chat-sql-wrap">
+                                                    {turn.answer.explanation && <p className="qi-chat-muted">{turn.answer.explanation}</p>}
+                                                    <pre className="qi-chat-sql">{turn.answer.sql}</pre>
+                                                </div>
+                                            )}
+                                        </article>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+
+                        {followUps.length > 0 && (
+                            <div className="qi-chat-followups" aria-label="Suggested follow-ups">
+                                {followUps.map(suggestion => (
+                                    <button key={suggestion} type="button" onClick={() => void send(suggestion, memory > 0 ? 'follow_up' : 'new')}>
+                                        <CornerDownRight className="h-3.5 w-3.5" aria-hidden /> {suggestion}
+                                    </button>
+                                ))}
+                            </div>
+                        )}
                     </div>
-                    <span className="shrink-0 text-[11px] font-bold uppercase tracking-wider bg-indigo-500/15 text-indigo-600 dark:text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-300/40 dark:border-indigo-500/30">
-                        Beta
-                    </span>
                 </div>
 
-                {/* Text Input */}
-                <div className="relative group shrink-0">
-                    <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/30 to-blue-500/30 rounded-2xl blur-lg opacity-0 group-hover:opacity-40 transition-opacity pointer-events-none" />
-                    <div className={`relative bg-white dark:bg-slate-800 border-2 rounded-2xl shadow-lg dark:shadow-2xl transition-all duration-300 ${query.trim() ? 'border-cyan-400/50 dark:border-cyan-500/40' : 'border-gray-200 dark:border-white/10 hover:border-cyan-400/30 dark:hover:border-cyan-500/30'}`}>
+                {/* ── Composer ── */}
+                <div className="qi-chat-composer-wrap">
+                    {!limitStatus.allowed && !limitStatus.blocked && (
+                        <p className="qi-chat-limit"><Lock className="h-3.5 w-3.5" aria-hidden /> You've used all {limitStatus.limit} AI SQL questions. Resets in {formatResetTime(limitStatus.resetsInMs)}.</p>
+                    )}
+                    {limitStatus.allowed && limitStatus.limit !== Infinity && (
+                        <p className="qi-chat-limit is-quiet">{limitStatus.remaining} of {limitStatus.limit} AI questions left · resets in {formatResetTime(limitStatus.resetsInMs)}</p>
+                    )}
+                    <div className="qi-chat-composer">
                         <textarea
                             ref={inputRef}
                             aria-label="Ask a question about your data"
-                            aria-describedby="ai-sql-input-help"
-                            className="w-full bg-transparent border-none outline-none text-gray-900 dark:text-white px-5 pt-4 pb-2 placeholder:text-gray-400 dark:placeholder:text-slate-500 font-medium resize-none min-h-[56px] max-h-[160px]"
-                            placeholder={`Ask about a metric, comparison, trend, or ranking... e.g. "${exampleQuestion}"`}
-                            value={query}
-                            onChange={(e) => setQuery(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                    e.preventDefault();
-                                    handleSubmit();
-                                }
+                            rows={1}
+                            value={draft}
+                            placeholder={answered.length ? 'Ask a follow-up, or a new question…' : `Ask about your data… e.g. “${examples[0] || 'Total sales by category'}”`}
+                            onChange={event => {
+                                setDraft(event.target.value);
+                                const element = event.target;
+                                element.style.height = 'auto';
+                                element.style.height = `${Math.min(element.scrollHeight, 180)}px`;
                             }}
-                            rows={2}
-                            disabled={isLoading}
+                            onKeyDown={event => {
+                                if (event.key === 'Enter' && !event.shiftKey) {
+                                    event.preventDefault();
+                                    if (!busy) void send(draft, modeOverride || undefined);
+                                }
+                                if (event.key === 'Escape' && busy) stop();
+                            }}
                         />
-                        <div className="flex items-center justify-between px-4 pb-3">
-                            <div id="ai-sql-input-help" className="flex items-center gap-2 text-xs text-gray-400 dark:text-slate-500">
-                                <img src="/ai-sql-logo.png" alt="" className="w-3.5 h-3.5 rounded-sm" />
-                                <span>AI reasoning → validate → local DuckDB → visualise &middot; Press <kbd className="px-1.5 py-0.5 bg-gray-100 dark:bg-slate-700 rounded text-[11px] font-mono border border-gray-200 dark:border-white/10">Enter</kbd> to send</span>
-                            </div>
-                            <button
-                                onClick={handleSubmit}
-                                disabled={!query.trim() || isLoading}
-                                className="bg-cyan-600 hover:bg-cyan-500 text-white px-5 py-2 rounded-xl font-bold flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed text-sm shadow-md hover:shadow-lg active:scale-95"
-                            >
-                                {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : !limitStatus.allowed ? <Lock className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
-                                {isLoading ? 'Generating...' : !limitStatus.allowed ? 'Limit Reached' : 'Send'}
-                            </button>
+                        <div className="qi-chat-composer-bar">
+                            {draft.trim() ? (
+                                <button
+                                    type="button"
+                                    className={`qi-chat-mode is-${sendKind}`}
+                                    disabled={!modeCanFlip}
+                                    onClick={() => setModeOverride(sendKind === 'follow_up' ? 'new' : 'follow_up')}
+                                    title={`${modeOverride ? 'Chosen by you.' : detected.reason}${modeCanFlip ? ' Click to switch.' : ''}`}
+                                    aria-label={`Will be sent as: ${sendKind === 'follow_up' ? 'follow-up' : sendKind === 'new' ? 'new question' : sendKind === 'summary' ? 'data overview' : 'answered without AI'}${modeCanFlip ? '. Click to switch.' : ''}`}
+                                >
+                                    {sendKind === 'follow_up' && <><Link2 className="h-3.5 w-3.5" aria-hidden /> Follow-up · {pendingContext.length ? `+${pendingContext.length} earlier answer${pendingContext.length === 1 ? '' : 's'} (~${contextCost} tokens)` : 'memory off'}</>}
+                                    {sendKind === 'new' && <>New question · no history sent</>}
+                                    {sendKind === 'small_talk' && <>Answered instantly · no AI</>}
+                                    {sendKind === 'summary' && <>Opens the data story</>}
+                                </button>
+                            ) : (
+                                <span className="qi-chat-hint">Enter to send · Shift+Enter for a new line</span>
+                            )}
+                            {busy ? (
+                                <button type="button" className="qi-chat-send is-stop" onClick={stop} aria-label="Stop answering">
+                                    <Square className="h-3.5 w-3.5" aria-hidden />
+                                </button>
+                            ) : (
+                                <button type="button" className="qi-chat-send" onClick={() => void send(draft, modeOverride || undefined)} disabled={!draft.trim()} aria-label="Send">
+                                    <ArrowUp className="h-4 w-4" aria-hidden />
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
+            </section>
+        </div>
+    );
+};
 
-                {/* Loading State */}
-                {isLoading && (
-                    <div className="flex-1 flex flex-col items-center justify-center" role="status" aria-live="polite" aria-label="Building and validating your analysis">
-                        <div className="relative mb-6">
-                            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center">
-                                <Sparkles className="w-8 h-8 text-cyan-400 animate-pulse" />
-                            </div>
-                            <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-cyan-400 animate-ping" />
-                        </div>
-                        <div className="flex items-center gap-3 text-gray-500 dark:text-slate-400 text-sm">
-                            <Loader2 className="w-4 h-4 animate-spin text-cyan-400" />
-                            <span>Building and validating your local analysis...</span>
-                        </div>
-                        <div className="mt-4 flex gap-2">
-                            <div className="w-2 h-2 rounded-full bg-cyan-400/50 animate-bounce" style={{ animationDelay: '0ms' }} />
-                            <div className="w-2 h-2 rounded-full bg-cyan-400/50 animate-bounce" style={{ animationDelay: '150ms' }} />
-                            <div className="w-2 h-2 rounded-full bg-cyan-400/50 animate-bounce" style={{ animationDelay: '300ms' }} />
-                        </div>
-                    </div>
-                )}
-
-                {/* No-data explanation banner */}
-                {noDataMsg && !isLoading && (
-                    <div role="status" aria-live="polite" className="bg-cyan-50 dark:bg-cyan-900/20 border border-cyan-300 dark:border-cyan-500/40 rounded-xl p-5 flex items-start gap-4">
-                        <div className="w-9 h-9 rounded-xl bg-cyan-100 dark:bg-cyan-500/20 flex items-center justify-center shrink-0">
-                            <AlertTriangle className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
-                        </div>
-                        <div className="flex-1">
-                            <div className="font-bold text-cyan-800 dark:text-cyan-300 mb-1 text-sm">No data found for this query</div>
-                            <p className="text-sm text-cyan-700 dark:text-cyan-200/80 leading-relaxed">{noDataMsg}</p>
-                            {noDataSQL && (
-                                <pre className="mt-3 text-[11px] text-emerald-700 dark:text-emerald-300 font-mono bg-white/60 dark:bg-slate-900/60 rounded-lg p-3 border border-cyan-200 dark:border-white/5 overflow-x-auto">{noDataSQL}</pre>
-                            )}
-                        </div>
-                        <button aria-label="Dismiss no-data message" onClick={() => { setNoDataMsg(null); setNoDataSQL(null); inputRef.current?.focus(); }} className="text-cyan-600 dark:text-cyan-400 hover:text-cyan-800 dark:hover:text-cyan-200 shrink-0"><X className="w-4 h-4" /></button>
-                    </div>
-                )}
-
-                {/* Rate Limit Reached Banner */}
-                {!limitStatus.allowed && !limitStatus.blocked && !isLoading && (
-                    <div className="shrink-0 bg-gradient-to-r from-red-500/10 via-cyan-500/10 to-blue-500/10 dark:from-red-500/15 dark:via-cyan-500/15 dark:to-blue-500/15 border border-red-300/60 dark:border-red-500/30 rounded-xl px-5 py-4 flex items-start gap-4">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-100 to-cyan-100 dark:from-red-500/20 dark:to-cyan-500/20 flex items-center justify-center shrink-0">
-                            <Lock className="w-5 h-5 text-red-600 dark:text-red-400" />
-                        </div>
-                        <div className="flex-1">
-                            <div className="font-bold text-red-800 dark:text-red-300 mb-1 text-sm">Query Limit Reached</div>
-                            <p className="text-sm text-red-700 dark:text-red-200/80 leading-relaxed">
-                                You've used all <strong>{limitStatus.limit}</strong> AI SQL queries on your Contributor license.
-                                Your limit resets in <strong>{formatResetTime(limitStatus.resetsInMs)}</strong>.
-                            </p>
-                            <div className="mt-2 flex items-center gap-2">
-                                <div className="h-1.5 flex-1 bg-red-200 dark:bg-red-500/20 rounded-full overflow-hidden">
-                                    <div className="h-full bg-gradient-to-r from-red-500 to-cyan-500 rounded-full" style={{ width: '100%' }} />
-                                </div>
-                                <span className="text-[11px] font-bold text-red-600 dark:text-red-400">{limitStatus.used}/{limitStatus.limit}</span>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* Error */}
-                {error && !isLoading && (
-                    <div
-                        ref={errorRef}
-                        role="alert"
-                        aria-live="assertive"
-                        tabIndex={-1}
-                        className="bg-red-50 dark:bg-red-500/10 border border-red-200 dark:border-red-500/20 rounded-xl p-5 flex items-start gap-3 text-red-700 dark:text-red-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
-                    >
-                        <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" aria-hidden="true" />
-                        <div className="flex-1">
-                            <div className="font-bold mb-1">{errorTitle}</div>
-                            <p className="leading-relaxed">{error}</p>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                                <button
-                                    type="button"
-                                    onClick={() => { setError(null); inputRef.current?.focus(); }}
-                                    className="px-3 py-1.5 rounded-lg border border-red-300 dark:border-red-500/40 font-semibold hover:bg-red-100 dark:hover:bg-red-500/15"
-                                >
-                                    Edit question
-                                </button>
-                                {errorTitle !== 'AI SQL unavailable' && (
-                                    <button
-                                        type="button"
-                                        onClick={() => { setError(null); handleSubmit(); }}
-                                        className="px-3 py-1.5 rounded-lg bg-red-600 text-white font-semibold hover:bg-red-500"
-                                    >
-                                        Try again
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                        <button aria-label="Dismiss error" onClick={() => { setError(null); inputRef.current?.focus(); }} className="text-red-400 hover:text-red-600 dark:hover:text-red-200 shrink-0"><X className="w-4 h-4" /></button>
-                    </div>
-                )}
-
-
-                {/* Example Suggestions */}
-                {!isLoading && !error && !noDataMsg && !followUp && !conversationReply && (
-                    <div className="flex min-h-[220px] shrink-0 flex-col items-center justify-center py-5">
-                        <div className="mb-5 max-w-2xl rounded-xl border border-cyan-200/70 bg-cyan-50/70 px-5 py-3 text-center dark:border-cyan-500/20 dark:bg-cyan-500/[0.07]">
-                            <p className="text-xs font-bold uppercase tracking-wider text-cyan-700 dark:text-cyan-300">A useful question usually includes</p>
-                            <p className="mt-1 text-sm text-gray-600 dark:text-slate-300">
-                                what to measure <span className="text-gray-400">+</span> how to split or compare it <span className="text-gray-400">+</span> an optional time period or filter
-                            </p>
-                            <p className="mt-1 text-[11px] text-gray-400 dark:text-slate-500">These are helpful patterns, not restrictions. You can still type any question supported by this dataset.</p>
-                        </div>
-                        <p className="mb-4 text-xs font-bold uppercase tracking-wider text-gray-500 dark:text-slate-400">Examples from your columns</p>
-                        <div className="flex flex-wrap justify-center gap-3 max-w-2xl">
-                            {examples.map((ex, i) => (
-                                <button
-                                    key={i}
-                                    onClick={() => setQuery(ex)}
-                                    className="px-4 py-2 rounded-full border border-gray-200 dark:border-white/10 hover:border-cyan-500/50 hover:bg-cyan-500/10 text-gray-600 dark:text-slate-300 text-sm transition-all"
-                                >
-                                    {ex}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                )}
-            </div>
-
-            <PrivacyConsentDialog
-                open={consentDialog !== null}
-                mode={consentDialog ?? 'consent'}
-                disclosure={disclosure}
-                selection={selection}
-                onAgree={acceptEnhanced}
-                onDecline={declineEnhanced}
-                onClose={() => setConsentDialog(null)}
-            />
+/** A plain list answer (no measure): the first rows as a table. */
+const AnswerTable: React.FC<{ rows: Record<string, any>[] }> = ({ rows }) => {
+    const columns = rows.length ? Object.keys(rows[0]) : [];
+    const shown = rows.slice(0, 25);
+    return (
+        <div className="qi-chat-table-wrap">
+            <table className="qi-chat-table">
+                <thead><tr>{columns.map(column => <th key={column}>{column.replace(/_/g, ' ')}</th>)}</tr></thead>
+                <tbody>
+                    {shown.map((row, index) => (
+                        <tr key={index}>{columns.map(column => <td key={column}>{String(row[column] ?? '')}</td>)}</tr>
+                    ))}
+                </tbody>
+            </table>
+            {rows.length > shown.length && <p className="qi-chat-muted">Showing {shown.length} of {rows.length}. Open full screen for all rows.</p>}
         </div>
     );
 };

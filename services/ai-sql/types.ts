@@ -556,6 +556,15 @@ export interface AISQLPipelineResult {
     traceStory?: TraceStory;
     /** Automatic plain-English answer shown with every visual. */
     narrative?: ResultNarrative;
+    /** AI SQL chat: how this answer relates to the conversation. */
+    conversation?: {
+        /** The complete question that was answered, readable on its own. */
+        standaloneQuestion: string;
+        /** Earlier turns sent with the request (0 for a new question). */
+        contextTurns: number;
+        /** The AI said it built on the earlier turns. */
+        usedContext: boolean;
+    };
     /** How this answer was produced. */
     provenance?: AIQueryProvenance;
     /** Exact model token cost for this question. Metadata and user-approved

@@ -128,22 +128,22 @@ for (const theme of ['light', 'dark'] as const) {
         await stage.screenshot({ path: path.join(OUT, `2C-format-axis-titles-${theme}.png`), ...quick }).catch(() => {});
     });
 
-    test(`ai sql answer ${theme}`, async ({ page }) => {
+    test(`ai sql chat ${theme}`, async ({ page }) => {
         await page.setViewportSize({ width: 1440, height: 900 });
         await boot(page, theme, 'DASHBOARD');
-        // Stand-ins for the two AI calls; everything else runs for real
-        // (SQL on the local data, chart choice, insights).
+        // A stand-in for the AI; everything else runs for real (the SQL on
+        // the local data, chart choice, insights, follow-up detection).
         const json = (body: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: { 'Access-Control-Allow-Origin': '*' } });
-        await page.route('**/api/ai-sql/resolve-turn', async route => {
-            const { currentQuestion } = route.request().postDataJSON();
-            await route.fulfill(json({ model: 'stub', usage: { total_tokens: 1 }, resolution: { route: 'analysis', turnType: 'new_question', resolvedQuestion: currentQuestion, confidence: 0.95 } }));
-        });
+        const sent: string[] = [];
         await page.route('**/api/llm/chat', async route => {
-            const asked = JSON.stringify(route.request().postDataJSON()?.messages?.slice(-1));
-            const reply = /month/i.test(asked)
-                ? { action: 'answer', title: 'Revenue by month', sql: 'SELECT DATE_TRUNC(\'month\', CAST("order_date" AS DATE)) AS month, ROUND(SUM("revenue"), 2) AS total_revenue FROM "data" GROUP BY 1 ORDER BY 1', dimensions: ['month'], measures: ['total_revenue'], explanation: 'Added up revenue for each calendar month.' }
-                : { action: 'answer', title: 'Top products by revenue', sql: 'SELECT "product", ROUND(SUM("revenue"), 2) AS total_revenue FROM "data" GROUP BY 1 ORDER BY 2 DESC LIMIT 10', dimensions: ['product'], measures: ['total_revenue'], explanation: 'Added up revenue for each product and kept the top 10.' };
-            await route.fulfill(json({ choices: [{ message: { content: JSON.stringify(reply) } }], usage: { total_tokens: 100 } }));
+            const asked = String(route.request().postDataJSON()?.messages?.slice(-1)?.[0]?.content || '');
+            sent.push(asked);
+            const reply = asked.includes('EARLIER IN THIS CHAT')
+                ? { action: 'answer', follow_up: true, title: 'Revenue by month for the top products', question: 'Monthly total revenue', sql: 'SELECT DATE_TRUNC(\'month\', CAST("order_date" AS DATE)) AS month, ROUND(SUM("revenue"), 2) AS total_revenue FROM "data" GROUP BY 1 ORDER BY 1', dimensions: ['month'], measures: ['total_revenue'], explanation: 'Added up revenue for each calendar month.' }
+                : /best products/i.test(asked)
+                    ? { action: 'clarify', question: 'What does “best” mean for you?', options: [{ label: 'Total revenue', question: 'Top 10 products by total revenue' }, { label: 'Units sold', question: 'Top 10 products by total quantity sold' }, { label: 'Profit', question: 'Top 10 products by total profit' }] }
+                    : { action: 'answer', title: 'Top products by revenue', question: 'Top 10 products by total revenue', sql: 'SELECT "product", ROUND(SUM("revenue"), 2) AS total_revenue FROM "data" GROUP BY 1 ORDER BY 2 DESC LIMIT 10', dimensions: ['product'], measures: ['total_revenue'], explanation: 'Added up revenue for each product and kept the top 10.' };
+            await route.fulfill(json({ choices: [{ message: { content: JSON.stringify(reply) } }], usage: { total_tokens: asked.includes('EARLIER') ? 1180 : 1040 } }));
         });
         let nav = page.getByRole('button', { name: 'AI SQL', exact: true }).first();
         if (!(await nav.isVisible().catch(() => false))) {
@@ -152,22 +152,40 @@ for (const theme of ['light', 'dark'] as const) {
         }
         await nav.click();
         const quick = { timeout: 8000 };
-        const ask = async (question: string, file: string) => {
-            const box = page.getByLabel('Ask a question about your data');
+        await page.waitForTimeout(800);
+        await shoot(page, `34-ai-sql-chat-empty-${theme}`);
+        const box = page.getByLabel('Ask a question about your data');
+        const ask = async (question: string) => {
             await box.fill(question, quick).catch(() => {});
+            await page.waitForTimeout(300);
             await box.press('Enter', quick).catch(() => {});
-            await page.locator('#ai-sql-result-workspace').waitFor(quick).catch(() => {});
-            await page.waitForTimeout(2500);
-            await shoot(page, `35-ai-sql-answer-${file}-${theme}`);
+            await page.locator('.qi-chat-thinking').waitFor({ state: 'detached', ...quick }).catch(() => {});
+            await page.waitForTimeout(2200);
         };
-        await ask('What are my best selling products by revenue?', 'ranking');
+        await ask('What are my best products?');
+        await shoot(page, `37-ai-sql-chat-clarify-${theme}`);
+        await page.locator('.qi-chat-chips button', { hasText: 'Total revenue' }).first().click(quick).catch(() => {});
+        await page.locator('.qi-chat-thinking').waitFor({ state: 'detached', ...quick }).catch(() => {});
+        await page.waitForTimeout(2500);
+        await shoot(page, `35-ai-sql-chat-answer-${theme}`);
+        // The mode chip while typing a follow-up.
+        await box.fill('now by month', quick).catch(() => {});
+        await page.waitForTimeout(400);
+        await page.locator('.qi-chat-composer').screenshot({ path: path.join(OUT, `38-ai-sql-chat-composer-followup-${theme}.png`), ...quick }).catch(() => {});
+        await ask('now by month');
+        await shoot(page, `35-ai-sql-chat-followup-${theme}`);
+        await ask('thanks!');
+        await shoot(page, `35-ai-sql-chat-thanks-${theme}`);
+        // Exactly two AI calls so far: the clarify and the follow-up's history.
+        test.info().annotations.push({ type: 'ai-calls', description: `${sent.length} calls; follow-up carried history: ${sent.some(text => text.includes('EARLIER IN THIS CHAT'))}` });
+        await page.getByRole('button', { name: /Full screen/ }).last().click(quick).catch(() => {});
+        await page.locator('#ai-sql-result-workspace').waitFor(quick).catch(() => {});
+        await page.waitForTimeout(2000);
+        await shoot(page, `35-ai-sql-answer-trend-${theme}`);
+        await page.getByRole('button', { name: 'Back', exact: true }).click(quick).catch(() => {});
         await page.setViewportSize({ width: 900, height: 1100 });
         await page.waitForTimeout(1200);
-        await shoot(page, `36-ai-sql-answer-narrow-${theme}`);
-        await page.setViewportSize({ width: 1440, height: 900 });
-        await page.getByRole('button', { name: 'Back', exact: true }).click(quick).catch(() => {});
-        await page.waitForTimeout(800);
-        await ask('Monthly revenue trend', 'trend');
+        await shoot(page, `36-ai-sql-chat-narrow-${theme}`);
     });
 
     test(`workspaces ${theme}`, async ({ page }) => {

@@ -33,6 +33,7 @@ import { recommendChart } from './chartRecommender';
 import { reshapeData } from './dataReshaper';
 import { buildResultNarrative } from './resultNarrative';
 import { formatSQL } from '../sqlFormatter';
+import { formatContextForPrompt, type ContextTurn } from './chatContext';
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -62,12 +63,17 @@ export interface LeanRunOptions {
      * most likely reading and say which one in the explanation.
      */
     autoChoose?: boolean;
+    /**
+     * Earlier questions in the chat and the SQL that answered them, sent only
+     * for a follow-up. Never results, rows or values.
+     */
+    context?: ContextTurn[];
 }
 
 /** What the model returns. Exported for tests. */
 export type LeanModelReply =
     | { action: 'clarify'; question: string; options: ClarificationOption[] }
-    | { action: 'answer'; title?: string; sql: string; dimensions?: string[]; measures?: string[]; explanation?: string };
+    | { action: 'answer'; title?: string; sql: string; dimensions?: string[]; measures?: string[]; explanation?: string; question?: string; followUp?: boolean };
 
 // ── Prompt ───────────────────────────────────────────────────────────
 
@@ -93,9 +99,19 @@ STEP 2 — Otherwise answer (action "answer").
 - Never return more than 500 rows.
 
 Return ONLY one JSON object, no prose:
-{"action":"answer","title":"short plain-English chart title","sql":"SELECT ...","dimensions":["grouping output column"],"measures":["measure output column"],"explanation":"one sentence: what was calculated, including any assumption"}
+{"action":"answer","title":"short plain-English chart title","question":"the full question you answered, written so it makes sense on its own","sql":"SELECT ...","dimensions":["grouping output column"],"measures":["measure output column"],"explanation":"one sentence: what was calculated, including any assumption"}
 or
 {"action":"clarify","question":"short follow-up","options":[{"label":"Total revenue","question":"Top 10 products by total revenue"}]}`;
+
+/** Added to the prompt only when earlier turns are sent with a follow-up. */
+export const LEAN_CONTEXT_RULES = `
+
+CONVERSATION
+You also get EARLIER IN THIS CHAT: the previous questions and the SQL that answered them (no results).
+- If the new message builds on them ("now by month", "only 2024", "what about profit?", "show it as a pie", "top 5 only"), start from the most recent SQL and change only what the message asks.
+- If the new message is a different topic, ignore the earlier chat completely.
+- Always fill "question" with the complete standalone question you answered, and add "follow_up": true if you used the earlier chat, otherwise false.
+- Asking a follow-up (action "clarify") follows the same rules as before; do not ask about anything the earlier chat already settles.`;
 
 // ── Helpers (exported for tests) ─────────────────────────────────────
 
@@ -134,6 +150,8 @@ export function parseLeanReply(content: string): LeanModelReply {
         dimensions: Array.isArray(raw.dimensions) ? raw.dimensions.map(String) : undefined,
         measures: Array.isArray(raw.measures) ? raw.measures.map(String) : undefined,
         explanation: typeof raw.explanation === 'string' ? raw.explanation.trim().slice(0, 400) : undefined,
+        question: typeof raw.question === 'string' && raw.question.trim() ? raw.question.trim().slice(0, 300) : undefined,
+        followUp: typeof raw.follow_up === 'boolean' ? raw.follow_up : typeof raw.followUp === 'boolean' ? raw.followUp : undefined,
     };
 }
 
@@ -388,14 +406,18 @@ function describeData(dataset: Dataset) {
 export async function runLeanAISQL(question: string, dataset: Dataset, options: LeanRunOptions = {}): Promise<AISQLPipelineResult> {
     const started = performance.now();
     const asked = `${question}${options.grain ? `\n(Group dates by ${options.grain}.)` : ''}${options.autoChoose ? '\n(Do not ask a follow-up. Choose the most likely measure and name it in the explanation.)' : ''}`;
+    const context = options.context?.filter(turn => turn.question && turn.sql) || [];
     options.onProgress?.('Reading your columns');
     const { model, schema } = describeData(dataset);
 
     // ── 1. One AI call: ask, or write the query ──
-    options.onProgress?.('Writing the query');
+    options.onProgress?.(context.length ? 'Building on the last answer' : 'Writing the query');
+    const userContent = context.length
+        ? `DATA DESCRIPTION\n${schema}\n\nEARLIER IN THIS CHAT\n${formatContextForPrompt(context)}\n\nNEW MESSAGE\n${asked}`
+        : `DATA DESCRIPTION\n${schema}\n\nQUESTION\n${asked}`;
     const reply = await fetchWithFallback([
-        { role: 'system', content: LEAN_SYSTEM_PROMPT },
-        { role: 'user', content: `DATA DESCRIPTION\n${schema}\n\nQUESTION\n${asked}` },
+        { role: 'system', content: context.length ? `${LEAN_SYSTEM_PROMPT}${LEAN_CONTEXT_RULES}` : LEAN_SYSTEM_PROMPT },
+        { role: 'user', content: userContent },
     ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000 });
     let tokens = Number(reply.data?.usage?.total_tokens) || 0;
     const parsed = parseLeanReply(reply.data?.choices?.[0]?.message?.content || '');
@@ -407,6 +429,8 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         }
         throw new AISQLClarificationError(parsed.question, parsed.options);
     }
+    // The standalone question is what later follow-ups and the repair use.
+    const standalone = parsed.question || question;
 
     // ── 2. Safety gate, then run locally; one repair if it fails ──
     let safety = validateReadOnlySQL(parsed.sql);
@@ -418,9 +442,10 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     if (execution.error) {
         repairAttempts = 1;
         options.onProgress?.('Fixing the query');
+        // The repair gets the standalone question, not the chat: fewer tokens.
         const repaired = await fetchWithFallback([
             { role: 'system', content: `${LEAN_SYSTEM_PROMPT}\n\nThe query below failed in DuckDB. Return the same JSON shape with a corrected "sql". Keep the meaning of the question.` },
-            { role: 'user', content: `DATA DESCRIPTION\n${schema}\n\nQUESTION\n${asked}\n\nFAILED SQL\n${sql}\n\nDUCKDB ERROR (values removed)\n${scrubErrorForModel(execution.error)}` },
+            { role: 'user', content: `DATA DESCRIPTION\n${schema}\n\nQUESTION\n${standalone}\n\nFAILED SQL\n${sql}\n\nDUCKDB ERROR (values removed)\n${scrubErrorForModel(execution.error)}` },
         ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000 });
         tokens += Number(repaired.data?.usage?.total_tokens) || 0;
         const fixed = parseLeanReply(repaired.data?.choices?.[0]?.message?.content || '');
@@ -438,9 +463,35 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         throw new AISQLPipelineError('ai_sql_execution_failed', `The query could not run on your data: ${execution.error}`);
     }
 
-    // ── 3. Chart and insights, all local ──
     options.onProgress?.('Choosing the chart');
-    const rows = (execution.data || []).slice(0, 500);
+    const result = buildLeanAnswer({
+        question: standalone, sql, rows: execution.data || [], reply: parsed, model, dataset, started, repairAttempts, tokens, aiModel: reply.model,
+    });
+    result.conversation = {
+        standaloneQuestion: standalone,
+        contextTurns: context.length,
+        usedContext: context.length > 0 && parsed.followUp !== false,
+    };
+    return result;
+}
+
+interface LeanAnswerInput {
+    question: string;
+    sql: string;
+    rows: Record<string, any>[];
+    reply: { title?: string; dimensions?: string[]; measures?: string[]; explanation?: string };
+    model: ReturnType<typeof resolveAISQLSemanticModel>['model'];
+    dataset: Dataset;
+    started: number;
+    repairAttempts: number;
+    tokens: number;
+    aiModel: string;
+}
+
+/** Chart, narrative and insights for an executed query — all local. */
+function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
+    const { question, sql, reply: parsed, model, dataset, repairAttempts, tokens } = input;
+    const rows = input.rows.slice(0, 500);
     const plan = planFromResult(question, rows, { dimensions: parsed.dimensions, measures: parsed.measures });
     const profile = profileResult(rows, plan, model);
     const chart: ChartRecommendation = recommendChart(profile, plan, model);
@@ -475,15 +526,43 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         confidence,
         explanation,
         columnsUsed: rows.length ? Object.keys(rows[0]) : [],
-        executionTimeMs: Math.round(performance.now() - started),
+        executionTimeMs: Math.round(performance.now() - input.started),
         repairAttempts,
         narrative,
         tokenUsage: { prompt: 0, completion: 0, total: tokens },
         provenance: {
             strategy: 'llm-plan',
-            model: reply.model,
+            model: input.aiModel,
             summary: 'The AI saw only your question and your column names and types; the query it wrote ran on your data in the browser.',
             dataAccess: 'metadata_only',
         },
     };
+}
+
+/** What a saved chat answer keeps so it can be shown again without the AI. */
+export interface SavedLeanAnswer {
+    question: string;
+    sql: string;
+    title?: string;
+    dimensions?: string[];
+    measures?: string[];
+    explanation?: string;
+}
+
+/**
+ * Re-run a saved answer's SQL on the current data, with no AI call: used to
+ * reopen an answer from an earlier session in full screen.
+ */
+export async function rerunSavedAnswer(saved: SavedLeanAnswer, dataset: Dataset): Promise<AISQLPipelineResult> {
+    const started = performance.now();
+    const safety = validateReadOnlySQL(saved.sql);
+    if (!safety.ok) throw new AISQLPipelineError('sql_validation_failed', `The saved query is not read-only (${safety.reason}).`);
+    const { model } = describeData(dataset);
+    const execution = await executeSQLViaDuckDB(dataset.rows, safety.sql, model.timeContext as any, dataset.relatedTables);
+    if (execution.error) throw new AISQLPipelineError('ai_sql_execution_failed', `The saved query could not run on the current data: ${execution.error}`);
+    const result = buildLeanAnswer({
+        question: saved.question, sql: safety.sql, rows: execution.data || [], reply: saved, model, dataset, started, repairAttempts: 0, tokens: 0, aiModel: 'none (re-run locally)',
+    });
+    result.conversation = { standaloneQuestion: saved.question, contextTurns: 0, usedContext: false };
+    return result;
 }
