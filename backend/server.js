@@ -1604,7 +1604,7 @@ async function checkAIQuota(userId, options = {}) {
     }
     try {
         // Check if user is active
-        const userResult = await authPool.query('SELECT is_active, daily_ai_limit FROM users WHERE id = $1', [userId]);
+        const userResult = await authPool.query('SELECT is_active, daily_ai_limit, role FROM users WHERE id = $1', [userId]);
         if (userResult.rows.length === 0) return { allowed: false, reason: 'User not found' };
         const user = userResult.rows[0];
         if (!user.is_active) return { allowed: false, reason: 'Account suspended. Contact admin.' };
@@ -1615,7 +1615,10 @@ async function checkAIQuota(userId, options = {}) {
             [userId, action]
         );
         const used = parseInt(todayResult.rows[0].count);
-        if (unlimited) {
+        // Admins run the workspace (and the benchmark lab): no daily cap. The
+        // role comes from the database, never from the token, and per-minute
+        // rate limits still apply.
+        if (unlimited || user.role === 'admin') {
             return { allowed: true, remaining: null, used, limit: null, unlimited: true };
         }
         const limit = Number.isFinite(limitOverride) && limitOverride > 0
