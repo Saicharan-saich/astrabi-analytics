@@ -1377,8 +1377,6 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // angled when the slots get narrow). Only very long axes skip names.
         // A timeline reads fine with every other period; named categories never skip.
         const timeAxis = isSequentialData(xKey, transformedData);
-        // Up to 12 names: wrap or shorten, never tilt. More: tilt when slots get narrow.
-        const mayTilt = !timeAxis && categoryCount > 12;
         const categoryTickCallback = (vertical: boolean) => function (this: any, value: any) {
             const label = this.getLabelForValue ? this.getLabelForValue(value) : value;
             if (this.type && this.type !== 'category') return label;
@@ -1389,9 +1387,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 const plotWidth = Math.max(120, (this.chart?.width || 600) - (yVisible ?? true ? 72 : 16) - (showAxisTitles ? 22 : 0));
                 // A little narrower than the slot, so the axis never decides to tilt.
                 const slot = plotWidth / count - 14;
-                // Too narrow for two lines on a long axis: shorten and let it angle the names.
-                if (mayTilt && slot < 48) return truncateToWidth(String(label ?? ''), 120, measureAxis);
-                return fitAxisLabel(label, slot, measureAxis, 2);
+                const text = String(label ?? '');
+                // Very narrow slots: shorten and let the axis angle the names.
+                if (slot < 30) return truncateToWidth(text, 120, measureAxis);
+                const fitted = fitAxisLabel(text, slot, measureAxis, 2);
+                const cut = (Array.isArray(fitted) ? fitted : [fitted]).some(line => line.endsWith('…'));
+                // A short name ("Liverpool") that does not fit flat reads better angled than cut.
+                if (cut && text.length <= 24) return text;
+                return fitted;
             }
             const maxWidth = Math.max(80, Math.min(220, (this.chart?.width || 600) * 0.3));
             return fitAxisLabel(label, maxWidth, measureAxis, 1);
@@ -1748,8 +1751,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     },
                     ticks: {
                         display: xVisible ?? true,
-                        maxRotation: isHorizontal || !mayTilt ? 0 : 50,
-                        autoSkip: isHorizontal || (timeAxis ? categoryCount > 12 : categoryCount > 60),
+                        maxRotation: isHorizontal || timeAxis ? 0 : 50,
+                        autoSkip: isHorizontal || timeAxis || categoryCount > 60,
                         autoSkipPadding: 8,
                         minRotation: 0,
                         font: {
