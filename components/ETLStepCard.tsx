@@ -116,7 +116,7 @@ export const ETLStepCard: React.FC<Props> = ({
                     </div>
                     <p className={`qi-step-summary text-[12.5px] leading-5 mt-0.5 ${open ? '' : 'line-clamp-1'}`}>{summary}</p>
                 </button>
-                {etlMode === 'manual' && (status === 'applied' || entry.decision) && (
+                {etlMode === 'manual' && (decision || entry.decision || (status === 'applied' && entry.revert)) && (
                     <div className="qi-step-actions flex flex-wrap items-center justify-end gap-1.5 shrink-0" onClick={e => e.stopPropagation()}>
                         {decision ? (
                             <>
@@ -144,9 +144,7 @@ export const ETLStepCard: React.FC<Props> = ({
                                     <button type="button" onClick={() => onEditRemoved(entry._key, entry.removedRowSamples!)} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><Edit3 className="w-3 h-3" /> Edit rows</button>
                                 )}
                             </>
-                        ) : (
-                            <span className="qi-step-chip qi-step-required inline-flex items-center gap-1 text-[11px] font-semibold" title="Needed to read the file correctly, so it always runs">Always applied</span>
-                        )}
+                        ) : null}
                     </div>
                 )}
                 <button type="button" onClick={() => onToggle(entry._key)} className="qi-step-chevron shrink-0 mt-0.5" aria-label={open ? 'Hide details' : 'Show details'}>

@@ -270,7 +270,7 @@ export const ETLView: React.FC<ETLViewProps> = ({ dataset, onRowsRecovered, onAp
             <div className="qi-review-bar mt-2 rounded-xl" role="region" aria-label="Your review">
               <div className="qi-review-bar-text">
                 <strong>{review.changes ? `${review.changes} change${review.changes === 1 ? '' : 's'} to apply` : review.reviewed ? 'Nothing to change' : 'Review each step'}</strong>
-                <span>{review.changes ? review.summary : review.reviewed ? `${review.reviewed} step${review.reviewed === 1 ? '' : 's'} kept as they are.` : 'Keep or undo each change, and decide what to do with flagged values. Nothing changes until you apply.'}</span>
+                <span>{review.changes ? review.summary : review.reviewed ? `${review.reviewed} step${review.reviewed === 1 ? '' : 's'} kept as they are.` : 'Keep or undo each change, and decide what to do with flagged values. Steps without an Undo are needed to read your file. Nothing changes until you apply.'}</span>
               </div>
               <div className="qi-review-bar-actions">
                 <button type="button" className="qi-ws-ghost px-3 py-1.5 rounded-lg text-[13px] font-semibold" onClick={() => { setDecisions({}); setEtlMode('auto'); }} disabled={applying}>

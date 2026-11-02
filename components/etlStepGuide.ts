@@ -23,6 +23,26 @@ export interface StepGuide {
 // Ordered rules — the first whose pattern matches the step name wins.
 const RULES: Array<{ test: RegExp; guide: StepGuide }> = [
     {
+        test: /outlier (confirmed|removal|capping)/i,
+        guide: {
+            emoji: '✋', title: 'Unusual values — your decision',
+            what: 'You reviewed values outside the usual range and chose to keep, remove or cap them.',
+            why: 'Only you know whether a huge order is real or a typo, so this follows your choice.',
+            ifSkipped: 'The values go back to being flagged for review.',
+            example: 'A real £48,000 order kept; a mistyped 4,800,000 removed',
+        },
+    },
+    {
+        test: /typo (merge|review)/i,
+        guide: {
+            emoji: '✋', title: 'Possible typos — your decision',
+            what: 'You reviewed similar-looking category values and chose to merge them or keep them apart.',
+            why: 'Typos split one group in two, but similar names can also be genuinely different.',
+            ifSkipped: 'The values go back to being flagged for review.',
+            example: '"Cardilogy" merged into "Cardiology"',
+        },
+    },
+    {
         test: /header|column name/i,
         guide: {
             emoji: '🏷️', title: 'Tidy up the column headings',
@@ -220,26 +240,6 @@ const RULES: Array<{ test: RegExp; guide: StepGuide }> = [
             why: 'These are silently dropped from sums/averages — you should know they exist.',
             ifSkipped: '"approx 500" is ignored, and your total is quietly too low.',
             example: 'Flags "1-2" and "approx 500" in an amount column',
-        },
-    },
-    {
-        test: /outlier (confirmed|removal|capping)/i,
-        guide: {
-            emoji: '✋', title: 'Unusual values — your decision',
-            what: 'You reviewed values outside the usual range and chose to keep, remove or cap them.',
-            why: 'Only you know whether a huge order is real or a typo, so this follows your choice.',
-            ifSkipped: 'The values go back to being flagged for review.',
-            example: 'A real £48,000 order kept; a mistyped 4,800,000 removed',
-        },
-    },
-    {
-        test: /typo (merge|review)/i,
-        guide: {
-            emoji: '✋', title: 'Possible typos — your decision',
-            what: 'You reviewed similar-looking category values and chose to merge them or keep them apart.',
-            why: 'Typos split one group in two, but similar names can also be genuinely different.',
-            ifSkipped: 'The values go back to being flagged for review.',
-            example: '"Cardilogy" merged into "Cardiology"',
         },
     },
     {
