@@ -85,6 +85,18 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         if (loadedKey.current === storageKey && datasetKey) saveConversations(storageKey, conversations);
     }, [conversations, storageKey, datasetKey]);
     useEffect(() => { try { localStorage.setItem(MEMORY_KEY, String(memory)); } catch { /* per-visit only */ } }, [memory]);
+    // The chat list is a side panel on wide screens and an overlay on narrow
+    // ones: close it when the window becomes narrow.
+    useEffect(() => {
+        let wide = window.innerWidth >= 1100;
+        const onResize = () => {
+            const nowWide = window.innerWidth >= 1100;
+            if (wide && !nowWide) setListOpen(false);
+            wide = nowWide;
+        };
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
 
     const active = conversations.find(conversation => conversation.id === activeId);
     const busy = Boolean(active?.turns.some(turn => turn.status === 'pending'));

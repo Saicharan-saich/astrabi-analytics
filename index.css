@@ -5156,3 +5156,4 @@ body {
   .qi-chat-memory > span { display: none; }
   .qi-chat-composer-wrap { padding: 6px 10px 10px; }
 }
+.qi-chat-composer textarea:focus, .qi-chat-composer textarea:focus-visible { outline: none !important; box-shadow: none !important; border: 0 !important; }
