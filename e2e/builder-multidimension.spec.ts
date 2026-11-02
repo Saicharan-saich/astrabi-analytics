@@ -60,6 +60,14 @@ test('adding a third grouping dimension automatically shows facet panels', async
     await splitter.focus();
     await page.keyboard.press('ArrowRight');
     await expect.poll(async () => (await builderDock.boundingBox())!.width).toBeGreaterThan(originalWidth + 8);
+    // The panel animates its width; grab the divider only once it has stopped moving.
+    let settledX = -1;
+    await expect.poll(async () => {
+        const x = (await splitter.boundingBox())!.x;
+        const settled = Math.abs(x - settledX) < 0.5;
+        settledX = x;
+        return settled;
+    }, { intervals: [150] }).toBe(true);
     const grip = (await splitter.boundingBox())!;
     await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
     await page.mouse.down();
