@@ -357,7 +357,18 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     const datasetColumns = useAppStore(state => state.dataset?.columns);
     // Money is shown in the file's own currency (Price (£) → £), unless the
     // user picked a currency in Style → Number format.
-    const currencyCodeFor = (name?: string) => (name ? datasetColumns?.find(column => column.name === name)?.currency : undefined);
+    // AI SQL names its results (total_revenue): fall back to the money column
+    // whose name the result name contains, longest name first.
+    const currencyCodeFor = (name?: string) => {
+        if (!name) return undefined;
+        const exact = datasetColumns?.find(column => column.name === name);
+        if (exact) return exact.currency;
+        const lower = name.toLowerCase();
+        if (/(count|number|qty|quantity|pct|percent|share|ratio|rate|margin)/.test(lower)) return undefined;
+        return (datasetColumns || [])
+            .filter(column => column.currency && column.name.length >= 3 && lower.includes(column.name.toLowerCase()))
+            .sort((a, b) => b.name.length - a.name.length)[0]?.currency;
+    };
     const explicitCurrency = activeNumberFormat === 'currency_usd' ? 'USD'
         : activeNumberFormat === 'currency_eur' ? 'EUR'
             : activeNumberFormat === 'currency_gbp' ? 'GBP' : undefined;

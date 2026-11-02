@@ -268,8 +268,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
             const axisFormatMap: Record<string, FormattingConfig['numberFormat']> = {
                 percent: 'percent', currency_usd: 'currency_usd', compact: 'compact',
             };
-            const axisFormat = result.chart.leftAxisFormat
-                ? (axisFormatMap[result.chart.leftAxisFormat] ?? 'auto') : 'auto';
+            const currencyFormat: Record<string, FormattingConfig['numberFormat']> = { USD: 'currency_usd', GBP: 'currency_gbp', EUR: 'currency_eur' };
+            const axisFormat = result.chart.leftAxisFormat === 'currency_usd' && result.chart.currency
+                ? (currencyFormat[result.chart.currency] ?? 'auto')
+                : result.chart.leftAxisFormat
+                    ? (axisFormatMap[result.chart.leftAxisFormat] ?? 'auto') : 'auto';
             // A rate the SQL already multiplied by 100 must never be rescaled,
             // even when every value is below 1 (0.5 = 0.5%, not 50%).
             const detectedFormat: FormattingConfig['numberFormat'] = axisFormat === 'percent'
@@ -279,16 +282,18 @@ export const AISQLView: React.FC<AISQLViewProps> = ({
             // applying one label threshold to every chart. Ranked horizontal
             // bars can comfortably show more labels; dense/multi-series charts
             // remain uncluttered by default.
-            const labelLimit = result.chart.chartType === 'horizontalBar' ? 15 : 8;
+            const shownAs = aiSqlPresentationChart(result) as string;
+            const labelLimit = shownAs === 'horizontalBar' ? 15 : ['bar', 'pie', 'doughnut', 'donut'].includes(shownAs) ? 12 : 8;
             const showRecommendedLabels = result.chart.chartType !== 'table'
                 && result.chart.chartType !== 'heatmap'
+                && !['line', 'area', 'multiLine', 'stackedArea'].includes(shownAs)
                 && result.chartData.length <= labelLimit;
             const fmt: FormattingConfig = {
                 ...defaultFormatting,
                 numberFormat: detectedFormat,
                 showDataLabels: showRecommendedLabels,
                 dataLabelMode: showRecommendedLabels ? 'all' : 'off',
-                axisLabelSize: result.chart.chartType === 'horizontalBar' ? 'sm' : defaultFormatting.axisLabelSize,
+                axisLabelSize: shownAs === 'horizontalBar' ? 'sm' : defaultFormatting.axisLabelSize,
             };
 
             // Build the analysis result

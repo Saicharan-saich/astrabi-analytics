@@ -210,13 +210,39 @@ export function planFromResult(
 }
 
 const plainWords = (column: string) => column.replace(/_/g, ' ').trim();
+let insightCurrencySymbol = '';
+const currencySymbolFor = (code?: string): string => {
+    if (!code) return '';
+    try {
+        return new Intl.NumberFormat('en-GB', { style: 'currency', currency: code }).formatToParts(0).find(part => part.type === 'currency')?.value || '';
+    } catch { return ''; }
+};
 const formatNumber = (value: number) => {
     const abs = Math.abs(value);
-    if (abs >= 1e9) return `${(value / 1e9).toFixed(1)}B`;
-    if (abs >= 1e6) return `${(value / 1e6).toFixed(1)}M`;
-    if (abs >= 1e4) return `${(value / 1e3).toFixed(1)}K`;
-    return Number.isInteger(value) ? value.toLocaleString() : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+    const sign = value < 0 ? '-' : '';
+    const symbol = insightCurrencySymbol;
+    if (abs >= 1e9) return `${sign}${symbol}${(abs / 1e9).toFixed(1)}B`;
+    if (abs >= 1e6) return `${sign}${symbol}${(abs / 1e6).toFixed(1)}M`;
+    if (abs >= 1e4) return `${sign}${symbol}${(abs / 1e3).toFixed(1)}K`;
+    return `${sign}${symbol}${Number.isInteger(abs) ? abs.toLocaleString() : abs.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
 };
+
+const NOT_MONEY = /(count|number|num_|qty|quantity|units|orders|customers|pct|percent|share|ratio|rate|margin|rank)/i;
+/**
+ * The currency of the answer's main measure, read from the uploaded file's
+ * columns that the SQL uses (e.g. SUM("revenue") where revenue is in £).
+ * Undefined when the SQL mixes currencies or the measure is not money.
+ */
+export function resultCurrency(sql: string, measure: string | undefined, columns: Dataset['columns']): string | undefined {
+    if (!measure || NOT_MONEY.test(measure)) return undefined;
+    const text = sql.toLowerCase();
+    const used = new Set(
+        (columns || [])
+            .filter(column => column.currency && (text.includes(`"${column.name.toLowerCase()}"`) || new RegExp(`\\b${column.name.toLowerCase().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`).test(text)))
+            .map(column => column.currency as string),
+    );
+    return used.size === 1 ? [...used][0] : undefined;
+}
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2024-01-01" → "Jan 2024" for month periods, "5 Mar 2024" for days. */
 export function periodLabel(value: unknown, grain?: string): string {
@@ -235,7 +261,8 @@ const pct = (value: number) => `${value.toLocaleString(undefined, { maximumFract
  * A few plain-English insights calculated from the returned rows, in the
  * browser. Each one states a fact that is visible in the result.
  */
-export function buildInsights(rows: Record<string, any>[], profile: ResultProfile, plan: AnalysisPlan): string[] {
+export function buildInsights(rows: Record<string, any>[], profile: ResultProfile, plan: AnalysisPlan, currency?: string): string[] {
+    insightCurrencySymbol = currencySymbolFor(currency);
     if (!rows.length) return [];
     const metric = profile.metricColumns.find(column => column in rows[0]) || plan.metrics[0]?.field;
     const dimension = profile.dimensionColumns.find(column => column in rows[0]) || plan.dimensions[0]?.field;
@@ -415,8 +442,10 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     const profile = profileResult(rows, plan, model);
     const chart: ChartRecommendation = recommendChart(profile, plan, model);
     const reshaped = reshapeData(rows, profile, chart, plan);
-    const narrativeBase = rows.length ? buildResultNarrative({ question, data: reshaped.data, profile, chart: reshaped.chart, plan, model, sourceRows: dataset.rows }) : null;
-    const insights = buildInsights(rows, profile, plan);
+    const currency = resultCurrency(sql, profile.metricColumns[0] || plan.metrics[0]?.field, dataset.columns);
+    if (currency) reshaped.chart = { ...reshaped.chart, currency };
+    const narrativeBase = rows.length ? buildResultNarrative({ question, data: reshaped.data, profile, chart: reshaped.chart, plan, model, sourceRows: dataset.rows, currency }) : null;
+    const insights = buildInsights(rows, profile, plan, currency);
     const narrative: ResultNarrative | undefined = narrativeBase
         ? { ...narrativeBase, headline: parsed.title || narrativeBase.headline, insights }
         : undefined;

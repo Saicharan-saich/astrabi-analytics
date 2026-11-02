@@ -13,10 +13,11 @@ vi.mock('../services/duckdbEngine', async (importOriginal) => {
 import { fetchWithFallback } from '../services/ai-sql/modelConfig';
 import { executeSQLViaDuckDB } from '../services/duckdbEngine';
 import {
-    AISQLClarificationError, buildInsights, describeColumnsOnly, parseLeanReply, periodLabel, planFromResult, runLeanAISQL, scrubErrorForModel,
+    AISQLClarificationError, buildInsights, describeColumnsOnly, parseLeanReply, periodLabel, planFromResult, resultCurrency, runLeanAISQL, scrubErrorForModel,
 } from '../services/ai-sql/leanPipeline';
 import { profileResult } from '../services/ai-sql/resultProfiler';
 import { resolveAISQLSemanticModel } from '../services/ai-sql/semanticLayer';
+import { fillTimeSpine, inferSpineStep } from '../services/ai-sql/dataReshaper';
 
 const rows = Array.from({ length: 40 }, (_, i) => ({
     manufacturer: ['Ford', 'Toyota', 'BMW', 'Honda'][i % 4],
@@ -113,6 +114,29 @@ describe('lean AI SQL — chart shape and insights', () => {
         expect(insights[0]).toBe('Ford is 33.3% ahead of BMW (400 vs 300).');
         expect(insights[1]).toBe('The top 3 make up 90% of the total price shown.');
         expect(insights[2]).toContain('Toyota is lowest at 100');
+    });
+});
+
+describe('lean AI SQL — money and periods', () => {
+    it('shows money in the currency of the file', () => {
+        const sql = 'SELECT "manufacturer", SUM("price") AS total_price FROM "data" GROUP BY 1';
+        expect(resultCurrency(sql, 'total_price', dataset.columns)).toBe('GBP');
+        expect(resultCurrency('SELECT COUNT(*) AS cars_sold FROM "data" WHERE price > 0', 'cars_sold', dataset.columns)).toBeUndefined();
+        const result = [{ manufacturer: 'Ford', total_price: 40000 }, { manufacturer: 'BMW', total_price: 30000 }];
+        const plan = planFromResult('Total price by manufacturer', result);
+        const { model } = resolveAISQLSemanticModel(dataset);
+        expect(buildInsights(result, profileResult(result, plan, model), plan, 'GBP')[0]).toBe('Ford is 33.3% ahead of BMW (£40.0K vs £30.0K).');
+    });
+
+    it('fills missing months month by month, not day by day', () => {
+        const rows = [{ month: '2024-01-01', v: 1 }, { month: '2024-04-01', v: 2 }];
+        expect(inferSpineStep(rows.map(row => row.month))).toBe('quarter');
+        expect(fillTimeSpine([{ month: '2024-01-01', v: 1 }, { month: '2024-02-01', v: 3 }, { month: '2024-05-01', v: 2 }], 'month', ['v']).map(row => row.month))
+            .toEqual(['2024-01-01', '2024-02-01', '2024-03-01', '2024-04-01', '2024-05-01']);
+        expect(inferSpineStep(['2024-01-01', '2025-01-01'])).toBe('year');
+        expect(inferSpineStep(['2024-01-01', '2024-01-08', '2024-01-22'])).toBe('week');
+        // A gap far larger than the data is left alone rather than drawn as spikes.
+        expect(fillTimeSpine([{ d: '2020-01-03', v: 1 }, { d: '2024-04-01', v: 2 }], 'd', ['v'])).toHaveLength(2);
     });
 });
 

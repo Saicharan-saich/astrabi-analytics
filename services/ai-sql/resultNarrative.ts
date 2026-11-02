@@ -16,6 +16,27 @@ interface ResultNarrativeInput {
     model: SemanticModel;
     /** Cleaned rows already present in the browser. Never sent to a model. */
     sourceRows?: Record<string, any>[];
+    /** ISO code of the money measure (from the uploaded file), e.g. GBP. */
+    currency?: string;
+}
+
+// Set for the duration of one buildResultNarrative call (it is synchronous).
+let narrativeCurrency = 'USD';
+
+const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "2026-03-01" → "Mar 2026" (month), "Q1 2026", "2026", or "5 Mar 2026". */
+function periodText(value: unknown, grain?: string): string {
+    const text = String(value ?? '');
+    const match = text.match(/^(\d{4})-(\d{2})(?:-(\d{2}))?$/);
+    if (!match) return text;
+    const year = match[1];
+    const month = Number(match[2]) - 1;
+    const day = match[3] ? Number(match[3]) : 1;
+    if (!SHORT_MONTHS[month]) return text;
+    if (grain === 'year') return year;
+    if (grain === 'quarter') return `Q${Math.floor(month / 3) + 1} ${year}`;
+    if (grain === 'day' || grain === 'week' || day !== 1) return `${day} ${SHORT_MONTHS[month]} ${year}`;
+    return `${SHORT_MONTHS[month]} ${year}`;
 }
 
 function words(value: string): string {
@@ -48,7 +69,7 @@ function formatValue(value: unknown, type: SemanticType = 'quantity'): string {
     if (type === 'percentage') return `${number.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
     if (type === 'currency') {
         return number.toLocaleString(undefined, {
-            style: 'currency', currency: 'USD', maximumFractionDigits: Number.isInteger(number) ? 0 : 2,
+            style: 'currency', currency: narrativeCurrency, maximumFractionDigits: Number.isInteger(number) ? 0 : 2,
         });
     }
     return number.toLocaleString(undefined, { maximumFractionDigits: Number.isInteger(number) ? 0 : 2 });
@@ -222,6 +243,7 @@ function buildScalarNarrative(input: ResultNarrativeInput, metric: string): Resu
 
 export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrative | null {
     if (!input.data?.length) return null;
+    narrativeCurrency = input.currency || 'USD';
     const { data, profile, plan } = input;
     const metrics = profile.metricColumns.filter(column => Object.prototype.hasOwnProperty.call(data[0], column));
     const dimensions = profile.dimensionColumns.filter(column => Object.prototype.hasOwnProperty.call(data[0], column));
@@ -259,6 +281,7 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
 
     if (profile.hasTimeDimension && profile.timeDimensionColumn && metrics.length >= 1 && data.length > 1) {
         const time = profile.timeDimensionColumn;
+        const grain = plan.dimensions.find(dimension => dimension.field === time)?.timeGrain;
         const metric = metrics[0];
         const first = data[0];
         const latest = data[data.length - 1];
@@ -271,7 +294,7 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
         return {
             version: 1, verifiedFrom: 'executed_result', kind: 'trend',
             headline: `${sentenceCase(metric)} is ${formatValue(latestValue, type)} in the latest period`,
-            summary: `${sentenceCase(metric)} is ${formatValue(latestValue, type)} for ${latest[time]}${movement}. The highest point shown is ${formatValue(peak[metric], type)} for ${peak[time]}.`,
+            summary: `${sentenceCase(metric)} is ${formatValue(latestValue, type)} for ${periodText(latest[time], grain)}${movement}. The highest point shown is ${formatValue(peak[metric], type)} for ${periodText(peak[time], grain)}.`,
         };
     }
 

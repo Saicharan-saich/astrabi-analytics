@@ -357,6 +357,8 @@ export interface ChartRecommendation {
     useDualAxis: boolean;
     /** Left axis config */
     leftAxisFormat?: 'currency_usd' | 'percent' | 'compact' | 'raw';
+    /** ISO currency of a money measure, from the uploaded file (e.g. GBP). */
+    currency?: string;
     /** Right axis config */
     rightAxisFormat?: 'currency_usd' | 'percent' | 'compact' | 'raw';
     /** Human-readable explanation of why this chart was chosen */

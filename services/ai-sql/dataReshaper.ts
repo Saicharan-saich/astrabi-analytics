@@ -171,42 +171,11 @@ export function reshapeData(
         });
 
         // ─── 4.5 Time Spine Filling ──────────────────────────────────
-        if (reshapedData.length >= 2) {
-            const isMonthly = /^\d{4}-\d{2}$/.test(String(reshapedData[0][timeCol] || ''));
-            const isDaily = /^\d{4}-\d{2}-\d{2}$/.test(String(reshapedData[0][timeCol] || ''));
-            
-            if (isMonthly || isDaily) {
-                const filledData = [];
-                for (let i = 0; i < reshapedData.length; i++) {
-                    filledData.push(reshapedData[i]);
-                    if (i < reshapedData.length - 1) {
-                        const currDate = new Date(reshapedData[i][timeCol]);
-                        const nextDate = new Date(reshapedData[i + 1][timeCol]);
-                        
-                        if (isMonthly) {
-                            let curr = new Date(currDate.getFullYear(), currDate.getMonth() + 1, 1);
-                            while (curr < new Date(nextDate.getFullYear(), nextDate.getMonth(), 1)) {
-                                const padMonth = `${curr.getFullYear()}-${String(curr.getMonth() + 1).padStart(2, '0')}`;
-                                const newRow: any = { [timeCol]: padMonth };
-                                for (const col of profile.metricColumns) newRow[col] = 0;
-                                filledData.push(newRow);
-                                curr.setMonth(curr.getMonth() + 1);
-                            }
-                        } else if (isDaily) {
-                            let curr = new Date(currDate.getTime() + 86400000);
-                            while (curr < nextDate) {
-                                const padDay = curr.toISOString().split('T')[0];
-                                const newRow: any = { [timeCol]: padDay };
-                                for (const col of profile.metricColumns) newRow[col] = 0;
-                                filledData.push(newRow);
-                                curr = new Date(curr.getTime() + 86400000);
-                            }
-                        }
-                    }
-                }
-                reshapedData = filledData;
-            }
-        }
+        // Missing periods are added as zero so a trend is evenly spaced. The
+        // step follows the data: monthly rows written as dates ("2024-03-01")
+        // are filled month by month, never day by day.
+        const spineGrain = (plan.dimensions.find(d => d.field === timeCol)?.timeGrain || undefined) as string | undefined;
+        reshapedData = fillTimeSpine(reshapedData, timeCol, profile.metricColumns, spineGrain);
     }
 
     // A synthetic Current/Previous comparison is not an ordinary chronological
@@ -233,4 +202,72 @@ function formatMetricName(name: string): string {
         .replace(/_/g, ' ')
         .replace(/\b\w/g, l => l.toUpperCase())
         .trim();
+}
+
+// ── Time spine ───────────────────────────────────────────────────────
+
+type SpineStep = 'day' | 'week' | 'month' | 'quarter' | 'year';
+const MAX_SPINE_POINTS = 400;
+
+/** The step between periods, read from the values themselves. */
+export function inferSpineStep(values: string[], grainHint?: string): SpineStep | null {
+    if (values.length < 2) return null;
+    if (values.every(value => /^\d{4}-\d{2}$/.test(value))) return grainHint === 'quarter' ? 'quarter' : 'month';
+    if (!values.every(value => /^\d{4}-\d{2}-\d{2}$/.test(value))) return null;
+    if (grainHint && ['day', 'week', 'month', 'quarter', 'year'].includes(grainHint)) return grainHint as SpineStep;
+    const dates = values.map(value => new Date(`${value}T00:00:00Z`));
+    if (dates.some(date => Number.isNaN(date.getTime()))) return null;
+    if (dates.every(date => date.getUTCDate() === 1)) {
+        if (dates.every(date => date.getUTCMonth() === 0)) return 'year';
+        const quarterly = dates.every(date => date.getUTCMonth() % 3 === 0)
+            && dates.slice(1).every((date, i) => {
+                const months = (date.getUTCFullYear() - dates[i].getUTCFullYear()) * 12 + date.getUTCMonth() - dates[i].getUTCMonth();
+                return months % 3 === 0;
+            });
+        return quarterly && values.length >= 3 ? 'quarter' : 'month';
+    }
+    const gaps = dates.slice(1).map((date, i) => Math.round((date.getTime() - dates[i].getTime()) / 86400000));
+    if (gaps.every(gap => gap > 0 && gap % 7 === 0)) return 'week';
+    return 'day';
+}
+
+function nextPeriod(date: Date, step: SpineStep): Date {
+    const next = new Date(date.getTime());
+    if (step === 'day') next.setUTCDate(next.getUTCDate() + 1);
+    else if (step === 'week') next.setUTCDate(next.getUTCDate() + 7);
+    else if (step === 'month') next.setUTCMonth(next.getUTCMonth() + 1);
+    else if (step === 'quarter') next.setUTCMonth(next.getUTCMonth() + 3);
+    else next.setUTCFullYear(next.getUTCFullYear() + 1);
+    return next;
+}
+
+/**
+ * Add zero rows for periods missing between the first and last row, in the
+ * same text format as the existing values. Leaves the rows unchanged when the
+ * step cannot be read or filling would swamp the real points.
+ */
+export function fillTimeSpine(rows: any[], timeCol: string, metricColumns: string[], grainHint?: string): any[] {
+    if (rows.length < 2) return rows;
+    const values = rows.map(row => String(row[timeCol] ?? ''));
+    const step = inferSpineStep(values, grainHint);
+    if (!step) return rows;
+    const monthText = /^\d{4}-\d{2}$/.test(values[0]);
+    const toDate = (value: string) => new Date(`${monthText ? `${value}-01` : value}T00:00:00Z`);
+    const toText = (date: Date) => monthText ? date.toISOString().slice(0, 7) : date.toISOString().slice(0, 10);
+
+    const filled: any[] = [];
+    for (let i = 0; i < rows.length; i++) {
+        filled.push(rows[i]);
+        if (i === rows.length - 1) continue;
+        const end = toDate(values[i + 1]).getTime();
+        let current = nextPeriod(toDate(values[i]), step);
+        while (current.getTime() < end) {
+            if (filled.length > MAX_SPINE_POINTS) return rows;
+            const row: any = { [timeCol]: toText(current) };
+            for (const column of metricColumns) row[column] = 0;
+            filled.push(row);
+            current = nextPeriod(current, step);
+        }
+    }
+    return filled.length > Math.max(rows.length * 3, 24) ? rows : filled;
 }

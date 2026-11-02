@@ -4940,3 +4940,5 @@ body {
   .qi-answer-asked { display: none; }
   .qi-answer-layout { padding: 12px; gap: 12px; }
 }
+/* One row of chart controls on the answer page: zoom is not needed here. */
+.qi-answer-canvas .qi-zoom-control { display: none !important; }
