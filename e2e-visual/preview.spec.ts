@@ -96,29 +96,34 @@ for (const theme of ['light', 'dark'] as const) {
         await dimension.waitFor();
         // Formatting: near-equal bars with value labels, long names, horizontal bars.
         const stage = page.locator('.qi-visual-stage').first();
-        for (const [field, file] of [['city', '28-format-city'], ['product', '29-format-product']] as const) {
-            await dimension.click().catch(() => {});
-            await page.getByRole('option', { name: field, exact: true }).click().catch(() => {});
-            await page.waitForTimeout(2500);
-            await page.locator('.qi-chart-suggestion').filter({ hasText: /^Bars/ }).first().click().catch(() => {});
+        const quick = { timeout: 5000 };
+        const chooseChart = async (label: string) => {
+            await page.locator('.qi-chart-type-trigger').first().click(quick).catch(() => {});
+            await page.getByRole('button', { name: label, exact: true }).first().click(quick).catch(() => {});
             await page.waitForTimeout(1500);
-            await stage.screenshot({ path: path.join(OUT, `${file}-${theme}.png`) }).catch(() => {});
+        };
+        for (const [field, file] of [['city', '28-format-city'], ['product', '29-format-product']] as const) {
+            await dimension.click(quick).catch(() => {});
+            await page.getByRole('option', { name: field, exact: true }).click(quick).catch(() => {});
+            await page.waitForTimeout(2500);
+            await chooseChart('Vertical Bar');
+            await stage.screenshot({ path: path.join(OUT, `${file}-${theme}.png`), ...quick }).catch(() => {});
         }
-        await page.locator('.qi-chart-suggestion').filter({ hasText: /Horizontal/ }).first().click().catch(() => {});
-        await page.waitForTimeout(1500);
-        await stage.screenshot({ path: path.join(OUT, `29-format-product-horizontal-${theme}.png`) }).catch(() => {});
+        await chooseChart('Horizontal Bar');
+        await stage.screenshot({ path: path.join(OUT, `29-format-product-horizontal-${theme}.png`), ...quick }).catch(() => {});
         // The Style panel, then axis titles turned on.
-        await page.locator('.qi-chart-suggestion').filter({ hasText: /^Bars/ }).first().click().catch(() => {});
-        await page.waitForTimeout(1000);
-        await page.getByRole('button', { name: 'Style', exact: true }).click().catch(() => {});
+        await chooseChart('Vertical Bar');
+        await page.getByRole('button', { name: 'Style', exact: true }).click(quick).catch(() => {});
         await page.waitForTimeout(600);
         await shoot(page, `2A-style-panel-${theme}`);
         const panel = page.locator('.qi-format-panel').first();
-        await panel.getByRole('switch', { name: /Axis titles/ }).check({ force: true }).catch(() => {});
+        await panel.getByRole('switch', { name: /Axis titles/ }).check({ force: true, ...quick }).catch(() => {});
         await panel.evaluate(element => { element.scrollTop = element.scrollHeight; }).catch(() => {});
         await page.waitForTimeout(800);
         await shoot(page, `2B-style-panel-axes-${theme}`);
-        await page.getByRole('button', { name: 'Close chart appearance' }).click().catch(() => {});
+        await page.getByRole('button', { name: 'Close chart appearance' }).click(quick).catch(() => {});
+        await page.waitForTimeout(800);
+        await stage.screenshot({ path: path.join(OUT, `2C-format-axis-titles-${theme}.png`), ...quick }).catch(() => {});
     });
 
     test(`workspaces ${theme}`, async ({ page }) => {
