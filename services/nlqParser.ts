@@ -1224,12 +1224,8 @@ export const parseNLQ = (query: string, dataset: Dataset): NLQParseResult => {
             if (!userExplicitlySetAgg) {
                 result.aggregation = measure.aggregation;
                 explanation.push(`Aggregation from semantic model: **${measure.aggregation}** for "${result.metric}"`);
-            } else if (measure.behavior === 'non_additive' && result.aggregation === AggregationType.SUM) {
-                // Block SUMming non-additive metrics (prices, rates, scores)
-                result.aggregation = measure.aggregation;
-                result.confidence -= 0.15;
-                explanation.push(`⚠️ Blocked SUM on non-additive metric "${result.metric}" → using ${measure.aggregation}`);
             }
+            // When the user says "total" or "average", that is what runs.
         } else {
             result.confidence -= 0.1;
             explanation.push(`⚠️ Metric "${result.metric}" not found in semantic model`);

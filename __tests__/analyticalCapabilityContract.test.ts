@@ -54,23 +54,23 @@ describe('Analytical Capability Contract', () => {
     expect(validation.checks.find(check => check.id === 'aggregation:sales:sum')?.status).toBe('pass');
   });
 
-  it('blocks SUM on percentages and identifiers even when they are numeric', () => {
+  it('allows any aggregation on a number, but only counting for identifiers', () => {
     const contract = buildAnalyticalCapabilityContract(model([
       field({ name: 'margin_pct', semanticType: 'percentage', additivity: 'non_additive' }),
       field({ name: 'trade_id', semanticType: 'identifier', role: 'dimension', keyRole: 'primary_key', additivity: 'not_applicable' }),
     ]));
     const percentage = validatePlanAgainstCapabilityContract(plan([{ field: 'margin_pct', agg: 'sum' }]), contract);
     const identifier = validatePlanAgainstCapabilityContract(plan([{ field: 'trade_id', agg: 'sum' }]), contract);
-    expect(percentage.status).toBe('blocked');
+    expect(percentage.status).toBe('safe');
     expect(identifier.status).toBe('blocked');
   });
 
-  it('allows AVG but not SUM for numeric descriptive dimensions such as age', () => {
+  it('allows AVG and SUM for numeric descriptive fields such as age', () => {
     const contract = buildAnalyticalCapabilityContract(model([
       field({ name: 'age', semanticType: 'ordinal', role: 'dimension', defaultAgg: 'avg' }),
     ]));
     expect(validatePlanAgainstCapabilityContract(plan([{ field: 'age', agg: 'avg' }]), contract).status).toBe('safe');
-    expect(validatePlanAgainstCapabilityContract(plan([{ field: 'age', agg: 'sum' }]), contract).status).toBe('blocked');
+    expect(validatePlanAgainstCapabilityContract(plan([{ field: 'age', agg: 'sum' }]), contract).status).toBe('safe');
   });
 
   it('supports COUNT(*) without inventing a governed physical field', () => {
@@ -78,7 +78,7 @@ describe('Analytical Capability Contract', () => {
     expect(validatePlanAgainstCapabilityContract(plan([{ field: '*', agg: 'count' }]), contract).status).toBe('safe');
   });
 
-  it('blocks a semi-additive snapshot summed across a time grouping', () => {
+  it('runs a balance summed across a time grouping when that is what was asked', () => {
     const contract = buildAnalyticalCapabilityContract(model([
       field({ name: 'inventory_balance', additivity: 'semi_additive' }),
       field({
@@ -90,8 +90,8 @@ describe('Analytical Capability Contract', () => {
       plan([{ field: 'inventory_balance', agg: 'sum' }], [{ field: 'period_date', timeGrain: 'month' }]),
       contract,
     );
-    expect(validation.status).toBe('blocked');
-    expect(validation.checks.some(check => check.id === 'time-additivity:inventory_balance' && check.status === 'fail')).toBe(true);
+    expect(validation.status).toBe('safe');
+    expect(validation.checks.some(check => check.status === 'fail')).toBe(false);
   });
 
   it('blocks multi-table fan-out before SQL execution', () => {

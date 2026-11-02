@@ -468,7 +468,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
                                             <div className="text-white font-mono">{parseResult.dimension || 'None'}</div>
                                             <div className="text-slate-500">Aggregation</div>
                                             <div className="text-white font-mono">{parseResult.aggregation}</div>
-                                            <div className="text-slate-500">Time Grain</div>
+                                            <div className="text-slate-500">Time period</div>
                                             <div className="text-white font-mono">{parseResult.timeGrain}</div>
                                             {parseResult.timeFilter && <>
                                                 <div className="text-slate-500">Time Filter</div>

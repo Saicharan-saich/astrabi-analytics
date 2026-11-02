@@ -8,7 +8,6 @@ import { AlertRule, AlertEvent, AlertCondition, AlertTimeRange, Dataset, Aggrega
 import { buildQueryPlan, UIQueryConfig } from './queryPlan/buildQueryPlan';
 import { executeQueryPlan } from './queryPlan/executeQueryPlan';
 import { getDates } from './dateHelpers';
-import { findMeasure } from './semanticModel';
 import { pruneRowsForQuery } from './queryPruner';
 
 // ── TIME RANGE RESOLVER ──────────────────────────────────────────
@@ -145,19 +144,10 @@ export async function evaluateAlertRule(
             return { event: null };
         }
 
-        // ── AGGREGATION SAFETY GUARD ─────────────────────────────
-        // Mirrors the guard in analysisEngine.ts — auto-correct SUM on
-        // non-additive metrics (e.g., current_quantity → use MAX instead)
-        let effectiveAggregation = rule.aggregation;
-        if (dataset.semanticModel) {
-            const semMeasure = findMeasure(dataset.semanticModel, rule.metric);
-            if (semMeasure && semMeasure.behavior === 'non_additive' && effectiveAggregation === 'SUM') {
-                console.warn(`[Alerts] ⚠️ AGGREGATION GUARD: "${rule.metric}" is non-additive. Auto-correcting SUM → ${semMeasure.aggregation}`);
-                effectiveAggregation = semMeasure.aggregation as AlertRule['aggregation'];
-            }
-        }
+        // The alert checks exactly the aggregation its owner chose.
+        const effectiveAggregation = rule.aggregation;
 
-        // Build QueryPlan with corrected aggregation
+        // Build QueryPlan
         const config = buildAlertQueryConfig({ ...rule, aggregation: effectiveAggregation });
         const plan = buildQueryPlan(config, dateCol, dates, dataset.name);
 

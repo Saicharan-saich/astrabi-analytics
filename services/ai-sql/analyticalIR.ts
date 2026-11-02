@@ -512,13 +512,6 @@ export function verifyAnalyticalIR(ir: AnalyticalIR): IRVerificationIssue[] {
     if (ir.relationships.fanoutRisk && aggregates.some(operator => operator.measures.some(measure => measure.additivity === 'additive'))) {
         issues.push({ code: 'join_fanout_risk', severity: 'warn', message: 'An additive measure crosses a fan-out join; pre-aggregate at its native grain before joining.' });
     }
-    for (const aggregate of aggregates) {
-        for (const measure of aggregate.measures) {
-            if (measure.aggregation === 'sum' && measure.additivity === 'non_additive') {
-                issues.push({ code: 'non_additive_sum', severity: 'error', message: `SUM(${measure.field}) is not analytically valid because the field is non-additive.` });
-            }
-        }
-    }
     if (ir.confidence.unresolved.length) {
         issues.push({ code: 'unresolved_interpretation', severity: 'warn', message: ir.confidence.unresolved.join(' ') });
     }

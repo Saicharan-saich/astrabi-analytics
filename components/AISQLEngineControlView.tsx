@@ -41,13 +41,13 @@ const CONFIGURABLE_ENGINES: EngineCard[] = [
     { id: 'valueGrounding', name: 'Value grounding', group: 'Understanding', description: 'Maps user-typed literals to real fields and locally observed values without inventing or exposing values.' },
     { id: 'ambiguityResolver', name: 'Ambiguity resolver', group: 'Reasoning', description: 'Evaluates competing interpretations and records explicit assumptions when the question has more than one plausible meaning.' },
     { id: 'derivedMetricGuardrails', name: 'Derived metric guardrails', group: 'Reasoning', description: 'Checks ratios, margins, percentages and scoped calculations before SQL synthesis.' },
-    { id: 'planVerification', name: 'Plan verifier', group: 'Reasoning', description: 'Checks whether the compact plan preserves the requested fields, filters, grain, ranking and comparison.' },
+    { id: 'planVerification', name: 'Plan verifier', group: 'Reasoning', description: 'Checks whether the compact plan preserves the requested fields, filters, level of detail, ranking and comparison.' },
     { id: 'canonicalAudit', name: 'Canonical IR audit', group: 'Reasoning', description: 'Audits the shared analytical representation for missing or conflicting operators. It does not author SQL.' },
-    { id: 'llmReviewer', name: 'Independent LLM reviewer', group: 'SQL quality', description: 'Uses a second model pass to review projection, grain, joins, ranking, scoped aggregates and table calculations.' },
+    { id: 'llmReviewer', name: 'Independent LLM reviewer', group: 'SQL quality', description: 'Uses a second model pass to review projection, level of detail, joins, ranking, scoped aggregates and table calculations.' },
     { id: 'contractRepair', name: 'Contract-guided SQL repair', group: 'SQL quality', description: 'Offers the model one focused repair when its read-only SQL conflicts with the requested answer contract.' },
     { id: 'sqlExecutionRepair', name: 'Execution repair', group: 'SQL quality', description: 'Retries fixable DuckDB syntax, identifier and type errors while preserving read-only safety.' },
     { id: 'semanticResultRepair', name: 'Semantic result repair', group: 'Result quality', description: 'Replans empty or clearly wrong-cardinality results using local execution evidence.' },
-    { id: 'resultContractValidation', name: 'Result contract validation', group: 'Result quality', description: 'Checks returned fields, grain, cardinality and analytical invariants against the requested answer.' },
+    { id: 'resultContractValidation', name: 'Result contract validation', group: 'Result quality', description: 'Checks returned fields, level of detail, row counts and analytical invariants against the requested answer.' },
     { id: 'answerContractValidation', name: 'Answer contract validation', group: 'Result quality', description: 'Runs the final answer-shape and display-safety verification before presenting the result.' },
 ];
 

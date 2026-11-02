@@ -438,13 +438,11 @@ const SALES_AMOUNT_NAME = /(?:^|_)(revenue|sales|total_sales|net_sales|gross_sal
 const norm = (name: string) => name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
 
 /**
- * Settle how per-unit values (prices) aggregate for this dataset's grain.
- * Mutates the measures in place and returns plain-English notes.
- *
- *  - A quantity column exists → keep the average, weighted by that column.
- *  - No quantity column, no separate sales amount, and rows are dated events
- *    (one row per sale) → the price is the sale amount: Total = SUM.
- *  - Otherwise (a price list / catalogue) → keep the average.
+ * Pick a sensible STARTING aggregation for prices. This never limits what the
+ * user can choose: every number can be totalled, averaged, etc.
+ *  - In a sales file with no quantity column the price is the sale amount,
+ *    so Total is the starting choice.
+ *  - Otherwise Average is the starting choice.
  */
 /** The quantity column that turns prices into per-unit values, if any. */
 function quantityColumnOf(columns: ColumnDefinition[]): string | undefined {
@@ -477,20 +475,12 @@ export function priceIsSaleAmount(columnName: string, columns: ColumnDefinition[
 
 export function reconcileMeasuresWithGrain(measures: SemanticMeasure[], columns: ColumnDefinition[], datasetName = ''): string[] {
     const notes: string[] = [];
-    const quantityColumn = quantityColumnOf(columns);
 
     for (const measure of measures) {
         const name = norm(measure.column);
         if (!PRICE_NAME.test(name) || measure.format === 'percent') continue;
         const perUnitByDefault = measure.behavior === 'non_additive' && measure.aggregation === AggregationType.AVG;
         if (!perUnitByDefault) continue;
-
-        if (quantityColumn && quantityColumn !== measure.column) {
-            measure.requiresWeighting = true;
-            measure.weightColumn = quantityColumn;
-            continue;
-        }
-
         if (!priceCanBeTotalled(measure.column, columns)) continue;
 
         // One row is one item, so Total is always allowed.
@@ -600,13 +590,8 @@ export function validateQueryAgainstModel(
     const resolvedDimension = getDimension(model, dimension);
 
     // Check aggregation override consistency
+    // Any aggregation the user picks is allowed; the model only holds a default.
     if (aggregation && aggregation !== resolvedMetric.aggregation) {
-        if (resolvedMetric.behavior === 'non_additive' && aggregation === AggregationType.SUM) {
-            throw new Error(
-                `[SemanticModel] Cannot SUM non-additive metric "${metric}" (e.g., price, rate). ` +
-                `Use ${resolvedMetric.aggregation} instead.`
-            );
-        }
         warnings.push(
             `Aggregation override: "${metric}" uses ${aggregation} instead of default ${resolvedMetric.aggregation}.`
         );

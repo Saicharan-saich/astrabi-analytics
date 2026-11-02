@@ -94,12 +94,6 @@ export const SmartQuestionsView: React.FC<SmartQuestionsViewProps> = ({ dataset,
                             <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-bold bg-violet-500/15 text-violet-400 border border-violet-500/25">
                                 {domain}
                             </span>
-                            {grain && (
-                                <>
-                                    <span className="text-gray-600">·</span>
-                                    <span className="text-xs text-gray-500">1 row = 1 {grain}</span>
-                                </>
-                            )}
                         </div>
                     </div>
                 </motion.div>

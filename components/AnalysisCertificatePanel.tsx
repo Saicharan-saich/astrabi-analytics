@@ -40,8 +40,7 @@ export const AnalysisCertificatePanel: React.FC<AnalysisCertificatePanelProps> =
           </div>
         </div>
 
-        <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-4">
-          <CertificateFact label="Dataset grain" value={certificate.dataset.grain} detail={`${certificate.dataset.grainConfidence} confidence`} />
+        <div className="grid gap-4 p-6 sm:grid-cols-2 lg:grid-cols-3">
           <CertificateFact label="Execution" value="Local DuckDB" detail={`${certificate.execution.rowCount.toLocaleString()} result rows`} />
           <CertificateFact label="AI data access" value={certificate.execution.aiDataAccess === 'metadata_only' ? 'Metadata only' : 'Approved safe values'} detail={`${certificate.execution.tokenUsage.toLocaleString()} AI tokens`} />
           <CertificateFact label="SQL fingerprint" value={certificate.execution.sqlFingerprint} detail={certificate.execution.engine} mono />

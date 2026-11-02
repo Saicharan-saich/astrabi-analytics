@@ -645,7 +645,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                   <div className="text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">🔍 Query Trace</div>
                   <div className="grid grid-cols-2 gap-3 text-xs">
                     <div><span className="text-slate-400">Intent:</span><span className="ml-1.5 font-bold">{pipeline.plan.intent}</span></div>
-                    <div><span className="text-slate-400">Grain:</span><span className="ml-1.5 font-bold">{pipeline.plan.resultGrain}</span></div>
+                    <div><span className="text-slate-400">Level of detail:</span><span className="ml-1.5 font-bold">{pipeline.plan.resultGrain}</span></div>
                     <div><span className="text-slate-400">Chart:</span><span className="ml-1.5 font-bold">{pipeline.chart.chartType}</span></div>
                     <div><span className="text-slate-400">Time:</span><span className="ml-1.5 font-bold">{pipeline.executionTimeMs}ms</span></div>
                     {provenance && (

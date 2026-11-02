@@ -22,7 +22,7 @@ function carSales(): Dataset {
     return dataset;
 }
 
-describe('price aggregation follows what one row is', () => {
+describe('the user decides how every number is aggregated', () => {
     it('totals the price when each row is one sale and there is no quantity column', () => {
         const dataset = carSales();
         const price = dataset.semanticModel!.measures.find(m => m.column === 'price')!;
@@ -41,14 +41,22 @@ describe('price aggregation follows what one row is', () => {
         expect(result.notices).toBeUndefined();
     });
 
-    it('keeps a per-unit price averaged, weighted by the real quantity column', () => {
+    it('starts a unit price on Average, but runs exactly what the user picks', async () => {
         const columns = [col('order_date', ColumnType.DATE), col('manufacturer', ColumnType.DIMENSION),
             col('units_sold', ColumnType.METRIC), col('unit_price', ColumnType.METRIC), col('sales', ColumnType.METRIC)];
-        const rows = [{ order_date: '2024-01-01', manufacturer: 'Ford', units_sold: 2, unit_price: 100, sales: 200 }];
-        const model = buildSemanticModel({ id: 'u', name: 'u.csv', rows, columns, totalRows: 1, version: 1 } as unknown as Dataset);
-        const unitPrice = model.measures.find(m => m.column === 'unit_price')!;
-        expect(unitPrice.aggregation).toBe(AggregationType.AVG);
-        expect(unitPrice.weightColumn).toBe('units_sold');
+        const rows = [
+            { order_date: '2024-01-01', manufacturer: 'Ford', units_sold: 2, unit_price: 100, sales: 200 },
+            { order_date: '2024-01-02', manufacturer: 'Ford', units_sold: 1, unit_price: 300, sales: 300 },
+        ];
+        const dataset = { id: 'u', name: 'u.csv', rows, columns, totalRows: 2, version: 1 } as unknown as Dataset;
+        dataset.semanticModel = buildSemanticModel(dataset);
+        expect(dataset.semanticModel.measures.find(m => m.column === 'unit_price')!.aggregation).toBe(AggregationType.AVG);
+        for (const [aggregation, expected] of [['SUM', 400], ['AVG', 200], ['MAX', 300], ['MIN', 100]] as const) {
+            const result = await runAnalysis(dataset, { questionId: 'custom_builder', metric: 'unit_price', aggregation, dimension: 'manufacturer' } as any);
+            expect(result.sql).toContain(`${aggregation}("unit_price")`);
+            expect(Number(result.data[0][result.yKey])).toBe(expected);
+            expect(result.notices).toBeUndefined();
+        }
     });
 
     it('keeps a price averaged when the table has its own sales amount or is a price list', () => {
@@ -124,13 +132,16 @@ describe('price aggregation follows what one row is', () => {
         expect(reconcileStoredModelGrain(repaired)).toBe(repaired);
     });
 
-    it('explains, rather than hides, a Total it cannot give', async () => {
+    it('totals even a rating when the user asks for Total', async () => {
         const columns = [col('model', ColumnType.DIMENSION), col('rating', ColumnType.METRIC)];
-        const rows = [{ model: 'A', rating: 4 }, { model: 'B', rating: 2 }];
+        const rows = [{ model: 'A', rating: 4 }, { model: 'A', rating: 2 }];
         const dataset = { id: 'r', name: 'r.csv', rows, columns, totalRows: 2, version: 1 } as unknown as Dataset;
         dataset.semanticModel = buildSemanticModel(dataset);
+        expect(dataset.semanticModel.measures.find(m => m.column === 'rating')!.aggregation).toBe(AggregationType.AVG);
         const result = await runAnalysis(dataset, { questionId: 'custom_builder', metric: 'rating', aggregation: AggregationType.SUM, dimension: 'model' } as any);
-        expect(result.sql).toContain('AVG(');
-        expect(result.notices?.[0]).toContain('A total of "rating" would not mean anything');
+        expect(result.sql).toContain('SUM("rating")');
+        expect(Number(result.data[0][result.yKey])).toBe(6);
+        expect(result.notices).toBeUndefined();
+        expect(result.confidence).toBe(1);
     });
 });

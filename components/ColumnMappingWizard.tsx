@@ -17,17 +17,6 @@ const ALL_DOMAINS = [
     'Energy', 'Government', 'Legal', 'Other'
 ];
 
-const GRAIN_SUGGESTIONS: Record<string, string[]> = {
-    Sales: ['Order', 'Transaction', 'Line Item', 'Invoice'],
-    HR: ['Employee', 'Payroll Record', 'Attendance Record', 'Performance Review'],
-    Finance: ['Transaction', 'Journal Entry', 'Invoice', 'Budget Line'],
-    Healthcare: ['Patient Visit', 'Prescription', 'Diagnosis', 'Claim'],
-    Education: ['Student', 'Enrollment', 'Course', 'Grade'],
-    Marketing: ['Campaign', 'Lead', 'Impression', 'Conversion'],
-    Inventory: ['SKU', 'Stock Movement', 'Purchase Order', 'Shipment'],
-    SaaS: ['Subscription', 'User', 'Event', 'License'],
-    default: ['Record', 'Row', 'Entry', 'Event'],
-};
 
 const COLUMN_TYPES: ColumnType[] = [ColumnType.METRIC, ColumnType.DIMENSION, ColumnType.DATE, ColumnType.BOOLEAN, ColumnType.ID, ColumnType.UNKNOWN];
 const AGGREGATIONS = ['SUM', 'AVG', 'COUNT', 'COUNT_DISTINCT', 'MIN', 'MAX', 'NONE'] as const;
@@ -169,7 +158,6 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
     const [subDomain, setSubDomain] = useState(initialProfile.subDomain || '');
     const [grain, setGrain] = useState(initialGrain);
     const [grainWasEdited, setGrainWasEdited] = useState(initialProfile.grainSource === 'user');
-    const [showGrainOverride, setShowGrainOverride] = useState(false);
     const [showPreview, setShowPreview] = useState(false);
 
     const [columnSemantics, setColumnSemantics] = useState<Record<string, ColumnSemantic>>(() => {
@@ -224,11 +212,6 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
         return map;
     }, [columns, columnSemantics, initialProfile]);
 
-    // ── Grain suggestions ──
-    const grainOptions = useMemo(() => {
-        return GRAIN_SUGGESTIONS[domain] || GRAIN_SUGGESTIONS.default;
-    }, [domain]);
-
     // ── Preview data ──
     const previewData = useMemo(() => {
         const visible = Object.entries(columnSemantics).filter(([, s]) => !s.isHidden);
@@ -266,7 +249,6 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
         setSubDomain(initialProfile.subDomain || '');
         setGrain(initialGrain);
         setGrainWasEdited(initialProfile.grainSource === 'user');
-        setShowGrainOverride(false);
         const merged: Record<string, ColumnSemantic> = {};
         for (const col of columns) {
             const existing = initialProfile.columnSemantics?.[col.name];
@@ -359,34 +341,8 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             {/* ── Body ── */}
             <div className="flex-1 overflow-y-auto">
                 <div className="px-5 py-4 space-y-4">
-                    {/* Summary: row detail · domain · how many columns look right */}
-                    <div className="qi-ws-subcard qi-ws-facts rounded-lg grid grid-cols-1 md:grid-cols-3">
-                        <div className="px-4 py-3">
-                            <div className="qi-ws-muted text-[12px]">Each row is</div>
-                            <div className="flex items-center gap-2 mt-0.5">
-                                <span className="qi-ws-strong text-[14px] font-semibold">One {grain || inferredGrain.label}</span>
-                                <button type="button" onClick={() => setShowGrainOverride(value => !value)} className="qi-ws-link text-[12.5px] font-semibold">
-                                    {showGrainOverride ? 'Done' : 'Change'}
-                                </button>
-                            </div>
-                            {showGrainOverride && (
-                                <div className="mt-2">
-                                    <input
-                                        type="text"
-                                        value={grain}
-                                        onChange={event => { setGrain(event.target.value); setGrainWasEdited(true); }}
-                                        placeholder="e.g. Order, line item, trade summary"
-                                        className="qi-ws-select w-full rounded-md px-2.5 py-1.5 text-[13px]"
-                                        aria-label="What one row represents"
-                                    />
-                                    <div className="mt-1.5 flex flex-wrap gap-1">
-                                        {grainOptions.map(option => (
-                                            <button type="button" key={option} onClick={() => { setGrain(option); setGrainWasEdited(true); }} className="qi-tool-chip rounded-md px-2 py-0.5 text-[11.5px] font-medium">{option}</button>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                    {/* Summary: subject · how many columns look right */}
+                    <div className="qi-ws-subcard qi-ws-facts rounded-lg grid grid-cols-1 md:grid-cols-2">
                         <div className="px-4 py-3">
                             <label className="qi-ws-muted text-[12px] block" htmlFor="qi-map-domain">Subject</label>
                             <select id="qi-map-domain" value={domain} onChange={e => setDomain(e.target.value)} className="qi-ws-select mt-1 w-full rounded-md px-2.5 py-1.5 text-[13px]">
@@ -584,7 +540,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
             {/* ── Actions ── */}
             <div className="qi-ws-toolbar is-bottom flex-shrink-0 px-5 py-3 flex items-center gap-3">
                 <p className="qi-ws-muted text-[12.5px] flex-1 min-w-0 truncate">
-                    {columns.length} columns · {domain.replace(/_/g, ' ')} · each row is one {grain || inferredGrain.label}
+                    {columns.length} columns · {domain.replace(/_/g, ' ')}
                     {hardErrors.length > 0 && showErrors && <span className="qi-ws-warn"> · {hardErrors.length} to fix</span>}
                 </p>
                 <button type="button" onClick={onDismiss} className="qi-ws-ghost px-3 py-1.5 rounded-lg text-[13px] font-semibold">Skip</button>

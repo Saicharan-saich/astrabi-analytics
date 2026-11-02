@@ -123,9 +123,8 @@ export function allowedAggregationsForField(field: SemanticField): CapabilityAgg
     if (field.semanticType === 'date' || field.physicalType !== 'number') {
         return ['count', 'count_distinct', 'none'];
     }
-    const additivity = fieldAdditivity(field);
-    if (additivity === 'non_additive') return ['avg', 'min', 'max', 'median', 'count', 'count_distinct', 'none'];
-    if (additivity === 'semi_additive') return ['sum', 'avg', 'min', 'max', 'median', 'count', 'count_distinct', 'none'];
+    // Any number can be totalled, averaged, etc. Which one makes sense is the
+    // user's call; additivity only picks a sensible default.
     return ['sum', 'avg', 'min', 'max', 'median', 'count', 'count_distinct', 'none'];
 }
 
@@ -277,25 +276,11 @@ export function validatePlanAgainstCapabilityContract(
             status: allowed ? 'pass' : 'fail',
             title: `${metric.agg.toUpperCase()}(${metric.field})`,
             detail: allowed
-                ? `${metric.agg.toUpperCase()} is valid for a ${rule.additivity.replace('_', '-')} ${rule.semanticType} field.`
-                : `${metric.agg.toUpperCase()} is not allowed for this ${rule.keyRole !== 'none' ? 'identifier' : rule.additivity.replace('_', '-')} field. Allowed: ${rule.allowedAggregations.join(', ')}.`,
+                ? `${metric.agg.toUpperCase()} of ${metric.field}.`
+                : `${metric.field} is ${rule.keyRole !== 'none' || rule.semanticType === 'identifier' ? 'an identifier' : 'not a number'}, so it can only be counted.`,
             evidence: rule.evidence,
         });
 
-        const hasTimeGrouping = plan.dimensions.some(dimension => {
-            const dimensionRule = resolveRule(contract, dimension.field);
-            return Boolean(dimension.timeGrain || dimensionRule?.semanticType === 'date');
-        });
-        if (metric.agg === 'sum' && rule.additivity === 'semi_additive' && hasTimeGrouping) {
-            checks.push({
-                id: `time-additivity:${metric.field}`,
-                category: 'time',
-                status: 'fail',
-                title: `${metric.field} cannot be summed across time`,
-                detail: 'This measure is semi-additive; summing snapshots across periods would overstate the result.',
-                evidence: rule.evidence,
-            });
-        }
     }
 
     for (const dimension of plan.dimensions) {
@@ -313,14 +298,6 @@ export function validatePlanAgainstCapabilityContract(
         });
     }
 
-    checks.push({
-        id: 'grain:dataset',
-        category: 'grain',
-        status: contract.grain.confidence === 'low' ? 'warn' : 'pass',
-        title: `Result grain: ${plan.resultGrain || contract.grain.label}`,
-        detail: `Dataset row grain is ${contract.grain.label} (${contract.grain.confidence} confidence).`,
-        evidence: contract.grain.evidence,
-    });
 
     if (analyticalIR && analyticalIR.relationships.tables.length > 1) {
         if (analyticalIR.relationships.fanoutRisk) {

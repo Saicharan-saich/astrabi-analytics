@@ -9,7 +9,6 @@ import { Tooltip } from './Tooltip';
 import { QuerySelect } from './QuerySelect';
 import { resolvePhysicalBuilderFields } from '../services/questionBuilderFieldGuard';
 import { questionBuilderColumns } from '../services/questionBuilderColumns';
-import { buildAnalyticalCapabilityContract, type CapabilityFieldRule } from '../services/ai-sql';
 import { describeBuilderQuestion } from '../utils/builderAnswer';
 
 interface QuestionBuilderProps {
@@ -451,49 +450,6 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     // boolean flags, even when an AI profile suggests hiding a field.
     const { metrics, dimensions: dims, countable: countableColumns, dates: dateColumns } = questionBuilderColumns(dataset);
     const isDimensionMetric = countableColumns.includes(metric);
-    const capabilityContract = useMemo(
-        () => dataset.aiSqlSemanticModel ? buildAnalyticalCapabilityContract(dataset.aiSqlSemanticModel) : null,
-        [dataset.aiSqlSemanticModel, dataset.aiSqlSemanticRevision],
-    );
-    const capabilityRuleFor = (fieldName: string): CapabilityFieldRule | undefined => {
-        const normalized = fieldName.trim().toLowerCase();
-        const richRule = capabilityContract?.fields.find(rule => rule.field.trim().toLowerCase() === normalized);
-
-        // User-created metrics are registered immediately in the local semantic
-        // model, while the richer AI SQL snapshot is rebuilt separately. Honour
-        // that live contract so a ratio never briefly falls back to SUM in the UI.
-        const localMeasure = dataset.semanticModel?.measures.find(measure =>
-            measure.column.trim().toLowerCase() === normalized
-        );
-        // The engine answers with the semantic model. Never offer a Total the
-        // engine would then quietly turn into an average.
-        if (richRule) {
-            if (localMeasure?.behavior === 'non_additive' && richRule.allowedAggregations.includes('sum')) {
-                return {
-                    ...richRule,
-                    additivity: 'non_additive',
-                    allowedAggregations: richRule.allowedAggregations.filter(aggregation => aggregation !== 'sum'),
-                };
-            }
-            return richRule;
-        }
-        if (!localMeasure) return undefined;
-        const nonAdditive = localMeasure.behavior === 'non_additive';
-        return {
-            field: localMeasure.column,
-            role: 'metric',
-            semanticType: localMeasure.format === 'percent' ? 'percentage' : 'quantity',
-            keyRole: 'none',
-            additivity: localMeasure.behavior,
-            unit: localMeasure.format === 'percent' ? 'percentage' : 'quantity',
-            allowedAggregations: nonAdditive
-                ? ['avg', 'min', 'max', 'count', 'count_distinct', 'none']
-                : ['sum', 'avg', 'min', 'max', 'count', 'count_distinct', 'none'],
-            allowedTimeGrains: [],
-            confidence: 1,
-            evidence: ['Registered derived metric', `default aggregation: ${localMeasure.aggregation}`],
-        };
-    };
     const allMetricAggregationOptions = [
         { label: 'Total  (Σ)', value: 'SUM' },
         { label: 'Average  (μ)', value: 'AVG' },
@@ -503,29 +459,27 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
         { label: 'Unique Count  (∩)', value: 'COUNT_DISTINCT' },
         { label: 'Raw Values', value: 'NONE' },
     ];
-    const safeAggregationOptions = (fieldName: string, dimensionMetric = false) => {
-        if (dimensionMetric) return allMetricAggregationOptions.filter(option => ['COUNT', 'COUNT_DISTINCT', 'NONE'].includes(option.value));
-        const rule = capabilityRuleFor(fieldName);
-        if (!rule) return allMetricAggregationOptions;
-        return allMetricAggregationOptions.filter(option => rule.allowedAggregations.includes(option.value.toLowerCase() as any));
-    };
+    // Any number can be totalled, averaged, etc. — the user decides. Only text
+    // and ID columns are limited to counting, because there is nothing to add.
+    const safeAggregationOptions = (_fieldName: string, dimensionMetric = false) => dimensionMetric
+        ? allMetricAggregationOptions.filter(option => ['COUNT', 'COUNT_DISTINCT', 'NONE'].includes(option.value))
+        : allMetricAggregationOptions;
+    /** A sensible starting choice (e.g. Average for a rating); never a limit. */
     const safeDefaultAggregation = (fieldName: string): string => {
-        const rule = capabilityRuleFor(fieldName);
-        if (!rule) return 'SUM';
-        const preferred = rule.allowedAggregations.includes(rule.additivity === 'additive' ? 'sum' : 'avg')
-            ? (rule.additivity === 'additive' ? 'SUM' : 'AVG')
-            : rule.allowedAggregations[0]?.toUpperCase();
-        return preferred || 'COUNT';
+        const normalized = fieldName.trim().toLowerCase();
+        const measure = dataset.semanticModel?.measures.find(item => item.column.trim().toLowerCase() === normalized);
+        return measure?.aggregation && measure.aggregation !== 'COUNT_DISTINCT' ? measure.aggregation : 'SUM';
     };
 
     useEffect(() => {
-        if (!metric || !capabilityContract) return;
-        const allowed = safeAggregationOptions(metric, countableColumns.includes(metric)).map(option => option.value);
-        if (!allowed.includes(aggregation)) setAggregation(safeDefaultAggregation(metric));
-    }, [metric, capabilityContract]);
+        if (!metric) return;
+        const countable = countableColumns.includes(metric);
+        const allowed = safeAggregationOptions(metric, countable).map(option => option.value);
+        if (!allowed.includes(aggregation)) setAggregation(countable ? 'COUNT' : safeDefaultAggregation(metric));
+    }, [metric]);
 
     useEffect(() => {
-        if (!capabilityContract || !secondaryMetrics.length) return;
+        if (!secondaryMetrics.length) return;
         setSecondaryMetricAggregations(current => {
             let changed = false;
             const next = { ...current };
@@ -539,7 +493,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
             }
             return changed ? next : current;
         });
-    }, [secondaryMetrics, capabilityContract]);
+    }, [secondaryMetrics]);
 
     // Helper: get human-readable label for a column
     const getLabel = (colName: string): string => {
@@ -985,14 +939,6 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                         </span>
                     ))}
 
-                    {metric && capabilityRuleFor(metric) && (
-                        <span
-                            className="qi-builder-capability rounded-lg border border-indigo-400/20 bg-indigo-500/10 px-2 py-1 text-[11px] font-bold text-indigo-300"
-                            title={`Dataset capability contract ${capabilityContract?.contractId}: ${capabilityRuleFor(metric)?.evidence.join(' · ')}`}
-                        >
-                            Works with: {capabilityRuleFor(metric)?.allowedAggregations.map(value => value.replace('_', ' ')).join(', ')}
-                        </span>
-                    )}
 
                     {/* Secondary Dimension Chips */}
                     {!gafsOnly && secondaryDimensions.map(sd => (
@@ -1100,11 +1046,11 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                     {activeBuilderTab === 'time' && (<>
                     <div className="mr-2 max-w-[260px]">
                         <div className="text-sm font-black text-white">Time intelligence</div>
-                        <div className="text-[11px] leading-4 text-slate-400">Choose the reporting grain and the period evaluated against the dataset’s AS OF date.</div>
+                        <div className="text-[11px] leading-4 text-slate-400">Group by day, week, month… and choose the period, counted back from the AS OF date.</div>
                     </div>
                     <div className="qi-builder-time-grain flex flex-col gap-0.5">
-                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-cyan-400/70 pl-1">Time Grain</span>
-                        <Tooltip text="Group by a time grain to see trends over time. Can be combined with a dimension." position="bottom">
+                        <span className="qi-builder-caption text-[11px] font-semibold uppercase tracking-wider text-cyan-400/70 pl-1">Group by time</span>
+                        <Tooltip text="Group by day, week, month, quarter or year to see trends over time. Can be combined with a dimension." position="bottom">
                             <QuerySelect
                                 menuPlacement="auto"
                                 value={timeGrain}

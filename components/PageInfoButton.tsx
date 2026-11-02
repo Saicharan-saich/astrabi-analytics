@@ -73,7 +73,7 @@ const PAGE_INFO: Record<PageKey, PageInfo> = {
         description: 'A visual, no-code query designer. Pick your metric, choose how to aggregate it, select a dimension to group by, and see the chart instantly. No SQL or formulas needed.',
         features: [
             'Pick metric + aggregation (SUM, AVG, COUNT, etc.)',
-            'Choose dimension and time grain (day, week, month, quarter)',
+            'Choose what to group by and a time period (day, week, month, quarter)',
             'Add filters with auto-populated values',
             'Secondary metrics with dual Y-axis support',
             'Secondary dimensions for multi-level breakdowns',

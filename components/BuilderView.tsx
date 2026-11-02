@@ -1290,7 +1290,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                         <input type="radio" name="builder-comparison" checked={result?.config?.comparison === 'same_period_last_n'} onChange={() => { if (result) handleRun({ ...result.config, comparison: 'same_period_last_n' as any, comparisonGrain: result.config.comparisonGrain || 'year', comparisonOffset: result.config.comparisonOffset || 1 }); }} className="text-emerald-600" />
                                                         <div>
                                                             <span className="text-sm font-bold text-slate-700">Same Period Last N</span>
-                                                            <span className="text-[11px] text-slate-500 block leading-tight">Flexible: pick grain &amp; offset (D/W/M/Q/Y)</span>
+                                                            <span className="text-[11px] text-slate-500 block leading-tight">Flexible: pick the period &amp; how far back (D/W/M/Q/Y)</span>
                                                         </div>
                                                     </label>
                                                     {/* Grain + Offset controls (only when Same Period Last N is active) */}
@@ -1298,7 +1298,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                                                         <div className="ml-7 mt-2 p-3 bg-emerald-50/60 rounded-lg border border-emerald-200 space-y-3">
                                                             {/* Grain selector pills */}
                                                             <div>
-                                                                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Grain</span>
+                                                                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wide block mb-1.5">Period</span>
                                                                 <div className="flex gap-1">
                                                                     {(['day', 'week', 'month', 'quarter', 'year'] as const).map(g => {
                                                                         const labels: Record<string, string> = { day: 'D', week: 'W', month: 'M', quarter: 'Q', year: 'Y' };

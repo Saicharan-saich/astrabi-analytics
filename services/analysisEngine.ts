@@ -84,25 +84,9 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
         if (sqlResult.data.length === 1 && cols.length === 1) vis = 'kpiCard';
         else if (cols.length === 1) vis = 'table';
 
-        // ═══ POST-VALIDATE AI SQL AGAINST SEMANTIC MODEL ═══════════════
-        // AI-generated SQL bypasses the semantic model's aggregation guards.
-        // Check if the SQL incorrectly uses SUM on non-additive metrics.
+        // The SQL ran exactly as written; which aggregation suits a column is
+        // the user's call, so there is nothing to second-guess here.
         const aiWarnings: string[] = [];
-        if (dataset.semanticModel) {
-            const sqlUpper = aiSql.toUpperCase();
-            for (const measure of dataset.semanticModel.measures) {
-                if (measure.behavior === 'non_additive') {
-                    // Check if SUM is applied to this non-additive column
-                    const colPattern = new RegExp(`SUM\\s*\\(\\s*["\`]?${measure.column.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}["\`]?\\s*\\)`, 'i');
-                    if (colPattern.test(aiSql)) {
-                        aiWarnings.push(
-                            `⚠️ AI used SUM("${measure.column}") but this metric is non-additive (should use ${measure.aggregation}). Values may be incorrect.`
-                        );
-                        console.warn(`[runAnalysis] AI SQL VALIDATION: SUM used on non-additive metric "${measure.column}" (expected ${measure.aggregation})`);
-                    }
-                }
-            }
-        }
 
         return {
             data: sqlResult.data, xKey, yKey,
@@ -147,60 +131,37 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
 
     let sql = activeQ.sql || `-- Dynamic SQL generated for ${activeQ.id}`;
 
-    // ═══ AGGREGATION SAFETY GUARD ═══════════════════════════════════
-    // Apply the semantic contract to every selected metric, not only the first.
-    // In particular, a materialised ratio such as profit/sales must be recomputed
-    // as SUM(profit)/SUM(sales) at the requested grain. AVG(row_margin) is biased
-    // because small and large rows otherwise receive equal weight.
-    // Any change to what the user asked for is reported on the result, never silent.
+    // ═══ AGGREGATION ═════════════════════════════════════════════════
+    // The aggregation the user picked is the one that runs: Total, Average,
+    // Highest, Lowest… on any number. The only thing added here is the
+    // weighting a calculated ratio metric needs (profit margin % must be
+    // SUM(profit)/SUM(sales), not an average of row-level percentages).
     const aggregationNotes: string[] = [];
     if (dataset.semanticModel) {
         const metricWeightColumns = { ...(query.metricWeightColumns || {}) };
-        const secondaryMetricAggregations = { ...(query.secondaryMetricAggregations || {}) };
-        const timeGrains = ['minute', 'hour', 'day', 'week', 'month', 'quarter', 'year'];
-        const dimIsTime = Boolean(query.dimension && timeGrains.includes(query.dimension));
-
-        const governAggregation = (metricName: string, requested: string): string => {
+        const isCalculatedMetric = (name: string) =>
+            Boolean(dataset.columns.find(column => column.name === name)?.derivedTemplateId);
+        const weightFor = (metricName: string, aggregation: string | undefined) => {
+            if (aggregation !== 'AVG') return;
             const measure = findMeasure(dataset.semanticModel!, metricName);
-            if (!measure) return requested;
-
-            let resolved = requested;
-            const label = metricName.replace(/_/g, ' ');
-            if (measure.behavior === 'non_additive' && resolved === 'SUM') {
-                resolved = measure.aggregation;
-                aggregationNotes.push(`A total of "${label}" would not mean anything (it is a ${measure.format === 'percent' ? 'rate' : 'per-unit value'}), so this shows the ${resolved === 'AVG' ? 'average' : resolved.toLowerCase()} instead.`);
-                console.warn(`[runAnalysis] ⚠️ AGGREGATION GUARD: "${metricName}" is non-additive. Auto-correcting SUM → ${resolved}`);
-            } else if (measure.behavior === 'semi_additive' && resolved === 'SUM' && dimIsTime) {
-                resolved = 'MAX';
-                aggregationNotes.push(`"${label}" is a balance, so adding it up across periods would double count; each period shows its highest value.`);
-                console.warn(`[runAnalysis] ⚠️ AGGREGATION GUARD: "${metricName}" is semi-additive over time. Auto-correcting SUM → MAX`);
-            }
-
-            const availableWeight = measure.weightColumn && dataset.columns.find(column =>
-                column.name.toLowerCase() === measure.weightColumn!.toLowerCase()
-            )?.name;
-            if (resolved === 'AVG' && measure.requiresWeighting && availableWeight) {
-                metricWeightColumns[metricName] = availableWeight;
-                console.log(`[runAnalysis] Weighted ratio: "${metricName}" uses denominator "${availableWeight}"`);
-            }
-            return resolved;
+            if (!isCalculatedMetric(metricName) && measure?.format !== 'percent') return;
+            const weight = measure?.requiresWeighting && measure.weightColumn
+                ? dataset.columns.find(column => column.name.toLowerCase() === measure.weightColumn!.toLowerCase())?.name
+                : undefined;
+            if (weight) metricWeightColumns[metricName] = weight;
         };
-
-        const primaryAggregation = query.metric
-            ? governAggregation(query.metric, query.aggregation || 'SUM')
-            : query.aggregation;
+        // A secondary metric sent without an aggregation starts from its default.
+        const secondaryMetricAggregations = { ...(query.secondaryMetricAggregations || {}) };
         for (const secondaryMetric of query.secondaryMetrics || []) {
-            const measure = findMeasure(dataset.semanticModel, secondaryMetric);
-            const requested = secondaryMetricAggregations[secondaryMetric]
-                || measure?.aggregation
+            secondaryMetricAggregations[secondaryMetric] = secondaryMetricAggregations[secondaryMetric]
+                || findMeasure(dataset.semanticModel, secondaryMetric)?.aggregation
                 || 'SUM';
-            secondaryMetricAggregations[secondaryMetric] = governAggregation(secondaryMetric, requested);
+            weightFor(secondaryMetric, secondaryMetricAggregations[secondaryMetric]);
         }
-
+        if (query.metric) weightFor(query.metric, query.aggregation || 'SUM');
         query = {
             ...query,
-            aggregation: primaryAggregation as AggregationType,
-            secondaryMetricAggregations,
+            ...(query.secondaryMetrics?.length ? { secondaryMetricAggregations } : {}),
             ...(Object.keys(metricWeightColumns).length > 0 ? { metricWeightColumns } : {}),
         };
     }
@@ -302,11 +263,6 @@ export const runAnalysis = async (dataset: Dataset, query: QueryConfig): Promise
             if (!measure) {
                 confidence -= 0.1;
                 resultWarnings.push(`Metric "${query.metric}" not in semantic model`);
-            } else if (query.aggregation && query.aggregation !== measure.aggregation) {
-                if (measure.behavior === 'non_additive' && query.aggregation === AggregationType.SUM) {
-                    confidence -= 0.2;
-                    resultWarnings.push(`Unsafe aggregation: SUM on non-additive metric "${query.metric}". Should use ${measure.aggregation}`);
-                }
             }
         }
         // Validate dimension
