@@ -156,6 +156,9 @@ export const FormatPanel: React.FC<FormatPanelProps> = ({
             ]}
             onChange={value => update({ colorEncoding: value })}
           />
+          {(chartType === 'pie' || chartType === 'doughnut' || chartType === 'polarArea') && (
+            <p className="qi-style-hint">Slices always get their own colour so they can be told apart.</p>
+          )}
         </div>
         <div className="space-y-1.5">
           <span className="qi-style-label block">Palette</span>

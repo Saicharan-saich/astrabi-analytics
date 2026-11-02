@@ -68,6 +68,9 @@ export const resolveColorEncoding = (
     data: any[],
     chartType = 'bar',
 ): 'sequential' | 'discrete' => {
+    // Slices are told apart by colour, so a pie or donut always gets one colour
+    // per slice, whatever the bar-chart colour setting says.
+    if (['pie', 'doughnut', 'polarArea'].includes(chartType)) return 'discrete';
     if (formatting?.colorEncoding === 'sequential' || formatting?.colorEncoding === 'discrete') {
         return formatting.colorEncoding;
     }

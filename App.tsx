@@ -13,6 +13,7 @@ import {
   EtlOptions
 } from './types';
 import { runAnalysis, runAutomatedETL, parseCSV, parseExcel, autoJoinDatasets, getSampleData } from './services/analysisEngine';
+import { withDetectedCurrencies } from './services/etlPipeline';
 import { profileDatasetWithAI } from './services/aiSemanticProfiler';
 import { inferRowGrain } from './services/rowGrainInference';
 import { buildSemanticModel, reconcileStoredModelGrain } from './services/semanticModel';
@@ -407,7 +408,11 @@ function App() {
           console.log(`[App] Recomputed legacy Profit Margin % for ${repairedMargin.name}`);
         }
         // Datasets saved before prices were judged against the row grain.
-        const migrated = reconcileStoredModelGrain(repairedMargin);
+        const regrained = reconcileStoredModelGrain(repairedMargin);
+        // ...and before money columns recorded their currency (Price (£) → £).
+        const columnsWithCurrency = withDetectedCurrencies(regrained.columns || [], regrained.rawRows || []);
+        const migrated = columnsWithCurrency !== regrained.columns ? { ...regrained, columns: columnsWithCurrency } : regrained;
+        if (migrated !== regrained) console.log(`[App] Recorded the currency of money columns for ${migrated.name}`);
         if (migrated !== repairedMargin) {
           console.log(`[App] Re-checked price aggregation against the row grain for ${migrated.name}`);
         }

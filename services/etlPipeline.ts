@@ -1442,6 +1442,37 @@ function attachCurrencies(
     });
 }
 
+/**
+ * Currency for each money column from the original file rows: the header
+ * ("Price (£)") or, failing that, most of the values ("£12,000"). Used for
+ * datasets saved before currencies were recorded.
+ */
+export function withDetectedCurrencies(columns: ColumnDefinition[], rawRows: Record<string, any>[]): ColumnDefinition[] {
+    if (!rawRows?.length || columns.some(column => column.currency)) return columns;
+    const headers = Object.keys(rawRows[0] || {});
+    const sample = rawRows.length > 2000 ? rawRows.slice(0, 2000) : rawRows;
+    const found = new Map<string, string>();
+    headers.forEach((header, index) => {
+        const name = normalizeHeaderName(header, index);
+        let currency = currencyOfHeader(header);
+        if (!currency) {
+            const values = sample.map(row => row[header]).filter(value => value !== null && value !== undefined && value !== '');
+            const top = detectCurrencies(values)[0];
+            if (top && top.count >= values.length * 0.5) currency = top.currency;
+        }
+        if (currency) found.set(name, currency);
+    });
+    if (!found.size) return columns;
+    let changed = false;
+    const next = columns.map(column => {
+        const currency = column.type === ColumnType.METRIC ? found.get(column.name) : undefined;
+        if (!currency) return column;
+        changed = true;
+        return { ...column, currency };
+    });
+    return changed ? next : columns;
+}
+
 function attachConversionProfiles(
     columns: ColumnDefinition[],
     sourceRows: Record<string, any>[],

@@ -48,6 +48,9 @@ describe('automatic colour encoding', () => {
         expect(resolveColorEncoding(undefined, 'month', months, 'pie')).toBe('discrete');
         expect(resolveColorEncoding({ colorEncoding: 'discrete' }, 'month', months, 'bar')).toBe('discrete');
         expect(resolveColorEncoding({ colorEncoding: 'sequential' }, 'city', cities, 'bar')).toBe('sequential');
+        // A saved "Low → high" choice never paints every slice the same colour.
+        expect(resolveColorEncoding({ colorEncoding: 'sequential' }, 'fuel_type', cities, 'doughnut')).toBe('discrete');
+        expect(resolveColorEncoding({ colorEncoding: 'sequential' }, 'fuel_type', cities, 'pie')).toBe('discrete');
     });
 
     it('shades from zero and never uses the near-white shades', () => {
