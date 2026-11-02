@@ -509,6 +509,14 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 notation: 'compact', compactDisplay: 'short', minimumFractionDigits: 0, maximumFractionDigits: labelDecimals,
             }).format(value);
         }
+        // Small money amounts: no ".00" on a whole number (£50, not £50.00).
+        if (isCurrency && abs < 1000) {
+            return new Intl.NumberFormat('en-US', {
+                style: 'currency', currency: primaryCurrency,
+                minimumFractionDigits: formatting?.decimals ?? 0,
+                maximumFractionDigits: formatting?.decimals ?? (Number.isInteger(value) ? 0 : 2),
+            }).format(value);
+        }
         // Non-currency large magnitudes → compact; everything else uses the
         // standard formatter (percent, small ints, etc.).
         if (!isCurrency && abs >= 10000 && !wantsFull) {

@@ -20,7 +20,8 @@ test('adding a third grouping dimension automatically shows facet panels', async
         (window as any).__qiValueLabelInks = [];
         CanvasRenderingContext2D.prototype.fillText = function (this: CanvasRenderingContext2D, ...args: Parameters<typeof original>) {
             // Value labels are bold; axis ticks that also read 50/100 are not.
-            if ((String(args[0]) === '100' || String(args[0]) === '50') && /bold/.test(this.font)) {
+            // value_usd_bn is in dollars, so labels read $100 / $50.
+            if (/^\$?(100|50)$/.test(String(args[0])) && /bold/.test(this.font)) {
                 (window as any).__qiValueLabelInks.push(String(this.fillStyle));
             }
             return original.apply(this, args);

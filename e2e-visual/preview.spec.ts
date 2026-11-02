@@ -84,6 +84,43 @@ for (const theme of ['light', 'dark'] as const) {
         }
     });
 
+    test(`formatting ${theme}`, async ({ page }) => {
+        await boot(page, theme, 'DASHBOARD');
+        let nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();
+        if (!(await nav.isVisible().catch(() => false))) {
+            await page.getByRole('button', { name: 'Open navigation', exact: true }).click().catch(() => {});
+            nav = page.getByRole('button', { name: 'Question Builder', exact: true }).first();
+        }
+        await nav.click();
+        const dimension = page.locator('.qi-builder-dimension button[aria-haspopup="listbox"]').first();
+        await dimension.waitFor();
+        // Formatting: near-equal bars with value labels, long names, horizontal bars.
+        const stage = page.locator('.qi-visual-stage').first();
+        for (const [field, file] of [['city', '28-format-city'], ['product', '29-format-product']] as const) {
+            await dimension.click().catch(() => {});
+            await page.getByRole('option', { name: field, exact: true }).click().catch(() => {});
+            await page.waitForTimeout(2500);
+            await page.locator('.qi-chart-suggestion').filter({ hasText: /^Bars/ }).first().click().catch(() => {});
+            await page.waitForTimeout(1500);
+            await stage.screenshot({ path: path.join(OUT, `${file}-${theme}.png`) }).catch(() => {});
+        }
+        await page.locator('.qi-chart-suggestion').filter({ hasText: /Horizontal/ }).first().click().catch(() => {});
+        await page.waitForTimeout(1500);
+        await stage.screenshot({ path: path.join(OUT, `29-format-product-horizontal-${theme}.png`) }).catch(() => {});
+        // The Style panel, then axis titles turned on.
+        await page.locator('.qi-chart-suggestion').filter({ hasText: /^Bars/ }).first().click().catch(() => {});
+        await page.waitForTimeout(1000);
+        await page.getByRole('button', { name: 'Style', exact: true }).click().catch(() => {});
+        await page.waitForTimeout(600);
+        await shoot(page, `2A-style-panel-${theme}`);
+        const panel = page.locator('.qi-format-panel').first();
+        await panel.getByRole('switch', { name: /Axis titles/ }).check({ force: true }).catch(() => {});
+        await panel.evaluate(element => { element.scrollTop = element.scrollHeight; }).catch(() => {});
+        await page.waitForTimeout(800);
+        await shoot(page, `2B-style-panel-axes-${theme}`);
+        await page.getByRole('button', { name: 'Close chart appearance' }).click().catch(() => {});
+    });
+
     test(`workspaces ${theme}`, async ({ page }) => {
         await boot(page, theme, 'DASHBOARD');
         const openNav = async (label: string) => {
@@ -137,34 +174,7 @@ for (const theme of ['light', 'dark'] as const) {
                         await page.keyboard.press('Escape');
                     }
                 }
-                // Formatting: near-equal bars with value labels, long names, horizontal bars.
-                const stage = page.locator('.qi-visual-stage').first();
-                for (const [field, file] of [['city', '28-format-city'], ['product', '29-format-product']] as const) {
-                    await page.keyboard.press('Escape').catch(() => {});
-                    const crumbRoot = page.getByRole('navigation', { name: 'How you got here' }).getByRole('button').first();
-                    if (await crumbRoot.isVisible().catch(() => false)) { await crumbRoot.click(); await page.waitForTimeout(1500); }
-                    await dimension.click().catch(() => {});
-                    await page.getByRole('option', { name: field, exact: true }).click().catch(() => {});
-                    await page.waitForTimeout(2500);
-                    await page.locator('.qi-chart-suggestion').filter({ hasText: /^Bars/ }).first().click().catch(() => {});
-                    await page.waitForTimeout(1500);
-                    await stage.screenshot({ path: path.join(OUT, `${file}-${theme}.png`) }).catch(() => {});
-                }
-                await page.locator('.qi-chart-suggestion').filter({ hasText: /Horizontal/ }).first().click().catch(() => {});
-                await page.waitForTimeout(1500);
-                await stage.screenshot({ path: path.join(OUT, `29-format-product-horizontal-${theme}.png`) }).catch(() => {});
-                // The Style panel, then axis titles turned on.
-                await page.locator('.qi-chart-suggestion').filter({ hasText: /^Bars/ }).first().click().catch(() => {});
-                await page.waitForTimeout(1000);
-                await page.getByRole('button', { name: 'Style', exact: true }).click().catch(() => {});
-                await page.waitForTimeout(600);
-                await shoot(page, `2A-style-panel-${theme}`);
-                const panel = page.locator('.qi-format-panel').first();
-                await panel.getByRole('switch', { name: /Axis titles/ }).check({ force: true }).catch(() => {});
-                await panel.evaluate(element => { element.scrollTop = element.scrollHeight; }).catch(() => {});
-                await page.waitForTimeout(800);
-                await shoot(page, `2B-style-panel-axes-${theme}`);
-                await page.getByRole('button', { name: 'Close chart appearance' }).click().catch(() => {});
+
             }
         }
         for (const [label, file] of [
