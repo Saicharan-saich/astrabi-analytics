@@ -657,6 +657,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // Keep ref in sync so Chart.js plugins always read the latest data
         transformedDataRef.current = transformedData;
 
+        const monthlyDates = transformedData.length > 1 && transformedData.every((row: any) => /^\d{4}-\d{2}-01(?:$|[T ]00:00)/.test(String(row?.[xKey] ?? '')));
         const formatDate = (val: string) => {
             const format = formatting?.dateFormat || 'auto';
             if (!val) return val;
@@ -683,7 +684,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 if (format === 'auto') {
                     // Check grain based on parts length
                     // YYYY-MM (parts[2] is usually undefined or empty if split by -)
-                    const isMonthGrain = (parts.length === 2 && m <= 11) || (!parts[2] && m <= 11);
+                    // Monthly periods written as dates (2024-03-01) read as "Mar 2024".
+                    const isMonthGrain = (parts.length === 2 && m <= 11) || (!parts[2] && m <= 11)
+                        || (monthlyDates && m <= 11);
 
                     // Detect Week Grain: If month index > 11 (e.g. 52), it's a week number
                     // Or if config explicitly says 'week'
@@ -2611,6 +2614,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                 : 'text-blue-700 bg-white border border-slate-200 hover:border-blue-300 hover:shadow-md hover:scale-105'
                                 }`}
                             title="Get smart interpretation of this chart (visual only — no data access)"
+                            aria-label="Smart Insight"
                         >
                             <Sparkles className="w-4 h-4" aria-hidden />
                             <span className="text-[13px]">{isAIInsightOpen ? 'Smart Insight' : 'Smart Insight'}</span>

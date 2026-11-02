@@ -4942,3 +4942,10 @@ body {
 }
 /* One row of chart controls on the answer page: zoom is not needed here. */
 .qi-answer-canvas .qi-zoom-control { display: none !important; }
+.qi-answer-canvas .qi-visual-toolbar { flex-wrap: nowrap !important; gap: 8px !important; }
+.qi-answer-canvas .qi-visual-toolbar > button,
+.qi-answer-canvas .qi-visual-toolbar > div > button { padding: 7px 11px !important; gap: 6px !important; white-space: nowrap; }
+@media (max-width: 1280px) {
+  /* Narrow chart: icon-only Smart Insight (its name stays in the title). */
+  .qi-answer-canvas .qi-visual-toolbar button[title^='Get smart interpretation'] > span { display: none; }
+}
