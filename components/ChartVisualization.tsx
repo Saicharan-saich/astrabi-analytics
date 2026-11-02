@@ -1298,7 +1298,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             autoAxisMode = ratio > 5 ? 'dual' : 'blended';
         }
         // Also force dual axis if config says so
-        const useDualAxis = autoAxisMode === 'dual' || config?.axisMode === 'dual';
+        const useDualAxis = config?.axisMode !== 'single' && (autoAxisMode === 'dual' || config?.axisMode === 'dual');
 
         // Read secondary metric visual types from config (default: line)
         const secVisuals: Record<string, string> = config?.secondaryMetricVisuals || {};
@@ -1674,6 +1674,17 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             }
 
                             return label;
+                        },
+                        // The item each point stands for (e.g. the product that
+                        // was highest that month), when the answer names one.
+                        afterLabel: function (context: any) {
+                            const labelKeys = config?.pointLabelKeys;
+                            if (!labelKeys) return '';
+                            const seriesKey = context.dataset?.qiSourceKey || yKey;
+                            const labelKey = labelKeys[seriesKey];
+                            const idx = context.dataset?.qiRowOrder?.[context.dataIndex] ?? context.dataIndex;
+                            const name = labelKey ? transformedDataRef.current[idx]?.[labelKey] : undefined;
+                            return name !== undefined && name !== null && name !== '' ? `    ${name}` : '';
                         },
                         afterBody: function (contexts: any[]) {
                             const latestData = transformedDataRef.current;

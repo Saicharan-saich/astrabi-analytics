@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { ExtremesTable } from './ExtremesTable';
 import {
   ArrowLeft, Pin, Code, Table2, BarChart2, Palette, Activity, Sparkles,
   Copy, Check, X, RefreshCw, Play, Database, Loader2, Microscope,
@@ -556,7 +557,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                 onAIInsight={() => setIsAIInsightOpen(!isAIInsightOpen)} isAIInsightOpen={isAIInsightOpen}
                 chartContainerRef={chartContainerRef}
                 onDrillDown={handleDrillDown}
-                disableAutoSeries={Boolean(activePipeline) && !['stackedBar', 'groupedBar', 'multiLine'].includes(activePipeline?.chart?.chartType || '')}
+                disableAutoSeries={Boolean(activePipeline) && (Boolean(activePipeline?.chart?.pointLabelKeys) || !['stackedBar', 'groupedBar', 'multiLine'].includes(activePipeline?.chart?.chartType || ''))}
               />
               )}
               {!activeDimensionOnly && (workspaceMode === 'result' || detailsSection === 'workspace') && <AIInsightPanel isOpen={isAIInsightOpen} onClose={() => setIsAIInsightOpen(false)} chartContainerRef={chartContainerRef} chartTitle={activeResult.yLabel} chartContext={{ chartType: activeResult.vis, xKey: activeResult.xKey, yKey: activeResult.yKey, comparisonMode: (activeResult.config as any)?.comparison || undefined }} />}
@@ -573,6 +574,17 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
                           <li key={insight}>{insight}</li>
                         ))}
                       </ul>
+                    </>
+                  )}
+                  {activeResult.config?.pointLabelKeys && (
+                    <>
+                      <div className="qi-answer-panel-label mt-4">Each {String(activeResult.xKey).replace(/_/g, ' ')}</div>
+                      <ExtremesTable
+                        rows={activeResult.data || []}
+                        groupKey={activeResult.xKey}
+                        pointLabelKeys={activeResult.config.pointLabelKeys}
+                        currency={activePipeline.chart?.currency}
+                      />
                     </>
                   )}
                   {activePipeline.explanation && activePipeline.provenance?.strategy === 'llm-plan' && (

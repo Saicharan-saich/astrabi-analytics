@@ -41,6 +41,10 @@ const SUMMARY = /^(?:(?:please |can you |could you )?(?:give|show|tell) me )?(?:
 const CONTINUES = /^(and|but|also|now|then|so|ok(ay)?,?|what about|how about|and what about|what if|same|instead|only|just|excluding|exclude|without|except|plus|versus|vs\.?|compared? (to|with)|split|break( it| that| this)? down|drill( down)?|sort|order|rank|show (it|that|this|them|those|these)|make (it|that|this)|change|switch|turn (it|that|this)|as a|as an|top \d+|bottom \d+|filter|group|limit|remove|add|include|exclude)\b/i;
 /** "by month", "for 2024": a follow-up when short, a new question when long. */
 const PREPOSITION_START = /^(by|per|for|in|within|during|over)\b/i;
+/** Talking about the answer itself: "the chart", "the visual", "this table". */
+const ABOUT_THE_ANSWER = /\b(the|this|that|your) (visual|visualisation|visualization|chart|graph|plot|result|results|answer|table|output|query|sql|numbers?|figures?|labels?|legend|axis|bars?|lines?)\b/i;
+/** A complaint or question about the last answer: "I can't see the names", "that's wrong". */
+const ABOUT_A_PROBLEM = /\b(can'?t|cannot|can not|don'?t|doesn'?t|isn'?t|aren'?t|not|no|missing|wrong|incorrect|instead of)\b[\s\S]*\b(see|seeing|show|shown|showing|visible|included|include|there|right|correct|listed|named|names?)\b|^why\b[\s\S]*\b(not|no|only|missing|wrong|same|zero|empty)\b/i;
 /** Words that point back at the previous answer. */
 const REFERS_BACK = /\b(it|its|that|those|these|them|they|the same|previous|above|earlier|last (one|answer|chart|result|query)|this (chart|result|answer|one|table)|as well|too|instead|again|also)\b/i;
 
@@ -97,6 +101,9 @@ export function classifyTurn(message: string, hasPreviousAnswer: boolean, datase
     const tokens = words(core);
     if (CONTINUES.test(core) || (PREPOSITION_START.test(core) && tokens.length <= 5)) {
         return { kind: 'follow_up', reason: 'Starts like a follow-up, so the last answer is included.' };
+    }
+    if (ABOUT_THE_ANSWER.test(core) || ABOUT_A_PROBLEM.test(core)) {
+        return { kind: 'follow_up', reason: 'Talks about the last answer, so it is included.' };
     }
     if (REFERS_BACK.test(core)) {
         return { kind: 'follow_up', reason: 'Refers back to the last answer, so it is included.' };

@@ -359,6 +359,10 @@ export interface ChartRecommendation {
     leftAxisFormat?: 'currency_usd' | 'percent' | 'compact' | 'raw';
     /** ISO currency of a money measure, from the uploaded file (e.g. GBP). */
     currency?: string;
+    /** Keep every series on one value axis (e.g. highest vs lowest). */
+    singleAxis?: boolean;
+    /** Series key → column whose text names each point (e.g. the product). */
+    pointLabelKeys?: Record<string, string>;
     /** Right axis config */
     rightAxisFormat?: 'currency_usd' | 'percent' | 'compact' | 'raw';
     /** Human-readable explanation of why this chart was chosen */

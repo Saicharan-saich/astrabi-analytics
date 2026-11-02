@@ -13,7 +13,7 @@ vi.mock('../services/duckdbEngine', async (importOriginal) => {
 import { fetchWithFallback } from '../services/ai-sql/modelConfig';
 import { executeSQLViaDuckDB } from '../services/duckdbEngine';
 import {
-    AISQLClarificationError, buildInsights, describeColumnsOnly, parseLeanReply, periodLabel, planFromResult, rerunSavedAnswer, resultCurrency, runLeanAISQL, scrubErrorForModel,
+    AISQLClarificationError, buildInsights, describeColumnsOnly, extremesNarrative, normaliseExtremes, parseLeanReply, periodLabel, planFromResult, rerunSavedAnswer, resultCurrency, runLeanAISQL, scrubErrorForModel,
 } from '../services/ai-sql/leanPipeline';
 import { profileResult } from '../services/ai-sql/resultProfiler';
 import { resolveAISQLSemanticModel } from '../services/ai-sql/semanticLayer';
@@ -137,6 +137,66 @@ describe('lean AI SQL — money and periods', () => {
         expect(inferSpineStep(['2024-01-01', '2024-01-08', '2024-01-22'])).toBe('week');
         // A gap far larger than the data is left alone rather than drawn as spikes.
         expect(fillTimeSpine([{ d: '2020-01-03', v: 1 }, { d: '2024-04-01', v: 2 }], 'd', ['v'])).toHaveLength(2);
+    });
+});
+
+describe('lean AI SQL — highest and lowest per group', () => {
+    const months = ['2025-01-01', '2025-02-01', '2025-03-01'];
+    const long = months.flatMap((month, i) => [
+        { month, sales_type: 'Highest', product: ['Mug', 'Lamp', 'Mug'][i], total_sales: 9000 + i },
+        { month, sales_type: 'Lowest', product: ['Bottle', 'Yoga Mat', 'Bottle'][i], total_sales: 500 + i },
+    ]);
+
+    it('keeps every product name, one row per month (long form with a type column)', () => {
+        const shape = normaliseExtremes(long, 'show me month wise highest and lowest sales for products')!;
+        expect(shape.group).toBe('month');
+        expect(shape.rows).toEqual([
+            { month: '2025-01-01', highest_product: 'Mug', highest_total_sales: 9000, lowest_product: 'Bottle', lowest_total_sales: 500 },
+            { month: '2025-02-01', highest_product: 'Lamp', highest_total_sales: 9001, lowest_product: 'Yoga Mat', lowest_total_sales: 501 },
+            { month: '2025-03-01', highest_product: 'Mug', highest_total_sales: 9002, lowest_product: 'Bottle', lowest_total_sales: 502 },
+        ]);
+    });
+
+    it('works out which is highest when the query did not label them', () => {
+        const unlabelled = long.map(({ sales_type, ...row }) => row);
+        const shape = normaliseExtremes(unlabelled, 'highest and lowest product sales by month')!;
+        expect(shape.rows[1]).toMatchObject({ highest_product: 'Lamp', lowest_product: 'Yoga Mat' });
+    });
+
+    it('reads the wide form the AI is asked for, and leaves ordinary answers alone', () => {
+        const wide = normaliseExtremes([
+            { month: '2025-01-01', highest_product: 'Mug', highest_sales: 10, lowest_product: 'Bottle', lowest_sales: 1 },
+            { month: '2025-02-01', highest_product: 'Lamp', highest_sales: 12, lowest_product: 'Bottle', lowest_sales: 2 },
+        ], 'x')!;
+        expect(wide.roles).toEqual([
+            { role: 'highest', item: 'highest_product', value: 'highest_sales' },
+            { role: 'lowest', item: 'lowest_product', value: 'lowest_sales' },
+        ]);
+        expect(normaliseExtremes([{ region: 'North', total: 1 }, { region: 'South', total: 2 }], 'total by region')).toBeNull();
+        expect(normaliseExtremes([{ month: '2025-01-01', total: 1 }, { month: '2025-02-01', total: 2 }], 'highest and lowest month')).toBeNull();
+    });
+
+    it('describes the answer with the names in it', () => {
+        const shape = normaliseExtremes(long, 'month wise highest and lowest sales for products')!;
+        const { summary, insights } = extremesNarrative(shape, 'GBP');
+        expect(summary).toBe('For each period, the product with the highest and lowest total sales — 3 periods in all.');
+        expect(insights[0]).toBe('Highest overall: Mug with £9,002 in Mar 2025.');
+        expect(insights[1]).toBe('Lowest overall: Bottle with £500 in Jan 2025.');
+        expect(insights).toContain('Mug was the highest product in 2 of 3 periods.');
+    });
+
+    it('charts it as one line per role with names for the tooltip, on one axis', async () => {
+        vi.mocked(fetchWithFallback).mockReset();
+        vi.mocked(executeSQLViaDuckDB).mockReset();
+        aiReplies({ action: 'answer', title: 'Highest and lowest product sales by month', sql: 'SELECT 1', dimensions: ['month', 'sales_type', 'product'], measures: ['total_sales'] });
+        vi.mocked(executeSQLViaDuckDB).mockResolvedValueOnce({ data: long, columns: [], error: null } as any);
+        const result = await runLeanAISQL('show me month wise highest and lowest sales for products', dataset);
+        expect(result.chart).toMatchObject({
+            chartType: 'multiLine', xKey: 'month', yKey: 'highest_total_sales', secondaryYKeys: ['lowest_total_sales'], useDualAxis: false,
+            pointLabelKeys: { highest_total_sales: 'highest_product', lowest_total_sales: 'lowest_product' },
+        });
+        expect(result.chartData).toHaveLength(3);
+        expect(result.narrative?.summary).toContain('the product with the highest and lowest total sales');
     });
 });
 

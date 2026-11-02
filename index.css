@@ -5157,3 +5157,18 @@ body {
   .qi-chat-composer-wrap { padding: 6px 10px 10px; }
 }
 .qi-chat-composer textarea:focus, .qi-chat-composer textarea:focus-visible { outline: none !important; box-shadow: none !important; border: 0 !important; }
+
+/* Highest / lowest per group: names visible without hovering */
+.qi-extremes { margin-top: 12px; max-height: 320px; overflow: auto; border: 1px solid var(--border-default); border-radius: 12px; }
+.qi-extremes-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.qi-extremes-table th, .qi-extremes-table td { padding: 7px 12px; text-align: left; border-bottom: 1px solid var(--border-default); vertical-align: top; }
+.qi-extremes-table thead th {
+  position: sticky; top: 0; z-index: 1; background: var(--bg-surface);
+  font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-tertiary);
+}
+.qi-extremes-table tbody th { font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.qi-extremes-table tbody tr:last-child > * { border-bottom: 0; }
+.qi-extremes-name { display: block; color: var(--text-primary); font-weight: 500; }
+.qi-extremes-value { display: block; font-size: 12px; color: var(--text-tertiary); font-variant-numeric: tabular-nums; }
+.qi-answer-panel .qi-extremes { max-height: none; margin-top: 8px; }
+.qi-answer-panel .qi-extremes-table th, .qi-answer-panel .qi-extremes-table td { padding: 6px 8px; }

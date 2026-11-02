@@ -48,6 +48,7 @@ export function presentLeanAnswer(result: AISQLPipelineResult, questionLabel: st
     const showLabels = result.chart.chartType !== 'table'
         && result.chart.chartType !== 'heatmap'
         && !['line', 'area', 'multiLine', 'stackedArea'].includes(shownAs)
+        && !result.chart.pointLabelKeys
         && result.chartData.length <= labelLimit;
     const formatting: FormattingConfig = {
         ...AI_SQL_DEFAULT_FORMATTING,
@@ -73,7 +74,11 @@ export function presentLeanAnswer(result: AISQLPipelineResult, questionLabel: st
             questionId: 'ai_sql_' + Date.now(),
             questionLabel,
             secondaryMetrics: result.chart.secondaryYKeys,
-            axisMode: result.chart.useDualAxis ? 'dual' : 'auto',
+            axisMode: result.chart.useDualAxis ? 'dual' : result.chart.singleAxis ? 'single' : 'auto',
+            pointLabelKeys: result.chart.pointLabelKeys,
+            secondaryMetricVisuals: result.chart.pointLabelKeys && shownAs === 'bar'
+                ? Object.fromEntries((result.chart.secondaryYKeys || []).map(key => [key, 'bar']))
+                : undefined,
             limit: result.plan.limit || 0,
             sort: result.plan.sort?.[0]?.dir || 'desc',
         },

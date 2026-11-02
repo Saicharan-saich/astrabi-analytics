@@ -16,6 +16,7 @@ import {
 import { isDimensionOnlyResult } from '../services/ai-sql/resultPresentation';
 import { presentLeanAnswer } from '../utils/aiSqlAnswerPresentation';
 import { ChartVisualization } from './ChartVisualization';
+import { ExtremesTable } from './ExtremesTable';
 import { checkAiSqlLimit, formatResetTime } from '../services/aiSqlRateLimiter';
 import { useAuthStore } from '../store/useAuthStore';
 import { buildQuestionExamples } from '../services/ai-sql/scopeIntent';
@@ -43,6 +44,8 @@ const readMemory = () => {
         return Number.isInteger(value) && value >= 0 && value <= 3 && localStorage.getItem(MEMORY_KEY) !== null ? value : 1;
     } catch { return 1; }
 };
+
+const CURRENCY_OF_FORMAT: Record<string, string> = { currency_gbp: 'GBP', currency_eur: 'EUR', currency_usd: 'USD' };
 
 const formatTokens = (tokens: number) => tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens);
 
@@ -528,6 +531,14 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                                     />
                                                 )}
                                             </div>
+                                            {turn.answer.analysis.config?.pointLabelKeys && (
+                                                <ExtremesTable
+                                                    rows={turn.answer.analysis.data || []}
+                                                    groupKey={turn.answer.analysis.xKey}
+                                                    pointLabelKeys={turn.answer.analysis.config.pointLabelKeys}
+                                                    currency={CURRENCY_OF_FORMAT[String(turn.answer.formatting.numberFormat)]}
+                                                />
+                                            )}
                                             {!!turn.answer.insights?.length && (
                                                 <ul className="qi-chat-insights" aria-label="Key points">
                                                     {turn.answer.insights.map(insight => <li key={insight}>{insight}</li>)}

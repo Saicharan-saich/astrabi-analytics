@@ -138,7 +138,9 @@ for (const theme of ['light', 'dark'] as const) {
         await page.route('**/api/llm/chat', async route => {
             const asked = String(route.request().postDataJSON()?.messages?.slice(-1)?.[0]?.content || '');
             sent.push(asked);
-            const reply = asked.includes('EARLIER IN THIS CHAT')
+            const reply = /highest and lowest/i.test(asked)
+                ? { action: 'answer', title: 'Highest and lowest product sales by month', question: 'For each month, the products with the highest and lowest total sales', dimensions: ['month', 'sales_type', 'product'], measures: ['total_sales'], explanation: 'Added up sales per product per month, then kept the top and bottom product in each month.', sql: 'WITH m AS (SELECT DATE_TRUNC(\'month\', CAST("order_date" AS DATE)) AS month, "product", SUM("revenue") AS total_sales FROM "data" GROUP BY 1, 2), r AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY month ORDER BY total_sales DESC) AS hi, ROW_NUMBER() OVER (PARTITION BY month ORDER BY total_sales ASC) AS lo FROM m) SELECT month, CASE WHEN hi = 1 THEN \'Highest\' ELSE \'Lowest\' END AS sales_type, "product", ROUND(total_sales, 2) AS total_sales FROM r WHERE hi = 1 OR lo = 1 ORDER BY month, sales_type' }
+                : asked.includes('EARLIER IN THIS CHAT')
                 ? { action: 'answer', follow_up: true, title: 'Revenue by month for the top products', question: 'Monthly total revenue', sql: 'SELECT DATE_TRUNC(\'month\', CAST("order_date" AS DATE)) AS month, ROUND(SUM("revenue"), 2) AS total_revenue FROM "data" GROUP BY 1 ORDER BY 1', dimensions: ['month'], measures: ['total_revenue'], explanation: 'Added up revenue for each calendar month.' }
                 : /best products/i.test(asked)
                     ? { action: 'clarify', question: 'What does “best” mean for you?', options: [{ label: 'Total revenue', question: 'Top 10 products by total revenue' }, { label: 'Units sold', question: 'Top 10 products by total quantity sold' }, { label: 'Profit', question: 'Top 10 products by total profit' }] }
@@ -176,12 +178,19 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `35-ai-sql-chat-followup-${theme}`);
         await ask('thanks!');
         await shoot(page, `35-ai-sql-chat-thanks-${theme}`);
+        await ask('show me month wise highest and lowest sales for products');
+        await shoot(page, `39-ai-sql-chat-extremes-${theme}`);
+        await page.locator('.qi-chat-answer').last().screenshot({ path: path.join(OUT, `39-ai-sql-chat-extremes-card-${theme}.png`), ...quick }).catch(() => {});
+        await box.fill('I cannot see the product names in the visual, why?', quick).catch(() => {});
+        await page.waitForTimeout(400);
+        await page.locator('.qi-chat-composer').screenshot({ path: path.join(OUT, `39-ai-sql-chat-complaint-mode-${theme}.png`), ...quick }).catch(() => {});
+        await box.fill('', quick).catch(() => {});
         // Exactly two AI calls so far: the clarify and the follow-up's history.
         test.info().annotations.push({ type: 'ai-calls', description: `${sent.length} calls; follow-up carried history: ${sent.some(text => text.includes('EARLIER IN THIS CHAT'))}` });
         await page.getByRole('button', { name: /Full screen/ }).last().click(quick).catch(() => {});
         await page.locator('#ai-sql-result-workspace').waitFor(quick).catch(() => {});
         await page.waitForTimeout(2000);
-        await shoot(page, `35-ai-sql-answer-trend-${theme}`);
+        await shoot(page, `35-ai-sql-answer-extremes-${theme}`);
         await page.getByRole('button', { name: 'Back', exact: true }).click(quick).catch(() => {});
         await page.setViewportSize({ width: 900, height: 1100 });
         await page.waitForTimeout(1200);

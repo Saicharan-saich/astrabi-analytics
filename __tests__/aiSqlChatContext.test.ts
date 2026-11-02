@@ -31,6 +31,8 @@ describe('AI SQL chat — deciding what a message is, without the AI', () => {
         for (const text of [
             'now by month', 'what about profit?', 'Only 2024', 'show it as a pie', 'Top 5 only', 'break it down by product',
             'and for London?', 'Great, now by month', 'same for last year', 'per region', 'profit instead', 'exclude returns',
+            'I cannot see the product names in the visual, why?', 'the chart is missing March', 'Why is only one product shown?',
+            "that's wrong", 'I don\'t see the names',
         ]) {
             expect(classifyTurn(text, true, dataset).kind, text).toBe('follow_up');
         }

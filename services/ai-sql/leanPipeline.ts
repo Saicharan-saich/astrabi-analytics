@@ -95,6 +95,7 @@ STEP 2 — Otherwise answer (action "answer").
 - Changes over time: group by DATE_TRUNC('month', CAST(date_column AS DATE)) (or the grain asked for) AS period, ORDER BY period. Numeric year columns are compared as numbers.
 - Relative dates ("this year", "last month", "recent") are measured from the latest date in the data, never from today: use (SELECT MAX(CAST(date_column AS DATE)) FROM "data") in the query. Never use CURRENT_DATE or NOW().
 - You do not know the values stored in text columns. Match text the user typed case-insensitively, e.g. LOWER("region") = LOWER('london'), or ILIKE '%term%' for partial names.
+- Highest and lowest (or best and worst, top and bottom) item per group or period, e.g. "month-wise highest and lowest sales for products": return ONE row per group with columns named like period, highest_product, highest_total_sales, lowest_product, lowest_total_sales (use QUALIFY/ROW_NUMBER or ARG_MAX/ARG_MIN). Always include the item's name, not just the number.
 - Listing records: return only the useful columns with LIMIT 200.
 - Never return more than 500 rows.
 
@@ -111,6 +112,7 @@ You also get EARLIER IN THIS CHAT: the previous questions and the SQL that answe
 - If the new message builds on them ("now by month", "only 2024", "what about profit?", "show it as a pie", "top 5 only"), start from the most recent SQL and change only what the message asks.
 - If the new message is a different topic, ignore the earlier chat completely.
 - Always fill "question" with the complete standalone question you answered, and add "follow_up": true if you used the earlier chat, otherwise false.
+- If the user says something is missing or wrong in the last answer ("I can't see the product names"), fix the query so the answer includes it.
 - Asking a follow-up (action "clarify") follows the same rules as before; do not ask about anything the earlier chat already settles.`;
 
 // ── Helpers (exported for tests) ─────────────────────────────────────
@@ -336,6 +338,131 @@ export function buildInsights(rows: Record<string, any>[], profile: ResultProfil
     return insights.slice(0, 3);
 }
 
+// ── Highest / lowest per group ───────────────────────────────────────
+
+const ROLE_WORD = /^(highest|lowest|top|bottom|best|worst|max|min|maximum|minimum|most|least|largest|smallest)$/i;
+const roleOf = (text: string): string | null => {
+    const first = text.toLowerCase().split(/[_\s-]+/)[0];
+    return ROLE_WORD.test(first) ? first : null;
+};
+const ASKS_FOR_EXTREMES = /\b(highest|lowest|top|bottom|best|worst|max(imum)?|min(imum)?|most|least)\b[\s\S]*\b(and|&|vs|versus)\b[\s\S]*\b(highest|lowest|top|bottom|best|worst|max(imum)?|min(imum)?|most|least)\b|\b(highest|top|best)\b.*\b(each|every|per|wise|by)\b/i;
+
+export interface ExtremesShape {
+    /** One row per group: the group, then each role's item and value. */
+    rows: Record<string, any>[];
+    group: string;
+    /** e.g. [{ role: 'highest', item: 'highest_product', value: 'highest_total_sales' }] */
+    roles: { role: string; item: string; value: string }[];
+    /** What the items are ("product") and what is measured ("total sales"). */
+    itemName: string;
+    measureName: string;
+}
+
+const isNumber = (value: unknown) => typeof value === 'number' && Number.isFinite(value);
+const titleWord = (word: string) => word.charAt(0).toUpperCase() + word.slice(1);
+
+/**
+ * Recognise "the highest and lowest item for each group" answers and return
+ * them one row per group, with every item name kept. Handles the wide form
+ * (highest_product, highest_sales, …) and the long form (month, product,
+ * sales[, type]) that would otherwise be drawn as one zig-zag line with the
+ * names thrown away.
+ */
+export function normaliseExtremes(rows: Record<string, any>[], question: string): ExtremesShape | null {
+    if (rows.length < 2) return null;
+    const columns = Object.keys(rows[0]);
+    const numeric = columns.filter(column => rows.every(row => row[column] === null || row[column] === undefined || isNumber(row[column])) && rows.some(row => isNumber(row[column])));
+    const text = columns.filter(column => !numeric.includes(column));
+
+    // Wide form: measures and items that share a role prefix.
+    const roles = numeric
+        .map(value => ({ value, role: roleOf(value) }))
+        .filter((entry): entry is { value: string; role: string } => Boolean(entry.role))
+        .map(entry => ({ ...entry, item: text.find(column => roleOf(column) === entry.role) || '' }))
+        .filter(entry => entry.item);
+    if (roles.length >= 1) {
+        const group = text.find(column => !roleOf(column)) || columns.find(column => !roles.some(role => role.item === column || role.value === column));
+        if (!group) return null;
+        const itemName = roles[0].item.split(/_/).slice(1).join(' ') || 'item';
+        const measureName = roles[0].value.split(/_/).slice(1).join(' ') || 'value';
+        return { rows, group, roles: roles.map(({ role, item, value }) => ({ role, item, value })), itemName, measureName };
+    }
+
+    // Long form: a group column, an item column and one measure, a few rows per group.
+    if (numeric.length !== 1 || text.length < 2 || !ASKS_FOR_EXTREMES.test(question)) return null;
+    const measure = numeric[0];
+    const roleColumn = text.find(column => {
+        const values = new Set(rows.map(row => String(row[column] ?? '')));
+        return values.size >= 2 && values.size <= 4 && [...values].every(value => Boolean(roleOf(value)));
+    });
+    const candidates = text.filter(column => column !== roleColumn);
+    // The group repeats; the item changes within a group.
+    const distinct = (column: string) => new Set(rows.map(row => String(row[column] ?? ''))).size;
+    // A date column is the group; otherwise the column that repeats most.
+    const group = candidates.find(column => rows.every(row => ISO_DATE.test(String(row[column] ?? ''))))
+        || [...candidates].sort((a, b) => distinct(a) - distinct(b))[0];
+    const item = candidates.find(column => column !== group);
+    if (!group || !item) return null;
+    const byGroup = new Map<string, Record<string, any>[]>();
+    for (const row of rows) {
+        const key = String(row[group] ?? '');
+        byGroup.set(key, [...(byGroup.get(key) || []), row]);
+    }
+    if (byGroup.size < 2 || [...byGroup.values()].some(list => list.length > 4)) return null;
+
+    const roleNames = roleColumn
+        ? [...new Set(rows.map(row => String(row[roleColumn]).toLowerCase().split(/[_\s-]+/)[0]))]
+        : ['highest', 'lowest'];
+    const measureName = measure.replace(/_/g, ' ');
+    const itemName = item.replace(/_/g, ' ');
+    const roleSpecs = roleNames.map(role => ({ role, item: `${role}_${item}`, value: `${role}_${measure}` }));
+    const wide = [...byGroup.entries()].map(([key, list]) => {
+        const out: Record<string, any> = { [group]: list[0][group] };
+        if (roleColumn) {
+            for (const row of list) {
+                const role = String(row[roleColumn]).toLowerCase().split(/[_\s-]+/)[0];
+                out[`${role}_${item}`] = row[item];
+                out[`${role}_${measure}`] = row[measure];
+            }
+        } else {
+            const sorted = [...list].sort((a, b) => Number(b[measure]) - Number(a[measure]));
+            out[`highest_${item}`] = sorted[0][item];
+            out[`highest_${measure}`] = sorted[0][measure];
+            out[`lowest_${item}`] = sorted[sorted.length - 1][item];
+            out[`lowest_${measure}`] = sorted[sorted.length - 1][measure];
+        }
+        return out;
+    }).sort((a, b) => String(a[group]).localeCompare(String(b[group])));
+    return { rows: wide, group, roles: roleSpecs, itemName, measureName };
+}
+
+/** Summary and key points for a highest/lowest-per-group answer. */
+export function extremesNarrative(shape: ExtremesShape, currency?: string): { summary: string; insights: string[] } {
+    insightCurrencySymbol = currencySymbolFor(currency);
+    const isTime = shape.rows.every(row => ISO_DATE.test(String(row[shape.group] ?? '')));
+    const when = (row: Record<string, any>) => isTime ? periodLabel(row[shape.group]) : String(row[shape.group]);
+    const groupWord = isTime ? 'period' : shape.group.replace(/_/g, ' ');
+    const roleList = shape.roles.map(role => role.role).join(' and ');
+    const summary = `For each ${groupWord}, the ${shape.itemName} with the ${roleList} ${shape.measureName} — ${shape.rows.length} ${groupWord}${shape.rows.length === 1 ? '' : 's'} in all.`;
+    const insights: string[] = [];
+    const first = shape.roles[0];
+    const last = shape.roles[shape.roles.length - 1];
+    const valid = (key: string) => shape.rows.filter(row => isNumber(row[key]));
+    const peak = valid(first.value).sort((a, b) => b[first.value] - a[first.value])[0];
+    if (peak) insights.push(`${titleWord(first.role)} overall: ${peak[first.item]} with ${formatNumber(peak[first.value])} in ${when(peak)}.`);
+    if (last !== first) {
+        const trough = valid(last.value).sort((a, b) => a[last.value] - b[last.value])[0];
+        if (trough) insights.push(`${titleWord(last.role)} overall: ${trough[last.item]} with ${formatNumber(trough[last.value])} in ${when(trough)}.`);
+    }
+    for (const role of [first, last].filter((role, index, list) => list.indexOf(role) === index)) {
+        const counts = new Map<string, number>();
+        for (const row of shape.rows) if (row[role.item] !== null && row[role.item] !== undefined) counts.set(String(row[role.item]), (counts.get(String(row[role.item])) || 0) + 1);
+        const [name, count] = [...counts.entries()].sort((a, b) => b[1] - a[1])[0] || [];
+        if (name && count && count > 1) insights.push(`${name} was the ${role.role} ${shape.itemName} in ${count} of ${shape.rows.length} ${groupWord}s.`);
+    }
+    return { summary, insights: insights.slice(0, 4) };
+}
+
 // ── The pipeline ─────────────────────────────────────────────────────
 
 const sqlName = (name: string) => `"${name.replace(/"/g, '""')}"`;
@@ -465,7 +592,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
 
     options.onProgress?.('Choosing the chart');
     const result = buildLeanAnswer({
-        question: standalone, sql, rows: execution.data || [], reply: parsed, model, dataset, started, repairAttempts, tokens, aiModel: reply.model,
+        question: standalone, sql, rows: execution.data || [], reply: parsed, model, dataset, started, repairAttempts, tokens, aiModel: reply.model, originalQuestion: question,
     });
     result.conversation = {
         standaloneQuestion: standalone,
@@ -486,22 +613,50 @@ interface LeanAnswerInput {
     repairAttempts: number;
     tokens: number;
     aiModel: string;
+    /** The user's own words, when the AI restated the question. */
+    originalQuestion?: string;
 }
 
 /** Chart, narrative and insights for an executed query — all local. */
 function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
     const { question, sql, reply: parsed, model, dataset, repairAttempts, tokens } = input;
-    const rows = input.rows.slice(0, 500);
-    const plan = planFromResult(question, rows, { dimensions: parsed.dimensions, measures: parsed.measures });
+    const returned = input.rows.slice(0, 500);
+    // "Highest and lowest X per group": one row per group, item names kept.
+    const extremes = normaliseExtremes(returned, `${question} ${input.originalQuestion || ''}`);
+    const rows = extremes ? extremes.rows : returned;
+    const plan = extremes
+        ? planFromResult(question, rows, { dimensions: [extremes.group], measures: extremes.roles.map(role => role.value) })
+        : planFromResult(question, rows, { dimensions: parsed.dimensions, measures: parsed.measures });
     const profile = profileResult(rows, plan, model);
+    if (extremes) {
+        // The item columns are labels for the points, not groupings.
+        const itemColumns = new Set(extremes.roles.map(role => role.item));
+        profile.dimensionColumns = profile.dimensionColumns.filter(column => !itemColumns.has(column));
+    }
     const chart: ChartRecommendation = recommendChart(profile, plan, model);
     const reshaped = reshapeData(rows, profile, chart, plan);
     const currency = resultCurrency(sql, profile.metricColumns[0] || plan.metrics[0]?.field, dataset.columns);
     if (currency) reshaped.chart = { ...reshaped.chart, currency };
+    if (extremes) {
+        const isTime = Boolean(profile.hasTimeDimension && profile.timeDimensionColumn === extremes.group);
+        const [primary, ...others] = extremes.roles.map(role => role.value);
+        reshaped.chart = {
+            ...reshaped.chart,
+            chartType: isTime || rows.length > 15 ? 'multiLine' : 'bar',
+            xKey: extremes.group,
+            yKey: primary,
+            secondaryYKeys: others,
+            useDualAxis: false,
+            singleAxis: true,
+            pointLabelKeys: Object.fromEntries(extremes.roles.map(role => [role.value, role.item])),
+            reason: 'Highest and lowest per group → one line per role, item names in the tooltip and table',
+        };
+    }
     const narrativeBase = rows.length ? buildResultNarrative({ question, data: reshaped.data, profile, chart: reshaped.chart, plan, model, sourceRows: dataset.rows, currency }) : null;
-    const insights = buildInsights(rows, profile, plan, currency);
+    const extremesText = extremes ? extremesNarrative(extremes, currency) : null;
+    const insights = extremesText ? extremesText.insights : buildInsights(rows, profile, plan, currency);
     const narrative: ResultNarrative | undefined = narrativeBase
-        ? { ...narrativeBase, headline: parsed.title || narrativeBase.headline, insights }
+        ? { ...narrativeBase, headline: parsed.title || narrativeBase.headline, insights, ...(extremesText ? { summary: extremesText.summary } : {}) }
         : undefined;
 
     const explanation = rows.length

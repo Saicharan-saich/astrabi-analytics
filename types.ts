@@ -442,6 +442,8 @@ export interface QueryConfig {
   comparisonOffset?: number; // For same_period_last_n: how many grains back (default 1)
   chartStyle?: 'vertical' | 'horizontal' | 'stacked' | 'normalized'; // Style variations for Bar/Area/Line
   secondaryMetrics?: string[]; // Additional metrics to overlay (e.g., profit alongside revenue)
+  /** Series key → column naming each point (shown in the tooltip), e.g. highest_sales → highest_product. */
+  pointLabelKeys?: Record<string, string>;
   axisMode?: 'auto' | 'single' | 'dual' | 'blended'; // How to handle Y axes for multi-metric
   secondaryMetricVisuals?: Record<string, string>; // Per-metric visual type: { 'quantity': 'bar', 'discount': 'area' }
   secondaryMetricAggregations?: Record<string, string>; // Per-metric aggregation: { 'quantity': 'SUM', 'discount': 'AVG' }
