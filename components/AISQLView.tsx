@@ -406,8 +406,10 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         );
     }
 
-    const lastAnswerTurn = [...(active?.turns || [])].reverse().find(turn => turn.role === 'assistant' && turn.answer);
-    const followUps = lastAnswerTurn?.answer && !busy ? suggestFollowUps(lastAnswerTurn.answer, dataset) : [];
+    // Follow-up chips only right after a query answer (not after a reply in
+    // words, and not after the overview, which has no query to build on).
+    const lastAssistantTurn = [...(active?.turns || [])].reverse().find(turn => turn.role === 'assistant');
+    const followUps = lastAssistantTurn?.answer?.sql && !busy ? suggestFollowUps(lastAssistantTurn.answer, dataset) : [];
     const history = conversations.filter(conversation => conversation.turns.length > 0).sort((a, b) => b.updatedAt - a.updatedAt);
     const groups = history.reduce<Record<string, Conversation[]>>((acc, conversation) => {
         const label = whenLabel(conversation.updatedAt);
@@ -578,7 +580,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                         <article className="qi-chat-answer" aria-label={turn.answer.title}>
                                             <header className="qi-chat-answer-head">
                                                 <h4>{turn.answer.title}</h4>
-                                                {turn.answer.standaloneQuestion && turn.answer.standaloneQuestion !== active.turns[index - 1]?.text && (
+                                                {turn.answer.standaloneQuestion && !turn.answer.overview && turn.answer.standaloneQuestion !== active.turns[index - 1]?.text && (
                                                     <p className="qi-chat-understood" title="The complete question that was answered"><CornerDownRight className="h-3 w-3" aria-hidden /> {turn.answer.standaloneQuestion}</p>
                                                 )}
                                             </header>
