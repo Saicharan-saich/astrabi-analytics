@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Loader2, Undo2, X } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader2, RefreshCw, Undo2, X } from 'lucide-react';
 import type { Dataset, ETLLog } from '../types';
-import { ChangeItem, ChangeKind, summariseEtlChanges } from '../utils/etlChangeSummary';
+import { ChangeItem, ChangeKind, cleanedByOlderVersion, summariseEtlChanges } from '../utils/etlChangeSummary';
 
 interface CleaningChangesPanelProps {
     dataset: Dataset;
@@ -11,6 +11,8 @@ interface CleaningChangesPanelProps {
     pendingOption?: string | null;
     /** Always shown (no dismiss), e.g. at the top of the full cleaning log. */
     persistent?: boolean;
+    /** Re-runs the current cleaning on the original upload. */
+    onReclean?: () => void;
 }
 
 const SECTIONS: { kind: ChangeKind; label: string; tone: string }[] = [
@@ -25,6 +27,19 @@ const dismissKey = (dataset: Dataset) => `qi:cleaning-panel:${dataset.id}:${data
 const readDismissed = (key: string) => { try { return localStorage.getItem(key) === '1'; } catch { return false; } };
 const writeDismissed = (key: string) => { try { localStorage.setItem(key, '1'); } catch { /* storage unavailable */ } };
 
+const LONG_DATE = /^[A-Z][a-z]{2} [A-Z][a-z]{2} \d{2} \d{4} \d{2}:\d{2}:\d{2} GMT/;
+/** Dates as people write them: "29 May 2026" (with the time only when there is one). */
+function cellText(value: unknown): string {
+    if (value === null || value === undefined || value === '') return '—';
+    const date = value instanceof Date ? value
+        : typeof value === 'string' && (LONG_DATE.test(value) || /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) ? new Date(value) : null;
+    if (date && !Number.isNaN(date.getTime())) {
+        const midnight = date.getHours() === 0 && date.getMinutes() === 0;
+        return date.toLocaleString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', ...(midnight ? {} : { hour: '2-digit', minute: '2-digit' }) });
+    }
+    return String(value);
+}
+
 function SampleRows({ rows }: { rows: Record<string, any>[] }) {
     const keys = Object.keys(rows[0] || {}).slice(0, 6);
     if (!keys.length) return null;
@@ -36,7 +51,7 @@ function SampleRows({ rows }: { rows: Record<string, any>[] }) {
                 </thead>
                 <tbody>
                     {rows.slice(0, 3).map((row, i) => (
-                        <tr key={i}>{keys.map(k => <td key={k} className="px-2 py-1 whitespace-nowrap">{row[k] === null || row[k] === undefined || row[k] === '' ? '—' : String(row[k])}</td>)}</tr>
+                        <tr key={i}>{keys.map(k => <td key={k} className="px-2 py-1 whitespace-nowrap">{cellText(row[k])}</td>)}</tr>
                     ))}
                 </tbody>
             </table>
@@ -82,8 +97,10 @@ function ChangeRow({ item, onRevert, pending, busy }: { item: ChangeItem; onReve
  * way to reverse each reversible step. Shown at the top of the dataset
  * workspace until dismissed for this version of the data.
  */
-export const CleaningChangesPanel: React.FC<CleaningChangesPanelProps> = ({ dataset, onRevert, pendingOption, persistent = false }) => {
+export const CleaningChangesPanel: React.FC<CleaningChangesPanelProps> = ({ dataset, onRevert, pendingOption, persistent = false, onReclean }) => {
     const summary = useMemo(() => summariseEtlChanges(dataset.etlLogs), [dataset.etlLogs]);
+    const older = useMemo(() => cleanedByOlderVersion(dataset.etlLogs), [dataset.etlLogs]);
+    const reversible = summary.items.filter(item => item.revert).length;
     const key = dismissKey(dataset);
     const [dismissed, setDismissed] = useState(() => readDismissed(key));
     const [lastKey, setLastKey] = useState(key);
@@ -102,7 +119,8 @@ export const CleaningChangesPanel: React.FC<CleaningChangesPanelProps> = ({ data
                         {rowsBefore !== undefined && rowsAfter !== undefined && rowsBefore !== rowsAfter
                             ? `${rowsBefore.toLocaleString()} rows uploaded → ${rowsAfter.toLocaleString()} analysed. `
                             : ''}
-                        {summary.headline}. Each change can be reversed.
+                        {summary.headline}.{' '}
+                        {!onRevert ? '' : reversible === summary.items.length ? 'Each change can be reversed.' : reversible > 0 ? `${reversible} of these can be reversed; the rest are needed to read the file.` : ''}
                     </p>
                 </div>
                 <button type="button" onClick={() => setExpanded(v => !v)} className="qi-clean-link text-[12px] font-semibold px-2 py-1">
@@ -114,6 +132,27 @@ export const CleaningChangesPanel: React.FC<CleaningChangesPanelProps> = ({ data
                     </button>
                 )}
             </header>
+            {older.stale && (
+                <div className="qi-clean-older mx-5 mb-3 rounded-lg px-4 py-3" role="status">
+                    <div className="min-w-0">
+                        <strong>This data was cleaned by an earlier version of QuickInsight.</strong>
+                        <p>
+                            {older.blankKeyDuplicates > 0
+                                ? `That version removed ${older.blankKeyDuplicates} rows as duplicates only because their ID was blank, and its changes cannot be undone. `
+                                : 'Its changes cannot be undone here. '}
+                            {onReclean
+                                ? 'Re-clean it with the current rules: your original upload is kept, so nothing is lost, and every change will have an undo.'
+                                : 'Upload the file again to clean it with the current rules, where every change has an undo.'}
+                        </p>
+                    </div>
+                    {onReclean && (
+                        <button type="button" className="qi-clean-reclean" onClick={onReclean} disabled={Boolean(pendingOption)}>
+                            {pendingOption === '__reclean__' ? <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden /> : <RefreshCw className="w-3.5 h-3.5" aria-hidden />}
+                            {pendingOption === '__reclean__' ? 'Re-cleaning…' : 'Re-clean with current rules'}
+                        </button>
+                    )}
+                </div>
+            )}
             {expanded && (
                 <div className="grid gap-x-8 gap-y-1 px-5 pb-4 md:grid-cols-2">
                     {SECTIONS.map(section => {

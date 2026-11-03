@@ -159,3 +159,26 @@ export function summariseEtlChanges(logs: ETLLog[] | undefined): ChangeSummary {
     const headline = parts.length ? parts.join(' · ') : 'Nothing needed changing';
     return { items, byKind, rowsBefore, rowsAfter, headline };
 }
+
+/** Steps that, in the current cleaning, always come with an undo. */
+const STEPS_WITH_UNDO = new Set([
+    'Duplicate Row Removal', 'Total Row Removal', 'Category Canonicalization', 'Unpivot Period Columns',
+    'Placeholder Values Removed', 'Auto-Merge Name Columns', 'Typo Merge',
+]);
+
+/**
+ * True when the data was cleaned by an earlier version of QuickInsight: one of
+ * these steps was applied without the undo the current version records.
+ * `blankKeyDuplicates` is set when that version removed rows whose ID was
+ * empty as "duplicates" of each other (fixed since).
+ */
+export function cleanedByOlderVersion(logs: ETLLog[] | undefined): { stale: boolean; blankKeyDuplicates: number } {
+    const old = (logs || []).filter(l => l.status === 'applied' && STEPS_WITH_UNDO.has(l.step) && !l.revert);
+    const dup = old.find(l => l.step === 'Duplicate Row Removal');
+    const key = dup?.affectedColumns?.[0] || (dup?.details.match(/column\(s\): ([\w ]+)/)?.[1]?.trim());
+    const blank = (value: unknown) => value === null || value === undefined || String(value).trim() === '';
+    const blankKeyDuplicates = dup && key && dup.removedRowSamples?.some(row => blank(row[key]))
+        ? (dup.rowsBefore !== undefined && dup.rowsAfter !== undefined ? dup.rowsBefore - dup.rowsAfter : dup.removedRowSamples.length)
+        : 0;
+    return { stale: old.length > 0, blankKeyDuplicates };
+}

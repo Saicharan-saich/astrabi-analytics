@@ -775,7 +775,9 @@ function layer1_structuralNormalization(
         }
         if (d.repeatedKept > 0) {
             logs.push(log('Repeated Rows Kept', 6, 'info',
-                `${d.repeatedKept} row(s) exactly repeat another row. With no unique ID they may be genuine repeat transactions, so they were kept. If they are accidental copies, remove them in Data Studio.`,
+                d.keyColumn
+                    ? `${d.repeatedKept} row(s) exactly repeat another row but have no '${d.keyColumn}', so nothing proves they are copies: they may be genuine repeat transactions and were kept. If they are accidental copies, remove them in Data Studio.`
+                    : `${d.repeatedKept} row(s) exactly repeat another row. With no unique ID they may be genuine repeat transactions, so they were kept. If they are accidental copies, remove them in Data Studio.`,
                 { affectedRows: d.repeatedKept }));
         }
         if (d.repeatingIdColumns.length > 0) {

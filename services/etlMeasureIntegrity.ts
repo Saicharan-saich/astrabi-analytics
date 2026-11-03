@@ -59,7 +59,12 @@ export function dedupeRows(rows: Row[], idPattern: RegExp): DedupeResult {
         return values.length > 0 && new Set(values.map(String)).size < values.length;
     });
     if (copies.length > 0 && keyColumn) {
-        return { rows: unique, removed: copies, repeatedKept: 0, keyColumn, repeatingIdColumns };
+        // The ID proves a copy only when it is filled in: two rows with a
+        // blank ID may be two real transactions, so those are kept.
+        const proven = copies.filter(row => !isBlank(row[keyColumn]));
+        if (proven.length === copies.length) return { rows: unique, removed: copies, repeatedKept: 0, keyColumn, repeatingIdColumns };
+        const drop = new Set(proven);
+        return { rows: rows.filter(row => !drop.has(row)), removed: proven, repeatedKept: copies.length - proven.length, keyColumn, repeatingIdColumns };
     }
     return { rows, removed: [], repeatedKept: copies.length, keyColumn, repeatingIdColumns };
 }

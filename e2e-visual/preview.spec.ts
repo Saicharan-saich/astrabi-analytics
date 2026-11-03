@@ -259,6 +259,27 @@ for (const theme of ['light', 'dark'] as const) {
         expect(aiCalls).toBe(0);
     });
 
+    test(`older cleaning ${theme}`, async ({ page }) => {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await boot(page, theme, 'DASHBOARD', { oldCleaning: true });
+        let nav = page.getByRole('button', { name: 'Dataset Workspace', exact: true }).first();
+        if (!(await nav.isVisible().catch(() => false))) {
+            await page.getByRole('button', { name: 'Open navigation', exact: true }).click().catch(() => {});
+            nav = page.getByRole('button', { name: 'Dataset Workspace', exact: true }).first();
+        }
+        await nav.click();
+        const panel = page.locator('.qi-clean-panel:visible').first();
+        await panel.waitFor({ timeout: 10000 });
+        await panel.getByRole('button', { name: /Removed 19 duplicate rows/ }).first().click().catch(() => {});
+        await page.waitForTimeout(600);
+        await panel.screenshot({ path: path.join(OUT, `52-older-cleaning-${theme}.png`) });
+        await panel.getByRole('button', { name: /Re-clean with current rules/ }).click();
+        await page.locator('.qi-clean-older').waitFor({ state: 'detached', timeout: 30000 }).catch(() => {});
+        await page.waitForTimeout(1500);
+        await shoot(page, `52-older-cleaning-after-${theme}`);
+        expect(await page.locator('.qi-clean-older').count()).toBe(0);
+    });
+
     test(`workspaces ${theme}`, async ({ page }) => {
         await boot(page, theme, 'DASHBOARD');
         const openNav = async (label: string) => {

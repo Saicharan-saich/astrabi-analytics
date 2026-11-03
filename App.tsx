@@ -973,6 +973,9 @@ function App() {
     onSwitchToLive: () => setActiveTab(Tab.UPLOAD),
     onEtlRevert: dataset?.rawRows?.length && !dataset.relationalCatalog ? handleEtlRevert : undefined,
     onApplyCleaningDecisions: dataset?.rawRows?.length && !dataset.relationalCatalog ? handleApplyCleaningDecisions : undefined,
+    onEtlReclean: dataset?.rawRows?.length && !dataset.relationalCatalog
+      ? () => { if (!etlRevertPending) rerunCleaning(dataset.etlOptions || {}, 'Re-cleaned with the current rules', '__reclean__'); }
+      : undefined,
     etlRevertPending,
   };
 

@@ -9,7 +9,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const user = { id: 'visual-user', email: 'visual@example.com', name: 'Alex Morgan', role: 'admin' };
 const token = 'header.' + Buffer.from(JSON.stringify({ userId: user.id })).toString('base64url') + '.signature';
 
-export async function boot(page: Page, theme: 'light' | 'dark', activeTab: string) {
+export async function boot(page: Page, theme: 'light' | 'dark', activeTab: string, options: { oldCleaning?: boolean } = {}) {
     const dashboard = dashboardFixture();
     const second = secondDashboardFixture();
     const gallery = galleryDashboardFixture();
@@ -28,7 +28,7 @@ export async function boot(page: Page, theme: 'light' | 'dark', activeTab: strin
         }));
     }, { dashboard, second, gallery, userId: user.id, theme, activeTab });
     await page.goto('/');
-    await page.evaluate(async ({ userId, rows }) => {
+    await page.evaluate(async ({ userId, rows, oldCleaning }) => {
         const db = await new Promise<IDBDatabase>((resolve, reject) => {
             const request = indexedDB.open('QuickInsight-datasets', 1);
             request.onupgradeneeded = () => request.result.createObjectStore('datasets', { keyPath: 'id' });
@@ -40,7 +40,10 @@ export async function boot(page: Page, theme: 'light' | 'dark', activeTab: strin
             tx.objectStore('datasets').put({
                 id: 'visual-sales', name: 'Sales.csv', ownerId: userId, rows, rawRows: rows, timeContext: { minDate: '2024-01-01', maxDate: '2024-12-31', defaultAnchorDate: '2024-12-31', anchorDateColumn: 'order_date', dateColumnMaxDates: { order_date: '2024-12-31' } }, domainProfile: { domain: 'Sales', summary: 'Orders by product, vendor and city.', confidence: 0.86, grain: 'Order', grainConfidence: 0.9, grainSource: 'unique_identifier', columnSemantics: {}, detectedAt: 1 }, totalRows: rows.length, etlLogs: [
                     { step: 'Null Token Standardization', stepNumber: 2, status: 'applied', timestamp: 1, details: 'Converted 14 null token(s) (N/A, null, -, etc.) to NULL in 2 column(s).', affectedColumns: ['vendor', 'city'], affectedRows: 14 },
-                    { step: 'Duplicate Row Removal', stepNumber: 1, status: 'applied', timestamp: 1, details: "Removed 3 exact duplicate row(s). 'order_id' is unique once copies are removed, so the repeats were re-exported copies.", rowsBefore: rows.length + 5, rowsAfter: rows.length + 2, removedRowSamples: rows.slice(0, 3), affectedColumns: ['order_id'], revert: { option: 'keepDuplicateRows', value: true, label: 'Keep the copies' } },
+                    oldCleaning
+                        // As an earlier version logged it: no undo, blank IDs, dates stored as Date objects.
+                        ? { step: 'Duplicate Row Removal', stepNumber: 1, status: 'applied', timestamp: 1, details: 'Removed 19 duplicate row(s). Strategy: primary key match on 1 unique ID column(s): order_id.', rowsBefore: rows.length + 21, rowsAfter: rows.length + 2, removedRowSamples: rows.slice(0, 3).map((row: any) => ({ ...row, order_id: null, order_date: new Date(`${row.order_date}T00:00:00`) })), affectedColumns: ['order_id'] }
+                        : { step: 'Duplicate Row Removal', stepNumber: 1, status: 'applied', timestamp: 1, details: "Removed 3 exact duplicate row(s). 'order_id' is unique once copies are removed, so the repeats were re-exported copies.", rowsBefore: rows.length + 5, rowsAfter: rows.length + 2, removedRowSamples: rows.slice(0, 3), affectedColumns: ['order_id'], revert: { option: 'keepDuplicateRows', value: true, label: 'Keep the copies' } },
                     { step: 'Total Row Removal', stepNumber: 1, status: 'applied', timestamp: 1, details: 'Removed 2 total/subtotal row(s) — their figures equal the rows they total, so keeping them would double-count.', rowsBefore: rows.length + 2, rowsAfter: rows.length, revert: { option: 'keepTotalRows', value: true, label: 'Keep these rows' } },
                     { step: 'Units Removed', stepNumber: 5, status: 'applied', timestamp: 1, details: "Column 'quantity': read numbers written with text (units seen: units (6)).", affectedColumns: ['quantity'] },
                     { step: 'Category Canonicalization', stepNumber: 5, status: 'applied', timestamp: 1, details: `Column 'city': merged 2 spelling variant(s) into canonical forms (9 cell(s)). "new york" → "New York"`, affectedColumns: ['city'], affectedRows: 9, revert: { option: 'keepCategorySpellings', value: true, label: 'Keep original spellings' } },
@@ -68,7 +71,7 @@ export async function boot(page: Page, theme: 'light' | 'dark', activeTab: strin
             tx.onerror = () => reject(tx.error);
         });
         db.close();
-    }, { userId: user.id, rows: salesRows() });
+    }, { userId: user.id, rows: salesRows(), oldCleaning: Boolean(options.oldCleaning) });
     if (theme === 'light') {
         await page.getByRole('button', { name: /skip tour/i }).waitFor();
         await page.screenshot({ path: path.join(OUT, `01-tour-${theme}.png`) });

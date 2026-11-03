@@ -31,6 +31,8 @@ interface DatasetSummaryViewProps {
     onSwitchToLive?: () => void;
     /** Reverse or restore one automatic cleaning step. */
     onEtlRevert?: (revert: NonNullable<ETLLog['revert']>) => void;
+    /** Re-runs the current cleaning on the original upload. */
+    onEtlReclean?: () => void;
     /** Apply the cleaning review's decisions in one re-run. */
     onApplyCleaningDecisions?: (nextOptions: EtlOptions, label: string) => void;
     etlRevertPending?: string | null;
@@ -258,6 +260,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
     onDataCleaned,
     onSwitchToLive,
     onEtlRevert,
+    onEtlReclean,
     onApplyCleaningDecisions,
     etlRevertPending,
 }) => {
@@ -363,7 +366,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                 <div className="mt-6 space-y-5">
                     {view === 'overview' && facts && (
                         <>
-                            <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} />
+                            <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} onReclean={onEtlReclean} />
 
                             <dl className="qi-ws-card qi-ws-facts rounded-xl grid grid-cols-2 md:grid-cols-4">
                                 <div className="px-5 py-4">
@@ -467,7 +470,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                             </div>
                             {cleaningMode === 'log' ? (
                                 <>
-                                    <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} persistent />
+                                    <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} onReclean={onEtlReclean} persistent />
                                     <CleaningRulesPanel dataset={dataset} onApply={onApplyCleaningDecisions} busy={Boolean(etlRevertPending)} />
                                     <ETLView dataset={dataset} onSchemaOverride={onSchemaOverride} onRowsRecovered={onRowsRecovered} onDataCleaned={onDataCleaned} onApplyDecisions={onApplyCleaningDecisions} applying={etlRevertPending === '__review__'} busy={Boolean(etlRevertPending)} />
                                 </>
