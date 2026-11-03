@@ -1,4 +1,4 @@
-import { test, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import path from 'path';
 
 import { boot, shoot, OUT } from './boot';
@@ -229,6 +229,32 @@ for (const theme of ['light', 'dark'] as const) {
         await page.setViewportSize({ width: 900, height: 1100 });
         await page.waitForTimeout(1200);
         await shoot(page, `36-ai-sql-chat-narrow-${theme}`);
+    });
+
+    test(`data story ${theme}`, async ({ page }) => {
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await boot(page, theme, 'DASHBOARD');
+        // No AI: any call to the model would fail this check.
+        let aiCalls = 0;
+        await page.route('**/api/llm/chat', route => { aiCalls++; return route.abort(); });
+        let open = page.getByRole('button', { name: /Data Story/ }).first();
+        if (!(await open.isVisible().catch(() => false))) {
+            await page.getByRole('button', { name: 'Open navigation', exact: true }).click().catch(() => {});
+            open = page.getByRole('button', { name: /Data Story/ }).first();
+        }
+        await open.click();
+        await page.locator('.qi-story-slide').waitFor({ timeout: 15000 });
+        const slides = await page.locator('.qi-story-dots button').count();
+        for (let i = 0; i < slides; i++) {
+            await page.waitForTimeout(1200);
+            await shoot(page, `70-data-story-${String(i + 1).padStart(2, '0')}-${theme}`);
+            await page.keyboard.press('ArrowRight');
+        }
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.locator('.qi-story-dots button').nth(1).click().catch(() => {});
+        await page.waitForTimeout(1200);
+        await shoot(page, `71-data-story-phone-${theme}`);
+        expect(aiCalls).toBe(0);
     });
 
     test(`workspaces ${theme}`, async ({ page }) => {
