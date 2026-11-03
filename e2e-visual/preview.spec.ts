@@ -251,7 +251,9 @@ for (const theme of ['light', 'dark'] as const) {
             await page.keyboard.press('ArrowRight');
         }
         await page.setViewportSize({ width: 390, height: 844 });
-        await page.locator('.qi-story-dots button').nth(1).click().catch(() => {});
+        await page.keyboard.press('Home').catch(() => {});
+        for (let i = 0; i < slides; i++) await page.keyboard.press('ArrowLeft');
+        await page.keyboard.press('ArrowRight');
         await page.waitForTimeout(1200);
         await shoot(page, `71-data-story-phone-${theme}`);
         expect(aiCalls).toBe(0);

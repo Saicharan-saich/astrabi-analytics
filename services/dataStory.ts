@@ -243,6 +243,7 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
     const measure = ranked[0];
     const fmt = (value: number, m: Measure | undefined = measure) => compact(value, m?.symbol || '');
     const recordWord = idColumn ? pluralPhrase(human(idColumn.name).replace(/\s*(id|number|no|num|ref|reference|code|key)$/i, '').trim() || 'record') : 'rows';
+    const oneRecord = recordWord === 'rows' ? 'row' : recordWord.replace(/ies$/, 'y').replace(/(ch|sh|x|s)es$/, '$1').replace(/s$/, '');
     const useful = groupings.filter(g => g.distinct >= 2 && rows.length / g.distinct >= 2);
 
     const findings: StoryFinding[] = [];
@@ -268,7 +269,7 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
             const distinct = new Set(rows.map(row => row[idColumn.name]).filter(v => !isBlank(v)).map(String)).size;
             kpis.push({ label: capital(recordWord), value: count(distinct), note: `${count(rows.length)} rows` });
         } else kpis.push({ label: capital(recordWord), value: count(rows.length) });
-        if (measure.agg === 'sum') kpis.push({ label: `Typical ${measure.label}`, value: fmt(mid), note: `median; average ${fmt(mean)}` });
+        if (measure.agg === 'sum') kpis.push({ label: `Typical ${oneRecord}`, value: fmt(mid), note: `middle value; average ${fmt(mean)}` });
         if (measure.agg === 'avg') kpis.push({ label: `Middle ${measure.label}`, value: fmt(mid), note: `half are above, half below` });
         const second = ranked.find(m => m !== measure);
         if (second) {
@@ -290,9 +291,9 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
             const sorted = [...values].sort((a, b) => b - a);
             const topCount = Math.max(1, Math.round(values.length * 0.1));
             const topShare = sorted.slice(0, topCount).reduce((s, v) => s + v, 0) / total;
-            points.push(`A few large rows lift the average: the typical row is ${fmt(mid)}, but the average is ${fmt(mean)}. The biggest 10% of rows make up ${pct(topShare)} of the total.`);
+            points.push(`A few large ${recordWord} lift the average: the typical ${oneRecord} is ${fmt(mid)}, but the average is ${fmt(mean)}. The biggest 10% of ${recordWord} make up ${pct(topShare)} of the total.`);
         } else if (measure.agg === 'sum' && values.length) {
-            points.push(`The typical row is ${fmt(mid)}, close to the average of ${fmt(mean)}, so no small group of rows dominates.`);
+            points.push(`The typical ${oneRecord} is ${fmt(mid)}, close to the average of ${fmt(mean)}, so no small group of ${recordWord} dominates.`);
         }
         const negatives = values.filter(v => v < 0);
         if (negatives.length && measure.agg === 'sum') points.push(`${count(negatives.length)} rows are negative (refunds or returns?), taking ${fmt(Math.abs(negatives.reduce((s, v) => s + v, 0)))} off the total.`);
@@ -635,7 +636,7 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
                     id: 'margin', kind: 'margin', eyebrow: 'Margin',
                     headline: `Margin ranges from ${pct(lo.margin, 1)} for ${lo.key} to ${pct(hi.margin, 1)} for ${hi.key}, against ${pct(overall, 1)} overall.`,
                     points,
-                    chart: { data: margins.slice(0, 12).map(m => ({ [grouping.name]: m.key, margin_pct: Math.round(m.margin * 1000) / 10 })), xKey: grouping.name, yKey: 'margin_pct', vis: margins.length > 6 ? 'horizontalBar' : 'bar', yLabel: `Margin % (${profit.label} ÷ ${revenue.label})`, numberFormat: 'auto' },
+                    chart: { data: margins.slice(0, 12).map(m => ({ [grouping.name]: m.key, margin_pct: Math.round(m.margin * 1000) / 10 })), xKey: grouping.name, yKey: 'margin_pct', vis: margins.length > 6 ? 'horizontalBar' : 'bar', yLabel: `Margin % (${profit.label} ÷ ${revenue.label})`, numberFormat: 'percent_points' },
                     ask: `Show ${profit.label} as a percentage of ${revenue.label} by ${grouping.label}`,
                     score: 75 + Math.min(25, (hi.margin - lo.margin) * 100),
                 });
