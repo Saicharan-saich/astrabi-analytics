@@ -21,6 +21,6 @@ describe('AI SQL chat layout', () => {
   it('tells the user how each message is sent', () => {
     expect(source).toContain('New question · no history sent');
     expect(source).toContain('Follow-up');
-    expect(source).toContain('Answered instantly');
+    expect(source).toContain('Conversation · the AI replies in words');
   });
 });

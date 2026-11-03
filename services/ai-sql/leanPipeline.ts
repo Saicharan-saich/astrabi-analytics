@@ -55,6 +55,18 @@ export class AISQLClarificationError extends AISQLPipelineError {
     }
 }
 
+/** The AI replied in words: the message was conversation, not a data question. */
+export class AISQLChatReplyError extends AISQLPipelineError {
+    readonly suggestions: string[];
+    readonly tokens: number;
+    constructor(message: string, suggestions: string[], tokens = 0) {
+        super('conversation_only', message);
+        this.name = 'AISQLChatReplyError';
+        this.suggestions = suggestions;
+        this.tokens = tokens;
+    }
+}
+
 export interface LeanRunOptions {
     /** Re-run the same question at a different date grouping. */
     grain?: 'day' | 'week' | 'month' | 'quarter' | 'year';
@@ -74,11 +86,15 @@ export interface LeanRunOptions {
 /** What the model returns. Exported for tests. */
 export type LeanModelReply =
     | { action: 'clarify'; question: string; options: ClarificationOption[] }
+    | { action: 'chat'; message: string; suggestions: string[] }
     | { action: 'answer'; title?: string; sql: string; dimensions?: string[]; measures?: string[]; explanation?: string; question?: string; followUp?: boolean };
 
 // ── Prompt ───────────────────────────────────────────────────────────
 
 export const LEAN_SYSTEM_PROMPT = `You are QuickInsight's data analyst. You see only a description of the user's data: column names, types, roles and short notes. You never see rows. Your job is to answer the user's question by writing ONE DuckDB SQL query that will run on their computer.
+
+STEP 0 — Is it a data question at all?
+If the message is conversation rather than a request for numbers from the data — a greeting or thanks, a question about you or how QuickInsight works, what a word means, why an earlier answer looks the way it does — reply in words (action "chat"): at most 100 friendly words, never stating numbers from the data (you have not seen them), plus up to 3 short example questions built from the real column names.
 
 STEP 1 — Decide whether to ask a follow-up.
 Ask (action "clarify") when ANY of these is true:
@@ -103,7 +119,9 @@ STEP 2 — Otherwise answer (action "answer").
 Return ONLY one JSON object, no prose:
 {"action":"answer","title":"short plain-English chart title","question":"the full question you answered, written so it makes sense on its own","sql":"SELECT ...","dimensions":["grouping output column"],"measures":["measure output column"],"explanation":"one sentence: what was calculated, including any assumption"}
 or
-{"action":"clarify","question":"short follow-up","options":[{"label":"Total revenue","question":"Top 10 products by total revenue"}]}`;
+{"action":"clarify","question":"short follow-up","options":[{"label":"Total revenue","question":"Top 10 products by total revenue"}]}
+or
+{"action":"chat","message":"your reply in words","suggestions":["example question"]}`;
 
 /** Added to the prompt only when earlier turns are sent with a follow-up. */
 export const LEAN_CONTEXT_RULES = `
@@ -132,6 +150,11 @@ export function parseLeanReply(content: string): LeanModelReply {
         const sqlMatch = text.match(/\b(with|select)\b[\s\S]+/i);
         if (sqlMatch) return { action: 'answer', sql: sqlMatch[0].trim() };
         throw new AISQLPipelineError('ai_sql_unavailable', 'The AI reply could not be read. Please try again.');
+    }
+    if (raw.action === 'chat') {
+        const message = String(raw.message || '').trim().slice(0, 1200);
+        const suggestions = (Array.isArray(raw.suggestions) ? raw.suggestions : []).map((item: unknown) => String(item).trim()).filter(Boolean).slice(0, 3);
+        if (message) return { action: 'chat', message, suggestions };
     }
     if (raw.action === 'clarify') {
         const options: ClarificationOption[] = (Array.isArray(raw.options) ? raw.options : [])
@@ -582,6 +605,10 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     let tokens = Number(reply.data?.usage?.total_tokens) || 0;
     const parsed = parseLeanReply(reply.data?.choices?.[0]?.message?.content || '');
 
+    if (parsed.action === 'chat') {
+        if (options.autoChoose) throw new AISQLPipelineError('ai_sql_unavailable', 'That is not a question about the data, so there is nothing to chart.');
+        throw new AISQLChatReplyError(parsed.message, parsed.suggestions, tokens);
+    }
     if (parsed.action === 'clarify') {
         // Automatic runs take the most likely choice instead of stopping.
         if (options.autoChoose && parsed.options[0] && parsed.options[0].question !== question) {

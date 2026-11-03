@@ -5227,3 +5227,5 @@ body {
   background: var(--bg-surface); color: var(--text-primary); font-size: 13px; font-weight: 500;
 }
 .qi-rules-form-actions { display: flex; justify-content: flex-end; gap: 8px; grid-column: 1 / -1; }
+.qi-chat-reply-text { margin: 0 !important; font-size: 15px !important; line-height: 1.65 !important; color: var(--text-primary) !important; white-space: pre-wrap; }
+.qi-chat-reply + .qi-chat-answer, .qi-chat-reply + .qi-chat-thinking { margin-top: 10px; }

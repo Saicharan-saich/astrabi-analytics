@@ -322,3 +322,10 @@ describe('lean AI SQL — end to end with the AI and DuckDB stubbed', () => {
         expect(executeSQLViaDuckDB).not.toHaveBeenCalled();
     });
 });
+
+describe('lean AI SQL — conversation', () => {
+    it('reads a reply in words from the analysis AI', () => {
+        expect(parseLeanReply('{"action":"chat","message":"I check the wording first.","suggestions":["Total sales by region"]}'))
+            .toEqual({ action: 'chat', message: 'I check the wording first.', suggestions: ['Total sales by region'] });
+    });
+});

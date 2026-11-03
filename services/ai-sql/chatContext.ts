@@ -1,18 +1,21 @@
 /**
- * AI SQL chat: decide, locally and for free, what kind of message this is.
+ * AI SQL chat: decide, locally and for free, where a message goes.
  *
- *  - small_talk  → "hi", "thanks", "what can you do?" — answered here, no AI call.
+ *  - chat        → conversation: "hi", "how does this work?", "how do you know
+ *                  if my question is a follow-up?", "what does median mean?".
+ *                  Answered by the AI in plain English, with the column names
+ *                  only (never rows), on the lighter model.
  *  - summary     → "give me an overview of my data" — opens the data story.
- *  - new         → a self-contained question — sent with NO chat history.
+ *  - new         → a self-contained analysis question — sent with NO history.
  *  - follow_up   → "now by month", "what about profit?" — sent with the last
  *                  few questions and their SQL (never results or rows).
  *
- * Deciding this in the browser replaces a separate AI "router" call on every
- * message, and keeps history out of the prompt unless it is actually needed.
+ * Both AIs can redirect: the analysis AI replies in words when a message turns
+ * out to be conversation, and the chat AI hands a data question to analysis.
  */
 import type { Dataset } from '../../types';
 
-export type TurnKind = 'small_talk' | 'summary' | 'new' | 'follow_up';
+export type TurnKind = 'chat' | 'summary' | 'new' | 'follow_up';
 
 export interface ContextTurn {
     /** The standalone question that was answered. */
@@ -25,8 +28,8 @@ export interface TurnDecision {
     kind: TurnKind;
     /** Plain-English reason, shown to the user on hover. */
     reason: string;
-    /** For small talk: the reply to show, written locally. */
-    reply?: { title: string; message: string };
+    /** For chat: a reply to fall back on if the AI cannot be reached. */
+    fallback?: { title: string; message: string };
 }
 
 const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9£$€%\s'-]/g, ' ').split(/\s+/).filter(Boolean);
@@ -34,8 +37,14 @@ const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9£$€%\s'-]
 const GREETING = /^(hi|hello|hey|hiya|howdy|yo|good (morning|afternoon|evening))( there| team| quickinsight)?[\s!.,]*$/i;
 const THANKS = /^(thanks|thank you|thx|ty|cheers|great|perfect|awesome|nice|cool|brilliant|lovely|ok|okay|got it|amazing)( (so much|a lot|mate|again))?( thanks| thank you)?[\s!.,]*$/i;
 const GOODBYE = /^(bye|goodbye|see you|see ya|that'?s all|that is all|i'?m done|done)( for now| thanks| thank you)?[\s!.,]*$/i;
-const HELP = /^(help|help me|what can you do|what can i ask|how does this work|how do i use (this|you)|what is this)[\s?!.]*$/i;
-const SUMMARY = /^(?:(?:please |can you |could you )?(?:give|show|tell) me )?(?:a |an )?(?:quick |short |full )?(?:summary|overview|story|rundown)(?: of)?(?: (?:my|the|this) (?:data|dataset|file|sheet))?[\s?!.]*$|^(?:please )?summari[sz]e (?:my|the|this) (?:data|dataset|file|sheet)[\s?!.]*$|^(?:tell me )?(?:about|what'?s in) (?:my|the|this) (?:data|dataset|file|sheet)[\s?!.]*$/i;
+const SUMMARY = /^(?:(?:please |can you |could you )?(?:give|show|tell) me )?(?:a |an )?(?:quick |short |full )?(?:summary|overview|story|rundown)(?: of)?(?: (?:my|the|this) (?:data|dataset|file|sheet))?[\s?!.]*$|^(?:please )?summari[sz]e (?:my|the|this) (?:data|dataset|file|sheet)[\s?!.]*$/i;
+
+/** Asking for numbers from the data. */
+const ANALYSIS_WORDS = /\b(show|total|sum|average|avg|mean|median|count|how many|how much|top|bottom|best|worst|highest|lowest|most|least|trend|compare|comparison|break ?down|by|per|list|chart|plot|graph|growth|share|percentage|rank|ranking|filter|between|over time|monthly|yearly|weekly|daily|each|split|distribution)\b/i;
+/** About the assistant, the app or how things work. */
+const ABOUT_THE_APP = /\b(you|your|yourself|quickinsight|this app|the app|this tool|ai sql|chat ?bot|bot|memory|follow[- ]?up|isolated|privacy|private|safe|secure|security|tokens?|how does (this|it) work|what can i ask|help)\b/i;
+/** Asking what something means. */
+const DEFINITION = /^(what is|what's|what are|what does|define|explain|meaning of|difference between|why (do|did|does|is|are) you|how (do|did|does) you|how (do|does|did) (this|it)|can you explain)\b/i;
 
 /** Openers that only make sense after a previous answer. */
 const CONTINUES = /^(and|but|also|now|then|so|ok(ay)?,?|what about|how about|and what about|what if|same|instead|only|just|excluding|exclude|without|except|plus|versus|vs\.?|compared? (to|with)|split|break( it| that| this)? down|drill( down)?|sort|order|rank|show (it|that|this|them|those|these)|make (it|that|this)|change|switch|turn (it|that|this)|as a|as an|top \d+|bottom \d+|filter|group|limit|remove|add|include|exclude)\b/i;
@@ -48,7 +57,7 @@ const ABOUT_A_PROBLEM = /\b(can'?t|cannot|can not|don'?t|doesn'?t|isn'?t|aren'?t
 /** Words that point back at the previous answer. */
 const REFERS_BACK = /\b(it|its|that|those|these|them|they|the same|previous|above|earlier|last (one|answer|chart|result|query)|this (chart|result|answer|one|table)|as well|too|instead|again|also)\b/i;
 
-/** Column names and their words, for spotting a self-contained question. */
+/** Column names and their words, for spotting a question about the data. */
 function columnVocabulary(dataset: Pick<Dataset, 'columns'> | null | undefined): Set<string> {
     const vocabulary = new Set<string>();
     for (const column of dataset?.columns || []) {
@@ -59,46 +68,36 @@ function columnVocabulary(dataset: Pick<Dataset, 'columns'> | null | undefined):
     return vocabulary;
 }
 
+const FALLBACK_HELP = {
+    title: 'How AI SQL works',
+    message: 'Ask a question about your data in plain English. The AI sees only your column names and types, never your rows, and writes one read-only query that runs here in your browser. Follow-ups like "now by month" build on the last answer.',
+};
+
 /**
  * Classify the message. `hasPreviousAnswer` is true when the chat already has
  * an answered question this message could build on.
  */
 export function classifyTurn(message: string, hasPreviousAnswer: boolean, dataset?: Pick<Dataset, 'columns'> | null): TurnDecision {
     const text = message.replace(/\s+/g, ' ').trim();
-    if (GREETING.test(text)) {
-        return { kind: 'small_talk', reason: 'A greeting — answered without the AI.', reply: {
-            title: 'Hello!',
-            message: 'Ask me anything about your data — for example a total, a ranking, a comparison or a trend. I will write the query, run it on your computer and show you the chart.',
-        } };
-    }
-    if (THANKS.test(text)) {
-        return { kind: 'small_talk', reason: 'A thank-you — answered without the AI.', reply: {
-            title: 'You’re welcome',
-            message: hasPreviousAnswer ? 'Ask a follow-up to dig deeper — for example “now by month” or “only the top 5”.' : 'Ask another question whenever you are ready.',
-        } };
-    }
-    if (GOODBYE.test(text)) {
-        return { kind: 'small_talk', reason: 'A goodbye — answered without the AI.', reply: {
-            title: 'See you soon',
-            message: 'Your conversation is saved here. Come back to it any time from the chat list.',
-        } };
-    }
-    if (HELP.test(text)) {
-        return { kind: 'small_talk', reason: 'A help request — answered without the AI.', reply: {
-            title: 'How AI SQL works',
-            message: 'Type a question in plain English. The AI sees only your column names and types — never your rows — and writes one read-only query. The query runs here in your browser, and you get a chart, a summary and the key points. Ask follow-ups like “by month”, “only London” or “show it as a pie” and I will build on the last answer.',
-        } };
-    }
-    if (SUMMARY.test(text)) {
-        return { kind: 'summary', reason: 'An overview of the whole dataset.' };
+    if (GREETING.test(text)) return { kind: 'chat', reason: 'A greeting — the AI replies in words.', fallback: { title: 'Hello!', message: 'Ask me anything about your data — a total, a ranking, a comparison or a trend.' } };
+    if (THANKS.test(text)) return { kind: 'chat', reason: 'A thank-you — the AI replies in words.', fallback: { title: 'You’re welcome', message: 'Ask another question whenever you are ready.' } };
+    if (GOODBYE.test(text)) return { kind: 'chat', reason: 'A goodbye — the AI replies in words.', fallback: { title: 'See you soon', message: 'Your conversation is saved here.' } };
+    if (SUMMARY.test(text)) return { kind: 'summary', reason: 'An overview of the whole dataset.' };
+
+    const core = text.replace(/^(great|perfect|thanks|thank you|cool|nice|ok|okay|good|lovely|awesome|right|alright|interesting)[,!.]?\s+/i, '');
+    const tokens = words(core);
+    const vocabulary = columnVocabulary(dataset);
+    const mentionsColumns = tokens.filter(token => vocabulary.has(token.replace(/'s$/, ''))).length;
+    const asksForNumbers = ANALYSIS_WORDS.test(core) && mentionsColumns > 0;
+
+    // Conversation: about the assistant or the app, or what something means,
+    // and not a request for numbers from the data.
+    if (!asksForNumbers && (ABOUT_THE_APP.test(core) || DEFINITION.test(core)) && !ABOUT_A_PROBLEM.test(core)) {
+        return { kind: 'chat', reason: 'A question for the assistant — the AI replies in words.', fallback: FALLBACK_HELP };
     }
     if (!hasPreviousAnswer) {
         return { kind: 'new', reason: 'The first question in this chat — sent without history.' };
     }
-
-    // "Great, now by month" — the acknowledgement is not the question.
-    const core = text.replace(/^(great|perfect|thanks|thank you|cool|nice|ok|okay|good|lovely|awesome|right|alright|interesting)[,!.]?\s+/i, '');
-    const tokens = words(core);
     if (CONTINUES.test(core) || (PREPOSITION_START.test(core) && tokens.length <= 5)) {
         return { kind: 'follow_up', reason: 'Starts like a follow-up, so the last answer is included.' };
     }
@@ -108,8 +107,6 @@ export function classifyTurn(message: string, hasPreviousAnswer: boolean, datase
     if (REFERS_BACK.test(core)) {
         return { kind: 'follow_up', reason: 'Refers back to the last answer, so it is included.' };
     }
-    const vocabulary = columnVocabulary(dataset);
-    const mentionsColumns = tokens.filter(token => vocabulary.has(token.replace(/'s$/, ''))).length;
     // A short fragment ("profit", "2024 only") needs the last answer, unless it
     // names both what to measure and how to split it ("revenue by region").
     if (tokens.length <= 4 && mentionsColumns < 2 && !/^(what|which|who|how|show|list|give|count|compare|is|are|does|do|did)\b/i.test(core)) {

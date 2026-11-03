@@ -40,7 +40,7 @@ export interface ChatTurn {
     progress?: string;
     answer?: ChatAnswer;
     clarify?: { question: string; options: ClarificationOption[]; original: string };
-    reply?: { title: string; message: string; suggestions?: string[] };
+    reply?: { title?: string; message: string; suggestions?: string[] };
     error?: { title: string; message: string; retryText?: string };
     noData?: { message: string; sql?: string };
 }

@@ -5,7 +5,8 @@ import {
 } from 'lucide-react';
 import type { AnalysisResult, Dataset, FormattingConfig } from '../types';
 import type { AISQLPipelineResult } from '../services/ai-sql';
-import { runLeanAISQL, rerunSavedAnswer, AISQLClarificationError } from '../services/ai-sql/leanPipeline';
+import { runLeanAISQL, rerunSavedAnswer, AISQLClarificationError, AISQLChatReplyError } from '../services/ai-sql/leanPipeline';
+import { chatWithAI, type ChatHistoryItem } from '../services/ai-sql/chatReply';
 import {
     classifyTurn, contextForFollowUp, estimateTokens, formatContextForPrompt, suggestFollowUps, type TurnKind,
 } from '../services/ai-sql/chatContext';
@@ -127,7 +128,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
     // ── What the next message will be sent as (shown live in the composer) ──
     const detected = useMemo(() => classifyTurn(draft, answered.length > 0, dataset), [draft, answered.length, dataset]);
-    const sendKind: TurnKind = modeOverride && (detected.kind === 'new' || detected.kind === 'follow_up') ? modeOverride : detected.kind;
+    const sendKind: TurnKind = modeOverride && (detected.kind === 'new' || detected.kind === 'follow_up' || detected.kind === 'chat') ? modeOverride : detected.kind;
     const pendingContext = sendKind === 'follow_up' ? contextForFollowUp(answered, memory) : [];
     useEffect(() => { if (!draft.trim()) setModeOverride(null); }, [draft]);
 
@@ -153,14 +154,6 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         setDraft('');
         setModeOverride(null);
 
-        // Small talk is answered here: no AI call, no tokens, no quota.
-        if (kind === 'small_talk' && decision.reply) {
-            updateTurn(conversationId, assistantId, {
-                status: 'done', progress: undefined,
-                reply: { ...decision.reply, suggestions: hasAnswer ? [] : examples.slice(0, 3) },
-            });
-            return;
-        }
         if (kind === 'summary') {
             if (onOpenSummaryStory) {
                 updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, reply: { title: 'Opening your data story', message: 'An overview of the whole dataset opens in Data Story.' } });
@@ -186,15 +179,44 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
         const run: ActiveRun = { turnId: assistantId, conversationId, cancelled: false };
         activeRun.current = run;
+        // The question the analysis runs: the message itself, or the data
+        // question the conversation AI handed over.
+        let question = text;
+        let analysisContext = context;
         try {
+            if (kind === 'chat') {
+                // Conversation: the AI replies in words, with column names only.
+                updateTurn(conversationId, assistantId, { progress: 'Writing a reply' });
+                const history: ChatHistoryItem[] = active.turns.flatMap((turn): ChatHistoryItem[] => turn.role === 'user'
+                    ? [{ role: 'user', text: turn.text || '' }]
+                    : [{ role: 'assistant', text: turn.reply?.message || turn.answer?.title || turn.clarify?.question || '' }]).filter(item => item.text);
+                const lastSql = [...active.turns].reverse().find(turn => turn.answer?.sql)?.answer?.sql;
+                const chat = await Promise.race([
+                    chatWithAI(text, dataset, history, lastSql),
+                    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('The reply took longer than 30 seconds. Please try again.')), 30_000)),
+                ]);
+                if (run.cancelled) return;
+                updateConversation(conversationId, conversation => ({ ...conversation, tokens: conversation.tokens + chat.tokens }));
+                if (!chat.analyze) {
+                    updateTurn(conversationId, assistantId, {
+                        status: 'done', progress: undefined,
+                        reply: { message: chat.message, suggestions: chat.suggestions.length ? chat.suggestions : (hasAnswer ? [] : examples.slice(0, 3)) },
+                    });
+                    return;
+                }
+                // It was a data question after all: say so, then answer it.
+                updateTurn(conversationId, assistantId, { reply: chat.message ? { message: chat.message } : undefined, progress: 'Writing the query' });
+                question = chat.analyze;
+                analysisContext = [];
+            }
             const result = await Promise.race([
-                runLeanAISQL(text, dataset, { context, onProgress: step => { if (!run.cancelled) updateTurn(conversationId, assistantId, { progress: step }); } }),
+                runLeanAISQL(question, dataset, { context: analysisContext, onProgress: step => { if (!run.cancelled) updateTurn(conversationId, assistantId, { progress: step }); } }),
                 new Promise<never>((_, reject) => setTimeout(() => reject(new Error('The answer took longer than 60 seconds. Please try again.')), 60_000)),
             ]);
             if (run.cancelled) return;
             incrementAiSqlUsage();
             const tokens = result.tokenUsage?.total || 0;
-            const standalone = result.conversation?.standaloneQuestion || text;
+            const standalone = result.conversation?.standaloneQuestion || question;
             if (result.rawData.length === 0) {
                 updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, noData: { message: result.explanation || 'No rows matched.', sql: result.sql } });
                 updateConversation(conversationId, conversation => ({ ...conversation, tokens: conversation.tokens + tokens }));
@@ -224,6 +246,17 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         } catch (err: any) {
             if (run.cancelled) return;
             const message = String(err?.message || 'Something went wrong.');
+            if (err instanceof AISQLChatReplyError) {
+                // The analysis AI judged it conversation and replied in words.
+                updateConversation(conversationId, conversation => ({ ...conversation, tokens: conversation.tokens + err.tokens }));
+                updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, reply: { message, suggestions: err.suggestions } });
+                return;
+            }
+            if (kind === 'chat' && decision.fallback && !/limit|quota/i.test(message)) {
+                // The AI could not be reached: a short built-in reply instead.
+                updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, reply: { ...decision.fallback, suggestions: examples.slice(0, 3) } });
+                return;
+            }
             if (err instanceof AISQLClarificationError || err?.kind === 'clarification_required') {
                 incrementAiSqlUsage();
                 updateTurn(conversationId, assistantId, {
@@ -349,7 +382,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     }, {});
     const memoryOption = MEMORY_OPTIONS.find(option => option.value === memory) || MEMORY_OPTIONS[1];
     const contextCost = pendingContext.length ? estimateTokens(formatContextForPrompt(pendingContext)) : 0;
-    const modeCanFlip = draft.trim() && answered.length > 0 && (sendKind === 'new' || sendKind === 'follow_up') && memory > 0;
+    // Conversation ↔ analysis can always be switched; follow-up ↔ new needs a previous answer.
+    const modeCanFlip = Boolean(draft.trim()) && (detected.kind === 'chat' || ((sendKind === 'new' || sendKind === 'follow_up') && answered.length > 0 && memory > 0));
+    const nextMode: TurnKind = detected.kind === 'chat'
+        ? (sendKind === 'chat' ? 'new' : 'chat')
+        : (sendKind === 'follow_up' ? 'new' : 'follow_up');
 
     return (
         <div className="qi-chat h-full">
@@ -443,7 +480,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                 <div className="qi-chat-tag" title={turn.kind === 'follow_up' ? 'Sent with the earlier question(s) and SQL — never results' : turn.kind === 'new' ? 'Sent on its own, without chat history' : 'Answered without the AI'}>
                                     {turn.kind === 'follow_up' && <><Link2 className="h-3 w-3" aria-hidden /> Follow-up{turn.contextTurns ? ` · used ${turn.contextTurns} earlier answer${turn.contextTurns === 1 ? '' : 's'}` : ' · memory off'}</>}
                                     {turn.kind === 'new' && index > 0 && <>New question · no history sent</>}
-                                    {turn.kind === 'small_talk' && <>Answered instantly · no AI used</>}
+                                    {turn.kind === 'chat' && <>Conversation · the AI replies in words</>}
                                 </div>
                             </div>
                         ) : (
@@ -460,8 +497,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                     {turn.status === 'stopped' && <p className="qi-chat-muted">Stopped.</p>}
                                     {turn.reply && (
                                         <div className="qi-chat-reply">
-                                            <strong>{turn.reply.title}</strong>
-                                            <p>{turn.reply.message}</p>
+                                            {turn.reply.title && <strong>{turn.reply.title}</strong>}
+                                            <p className={turn.reply.title ? '' : 'qi-chat-reply-text'}>{turn.reply.message}</p>
                                             {!!turn.reply.suggestions?.length && (
                                                 <div className="qi-chat-chips">
                                                     {turn.reply.suggestions.map(suggestion => <button key={suggestion} type="button" onClick={() => void send(suggestion, 'new')}>{suggestion}</button>)}
@@ -627,13 +664,13 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                     type="button"
                                     className={`qi-chat-mode is-${sendKind}`}
                                     disabled={!modeCanFlip}
-                                    onClick={() => setModeOverride(sendKind === 'follow_up' ? 'new' : 'follow_up')}
+                                    onClick={() => setModeOverride(nextMode)}
                                     title={`${modeOverride ? 'Chosen by you.' : detected.reason}${modeCanFlip ? ' Click to switch.' : ''}`}
-                                    aria-label={`Will be sent as: ${sendKind === 'follow_up' ? 'follow-up' : sendKind === 'new' ? 'new question' : sendKind === 'summary' ? 'data overview' : 'answered without AI'}${modeCanFlip ? '. Click to switch.' : ''}`}
+                                    aria-label={`Will be sent as: ${sendKind === 'follow_up' ? 'follow-up' : sendKind === 'new' ? 'new question' : sendKind === 'summary' ? 'data overview' : 'conversation'}${modeCanFlip ? '. Click to switch.' : ''}`}
                                 >
                                     {sendKind === 'follow_up' && <><Link2 className="h-3.5 w-3.5" aria-hidden /> Follow-up · {pendingContext.length ? `+${pendingContext.length} earlier answer${pendingContext.length === 1 ? '' : 's'} (~${contextCost} tokens)` : 'memory off'}</>}
                                     {sendKind === 'new' && <>New question · no history sent</>}
-                                    {sendKind === 'small_talk' && <>Answered instantly · no AI</>}
+                                    {sendKind === 'chat' && <>Conversation · the AI replies in words</>}
                                     {sendKind === 'summary' && <>Opens the data story</>}
                                 </button>
                             ) : (

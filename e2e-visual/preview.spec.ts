@@ -136,8 +136,18 @@ for (const theme of ['light', 'dark'] as const) {
         const json = (body: unknown) => ({ status: 200, contentType: 'application/json', body: JSON.stringify(body), headers: { 'Access-Control-Allow-Origin': '*' } });
         const sent: string[] = [];
         await page.route('**/api/llm/chat', async route => {
-            const asked = String(route.request().postDataJSON()?.messages?.slice(-1)?.[0]?.content || '');
+            const messages = route.request().postDataJSON()?.messages || [];
+            const asked = String(messages.slice(-1)?.[0]?.content || '');
             sent.push(asked);
+            if (String(messages[0]?.content || '').includes('assistant in QuickInsight')) {
+                // The conversation AI (stand-in reply).
+                const followUpQuestion = /follow ?up|isolated/i.test(asked);
+                const chat = followUpQuestion
+                    ? { message: 'Before anything is sent, I read the wording of your message. If it builds on the last answer, like "now by month", "what about profit?" or words such as "it" and "that", it is a follow-up and goes with your last question and its SQL, never the results. A complete question goes on its own, which saves tokens. The label under each message shows which it was, and you can tap the label in the message box to switch before sending.', suggestions: ['Revenue by month', 'Top 5 products by revenue'], analyze: null }
+                    : { message: "You're welcome! Ask a follow-up any time, like \"only the top 5\".", suggestions: [], analyze: null };
+                await route.fulfill(json({ choices: [{ message: { content: JSON.stringify(chat) } }], usage: { total_tokens: 420 } }));
+                return;
+            }
             const reply = /highest and lowest/i.test(asked)
                 ? { action: 'answer', title: 'Highest and lowest product sales by month', question: 'For each month, the products with the highest and lowest total sales', dimensions: ['month', 'sales_type', 'product'], measures: ['total_sales'], explanation: 'Added up sales per product per month, then kept the top and bottom product in each month.', sql: 'WITH m AS (SELECT DATE_TRUNC(\'month\', CAST("order_date" AS DATE)) AS month, "product", SUM("revenue") AS total_sales FROM "data" GROUP BY 1, 2), r AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY month ORDER BY total_sales DESC) AS hi, ROW_NUMBER() OVER (PARTITION BY month ORDER BY total_sales ASC) AS lo FROM m) SELECT month, CASE WHEN hi = 1 THEN \'Highest\' ELSE \'Lowest\' END AS sales_type, "product", ROUND(total_sales, 2) AS total_sales FROM r WHERE hi = 1 OR lo = 1 ORDER BY month, sales_type' }
                 : asked.includes('EARLIER IN THIS CHAT')
@@ -164,6 +174,8 @@ for (const theme of ['light', 'dark'] as const) {
             await page.locator('.qi-chat-thinking').waitFor({ state: 'detached', ...quick }).catch(() => {});
             await page.waitForTimeout(2200);
         };
+        await ask('How do you know if my question is follow up or isolated question?');
+        await shoot(page, `33-ai-sql-chat-conversation-${theme}`);
         await ask('What are my best products?');
         await shoot(page, `37-ai-sql-chat-clarify-${theme}`);
         await page.locator('.qi-chat-chips button', { hasText: 'Total revenue' }).first().click(quick).catch(() => {});

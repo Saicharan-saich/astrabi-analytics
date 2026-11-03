@@ -14,12 +14,20 @@ const dataset = {
 } as any;
 
 describe('AI SQL chat — deciding what a message is, without the AI', () => {
-    it('answers greetings, thanks and help locally', () => {
-        for (const text of ['hi', 'Hello there!', 'thanks', 'Thank you so much', 'ok', 'what can you do?', 'bye']) {
+    it('sends conversation to the AI to reply in words, with a fallback reply ready', () => {
+        for (const text of ['hi', 'Hello there!', 'thanks', 'Thank you so much', 'ok', 'what can you do?', 'bye',
+            'How do you know if my question is follow up or isolated question?', 'What does median mean?',
+            'Is my data safe with you?', 'how does this work?', 'Why did you use a line chart?']) {
             const decision = classifyTurn(text, true, dataset);
-            expect(decision.kind, text).toBe('small_talk');
-            expect(decision.reply?.message).toBeTruthy();
+            expect(decision.kind, text).toBe('chat');
+            expect(decision.fallback?.message, text).toBeTruthy();
         }
+    });
+
+    it('keeps data questions as analysis even when they mention "you"', () => {
+        expect(classifyTurn('Can you show total revenue by region?', false, dataset).kind).toBe('new');
+        expect(classifyTurn('What is the average profit per product?', true, dataset).kind).toBe('new');
+        expect(classifyTurn('What is my best performing product?', false, dataset).kind).toBe('new');
     });
 
     it('sends the first question on its own', () => {
