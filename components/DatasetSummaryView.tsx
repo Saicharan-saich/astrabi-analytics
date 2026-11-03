@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Database, Download, Upload, Zap } from 'luci
 import { Dataset, DatasetDomainProfile, ColumnType, ETLLog, EtlOptions } from '../types';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { CleaningChangesPanel } from './CleaningChangesPanel';
+import { CleaningRulesPanel } from './CleaningRulesPanel';
 import { DataExplorerView } from './DataExplorerView';
 import { ETLView } from './ETLView';
 import { DataCleaningPanel } from './DataCleaningPanel';
@@ -467,6 +468,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                             {cleaningMode === 'log' ? (
                                 <>
                                     <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} persistent />
+                                    <CleaningRulesPanel dataset={dataset} onApply={onApplyCleaningDecisions} busy={Boolean(etlRevertPending)} />
                                     <ETLView dataset={dataset} onSchemaOverride={onSchemaOverride} onRowsRecovered={onRowsRecovered} onDataCleaned={onDataCleaned} onApplyDecisions={onApplyCleaningDecisions} applying={etlRevertPending === '__review__'} busy={Boolean(etlRevertPending)} />
                                 </>
                             ) : (

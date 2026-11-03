@@ -293,6 +293,15 @@ for (const theme of ['light', 'dark'] as const) {
                     await page.getByRole('button', { name: 'Apply changes' }).first().click(quick).catch(() => {});
                     await page.waitForTimeout(5000);
                     await page.screenshot({ path: path.join(OUT, `56-cleaning-applied-${theme}.png`), fullPage: true });
+                    // Your rules: write a check once, applied on every re-clean.
+                    await page.getByRole('button', { name: 'Add a rule' }).first().click(quick).catch(() => {});
+                    await page.locator('.qi-rules-form select').first().selectOption('revenue', quick).catch(() => {});
+                    await page.getByLabel('Rule value').fill('100', quick).catch(() => {});
+                    await page.locator('.qi-rules').first().screenshot({ path: path.join(OUT, `57-cleaning-rule-form-${theme}.png`), ...quick }).catch(() => {});
+                    await page.getByRole('button', { name: 'Add and re-clean' }).first().click(quick).catch(() => {});
+                    await page.waitForTimeout(5000);
+                    await page.locator('.qi-rules').first().screenshot({ path: path.join(OUT, `58-cleaning-rules-${theme}.png`), ...quick }).catch(() => {});
+                    await page.screenshot({ path: path.join(OUT, `59-cleaning-after-rule-${theme}.png`), fullPage: true });
                 }
                 if (slug === 'overview') {
                     await page.locator('.qi-ws-row:visible').filter({ hasText: 'revenue' }).first().click().catch(() => {});

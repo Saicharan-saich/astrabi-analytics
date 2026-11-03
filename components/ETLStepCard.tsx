@@ -85,6 +85,7 @@ const decisionLabel = (decision: StepDecision): string => {
         case 'undo': return `Will undo — ${decision.revert.label}`;
         case 'outlier': return decision.choice === 'keep' ? 'Will keep as correct' : decision.choice === 'remove' ? 'Will remove these rows' : 'Will cap to the usual range';
         case 'typo': return decision.choice === 'merge' ? 'Will merge them' : 'Will keep them apart';
+        case 'flag': return `Will: ${decision.label.charAt(0).toLowerCase()}${decision.label.slice(1)}`;
     }
 };
 
@@ -98,7 +99,7 @@ export const ETLStepCard: React.FC<Props> = ({
     const isTransformPlans = entry.step === 'Transform Plans';
 
     const hasDetails = !!(
-        entry.affectedColumns?.length || entry.rowsBefore !== undefined || entry.affectedRows !== undefined ||
+        entry.affectedColumns?.length || entry.rowsBefore !== undefined || entry.affectedRows !== undefined || (entry.sampleRows && entry.sampleRows.length > 0) ||
         (entry.removedRowSamples && entry.removedRowSamples.length > 0) ||
         (entry.transformSamples && entry.transformSamples.length > 0) || isTransformPlans
     );
@@ -130,6 +131,19 @@ export const ETLStepCard: React.FC<Props> = ({
                                 <button type="button" onClick={() => onDecide?.(entry._key, { kind: 'outlier', column: entry.decision!.column, choice: 'keep' })} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"><Check className="w-3 h-3" /> Values are correct</button>
                                 <button type="button" onClick={() => onDecide?.(entry._key, { kind: 'outlier', column: entry.decision!.column, choice: 'remove' })} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold">Remove these rows</button>
                                 <button type="button" onClick={() => onDecide?.(entry._key, { kind: 'outlier', column: entry.decision!.column, choice: 'cap' })} className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold">Cap to usual range</button>
+                            </>
+                        ) : entry.decision?.kind === 'flag' && entry.decision.key && entry.decision.options?.length ? (
+                            <>
+                                {entry.decision.options.map((option, index) => (
+                                    <button
+                                        key={option.choice}
+                                        type="button"
+                                        onClick={() => onDecide?.(entry._key, { kind: 'flag', key: entry.decision!.key!, column: entry.decision!.column, choice: option.choice, label: option.label })}
+                                        className="qi-step-action inline-flex items-center gap-1 text-[11px] font-semibold"
+                                    >
+                                        {index === 0 && <Check className="w-3 h-3" />} {option.label}
+                                    </button>
+                                ))}
                             </>
                         ) : entry.decision?.kind === 'typo' ? (
                             <>
@@ -242,6 +256,26 @@ export const ETLStepCard: React.FC<Props> = ({
                                                 <tr key={ri}>{Object.keys(entry.removedRowSamples![0]).map(col => {
                                                     const val = row[col]; const empty = val === null || val === undefined || val === '';
                                                     return <td key={col} className={`px-2 py-1 font-mono whitespace-nowrap ${empty ? 'text-rose-400 italic' : 'text-slate-700 dark:text-slate-300'}`}>{empty ? '∅' : String(val)}</td>;
+                                                })}</tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Example rows a flag is about */}
+                        {entry.sampleRows && entry.sampleRows.length > 0 && (
+                            <div>
+                                <div className="flex items-center gap-2 mb-2"><Eye className="w-3.5 h-3.5 text-amber-500" /><span className="text-xs font-semibold text-amber-700 dark:text-amber-300">Rows to check</span></div>
+                                <div className="overflow-auto max-h-40 rounded-lg border border-amber-200/70 dark:border-amber-500/20 bg-white dark:bg-slate-800/60">
+                                    <table className="w-full text-[11px]">
+                                        <thead className="bg-amber-50 dark:bg-amber-500/10 sticky top-0"><tr>{Object.keys(entry.sampleRows[0]).slice(0, 8).map(col => <th key={col} className={`px-2 py-1.5 text-left font-bold uppercase border-b border-amber-200/70 dark:border-amber-500/20 whitespace-nowrap ${entry.affectedColumns?.includes(col) ? 'text-amber-700 dark:text-amber-300' : 'text-slate-500 dark:text-slate-400'}`}>{col}</th>)}</tr></thead>
+                                        <tbody className="divide-y divide-amber-100 dark:divide-white/5">
+                                            {entry.sampleRows.map((row, ri) => (
+                                                <tr key={ri}>{Object.keys(entry.sampleRows![0]).slice(0, 8).map(col => {
+                                                    const val = row[col]; const empty = val === null || val === undefined || val === '';
+                                                    return <td key={col} className={`px-2 py-1 font-mono whitespace-nowrap ${entry.affectedColumns?.includes(col) ? 'font-semibold text-amber-700 dark:text-amber-300' : 'text-slate-700 dark:text-slate-300'}`}>{empty ? '∅' : String(val)}</td>;
                                                 })}</tr>
                                             ))}
                                         </tbody>

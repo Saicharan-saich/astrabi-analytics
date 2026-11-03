@@ -14,6 +14,7 @@
 
 import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, EtlOptions, PhysicalDataType, TimeContext } from '../types';
 import { generateDimDate } from './dimDateGenerator';
+import { convertMixedUnits, runQualityChecks } from './etlQualityChecks';
 import {
     parseLocaleNumber, hasCurrencyMarker, normalizeUnicode, resolveDateOrder, detectOutliersIQR,
     buildCanonicalCategoryMap, findNearDuplicateGroups, pivotTwoDigitYear,
@@ -337,7 +338,8 @@ function wordToNumber(s: string): number | null {
  * Exported for unit testing.
  */
 export function toTitleCase(s: string): string {
-    return s.replace(/\w\S*/g, w => {
+    const part = (w: string) => {
+        if (!w) return w;
         // Contains a digit → alphanumeric code/model number → leave as-is.
         if (/\d/.test(w)) return w;
         // Internal capital (camelCase / brand) → leave as-is (iPhone, eBay, MacBook).
@@ -346,6 +348,15 @@ export function toTitleCase(s: string): string {
         if (w.length <= 4 && w === w.toUpperCase() && /[A-Z]/.test(w)) return w;
         // Otherwise normalize: first letter up, rest down.
         return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    };
+    // Each part of a hyphenated or slashed word is a word of its own:
+    // "Mercedes-Benz", "C-Class", "Stoke-on-Trent" keep their capitals.
+    return s.replace(/\w\S*/g, w => {
+        if (/\d/.test(w) || !/[-/]/.test(w)) return /\d/.test(w) ? w : part(w);
+        // "MERCEDES-BENZ" is shouting, not acronyms: only 1–2 letter parts stay capitals.
+        const shouting = w === w.toUpperCase();
+        return w.split(/([-/])/).map(piece => (piece === '-' || piece === '/' ? piece
+            : shouting && piece.length > 2 ? piece.charAt(0) + piece.slice(1).toLowerCase() : part(piece))).join('');
     });
 }
 
@@ -1192,7 +1203,7 @@ function layer4_rulePlanner(
                     const units = [...seen.units.entries()].map(([u, n]) => `${u} (${n})`).join(', ');
                     out.push(log('Units Removed', 5, 'applied',
                         `Column '${column}': read numbers written with text${units ? ` (units seen: ${units})` : ''}${seen.approximate ? `; ${seen.approximate} marked approximate` : ''}.`
-                        + (seen.units.size > 1 ? ' More than one unit appears; check they are the same scale before summing.' : ''),
+                        + (seen.units.size > 1 ? ' More than one unit appears; see the units step below.' : ''),
                         { affectedColumns: [column] }));
                 }
                 if (seen.scaled > 0) out.push(log('Percent Scale Standardized', 5, 'applied',
@@ -1533,6 +1544,8 @@ function layer5b_hardening(
 ): { rows: Record<string, any>[]; logs: ETLLog[]; columns: ColumnDefinition[] } {
     const logs: ETLLog[] = [];
     const columns = [...inputColumns];
+    // Mixed units first, while rows still line up with the values as written.
+    rows = convertMixedUnits(rows, sourceRows, columns, opts, logs);
     const valuesOf = (col: string) => rows.map(r => r[col]);
     const metricNames = () => columns.filter(c => c.type === ColumnType.METRIC).map(c => c.name);
     const addColumn = (name: string, type: ColumnType) => {
@@ -1799,6 +1812,12 @@ function layer5b_hardening(
             `${bad} row(s) where '${endCol}' is before '${startCol}'. These may be data-entry errors.`,
             { affectedColumns: [startCol, endCol], affectedRows: bad }));
     }
+
+    // 3. The wider data-quality checks (formats, mappings, dates, scale,
+    //    near-duplicates, unusual rows, the user's own rules).
+    const quality = runQualityChecks(rows, columns, opts);
+    rows = quality.rows;
+    logs.push(...quality.logs);
 
     return { rows, logs, columns };
 }

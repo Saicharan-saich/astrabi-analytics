@@ -53,9 +53,29 @@ export interface ETLLog {
   /** Before/after value samples for column transforms */
   transformSamples?: { column: string; before: any; after: any }[];
   /** Re-run the cleaning with this option to reverse (or restore) the step. */
-  revert?: { option: EtlUndoOption; value: boolean | 'day_first' | 'month_first' | Record<string, string> | null; label: string };
+  revert?: { option: EtlUndoOption; value: boolean | 'day_first' | 'month_first' | Record<string, string> | CleaningRule[] | null; label: string };
   /** A flag the user can decide on in the cleaning review. */
-  decision?: { kind: 'outlier' | 'typo'; column: string };
+  decision?: {
+    kind: 'outlier' | 'typo' | 'flag';
+    column: string;
+    /** For kind 'flag': the decision key in EtlOptions.flagDecisions. */
+    key?: string;
+    /** For kind 'flag': the choices offered, in order. */
+    options?: { choice: 'keep' | 'remove' | 'fix'; label: string }[];
+  };
+  /** Example rows a flag is about (not removed). */
+  sampleRows?: Record<string, any>[];
+}
+
+/** A check an analyst writes once; applied on every re-run of the cleaning. */
+export interface CleaningRule {
+  id: string;
+  column: string;
+  test: 'min' | 'max' | 'not_blank' | 'one_of' | 'matches' | 'unique' | 'not_future';
+  /** The number, the comma-separated list, or the pattern. */
+  value?: string;
+  /** Flag the rows for review, or remove them every time. */
+  action: 'flag' | 'remove';
 }
 
 /** Cleaning steps a user can reverse after upload. Stored on the dataset so a re-run keeps the choice. */
@@ -74,6 +94,12 @@ export interface EtlOptions {
   outlierDecisions?: Record<string, 'keep' | 'remove' | 'cap'>;
   /** Per category column: merge likely typos into one spelling, or keep them. */
   typoDecisions?: Record<string, 'merge' | 'keep'>;
+  /** Decisions on the other quality flags, keyed by flag (e.g. "valid:email"). */
+  flagDecisions?: Record<string, 'keep' | 'remove' | 'fix'>;
+  /** Leave mixed units (kg and g in one column) as written. */
+  keepMixedUnits?: boolean;
+  /** Checks the analyst wrote; applied on every re-run. */
+  customRules?: CleaningRule[];
 }
 export type EtlUndoOption = keyof EtlOptions;
 /** A choice the user makes on a flagged step in the cleaning review. */

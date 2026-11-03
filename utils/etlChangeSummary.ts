@@ -93,6 +93,38 @@ function keptTitle(l: ETLLog): string {
     }
 }
 
+/** Plain words for the wider quality checks, by their base step name. */
+const QUALITY_WORDS: Record<string, string> = {
+    'Format Inconsistency': 'values in an unusual format',
+    'Invalid Format': 'invalid values',
+    'Inconsistent Mapping': 'rows that break a usual pairing',
+    'Future Date': 'dates in the future',
+    'Implausible Date': 'dates before 1900',
+    'Scale Shift': 'values off by ×100 or ×1000',
+    'Near-Duplicate Rows': 'near-duplicate rows',
+    'Unusual Row': 'unusual rows',
+    'Rule Violation': 'rows breaking your rule',
+};
+
+/** Rules for the quality checks' Flag / Fixed / Rows Removed / Confirmed steps. */
+function qualityRule(step: string): Rule | undefined {
+    if (step === 'Missing Period Note') return { kind: 'check', title: (_l, _n, c) => `Months with no data in '${c}'` };
+    if (step === 'Constant Column Note') return { kind: 'check', title: (_l, _n, c) => `'${c}' holds a single value` };
+    if (step === 'Mixed Units Converted') return { kind: 'converted', title: (_l, n, c) => `Converted ${plural(n ?? 0, 'value')} in '${c}' to one unit` };
+    if (step === 'Mixed Units Flag') return { kind: 'check', title: (_l, _n, c) => `'${c}' mixes units that cannot be converted` };
+    if (step === 'Rule Applied') return { kind: 'removed', title: (_l, n) => `Removed ${plural(n ?? 0, 'row')} breaking your rule` };
+    const match = step.match(/^(.*) (Flag|Fixed|Rows Removed|Confirmed)$/);
+    const words = match && QUALITY_WORDS[match[1]];
+    if (!match || !words) return undefined;
+    const where = (c?: string) => (c && match[1] !== 'Near-Duplicate Rows' && match[1] !== 'Unusual Row' ? ` in '${c}'` : '');
+    switch (match[2]) {
+        case 'Flag': return { kind: 'check', title: (_l, n, c) => `${n ? `${n.toLocaleString()} ` : ''}${words}${where(c)}` };
+        case 'Fixed': return { kind: 'converted', title: (_l, n, c) => `Fixed ${n ? `${n.toLocaleString()} ` : ''}${words}${where(c)} (your choice)` };
+        case 'Rows Removed': return { kind: 'removed', title: (_l, n, c) => `Removed ${plural(n ?? 0, 'row')}: ${words}${where(c)} (your choice)` };
+        default: return { kind: 'kept', title: (_l, _n, c) => `${words.charAt(0).toUpperCase()}${words.slice(1)}${where(c)} checked and kept` };
+    }
+}
+
 export function summariseEtlChanges(logs: ETLLog[] | undefined): ChangeSummary {
     const items: ChangeItem[] = [];
     let rowsBefore: number | undefined;
@@ -100,7 +132,7 @@ export function summariseEtlChanges(logs: ETLLog[] | undefined): ChangeSummary {
     (logs || []).forEach((l, index) => {
         if (l.step === 'Final Summary') { rowsBefore = l.rowsBefore; rowsAfter = l.rowsAfter; return; }
         if (l.status === 'skipped') return;
-        const rule = RULES[l.step];
+        const rule = RULES[l.step] || qualityRule(l.step);
         if (!rule) return;
         const count = rowsDropped(l) ?? l.affectedRows ?? (rule.kind === 'removed' || l.step === 'Null Token Standardization' ? firstNumber(l.details) : undefined);
         const column = quoted(l.details) || l.affectedColumns?.[0];

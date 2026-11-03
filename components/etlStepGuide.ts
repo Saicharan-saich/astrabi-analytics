@@ -23,6 +23,50 @@ export interface StepGuide {
 // Ordered rules — the first whose pattern matches the step name wins.
 const RULES: Array<{ test: RegExp; guide: StepGuide }> = [
     {
+        test: /^format inconsistency/i,
+        guide: { emoji: '🔣', title: 'Values in an unusual format', what: 'Finds the few values in a column of codes that do not follow the pattern of all the others.', why: 'One odd ID or code is usually a typing mistake, and it splits a group or breaks a join.', ifSkipped: '"ORD10007X" sits among "ORD-10006" and is counted as its own order.', example: 'Flags "ORD10007X" among 399 "ORD-#####" codes' },
+    },
+    {
+        test: /^invalid format/i,
+        guide: { emoji: '✉️', title: 'Invalid emails, postcodes, phones or web addresses', what: 'Checks columns named like email, postcode, phone or website against the real format.', why: 'Invalid contact details cannot be used, and they inflate counts of customers you can reach.', ifSkipped: '"not-an-email" is counted as a contactable customer.', example: 'Flags "jane@" and "SW1 1" in a UK postcode column' },
+    },
+    {
+        test: /^inconsistent mapping/i,
+        guide: { emoji: '🔗', title: 'Rows that break a usual pairing', what: 'Finds columns that almost always go together (a product and its category) and the few rows that disagree.', why: 'One product filed under two categories splits its sales between them.', ifSkipped: 'Some of Milk\'s sales show under Bakery.', example: 'Milk is under Dairy 66 times but Bakery once' },
+    },
+    {
+        test: /^(future date|implausible date)/i,
+        guide: { emoji: '📆', title: 'Dates that cannot be right', what: 'Finds records of past events dated in the future, and dates before 1900.', why: 'A sale dated 2099 stretches every timeline and lands in the wrong period.', ifSkipped: 'Charts run to 2099 and "this year" means the wrong year.', example: 'Flags an order dated 2099-01-01' },
+    },
+    {
+        test: /^scale shift/i,
+        guide: { emoji: '✖️', title: 'Values off by ×100 or ×1000', what: 'Finds a small group of values about 100 or 1,000 times bigger or smaller than the rest.', why: 'Prices typed in pence among pounds, or in units among thousands, wreck totals and averages.', ifSkipped: 'One £2,300 price that should be £23 doubles a small total.', example: 'Flags 2,300 among prices around 23' },
+    },
+    {
+        test: /^near-duplicate rows/i,
+        guide: { emoji: '👯', title: 'Near-duplicate rows', what: 'Finds rows that match an earlier row except for capitals, spaces or punctuation.', why: 'The same record entered twice is counted twice.', ifSkipped: '"acme ltd" and "ACME Ltd." are both counted as sales.', example: 'Flags "London , 120" repeating "london, 120"' },
+    },
+    {
+        test: /^unusual row/i,
+        guide: { emoji: '🧭', title: 'Unusual rows', what: 'Finds rows that are rare in two or more ways at once, such as an extreme value and a one-off category in the same row. No rule needs writing first.', why: 'A row that is odd in several columns is far more likely to be an error than one odd value.', ifSkipped: 'A corrupted line from an export is analysed like any other.', example: 'Flags a row with price 90× the usual and a category seen once' },
+    },
+    {
+        test: /^rule /i,
+        guide: { emoji: '📏', title: 'Your rule', what: 'A check you wrote once, applied every time the data is cleaned.', why: 'You know your data: a rule turns a problem you found once into one the app catches every time.', ifSkipped: 'The same problem has to be spotted by hand on every upload.', example: '"price is at least 0" flags refunds typed as prices' },
+    },
+    {
+        test: /^mixed units/i,
+        guide: { emoji: '⚖️', title: 'Mixed units', what: 'Converts a column that mixes units of one kind (kg and g, km and miles) into its most common unit.', why: 'Adding 5 kg to 500 g as 505 is wrong; converting first makes totals add like with like.', ifSkipped: 'A weight total mixes kilograms and grams.', example: '"1500 g" → 1.5 in a kg column' },
+    },
+    {
+        test: /^missing period/i,
+        guide: { emoji: '🕳️', title: 'Months with no data', what: 'Notes months with no rows at all between the first and last month in the file.', why: 'A missing month often means part of an export did not arrive.', ifSkipped: 'A dip in the chart is read as a bad month, not missing data.', example: 'No rows for Jun 2024' },
+    },
+    {
+        test: /^constant column/i,
+        guide: { emoji: '➖', title: 'A column with one value', what: 'Notes columns that hold the same value in every row.', why: 'Such a column cannot split or explain anything, and is often a sign the export filtered more than intended.', ifSkipped: 'You may group by a column that has only one group.', example: "'country' is 'UK' on every row" },
+    },
+    {
         test: /outlier (confirmed|removal|capping)/i,
         guide: {
             emoji: '✋', title: 'Unusual values — your decision',
