@@ -141,7 +141,7 @@ for (const theme of ['light', 'dark'] as const) {
             sent.push(asked);
             if (String(messages[0]?.content || '').includes('assistant in QuickInsight')) {
                 // The conversation AI (stand-in reply).
-                const followUpQuestion = /follow ?up|isolated/i.test(asked);
+                const followUpQuestion = /follow ?up|isolated/i.test(asked.split('NEW MESSAGE').pop() || '');
                 const chat = followUpQuestion
                     ? { message: 'Before anything is sent, I read the wording of your message. If it builds on the last answer, like "now by month", "what about profit?" or words such as "it" and "that", it is a follow-up and goes with your last question and its SQL, never the results. A complete question goes on its own, which saves tokens. The label under each message shows which it was, and you can tap the label in the message box to switch before sending.', suggestions: ['Revenue by month', 'Top 5 products by revenue'], analyze: null }
                     : { message: "You're welcome! Ask a follow-up any time, like \"only the top 5\".", suggestions: [], analyze: null };
