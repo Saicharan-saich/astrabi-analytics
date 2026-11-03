@@ -25,6 +25,8 @@ export interface ChatAnswer {
     listOnly?: boolean;
     tokens: number;
     executionTimeMs?: number;
+    /** The local overview of the whole dataset (no SQL, no AI). */
+    overview?: boolean;
 }
 
 export interface ChatTurn {
@@ -36,6 +38,8 @@ export interface ChatTurn {
     kind?: TurnKind;
     /** user turns: earlier answers sent with it (0 = none) */
     contextTurns?: number;
+    /** user turns: earlier answers offered to the AI (it decides whether to use them) */
+    sentContext?: number;
     status?: 'pending' | 'done' | 'error' | 'stopped';
     progress?: string;
     answer?: ChatAnswer;

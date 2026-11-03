@@ -67,7 +67,19 @@ export class AISQLChatReplyError extends AISQLPipelineError {
     }
 }
 
+/** The user asked for an overview of the whole dataset (worked out locally). */
+export class AISQLOverviewRequest extends AISQLPipelineError {
+    readonly tokens: number;
+    constructor(tokens = 0) {
+        super('summary_story_required', 'An overview of the whole dataset.');
+        this.name = 'AISQLOverviewRequest';
+        this.tokens = tokens;
+    }
+}
+
 export interface LeanRunOptions {
+    /** The user chose "analysis": answer with data, never reply in words. */
+    requireAnalysis?: boolean;
     /** Re-run the same question at a different date grouping. */
     grain?: 'day' | 'week' | 'month' | 'quarter' | 'year';
     onProgress?: (step: string) => void;
@@ -87,6 +99,7 @@ export interface LeanRunOptions {
 export type LeanModelReply =
     | { action: 'clarify'; question: string; options: ClarificationOption[] }
     | { action: 'chat'; message: string; suggestions: string[] }
+    | { action: 'overview' }
     | { action: 'answer'; title?: string; sql: string; dimensions?: string[]; measures?: string[]; explanation?: string; question?: string; followUp?: boolean };
 
 // ── Prompt ───────────────────────────────────────────────────────────
@@ -94,6 +107,7 @@ export type LeanModelReply =
 export const LEAN_SYSTEM_PROMPT = `You are QuickInsight's data analyst. You see only a description of the user's data: column names, types, roles and short notes. You never see rows. Your job is to answer the user's question by writing ONE DuckDB SQL query that will run on their computer.
 
 STEP 0 — Is it a data question at all?
+If the message asks for a summary, overview or description of the whole dataset ("summarise my data", "what's in this file?"), return {"action":"overview"}: the app builds that itself.
 If the message is conversation rather than a request for numbers from the data — a greeting or thanks, a question about you or how QuickInsight works, what a word means, why an earlier answer looks the way it does — reply in words (action "chat"): at most 100 friendly words, never stating numbers from the data (you have not seen them), plus up to 3 short example questions built from the real column names.
 
 STEP 1 — Decide whether to ask a follow-up.
@@ -151,6 +165,7 @@ export function parseLeanReply(content: string): LeanModelReply {
         if (sqlMatch) return { action: 'answer', sql: sqlMatch[0].trim() };
         throw new AISQLPipelineError('ai_sql_unavailable', 'The AI reply could not be read. Please try again.');
     }
+    if (raw.action === 'overview') return { action: 'overview' };
     if (raw.action === 'chat') {
         const message = String(raw.message || '').trim().slice(0, 1200);
         const suggestions = (Array.isArray(raw.suggestions) ? raw.suggestions : []).map((item: unknown) => String(item).trim()).filter(Boolean).slice(0, 3);
@@ -588,7 +603,7 @@ function describeData(dataset: Dataset) {
 
 export async function runLeanAISQL(question: string, dataset: Dataset, options: LeanRunOptions = {}): Promise<AISQLPipelineResult> {
     const started = performance.now();
-    const asked = `${question}${options.grain ? `\n(Group dates by ${options.grain}.)` : ''}${options.autoChoose ? '\n(Do not ask a follow-up. Choose the most likely measure and name it in the explanation.)' : ''}`;
+    const asked = `${question}${options.grain ? `\n(Group dates by ${options.grain}.)` : ''}${options.autoChoose ? '\n(Do not ask a follow-up. Choose the most likely measure and name it in the explanation.)' : ''}${options.requireAnalysis ? '\n(The user asked for an analysis of the data: answer with a query, or ask a follow-up if it is vague. Do not reply with action "chat".)' : ''}`;
     const context = options.context?.filter(turn => turn.question && turn.sql) || [];
     options.onProgress?.('Reading your columns');
     const { model, schema } = describeData(dataset);
@@ -605,6 +620,10 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     let tokens = Number(reply.data?.usage?.total_tokens) || 0;
     const parsed = parseLeanReply(reply.data?.choices?.[0]?.message?.content || '');
 
+    if (parsed.action === 'overview') {
+        if (options.autoChoose) throw new AISQLPipelineError('ai_sql_unavailable', 'Ask about one measure to get a chart.');
+        throw new AISQLOverviewRequest(tokens);
+    }
     if (parsed.action === 'chat') {
         if (options.autoChoose) throw new AISQLPipelineError('ai_sql_unavailable', 'That is not a question about the data, so there is nothing to chart.');
         throw new AISQLChatReplyError(parsed.message, parsed.suggestions, tokens);
@@ -657,7 +676,8 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     result.conversation = {
         standaloneQuestion: standalone,
         contextTurns: context.length,
-        usedContext: context.length > 0 && parsed.followUp !== false,
+        // The AI's own judgement: it built on the earlier chat only if it says so.
+        usedContext: context.length > 0 && parsed.followUp === true,
     };
     return result;
 }

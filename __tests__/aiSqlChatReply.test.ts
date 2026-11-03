@@ -38,4 +38,9 @@ describe('AI SQL chat — conversation replies', () => {
         expect(parseChatReply('{"message":"Let me work that out.","analyze":"Total revenue by region"}').analyze).toBe('Total revenue by region');
         expect(parseChatReply('Plain words are fine too.').message).toBe('Plain words are fine too.');
     });
+
+    it('reads a hand-over to the dataset overview', () => {
+        expect(parseChatReply('{"message":"Here is an overview.","overview":true}').overview).toBe(true);
+        expect(parseChatReply('{"message":"Hi!","overview":false}').overview).toBeUndefined();
+    });
 });

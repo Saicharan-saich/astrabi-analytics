@@ -144,11 +144,15 @@ for (const theme of ['light', 'dark'] as const) {
                 const followUpQuestion = /follow ?up|isolated/i.test(asked.split('NEW MESSAGE').pop() || '');
                 const chat = followUpQuestion
                     ? { message: 'Before anything is sent, I read the wording of your message. If it builds on the last answer, like "now by month", "what about profit?" or words such as "it" and "that", it is a follow-up and goes with your last question and its SQL, never the results. A complete question goes on its own, which saves tokens. The label under each message shows which it was, and you can tap the label in the message box to switch before sending.', suggestions: ['Revenue by month', 'Top 5 products by revenue'], analyze: null }
+                    : /help me understand/i.test(asked.split('NEW MESSAGE').pop() || '')
+                    ? { message: 'Happy to help. I can see your revenue, profit and quantity, split by product, category, country, city and month. A good place to start is where revenue comes from.', suggestions: ['Revenue by country', 'Profit by category'], analyze: null }
                     : { message: "You're welcome! Ask a follow-up any time, like \"only the top 5\".", suggestions: [], analyze: null };
                 await route.fulfill(json({ choices: [{ message: { content: JSON.stringify(chat) } }], usage: { total_tokens: 420 } }));
                 return;
             }
-            const reply = /highest and lowest/i.test(asked)
+            const reply = asked.includes('Do not reply with action "chat"')
+                ? { action: 'answer', follow_up: false, title: 'Revenue by country', question: 'Total revenue by country', sql: 'SELECT "country", ROUND(SUM("revenue"), 2) AS total_revenue FROM "data" GROUP BY 1 ORDER BY 2 DESC', dimensions: ['country'], measures: ['total_revenue'], explanation: 'Added up revenue for each country to show where sales come from.' }
+                : /highest and lowest/i.test(asked)
                 ? { action: 'answer', title: 'Highest and lowest product sales by month', question: 'For each month, the products with the highest and lowest total sales', dimensions: ['month', 'sales_type', 'product'], measures: ['total_sales'], explanation: 'Added up sales per product per month, then kept the top and bottom product in each month.', sql: 'WITH m AS (SELECT DATE_TRUNC(\'month\', CAST("order_date" AS DATE)) AS month, "product", SUM("revenue") AS total_sales FROM "data" GROUP BY 1, 2), r AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY month ORDER BY total_sales DESC) AS hi, ROW_NUMBER() OVER (PARTITION BY month ORDER BY total_sales ASC) AS lo FROM m) SELECT month, CASE WHEN hi = 1 THEN \'Highest\' ELSE \'Lowest\' END AS sales_type, "product", ROUND(total_sales, 2) AS total_sales FROM r WHERE hi = 1 OR lo = 1 ORDER BY month, sales_type' }
                 : asked.includes('EARLIER IN THIS CHAT')
                 ? { action: 'answer', follow_up: true, title: 'Revenue by month for the top products', question: 'Monthly total revenue', sql: 'SELECT DATE_TRUNC(\'month\', CAST("order_date" AS DATE)) AS month, ROUND(SUM("revenue"), 2) AS total_revenue FROM "data" GROUP BY 1 ORDER BY 1', dimensions: ['month'], measures: ['total_revenue'], explanation: 'Added up revenue for each calendar month.' }
@@ -190,6 +194,24 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `35-ai-sql-chat-followup-${theme}`);
         await ask('thanks!');
         await shoot(page, `35-ai-sql-chat-thanks-${theme}`);
+        // A summary of the whole file: worked out locally, no AI call.
+        const callsBefore = sent.length;
+        await ask('Can you generate a summary of my dataset uploaded?');
+        await shoot(page, `40-ai-sql-chat-overview-${theme}`);
+        await page.locator('.qi-chat-answer').last().screenshot({ path: path.join(OUT, `40-ai-sql-chat-overview-card-${theme}.png`), ...quick }).catch(() => {});
+        test.info().annotations.push({ type: 'overview-ai-calls', description: String(sent.length - callsBefore) });
+        // Conversation first, then the same message switched to analysis.
+        await ask('Can you help me understand my sales?');
+        await shoot(page, `41-ai-sql-chat-help-${theme}`);
+        await box.fill('Can you help me understand my sales?', quick).catch(() => {});
+        await page.waitForTimeout(300);
+        await page.locator('.qi-chat-mode').click(quick).catch(() => {});
+        await page.waitForTimeout(300);
+        await page.locator('.qi-chat-composer').screenshot({ path: path.join(OUT, `41-ai-sql-chat-switched-${theme}.png`), ...quick }).catch(() => {});
+        await box.press('Enter', quick).catch(() => {});
+        await page.locator('.qi-chat-thinking').waitFor({ state: 'detached', ...quick }).catch(() => {});
+        await page.waitForTimeout(2200);
+        await shoot(page, `41-ai-sql-chat-switched-answer-${theme}`);
         await ask('show me month wise highest and lowest sales for products');
         await shoot(page, `39-ai-sql-chat-extremes-${theme}`);
         await page.locator('.qi-chat-answer').last().screenshot({ path: path.join(OUT, `39-ai-sql-chat-extremes-card-${theme}.png`), ...quick }).catch(() => {});

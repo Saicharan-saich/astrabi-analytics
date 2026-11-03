@@ -60,6 +60,11 @@ describe('AI SQL chat — deciding what a message is, without the AI', () => {
     it('sends overview requests to the data story', () => {
         expect(classifyTurn('Give me a summary of my data', true, dataset).kind).toBe('summary');
         expect(classifyTurn('summarise this dataset', false, dataset).kind).toBe('summary');
+        expect(classifyTurn('Can you generate a summary of my dataset uploaded?', true, dataset).kind).toBe('summary');
+        expect(classifyTurn('What does profit margin mean?', true, { columns: [...dataset.columns, { name: 'profit' }] } as any).kind).toBe('chat');
+        expect(classifyTurn("What's in my file?", false, dataset).kind).toBe('summary');
+        // A summary of one measure split by something is an analysis.
+        expect(classifyTurn('Give me a summary of revenue by region', false, dataset).kind).toBe('new');
     });
 
     it('keeps the context window to the chosen number of answers, questions and SQL only', () => {

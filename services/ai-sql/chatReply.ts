@@ -25,6 +25,8 @@ export interface ChatReply {
     suggestions: string[];
     /** A data question to run as analysis, when the message asked for one. */
     analyze?: string;
+    /** The user asked for a summary of the whole dataset. */
+    overview?: boolean;
     tokens: number;
 }
 
@@ -44,10 +46,12 @@ How QuickInsight works — answer questions about it from these facts only:
 Rules:
 - Keep replies short: at most 120 words, no headings. Use the user's terms.
 - Never state numbers or facts about the data's contents — you have not seen them. You may say which columns exist and what can be asked.
-- If the message asks for an analysis of the data (a total, average, count, ranking, trend, comparison, list or chart), do not answer it yourself: put the complete question to run in "analyze" and a one-line lead-in in "message".
+- If the message asks for an analysis of the data (a total, average, count, ranking, trend, comparison, list or chart), do not answer it yourself: put the complete question to run in "analyze" (written so it makes sense on its own, using the recent conversation) and a one-line lead-in in "message".
+- If the message asks for a summary, overview or description of the whole dataset, set "overview": true and a one-line lead-in in "message"; the app works the overview out on the user's computer.
+- You may use short paragraphs and simple "- " bullet lists. No headings, no tables.
 - When helpful, offer 2 or 3 short example questions in "suggestions", built from the real column names.
 
-Return only JSON: {"message": "...", "suggestions": ["..."], "analyze": null}`;
+Return only JSON: {"message": "...", "suggestions": ["..."], "analyze": null, "overview": false}`;
 
 export function buildChatMessages(message: string, dataset: Dataset, history: ChatHistoryItem[], lastSql?: string) {
     const { model } = resolveAISQLSemanticModel(dataset);
@@ -80,8 +84,9 @@ export function parseChatReply(content: string): Omit<ChatReply, 'tokens'> {
     const message = String(raw.message || '').trim().slice(0, 1200);
     const suggestions = (Array.isArray(raw.suggestions) ? raw.suggestions : []).map((s: unknown) => String(s).trim()).filter(Boolean).slice(0, 3);
     const analyze = typeof raw.analyze === 'string' && raw.analyze.trim() ? raw.analyze.trim().slice(0, 300) : undefined;
-    if (!message && !analyze) throw new AISQLPipelineError('ai_sql_unavailable', 'The AI sent an empty reply. Please try again.');
-    return { message, suggestions, analyze };
+    const overview = raw.overview === true;
+    if (!message && !analyze && !overview) throw new AISQLPipelineError('ai_sql_unavailable', 'The AI sent an empty reply. Please try again.');
+    return { message, suggestions, analyze, ...(overview ? { overview } : {}) };
 }
 
 /** One conversational AI call, on the lighter model. */

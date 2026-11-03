@@ -37,7 +37,7 @@ const words = (text: string) => text.toLowerCase().replace(/[^a-z0-9£$€%\s'-]
 const GREETING = /^(hi|hello|hey|hiya|howdy|yo|good (morning|afternoon|evening))( there| team| quickinsight)?[\s!.,]*$/i;
 const THANKS = /^(thanks|thank you|thx|ty|cheers|great|perfect|awesome|nice|cool|brilliant|lovely|ok|okay|got it|amazing)( (so much|a lot|mate|again))?( thanks| thank you)?[\s!.,]*$/i;
 const GOODBYE = /^(bye|goodbye|see you|see ya|that'?s all|that is all|i'?m done|done)( for now| thanks| thank you)?[\s!.,]*$/i;
-const SUMMARY = /^(?:(?:please |can you |could you )?(?:give|show|tell) me )?(?:a |an )?(?:quick |short |full )?(?:summary|overview|story|rundown)(?: of)?(?: (?:my|the|this) (?:data|dataset|file|sheet))?[\s?!.]*$|^(?:please )?summari[sz]e (?:my|the|this) (?:data|dataset|file|sheet)[\s?!.]*$/i;
+const SUMMARY = /\b(summary|summari[sz]e|summari[sz]ing|overview|describe|description|rundown|profile)\b[\s\S]*\b(data|dataset|data ?set|file|sheet|spreadsheet|table|upload|uploaded|everything)\b|^(what'?s|what is) in (my|the|this) (data|dataset|file|sheet|spreadsheet)|^tell me about (my|the|this) (data|dataset|file|sheet|spreadsheet)|^(summari[sz]e|overview)[\s?!.]*$/i;
 
 /** Asking for numbers from the data. */
 const ANALYSIS_WORDS = /\b(show|total|sum|average|avg|mean|median|count|how many|how much|top|bottom|best|worst|highest|lowest|most|least|trend|compare|comparison|break ?down|by|per|list|chart|plot|graph|growth|share|percentage|rank|ranking|filter|between|over time|monthly|yearly|weekly|daily|each|split|distribution)\b/i;
@@ -88,7 +88,8 @@ export function classifyTurn(message: string, hasPreviousAnswer: boolean, datase
     const tokens = words(core);
     const vocabulary = columnVocabulary(dataset);
     const mentionsColumns = tokens.filter(token => vocabulary.has(token.replace(/'s$/, ''))).length;
-    const asksForNumbers = ANALYSIS_WORDS.test(core) && mentionsColumns > 0;
+    // "What does median mean?" asks for a meaning, not a mean.
+    const asksForNumbers = ANALYSIS_WORDS.test(core.replace(/\bmean(s|ing)?\s*[?!.]*$/i, '')) && mentionsColumns > 0;
 
     // Conversation: about the assistant or the app, or what something means,
     // and not a request for numbers from the data.

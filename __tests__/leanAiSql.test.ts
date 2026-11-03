@@ -13,7 +13,7 @@ vi.mock('../services/duckdbEngine', async (importOriginal) => {
 import { fetchWithFallback } from '../services/ai-sql/modelConfig';
 import { executeSQLViaDuckDB } from '../services/duckdbEngine';
 import {
-    AISQLClarificationError, buildInsights, describeColumnsOnly, extremesNarrative, normaliseExtremes, parseLeanReply, periodLabel, planFromResult, rerunSavedAnswer, resultCurrency, runLeanAISQL, scrubErrorForModel,
+    AISQLClarificationError, AISQLOverviewRequest, buildInsights, describeColumnsOnly, extremesNarrative, normaliseExtremes, parseLeanReply, periodLabel, planFromResult, rerunSavedAnswer, resultCurrency, runLeanAISQL, scrubErrorForModel,
 } from '../services/ai-sql/leanPipeline';
 import { profileResult } from '../services/ai-sql/resultProfiler';
 import { resolveAISQLSemanticModel } from '../services/ai-sql/semanticLayer';
@@ -327,5 +327,38 @@ describe('lean AI SQL — conversation', () => {
     it('reads a reply in words from the analysis AI', () => {
         expect(parseLeanReply('{"action":"chat","message":"I check the wording first.","suggestions":["Total sales by region"]}'))
             .toEqual({ action: 'chat', message: 'I check the wording first.', suggestions: ['Total sales by region'] });
+    });
+
+    it('reads a request for a dataset overview', () => {
+        expect(parseLeanReply('{"action":"overview"}')).toEqual({ action: 'overview' });
+    });
+});
+
+describe('lean AI SQL — the AI decides what a message is', () => {
+    beforeEach(() => {
+        vi.mocked(fetchWithFallback).mockReset();
+        vi.mocked(executeSQLViaDuckDB).mockReset();
+    });
+
+    it('hands a summary request back to the app, with no query run', async () => {
+        aiReplies({ action: 'overview' });
+        await expect(runLeanAISQL('Can you generate a summary of my dataset uploaded?', dataset)).rejects.toBeInstanceOf(AISQLOverviewRequest);
+        expect(executeSQLViaDuckDB).not.toHaveBeenCalled();
+    });
+
+    it('tells the AI to analyse when the user switched the message to analysis', async () => {
+        aiReplies({ action: 'answer', sql: 'SELECT "manufacturer", SUM("price") AS total_price FROM "data" GROUP BY 1', dimensions: ['manufacturer'], measures: ['total_price'] });
+        vi.mocked(executeSQLViaDuckDB).mockResolvedValueOnce({ data: [{ manufacturer: 'Ford', total_price: 3 }, { manufacturer: 'BMW', total_price: 2 }], columns: [], error: null } as any);
+        await runLeanAISQL('how are the makers doing', dataset, { requireAnalysis: true });
+        const [, user] = vi.mocked(fetchWithFallback).mock.calls[0][0] as any[];
+        expect(String(user.content)).toContain('Do not reply with action "chat"');
+    });
+
+    it('offers the last answer but only counts it as a follow-up when the AI says so', async () => {
+        aiReplies({ action: 'answer', question: 'Average mileage by model', follow_up: false, sql: 'SELECT "model", AVG("mileage") AS avg_mileage FROM "data" GROUP BY 1', dimensions: ['model'], measures: ['avg_mileage'] });
+        vi.mocked(executeSQLViaDuckDB).mockResolvedValueOnce({ data: [{ model: 'M1', avg_mileage: 3 }, { model: 'M2', avg_mileage: 2 }], columns: [], error: null } as any);
+        const context = [{ question: 'Total price by manufacturer', sql: 'SELECT "manufacturer", SUM("price") AS total_price FROM "data" GROUP BY 1' }];
+        const result = await runLeanAISQL('Average mileage by fuel type', dataset, { context });
+        expect(result.conversation?.usedContext).toBe(false);
     });
 });

@@ -5,10 +5,11 @@ import {
 } from 'lucide-react';
 import type { AnalysisResult, Dataset, FormattingConfig } from '../types';
 import type { AISQLPipelineResult } from '../services/ai-sql';
-import { runLeanAISQL, rerunSavedAnswer, AISQLClarificationError, AISQLChatReplyError } from '../services/ai-sql/leanPipeline';
+import { runLeanAISQL, rerunSavedAnswer, AISQLClarificationError, AISQLChatReplyError, AISQLOverviewRequest } from '../services/ai-sql/leanPipeline';
+import { buildDatasetOverview } from '../services/ai-sql/datasetOverview';
 import { chatWithAI, type ChatHistoryItem } from '../services/ai-sql/chatReply';
 import {
-    classifyTurn, contextForFollowUp, estimateTokens, formatContextForPrompt, suggestFollowUps, type TurnKind,
+    classifyTurn, contextForFollowUp, estimateTokens, formatContextForPrompt, suggestFollowUps,
 } from '../services/ai-sql/chatContext';
 import {
     answeredTurns, chatStorageKey, loadConversations, newConversation, newId, saveConversations, titleFrom, whenLabel,
@@ -48,6 +49,9 @@ const readMemory = () => {
 
 const CURRENCY_OF_FORMAT: Record<string, string> = { currency_gbp: 'GBP', currency_eur: 'EUR', currency_usd: 'USD' };
 
+/** Where a message goes: conversation (words), analysis (a query), or the local overview. */
+type Route = 'chat' | 'analysis' | 'summary';
+
 const formatTokens = (tokens: number) => tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens);
 
 /** Where a run that is in flight writes its result (or is told to stop). */
@@ -63,7 +67,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const [conversations, setConversations] = useState<Conversation[]>([]);
     const [activeId, setActiveId] = useState<string>('');
     const [draft, setDraft] = useState('');
-    const [modeOverride, setModeOverride] = useState<TurnKind | null>(null);
+    const [modeOverride, setModeOverride] = useState<Route | null>(null);
     const [memory, setMemory] = useState<number>(readMemory);
     const [listOpen, setListOpen] = useState<boolean>(() => typeof window === 'undefined' || window.innerWidth >= 1100);
     const [openSql, setOpenSql] = useState<Record<string, boolean>>({});
@@ -126,23 +130,41 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         if (thread) thread.scrollTo({ top: thread.scrollHeight, behavior: 'smooth' });
     }, [turnCount, lastProgress, activeId]);
 
-    // ── What the next message will be sent as (shown live in the composer) ──
+    // ── Where the next message goes (shown live in the composer) ──
+    // conversation → the AI replies in words · analysis → the AI writes a query
+    // (and decides itself whether it builds on the last answer) · overview →
+    // worked out on this computer. The user can switch before sending.
     const detected = useMemo(() => classifyTurn(draft, answered.length > 0, dataset), [draft, answered.length, dataset]);
-    const sendKind: TurnKind = modeOverride && (detected.kind === 'new' || detected.kind === 'follow_up' || detected.kind === 'chat') ? modeOverride : detected.kind;
-    const pendingContext = sendKind === 'follow_up' ? contextForFollowUp(answered, memory) : [];
+    const detectedRoute: Route = detected.kind === 'chat' ? 'chat' : detected.kind === 'summary' ? 'summary' : 'analysis';
+    const sendRoute: Route = modeOverride || detectedRoute;
+    const pendingContext = sendRoute === 'analysis' ? contextForFollowUp(answered, memory) : [];
     useEffect(() => { if (!draft.trim()) setModeOverride(null); }, [draft]);
 
+    /** The overview of the whole dataset, worked out here: no AI, nothing sent. */
+    const overviewAnswer = useCallback((): ChatAnswer | null => {
+        if (!dataset) return null;
+        const overview = buildDatasetOverview(dataset);
+        return {
+            title: overview.title, standaloneQuestion: overview.title, summary: overview.summary, insights: overview.insights,
+            sql: '', rowCount: overview.rowCount, analysis: overview.analysis, formatting: overview.formatting, tokens: 0, overview: true,
+            explanation: 'Worked out on your computer from all the rows. Nothing was sent to the AI.',
+        };
+    }, [dataset]);
+
     // ── Send ──
-    const send = useCallback(async (rawText: string, forcedKind?: TurnKind) => {
+    const send = useCallback(async (rawText: string, forced?: Route) => {
         const text = rawText.replace(/\s+$/g, '').trim();
         if (!text || !dataset || !active || busy) return;
         const conversationId = active.id;
         const hasAnswer = answeredTurns(active).length > 0;
         const decision = classifyTurn(text, hasAnswer, dataset);
-        const kind: TurnKind = forcedKind || decision.kind;
-        const context = kind === 'follow_up' ? contextForFollowUp(answeredTurns(active), memory) : [];
+        const route: Route = forced || (decision.kind === 'chat' ? 'chat' : decision.kind === 'summary' ? 'summary' : 'analysis');
+        // With an earlier answer (and Memory on), its question and SQL go with
+        // every analysis message; the AI decides whether to build on them.
+        const context = contextForFollowUp(answeredTurns(active), memory);
 
-        const userTurn: ChatTurn = { id: newId(), role: 'user', createdAt: Date.now(), text, kind, contextTurns: context.length };
+        const userId = newId();
+        const userTurn: ChatTurn = { id: userId, role: 'user', createdAt: Date.now(), text, kind: route === 'chat' ? 'chat' : route === 'summary' ? 'summary' : 'new', contextTurns: 0 };
         const assistantId = newId();
         const assistantTurn: ChatTurn = { id: assistantId, role: 'assistant', createdAt: Date.now(), status: 'pending', progress: 'Thinking' };
         updateConversation(conversationId, conversation => ({
@@ -154,16 +176,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         setDraft('');
         setModeOverride(null);
 
-        if (kind === 'summary') {
-            if (onOpenSummaryStory) {
-                updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, reply: { title: 'Opening your data story', message: 'An overview of the whole dataset opens in Data Story.' } });
-                onOpenSummaryStory(text);
-                incrementAiSqlUsage();
-            } else {
-                updateTurn(conversationId, assistantId, { status: 'error', progress: undefined, error: { title: 'Data story unavailable', message: 'Ask a specific question instead, for example a total or a trend.' } });
-            }
-            return;
-        }
+        const showOverview = (lead?: string) => {
+            const answer = overviewAnswer();
+            updateTurn(conversationId, userId, { kind: 'summary' });
+            updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, ...(lead ? { reply: { message: lead } } : {}), ...(answer ? { answer } : {}) });
+        };
+        if (route === 'summary') { showOverview(); return; }
 
         const status = checkAiSqlLimit(currentUser);
         if (!status.allowed) {
@@ -179,13 +197,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
         const run: ActiveRun = { turnId: assistantId, conversationId, cancelled: false };
         activeRun.current = run;
-        // The question the analysis runs: the message itself, or the data
-        // question the conversation AI handed over.
+        // Which call failed matters: a built-in reply only stands in for the conversation AI.
+        let phase: 'chat' | 'analysis' = route === 'chat' ? 'chat' : 'analysis';
         let question = text;
-        let analysisContext = context;
+        let lead: string | undefined;
         try {
-            if (kind === 'chat') {
-                // Conversation: the AI replies in words, with column names only.
+            if (route === 'chat') {
                 updateTurn(conversationId, assistantId, { progress: 'Writing a reply' });
                 const history: ChatHistoryItem[] = active.turns.flatMap((turn): ChatHistoryItem[] => turn.role === 'user'
                     ? [{ role: 'user', text: turn.text || '' }]
@@ -197,6 +214,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 ]);
                 if (run.cancelled) return;
                 updateConversation(conversationId, conversation => ({ ...conversation, tokens: conversation.tokens + chat.tokens }));
+                if (chat.overview) { showOverview(chat.message || undefined); return; }
                 if (!chat.analyze) {
                     updateTurn(conversationId, assistantId, {
                         status: 'done', progress: undefined,
@@ -204,19 +222,27 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                     });
                     return;
                 }
-                // It was a data question after all: say so, then answer it.
-                updateTurn(conversationId, assistantId, { reply: chat.message ? { message: chat.message } : undefined, progress: 'Writing the query' });
+                // A data question after all: say so, then answer it as analysis.
+                lead = chat.message || undefined;
+                updateTurn(conversationId, assistantId, { reply: lead ? { message: lead } : undefined, progress: 'Writing the query' });
                 question = chat.analyze;
-                analysisContext = [];
+                phase = 'analysis';
             }
             const result = await Promise.race([
-                runLeanAISQL(question, dataset, { context: analysisContext, onProgress: step => { if (!run.cancelled) updateTurn(conversationId, assistantId, { progress: step }); } }),
+                runLeanAISQL(question, dataset, {
+                    context,
+                    // Chosen as analysis by the user or handed over by the conversation AI: never answered in words.
+                    requireAnalysis: forced === 'analysis' || route === 'chat',
+                    onProgress: step => { if (!run.cancelled) updateTurn(conversationId, assistantId, { progress: step }); },
+                }),
                 new Promise<never>((_, reject) => setTimeout(() => reject(new Error('The answer took longer than 60 seconds. Please try again.')), 60_000)),
             ]);
             if (run.cancelled) return;
             incrementAiSqlUsage();
             const tokens = result.tokenUsage?.total || 0;
             const standalone = result.conversation?.standaloneQuestion || question;
+            const builtOn = result.conversation?.usedContext ? result.conversation.contextTurns : 0;
+            if (route !== 'chat') updateTurn(conversationId, userId, { kind: builtOn ? 'follow_up' : 'new', contextTurns: builtOn, sentContext: context.length });
             if (result.rawData.length === 0) {
                 updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, noData: { message: result.explanation || 'No rows matched.', sql: result.sql } });
                 updateConversation(conversationId, conversation => ({ ...conversation, tokens: conversation.tokens + tokens }));
@@ -224,6 +250,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
             }
             pipelines.current.set(assistantId, result);
             const { analysis, formatting } = presentLeanAnswer(result, standalone);
+            const listOnly = isDimensionOnlyResult(result.profile, result.rawData);
             const answer: ChatAnswer = {
                 title: result.narrative?.headline || titleFrom(standalone),
                 standaloneQuestion: standalone,
@@ -235,9 +262,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 measures: result.plan.metrics.map(item => item.field),
                 rowCount: result.rawData.length,
                 // A list answer is shown as a table of the rows the query returned.
-                analysis: isDimensionOnlyResult(result.profile, result.rawData) ? { ...analysis, data: result.rawData.slice(0, 200) } : analysis,
+                analysis: listOnly ? { ...analysis, data: result.rawData.slice(0, 200) } : analysis,
                 formatting,
-                listOnly: isDimensionOnlyResult(result.profile, result.rawData),
+                listOnly,
                 tokens,
                 executionTimeMs: result.executionTimeMs,
             };
@@ -246,23 +273,30 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         } catch (err: any) {
             if (run.cancelled) return;
             const message = String(err?.message || 'Something went wrong.');
-            if (err instanceof AISQLChatReplyError) {
-                // The analysis AI judged it conversation and replied in words.
+            if (err instanceof AISQLOverviewRequest) {
                 updateConversation(conversationId, conversation => ({ ...conversation, tokens: conversation.tokens + err.tokens }));
-                updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, reply: { message, suggestions: err.suggestions } });
+                showOverview(lead);
                 return;
             }
-            if (kind === 'chat' && decision.fallback && !/limit|quota/i.test(message)) {
-                // The AI could not be reached: a short built-in reply instead.
-                updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, reply: { ...decision.fallback, suggestions: examples.slice(0, 3) } });
+            if (err instanceof AISQLChatReplyError) {
+                // The analysis AI judged it conversation and replied in words.
+                updateTurn(conversationId, userId, { kind: 'chat' });
+                updateConversation(conversationId, conversation => ({ ...conversation, tokens: conversation.tokens + err.tokens }));
+                updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, reply: { message, suggestions: err.suggestions } });
                 return;
             }
             if (err instanceof AISQLClarificationError || err?.kind === 'clarification_required') {
                 incrementAiSqlUsage();
                 updateTurn(conversationId, assistantId, {
                     status: 'done', progress: undefined,
-                    clarify: { question: message, options: (err as AISQLClarificationError).options || [], original: text },
+                    ...(lead ? { reply: { message: lead } } : {}),
+                    clarify: { question: message, options: (err as AISQLClarificationError).options || [], original: question },
                 });
+                return;
+            }
+            if (phase === 'chat' && decision.fallback && !/limit|quota/i.test(message)) {
+                // Only when the conversation AI itself could not be reached.
+                updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, reply: { ...decision.fallback, suggestions: examples.slice(0, 3) } });
                 return;
             }
             const title = err?.kind === 'ai_sql_execution_failed' ? 'The query could not run'
@@ -275,7 +309,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         } finally {
             if (activeRun.current === run) activeRun.current = null;
         }
-    }, [dataset, active, busy, memory, updateConversation, updateTurn, examples, onOpenSummaryStory, incrementAiSqlUsage, currentUser]);
+    }, [dataset, active, busy, memory, updateConversation, updateTurn, examples, incrementAiSqlUsage, currentUser, overviewAnswer]);
 
     const stop = () => {
         const run = activeRun.current;
@@ -298,14 +332,14 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
             setActiveId(fresh.id);
             return;
         }
-        void send(initialQuery, 'new');
+        void send(initialQuery, 'analysis');
     }, [initialQuery, dataset, active, busy, send]);
     // After switching to the fresh chat above, send the waiting question.
     useEffect(() => {
         const waiting = waitingInitial.current;
         if (waiting && active && !active.turns.length && !busy) {
             waitingInitial.current = null;
-            void send(waiting, 'new');
+            void send(waiting, 'analysis');
         }
     }, [active, busy, send]);
 
@@ -383,10 +417,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const memoryOption = MEMORY_OPTIONS.find(option => option.value === memory) || MEMORY_OPTIONS[1];
     const contextCost = pendingContext.length ? estimateTokens(formatContextForPrompt(pendingContext)) : 0;
     // Conversation ↔ analysis can always be switched; follow-up ↔ new needs a previous answer.
-    const modeCanFlip = Boolean(draft.trim()) && (detected.kind === 'chat' || ((sendKind === 'new' || sendKind === 'follow_up') && answered.length > 0 && memory > 0));
-    const nextMode: TurnKind = detected.kind === 'chat'
-        ? (sendKind === 'chat' ? 'new' : 'chat')
-        : (sendKind === 'follow_up' ? 'new' : 'follow_up');
+    // Tap the label to switch: conversation ⇄ analysis (an overview can become analysis).
+    const modeCanFlip = Boolean(draft.trim());
+    const nextMode: Route = sendRoute === 'analysis' ? 'chat' : 'analysis';
 
     return (
         <div className="qi-chat h-full">
@@ -468,7 +501,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                 <p>Ask in plain English. The AI sees only your column names and types, writes one query, and the query runs here on your computer. Ask follow-ups like “now by month” — only the last question and its SQL are sent with them.</p>
                                 <div className="qi-chat-examples">
                                     {examples.map(example => (
-                                        <button key={example} type="button" onClick={() => void send(example, 'new')}>{example}</button>
+                                        <button key={example} type="button" onClick={() => void send(example, 'analysis')}>{example}</button>
                                     ))}
                                 </div>
                             </div>
@@ -477,10 +510,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         {active?.turns.map((turn, index) => turn.role === 'user' ? (
                             <div key={turn.id} className="qi-chat-row is-user">
                                 <div className="qi-chat-bubble">{turn.text}</div>
-                                <div className="qi-chat-tag" title={turn.kind === 'follow_up' ? 'Sent with the earlier question(s) and SQL — never results' : turn.kind === 'new' ? 'Sent on its own, without chat history' : 'Answered without the AI'}>
-                                    {turn.kind === 'follow_up' && <><Link2 className="h-3 w-3" aria-hidden /> Follow-up{turn.contextTurns ? ` · used ${turn.contextTurns} earlier answer${turn.contextTurns === 1 ? '' : 's'}` : ' · memory off'}</>}
-                                    {turn.kind === 'new' && index > 0 && <>New question · no history sent</>}
+                                <div className="qi-chat-tag" title={turn.kind === 'follow_up' ? 'The AI built on the earlier question and SQL (never results)' : turn.kind === 'new' ? 'The AI answered it on its own' : turn.kind === 'summary' ? 'Worked out on your computer; nothing sent to the AI' : 'The AI replied in words'}>
+                                    {turn.kind === 'follow_up' && <><Link2 className="h-3 w-3" aria-hidden /> Follow-up · the AI built on your last answer</>}
+                                    {turn.kind === 'new' && index > 0 && <>{turn.sentContext ? 'New question · the AI treated it on its own' : 'New question'}</>}
                                     {turn.kind === 'chat' && <>Conversation · the AI replies in words</>}
+                                    {turn.kind === 'summary' && <>Overview · worked out on your computer, no AI</>}
                                 </div>
                             </div>
                         ) : (
@@ -498,10 +532,10 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                     {turn.reply && (
                                         <div className="qi-chat-reply">
                                             {turn.reply.title && <strong>{turn.reply.title}</strong>}
-                                            <p className={turn.reply.title ? '' : 'qi-chat-reply-text'}>{turn.reply.message}</p>
+                                            <RichText text={turn.reply.message} className={turn.reply.title ? '' : 'qi-chat-reply-text'} />
                                             {!!turn.reply.suggestions?.length && (
                                                 <div className="qi-chat-chips">
-                                                    {turn.reply.suggestions.map(suggestion => <button key={suggestion} type="button" onClick={() => void send(suggestion, 'new')}>{suggestion}</button>)}
+                                                    {turn.reply.suggestions.map(suggestion => <button key={suggestion} type="button" onClick={() => void send(suggestion, 'analysis')}>{suggestion}</button>)}
                                                 </div>
                                             )}
                                         </div>
@@ -511,7 +545,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                             <p className="qi-chat-clarify-q">{turn.clarify.question}</p>
                                             <div className="qi-chat-chips">
                                                 {turn.clarify.options.map(option => (
-                                                    <button key={option.question} type="button" title={option.question} disabled={busy} onClick={() => void send(option.question, 'new')}>{option.label}</button>
+                                                    <button key={option.question} type="button" title={option.question} disabled={busy} onClick={() => void send(option.question, 'analysis')}>{option.label}</button>
                                                 ))}
                                                 <button type="button" className="is-quiet" onClick={() => { setDraft(turn.clarify!.original); requestAnimationFrame(() => inputRef.current?.focus()); }}>
                                                     {turn.clarify.options.length ? 'Something else…' : 'Edit my question'}
@@ -583,14 +617,21 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                             )}
                                             <footer className="qi-chat-answer-foot">
                                                 <div className="qi-chat-actions">
-                                                    {onViewFullPage && (
+                                                    {turn.answer.overview && onOpenSummaryStory && (
+                                                        <button type="button" className="is-primary" onClick={() => onOpenSummaryStory('Give me an overview of my data')}>
+                                                            <Maximize2 className="h-3.5 w-3.5" aria-hidden /> Full data story
+                                                        </button>
+                                                    )}
+                                                    {onViewFullPage && turn.answer.sql && (
                                                         <button type="button" className="is-primary" onClick={() => void openFullScreen(turn)} disabled={opening === turn.id}>
                                                             {opening === turn.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Maximize2 className="h-3.5 w-3.5" aria-hidden />} Full screen
                                                         </button>
                                                     )}
-                                                    <button type="button" aria-expanded={Boolean(openSql[turn.id])} onClick={() => setOpenSql(state => ({ ...state, [turn.id]: !state[turn.id] }))}>
-                                                        <Code className="h-3.5 w-3.5" aria-hidden /> SQL
-                                                    </button>
+                                                    {turn.answer.sql && (
+                                                        <button type="button" aria-expanded={Boolean(openSql[turn.id])} onClick={() => setOpenSql(state => ({ ...state, [turn.id]: !state[turn.id] }))}>
+                                                            <Code className="h-3.5 w-3.5" aria-hidden /> SQL
+                                                        </button>
+                                                    )}
                                                     {onPin && (
                                                         <button type="button" onClick={() => onPin(turn.answer!.title, turn.answer!.analysis)}>
                                                             <Pin className="h-3.5 w-3.5" aria-hidden /> Pin
@@ -601,7 +642,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                                     </button>
                                                 </div>
                                                 <span className="qi-chat-meta">
-                                                    {turn.answer.rowCount.toLocaleString()} row{turn.answer.rowCount === 1 ? '' : 's'}
+                                                    {turn.answer.overview ? `From all ${turn.answer.rowCount.toLocaleString()} rows · no AI` : `${turn.answer.rowCount.toLocaleString()} row${turn.answer.rowCount === 1 ? '' : 's'}`}
                                                     {turn.answer.tokens ? ` · ${formatTokens(turn.answer.tokens)} tokens` : ''}
                                                 </span>
                                             </footer>
@@ -620,7 +661,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         {followUps.length > 0 && (
                             <div className="qi-chat-followups" aria-label="Suggested follow-ups">
                                 {followUps.map(suggestion => (
-                                    <button key={suggestion} type="button" onClick={() => void send(suggestion, memory > 0 ? 'follow_up' : 'new')}>
+                                    <button key={suggestion} type="button" onClick={() => void send(suggestion, 'analysis')}>
                                         <CornerDownRight className="h-3.5 w-3.5" aria-hidden /> {suggestion}
                                     </button>
                                 ))}
@@ -662,16 +703,17 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                             {draft.trim() ? (
                                 <button
                                     type="button"
-                                    className={`qi-chat-mode is-${sendKind}`}
+                                    className={`qi-chat-mode is-${sendRoute}`}
                                     disabled={!modeCanFlip}
                                     onClick={() => setModeOverride(nextMode)}
-                                    title={`${modeOverride ? 'Chosen by you.' : detected.reason}${modeCanFlip ? ' Click to switch.' : ''}`}
-                                    aria-label={`Will be sent as: ${sendKind === 'follow_up' ? 'follow-up' : sendKind === 'new' ? 'new question' : sendKind === 'summary' ? 'data overview' : 'conversation'}${modeCanFlip ? '. Click to switch.' : ''}`}
+                                    title={`${modeOverride ? 'Chosen by you.' : detected.reason} Click to switch to ${nextMode === 'chat' ? 'conversation' : 'analysis'}.`}
+                                    aria-label={`Will be sent as: ${sendRoute === 'analysis' ? 'analysis' : sendRoute === 'summary' ? 'data overview' : 'conversation'}. Click to switch to ${nextMode === 'chat' ? 'conversation' : 'analysis'}.`}
                                 >
-                                    {sendKind === 'follow_up' && <><Link2 className="h-3.5 w-3.5" aria-hidden /> Follow-up · {pendingContext.length ? `+${pendingContext.length} earlier answer${pendingContext.length === 1 ? '' : 's'} (~${contextCost} tokens)` : 'memory off'}</>}
-                                    {sendKind === 'new' && <>New question · no history sent</>}
-                                    {sendKind === 'chat' && <>Conversation · the AI replies in words</>}
-                                    {sendKind === 'summary' && <>Opens the data story</>}
+                                    {sendRoute === 'analysis' && (pendingContext.length
+                                        ? <><Link2 className="h-3.5 w-3.5" aria-hidden /> Analysis · the AI checks if it builds on your last answer (~{contextCost} tokens)</>
+                                        : <>Analysis · new question</>)}
+                                    {sendRoute === 'chat' && <>Conversation · the AI replies in words</>}
+                                    {sendRoute === 'summary' && <>Overview · worked out on your computer</>}
                                 </button>
                             ) : (
                                 <span className="qi-chat-hint">Enter to send · Shift+Enter for a new line</span>
@@ -711,3 +753,21 @@ const AnswerTable: React.FC<{ rows: Record<string, any>[] }> = ({ rows }) => {
         </div>
     );
 };
+
+/**
+ * The AI's words, lightly formatted: paragraphs, "- " bullet lists and
+ * **bold**. Rendered as text (no HTML from the reply is ever used).
+ */
+const RichText: React.FC<{ text: string; className?: string }> = ({ text, className }) => {
+    const bold = (line: string) => line.split(/(\*\*[^*]+\*\*)/g).map((part, i) =>
+        /^\*\*[^*]+\*\*$/.test(part) ? <strong key={i}>{part.slice(2, -2)}</strong> : <React.Fragment key={i}>{part}</React.Fragment>);
+    const blocks = text.replace(/\r/g, '').split(/\n{2,}/).map(block => block.split('\n').filter(line => line.trim()));
+    return (
+        <div className={`qi-chat-rich ${className || ''}`}>
+            {blocks.map((lines, index) => lines.length && lines.every(line => /^\s*([-•*]|\d+[.)])\s+/.test(line))
+                ? <ul key={index}>{lines.map((line, i) => <li key={i}>{bold(line.replace(/^\s*([-•*]|\d+[.)])\s+/, ''))}</li>)}</ul>
+                : <p key={index}>{lines.map((line, i) => <React.Fragment key={i}>{i > 0 && <br />}{bold(line)}</React.Fragment>)}</p>)}
+        </div>
+    );
+};
+
