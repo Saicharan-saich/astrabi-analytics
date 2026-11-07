@@ -13,6 +13,8 @@ export interface ChatAnswer {
     standaloneQuestion: string;
     summary?: string;
     insights?: string[];
+    /** Warnings about the numbers (a misleading average, very few rows). */
+    cautions?: string[];
     explanation?: string;
     sql: string;
     dimensions?: string[];

@@ -89,7 +89,13 @@ export function classifyTurn(message: string, hasPreviousAnswer: boolean, datase
     const vocabulary = columnVocabulary(dataset);
     const mentionsColumns = tokens.filter(token => vocabulary.has(token.replace(/'s$/, ''))).length;
     // "What does median mean?" asks for a meaning, not a mean.
-    const asksForNumbers = ANALYSIS_WORDS.test(core.replace(/\bmean(s|ing)?\s*[?!.]*$/i, '')) && mentionsColumns > 0;
+    const forNumbers = core.replace(/\bmean(s|ing)?\s*[?!.]*$/i, '');
+    // "What is the average sales per person?" asks for a figure even when no
+    // column is called "sales": an aggregate split per/by/for something.
+    const figureSplit = /\b(average|avg|mean|median|total|sum|count|how many|how much|highest|lowest|top|bottom|most|least)\b/i.test(forNumbers)
+        && /\b(per|by|each|across|for (each|every|my|the|our)|in (my|the|our|this|each))\b/i.test(forNumbers)
+        && !/^(what|which) (is|are) (a|an)\b/i.test(core);
+    const asksForNumbers = (ANALYSIS_WORDS.test(forNumbers) && mentionsColumns > 0) || figureSplit;
 
     // Conversation: about the assistant or the app, or what something means,
     // and not a request for numbers from the data.

@@ -20,6 +20,7 @@
  *   quality        gaps that change the numbers
  */
 import { ColumnType, type Dataset, type FormattingConfig } from '../types';
+import { averageCaution } from '../utils/averageCheck';
 
 export type StoryKind = 'overview' | 'trend' | 'anomaly' | 'movers' | 'breakdown' | 'concentration' | 'margin' | 'contrast' | 'relationship' | 'quality';
 
@@ -283,16 +284,21 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
         let headline = measure.agg === 'sum'
             ? `${fmt(total)} of ${measure.label} across ${count(rows.length)} ${recordWord === 'rows' ? 'rows' : recordWord}${firstDay ? `, ${periodOf(firstDay, 'month').label} to ${periodOf(lastDay, 'month').label}` : ''}.`
             : `The average ${measure.label} is ${fmt(mean)} across ${count(rows.length)} ${recordWord}${firstDay ? `, ${periodOf(firstDay, 'month').label} to ${periodOf(lastDay, 'month').label}` : ''}.`;
-        if (measure.agg === 'avg') {
-            points.push(`${capital(measure.label)} belongs to each row, so it is averaged rather than added up.`);
+        if (rows.length < 30) points.push(`There are only ${count(rows.length)} rows, so treat every pattern here as a rough guide: one row more or less can change it.`);
+        if (measure.agg === 'avg') points.push(`${capital(measure.label)} belongs to each row, so it is averaged rather than added up.`);
+        // An average that hides very uneven values (100, 0, 0, 0 → 25).
+        const caution = values.length >= 3 ? averageCaution(values, oneRecord) : null;
+        if (caution) {
+            const listed = values.length <= 6 ? ` The ${count(values.length)} values are ${[...values].sort((a, b) => b - a).map(v => fmt(v)).join(', ')}.` : '';
+            points.push(`Don't read the average as typical: ${caution.reason}.${listed} The typical ${oneRecord} is ${fmt(mid)}, against an average of ${fmt(mean)}.`);
+        } else if (measure.agg === 'avg') {
             if (mid > 0 && mean > mid * 1.3) points.push(`A few high values pull the average up: the middle ${measure.label} is ${fmt(mid)}.`);
-        }
-        if (measure.agg === 'sum' && mid > 0 && mean > mid * 1.5 && values.length >= 20) {
+        } else if (mid > 0 && mean > mid * 1.5 && values.length >= 20) {
             const sorted = [...values].sort((a, b) => b - a);
             const topCount = Math.max(1, Math.round(values.length * 0.1));
             const topShare = sorted.slice(0, topCount).reduce((s, v) => s + v, 0) / total;
             points.push(`A few large ${recordWord} lift the average: the typical ${oneRecord} is ${fmt(mid)}, but the average is ${fmt(mean)}. The biggest 10% of ${recordWord} make up ${pct(topShare)} of the total.`);
-        } else if (measure.agg === 'sum' && values.length) {
+        } else if (values.length && mean && Math.abs(mean - mid) / Math.abs(mean) < 0.25) {
             points.push(`The typical ${oneRecord} is ${fmt(mid)}, close to the average of ${fmt(mean)}, so no small group of ${recordWord} dominates.`);
         }
         const negatives = values.filter(v => v < 0);
@@ -387,11 +393,18 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
     for (const candidate of breakdownCandidates.filter(c => !c.grouping.yearLike).slice(0, 4)) {
         if (breakdownsShown >= 2) break;
         const { grouping, groups, total } = candidate;
-        const top = groups[0]; const second = groups[1]; const bottom = groups[groups.length - 1];
+        let top = groups[0]; const second = groups[1]; let bottom = groups[groups.length - 1];
         const label = grouping.label;
         let headline: string;
         const points: string[] = [];
         if (measure.agg === 'avg' || total <= 0) {
+            // A group with one or two rows can top an average by chance.
+            const solid = groups.filter(g => g.rows >= 3);
+            const thin = groups.filter(g => g.rows < 3);
+            if (solid.length >= 2 && thin.length) {
+                top = solid[0]; bottom = solid[solid.length - 1];
+                points.push(`${thin.slice(0, 3).map(g => g.key).join(', ')}${thin.length > 3 ? ` and ${thin.length - 3} more` : ''} ${thin.length === 1 ? 'has' : 'have'} fewer than 3 rows, so ${thin.length === 1 ? 'its average is' : 'their averages are'} left out of the comparison.`);
+            }
             const gap = top.value && bottom.value ? (top.value - bottom.value) / Math.abs(bottom.value) : 1;
             headline = gap < 0.05
                 ? `Average ${measure.label} barely changes by ${label}: every ${label} is between ${fmt(bottom.value)} and ${fmt(top.value)}.`

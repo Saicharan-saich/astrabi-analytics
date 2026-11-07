@@ -493,6 +493,8 @@ export interface ResultNarrative {
     summary: string;
     /** A few facts calculated from the returned rows in the browser. */
     insights?: string[];
+    /** Warnings about the numbers themselves (a misleading average, very few rows). Also first in insights. */
+    cautions?: string[];
 }
 
 export interface AIQueryProvenance {

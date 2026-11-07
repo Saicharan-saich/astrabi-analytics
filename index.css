@@ -5338,3 +5338,13 @@ body {
 }
 :root:is(.light, .dark) .qi-clean-reclean:hover:not(:disabled) { filter: brightness(1.08); }
 :root:is(.light, .dark) .qi-clean-reclean:disabled { opacity: 0.6; cursor: progress; }
+
+/* AI SQL: a warning about the numbers, under the answer's summary */
+.qi-chat-caution {
+  display: flex; gap: 10px; align-items: flex-start; margin: 10px 0 4px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid rgba(217, 119, 6, 0.45); background: rgba(245, 158, 11, 0.09);
+  color: var(--text-primary); font-size: 13.5px; line-height: 1.55;
+}
+.qi-chat-caution svg { flex: none; margin-top: 2px; color: #d97706; }
+.qi-chat-caution p { margin: 0; }
+.qi-chat-caution p + p { margin-top: 6px; }

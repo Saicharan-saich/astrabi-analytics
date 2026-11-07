@@ -62,6 +62,10 @@ describe('AI SQL chat — deciding what a message is, without the AI', () => {
         expect(classifyTurn('summarise this dataset', false, dataset).kind).toBe('summary');
         expect(classifyTurn('Can you generate a summary of my dataset uploaded?', true, dataset).kind).toBe('summary');
         expect(classifyTurn('What does profit margin mean?', true, { columns: [...dataset.columns, { name: 'profit' }] } as any).kind).toBe('chat');
+        // A figure split per/by something is analysis, even with no matching column name.
+        expect(classifyTurn('What is the average sales per person?', false, dataset).kind).toBe('new');
+        expect(classifyTurn('What is a median?', false, dataset).kind).toBe('chat');
+        expect(classifyTurn('What does average mean?', false, dataset).kind).toBe('chat');
         expect(classifyTurn("What's in my file?", false, dataset).kind).toBe('summary');
         // A summary of one measure split by something is an analysis.
         expect(classifyTurn('Give me a summary of revenue by region', false, dataset).kind).toBe('new');

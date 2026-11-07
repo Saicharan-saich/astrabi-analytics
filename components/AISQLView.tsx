@@ -255,7 +255,9 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 title: result.narrative?.headline || titleFrom(standalone),
                 standaloneQuestion: standalone,
                 summary: result.narrative?.summary,
-                insights: result.narrative?.insights,
+                // Warnings about the numbers get their own box; the rest are key points.
+                cautions: result.narrative?.cautions,
+                insights: result.narrative?.insights?.filter(item => !result.narrative?.cautions?.includes(item)),
                 explanation: result.explanation,
                 sql: result.sql,
                 dimensions: result.plan.dimensions.map(item => item.field),
@@ -392,7 +394,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
 
     const copyAnswer = async (turn: ChatTurn) => {
         if (!turn.answer) return;
-        const text = [turn.answer.title, turn.answer.summary, ...(turn.answer.insights || []).map(item => `• ${item}`)].filter(Boolean).join('\n');
+        const text = [turn.answer.title, turn.answer.summary, ...(turn.answer.cautions || []).map(item => `⚠ ${item}`), ...(turn.answer.insights || []).map(item => `• ${item}`)].filter(Boolean).join('\n');
         try { await navigator.clipboard.writeText(text); setCopied(turn.id); setTimeout(() => setCopied(null), 1500); } catch { /* clipboard blocked */ }
     };
 
@@ -585,6 +587,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                                 )}
                                             </header>
                                             {turn.answer.summary && <p className="qi-chat-summary">{turn.answer.summary}</p>}
+                                            {!!turn.answer.cautions?.length && (
+                                                <div className="qi-chat-caution" role="note" aria-label="Check these numbers">
+                                                    <AlertTriangle className="h-4 w-4" aria-hidden />
+                                                    <div>{turn.answer.cautions.map(item => <p key={item}>{item}</p>)}</div>
+                                                </div>
+                                            )}
                                             <div className={`qi-chat-figure ${turn.answer.listOnly ? 'is-table' : ''}`}>
                                                 {turn.answer.listOnly ? (
                                                     <AnswerTable rows={turn.answer.analysis.data || []} />

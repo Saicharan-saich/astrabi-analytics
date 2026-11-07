@@ -35,6 +35,7 @@ import { buildResultNarrative } from './resultNarrative';
 import { formatSQL } from '../sqlFormatter';
 import { formatContextForPrompt, type ContextTurn } from './chatContext';
 import { averageCaution, groupedAverageMessage } from '../../utils/averageCheck';
+import { averageNotesFromValues, averageValuesQuery, perItemColumns, perItemSumNote } from './numberChecks';
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -546,7 +547,12 @@ function columnType(field: SemanticField, storedAsNumber?: boolean): string {
     return 'TEXT';
 }
 
-function columnRole(field: SemanticField): string {
+function columnRole(field: SemanticField, perItem = false): string {
+    const base = columnRoleBase(field);
+    return perItem && base.startsWith('measure') ? `${base}; a per-item figure: average it, never SUM it` : base;
+}
+
+function columnRoleBase(field: SemanticField): string {
     if (field.keyRole && field.keyRole !== 'none') return field.keyRole === 'primary_key' ? 'identifier (unique per row)' : 'identifier';
     if (field.semanticType === 'identifier') return 'identifier';
     if (field.semanticType === 'date' || field.physicalType === 'date') return 'date';
@@ -569,10 +575,11 @@ export function describeColumnsOnly(
     model: SemanticModel,
     join?: { tables: { name: string; columns: { name: string; isPK?: boolean }[] }[]; links: { leftTable: string; leftColumn: string; rightTable: string; rightColumn: string; cardinality?: string }[] } | null,
     numericColumns: Set<string> = new Set(),
+    perItem: Set<string> = new Set(),
 ): string {
     const lines = ['Table "data" columns:'];
     for (const field of model.fields) {
-        lines.push(`- ${sqlName(field.name)}: ${columnType(field, numericColumns.has(field.name))}; ${columnRole(field)}`);
+        lines.push(`- ${sqlName(field.name)}: ${columnType(field, numericColumns.has(field.name))}; ${columnRole(field, perItem.has(field.name))}`);
     }
     if (join?.tables?.length) {
         lines.push('', 'The data came from several tables. "data" holds the main table. Related tables:');
@@ -598,7 +605,7 @@ function describeData(dataset: Dataset) {
     const numericColumns = new Set(model.fields.map(field => field.name).filter(name =>
         sample.some(row => row[name] !== null && row[name] !== undefined && row[name] !== '')
         && sample.every(row => row[name] === null || row[name] === undefined || row[name] === '' || typeof row[name] === 'number')));
-    return { model, schema: describeColumnsOnly(model, join, numericColumns) };
+    return { model, schema: describeColumnsOnly(model, join, numericColumns, perItemColumns(dataset.columns, dataset.name)) };
 }
 
 export async function runLeanAISQL(question: string, dataset: Dataset, options: LeanRunOptions = {}): Promise<AISQLPipelineResult> {
@@ -669,9 +676,11 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         throw new AISQLPipelineError('ai_sql_execution_failed', `The query could not run on your data: ${execution.error}`);
     }
 
+    options.onProgress?.('Checking the numbers');
+    const cautions = await numberCautions(sql, execution.data || [], parsed.dimensions, dataset, model.timeContext);
     options.onProgress?.('Choosing the chart');
     const result = buildLeanAnswer({
-        question: standalone, sql, rows: execution.data || [], reply: parsed, model, dataset, started, repairAttempts, tokens, aiModel: reply.model, originalQuestion: question,
+        question: standalone, sql, rows: execution.data || [], reply: parsed, model, dataset, started, repairAttempts, tokens, aiModel: reply.model, originalQuestion: question, cautions,
     });
     result.conversation = {
         standaloneQuestion: standalone,
@@ -695,6 +704,27 @@ interface LeanAnswerInput {
     aiModel: string;
     /** The user's own words, when the AI restated the question. */
     originalQuestion?: string;
+    /** Warnings from numberCautions (otherwise the quick in-memory check). */
+    cautions?: string[];
+}
+
+/**
+ * Warnings about the answer's numbers, worked out on this computer: the
+ * query is run again with its average returned as the values behind it.
+ */
+async function numberCautions(sql: string, rows: Record<string, any>[], dimensions: string[] | undefined, dataset: Dataset, timeContext: any): Promise<string[]> {
+    const notes: string[] = [];
+    try {
+        const listQuery = averageValuesQuery(sql);
+        if (listQuery && rows.length) {
+            const dims = (dimensions || []).filter(name => Object.prototype.hasOwnProperty.call(rows[0], name));
+            const listed = await executeSQLViaDuckDB(dataset.rows, listQuery.sql, timeContext, dataset.relatedTables);
+            if (!listed.error && listed.data?.length) notes.push(...averageNotesFromValues(listed.data, rows.slice(0, 500), dims, listQuery.column));
+        }
+    } catch { /* the answer stands without the extra check */ }
+    const sum = perItemSumNote(sql, dataset.columns, dataset.name);
+    if (sum) notes.push(sum);
+    return notes;
 }
 
 /** Chart, narrative and insights for an executed query — all local. */
@@ -734,10 +764,11 @@ function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
     }
     const narrativeBase = rows.length ? buildResultNarrative({ question, data: reshaped.data, profile, chart: reshaped.chart, plan, model, sourceRows: dataset.rows, currency }) : null;
     const extremesText = extremes ? extremesNarrative(extremes, currency) : null;
-    const caution = averageCautionForSql(sql, dataset.rows, plan.dimensions.map(item => item.field));
-    const insights = [...(caution ? [caution] : []), ...(extremesText ? extremesText.insights : buildInsights(rows, profile, plan, currency))].slice(0, 4);
+    const quick = input.cautions ? null : averageCautionForSql(sql, dataset.rows, plan.dimensions.map(item => item.field));
+    const cautions = input.cautions || (quick ? [quick] : []);
+    const insights = [...cautions, ...(extremesText ? extremesText.insights : buildInsights(rows, profile, plan, currency))].slice(0, Math.max(4, cautions.length + 2));
     const narrative: ResultNarrative | undefined = narrativeBase
-        ? { ...narrativeBase, headline: parsed.title || narrativeBase.headline, insights, ...(extremesText ? { summary: extremesText.summary } : {}) }
+        ? { ...narrativeBase, headline: parsed.title || narrativeBase.headline, insights, ...(cautions.length ? { cautions } : {}), ...(extremesText ? { summary: extremesText.summary } : {}) }
         : undefined;
 
     const explanation = rows.length
@@ -796,8 +827,9 @@ export async function rerunSavedAnswer(saved: SavedLeanAnswer, dataset: Dataset)
     const { model } = describeData(dataset);
     const execution = await executeSQLViaDuckDB(dataset.rows, safety.sql, model.timeContext as any, dataset.relatedTables);
     if (execution.error) throw new AISQLPipelineError('ai_sql_execution_failed', `The saved query could not run on the current data: ${execution.error}`);
+    const cautions = await numberCautions(safety.sql, execution.data || [], saved.dimensions, dataset, model.timeContext);
     const result = buildLeanAnswer({
-        question: saved.question, sql: safety.sql, rows: execution.data || [], reply: saved, model, dataset, started, repairAttempts: 0, tokens: 0, aiModel: 'none (re-run locally)',
+        question: saved.question, sql: safety.sql, rows: execution.data || [], reply: saved, model, dataset, started, repairAttempts: 0, tokens: 0, aiModel: 'none (re-run locally)', cautions,
     });
     result.conversation = { standaloneQuestion: saved.question, contextTurns: 0, usedContext: false };
     return result;

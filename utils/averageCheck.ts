@@ -22,6 +22,19 @@ export const formatAverageNumber = (value: number) => Math.abs(value) >= 1000
     : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 const fmt = (value: number) => formatAverageNumber(value);
+const plural = (word: string) => word === 'person' ? 'people' : /[^aeiou]y$/.test(word) ? `${word.slice(0, -1)}ies` : /(s|x|ch|sh)$/.test(word) ? `${word}es` : `${word}s`;
+const listValues = (values: number[]) => {
+    const shown = [...values].sort((a, b) => b - a).map(fmt);
+    return shown.length > 1 ? `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}` : shown[0];
+};
+
+/** "Based on only 4 rows": an average or share from very few values is fragile. */
+export function smallSampleNote(count: number, what = 'figure'): string | null {
+    if (count >= 30 || count < 1) return null;
+    return count < 10
+        ? `This ${what} rests on only ${count} row${count === 1 ? '' : 's'}: one more or one fewer could change it a lot.`
+        : `This ${what} rests on ${count} rows, so treat it as a rough guide.`;
+}
 
 export function averageCaution(values: unknown[], label = 'value'): AverageCaution | null {
     const numbers = values
@@ -45,10 +58,14 @@ export function averageCaution(values: unknown[], label = 'value'): AverageCauti
 
     const reason = oneDominates
         ? `one ${label} makes up ${Math.round(topShare * 100)}% of the total`
-        : `${zeros} of ${numbers.length} ${label}s are 0`;
+        : `${zeros} of ${numbers.length} ${plural(label)} are 0`;
+    // With a handful of values, show them: "100, 0, 0 and 0" says it all.
+    const listed = numbers.length <= 6
+        ? `the ${numbers.length} ${plural(label)} are ${listValues(numbers)}, so `
+        : oneDominates ? `of ${numbers.length} ${plural(label)}, ` : '';
     return {
         mean, median, count: numbers.length, zeros, topShare, reason,
-        message: `The average (${fmt(mean)}) can mislead here: ${reason}. The typical ${label} (median) is ${fmt(median)}.`,
+        message: `The average (${fmt(mean)}) can mislead here: ${listed}${reason}. The typical ${label} (median) is ${fmt(median)}.`,
     };
 }
 

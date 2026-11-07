@@ -83,3 +83,30 @@ describe('dataset overview in the chat', () => {
         expect(overview.formatting.numberFormat).toBe('currency_gbp');
     });
 });
+
+describe('data story — averages that mislead', () => {
+    const tiny = {
+        id: 't', name: 'team.csv', etlLogs: [], version: 1,
+        rows: [{ person: 'Ana', sales: 100 }, { person: 'Ben', sales: 0 }, { person: 'Cy', sales: 0 }, { person: 'Di', sales: 0 }],
+        columns: [{ name: 'person', type: ColumnType.DIMENSION }, { name: 'sales', type: ColumnType.METRIC, currency: 'GBP' }],
+    } as unknown as Dataset;
+
+    it('says 100, 0, 0, 0 is one person, not "everyone about 25"', () => {
+        const points = buildDataStory(tiny).findings[0].points.join(' ');
+        expect(points).toContain('There are only 4 rows');
+        expect(points).toContain("Don't read the average as typical: one row makes up 100% of the total. The 4 values are £100, £0, £0, £0. The typical row is £0, against an average of £25.");
+        expect(points).not.toContain('no small group');
+    });
+
+    it('does not let a one-row group win "highest average"', () => {
+        const rows = [
+            ...Array.from({ length: 10 }, (_, i) => ({ make: 'Ford', unit_price: 20 + (i % 3) })),
+            ...Array.from({ length: 10 }, (_, i) => ({ make: 'BMW', unit_price: 40 + (i % 3) })),
+            { make: 'Ferrari', unit_price: 900 },
+        ];
+        const story = buildDataStory({ id: 'p', name: 'prices.csv', etlLogs: [], version: 1, rows, columns: [{ name: 'make', type: ColumnType.DIMENSION }, { name: 'unit_price', type: ColumnType.METRIC }] } as unknown as Dataset);
+        const breakdown = story.findings.find(f => f.kind === 'breakdown')!;
+        expect(breakdown.headline).toMatch(/^BMW has the highest average unit price/);
+        expect(breakdown.points.join(' ')).toContain('Ferrari has fewer than 3 rows');
+    });
+});

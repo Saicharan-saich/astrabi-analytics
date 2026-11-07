@@ -68,7 +68,7 @@ describe('cleaning review — decisions change the data', () => {
 describe('averages that mislead', () => {
     it('warns when one value carries the total, with the median', () => {
         expect(averageCaution([100, 0, 0, 0], 'person')?.message)
-            .toBe('The average (25) can mislead here: one person makes up 100% of the total. The typical person (median) is 0.');
+            .toBe('The average (25) can mislead here: the 4 people are 100, 0, 0 and 0, so one person makes up 100% of the total. The typical person (median) is 0.');
         expect(averageCaution([25, 26, 24, 25])).toBeNull();
         expect(averageCaution([10, 12])).toBeNull();
     });

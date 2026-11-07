@@ -150,7 +150,10 @@ for (const theme of ['light', 'dark'] as const) {
                 await route.fulfill(json({ choices: [{ message: { content: JSON.stringify(chat) } }], usage: { total_tokens: 420 } }));
                 return;
             }
-            const reply = asked.includes('Do not reply with action "chat"')
+            const reply = /average sales per person/i.test(asked.split(/QUESTION|NEW MESSAGE/).pop() || '')
+                // The 100, 0, 0, 0 example: one person made every sale.
+                ? { action: 'answer', follow_up: false, title: 'Average sales per person', question: 'Average sales per person', sql: 'SELECT ROUND(AVG(total_sales), 2) AS avg_sales_per_person FROM (SELECT person, SUM(sales) AS total_sales FROM (VALUES (\'Ana\', 100), (\'Ben\', 0), (\'Cy\', 0), (\'Di\', 0)) AS t(person, sales) GROUP BY 1)', dimensions: [], measures: ['avg_sales_per_person'], explanation: 'Totalled each person, then averaged those totals.' }
+                : asked.includes('Do not reply with action "chat"')
                 ? { action: 'answer', follow_up: false, title: 'Revenue by country', question: 'Total revenue by country', sql: 'SELECT "country", ROUND(SUM("revenue"), 2) AS total_revenue FROM "data" GROUP BY 1 ORDER BY 2 DESC', dimensions: ['country'], measures: ['total_revenue'], explanation: 'Added up revenue for each country to show where sales come from.' }
                 : /highest and lowest/i.test(asked)
                 ? { action: 'answer', title: 'Highest and lowest product sales by month', question: 'For each month, the products with the highest and lowest total sales', dimensions: ['month', 'sales_type', 'product'], measures: ['total_sales'], explanation: 'Added up sales per product per month, then kept the top and bottom product in each month.', sql: 'WITH m AS (SELECT DATE_TRUNC(\'month\', CAST("order_date" AS DATE)) AS month, "product", SUM("revenue") AS total_sales FROM "data" GROUP BY 1, 2), r AS (SELECT *, ROW_NUMBER() OVER (PARTITION BY month ORDER BY total_sales DESC) AS hi, ROW_NUMBER() OVER (PARTITION BY month ORDER BY total_sales ASC) AS lo FROM m) SELECT month, CASE WHEN hi = 1 THEN \'Highest\' ELSE \'Lowest\' END AS sales_type, "product", ROUND(total_sales, 2) AS total_sales FROM r WHERE hi = 1 OR lo = 1 ORDER BY month, sales_type' }
@@ -212,6 +215,8 @@ for (const theme of ['light', 'dark'] as const) {
         await page.locator('.qi-chat-thinking').waitFor({ state: 'detached', ...quick }).catch(() => {});
         await page.waitForTimeout(2200);
         await shoot(page, `41-ai-sql-chat-switched-answer-${theme}`);
+        await ask('What is the average sales per person?');
+        await page.locator('.qi-chat-answer').last().screenshot({ path: path.join(OUT, `42-ai-sql-average-caution-${theme}.png`), ...quick }).catch(() => {});
         await ask('show me month wise highest and lowest sales for products');
         await shoot(page, `39-ai-sql-chat-extremes-${theme}`);
         await page.locator('.qi-chat-answer').last().screenshot({ path: path.join(OUT, `39-ai-sql-chat-extremes-card-${theme}.png`), ...quick }).catch(() => {});
