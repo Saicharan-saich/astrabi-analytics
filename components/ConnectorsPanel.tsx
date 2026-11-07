@@ -323,7 +323,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
 
                             {/* Step Progress */}
                             {isRDBMS && (
-                                <div className="flex items-center gap-1">
+                                <div className="flex flex-wrap items-center gap-1">
                                     {stepLabels.map((s, i) => (
                                         <React.Fragment key={s.key}>
                                             <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${i <= stepIndex
