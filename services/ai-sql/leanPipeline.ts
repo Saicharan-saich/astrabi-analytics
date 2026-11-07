@@ -877,6 +877,11 @@ function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
         ? planFromResult(question, rows, { dimensions: [extremes.group], measures: extremes.roles.map(role => role.value) })
         : planFromResult(question, rows, { dimensions: parsed.dimensions, measures: parsed.measures });
     const profile = profileResult(rows, plan, model);
+    // The measure the plan leads with (a rate before the count beside it) leads the chart and insights too.
+    const lead = plan.metrics[0]?.field;
+    if (lead && profile.metricColumns.includes(lead) && profile.metricColumns[0] !== lead) {
+        profile.metricColumns = [lead, ...profile.metricColumns.filter(column => column !== lead)];
+    }
     if (extremes) {
         // The item columns are labels for the points, not groupings.
         const itemColumns = new Set(extremes.roles.map(role => role.item));
