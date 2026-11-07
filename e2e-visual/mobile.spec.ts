@@ -43,7 +43,15 @@ async function overflowReport(page: Page) {
             if (parent && parent.getBoundingClientRect().right > vw + 2 && !scrollsSideways(parent) && parent !== document.body) continue;
             offenders.push({ el: describe(el), right: Math.round(r.right), width: Math.round(r.width), text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 50), parent: parent ? describe(parent) : '' });
         }
-        return { pageWidth: document.documentElement.scrollWidth, viewport: vw, offenders: offenders.slice(0, 25) };
+        // Where the left margin of the page title comes from.
+        const title = document.querySelector('.qi-main-frame h1, .qi-main-frame h2');
+        const gutter: string[] = [];
+        for (let node = title as HTMLElement | null; node && node !== document.body; node = node.parentElement) {
+            const st = getComputedStyle(node);
+            const bits = [['pl', st.paddingLeft], ['ml', st.marginLeft], ['bl', st.borderLeftWidth]].filter(([, v]) => parseFloat(v) > 0).map(([k, v]) => `${k}${v}`);
+            if (bits.length) gutter.push(`${describe(node)} ${bits.join(' ')} @${Math.round(node.getBoundingClientRect().left)}`);
+        }
+        return { pageWidth: document.documentElement.scrollWidth, viewport: vw, titleLeft: title ? Math.round(title.getBoundingClientRect().left) : null, gutter, offenders: offenders.slice(0, 25) };
     });
 }
 

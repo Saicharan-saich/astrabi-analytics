@@ -5380,3 +5380,7 @@ body {
   .qi-chat-memory select { font-size: 13px; max-width: 120px; }
   .qi-chat-head { gap: 8px; }
 }
+@media (max-width: 640px) {
+  .qi-chat-head img { display: none; }
+  .qi-clean-head > :first-child { flex-basis: 100%; }
+}
