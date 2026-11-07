@@ -3,6 +3,7 @@ import { ChevronDown, ChevronRight, Database, Download, Upload, Zap } from 'luci
 import { Dataset, DatasetDomainProfile, ColumnType, ETLLog, EtlOptions } from '../types';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { CleaningChangesPanel } from './CleaningChangesPanel';
+import { DataKindNote } from './DataKindNote';
 import { CleaningRulesPanel } from './CleaningRulesPanel';
 import { DataExplorerView } from './DataExplorerView';
 import { ETLView } from './ETLView';
@@ -367,6 +368,8 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                     {view === 'overview' && facts && (
                         <>
                             <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} onReclean={onEtlReclean} />
+
+                            <DataKindNote dataset={dataset} />
 
                             <dl className="qi-ws-card qi-ws-facts rounded-xl grid grid-cols-2 md:grid-cols-4">
                                 <div className="px-5 py-4">

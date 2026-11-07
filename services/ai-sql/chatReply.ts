@@ -10,8 +10,7 @@
  */
 import type { Dataset } from '../../types';
 import { fetchWithFallback, LUNA_MODEL } from './modelConfig';
-import { resolveAISQLSemanticModel } from './semanticLayer';
-import { describeColumnsOnly } from './leanPipeline';
+import { describeData } from './leanPipeline';
 import { AISQLPipelineError } from './pipelineError';
 
 export interface ChatHistoryItem {
@@ -55,13 +54,14 @@ Rules:
 - If the message asks for an analysis of the data (a total, average, count, ranking, trend, comparison, list or chart), do not answer it yourself: put the complete question to run in "analyze" (written so it makes sense on its own, using the recent conversation) and a one-line lead-in in "message".
 - If the message asks for a summary, overview or description of the whole dataset, set "overview": true and a one-line lead-in in "message"; the app works the overview out on the user's computer.
 - You may use short paragraphs and simple "- " bullet lists. No headings, no tables.
+- If the DATA SHAPE says there is nothing to add up (appointments, patients, tickets), say so simply when it helps: answers come from counting rows, the share with each yes/no answer and averages, and example questions should be like "What % of appointments were missed, by neighbourhood?".
 - When helpful, offer 2 or 3 short example questions in "suggestions", written as a person would ask them, using the column names as plain words.
 
 Return only JSON: {"message": "...", "suggestions": ["..."], "analyze": null, "overview": false}`;
 
 export function buildChatMessages(message: string, dataset: Dataset, history: ChatHistoryItem[], lastSql?: string) {
-    const { model } = resolveAISQLSemanticModel(dataset);
-    const columns = describeColumnsOnly(model);
+    // Column names, types, roles and the data's shape — never values.
+    const columns = describeData(dataset).schema;
     const recent = history.slice(-8).map(item => `${item.role === 'user' ? 'User' : 'Assistant'}: ${item.text.replace(/\s+/g, ' ').slice(0, 300)}`).join('\n');
     const content = [
         `DATASET: ${dataset.name}`,

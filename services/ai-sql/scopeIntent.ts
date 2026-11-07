@@ -1,3 +1,5 @@
+import { describeDatasetShape } from '../datasetShape';
+import { recordsQuestions } from '../recordsStory';
 import type { Dataset } from '../../types';
 
 export interface BroadScopeDetection {
@@ -278,6 +280,12 @@ export function buildFocusedQuestionSuggestion(dataset: Dataset): string {
  * suggestions, not a whitelist: they never restrict what the user can type.
  */
 export function buildQuestionExamples(dataset: Dataset): string[] {
+    // Records with nothing to add up (appointments, patients): count and compare rates.
+    const shape = dataset.rows?.length ? describeDatasetShape(dataset) : null;
+    if (shape?.countStory) {
+        const questions = recordsQuestions(shape);
+        if (questions.length) return questions;
+    }
     const model = dataset.aiSqlSemanticModel;
     const metric = model?.fields.find(field => field.role === 'metric'
         && field.semanticType !== 'identifier');

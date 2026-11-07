@@ -16,7 +16,9 @@
  *      returned numbers in the browser (the AI never sees them).
  */
 
-import type { Dataset } from '../../types';
+import { ColumnType, type Dataset } from '../../types';
+import { describeDatasetShape, shapeForModel } from '../datasetShape';
+import { isBooleanCell } from '../../utils/booleanCell';
 import type {
     SemanticModel, SemanticField,
     AISQLPipelineResult, AnalysisIntent, AnalysisPlan, ConfidenceScore, PlanDimension, PlanMetric,
@@ -118,6 +120,7 @@ Ask (action "clarify") when ANY of these is true:
 - The question mentions something that is not in the data, or that matches several different columns.
 - The question has nothing specific to analyse ("show me insights", "what's interesting?", "analyse this").
 Do NOT ask when the question names its measure ("top products by revenue", "average price by make", "how many orders per month") or when only one measure could sensibly be meant.
+When the DATA SHAPE says there is nothing to add up, the measures are counts, rates of the yes/no columns and averages of the numbers; if it names the result being tracked, a vague question ("what matters most?", "insights") is usually about that rate — offer options that compare it by different columns.
 For a follow-up give 2 to 4 options. Each option must be a complete, specific question you would answer without asking again, naming the exact measure and grouping from the data, e.g. "Top 10 products by total revenue". Put the most likely option first. Keep the follow-up question short and friendly.
 
 STEP 2 — Otherwise answer (action "answer").
@@ -133,6 +136,8 @@ STEP 2 — Otherwise answer (action "answer").
   - Share or % of total: divide by the total of ALL rows (SUM(x) OVER ()) computed before any LIMIT, so shares are of the whole, not of the top 10.
   - Change and growth: (new - old) / NULLIF(old, 0) * 100, so a change from 0 is blank, not infinite.
   - Divide with NULLIF(denominator, 0). Blank (NULL) values are left out of averages; never treat them as 0 unless asked.
+  - Rates ("no-show rate", "% that churned"): ROUND(100.0 * COUNT_IF(condition) / COUNT(*), 1) named like no_show_rate_pct (0 to 100), with the number of rows beside it (e.g. appointments). BOOLEAN columns are tested directly: WHERE "x", NOT "x", COUNT_IF("x").
+  - Never SUM or AVG an identifier, and never SUM a yes/no column as if it were an amount.
 - Rankings ("top", "best", "highest"): ORDER BY the measure DESC with LIMIT 10 unless the user gave a number. For "which is the best X", still return the top 10 so the answer can be compared; the first row is the answer.
 - Changes over time: group by DATE_TRUNC('month', CAST(date_column AS DATE)) (or the grain asked for) AS period, ORDER BY period. Numeric year columns are compared as numbers.
 - Relative dates ("this year", "last month", "recent") are measured from the latest date in the data, never from today: use (SELECT MAX(CAST(date_column AS DATE)) FROM "data") in the query. Never use CURRENT_DATE or NOW().
@@ -231,6 +236,8 @@ export function scrubErrorForModel(error: string): string {
 }
 
 const TIME_NAME = /(^|_)(date|day|week|month|quarter|year|period|time|timestamp)($|_)/i;
+/** A rate or share: averaged, compared in points, never added up. */
+const RATE_COLUMN = /(^|_)(rate|pct|percent|percentage|share|ratio|proportion)($|_)/i;
 const ISO_DATE = /^\d{4}-\d{2}(-\d{2})?([ T].*)?$/;
 
 /** Infer the analysis shape from the returned columns (used by the chart picker). */
@@ -246,7 +253,10 @@ export function planFromResult(
     const hintedDims = (hints.dimensions || []).filter(column => columns.includes(column));
     const hintedMeasures = (hints.measures || []).filter(column => columns.includes(column) && !hintedDims.includes(column));
     // A numeric "year" or "month" column is a grouping, not a measure.
-    const measures = hintedMeasures.length ? hintedMeasures : columns.filter(column => isNumeric(column) && !TIME_NAME.test(column));
+    let measures = hintedMeasures.length ? hintedMeasures : columns.filter(column => isNumeric(column) && !TIME_NAME.test(column));
+    // "No-show rate by neighbourhood": the rate leads, the count beside it follows.
+    const rate = measures.find(column => RATE_COLUMN.test(column));
+    if (rate && measures[0] !== rate && !/\b(how many|count|number of)\b/i.test(question)) measures = [rate, ...measures.filter(column => column !== rate)];
     const dimensions = hintedDims.length ? hintedDims : columns.filter(column => !measures.includes(column));
 
     const planDimensions: PlanDimension[] = dimensions.map(field => {
@@ -256,7 +266,7 @@ export function planFromResult(
     });
     const planMetrics: PlanMetric[] = measures.map(field => ({
         field,
-        agg: /^(avg|average|mean)_|_(avg|average|mean)$/i.test(field) ? 'avg'
+        agg: /^(avg|average|mean)_|_(avg|average|mean)$/i.test(field) || RATE_COLUMN.test(field) ? 'avg'
             : /count|number_of|^n_/i.test(field) ? 'count'
                 : /^(max|highest)_/i.test(field) ? 'max'
                     : /^(min|lowest)_/i.test(field) ? 'min' : 'sum',
@@ -363,7 +373,11 @@ export function buildInsights(rows: Record<string, any>[], profile: ResultProfil
         const when = (row: Record<string, any>) => periodLabel(row[dimension], /^(quarter|year)$/.test(dimension) ? dimension : timeGrain);
         const first = Number(rows[0][metric]);
         const last = Number(rows[rows.length - 1][metric]);
-        if (Number.isFinite(first) && first !== 0 && Number.isFinite(last)) {
+        if (RATE_COLUMN.test(metric) && Number.isFinite(first) && Number.isFinite(last)) {
+            const unit = /(pct|percent)/i.test(metric) ? '%' : '';
+            const diff = last - first;
+            insights.push(`${label.charAt(0).toUpperCase()}${label.slice(1)} ${diff >= 0 ? 'rose' : 'fell'} from ${first.toLocaleString('en-GB', { maximumFractionDigits: 1 })}${unit} in ${when(rows[0])} to ${last.toLocaleString('en-GB', { maximumFractionDigits: 1 })}${unit} in ${when(rows[rows.length - 1])}${unit ? ` (${Math.abs(diff).toLocaleString('en-GB', { maximumFractionDigits: 1 })} points)` : ''}.`);
+        } else if (Number.isFinite(first) && first !== 0 && Number.isFinite(last)) {
             const change = ((last - first) / Math.abs(first)) * 100;
             insights.push(`${label.charAt(0).toUpperCase()}${label.slice(1)} ${change >= 0 ? 'rose' : 'fell'} ${pct(Math.abs(change))} from ${when(rows[0])} to ${when(rows[rows.length - 1])}.`);
         }
@@ -380,6 +394,20 @@ export function buildInsights(rows: Record<string, any>[], profile: ResultProfil
     const leader = ranked[0];
     const runner = ranked[1];
     const allPositive = ranked.every(row => Number(row[metric]) >= 0);
+    if (RATE_COLUMN.test(metric)) {
+        // Rates are compared in points and never added up.
+        const unit = /(pct|percent)/i.test(metric) ? '%' : '';
+        const show = (row: Record<string, any>) => `${Number(row[metric]).toLocaleString('en-GB', { maximumFractionDigits: 1 })}${unit}`;
+        const last = ranked[ranked.length - 1];
+        if (leader && runner) insights.push(`${leader[dimension]} is highest at ${show(leader)}, ${(Number(leader[metric]) - Number(runner[metric])).toLocaleString('en-GB', { maximumFractionDigits: 1 })} ${unit ? 'points ' : ''}above ${runner[dimension]} (${show(runner)}).`);
+        if (last && ranked.length >= 3) insights.push(`${last[dimension]} is lowest at ${show(last)}.`);
+        const count = Object.keys(rows[0]).find(column => column !== metric && column !== dimension && /(count|appointments|rows|records|number|n_|total|patients|customers|orders|cases)/i.test(column) && rows.every(row => Number.isFinite(Number(row[column]))));
+        if (count && ranked.length >= 3) {
+            const small = ranked.filter(row => Number(row[count]) < 30);
+            if (small.length) insights.push(`${small.length} of these ${small.length === 1 ? 'is' : 'are'} based on fewer than 30 rows, so ${small.length === 1 ? 'its rate' : 'their rates'} can swing a lot by chance.`);
+        }
+        return insights.slice(0, 3);
+    }
     if (leader && runner && Number(runner[metric]) !== 0) {
         const gap = ((Number(leader[metric]) - Number(runner[metric])) / Math.abs(Number(runner[metric]))) * 100;
         insights.push(gap < 1
@@ -567,10 +595,27 @@ function columnType(field: SemanticField, storedAsNumber?: boolean): string {
     return 'TEXT';
 }
 
-function columnRole(field: SemanticField, perItem = false, repeats = false): string {
+function columnRole(field: SemanticField, perItem = false, repeats = false, extra: ColumnExtras = {}): string {
+    const yesNo = extra.yesNo?.get(field.name);
+    if (yesNo) return yesNo === 'boolean' ? 'yes/no' : yesNo === 'number' ? 'yes/no as 1/0' : "yes/no as text: test it with LOWER(col) IN ('yes','y','true','t','1')";
+    if (extra.ids?.has(field.name) && !(field.keyRole && field.keyRole !== 'none') && field.semanticType !== 'identifier') {
+        return repeats ? 'identifier (repeats: several rows share one value)' : 'identifier (unique per row)';
+    }
+    if (extra.perRowNumbers?.has(field.name) && field.role !== 'metric') return 'number describing each row (like an age or a number of days): average it or group it into ranges, never add it up';
     const base = columnRoleBase(field);
     if (repeats && base.startsWith('identifier')) return 'identifier (repeats: several rows share one value, e.g. the lines of one order)';
+    if (base === 'identifier' && extra.ids?.has(field.name)) return 'identifier (unique per row)';
     return perItem && base.startsWith('measure') ? `${base}; a per-item figure: average it, never SUM it` : base;
+}
+
+/** What the browser knows about how each column is stored and used (no values). */
+interface ColumnExtras {
+    ids?: Set<string>;
+    perRowNumbers?: Set<string>;
+    /** yes/no columns and how they are stored in the database. */
+    yesNo?: Map<string, 'boolean' | 'number' | 'text'>;
+    /** The DATA SHAPE block (from datasetShape). */
+    shape?: string;
 }
 
 function columnRoleBase(field: SemanticField): string {
@@ -598,11 +643,15 @@ export function describeColumnsOnly(
     numericColumns: Set<string> = new Set(),
     perItem: Set<string> = new Set(),
     repeatingIds: Set<string> = new Set(),
+    extra: ColumnExtras = {},
 ): string {
     const lines = ['Table "data" columns:'];
     for (const field of model.fields) {
-        lines.push(`- ${sqlName(field.name)}: ${columnType(field, numericColumns.has(field.name))}; ${columnRole(field, perItem.has(field.name), repeatingIds.has(field.name))}`);
+        const yesNo = extra.yesNo?.get(field.name);
+        const type = yesNo === 'boolean' ? 'BOOLEAN' : yesNo === 'text' ? 'TEXT' : columnType(field, numericColumns.has(field.name));
+        lines.push(`- ${sqlName(field.name)}: ${type}; ${columnRole(field, perItem.has(field.name), repeatingIds.has(field.name), extra)}`);
     }
+    if (extra.shape) lines.push('', extra.shape);
     if (join?.tables?.length) {
         lines.push('', 'The data came from several tables. "data" holds the main table. Related tables:');
         for (const table of join.tables) {
@@ -619,23 +668,42 @@ export function describeColumnsOnly(
     return lines.join('\n');
 }
 
-function describeData(dataset: Dataset) {
+/** Stored as a number in the database (the same test the loader uses). */
+const storedNumber = (value: unknown) => typeof value === 'number'
+    || (typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value.trim()) && !/^-?0\d/.test(value.trim()));
+
+export function describeData(dataset: Dataset) {
     const { model } = resolveAISQLSemanticModel(dataset);
     const join = discoverJoinContext(dataset.relatedTables, dataset.sourceSchema);
     // How each column is stored in the browser (a type, never a value).
-    const sample = dataset.rows.slice(0, 50);
-    const numericColumns = new Set(model.fields.map(field => field.name).filter(name =>
-        sample.some(row => row[name] !== null && row[name] !== undefined && row[name] !== '')
-        && sample.every(row => row[name] === null || row[name] === undefined || row[name] === '' || typeof row[name] === 'number')));
+    const sample = dataset.rows.slice(0, 2000);
+    const filled = (name: string) => sample.map(row => row[name]).filter(value => value !== null && value !== undefined && value !== '');
+    const numericColumns = new Set(model.fields.map(field => field.name).filter(name => {
+        const values = filled(name);
+        return values.length > 0 && values.every(storedNumber);
+    }));
     // The table's grain (does an ID repeat?) — a fact about its shape, not its values.
+    const shape = describeDatasetShape(dataset);
+    const etlIds = new Set(dataset.columns.filter(column => column.type === ColumnType.ID).map(column => column.name));
+    const idNames = new Set([...etlIds, ...(shape.rowId ? [shape.rowId] : []), ...shape.entityIds]);
     const repeatingIds = new Set(model.fields
-        .filter(field => (field.keyRole && field.keyRole !== 'none') || field.semanticType === 'identifier')
+        .filter(field => (field.keyRole && field.keyRole !== 'none') || field.semanticType === 'identifier' || idNames.has(field.name))
         .map(field => field.name)
         .filter(name => {
             const sample = dataset.rows.slice(0, 20000).map(row => row[name]).filter(v => v !== null && v !== undefined && v !== '');
             return sample.length > 1 && new Set(sample.map(String)).size < sample.length * 0.95;
         }));
-    return { model, schema: describeColumnsOnly(model, join, numericColumns, perItemColumns(dataset.columns, dataset.name), repeatingIds) };
+    const yesNo = new Map<string, 'boolean' | 'number' | 'text'>();
+    for (const name of shape.yesNo) {
+        const values = filled(name);
+        yesNo.set(name, values.every(isBooleanCell) ? 'boolean' : values.every(storedNumber) ? 'number' : 'text');
+    }
+    const yesTest = (name: string) => {
+        const how = yesNo.get(name);
+        return how === 'number' ? `${sqlName(name)} = 1` : how === 'text' ? `LOWER(${sqlName(name)}) IN ('yes','y','true','t','1')` : sqlName(name);
+    };
+    const extra: ColumnExtras = { ids: idNames, perRowNumbers: new Set(shape.perRowNumbers), yesNo, shape: shapeForModel(shape, yesTest) };
+    return { model, schema: describeColumnsOnly(model, join, numericColumns, perItemColumns(dataset.columns, dataset.name), repeatingIds, extra) };
 }
 
 export async function runLeanAISQL(question: string, dataset: Dataset, options: LeanRunOptions = {}): Promise<AISQLPipelineResult> {

@@ -25,6 +25,9 @@ interface ResultNarrativeInput {
     latestDate?: string;
 }
 
+/** A rate or share column: "no_show_rate_pct", "share_of_total". Never added up. */
+const RATE_NAME = /(rate|pct|percent|percentage|share|ratio|proportion)/i;
+
 const SYMBOLS: Record<string, string> = { GBP: '£', USD: '$', EUR: '€', INR: '₹', JPY: '¥' };
 const DAY_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const dayText = (iso: string) => { const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${Number(m[3])} ${DAY_MONTHS[Number(m[2]) - 1]} ${m[1]}` : iso; };
@@ -43,8 +46,8 @@ function groupName(row: Record<string, any>, dimension: string): string {
 /** What the measure is, keeping "average" (words() drops it): "average weekly sales". */
 function measureLabel(column: string, input?: { plan: AnalysisPlan }): string {
     const averaged = /^(avg|average|mean)_|_(avg|average|mean)$/i.test(column)
-        || Boolean(input?.plan.metrics.length === 1 && input.plan.metrics[0].agg === 'avg' && !/total|sum|count/i.test(column));
-    const base = words(column) || 'result';
+        || Boolean(input?.plan.metrics.length === 1 && input.plan.metrics[0].agg === 'avg' && !/total|sum|count/i.test(column) && !RATE_NAME.test(column));
+    const base = (words(column) || 'result').replace(/\s+(pct|percent|percentage)$/i, '');
     return averaged && !/^average\b/i.test(base) ? `average ${base}` : base;
 }
 
@@ -274,7 +277,12 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
     if (!input.data?.length) return null;
     narrativeCurrency = input.currency || '';
     const { data, profile, plan } = input;
-    const metrics = profile.metricColumns.filter(column => Object.prototype.hasOwnProperty.call(data[0], column));
+    let metrics = profile.metricColumns.filter(column => Object.prototype.hasOwnProperty.call(data[0], column));
+    // "No-show rate by neighbourhood": lead with the rate, not the count beside it.
+    const rateFirst = metrics.find(column => RATE_NAME.test(column));
+    if (rateFirst && metrics[0] !== rateFirst && (/\b(rate|share|percent|percentage|proportion|how often|likely)\b|%/i.test(input.question) || !/\b(how many|count|number of|most)\b/i.test(input.question))) {
+        metrics = [rateFirst, ...metrics.filter(column => column !== rateFirst)];
+    }
     const dimensions = profile.dimensionColumns.filter(column => Object.prototype.hasOwnProperty.call(data[0], column));
 
     if (data.length === 1 && metrics.length >= 1 && dimensions.length === 0) {
@@ -354,6 +362,16 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
         const averaged = /^average\b/.test(label);
         // Two groups (holiday vs not, online vs in store): say how far apart they are.
         const ranking = plan.intent === 'ranking' || /\b(?:top|highest|most|best|largest|leading)\b/i.test(input.question);
+        const isRate = type === 'percentage' || RATE_NAME.test(metric);
+        if (!ranking && ranked.length === 2 && isRate) {
+            const gap = Number(leader[metric]) - Number(runner[metric]);
+            const unit = type === 'percentage' ? ' points' : '';
+            return {
+                version: 1, verifiedFrom: 'executed_result', kind: 'comparison',
+                headline: `${groupName(leader, dimension)}: higher ${label}`,
+                summary: `${label.charAt(0).toUpperCase() + label.slice(1)} is ${formatValue(leader[metric], type)} for ${groupName(leader, dimension)} and ${formatValue(runner[metric], type)} for ${groupName(runner, dimension)}, a gap of ${gap.toLocaleString('en-GB', { maximumFractionDigits: 1 })}${unit}.`,
+            };
+        }
         if (!ranking && ranked.length === 2 && Number(runner[metric])) {
             const gap = (Number(leader[metric]) - Number(runner[metric])) / Math.abs(Number(runner[metric])) * 100;
             return {
@@ -367,6 +385,13 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
                 version: 1, verifiedFrom: 'executed_result', kind: 'ranking',
                 headline: `${groupName(leader, dimension)} comes first on ${label}`,
                 summary: `${groupName(leader, dimension)} comes first with ${formatValue(leader[metric], type)}${runner ? `, then ${groupName(runner, dimension)} with ${formatValue(runner[metric], type)}` : ''}.${data.length > 2 ? ` ${data.length.toLocaleString()} ${plainName(dimension)} values are ranked in the chart.` : ''}`,
+            };
+        }
+        if (isRate) {
+            return {
+                version: 1, verifiedFrom: 'executed_result', kind: 'breakdown',
+                headline: `${groupName(leader, dimension)} has the highest ${label}`,
+                summary: `${groupName(leader, dimension)} has the highest ${label}, at ${formatValue(leader[metric], type)}${last && last !== leader ? `. ${groupName(last, dimension)} has the lowest, at ${formatValue(last[metric], type)}` : ''}.${input.sql && /HAVING\s+COUNT/i.test(input.sql) ? ' Small groups were left out so a handful of rows cannot top the list.' : ''}`,
             };
         }
         return {

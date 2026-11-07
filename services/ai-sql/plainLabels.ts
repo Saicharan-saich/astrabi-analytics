@@ -7,16 +7,51 @@
 const YES = new Set(['1', 'true', 'yes', 'y', 't']);
 const NO = new Set(['0', 'false', 'no', 'n', 'f']);
 
-/** "holiday_flag" → "holiday", "is_member" → "member", "has_discount" → "discount". */
+/** Short names that are always written in capitals. */
+const ACRONYMS = new Set(['sms', 'vip', 'cpi', 'nps', 'kpi', 'gdp', 'bmi', 'hiv', 'icu', 'gp', 'mri', 'sku', 'url', 'id', 'uk', 'usa', 'eu', 'crm', 'b2b', 'b2c', 'hr', 'ceo', 'ivf', 'tv', 'pc']);
+
+/** Lower-case a label for the middle of a sentence, keeping capitals in names like SMS. */
+export function lowerLabel(label: string): string {
+    return label.split(' ').map(word => (/^[A-Z0-9]{2,}$/.test(word) ? word : word.toLowerCase())).join(' ');
+}
+
+/** "holiday_flag" → "holiday", "is_member" → "member", "SMS_received" → "SMS received". */
 export function flagSubject(column: string): string {
+    // Short capitals (SMS, VIP) stay capitals unless the whole name is in capitals.
+    const allCaps = column === column.toUpperCase();
     const subject = column
         .replace(/([a-z])([A-Z])/g, '$1 $2')
-        .toLowerCase()
-        .replace(/[_-]+/g, ' ')
+        .replace(/[_.-]+/g, ' ')
+        .split(/\s+/)
+        .map(word => ((!allCaps && /^[A-Z]{2,5}$/.test(word)) || ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word.toLowerCase()))
+        .join(' ')
         .replace(/\b(is|has|was|flag|flags|indicator|ind|yn|bool|boolean)\b/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
     return subject || column.replace(/_/g, ' ');
+}
+
+/** Things people do, as they are said in the negative: "showed up" → "Didn't show up". */
+const DID: Record<string, string> = {
+    showed: 'show', attended: 'attend', arrived: 'arrive', churned: 'churn', converted: 'convert', completed: 'complete',
+    cancelled: 'cancel', canceled: 'cancel', returned: 'return', renewed: 'renew', subscribed: 'subscribe', clicked: 'click',
+    opened: 'open', purchased: 'purchase', responded: 'respond', defaulted: 'default', enrolled: 'enrol', passed: 'pass',
+    failed: 'fail', survived: 'survive', signed: 'sign', booked: 'book', visited: 'visit', left: 'leave', paid: 'pay',
+    bought: 'buy', won: 'win', lost: 'lose', joined: 'join', replied: 'reply', ordered: 'order', upgraded: 'upgrade',
+};
+
+/** The "no" side in words: "Not holiday", "Didn't show up", "SMS not received". */
+function noLabel(subject: string): string {
+    const words = subject.split(' ');
+    const first = words[0].toLowerCase();
+    if (DID[first]) return `Didn't ${[DID[first], ...words.slice(1)].join(' ')}`;
+    // "SMS received", "loan approved": something that was or wasn't done to it.
+    if (words.length >= 2 && /ed$/.test(words[1]) && words[1].length > 3) {
+        const head = words[0];
+        return `${head.charAt(0).toUpperCase()}${head.slice(1)} not ${words.slice(1).join(' ')}`;
+    }
+    if (/^no\b/.test(first)) return `Not a ${subject}`;
+    return `Not ${subject}`;
 }
 
 /** True when every value is a yes/no (0/1, true/false, yes/no) and both appear or only one does. */
@@ -31,15 +66,18 @@ export function isYesNoColumn(values: unknown[]): boolean {
     return seen.size > 0;
 }
 
-/** "Holiday" for yes, "Not holiday" for no. */
+/** "Holiday" for yes, "Not holiday" for no; "Showed up" / "Didn't show up". */
 export function yesNoLabel(column: string, value: unknown): string {
     const key = String(value ?? '').trim().toLowerCase();
     const subject = flagSubject(column);
     const capital = subject.charAt(0).toUpperCase() + subject.slice(1);
     if (YES.has(key)) return capital;
-    if (NO.has(key)) return `Not ${subject}`;
+    if (NO.has(key)) return noLabel(subject);
     return String(value ?? '');
 }
+
+/** True for the "yes" side of a yes/no value. */
+export const isYesValue = (value: unknown) => YES.has(String(value ?? '').trim().toLowerCase());
 
 /** Rows with their yes/no grouping columns turned into words. */
 export function relabelYesNo(rows: Record<string, any>[], columns: string[]): { rows: Record<string, any>[]; relabelled: string[] } {

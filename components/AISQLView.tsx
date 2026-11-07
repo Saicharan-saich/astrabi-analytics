@@ -3,6 +3,7 @@ import {
     AlertTriangle, ArrowUp, Check, Code, Copy, CornerDownRight, History, Link2, Loader2, Lock, Maximize2,
     MessageSquarePlus, PanelLeftClose, PanelLeftOpen, Pin, RotateCcw, ShieldCheck, Sparkles, Square, Trash2,
 } from 'lucide-react';
+import { DataKindNote } from './DataKindNote';
 import type { AnalysisResult, Dataset, FormattingConfig } from '../types';
 import type { AISQLPipelineResult } from '../services/ai-sql';
 import { runLeanAISQL, rerunSavedAnswer, AISQLClarificationError, AISQLChatReplyError, AISQLOverviewRequest } from '../services/ai-sql/leanPipeline';
@@ -515,6 +516,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                 <div className="qi-chat-empty-mark"><Sparkles className="h-6 w-6" aria-hidden /></div>
                                 <h3>What would you like to know about {dataset.name.replace(/\.[^.]+$/, '')}?</h3>
                                 <p>Ask in plain English. The AI sees only your column names and types, writes one query, and the query runs here on your computer. Ask follow-ups like “now by month” — only the last question and its SQL are sent with them.</p>
+                                <DataKindNote dataset={dataset} compact />
                                 <div className="qi-chat-examples">
                                     {examples.map(example => (
                                         <button key={example} type="button" onClick={() => void send(example, 'analysis')}>{example}</button>

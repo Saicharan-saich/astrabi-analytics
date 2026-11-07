@@ -350,6 +350,19 @@ export function toTitleCase(s: string): string {
         // Otherwise normalize: first letter up, rest down.
         return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
     };
+    // A whole value in capitals with a long word in it ("JARDIM DA PENHA",
+    // "ILHA DO PRÍNCIPE") is shouting: every word is normalised, short joining
+    // words go lower case, and only 2–3 letter words (USA, UK) stay capitals.
+    const letterWords = s.split(/\s+/).filter(w => /\p{L}/u.test(w));
+    if (letterWords.length >= 2 && s === s.toUpperCase() && /\p{Lu}/u.test(s) && letterWords.some(w => w.replace(/[^\p{L}]/gu, '').length >= 5) && !/\d/.test(s)) {
+        const JOINING = /^(da|de|do|das|dos|du|del|della|di|la|le|el|van|von|der|den|of|and|the|on|in|at|upon|y|e)$/i;
+        return s.split(/(\s+)/).map((w, i) => {
+            if (!/\p{L}/u.test(w)) return w;
+            if (JOINING.test(w)) return i > 0 ? w.toLowerCase() : w.charAt(0) + w.slice(1).toLowerCase();
+            if (w.length <= 3 && /^[A-Z]+$/.test(w)) return w;
+            return w.split(/([-/'])/).map(piece => (/^[-/']$/.test(piece) ? piece : piece.charAt(0) + piece.slice(1).toLowerCase())).join('');
+        }).join('');
+    }
     // Each part of a hyphenated or slashed word is a word of its own:
     // "Mercedes-Benz", "C-Class", "Stoke-on-Trent" keep their capitals.
     return s.replace(/\w\S*/g, w => {
@@ -997,8 +1010,17 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
         const dateParseRate = nonNull.length > 0 ? totalDateParseable / nonNull.length : 0;
 
         // Boolean token rate
-        const boolCount = nonNull.filter(v => typeof v === 'boolean'
-            || (typeof v === 'string' && BOOLEAN_TOKENS[v.toLowerCase().trim()] !== undefined)).length;
+        let sawTrue = false;
+        let sawFalse = false;
+        const boolCount = nonNull.filter(v => {
+            const token = typeof v === 'boolean' ? v : typeof v === 'string' ? BOOLEAN_TOKENS[v.toLowerCase().trim()] : undefined;
+            if (token === true) sawTrue = true;
+            if (token === false) sawFalse = true;
+            return token !== undefined;
+        }).length;
+        // "F"/"M" (gender) or "N"/"S" (north/south) match only one side of a
+        // yes/no pair, with other values beside them: a category, not yes/no.
+        const oneSidedBoolean = !(sawTrue && sawFalse) && boolCount < nonNull.length;
 
         const profile: ColumnProfileData = {
             name: col,
@@ -1007,7 +1029,7 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
             totalValues: nonNull.length,
             numericParseRate: nonNull.length > 0 ? numericCount / nonNull.length : 0,
             dateParseRate,
-            booleanTokenRate: nonNull.length > 0 ? boolCount / nonNull.length : 0,
+            booleanTokenRate: nonNull.length > 0 && !oneSidedBoolean ? boolCount / nonNull.length : 0,
             min: min === Infinity ? undefined : min,
             max: max === -Infinity ? undefined : max,
             dateFormatCandidate: bestDateFormat,

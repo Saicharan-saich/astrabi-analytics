@@ -23,6 +23,8 @@ import { ColumnType, type Dataset, type FormattingConfig } from '../types';
 import { averageCaution } from '../utils/averageCheck';
 import { localDateKey } from '../utils/dateKey';
 import { flagSubject, isYesNoColumn, yesNoLabel } from './ai-sql/plainLabels';
+import { describeDatasetShape } from './datasetShape';
+import { buildRecordsStory } from './recordsStory';
 
 export type StoryKind = 'overview' | 'trend' | 'anomaly' | 'movers' | 'breakdown' | 'concentration' | 'margin' | 'contrast' | 'relationship' | 'quality';
 
@@ -121,7 +123,10 @@ const asDay = (value: unknown): string | null => {
 };
 
 function profile(dataset: Dataset, rows: Record<string, any>[]) {
-    const columns = dataset.columns.filter(column => !column.name.startsWith('__'));
+    // Numbers that describe each row (age, days waited) are not groupings.
+    const shape = describeDatasetShape(dataset);
+    const perRow = new Set(shape.countStory ? shape.perRowNumbers : []);
+    const columns = dataset.columns.filter(column => !column.name.startsWith('__') && !(perRow.has(column.name) && column.type !== ColumnType.METRIC));
     const fields = dataset.aiSqlSemanticModel?.fields || [];
     const semantic = (name: string) => fields.find(field => field.name === name);
     const sample = rows.length > 5000 ? rows.filter((_, index) => index % Math.ceil(rows.length / 5000) === 0) : rows;
@@ -253,6 +258,20 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
         const values = [...new Set(rows.map(row => row[grouping.name]).filter(value => typeof value === 'string' && value.trim().length >= 3).map(value => String(value).trim()))];
         const hit = values.find(value => new RegExp(`\\b${value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(question));
         if (hit) { rows = rows.filter(row => String(row[grouping.name] ?? '').trim() === hit); scopes.push(hit); break; }
+    }
+
+    // ── records with nothing to add up: count them and compare outcomes ──
+    const shape = describeDatasetShape(dataset);
+    if (shape.countStory) {
+        const story = buildRecordsStory(rows, dataset, shape, question);
+        const scope = scopes.length ? scopes.join(', ') : undefined;
+        return {
+            title: scope ? `${capital(name)} — ${scope}` : capital(name),
+            subtitle: [story.lead, `${count(rows.length)} rows`, ...story.subtitle].join(' · '),
+            findings: story.findings.filter(f => f.kind === 'overview').concat(story.findings.filter(f => f.kind !== 'overview').sort((a, b) => b.score - a.score).slice(0, 7)),
+            rowCount: rows.length,
+            scope,
+        };
     }
 
     // ── what to measure ──
@@ -433,7 +452,7 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
             const avgs = aggregate(rows, groupKey(grouping.name), { ...measure, agg: 'avg' }).sort((a, b) => b.value - a.value);
             if (avgs.length < 2 || !avgs[1].value) continue;
             const gap = (avgs[0].value - avgs[1].value) / Math.abs(avgs[1].value);
-            const yes = avgs.find(g => !/^Not /.test(g.key)) || avgs[0];
+            const yes = avgs.find(g => g.key === yesNoLabel(grouping.name, true)) || avgs[0];
             const no = avgs.find(g => g !== yes) || avgs[1];
             const yesGap = (yes.value - no.value) / Math.abs(no.value || 1);
             headline = Math.abs(gap) < 0.03

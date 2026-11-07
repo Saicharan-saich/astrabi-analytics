@@ -176,6 +176,8 @@ export function suggestFollowUps(
     if (otherDimension && rows >= 1) suggestions.push(`Break it down by ${humanName(otherDimension.name)}`);
     const otherMeasure = measures.find(column => !used(column.name));
     if (otherMeasure) suggestions.push(`What about ${humanName(otherMeasure.name)}?`);
-    if (!isTime && rows >= 2 && rows <= 8 && answer.analysis.vis !== 'doughnut' && answer.analysis.vis !== 'pie') suggestions.push('Show it as a pie');
+    // A rate or average is not a share of a whole, so it never goes in a pie.
+    const rateOrAverage = /count_if|\bavg\s*\(|_(rate|pct|percent|share|ratio)\b|\bas\s+"?\w*(rate|pct|percent)/i.test(sql);
+    if (!isTime && !rateOrAverage && rows >= 2 && rows <= 8 && answer.analysis.vis !== 'doughnut' && answer.analysis.vis !== 'pie') suggestions.push('Show it as a pie');
     return [...new Set(suggestions)].slice(0, 4);
 }

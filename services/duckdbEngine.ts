@@ -20,6 +20,8 @@ import { logger } from './logger';
 import { finiteOrNull } from '../utils/numberSafety';
 import { parseLocaleNumber } from './etlHardening';
 import { createSerializedAsyncQueue } from '../utils/serializedAsync';
+import { isBooleanCell } from '../utils/booleanCell';
+import { duckColumnType } from '../utils/duckColumnType';
 
 /**
  * Normalise a DuckDB DATE/TIMESTAMP value to a display-ready string.
@@ -257,49 +259,9 @@ async function loadDataIntoTable(tableName: string, rows: any[], schemaRows: any
         const sampleRow = rows[0] || schemaRows[0];
         const columns = Object.keys(sampleRow);
 
-        const colInfos = columns.map(col => {
-            // Infer the column type by scanning ALL rows — NOT just the first 100.
-            // A column can look numeric in the first rows but hold codes like
-            // "00D5" further down (common in real datasets, e.g. BIRD's schools).
-            // Sampling only the head types it DOUBLE and the INSERT then fails
-            // ("Could not convert string '00D5' to DOUBLE"). We stop early the
-            // moment we see a non-numeric, non-date value — that column is text.
-            let hasDate = false;
-            let hasNumber = false;
-            let hasString = false;
-
-            const typeRows = rows.length ? rows : schemaRows;
-            for (let i = 0; i < typeRows.length; i++) {
-                const val = typeRows[i][col];
-                if (val === null || val === undefined || val === '') continue;
-
-                // A native JS number is unambiguously numeric.
-                if (typeof val === 'number') { hasNumber = true; continue; }
-
-                const strVal = String(val);
-                // Numeric-looking codes with significant zeros must remain text.
-                if (/^[+-]?0\d/.test(strVal.trim())) { hasString = true; break; }
-                // Check if it's a date
-                if (/^\d{4}-\d{2}-\d{2}/.test(strVal) || /^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(strVal)) {
-                    hasDate = true;
-                }
-                // Use the same locale/currency parser as ETL. This is a final
-                // execution guard for numeric strings such as "387.00 GBP".
-                else if (parseLocaleNumber(strVal) !== null) {
-                    hasNumber = true;
-                } else {
-                    hasString = true;
-                    break; // definitively text — no need to scan further
-                }
-            }
-
-            // Priority: if any strings found, use VARCHAR; otherwise prefer number > date
-            let sqlType = 'VARCHAR';
-            if (!hasString && !hasDate && hasNumber) sqlType = 'DOUBLE';
-            else if (!hasString && hasDate && !hasNumber) sqlType = 'VARCHAR'; // Keep dates as strings to match JS engine behavior
-
-            return { col, sqlType };
-        });
+        // Infer each column's type by scanning ALL rows (see duckColumnType).
+        const typeRows = rows.length ? rows : schemaRows;
+        const colInfos = columns.map(col => ({ col, sqlType: duckColumnType(typeRows, col) }));
 
         const colDefs = colInfos.map(ci => `"${ci.col.replace(/"/g, '""')}" ${ci.sqlType}`);
         const colType = new Map(colInfos.map(ci => [ci.col, ci.sqlType]));
@@ -321,6 +283,9 @@ async function loadDataIntoTable(tableName: string, rows: any[], schemaRows: any
                     // Quote per the COLUMN type, not the value: a text column keeps
                     // codes/leading-zeros intact; a numeric column takes bare
                     // numbers (or NULL if a stray value isn't numeric).
+                    if (colType.get(col) === 'BOOLEAN') {
+                        return isBooleanCell(v) ? (String(v).trim().toLowerCase() === 'true' ? 'TRUE' : 'FALSE') : 'NULL';
+                    }
                     if (colType.get(col) === 'DOUBLE') {
                         const parsed = parseLocaleNumber(v);
                         return parsed !== null ? String(parsed) : 'NULL';
