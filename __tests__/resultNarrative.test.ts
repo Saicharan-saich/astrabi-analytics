@@ -36,8 +36,8 @@ describe('automatic result narratives', () => {
                 { date_of_admission: '2024-05-06' },
             ],
         });
-        expect(narrative?.summary).toContain('2 admissions today');
-        expect(narrative?.summary).toContain('100% higher than the previous day (1)');
+        expect(narrative?.summary).toContain('Admissions today: 2');
+        expect(narrative?.summary).toContain('100% more than the day before (1)');
         expect(narrative?.verifiedFrom).toBe('executed_result_and_local_context');
         expect(model.timeContext?.anchorDate).toBe('2024-05-07');
     });
@@ -55,8 +55,8 @@ describe('automatic result narratives', () => {
             plan: plan({ intent: 'ranking', dimensions: [{ field: 'doctor' }], filters: [] }), model,
         });
         expect(narrative?.kind).toBe('ranking');
-        expect(narrative?.summary).toContain('Dr Lee leads with 12');
-        expect(narrative?.summary).toContain('Dr Shah with 9');
+        expect(narrative?.summary).toContain('Dr Lee comes first with 12');
+        expect(narrative?.summary).toContain('then Dr Shah with 9');
     });
 
     it('summarizes a returned dimension list without inventing a chart metric', () => {
@@ -72,6 +72,6 @@ describe('automatic result narratives', () => {
             plan: plan({ intent: 'projection', dimensions: [{ field: 'doctor' }], metrics: [], filters: [] }), model,
         });
         expect(narrative?.kind).toBe('list');
-        expect(narrative?.summary).toContain('3 matching results');
+        expect(narrative?.summary).toContain('I found 3');
     });
 });

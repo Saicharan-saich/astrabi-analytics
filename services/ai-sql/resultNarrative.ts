@@ -6,6 +6,7 @@ import type {
     SemanticModel,
     SemanticType,
 } from './types';
+import { correlationInWords, friendlyNumber, plainName } from './plainLabels';
 
 interface ResultNarrativeInput {
     question: string;
@@ -18,6 +19,33 @@ interface ResultNarrativeInput {
     sourceRows?: Record<string, any>[];
     /** ISO code of the money measure (from the uploaded file), e.g. GBP. */
     currency?: string;
+    /** The query, to recognise a correlation (CORR) and name its two measures. */
+    sql?: string;
+    /** The latest date in the data, for "today" questions on data that is not live. */
+    latestDate?: string;
+}
+
+const SYMBOLS: Record<string, string> = { GBP: '£', USD: '$', EUR: '€', INR: '₹', JPY: '¥' };
+const DAY_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const dayText = (iso: string) => { const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? `${Number(m[3])} ${DAY_MONTHS[Number(m[2]) - 1]} ${m[1]}` : iso; };
+
+/** A group's name as people say it: store 45 → "Store 45" (a bare number reads as an amount). */
+function groupName(row: Record<string, any>, dimension: string): string {
+    const value = row[dimension];
+    const text = String(value ?? '(blank)');
+    if (/^-?\d+(\.\d+)?$/.test(text) && !/^(19|20)\d{2}$/.test(text)) {
+        const name = plainName(dimension).replace(/\s*(id|no|number|code|key)$/i, '').trim() || plainName(dimension);
+        return `${name.charAt(0).toUpperCase()}${name.slice(1)} ${text}`;
+    }
+    return text;
+}
+
+/** What the measure is, keeping "average" (words() drops it): "average weekly sales". */
+function measureLabel(column: string, input?: { plan: AnalysisPlan }): string {
+    const averaged = /^(avg|average|mean)_|_(avg|average|mean)$/i.test(column)
+        || Boolean(input?.plan.metrics.length === 1 && input.plan.metrics[0].agg === 'avg' && !/total|sum|count/i.test(column));
+    const base = words(column) || 'result';
+    return averaged && !/^average\b/i.test(base) ? `average ${base}` : base;
 }
 
 // Set for the duration of one buildResultNarrative call (it is synchronous).
@@ -67,6 +95,8 @@ function metricType(column: string, profile: ResultProfile, model: SemanticModel
 function formatValue(value: unknown, type: SemanticType = 'quantity'): string {
     const number = Number(value);
     if (!Number.isFinite(number)) return String(value ?? '');
+    // Millions and billions read as words: "45.5 million", not "45,544,116.29".
+    if (Math.abs(number) >= 1e6 && type !== 'percentage') return friendlyNumber(number, type === 'currency' ? (SYMBOLS[narrativeCurrency] || '') : '');
     if (type === 'percentage') return `${number.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
     if (type === 'currency' && narrativeCurrency) {
         return number.toLocaleString(undefined, {
@@ -206,40 +236,38 @@ function isCountMetric(column: string, input: ResultNarrativeInput): boolean {
 function buildScalarNarrative(input: ResultNarrativeInput, metric: string): ResultNarrative {
     const value = Number(input.data[0][metric]);
     const type = metricType(metric, input.profile, input.model);
-    const label = words(metric) || words(input.plan.metrics[0]?.field || '') || 'records';
-    const when = /\btoday\b/i.test(input.question) ? ' today' : '';
-    const headline = `${formatValue(value, type)} ${label}${when}`.replace(/\s+/g, ' ').trim();
+    // A correlation: say what the number means, not just the number.
+    const corr = (input.sql || '').match(/\bCORR\s*\(\s*"?([A-Za-z0-9_ ]+?)"?\s*,\s*"?([A-Za-z0-9_ ]+?)"?\s*\)/i);
+    if (corr || /(^|_)corr(elation)?(_|$)/i.test(metric)) {
+        const [x, y] = corr ? [plainName(corr[1]), plainName(corr[2])] : ['the two measures', ''];
+        const text = correlationInWords(value, x, y || 'each other');
+        return { version: 1, verifiedFrom: 'executed_result', kind: 'kpi', headline: text.headline, summary: text.summary };
+    }
+    const label = measureLabel(metric, input) || words(input.plan.metrics[0]?.field || '') || 'records';
+    const shown = formatValue(value, type);
+    // Data is not live: "today" means the latest day in the file.
+    const asksToday = /\b(today|today's|todays|now|this week|right now)\b/i.test(input.question);
+    const when = asksToday ? (input.latestDate ? ` on ${dayText(input.latestDate)}` : ' today') : '';
+    const headline = `${label.charAt(0).toUpperCase() + label.slice(1)}${when}: ${shown}`;
+    const note = asksToday && input.latestDate ? ` Your data runs up to ${dayText(input.latestDate)}, so this is the latest day available, not today.` : '';
     const prior = isCountMetric(metric, input) ? previousDayCount(input, metric) : null;
     if (prior !== null) {
         if (prior === 0) {
             return {
-                version: 1,
-                verifiedFrom: 'executed_result_and_local_context',
-                kind: 'comparison',
-                headline,
-                summary: `${headline}. The previous day had no matching ${label}, so a percentage change is not meaningful.`,
+                version: 1, verifiedFrom: 'executed_result_and_local_context', kind: 'comparison', headline,
+                summary: `${headline}. The day before had none, so there is no percentage change to show.${note}`,
             };
         }
         const pct = ((value - prior) / Math.abs(prior)) * 100;
-        const direction = pct > 0 ? 'higher' : pct < 0 ? 'lower' : 'the same';
-        const comparison = direction === 'the same'
-            ? `the same as the previous day (${formatValue(prior, 'count')})`
-            : `${Math.abs(pct).toLocaleString(undefined, { maximumFractionDigits: 1 })}% ${direction} than the previous day (${formatValue(prior, 'count')})`;
+        const comparison = pct === 0
+            ? `the same as the day before (${formatValue(prior, 'count')})`
+            : `${Math.abs(pct).toLocaleString('en-GB', { maximumFractionDigits: 1 })}% ${pct > 0 ? 'more' : 'less'} than the day before (${formatValue(prior, 'count')})`;
         return {
-            version: 1,
-            verifiedFrom: 'executed_result_and_local_context',
-            kind: 'comparison',
-            headline,
-            summary: `${headline}. That is ${comparison}.`,
+            version: 1, verifiedFrom: 'executed_result_and_local_context', kind: 'comparison', headline,
+            summary: `${headline}. That is ${comparison}.${note}`,
         };
     }
-    return {
-        version: 1,
-        verifiedFrom: 'executed_result',
-        kind: 'kpi',
-        headline,
-        summary: `${headline}.`,
-    };
+    return { version: 1, verifiedFrom: 'executed_result', kind: 'kpi', headline, summary: `${headline}.${note}` };
 }
 
 export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrative | null {
@@ -252,12 +280,12 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
     if (data.length === 1 && metrics.length >= 1 && dimensions.length === 0) {
         if (metrics.length === 1) return buildScalarNarrative(input, metrics[0]);
         const parts = metrics.slice(0, 3).map(metric =>
-            `${words(metric)} is ${formatValue(data[0][metric], metricType(metric, profile, input.model))}`
+            `${measureLabel(metric)} is ${formatValue(data[0][metric], metricType(metric, profile, input.model))}`
         );
         return {
             version: 1, verifiedFrom: 'executed_result', kind: 'kpi',
-            headline: 'Summary of the requested measures',
-            summary: `${parts.join(', ')}${metrics.length > 3 ? `, with ${metrics.length - 3} additional measure${metrics.length - 3 === 1 ? '' : 's'} in the table` : ''}.`,
+            headline: 'Your figures',
+            summary: `${parts.join('; ')}${metrics.length > 3 ? `; ${metrics.length - 3} more in the table` : ''}.`,
         };
     }
 
@@ -291,11 +319,13 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
         const type = metricType(metric, profile, input.model);
         const peak = data.reduce((best, row) => Number(row[metric]) > Number(best[metric]) ? row : best, data[0]);
         const pct = firstValue !== 0 ? ((latestValue - firstValue) / Math.abs(firstValue)) * 100 : null;
-        const movement = pct === null ? '' : `, ${Math.abs(pct).toLocaleString(undefined, { maximumFractionDigits: 1 })}% ${pct >= 0 ? 'higher' : 'lower'} than the first period shown`;
+        const label = measureLabel(metric, input);
+        const Label = label.charAt(0).toUpperCase() + label.slice(1);
+        const movement = pct === null ? '' : pct === 0 ? `, the same as in ${periodText(first[time], grain)}` : `, ${Math.abs(pct).toLocaleString('en-GB', { maximumFractionDigits: 1 })}% ${pct >= 0 ? 'up' : 'down'} on ${periodText(first[time], grain)}`;
         return {
             version: 1, verifiedFrom: 'executed_result', kind: 'trend',
-            headline: `${sentenceCase(metric)} is ${formatValue(latestValue, type)} in the latest period`,
-            summary: `${sentenceCase(metric)} is ${formatValue(latestValue, type)} for ${periodText(latest[time], grain)}${movement}. The highest point shown is ${formatValue(peak[metric], type)} for ${periodText(peak[time], grain)}.`,
+            headline: `${Label}: ${formatValue(latestValue, type)} in ${periodText(latest[time], grain)}`,
+            summary: `${Label} was ${formatValue(latestValue, type)} in ${periodText(latest[time], grain)}${movement}. The best was ${periodText(peak[time], grain)}, at ${formatValue(peak[metric], type)}.`,
         };
     }
 
@@ -304,8 +334,8 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
         const sample = data.slice(0, 3).map(row => columns.map(column => String(row[column] ?? '')).filter(Boolean).join(' — '));
         return {
             version: 1, verifiedFrom: 'executed_result', kind: 'list',
-            headline: `${data.length.toLocaleString()} result${data.length === 1 ? '' : 's'} found`,
-            summary: `${data.length.toLocaleString()} matching result${data.length === 1 ? ' was' : 's were'} found${sample.length ? `, including ${sample.join(', ')}` : ''}${data.length > sample.length ? '. The full list is available in the table' : ''}.`,
+            headline: `${data.length.toLocaleString()} found`,
+            summary: `I found ${data.length.toLocaleString()}${sample.length ? `, including ${sample.join(', ')}` : ''}${data.length > sample.length ? '. The full list is in the table' : ''}.`,
         };
     }
 
@@ -318,25 +348,38 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
         const leader = ranked[0] || data[0];
         const total = ranked.reduce((sum, row) => sum + Number(row[metric] || 0), 0);
         const share = total !== 0 ? Number(leader[metric]) / total * 100 : null;
-        if (plan.intent === 'ranking' || /\b(?:top|highest|most|best|largest|leading)\b/i.test(input.question)) {
-            const runner = ranked[1];
+        const label = measureLabel(metric, input);
+        const runner = ranked[1];
+        const last = ranked[ranked.length - 1];
+        const averaged = /^average\b/.test(label);
+        // Two groups (holiday vs not, online vs in store): say how far apart they are.
+        const ranking = plan.intent === 'ranking' || /\b(?:top|highest|most|best|largest|leading)\b/i.test(input.question);
+        if (!ranking && ranked.length === 2 && Number(runner[metric])) {
+            const gap = (Number(leader[metric]) - Number(runner[metric])) / Math.abs(Number(runner[metric])) * 100;
+            return {
+                version: 1, verifiedFrom: 'executed_result', kind: 'comparison',
+                headline: `${groupName(leader, dimension)}: ${gap.toLocaleString('en-GB', { maximumFractionDigits: 1 })}% higher ${label}`,
+                summary: `${label.charAt(0).toUpperCase() + label.slice(1)} is ${gap.toLocaleString('en-GB', { maximumFractionDigits: 1 })}% higher for ${groupName(leader, dimension)} (${formatValue(leader[metric], type)}) than for ${groupName(runner, dimension)} (${formatValue(runner[metric], type)}).`,
+            };
+        }
+        if (ranking) {
             return {
                 version: 1, verifiedFrom: 'executed_result', kind: 'ranking',
-                headline: `${leader[dimension]} leads on ${words(metric)}`,
-                summary: `${leader[dimension]} leads with ${formatValue(leader[metric], type)}${runner ? `, followed by ${runner[dimension]} with ${formatValue(runner[metric], type)}` : ''}. The result contains ${data.length.toLocaleString()} ranked ${words(dimension)} value${data.length === 1 ? '' : 's'}.`,
+                headline: `${groupName(leader, dimension)} comes first on ${label}`,
+                summary: `${groupName(leader, dimension)} comes first with ${formatValue(leader[metric], type)}${runner ? `, then ${groupName(runner, dimension)} with ${formatValue(runner[metric], type)}` : ''}.${data.length > 2 ? ` ${data.length.toLocaleString()} ${plainName(dimension)} values are ranked in the chart.` : ''}`,
             };
         }
         return {
             version: 1, verifiedFrom: 'executed_result', kind: 'breakdown',
-            headline: `${leader[dimension]} has the largest ${words(metric)}`,
-            summary: `Across ${data.length.toLocaleString()} ${words(dimension)} value${data.length === 1 ? '' : 's'}, ${leader[dimension]} has the largest ${words(metric)} at ${formatValue(leader[metric], type)}${share !== null ? `, representing ${share.toLocaleString(undefined, { maximumFractionDigits: 1 })}% of the displayed total` : ''}.`,
+            headline: `${groupName(leader, dimension)} has the most ${label}`,
+            summary: `${groupName(leader, dimension)} has the most ${label}, at ${formatValue(leader[metric], type)}${share !== null && !averaged ? ` (${share.toLocaleString('en-GB', { maximumFractionDigits: 1 })}% of the total shown)` : ''}${last && last !== leader ? `. ${groupName(last, dimension)} has the least, at ${formatValue(last[metric], type)}` : ''}.`,
         };
     }
 
     const columns = Object.keys(data[0]);
     return {
         version: 1, verifiedFrom: 'executed_result', kind: 'result',
-        headline: `${data.length.toLocaleString()} result row${data.length === 1 ? '' : 's'}`,
-        summary: `The query returned ${data.length.toLocaleString()} row${data.length === 1 ? '' : 's'} across ${columns.length.toLocaleString()} field${columns.length === 1 ? '' : 's'}: ${columns.slice(0, 4).map(words).join(', ')}${columns.length > 4 ? ', and more' : ''}.`,
+        headline: `${data.length.toLocaleString()} result${data.length === 1 ? '' : 's'}`,
+        summary: `Here ${data.length === 1 ? 'is 1 result' : `are ${data.length.toLocaleString()} results`}, showing ${columns.slice(0, 4).map(words).join(', ')}${columns.length > 4 ? ' and more' : ''}.`,
     };
 }

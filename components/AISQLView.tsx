@@ -6,6 +6,7 @@ import {
 import type { AnalysisResult, Dataset, FormattingConfig } from '../types';
 import type { AISQLPipelineResult } from '../services/ai-sql';
 import { runLeanAISQL, rerunSavedAnswer, AISQLClarificationError, AISQLChatReplyError, AISQLOverviewRequest } from '../services/ai-sql/leanPipeline';
+import { explainAnswer } from '../services/ai-sql/explainAnswer';
 import { buildDatasetOverview } from '../services/ai-sql/datasetOverview';
 import { chatWithAI, type ChatHistoryItem } from '../services/ai-sql/chatReply';
 import {
@@ -50,7 +51,7 @@ const readMemory = () => {
 const CURRENCY_OF_FORMAT: Record<string, string> = { currency_gbp: 'GBP', currency_eur: 'EUR', currency_usd: 'USD' };
 
 /** Where a message goes: conversation (words), analysis (a query), or the local overview. */
-type Route = 'chat' | 'analysis' | 'summary';
+type Route = 'chat' | 'analysis' | 'summary' | 'explain';
 
 const formatTokens = (tokens: number) => tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : String(tokens);
 
@@ -135,7 +136,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     // (and decides itself whether it builds on the last answer) · overview →
     // worked out on this computer. The user can switch before sending.
     const detected = useMemo(() => classifyTurn(draft, answered.length > 0, dataset), [draft, answered.length, dataset]);
-    const detectedRoute: Route = detected.kind === 'chat' ? 'chat' : detected.kind === 'summary' ? 'summary' : 'analysis';
+    const detectedRoute: Route = detected.kind === 'chat' ? 'chat' : detected.kind === 'summary' ? 'summary' : detected.kind === 'explain' ? 'explain' : 'analysis';
     const sendRoute: Route = modeOverride || detectedRoute;
     const pendingContext = sendRoute === 'analysis' ? contextForFollowUp(answered, memory) : [];
     useEffect(() => { if (!draft.trim()) setModeOverride(null); }, [draft]);
@@ -158,13 +159,13 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         const conversationId = active.id;
         const hasAnswer = answeredTurns(active).length > 0;
         const decision = classifyTurn(text, hasAnswer, dataset);
-        const route: Route = forced || (decision.kind === 'chat' ? 'chat' : decision.kind === 'summary' ? 'summary' : 'analysis');
+        const route: Route = forced || (decision.kind === 'chat' ? 'chat' : decision.kind === 'summary' ? 'summary' : decision.kind === 'explain' ? 'explain' : 'analysis');
         // With an earlier answer (and Memory on), its question and SQL go with
         // every analysis message; the AI decides whether to build on them.
         const context = contextForFollowUp(answeredTurns(active), memory);
 
         const userId = newId();
-        const userTurn: ChatTurn = { id: userId, role: 'user', createdAt: Date.now(), text, kind: route === 'chat' ? 'chat' : route === 'summary' ? 'summary' : 'new', contextTurns: 0 };
+        const userTurn: ChatTurn = { id: userId, role: 'user', createdAt: Date.now(), text, kind: route === 'chat' ? 'chat' : route === 'summary' ? 'summary' : route === 'explain' ? 'explain' : 'new', contextTurns: 0 };
         const assistantId = newId();
         const assistantTurn: ChatTurn = { id: assistantId, role: 'assistant', createdAt: Date.now(), status: 'pending', progress: 'Thinking' };
         updateConversation(conversationId, conversation => ({
@@ -182,6 +183,17 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
             updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, ...(lead ? { reply: { message: lead } } : {}), ...(answer ? { answer } : {}) });
         };
         if (route === 'summary') { showOverview(); return; }
+        // "What does that mean?": explained here from the last answer, numbers included, no AI.
+        if (route === 'explain') {
+            const last = [...active.turns].reverse().find(turn => turn.role === 'assistant' && turn.answer);
+            if (last?.answer) {
+                updateTurn(conversationId, assistantId, {
+                    status: 'done', progress: undefined,
+                    reply: { message: explainAnswer(last.answer), suggestions: suggestFollowUps(last.answer, dataset).slice(0, 3) },
+                });
+                return;
+            }
+        }
 
         const status = checkAiSqlLimit(currentUser);
         if (!status.allowed) {
@@ -514,11 +526,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         {active?.turns.map((turn, index) => turn.role === 'user' ? (
                             <div key={turn.id} className="qi-chat-row is-user">
                                 <div className="qi-chat-bubble">{turn.text}</div>
-                                <div className="qi-chat-tag" title={turn.kind === 'follow_up' ? 'The AI built on the earlier question and SQL (never results)' : turn.kind === 'new' ? 'The AI answered it on its own' : turn.kind === 'summary' ? 'Worked out on your computer; nothing sent to the AI' : 'The AI replied in words'}>
+                                <div className="qi-chat-tag" title={turn.kind === 'follow_up' ? 'The AI built on the earlier question and SQL (never results)' : turn.kind === 'new' ? 'The AI answered it on its own' : turn.kind === 'summary' || turn.kind === 'explain' ? 'Worked out on your computer; nothing sent to the AI' : 'The AI replied in words'}>
                                     {turn.kind === 'follow_up' && <><Link2 className="h-3 w-3" aria-hidden /> Follow-up · the AI built on your last answer</>}
                                     {turn.kind === 'new' && index > 0 && <>{turn.sentContext ? 'New question · the AI treated it on its own' : 'New question'}</>}
                                     {turn.kind === 'chat' && <>Conversation · the AI replies in words</>}
                                     {turn.kind === 'summary' && <>Overview · worked out on your computer, no AI</>}
+                                    {turn.kind === 'explain' && <>Explained from your last answer · on your computer, no AI</>}
                                 </div>
                             </div>
                         ) : (
@@ -717,13 +730,14 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                     disabled={!modeCanFlip}
                                     onClick={() => setModeOverride(nextMode)}
                                     title={`${modeOverride ? 'Chosen by you.' : detected.reason} Click to switch to ${nextMode === 'chat' ? 'conversation' : 'analysis'}.`}
-                                    aria-label={`Will be sent as: ${sendRoute === 'analysis' ? 'analysis' : sendRoute === 'summary' ? 'data overview' : 'conversation'}. Click to switch to ${nextMode === 'chat' ? 'conversation' : 'analysis'}.`}
+                                    aria-label={`Will be sent as: ${sendRoute === 'analysis' ? 'analysis' : sendRoute === 'summary' ? 'data overview' : sendRoute === 'explain' ? 'an explanation of the last answer' : 'conversation'}. Click to switch to ${nextMode === 'chat' ? 'conversation' : 'analysis'}.`}
                                 >
                                     {sendRoute === 'analysis' && (pendingContext.length
                                         ? <><Link2 className="h-3.5 w-3.5" aria-hidden /> Analysis · the AI checks if it builds on your last answer (~{contextCost} tokens)</>
                                         : <>Analysis · new question</>)}
                                     {sendRoute === 'chat' && <>Conversation · the AI replies in words</>}
                                     {sendRoute === 'summary' && <>Overview · worked out on your computer</>}
+                                    {sendRoute === 'explain' && <>Explain the last answer · on your computer</>}
                                 </button>
                             ) : (
                                 <span className="qi-chat-hint">Enter to send · Shift+Enter for a new line</span>

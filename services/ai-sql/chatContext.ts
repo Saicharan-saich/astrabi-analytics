@@ -15,7 +15,7 @@
  */
 import type { Dataset } from '../../types';
 
-export type TurnKind = 'chat' | 'summary' | 'new' | 'follow_up';
+export type TurnKind = 'chat' | 'summary' | 'new' | 'follow_up' | 'explain';
 
 export interface ContextTurn {
     /** The standalone question that was answered. */
@@ -38,6 +38,9 @@ const GREETING = /^(hi|hello|hey|hiya|howdy|yo|good (morning|afternoon|evening))
 const THANKS = /^(thanks|thank you|thx|ty|cheers|great|perfect|awesome|nice|cool|brilliant|lovely|ok|okay|got it|amazing)( (so much|a lot|mate|again))?( thanks| thank you)?[\s!.,]*$/i;
 const GOODBYE = /^(bye|goodbye|see you|see ya|that'?s all|that is all|i'?m done|done)( for now| thanks| thank you)?[\s!.,]*$/i;
 const SUMMARY = /\b(summary|summari[sz]e|summari[sz]ing|overview|describe|description|rundown|profile)\b[\s\S]*\b(data|dataset|data ?set|file|sheet|spreadsheet|table|upload|uploaded|everything)\b|^(what'?s|what is) in (my|the|this) (data|dataset|file|sheet|spreadsheet)|^tell me about (my|the|this) (data|dataset|file|sheet|spreadsheet)|^(summari[sz]e|overview)[\s?!.]*$/i;
+
+/** "What does that mean?", "so what did you find?": explained from the last answer, on this computer. */
+const EXPLAIN = /\bwhat (does|do|did) (this|that|it|these|those|the (above|last|result|results|number|numbers|answer|chart|figure|analysis)|-?\d[\d.,]*)( (number|result|figure|chart))? mean\b|\bwhat (did|does|has|have) (you|it|the analysis|this|that) (find|found|show|shows|tell|say)\b|\bwhat (do|does) (this|that|it) (tell|show|say)\b|^(so )?what does (the )?(analysis|result|answer) (find|found|show|say)\b|\bexplain (this|that|it|the (result|answer|chart|number|figure))\b|\b(in )?(simple|plain|layman'?s?|easy) (words|english|terms|language)\b|^so what\??$|\bwhat'?s the (takeaway|conclusion|meaning)\b|\bwhat should i (take|learn) from (this|that|it)\b|\bi (don'?t|do not) understand( (this|that|it))?\b|^what do you mean\??$/i;
 
 /** Asking for numbers from the data. */
 const ANALYSIS_WORDS = /\b(show|total|sum|average|avg|mean|median|count|how many|how much|top|bottom|best|worst|highest|lowest|most|least|trend|compare|comparison|break ?down|by|per|list|chart|plot|graph|growth|share|percentage|rank|ranking|filter|between|over time|monthly|yearly|weekly|daily|each|split|distribution)\b/i;
@@ -83,6 +86,7 @@ export function classifyTurn(message: string, hasPreviousAnswer: boolean, datase
     if (THANKS.test(text)) return { kind: 'chat', reason: 'A thank-you — the AI replies in words.', fallback: { title: 'You’re welcome', message: 'Ask another question whenever you are ready.' } };
     if (GOODBYE.test(text)) return { kind: 'chat', reason: 'A goodbye — the AI replies in words.', fallback: { title: 'See you soon', message: 'Your conversation is saved here.' } };
     if (SUMMARY.test(text)) return { kind: 'summary', reason: 'An overview of the whole dataset.' };
+    if (hasPreviousAnswer && EXPLAIN.test(text)) return { kind: 'explain', reason: 'Explains the last answer in plain words, on your computer.' };
 
     const core = text.replace(/^(great|perfect|thanks|thank you|cool|nice|ok|okay|good|lovely|awesome|right|alright|interesting)[,!.]?\s+/i, '');
     const tokens = words(core);

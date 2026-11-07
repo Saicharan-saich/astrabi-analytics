@@ -195,6 +195,9 @@ for (const theme of ['light', 'dark'] as const) {
         await page.locator('.qi-chat-composer').screenshot({ path: path.join(OUT, `38-ai-sql-chat-composer-followup-${theme}.png`), ...quick }).catch(() => {});
         await ask('now by month');
         await shoot(page, `35-ai-sql-chat-followup-${theme}`);
+        // "What does that mean?" is explained from the last answer, on this computer.
+        await ask('What does that mean?');
+        await page.locator('.qi-chat-row').last().screenshot({ path: path.join(OUT, `43-ai-sql-explain-${theme}.png`), ...quick }).catch(() => {});
         await ask('thanks!');
         await shoot(page, `35-ai-sql-chat-thanks-${theme}`);
         // A summary of the whole file: worked out locally, no AI call.

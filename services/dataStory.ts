@@ -22,6 +22,7 @@
 import { ColumnType, type Dataset, type FormattingConfig } from '../types';
 import { averageCaution } from '../utils/averageCheck';
 import { localDateKey } from '../utils/dateKey';
+import { flagSubject, isYesNoColumn, yesNoLabel } from './ai-sql/plainLabels';
 
 export type StoryKind = 'overview' | 'trend' | 'anomaly' | 'movers' | 'breakdown' | 'concentration' | 'margin' | 'contrast' | 'relationship' | 'quality';
 
@@ -95,7 +96,7 @@ const ID_NAME = /(^|[_\s-])(id|uuid|guid|key|code|ref|reference|number|no|num|nr
 const FREE_TEXT = /(url|link|notes?|description|comment|comments|email|e-mail|phone|mobile|address|postcode|zip|remarks?|summary|message|text)$/i;
 const NOT_A_MEASURE = /(^|_)(lat|lon|lng|latitude|longitude|zip|postcode|phone|year|yr|month|week|day|hour|quarter)$/i;
 /** Per-row attributes (a car's price, a person's age): averaged, never added up. */
-const PER_ROW = /(^|_)(unit|per|avg|average|mean|median)(_|$)|(rate|ratio|pct|percent|percentage|%|score|rating|age|temperature|temp|probability|nps|satisfaction|margin_pct|margin_percent|index|level|price|size|weight|height|length|width|mileage|miles|km|distance|duration|speed|capacity|engine|tenure|days|hours|minutes)/i;
+const PER_ROW = /(^|_)(unit|per|avg|average|mean|median)(_|$)|(rate|ratio|pct|percent|percentage|%|score|rating|age|temperature|temp|probability|nps|satisfaction|margin_pct|margin_percent|index|level|price|size|weight|height|length|width|mileage|miles|km|distance|duration|speed|capacity|engine|tenure|days|hours|minutes|cpi|unemployment|inflation|interest|humidity|rainfall)/i;
 /** Amounts that add up across rows. */
 const ADDITIVE = /(revenue|sales|amount|quantity|qty|units|profit|cost|spend|value|total|count|income|turnover|orders|volume|gmv|fee|tax|earnings|budget|salary)/i;
 const MONEY = /(revenue|sales|price|cost|amount|profit|spend|income|value|turnover|margin|fee|pay|salary|budget|gmv|earnings|total)/i;
@@ -104,7 +105,7 @@ const REVENUE = /(revenue|sales|turnover|amount|income|gmv)/i;
 const DATEISH = /^\d{4}-\d{2}(-\d{2})?/;
 
 interface Measure { name: string; label: string; agg: 'sum' | 'avg'; symbol: string; numberFormat: FormattingConfig['numberFormat']; money: boolean }
-interface Grouping { name: string; label: string; distinct: number; yearLike: boolean }
+interface Grouping { name: string; label: string; distinct: number; yearLike: boolean; yesNo?: boolean }
 interface Period { key: string; label: string }
 
 const isBlank = (value: unknown) => value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
@@ -146,6 +147,11 @@ function profile(dataset: Dataset, rows: Record<string, any>[]) {
         if (idByName || (column.type !== ColumnType.METRIC && distinctSample / values.length > 0.9 && values.length > 40 && !yearLike)) {
             const distinct = new Set(rows.map(row => row[column.name]).filter(value => !isBlank(value)).map(String)).size;
             if (!idColumn || /order|invoice|transaction|sale|booking|ticket/i.test(column.name)) idColumn = { name: column.name, distinct };
+            continue;
+        }
+        // A yes/no column (holiday flag, is_member): a grouping of two, read as words.
+        if (isYesNoColumn(values) && distinctSample <= 2 && !idByName) {
+            groupings.push({ name: column.name, label: flagSubject(column.name), distinct: distinctSample, yearLike: false, yesNo: true });
             continue;
         }
         if (yearLike) {
@@ -224,7 +230,19 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
     const { measures, groupings, idColumn, dateColumn } = profile(dataset, allRows);
 
     // ── scope from the request: a year, or a value of a grouping ──
-    let rows = allRows;
+    // Yes/no columns as words everywhere below ("Holiday" / "Not holiday"), and
+    // numbered groups with their name ("Store 45", not "45", which reads as an amount).
+    const yesNo = groupings.filter(g => g.yesNo).map(g => g.name);
+    const numbered = groupings.filter(g => !g.yesNo && !g.yearLike && allRows.slice(0, 200).every(row => isBlank(row[g.name]) || /^-?\d+$/.test(String(row[g.name]).trim()))).map(g => g.name);
+    const groupWord = (name: string) => { const w = human(name).replace(/\s*(id|no|number|code|key)$/i, '').trim() || human(name); return w.charAt(0).toUpperCase() + w.slice(1); };
+    let rows = yesNo.length || numbered.length
+        ? allRows.map(row => {
+            const copy = { ...row };
+            for (const name of yesNo) if (!isBlank(row[name])) copy[name] = yesNoLabel(name, row[name]);
+            for (const name of numbered) if (!isBlank(row[name])) copy[name] = `${groupWord(name)} ${String(row[name]).trim()}`;
+            return copy;
+        })
+        : allRows;
     const scopes: string[] = [];
     const year = question.match(/\b(19|20)\d{2}\b/)?.[0];
     if (year && dateColumn) {
@@ -410,6 +428,27 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
         const label = grouping.label;
         let headline: string;
         const points: string[] = [];
+        if (grouping.yesNo) {
+            // Totals by a yes/no say little (most weeks are not holidays): compare the average row.
+            const avgs = aggregate(rows, groupKey(grouping.name), { ...measure, agg: 'avg' }).sort((a, b) => b.value - a.value);
+            if (avgs.length < 2 || !avgs[1].value) continue;
+            const gap = (avgs[0].value - avgs[1].value) / Math.abs(avgs[1].value);
+            const yes = avgs.find(g => !/^Not /.test(g.key)) || avgs[0];
+            const no = avgs.find(g => g !== yes) || avgs[1];
+            const yesGap = (yes.value - no.value) / Math.abs(no.value || 1);
+            headline = Math.abs(gap) < 0.03
+                ? `${capital(measure.label)} is about the same with or without ${label}: ${fmt(yes.value)} vs ${fmt(no.value)} on average.`
+                : `${capital(label)} rows average ${fmt(yes.value)} of ${measure.label}, ${pct(Math.abs(yesGap))} ${yesGap > 0 ? 'more' : 'less'} than other rows (${fmt(no.value)}).`;
+            points.push(`${count(yes.rows)} rows are ${label} and ${count(no.rows)} are not, so totals mostly reflect how many there are; the average per row is the fair comparison.`);
+            breakdownsShown++;
+            findings.push({
+                id: `breakdown_${grouping.name}`, kind: 'breakdown', eyebrow: `${capital(label)} or not`, headline, points,
+                chart: { data: [yes, no].map(g => ({ [grouping.name]: g.key, [`avg_${measure.name}`]: round(g.value) })), xKey: grouping.name, yKey: `avg_${measure.name}`, vis: 'bar', yLabel: `Average ${measure.label} per row`, numberFormat: measure.numberFormat },
+                ask: `Compare average ${measure.label} with and without ${label}`,
+                score: 60 + Math.min(40, Math.abs(yesGap) * 200),
+            });
+            continue;
+        }
         if (measure.agg === 'avg' || total <= 0) {
             // A group with one or two rows can top an average by chance.
             const solid = groups.filter(g => g.rows >= 3);
@@ -542,7 +581,7 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
             + (skipped.length ? ` (leaving out ${skipped.join(' and ')}, which was unusual)` : '');
         type Change = { key: string; change: number; before: number; off: number };
         let best: { grouping: Grouping; changes: Change[]; total: number; growth: number; reach: number } | undefined;
-        for (const grouping of useful.filter(g => g.distinct <= 30 && !g.yearLike)) {
+        for (const grouping of useful.filter(g => g.distinct <= 30 && !g.yearLike && !g.yesNo)) {
             const map = new Map<string, { recent: number; before: number }>();
             for (const row of rows) {
                 const day = asDay(row[dateColumn]); const v = asNumber(row[measure.name]); const key = groupKey(grouping.name)(row);
@@ -601,7 +640,7 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
                 let chart: StoryChart | undefined;
                 let driver: Grouping | undefined;
                 let bestShare = 0;
-                if (dateColumn && measure.agg === 'sum') for (const g of useful.filter(g => !g.yearLike && g.distinct <= 20)) {
+                if (dateColumn && measure.agg === 'sum') for (const g of useful.filter(g => !g.yearLike && !g.yesNo && g.distinct <= 20)) {
                     const inHit = aggregate(rows.filter(row => { const d = asDay(row[dateColumn]); return d && periodOf(d, grain).key === hit.p.key; }), groupKey(g.name), measure);
                     const near = complete.filter((_, i) => i !== hit.i && Math.abs(i - hit.i) <= 2).map(p => p.key);
                     const nearRows = rows.filter(row => { const d = asDay(row[dateColumn]); return d && near.includes(periodOf(d, grain).key); });
@@ -645,7 +684,7 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
     if (profit && revenue) {
         const totalP = rows.reduce((s, row) => s + (asNumber(row[profit.name]) ?? 0), 0);
         const totalR = rows.reduce((s, row) => s + (asNumber(row[revenue.name]) ?? 0), 0);
-        const grouping = breakdownCandidates.find(c => !c.grouping.yearLike)?.grouping || useful.find(g => g.distinct <= 30 && !g.yearLike);
+        const grouping = breakdownCandidates.find(c => !c.grouping.yearLike && !c.grouping.yesNo)?.grouping || useful.find(g => g.distinct <= 30 && !g.yearLike && !g.yesNo);
         if (totalR > 0 && grouping) {
             const p = new Map(aggregate(rows, groupKey(grouping.name), profit).map(g => [g.key, g.value]));
             const margins = aggregate(rows, groupKey(grouping.name), revenue)
@@ -671,7 +710,7 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
     }
 
     // ── 8. contrast: a different leader on another measure ──
-    const lead = breakdownCandidates.find(c => !c.grouping.yearLike);
+    const lead = breakdownCandidates.find(c => !c.grouping.yearLike && !c.grouping.yesNo);
     if (measure && lead) {
         for (const other of ranked.filter(m => m !== measure && m !== profit).slice(0, 3)) {
             const groups = aggregate(rows, groupKey(lead.grouping.name), other).sort((a, b) => b.value - a.value);

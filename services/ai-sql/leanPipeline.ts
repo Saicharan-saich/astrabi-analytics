@@ -35,6 +35,7 @@ import { buildResultNarrative } from './resultNarrative';
 import { formatSQL } from '../sqlFormatter';
 import { formatContextForPrompt, type ContextTurn } from './chatContext';
 import { averageCaution, groupedAverageMessage } from '../../utils/averageCheck';
+import { relabelYesNo } from './plainLabels';
 import { averagedRatioNote, averageNotesFromValues, averageValuesQuery, fillMonthlyGaps, missingMonthsNote, partialMonthNote, perItemColumns, perItemSumNote, perLineAverageNote, summedBalanceNote } from './numberChecks';
 
 // ── Public types ─────────────────────────────────────────────────────
@@ -140,6 +141,13 @@ STEP 2 — Otherwise answer (action "answer").
 - Listing records: return only the useful columns with LIMIT 200.
 - Never return more than 500 rows.
 
+Plain words for the person reading (they are not technical):
+- "title", "question" and "explanation" use everyday words and write column names as plain words ("weekly sales", never weekly_sales). No SQL, code, "= true" or jargon (query, aggregate, dimension, metric, linear, null).
+- "explanation" says in one short sentence what was worked out, e.g. "Added up weekly sales for each store." Never state numbers from the data.
+- Yes/no columns are named in words: "holiday weeks vs other weeks", never 1/0 or true/false.
+- "Today", "now" or "this week": the data is not live, so use the latest date in the data and say so in the title, e.g. "Sales on the latest day in your data".
+- Follow-up options in "clarify" are plain questions a person would ask.
+
 Return ONLY one JSON object, no prose:
 {"action":"answer","title":"short plain-English chart title","question":"the full question you answered, written so it makes sense on its own","sql":"SELECT ...","dimensions":["grouping output column"],"measures":["measure output column"],"explanation":"one sentence: what was calculated, including any assumption"}
 or
@@ -161,6 +169,9 @@ You also get EARLIER IN THIS CHAT: the previous questions and the SQL that answe
 // ── Helpers (exported for tests) ─────────────────────────────────────
 
 /** Parse and check the model's JSON reply. */
+/** Words a person reads: "weekly_sales" → "weekly sales" (SQL and column lists are left alone). */
+const unsnake = (text: string) => text.replace(/([A-Za-z0-9])_(?=[A-Za-z0-9])/g, '$1 ');
+
 export function parseLeanReply(content: string): LeanModelReply {
     const text = String(content || '').replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
     const start = text.indexOf('{');
@@ -178,14 +189,14 @@ export function parseLeanReply(content: string): LeanModelReply {
     if (raw.action === 'overview') return { action: 'overview' };
     if (raw.action === 'chat') {
         const message = String(raw.message || '').trim().slice(0, 1200);
-        const suggestions = (Array.isArray(raw.suggestions) ? raw.suggestions : []).map((item: unknown) => String(item).trim()).filter(Boolean).slice(0, 3);
+        const suggestions = (Array.isArray(raw.suggestions) ? raw.suggestions : []).map((item: unknown) => unsnake(String(item).trim())).filter(Boolean).slice(0, 3);
         if (message) return { action: 'chat', message, suggestions };
     }
     if (raw.action === 'clarify') {
         const options: ClarificationOption[] = (Array.isArray(raw.options) ? raw.options : [])
             .map((option: any) => ({
-                label: String(option?.label || option?.question || '').trim().slice(0, 60),
-                question: String(option?.question || option?.label || '').trim().slice(0, 300),
+                label: unsnake(String(option?.label || option?.question || '').trim()).slice(0, 60),
+                question: unsnake(String(option?.question || option?.label || '').trim()).slice(0, 300),
             }))
             .filter((option: ClarificationOption) => option.label && option.question)
             .slice(0, 4);
@@ -197,10 +208,10 @@ export function parseLeanReply(content: string): LeanModelReply {
     return {
         action: 'answer',
         sql,
-        title: typeof raw.title === 'string' ? raw.title.trim().slice(0, 140) : undefined,
+        title: typeof raw.title === 'string' ? unsnake(raw.title.trim()).slice(0, 140) : undefined,
         dimensions: Array.isArray(raw.dimensions) ? raw.dimensions.map(String) : undefined,
         measures: Array.isArray(raw.measures) ? raw.measures.map(String) : undefined,
-        explanation: typeof raw.explanation === 'string' ? raw.explanation.trim().slice(0, 400) : undefined,
+        explanation: typeof raw.explanation === 'string' ? unsnake(raw.explanation.trim()).slice(0, 400) : undefined,
         question: typeof raw.question === 'string' && raw.question.trim() ? raw.question.trim().slice(0, 300) : undefined,
         followUp: typeof raw.follow_up === 'boolean' ? raw.follow_up : typeof raw.followUp === 'boolean' ? raw.followUp : undefined,
     };
@@ -789,7 +800,8 @@ async function numberCautions(sql: string, rows: Record<string, any>[], dimensio
 /** Chart, narrative and insights for an executed query — all local. */
 function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
     const { question, sql, reply: parsed, model, dataset, repairAttempts, tokens } = input;
-    const returned = input.rows.slice(0, 500);
+    // Yes/no groupings read as words ("Holiday" / "Not holiday"), never 0 and 1.
+    const returned = relabelYesNo(input.rows.slice(0, 500), parsed.dimensions || []).rows;
     // "Highest and lowest X per group": one row per group, item names kept.
     const extremes = normaliseExtremes(returned, `${question} ${input.originalQuestion || ''}`);
     const rows = extremes ? extremes.rows : returned;
@@ -821,7 +833,7 @@ function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
             reason: 'Highest and lowest per group → one line per role, item names in the tooltip and table',
         };
     }
-    const narrativeBase = rows.length ? buildResultNarrative({ question, data: reshaped.data, profile, chart: reshaped.chart, plan, model, sourceRows: dataset.rows, currency }) : null;
+    const narrativeBase = rows.length ? buildResultNarrative({ question: `${question} ${input.originalQuestion || ''}`, data: reshaped.data, profile, chart: reshaped.chart, plan, model, sourceRows: dataset.rows, currency, sql, latestDate: latestDate(dataset, model.timeContext) }) : null;
     const extremesText = extremes ? extremesNarrative(extremes, currency) : null;
     const quick = input.cautions ? null : averageCautionForSql(sql, dataset.rows, plan.dimensions.map(item => item.field));
     const cautions = input.cautions || (quick ? [quick] : []);
