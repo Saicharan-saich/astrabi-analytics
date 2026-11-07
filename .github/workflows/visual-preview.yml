@@ -8,6 +8,11 @@ on:
   push:
     branches: ['ui-**']
   workflow_dispatch:
+    inputs:
+      grep:
+        description: 'Only run tests whose title matches (e.g. mobile)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -29,7 +34,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
       - name: Capture screenshots
-        run: npx playwright test -c playwright.visual.config.ts
+        run: npx playwright test -c playwright.visual.config.ts ${{ github.event.inputs.grep && format('--grep "{0}"', github.event.inputs.grep) || '' }}
         continue-on-error: true
       - name: Publish screenshots
         run: |
