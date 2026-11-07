@@ -5348,3 +5348,35 @@ body {
 .qi-chat-caution svg { flex: none; margin-top: 2px; color: #d97706; }
 .qi-chat-caution p { margin: 0; }
 .qi-chat-caution p + p { margin-top: 6px; }
+
+/* ── Phones (≤ 640px) ─────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  /* 16px page margins instead of 24–40px. */
+  .qi-main-frame :is(.p-6, .p-8, .p-10) { padding: 16px !important; }
+  .qi-main-frame :is(.px-6, .px-8, .px-10) { padding-left: 16px !important; padding-right: 16px !important; }
+
+  /* Page headers: the title on its own line, the buttons below it, wrapping. */
+  .qi-page-head { flex-direction: column !important; align-items: stretch !important; gap: 12px !important; }
+  .qi-page-head > * { min-width: 0; max-width: 100%; }
+  .qi-page-head > :last-child:not(:first-child) { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .qi-page-head h1, .qi-page-head h2 { word-break: normal; overflow-wrap: anywhere; }
+  .qi-page-actions { flex-wrap: wrap; }
+
+  /* Question Builder: the question, then its options and filters below. */
+  .qi-builder-row { flex-direction: column; gap: 12px; }
+  .qi-builder-row > * { width: 100%; padding-right: 0 !important; }
+  .qi-builder-actions { align-items: flex-start !important; }
+  .qi-builder-action-row { flex-wrap: wrap; }
+
+  /* Cleaning: the undo button goes under its change, not beside it. */
+  .qi-clean-row { flex-wrap: wrap; }
+  .qi-clean-row .qi-clean-title { flex-basis: calc(100% - 40px); }
+  .qi-clean-row .qi-clean-undo { margin-left: 28px; }
+  .qi-clean-head { flex-wrap: wrap; padding-left: 16px !important; padding-right: 16px !important; }
+
+  /* AI SQL header: one line of subtitle, no "Memory" word. */
+  .qi-chat-subtitle { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .qi-chat-memory > span { display: none; }
+  .qi-chat-memory select { font-size: 13px; max-width: 120px; }
+  .qi-chat-head { gap: 8px; }
+}

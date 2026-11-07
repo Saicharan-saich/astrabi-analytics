@@ -846,7 +846,7 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
                 </div>
             </div>
 
-            <div className="flex items-start justify-between w-full">
+            <div className="qi-builder-row flex items-start justify-between w-full">
                 {/* ═══════════════ PRIMARY ROW: THE CORE QUESTION ═══════════════ */}
                 <div className="flex flex-wrap items-center gap-3 text-sm leading-snug flex-1 pr-4 pt-1 pb-1">
                     {activeBuilderTab === 'build' && (<>

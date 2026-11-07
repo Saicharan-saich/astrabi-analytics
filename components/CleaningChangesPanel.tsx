@@ -63,7 +63,7 @@ function ChangeRow({ item, onRevert, pending, busy }: { item: ChangeItem; onReve
     const [open, setOpen] = useState(false);
     return (
         <li className="qi-clean-item py-2.5">
-            <div className="flex items-start gap-3">
+            <div className="qi-clean-row flex items-start gap-3">
                 <button type="button" onClick={() => setOpen(v => !v)} className="qi-clean-toggle mt-0.5 shrink-0" aria-expanded={open} aria-label={open ? 'Hide details' : 'Show details'}>
                     {open ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
                 </button>
@@ -112,7 +112,7 @@ export const CleaningChangesPanel: React.FC<CleaningChangesPanelProps> = ({ data
 
     return (
         <section className="qi-clean-panel rounded-xl" aria-label="What we changed">
-            <header className="flex items-start gap-3 px-5 pt-4 pb-3">
+            <header className="qi-clean-head flex items-start gap-3 px-5 pt-4 pb-3">
                 <div className="flex-1 min-w-0">
                     <h3 className="qi-clean-heading text-[15px] font-semibold">What we changed</h3>
                     <p className="qi-clean-sub text-[12.5px] mt-0.5">

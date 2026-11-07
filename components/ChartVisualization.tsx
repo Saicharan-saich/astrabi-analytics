@@ -204,7 +204,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     onChartTypeChange,
     yLabel,
     config, // Destructure Config
-    formatting,
+    formatting: incomingFormatting,
     onToggleFormat,
     isFormatOpen,
     onToggleAnalytics,
@@ -223,6 +223,18 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     axisRange,
     disableAutoSeries = false
 }) => {
+    // On a phone, labels on more than six bars or points pile on top of each
+    // other: drop them (the values stay in the tooltip and the table).
+    const [narrow, setNarrow] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
+    useEffect(() => {
+        const onResize = () => setNarrow(window.innerWidth < 640);
+        window.addEventListener('resize', onResize);
+        return () => window.removeEventListener('resize', onResize);
+    }, []);
+    const formatting = useMemo(() => (narrow && incomingFormatting?.showDataLabels && Array.isArray(incomingData) && incomingData.length > 6
+        ? { ...incomingFormatting, showDataLabels: false, dataLabelMode: 'off' as const }
+        : incomingFormatting), [narrow, incomingFormatting, incomingData]);
+
     // A monthly line or area with months missing would draw straight across
     // them as if nothing happened: add the empty months (0 for totals and
     // counts, a gap for averages).

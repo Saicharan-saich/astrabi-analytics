@@ -81,7 +81,8 @@ test('mobile sign in', async ({ page }) => {
     await page.setViewportSize(PHONE);
     await page.addInitScript(() => localStorage.setItem('QuickInsight-onboarding-complete', 'true'));
     await page.goto('/');
-    await page.waitForTimeout(2000);
+    await page.getByRole('button', { name: /skip tour/i }).click({ timeout: 15000 }).catch(() => {});
+    await page.waitForTimeout(1500);
     await page.screenshot({ path: path.join(OUT, 'm-sign-in.png'), fullPage: true });
     fs.writeFileSync(path.join(OUT, 'mobile-report-sign-in.json'), JSON.stringify(await overflowReport(page), null, 2));
 });

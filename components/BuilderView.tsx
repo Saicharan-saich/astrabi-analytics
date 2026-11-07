@@ -1085,7 +1085,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 {!result && !error && !isLoading && (
                     <div className="flex flex-col items-center justify-center h-full text-slate-400">
                         <Play className="w-12 h-12 mb-4 opacity-20" />
-                        <p className="text-lg font-medium">Build your question on the left to see results</p>
+                        <p className="text-lg font-medium">Build your question to see the results</p>
                         <p className="text-sm mt-1 text-slate-300">Press <kbd className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-xs font-mono border border-slate-200">Ctrl+Enter</kbd> to run</p>
 
 

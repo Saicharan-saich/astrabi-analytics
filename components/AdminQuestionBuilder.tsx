@@ -187,7 +187,7 @@ export const AdminQuestionBuilder: React.FC<AdminQuestionBuilderProps> = ({ data
         <div className={`h-full overflow-y-auto ${isDark ? 'bg-[#0a0c12]' : 'bg-gray-50'}`}>
             <div className="max-w-6xl mx-auto p-6 space-y-6">
                 {/* Header */}
-                <div className="flex items-center justify-between">
+                <div className="qi-page-head flex items-center justify-between">
                     <div>
                         <h1 className={`text-2xl font-bold ${isDark ? 'text-white' : 'text-slate-800'}`}>
                             Custom Question Builder

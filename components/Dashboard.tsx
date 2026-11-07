@@ -955,7 +955,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
 
         {/* ─── Dashboard Header ─── */}
         <div className="flex flex-col gap-4 mb-6 print:hidden">
-          <div className="flex justify-between items-center">
+          <div className="qi-page-head flex justify-between items-center">
             <div className="flex items-center gap-3">
               <div>
                 <h2 className="qi-dash-title text-[22px] font-semibold tracking-tight">{activeDashboard?.name || 'Dashboard'}</h2>
@@ -1004,7 +1004,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
             </div>
 
             {items.length > 0 && (
-              <div className="flex items-center gap-2 print:hidden">
+              <div className="qi-page-actions flex items-center gap-2 print:hidden">
                 <button
                   onClick={() => setShowPresentPicker(true)}
                   className="qi-dash-button group flex items-center gap-2 px-3 py-2 text-sm font-medium"

@@ -317,7 +317,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
         <div className="qi-workspace-page qi-ws h-full overflow-y-auto">
             <div className="qi-ws-inner max-w-[72rem] mx-auto px-6 pt-6 pb-10">
                 {/* Header: what this dataset is, and the dataset-level actions */}
-                <header className="flex flex-wrap items-end gap-x-6 gap-y-3">
+                <header className="qi-page-head flex flex-wrap items-end gap-x-6 gap-y-3">
                     <div className="min-w-0 flex-1">
                         <h2 className="qi-ws-strong text-[22px] font-semibold tracking-tight">Dataset Workspace</h2>
                         <p className="qi-ws-muted text-[13px] mt-1 truncate">
