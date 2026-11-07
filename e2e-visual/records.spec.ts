@@ -89,6 +89,10 @@ for (const theme of ['light', 'dark'] as const) {
             await page.keyboard.press('ArrowRight');
         }
 
+        // The story is a full-screen dialog: close it.
+        await page.keyboard.press('Escape');
+        await page.locator('.qi-story').waitFor({ state: 'detached', timeout: 5000 }).catch(() => {});
+
         // ── AI SQL: the kind of data, starter questions, a real rate query ──
         await go(page, 'AI SQL');
         await page.locator('.qi-kind-line:visible').first().waitFor({ timeout: 20000 });
