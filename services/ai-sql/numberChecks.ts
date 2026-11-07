@@ -112,3 +112,111 @@ export function perItemColumns(columns: ColumnDefinition[], datasetName = ''): S
         .filter(column => String(column.type) === 'METRIC' && inferDefaultAggregationForGrain(column.name, 'METRIC', columns, datasetName) === 'AVG')
         .map(column => column.name));
 }
+
+// ── Time series: missing months and a part-month at the end ─────────────
+
+const MONTH_KEY = /^(\d{4})-(\d{2})(?:-01)?(?:[T ].*)?$/;
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const monthLabel = (y: number, m: number) => `${MONTHS[m - 1]} ${y}`;
+
+/**
+ * A monthly series with months missing draws a line straight across them as
+ * if nothing happened. Months with no rows are added: 0 for totals and
+ * counts, blank for averages (an average of nothing is not 0).
+ */
+export function fillMonthlyGaps(
+    rows: Record<string, any>[], timeColumn: string, measures: string[], sql: string,
+): { rows: Record<string, any>[]; missing: string[] } {
+    if (rows.length < 2 || !measures.length) return { rows, missing: [] };
+    const keys = rows.map(row => String(row[timeColumn] ?? '').match(MONTH_KEY));
+    if (keys.some(match => !match)) return { rows, missing: [] };
+    const index = (match: RegExpMatchArray) => Number(match[1]) * 12 + Number(match[2]) - 1;
+    const present = new Map(keys.map((match, i) => [index(match!), rows[i]]));
+    if (present.size !== rows.length) return { rows, missing: [] }; // more than one row per month: not a single series
+    const sorted = [...present.keys()].sort((a, b) => a - b);
+    const first = sorted[0], last = sorted[sorted.length - 1];
+    if (last - first + 1 === rows.length || last - first > 240) return { rows, missing: [] };
+    const zeroFill = !/\b(AVG|MEDIAN|MIN|MAX|QUANTILE|STDDEV)\s*\(/i.test(sql);
+    const shape = String(rows[0][timeColumn]);
+    const missing: string[] = [];
+    const filled: Record<string, any>[] = [];
+    for (let i = first; i <= last; i++) {
+        const existing = present.get(i);
+        if (existing) { filled.push(existing); continue; }
+        const y = Math.floor(i / 12), m = (i % 12) + 1;
+        const key = /^\d{4}-\d{2}-01/.test(shape) ? `${y}-${String(m).padStart(2, '0')}-01` : `${y}-${String(m).padStart(2, '0')}`;
+        missing.push(monthLabel(y, m));
+        filled.push({ ...Object.fromEntries(Object.keys(rows[0]).map(k => [k, null])), [timeColumn]: key, ...Object.fromEntries(measures.map(name => [name, zeroFill ? 0 : null])) });
+    }
+    // Keep the order the query asked for.
+    const descending = index(keys[0]!) > index(keys[keys.length - 1]!);
+    return { rows: descending ? filled.reverse() : filled, missing };
+}
+
+export function missingMonthsNote(missing: string[], zeroFilled: boolean): string | null {
+    if (!missing.length) return null;
+    const names = missing.length > 3 ? `${missing.slice(0, 3).join(', ')} and ${missing.length - 3} more` : missing.join(missing.length === 2 ? ' and ' : ', ');
+    return `No rows in ${names}: ${missing.length === 1 ? 'it is' : 'they are'} shown as ${zeroFilled ? '0' : 'a gap'} rather than skipped.`;
+}
+
+/** The data stops part-way through its last month: a total for it looks like a fall. */
+export function partialMonthNote(rows: Record<string, any>[], timeColumn: string, maxDate: string | undefined, sql: string): string | null {
+    if (!maxDate || rows.length < 2 || !/\b(SUM|COUNT)\s*\(/i.test(sql)) return null;
+    const max = String(maxDate).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!max) return null;
+    const lastShown = rows.map(row => String(row[timeColumn] ?? '').match(MONTH_KEY)).filter(Boolean)
+        .map(match => `${match![1]}-${match![2]}`).sort().pop();
+    if (lastShown !== `${max[1]}-${max[2]}`) return null;
+    const y = Number(max[1]), m = Number(max[2]), d = Number(max[3]);
+    const daysIn = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    if (d >= daysIn - 1) return null;
+    return `${monthLabel(y, m)} is only partly in the data (up to ${d} ${MONTHS[m - 1]}), so its total looks lower than a full month would be.`;
+}
+
+// ── Per-row figures, order lines and balances ───────────────────────────
+
+const RATIO_NAME = /(pct|percent|percentage|rate|ratio|margin|share|conversion|discount)/i;
+const BALANCE_NAME = /(balance|stock|inventory|on_?hand|headcount|head_?count|level|snapshot|outstanding|backlog|open_?orders)/i;
+const ORDER_WORDS = /\b(order|orders|basket|invoice|transaction|receipt|booking|purchase)\b/i;
+const ORDER_ID = /(order|invoice|transaction|receipt|basket|booking)[_\s-]?(id|no|number|ref)?$/i;
+
+/** AVG of a per-row percentage weights a £5 sale the same as a £5,000 one. */
+export function averagedRatioNote(sql: string, columns: ColumnDefinition[]): string | null {
+    for (const match of sql.matchAll(new RegExp(String.raw`\bAVG\s*\(\s*(${IDENT})\s*\)`, 'gi'))) {
+        const name = unquote(match[1]);
+        const column = columns.find(item => item.name.toLowerCase() === name.toLowerCase());
+        if (!column || String(column.type) !== 'METRIC' || !RATIO_NAME.test(column.name) || /(price|cost|amount)$/i.test(column.name)) continue;
+        const label = words(column.name);
+        return `This averages each row's ${label} equally, so a small sale counts as much as a large one. The overall ${label}, worked out from the totals, can be quite different.`;
+    }
+    return null;
+}
+
+/**
+ * Rows are lines of an order (the order ID repeats), but the question is about
+ * orders and the query averages a value per row: that is per line, not per order.
+ */
+export function perLineAverageNote(sql: string, question: string, rows: Record<string, any>[], columns: ColumnDefinition[]): string | null {
+    if (!ORDER_WORDS.test(question) || !/\bAVG\s*\(/i.test(sql) || /COUNT\s*\(\s*DISTINCT/i.test(sql)) return null;
+    const id = columns.find(column => ORDER_ID.test(column.name));
+    if (!id || sql.toLowerCase().includes(id.name.toLowerCase())) return null;
+    const sample = rows.slice(0, 20000);
+    const distinct = new Set(sample.map(row => row[id.name]).filter(v => v !== null && v !== undefined && v !== '')).size;
+    if (!distinct || distinct > sample.length * 0.95) return null;
+    const thing = words(id.name).replace(/\s*(id|no|number|ref)$/i, '').trim() || 'order';
+    return `One ${thing} spans several rows here (one row per line), so this is the average per line, not per ${thing}. For the average per ${thing}, ask for the total divided by the number of ${thing}s.`;
+}
+
+/** Stock or balances are snapshots: adding them up across dates double-counts. */
+export function summedBalanceNote(sql: string, columns: ColumnDefinition[]): string | null {
+    const hasDate = columns.some(column => String(column.type) === 'DATE');
+    if (!hasDate) return null;
+    for (const match of sql.matchAll(new RegExp(String.raw`\bSUM\s*\(\s*(${IDENT})\s*\)`, 'gi'))) {
+        const name = unquote(match[1]);
+        const column = columns.find(item => item.name.toLowerCase() === name.toLowerCase());
+        if (!column || String(column.type) !== 'METRIC' || !BALANCE_NAME.test(column.name)) continue;
+        const label = words(column.name);
+        return `${label.charAt(0).toUpperCase() + label.slice(1)} looks like a snapshot (a level on a given date), so adding it up across dates counts the same stock or balance again and again. Use the latest date's value, or the average over the period.`;
+    }
+    return null;
+}

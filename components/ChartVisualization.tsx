@@ -1,3 +1,4 @@
+import { fillMonthlyGaps } from '../services/ai-sql/numberChecks';
 import React, { useMemo, useRef, useCallback, useState, useEffect } from 'react';
 // html2canvas is only needed when the user exports a chart to PNG — load it
 // lazily so it stays out of the initial bundle.
@@ -196,7 +197,7 @@ function capCategoriesForRender(rows: any[], chartType: string, yKey: string, ma
 }
 
 export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
-    data,
+    data: incomingData,
     xKey,
     yKey,
     chartType,
@@ -222,7 +223,17 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     axisRange,
     disableAutoSeries = false
 }) => {
-    // Chart ref for PNG export
+    // A monthly line or area with months missing would draw straight across
+    // them as if nothing happened: add the empty months (0 for totals and
+    // counts, a gap for averages).
+    const data = useMemo(() => {
+        if (!Array.isArray(incomingData) || !['line', 'area', 'multiLine', 'stackedArea'].includes(String(chartType))) return incomingData;
+        const aggregation = String((config as any)?.aggregation || 'SUM').toUpperCase();
+        const fakeSql = /AVG|MEDIAN|MIN|MAX/.test(aggregation) ? 'AVG(x)' : 'SUM(x)';
+        const measures = [yKey, ...(((config as any)?.secondaryMetrics as string[] | undefined) || [])].filter(Boolean);
+        return fillMonthlyGaps(incomingData, xKey, measures, fakeSql).rows;
+    }, [incomingData, chartType, xKey, yKey, config]);
+
     // Chart ref for PNG export
     const chartRef = useRef<any>(null);
     const localChartRef = useRef<HTMLDivElement>(null);
@@ -303,7 +314,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 formatting?.movingAvgWindow || 3,
                 formatting?.tableCalculationComparison
                     ? { ...formatting.tableCalculationComparison, dimensionKey: xKey }
-                    : undefined
+                    : undefined,
+                Number((config as any)?.limit) || undefined,
             );
         // Output-boundary safety net: no NaN/Infinity can ever reach a chart,
         // regardless of which engine or table-calc produced the data.

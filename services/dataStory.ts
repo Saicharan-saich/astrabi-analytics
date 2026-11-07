@@ -21,6 +21,7 @@
  */
 import { ColumnType, type Dataset, type FormattingConfig } from '../types';
 import { averageCaution } from '../utils/averageCheck';
+import { localDateKey } from '../utils/dateKey';
 
 export type StoryKind = 'overview' | 'trend' | 'anomaly' | 'movers' | 'breakdown' | 'concentration' | 'margin' | 'contrast' | 'relationship' | 'quality';
 
@@ -113,7 +114,7 @@ const asNumber = (value: unknown): number | null => {
     return null;
 };
 const asDay = (value: unknown): string | null => {
-    if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+    if (value instanceof Date) return localDateKey(value);
     if (typeof value === 'string' && DATEISH.test(value)) return value.length >= 10 ? value.slice(0, 10) : `${value.slice(0, 7)}-01`;
     return null;
 };
@@ -323,6 +324,18 @@ export function buildDataStory(dataset: Dataset, question = ''): DataStory {
         }
         series = [...byPeriod.entries()].sort((a, b) => a[0].localeCompare(b[0]))
             .map(([key, e]) => ({ key, label: e.label, value: measure.agg === 'avg' ? e.sum / e.n : e.sum }));
+        // A month with no rows is a month of 0 sales, not a month that did not happen.
+        if (grain === 'month' && measure.agg === 'sum' && series.length >= 2) {
+            const have = new Map(series.map(p => [p.key, p]));
+            const filled: typeof series = [];
+            const start = monthIndex(series[0].key), end = monthIndex(series[series.length - 1].key);
+            for (let i = start; i <= end; i++) {
+                const y = Math.floor(i / 12), m = (i % 12) + 1;
+                const key = `${y}-${String(m).padStart(2, '0')}-01`;
+                filled.push(have.get(key) || { key, label: `${MONTHS[m - 1]} ${y}`, value: 0 });
+            }
+            series = filled;
+        }
         // A last month that has only a few days in it would look like a collapse.
         if (grain === 'month' && lastDay && measure.agg === 'sum') {
             const daysIn = new Date(Number(lastDay.slice(0, 4)), Number(lastDay.slice(5, 7)), 0).getDate();

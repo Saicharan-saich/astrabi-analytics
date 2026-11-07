@@ -110,3 +110,19 @@ describe('data story — averages that mislead', () => {
         expect(breakdown.points.join(' ')).toContain('Ferrari has fewer than 3 rows');
     });
 });
+
+describe('data story — months with no sales', () => {
+    it('counts an empty month as 0 instead of skipping it', () => {
+        const rows = [
+            ...Array.from({ length: 5 }, () => ({ order_date: '2025-01-10', sales: 100 })),
+            ...Array.from({ length: 5 }, () => ({ order_date: '2025-02-10', sales: 100 })),
+            // nothing in March
+            ...Array.from({ length: 5 }, () => ({ order_date: '2025-04-10', sales: 100 })),
+            ...Array.from({ length: 5 }, () => ({ order_date: '2025-05-30', sales: 100 })),
+        ];
+        const story = buildDataStory({ id: 'g', name: 'gaps.csv', etlLogs: [], version: 1, rows, columns: [{ name: 'order_date', type: ColumnType.DATE }, { name: 'sales', type: ColumnType.METRIC }] } as unknown as Dataset);
+        const trend = story.findings.find(f => f.kind === 'trend')!;
+        expect(trend.chart!.data.map(d => d.sales)).toEqual([500, 500, 0, 500, 500]);
+        expect(trend.points.join(' ')).toContain('Weakest: Mar 2025 at 0');
+    });
+});

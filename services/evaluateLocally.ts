@@ -1,3 +1,4 @@
+import { dateKeyOf } from '../utils/dateKey';
 import { CanonicalMapping, Dataset, DimDateRow, QuestionTemplate, QueryConfig } from "../types";
 import { buildQueryPlan, compileSQL, compileEnrichedSQL, executeQueryPlan, validatePlan, dimensionId } from './queryPlan';
 import type { EnrichedQuery, ComparisonConfig, TableCalculation } from './queryPlan';
@@ -192,12 +193,8 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
         }
 
         // Fallback: try Date parse
-        const d = new Date(raw);
-        if (!isNaN(d.getTime())) {
-            return d.toISOString().split('T')[0];
-        }
-
-        return '1970-01-01';
+        // The written day, not UTC (which moves "1 June" to 31 May east of UTC).
+        return dateKeyOf(raw) || '1970-01-01';
     };
 
     // Full datetime extractor — preserves time portion for hour/minute bucketing

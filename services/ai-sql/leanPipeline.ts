@@ -35,7 +35,7 @@ import { buildResultNarrative } from './resultNarrative';
 import { formatSQL } from '../sqlFormatter';
 import { formatContextForPrompt, type ContextTurn } from './chatContext';
 import { averageCaution, groupedAverageMessage } from '../../utils/averageCheck';
-import { averageNotesFromValues, averageValuesQuery, perItemColumns, perItemSumNote } from './numberChecks';
+import { averagedRatioNote, averageNotesFromValues, averageValuesQuery, fillMonthlyGaps, missingMonthsNote, partialMonthNote, perItemColumns, perItemSumNote, perLineAverageNote, summedBalanceNote } from './numberChecks';
 
 // ── Public types ─────────────────────────────────────────────────────
 
@@ -123,6 +123,15 @@ STEP 2 — Otherwise answer (action "answer").
 - Exactly one read-only SELECT (or WITH ... SELECT) in DuckDB syntax. Double-quote every column and table name.
 - Output columns: grouping columns first, then measures. Give measures plain snake_case names such as total_revenue, average_price, order_count.
 - Totals use SUM, averages AVG, counts COUNT(*) or COUNT(DISTINCT ...). Round money and averages to 2 decimals with ROUND(x, 2).
+- Correct numbers (standard BI rules):
+  - A rate, margin or percentage over many rows is worked out from totals, e.g. SUM("profit") / NULLIF(SUM("revenue"), 0) * 100, never AVG of a per-row percentage column, unless the user asks for "the average of" that column.
+  - "Average per order / customer / store": total divided by distinct count, e.g. SUM("sales") / COUNT(DISTINCT "order_id"), above all when that ID is marked as repeating (several rows per order). AVG over rows is the average per line.
+  - Columns marked "per-item figure" (price, age, rating) are averaged, never added up. A total value of items is SUM(price * quantity) when there is a quantity column.
+  - Balances, stock levels and headcounts are snapshots: never SUM them across dates; use the value on the latest date, or AVG over the period.
+  - Counting customers, products or orders uses COUNT(DISTINCT id); counting rows uses COUNT(*).
+  - Share or % of total: divide by the total of ALL rows (SUM(x) OVER ()) computed before any LIMIT, so shares are of the whole, not of the top 10.
+  - Change and growth: (new - old) / NULLIF(old, 0) * 100, so a change from 0 is blank, not infinite.
+  - Divide with NULLIF(denominator, 0). Blank (NULL) values are left out of averages; never treat them as 0 unless asked.
 - Rankings ("top", "best", "highest"): ORDER BY the measure DESC with LIMIT 10 unless the user gave a number. For "which is the best X", still return the top 10 so the answer can be compared; the first row is the answer.
 - Changes over time: group by DATE_TRUNC('month', CAST(date_column AS DATE)) (or the grain asked for) AS period, ORDER BY period. Numeric year columns are compared as numbers.
 - Relative dates ("this year", "last month", "recent") are measured from the latest date in the data, never from today: use (SELECT MAX(CAST(date_column AS DATE)) FROM "data") in the query. Never use CURRENT_DATE or NOW().
@@ -547,8 +556,9 @@ function columnType(field: SemanticField, storedAsNumber?: boolean): string {
     return 'TEXT';
 }
 
-function columnRole(field: SemanticField, perItem = false): string {
+function columnRole(field: SemanticField, perItem = false, repeats = false): string {
     const base = columnRoleBase(field);
+    if (repeats && base.startsWith('identifier')) return 'identifier (repeats: several rows share one value, e.g. the lines of one order)';
     return perItem && base.startsWith('measure') ? `${base}; a per-item figure: average it, never SUM it` : base;
 }
 
@@ -576,10 +586,11 @@ export function describeColumnsOnly(
     join?: { tables: { name: string; columns: { name: string; isPK?: boolean }[] }[]; links: { leftTable: string; leftColumn: string; rightTable: string; rightColumn: string; cardinality?: string }[] } | null,
     numericColumns: Set<string> = new Set(),
     perItem: Set<string> = new Set(),
+    repeatingIds: Set<string> = new Set(),
 ): string {
     const lines = ['Table "data" columns:'];
     for (const field of model.fields) {
-        lines.push(`- ${sqlName(field.name)}: ${columnType(field, numericColumns.has(field.name))}; ${columnRole(field, perItem.has(field.name))}`);
+        lines.push(`- ${sqlName(field.name)}: ${columnType(field, numericColumns.has(field.name))}; ${columnRole(field, perItem.has(field.name), repeatingIds.has(field.name))}`);
     }
     if (join?.tables?.length) {
         lines.push('', 'The data came from several tables. "data" holds the main table. Related tables:');
@@ -605,7 +616,15 @@ function describeData(dataset: Dataset) {
     const numericColumns = new Set(model.fields.map(field => field.name).filter(name =>
         sample.some(row => row[name] !== null && row[name] !== undefined && row[name] !== '')
         && sample.every(row => row[name] === null || row[name] === undefined || row[name] === '' || typeof row[name] === 'number')));
-    return { model, schema: describeColumnsOnly(model, join, numericColumns, perItemColumns(dataset.columns, dataset.name)) };
+    // The table's grain (does an ID repeat?) — a fact about its shape, not its values.
+    const repeatingIds = new Set(model.fields
+        .filter(field => (field.keyRole && field.keyRole !== 'none') || field.semanticType === 'identifier')
+        .map(field => field.name)
+        .filter(name => {
+            const sample = dataset.rows.slice(0, 20000).map(row => row[name]).filter(v => v !== null && v !== undefined && v !== '');
+            return sample.length > 1 && new Set(sample.map(String)).size < sample.length * 0.95;
+        }));
+    return { model, schema: describeColumnsOnly(model, join, numericColumns, perItemColumns(dataset.columns, dataset.name), repeatingIds) };
 }
 
 export async function runLeanAISQL(question: string, dataset: Dataset, options: LeanRunOptions = {}): Promise<AISQLPipelineResult> {
@@ -677,10 +696,11 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     }
 
     options.onProgress?.('Checking the numbers');
-    const cautions = await numberCautions(sql, execution.data || [], parsed.dimensions, dataset, model.timeContext);
+    const series = completeTimeSeries(sql, execution.data || [], parsed, model.timeContext);
+    const cautions = [...await numberCautions(sql, execution.data || [], parsed.dimensions, dataset, model.timeContext, `${question} ${standalone}`), ...series.notes];
     options.onProgress?.('Choosing the chart');
     const result = buildLeanAnswer({
-        question: standalone, sql, rows: execution.data || [], reply: parsed, model, dataset, started, repairAttempts, tokens, aiModel: reply.model, originalQuestion: question, cautions,
+        question: standalone, sql, rows: series.rows, reply: parsed, model, dataset, started, repairAttempts, tokens, aiModel: reply.model, originalQuestion: question, cautions,
     });
     result.conversation = {
         standaloneQuestion: standalone,
@@ -709,11 +729,36 @@ interface LeanAnswerInput {
 }
 
 /**
+ * A monthly series: add months with no rows (so the line does not skip them)
+ * and say when the last month is only partly in the data.
+ */
+function completeTimeSeries(sql: string, rows: Record<string, any>[], reply: { dimensions?: string[]; measures?: string[] }, timeContext: any): { rows: Record<string, any>[]; notes: string[] } {
+    if (!rows.length) return { rows, notes: [] };
+    const columns = Object.keys(rows[0]);
+    const dims = (reply.dimensions || []).filter(name => columns.includes(name));
+    const time = dims.find(name => rows.every(row => /^\d{4}-\d{2}(-01)?([T ].*)?$/.test(String(row[name] ?? ''))));
+    if (!time || dims.length !== 1) return { rows, notes: [] };
+    const measures = (reply.measures || []).filter(name => columns.includes(name));
+    const notes: string[] = [];
+    const filled = fillMonthlyGaps(rows, time, measures.length ? measures : columns.filter(name => name !== time && typeof rows[0][name] === 'number'), sql);
+    const gap = missingMonthsNote(filled.missing, !/\b(AVG|MEDIAN|MIN|MAX|QUANTILE|STDDEV)\s*\(/i.test(sql));
+    if (gap) notes.push(gap);
+    const partial = partialMonthNote(filled.rows, time, timeContext?.maxDate, sql);
+    if (partial) notes.push(partial);
+    return { rows: filled.rows, notes };
+}
+
+/**
  * Warnings about the answer's numbers, worked out on this computer: the
  * query is run again with its average returned as the values behind it.
  */
-async function numberCautions(sql: string, rows: Record<string, any>[], dimensions: string[] | undefined, dataset: Dataset, timeContext: any): Promise<string[]> {
+async function numberCautions(sql: string, rows: Record<string, any>[], dimensions: string[] | undefined, dataset: Dataset, timeContext: any, question = ''): Promise<string[]> {
     const notes: string[] = [];
+    for (const note of [
+        averagedRatioNote(sql, dataset.columns),
+        perLineAverageNote(sql, question, dataset.rows, dataset.columns),
+        summedBalanceNote(sql, dataset.columns),
+    ]) if (note) notes.push(note);
     try {
         const listQuery = averageValuesQuery(sql);
         if (listQuery && rows.length) {
@@ -827,9 +872,10 @@ export async function rerunSavedAnswer(saved: SavedLeanAnswer, dataset: Dataset)
     const { model } = describeData(dataset);
     const execution = await executeSQLViaDuckDB(dataset.rows, safety.sql, model.timeContext as any, dataset.relatedTables);
     if (execution.error) throw new AISQLPipelineError('ai_sql_execution_failed', `The saved query could not run on the current data: ${execution.error}`);
-    const cautions = await numberCautions(safety.sql, execution.data || [], saved.dimensions, dataset, model.timeContext);
+    const series = completeTimeSeries(safety.sql, execution.data || [], saved, model.timeContext);
+    const cautions = [...await numberCautions(safety.sql, execution.data || [], saved.dimensions, dataset, model.timeContext, saved.question), ...series.notes];
     const result = buildLeanAnswer({
-        question: saved.question, sql: safety.sql, rows: execution.data || [], reply: saved, model, dataset, started, repairAttempts: 0, tokens: 0, aiModel: 'none (re-run locally)', cautions,
+        question: saved.question, sql: safety.sql, rows: series.rows, reply: saved, model, dataset, started, repairAttempts: 0, tokens: 0, aiModel: 'none (re-run locally)', cautions,
     });
     result.conversation = { standaloneQuestion: saved.question, contextTurns: 0, usedContext: false };
     return result;

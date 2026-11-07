@@ -41,7 +41,9 @@ export function applyTableCalculation(
     originalNumberFormat: string = 'raw',
     outputKey?: string,
     movingAvgWindow: number = 3,
-    comparison?: TableCalculationComparison
+    comparison?: TableCalculationComparison,
+    /** The query kept only the top N groups: shares are then of those N, not of everything. */
+    limitedTo?: number,
 ): CalculationResult {
 
     if (!data || data.length === 0 || calculation === 'none') {
@@ -71,7 +73,10 @@ export function applyTableCalculation(
                 ...row,
                 [targetKey]: total !== 0 ? (Number(row[yKey]) / total) * 100 : 0
             }));
-            yLabel = `% of Total (${originalYLabel})`;
+            // Cut to the top N, the shares add up to 100% of those N only: say so.
+            yLabel = limitedTo && limitedTo > 0 && data.length >= limitedTo
+                ? `% of the top ${data.length} shown (${originalYLabel})`
+                : `% of Total (${originalYLabel})`;
             suggestedNumberFormat = 'percent';
             break;
         }

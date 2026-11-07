@@ -12,6 +12,7 @@
  *   Post:    TimeContext + DimDate + Quality Score
  */
 
+import { localDateKey } from '../utils/dateKey';
 import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, EtlOptions, PhysicalDataType, TimeContext } from '../types';
 import { generateDimDate } from './dimDateGenerator';
 import { convertMixedUnits, runQualityChecks } from './etlQualityChecks';
@@ -1995,7 +1996,8 @@ function buildTimeContext(rows: Record<string, any>[], columns: ColumnDefinition
         // Try JS Date parse for other formats (e.g., "Jan 3, 2017")
         const d = new Date(s);
         if (!isNaN(d.getTime()) && d.getFullYear() > 1900 && d.getFullYear() < 2100) {
-            return d.toISOString().split('T')[0];
+            // The written day, not UTC (which moves "1 June" to 31 May east of UTC).
+            return localDateKey(d);
         }
         return null;
     };

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { averageNotesFromValues, averageValuesQuery, perItemColumns, perItemSumNote } from '../services/ai-sql/numberChecks';
+import { averagedRatioNote, averageNotesFromValues, averageValuesQuery, fillMonthlyGaps, missingMonthsNote, partialMonthNote, perItemColumns, perItemSumNote, perLineAverageNote, summedBalanceNote } from '../services/ai-sql/numberChecks';
+import { LEAN_SYSTEM_PROMPT } from '../services/ai-sql/leanPipeline';
 import { averageCaution, smallSampleNote } from '../utils/averageCheck';
 import { ColumnType, type ColumnDefinition } from '../types';
 
@@ -73,5 +74,74 @@ describe('per-item figures are averaged, not added up', () => {
 
     it('tells the AI which columns are per-item (from names only)', () => {
         expect([...perItemColumns(columns)].sort()).toEqual(['customer_age', 'unit_price']);
+    });
+});
+
+describe('time series: missing months and a part-month', () => {
+    const rows = [{ period: '2025-01-01', total: 10 }, { period: '2025-02-01', total: 20 }, { period: '2025-05-01', total: 5 }];
+
+    it('adds months with no rows as 0 for totals, so the line does not skip them', () => {
+        const out = fillMonthlyGaps(rows, 'period', ['total'], 'SELECT DATE_TRUNC(\'month\', d) AS period, SUM(x) AS total FROM data GROUP BY 1');
+        expect(out.rows.map(r => [r.period, r.total])).toEqual([['2025-01-01', 10], ['2025-02-01', 20], ['2025-03-01', 0], ['2025-04-01', 0], ['2025-05-01', 5]]);
+        expect(missingMonthsNote(out.missing, true)).toBe('No rows in Mar 2025 and Apr 2025: they are shown as 0 rather than skipped.');
+    });
+
+    it('leaves averages blank for empty months (an average of nothing is not 0)', () => {
+        const out = fillMonthlyGaps(rows, 'period', ['total'], 'SELECT period, AVG(x) AS total FROM data GROUP BY 1');
+        expect(out.rows[2].total).toBeNull();
+    });
+
+    it('leaves complete or multi-series results alone', () => {
+        expect(fillMonthlyGaps(rows.slice(0, 2), 'period', ['total'], 'SUM(x)').missing).toEqual([]);
+        expect(fillMonthlyGaps([...rows, { period: '2025-01-01', total: 3 }], 'period', ['total'], 'SUM(x)').missing).toEqual([]);
+    });
+
+    it('flags a last month the data only partly covers', () => {
+        expect(partialMonthNote(rows, 'period', '2025-05-12', 'SUM(x)')).toBe('May 2025 is only partly in the data (up to 12 May), so its total looks lower than a full month would be.');
+        expect(partialMonthNote(rows, 'period', '2025-05-31', 'SUM(x)')).toBeNull();
+        expect(partialMonthNote(rows, 'period', '2025-05-12', 'AVG(x)')).toBeNull();
+    });
+});
+
+describe('per-row percentages, order lines and balances', () => {
+    const columns = [
+        { name: 'order_id', type: ColumnType.DIMENSION },
+        { name: 'order_date', type: ColumnType.DATE },
+        { name: 'sales', type: ColumnType.METRIC },
+        { name: 'margin_pct', type: ColumnType.METRIC },
+        { name: 'stock_level', type: ColumnType.METRIC },
+    ] as ColumnDefinition[];
+
+    it('warns that averaging a per-row margin % is not the overall margin', () => {
+        expect(averagedRatioNote('SELECT AVG("margin_pct") FROM "data"', columns)).toContain('The overall margin pct, worked out from the totals, can be quite different.');
+        expect(averagedRatioNote('SELECT AVG("sales") FROM "data"', columns)).toBeNull();
+    });
+
+    it('warns when "average order value" averages lines of orders', () => {
+        const lines = [{ order_id: 'A', sales: 10 }, { order_id: 'A', sales: 20 }, { order_id: 'B', sales: 30 }];
+        expect(perLineAverageNote('SELECT AVG("sales") FROM "data"', 'What is the average order value?', lines, columns))
+            .toBe('One order spans several rows here (one row per line), so this is the average per line, not per order. For the average per order, ask for the total divided by the number of orders.');
+        expect(perLineAverageNote('SELECT SUM("sales") / COUNT(DISTINCT "order_id") FROM "data"', 'average order value', lines, columns)).toBeNull();
+        expect(perLineAverageNote('SELECT AVG("sales") FROM "data"', 'average sales', lines, columns)).toBeNull();
+    });
+
+    it('warns when stock levels are added up across dates', () => {
+        expect(summedBalanceNote('SELECT SUM("stock_level") FROM "data"', columns)).toMatch(/^Stock level looks like a snapshot/);
+        expect(summedBalanceNote('SELECT SUM("sales") FROM "data"', columns)).toBeNull();
+    });
+
+    it('the AI is given the standard BI rules', () => {
+        for (const rule of ['NULLIF(SUM("revenue"), 0)', 'COUNT(DISTINCT "order_id")', 'never SUM them across dates', 'SUM(x) OVER ()', '(new - old) / NULLIF(old, 0)']) {
+            expect(LEAN_SYSTEM_PROMPT).toContain(rule);
+        }
+    });
+});
+
+describe('% of total with a top-N limit', () => {
+    it('says the shares are of the rows shown, not of everything', async () => {
+        const { applyTableCalculation } = await import('../utils/tableCalculations');
+        const rows = [{ c: 'A', v: 50 }, { c: 'B', v: 30 }];
+        expect(applyTableCalculation(rows, 'v', 'percent_of_total', 'Revenue', 'raw', undefined, 3, undefined, 2).yLabel).toBe('% of the top 2 shown (Revenue)');
+        expect(applyTableCalculation(rows, 'v', 'percent_of_total', 'Revenue').yLabel).toBe('% of Total (Revenue)');
     });
 });
