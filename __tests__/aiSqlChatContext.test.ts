@@ -66,6 +66,10 @@ describe('AI SQL chat — deciding what a message is, without the AI', () => {
         expect(classifyTurn('What is the average sales per person?', false, dataset).kind).toBe('new');
         expect(classifyTurn('What is a median?', false, dataset).kind).toBe('chat');
         expect(classifyTurn('What does average mean?', false, dataset).kind).toBe('chat');
+        // Questions about the user's own data are analysis, even when they start "What are…".
+        expect(classifyTurn('What are my best products?', false, { columns: [{ name: 'product' }, { name: 'revenue' }] } as any).kind).toBe('new');
+        expect(classifyTurn('What are our top categories?', false, dataset).kind).toBe('new');
+        expect(classifyTurn('What are you able to do?', false, dataset).kind).toBe('chat');
         expect(classifyTurn("What's in my file?", false, dataset).kind).toBe('summary');
         // A summary of one measure split by something is an analysis.
         expect(classifyTurn('Give me a summary of revenue by region', false, dataset).kind).toBe('new');

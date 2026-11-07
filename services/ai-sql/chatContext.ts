@@ -87,7 +87,9 @@ export function classifyTurn(message: string, hasPreviousAnswer: boolean, datase
     const core = text.replace(/^(great|perfect|thanks|thank you|cool|nice|ok|okay|good|lovely|awesome|right|alright|interesting)[,!.]?\s+/i, '');
     const tokens = words(core);
     const vocabulary = columnVocabulary(dataset);
-    const mentionsColumns = tokens.filter(token => vocabulary.has(token.replace(/'s$/, ''))).length;
+    // "products" names the product column: try the word, then its singular.
+    const singular = (token: string) => [token, token.replace(/ies$/, 'y'), token.replace(/es$/, ''), token.replace(/s$/, '')];
+    const mentionsColumns = tokens.filter(token => singular(token.replace(/'s$/, '')).some(form => vocabulary.has(form))).length;
     // "What does median mean?" asks for a meaning, not a mean.
     const forNumbers = core.replace(/\bmean(s|ing)?\s*[?!.]*$/i, '');
     // "What is the average sales per person?" asks for a figure even when no
@@ -99,7 +101,9 @@ export function classifyTurn(message: string, hasPreviousAnswer: boolean, datase
 
     // Conversation: about the assistant or the app, or what something means,
     // and not a request for numbers from the data.
-    if (!asksForNumbers && (ABOUT_THE_APP.test(core) || DEFINITION.test(core)) && !ABOUT_A_PROBLEM.test(core)) {
+    // "What are my best products?" starts like a definition but asks about the user's own data.
+    const aboutTheirData = /\b(my|our)\b/i.test(core) && ANALYSIS_WORDS.test(forNumbers) && !ABOUT_THE_APP.test(core.replace(/\b(my|our)\b/gi, ''));
+    if (!asksForNumbers && !aboutTheirData && (ABOUT_THE_APP.test(core) || DEFINITION.test(core)) && !ABOUT_A_PROBLEM.test(core)) {
         return { kind: 'chat', reason: 'A question for the assistant — the AI replies in words.', fallback: FALLBACK_HELP };
     }
     if (!hasPreviousAnswer) {
