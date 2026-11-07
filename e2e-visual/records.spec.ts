@@ -69,7 +69,8 @@ for (const theme of ['light', 'dark'] as const) {
         await go(page, 'Data Source');
         await page.locator('input[type="file"][accept=".csv,.xlsx,.xls"]').setInputFiles({ name: 'healthcare_noshows.csv', mimeType: 'text/csv', buffer: Buffer.from(appointmentsCsv(), 'utf8') });
         await expect(page.getByRole('heading', { name: 'Dataset Workspace' })).toBeVisible({ timeout: 90000 });
-        const kind = page.locator('.qi-kind').first();
+        await page.getByRole('tab', { name: 'Overview', exact: true }).click().catch(() => {});
+        const kind = page.locator('.qi-kind:visible').first();
         await kind.waitFor({ timeout: 20000 });
         await expect(kind).toContainText('Records — nothing to add up');
         await expect(kind).toContainText('Dimensional');
@@ -79,7 +80,7 @@ for (const theme of ['light', 'dark'] as const) {
 
         // ── the story: counts and rates, no totals ──
         await go(page, /Data Story/);
-        await page.locator('.qi-story-slide').waitFor({ timeout: 30000 });
+        await page.locator('.qi-story-slide:visible').first().waitFor({ timeout: 30000 });
         await expect(page.locator('.qi-story-slide').first()).toContainText("didn't show up");
         const slides = await page.locator('.qi-story-dots button').count();
         for (let i = 0; i < slides; i++) {
@@ -90,7 +91,7 @@ for (const theme of ['light', 'dark'] as const) {
 
         // ── AI SQL: the kind of data, starter questions, a real rate query ──
         await go(page, 'AI SQL');
-        await page.locator('.qi-kind-line').waitFor({ timeout: 20000 });
+        await page.locator('.qi-kind-line:visible').first().waitFor({ timeout: 20000 });
         await shoot(page, `82-records-ai-sql-empty-${theme}`);
         const box = page.getByLabel('Ask a question about your data');
         const ask = async (question: string) => {
