@@ -123,6 +123,21 @@ test('mobile ai sql flow', async ({ browser }) => {
     await page.screenshot({ path: path.join(OUT, 'm-flow-2-ai-sql.png') });
     const menuVisible = await page.getByRole('button', { name: 'Open navigation', exact: true }).isVisible().catch(() => false);
     const dialogOpen = await page.getByRole('dialog').count();
+    // Data Source → Connect: the button and the form that opens must fit.
+    await page.getByRole('button', { name: 'Open navigation', exact: true }).tap({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(500);
+    await page.getByRole('button', { name: 'Data Source', exact: true }).last().tap({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1000);
+    const connect = page.getByRole('button', { name: 'Connect', exact: true }).first();
+    await connect.scrollIntoViewIfNeeded().catch(() => {});
+    await page.screenshot({ path: path.join(OUT, 'm-flow-3-connect.png') });
+    const box = await connect.boundingBox().catch(() => null);
+    const select = page.locator('select').filter({ hasText: 'Shopify' }).first();
+    await select.selectOption('mssql').catch(() => {});
+    await connect.tap({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(900);
+    await page.screenshot({ path: path.join(OUT, 'm-flow-4-connect-form.png') });
+    fs.writeFileSync(path.join(OUT, 'mobile-flow-connect.json'), JSON.stringify({ connectButton: box, viewport: PHONE }, null, 2));
     fs.writeFileSync(path.join(OUT, 'mobile-flow.json'), JSON.stringify({ menuVisibleInAiSql: menuVisible, dialogsOpen: dialogOpen }, null, 2));
     await context.close();
 });

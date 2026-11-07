@@ -275,11 +275,12 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
             <div className="flex flex-col gap-4">
                 <div className="bg-gradient-to-br from-violet-50 to-indigo-50 dark:bg-slate-700/50 rounded-xl p-5 border border-violet-200 dark:border-slate-600 flex flex-col gap-4 shadow-sm">
                     <label className="text-base text-gray-800 dark:text-slate-200 font-bold">Select Data Source</label>
-                    <div className="flex gap-3">
+                    {/* On phones the button goes under the picker, so it is never pushed off-screen. */}
+                    <div className="flex flex-col sm:flex-row gap-3">
                         <select
                             value={selectedConnectorId}
                             onChange={(e) => setSelectedConnectorId(e.target.value)}
-                            className="flex-1 bg-white dark:bg-slate-800 border-2 border-gray-300 dark:border-slate-600 rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none font-semibold text-sm shadow-sm"
+                            className="w-full min-w-0 sm:flex-1 bg-white dark:bg-slate-800 border-2 border-gray-300 dark:border-slate-600 rounded-xl px-4 py-3 text-gray-900 dark:text-white focus:ring-2 focus:ring-violet-500 focus:border-violet-500 outline-none font-semibold text-sm shadow-sm"
                         >
                             {AVAILABLE_CONNECTORS.map(c => (
                                 <option key={c.id} value={c.id}>{c.name}</option>
@@ -288,7 +289,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                         </select>
                         <button
                             onClick={handleConnect}
-                            className="bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl font-bold text-sm transition-all shadow-lg shadow-violet-200 hover:shadow-xl hover:shadow-violet-300 active:scale-95"
+                            className="w-full sm:w-auto shrink-0 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white px-6 py-3 rounded-xl font-bold text-sm transition-all shadow-lg shadow-violet-200 hover:shadow-xl hover:shadow-violet-300 active:scale-95"
                         >
                             Connect
                         </button>
@@ -299,7 +300,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
             {/* CONFIGURATION MODAL */}
             {configuringId && activeConnector && (
                 <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm p-4">
-                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] flex flex-col border border-indigo-100">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200 max-h-[90vh] max-h-[90dvh] flex flex-col border border-indigo-100">
 
                         {/* HEADER + STEP INDICATOR */}
                         <div className="p-5 border-b border-slate-200 bg-gradient-to-r from-indigo-50 to-white flex-shrink-0">
