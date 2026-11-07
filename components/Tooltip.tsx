@@ -28,6 +28,9 @@ export const Tooltip: React.FC<TooltipProps> = ({
     const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     const show = useCallback(() => {
+        // Touch screens have no hover: a tap would pop the tip over the very
+        // thing being tapped, so tips are for mouse users only.
+        if (typeof window !== 'undefined' && window.matchMedia?.('(hover: none)').matches) return;
         timerRef.current = setTimeout(() => setVisible(true), delay);
     }, [delay]);
 

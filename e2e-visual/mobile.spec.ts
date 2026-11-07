@@ -71,6 +71,20 @@ for (const theme of ['light', 'dark'] as const) {
             const { context, page } = await open(tab).catch(() => ({ context: null, page: null } as any));
             if (!page) { report[name] = { error: 'did not open' }; continue; }
             await page.screenshot({ path: path.join(OUT, `m-${name}-${theme}.png`), fullPage: true }).catch(() => {});
+            // The screen's own scroll area, scrolled to the end: is everything reachable?
+            if (theme === 'light') {
+                await page.evaluate(() => {
+                    const visible = Array.from(document.querySelectorAll('.qi-main-frame *')).filter(el => {
+                        const node = el as HTMLElement; const st = getComputedStyle(node);
+                        return node.offsetParent !== null && /(auto|scroll)/.test(st.overflowY) && node.scrollHeight > node.clientHeight + 40;
+                    }) as HTMLElement[];
+                    visible.sort((a, b) => b.scrollHeight - a.scrollHeight);
+                    if (visible[0]) visible[0].scrollTop = visible[0].scrollHeight;
+                    window.scrollTo(0, document.body.scrollHeight);
+                });
+                await page.waitForTimeout(700);
+                await page.screenshot({ path: path.join(OUT, `m-${name}-end-${theme}.png`) }).catch(() => {});
+            }
             report[name] = await overflowReport(page).catch(error => ({ error: String(error) }));
             await context.close();
         }
@@ -93,4 +107,22 @@ test('mobile sign in', async ({ page }) => {
     await page.waitForTimeout(1500);
     await page.screenshot({ path: path.join(OUT, 'm-sign-in.png'), fullPage: true });
     fs.writeFileSync(path.join(OUT, 'mobile-report-sign-in.json'), JSON.stringify(await overflowReport(page), null, 2));
+});
+
+test('mobile ai sql flow', async ({ browser }) => {
+    test.setTimeout(180_000);
+    const context = await browser.newContext({ viewport: PHONE, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    const page = await context.newPage();
+    await boot(page, 'light', 'DASHBOARD');
+    // Open the menu and tap AI SQL once: it must open straight away.
+    await page.getByRole('button', { name: 'Open navigation', exact: true }).tap({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(600);
+    await page.screenshot({ path: path.join(OUT, 'm-flow-1-menu.png') });
+    await page.getByRole('button', { name: 'AI SQL', exact: true }).last().tap({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1200);
+    await page.screenshot({ path: path.join(OUT, 'm-flow-2-ai-sql.png') });
+    const menuVisible = await page.getByRole('button', { name: 'Open navigation', exact: true }).isVisible().catch(() => false);
+    const dialogOpen = await page.getByRole('dialog').count();
+    fs.writeFileSync(path.join(OUT, 'mobile-flow.json'), JSON.stringify({ menuVisibleInAiSql: menuVisible, dialogsOpen: dialogOpen }, null, 2));
+    await context.close();
 });

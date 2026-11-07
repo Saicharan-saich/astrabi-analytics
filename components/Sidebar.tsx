@@ -195,7 +195,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, onTabChange, onTogg
                     <span className="relative">{item.label}</span>
                     {/* Info button — appears on hover */}
                     <span
-                        className="relative ml-auto opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150"
+                        className="qi-nav-info relative ml-auto opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100 transition-opacity duration-150"
                         onClick={e => e.stopPropagation()}
                     >
                         <PageInfoButton pageKey={item.id as PageKey} />

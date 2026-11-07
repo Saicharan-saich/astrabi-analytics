@@ -1682,7 +1682,7 @@ function App() {
 
             <div className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
               {/* Header */}
-              <header className={`app-topbar qi-topbar-frame h-14 flex items-center justify-between px-3 md:px-5 z-30 relative border-b print:hidden ${theme === 'dark' ? 'bg-[#12161f]/80 backdrop-blur-xl border-white/[0.06]' : 'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm'
+              <header className={`app-topbar qi-topbar-frame shrink-0 h-14 flex items-center justify-between px-3 md:px-5 z-30 relative border-b print:hidden ${theme === 'dark' ? 'bg-[#12161f]/80 backdrop-blur-xl border-white/[0.06]' : 'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm'
                 }`}>
                 <div className="flex items-center gap-2 md:gap-3 min-w-0">
                   {(!isSidebarOpen || isMobile) && (
