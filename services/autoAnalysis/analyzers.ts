@@ -67,7 +67,7 @@ export interface AutoFinding {
 
 const metricOf = (prep: Prepared, id: string) => prep.focus.metrics.find(m => m.id === id);
 const numberFormatOf = (m: MetricDef): AutoCard['numberFormat'] =>
-    m.format === 'percent' ? 'percent_points' : m.currency === 'GBP' ? 'currency_gbp' : m.currency === 'EUR' || m.format === 'currency_eur' ? 'currency_eur' : m.currency && m.currency !== 'USD' ? 'auto' : m.format === 'currency_usd' ? 'currency_usd' : 'auto';
+    m.format === 'percent' ? 'percent_points' : m.currency === 'GBP' ? 'currency_gbp' : m.currency === 'EUR' || m.format === 'currency_eur' ? 'currency_eur' : m.currency === 'USD' ? 'currency_usd' : 'auto';
 
 function toneFor(metric: MetricDef, change: number): Tone {
     if (!Number.isFinite(change) || Math.abs(change) < 1e-9 || metric.higherIsBetter === null) return 'neutral';

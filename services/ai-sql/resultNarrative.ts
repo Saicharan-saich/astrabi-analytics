@@ -21,7 +21,8 @@ interface ResultNarrativeInput {
 }
 
 // Set for the duration of one buildResultNarrative call (it is synchronous).
-let narrativeCurrency = 'USD';
+// Empty when the file gave no currency: money is then shown as a plain number.
+let narrativeCurrency = '';
 
 const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2026-03-01" → "Mar 2026" (month), "Q1 2026", "2026", or "5 Mar 2026". */
@@ -67,7 +68,7 @@ function formatValue(value: unknown, type: SemanticType = 'quantity'): string {
     const number = Number(value);
     if (!Number.isFinite(number)) return String(value ?? '');
     if (type === 'percentage') return `${number.toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
-    if (type === 'currency') {
+    if (type === 'currency' && narrativeCurrency) {
         return number.toLocaleString(undefined, {
             style: 'currency', currency: narrativeCurrency, maximumFractionDigits: Number.isInteger(number) ? 0 : 2,
         });
@@ -237,13 +238,13 @@ function buildScalarNarrative(input: ResultNarrativeInput, metric: string): Resu
         verifiedFrom: 'executed_result',
         kind: 'kpi',
         headline,
-        summary: `${headline}. This is the value for the filters and period in your question.`,
+        summary: `${headline}.`,
     };
 }
 
 export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrative | null {
     if (!input.data?.length) return null;
-    narrativeCurrency = input.currency || 'USD';
+    narrativeCurrency = input.currency || '';
     const { data, profile, plan } = input;
     const metrics = profile.metricColumns.filter(column => Object.prototype.hasOwnProperty.call(data[0], column));
     const dimensions = profile.dimensionColumns.filter(column => Object.prototype.hasOwnProperty.call(data[0], column));

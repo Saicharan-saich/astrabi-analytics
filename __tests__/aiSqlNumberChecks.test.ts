@@ -6,12 +6,12 @@ import { ColumnType, type ColumnDefinition } from '../types';
 describe('average check — any query shape', () => {
     it('returns the values behind the average, keeping filters and dropping the final LIMIT', () => {
         const q = averageValuesQuery('SELECT "region", ROUND(AVG("sales"), 2) AS average_sales FROM "data" WHERE "year" = 2024 GROUP BY 1 ORDER BY 2 DESC LIMIT 10');
-        expect(q).toEqual({ column: 'sales', sql: 'SELECT "region", LIST("sales") AS average_sales FROM "data" WHERE "year" = 2024 GROUP BY 1 ORDER BY 2 DESC' });
+        expect(q).toEqual({ column: 'sales', sql: 'SELECT "region", LIST(CAST("sales" AS DOUBLE)) AS average_sales FROM "data" WHERE "year" = 2024 GROUP BY 1 ORDER BY 2 DESC' });
     });
 
     it('handles "average per person": an average of per-person totals from a sub-query', () => {
         const q = averageValuesQuery('SELECT ROUND(AVG(total_sales), 2) AS avg_sales_per_person FROM (SELECT "person", SUM("sales") AS total_sales FROM "data" GROUP BY 1)');
-        expect(q?.sql).toBe('SELECT LIST(total_sales) AS avg_sales_per_person FROM (SELECT "person", SUM("sales") AS total_sales FROM "data" GROUP BY 1)');
+        expect(q?.sql).toBe('SELECT LIST(CAST(total_sales AS DOUBLE)) AS avg_sales_per_person FROM (SELECT "person", SUM("sales") AS total_sales FROM "data" GROUP BY 1)');
     });
 
     it('leaves alone queries it cannot rewrite safely', () => {
@@ -39,6 +39,12 @@ describe('average check — any query shape', () => {
         expect(notes[0]).toMatch(/^Careful with the average for North: it is 12\.5, but /);
         expect(notes.join(' ')).not.toContain('Hidden');
         expect(notes[1]).toBe('Some averages rest on very few rows, so they can swing a lot: East (2 rows).');
+    });
+
+    it('reads lists that arrive as typed arrays or vectors', () => {
+        const vector = { toArray: () => new Float64Array([100, 0, 0, 0]) };
+        expect(averageNotesFromValues([{ a: vector }], [{ a: 25 }], [], 'sales')[0]).toContain('the 4 values are 100, 0, 0 and 0');
+        expect(averageNotesFromValues([{ a: new Float64Array([100, 0, 0, 0]) }], [{ a: 25 }], [], 'sales')[0]).toContain('one value makes up 100%');
     });
 
     it('stays quiet when values are alike and plentiful', () => {

@@ -558,7 +558,8 @@ export function fmt(value: number, metric: MetricDef): string {
         return `${v.toFixed(Math.abs(v) < 10 ? 1 : 1)}%`;
     }
     const symbol = metric.currency ? currencySymbolOf(metric.currency)
-        : metric.format === 'currency_usd' ? '$' : metric.format === 'currency_eur' ? '€' : '';
+        // "currency_usd" only marks money here; with no currency in the file, no symbol.
+        : '';
     const text = compact(value);
     return text.startsWith('−') ? `−${symbol}${text.slice(1)}` : `${symbol}${text}`;
 }

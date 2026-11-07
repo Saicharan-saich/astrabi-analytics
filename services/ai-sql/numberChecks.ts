@@ -34,7 +34,7 @@ export function averageValuesQuery(sql: string): { sql: string; column: string }
     const column = unquote(averages[0][2]);
     let listed = sql.replace(
         new RegExp(String.raw`\bROUND\s*\(\s*AVG\s*\(\s*(${IDENT})\s*\)\s*,\s*\d+\s*\)|\bAVG\s*\(\s*(${IDENT})\s*\)`, 'gi'),
-        (_whole, inRound, plain) => `LIST(${inRound || plain})`,
+        (_whole, inRound, plain) => `LIST(CAST(${inRound || plain} AS DOUBLE))`,
     );
     // HAVING on an average cannot be kept once it is a list.
     if (/\bHAVING\b[^)]*\bLIST\(/i.test(listed)) return null;
@@ -53,8 +53,11 @@ export function averageNotesFromValues(
     listRows: Record<string, any>[], shown: Record<string, any>[], dimensions: string[], column: string,
 ): string[] {
     const label = words(column);
+    const asList = (value: unknown): unknown[] | undefined => Array.isArray(value) ? value
+        : value && typeof value === 'object' && typeof (value as any).toArray === 'function' ? Array.from((value as any).toArray() as ArrayLike<unknown>)
+            : ArrayBuffer.isView(value) ? Array.from(value as unknown as ArrayLike<number>) : undefined;
     const groups = listRows
-        .map(row => ({ row, values: Object.values(row).find(Array.isArray) as unknown[] | undefined }))
+        .map(row => ({ row, values: Object.values(row).map(asList).find(Boolean) }))
         .filter((item): item is { row: Record<string, any>; values: unknown[] } => Boolean(item.values));
     if (!groups.length) return [];
     const visible = new Set(shown.map(row => keyOf(row, dimensions)));

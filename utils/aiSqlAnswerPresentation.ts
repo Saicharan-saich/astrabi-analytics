@@ -37,6 +37,8 @@ export function presentLeanAnswer(result: AISQLPipelineResult, questionLabel: st
     const axisFormat = result.chart.currency && CURRENCY_FORMAT[result.chart.currency]
         && (!result.chart.leftAxisFormat || result.chart.leftAxisFormat === 'currency_usd' || result.chart.leftAxisFormat === 'compact')
         ? CURRENCY_FORMAT[result.chart.currency]
+        // Money with no currency in the file: never assume dollars.
+        : result.chart.leftAxisFormat === 'currency_usd' && !result.chart.currency ? 'auto'
         : result.chart.leftAxisFormat
             ? (AXIS_FORMAT[result.chart.leftAxisFormat] ?? 'auto') : 'auto';
     // A rate the SQL already multiplied by 100 must never be rescaled,

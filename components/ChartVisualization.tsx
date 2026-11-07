@@ -438,8 +438,13 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 effectiveFormat = 'percent';
             }
             // Check for Currency indicators
-            else if (metricName.includes('sales') || metricName.includes('revenue') || metricName.includes('price') || metricName.includes('cost') || metricName.includes('amount') || metricName.includes('profit') || metricName.includes('margin') || currencyCodeFor(config?.metric)) {
+            // Money is shown with a symbol only when the file gave its currency;
+            // a column called "sales" alone does not say dollars or pounds.
+            else if (currencyCodeFor(config?.metric) || explicitCurrency) {
                 effectiveFormat = 'currency';
+            }
+            else if (metricName.includes('sales') || metricName.includes('revenue') || metricName.includes('price') || metricName.includes('cost') || metricName.includes('amount') || metricName.includes('profit') || metricName.includes('margin')) {
+                effectiveFormat = 'money_plain';
             }
             // Default fallbacks
             else {
@@ -471,6 +476,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         currency: 'EUR',
                         minimumFractionDigits: fractionDigits,
                         maximumFractionDigits: fractionDigits
+                    }).format(value);
+                case 'money_plain':
+                    // Money in an unknown currency: 1,234.5 — no symbol, no forced ".00".
+                    return new Intl.NumberFormat('en-GB', {
+                        minimumFractionDigits: formatting?.decimals ?? 0,
+                        maximumFractionDigits: formatting?.decimals ?? (Number.isInteger(value) ? 0 : 2),
                     }).format(value);
                 case 'percent_points':
                     // Values already in percent units (12.5 = 12.5%): never rescale.
@@ -510,7 +521,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const metricRef = (config?.metric || yLabel || yKey || '').toLowerCase();
         const autoDetect = !activeNumberFormat || activeNumberFormat === 'auto';
         const isCurrency = isCurrencyFormat(activeNumberFormat)
-            || (autoDetect && (Boolean(currencyCodeFor(config?.metric)) || /(sales|revenue|price|cost|amount|profit|margin|spend|payment|balance|budget|salary)/.test(metricRef)));
+            || (autoDetect && Boolean(currencyCodeFor(config?.metric)));
         // Decimal places chosen in Style apply to the labels too.
         const labelDecimals = formatting?.decimals ?? 1;
         // "Raw number" / "Full" means no K/M shortening on the bars either.

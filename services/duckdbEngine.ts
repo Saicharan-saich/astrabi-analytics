@@ -406,7 +406,11 @@ async function executeSQLQuery(sql: string): Promise<DuckDBResult> {
                         // Convert BigInt to number (DuckDB returns BigInt for integers).
                         // Guarantee finiteness at the SQL boundary: any inf/NaN that a
                         // division or aggregate could yield becomes null, never garbage.
-                        row[col] = typeof val === 'bigint' ? Number(val) : finiteOrNull(val);
+                        // Lists (LIST(...)) come back as Arrow vectors: hand back plain arrays.
+                        row[col] = typeof val === 'bigint' ? Number(val)
+                            : val && typeof val === 'object' && typeof (val as any).toArray === 'function'
+                                ? Array.from((val as any).toArray() as ArrayLike<unknown>, item => (typeof item === 'bigint' ? Number(item) : item))
+                                : finiteOrNull(val);
                     }
                 } else {
                     row[col] = null;
