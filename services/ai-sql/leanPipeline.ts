@@ -732,18 +732,18 @@ interface LeanAnswerInput {
  * A monthly series: add months with no rows (so the line does not skip them)
  * and say when the last month is only partly in the data.
  */
-/** The latest date in the data: from the cleaning's date range, else read from the date columns. */
+/** The latest date in the data, read from the rows themselves (a stored range can be out of date). */
 function latestDate(dataset: Dataset, timeContext: any): string | undefined {
-    const known = dataset.timeContext?.maxDate || timeContext?.maxDate;
-    if (known) return String(known).slice(0, 10);
+    const anchor = dataset.timeContext?.anchorDateColumn || timeContext?.primaryDateColumn;
+    const columns = dataset.columns.filter(item => String(item.type) === 'DATE' && (!anchor || item.name === anchor));
     let max = '';
-    for (const column of dataset.columns.filter(item => String(item.type) === 'DATE')) {
+    for (const column of columns.length ? columns : dataset.columns.filter(item => String(item.type) === 'DATE')) {
         for (const row of dataset.rows) {
             const value = String(row[column.name] ?? '').slice(0, 10);
             if (/^\d{4}-\d{2}-\d{2}$/.test(value) && value > max) max = value;
         }
     }
-    return max || undefined;
+    return max || (dataset.timeContext?.maxDate || timeContext?.maxDate || undefined);
 }
 
 function completeTimeSeries(sql: string, rows: Record<string, any>[], reply: { dimensions?: string[]; measures?: string[] }, timeContext: any, dataset?: Dataset): { rows: Record<string, any>[]; notes: string[] } {
