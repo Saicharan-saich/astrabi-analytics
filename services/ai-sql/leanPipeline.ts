@@ -696,7 +696,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     }
 
     options.onProgress?.('Checking the numbers');
-    const series = completeTimeSeries(sql, execution.data || [], parsed, model.timeContext);
+    const series = completeTimeSeries(sql, execution.data || [], parsed, model.timeContext, dataset);
     const cautions = [...await numberCautions(sql, execution.data || [], parsed.dimensions, dataset, model.timeContext, `${question} ${standalone}`), ...series.notes];
     options.onProgress?.('Choosing the chart');
     const result = buildLeanAnswer({
@@ -732,7 +732,21 @@ interface LeanAnswerInput {
  * A monthly series: add months with no rows (so the line does not skip them)
  * and say when the last month is only partly in the data.
  */
-function completeTimeSeries(sql: string, rows: Record<string, any>[], reply: { dimensions?: string[]; measures?: string[] }, timeContext: any): { rows: Record<string, any>[]; notes: string[] } {
+/** The latest date in the data: from the cleaning's date range, else read from the date columns. */
+function latestDate(dataset: Dataset, timeContext: any): string | undefined {
+    const known = dataset.timeContext?.maxDate || timeContext?.maxDate;
+    if (known) return String(known).slice(0, 10);
+    let max = '';
+    for (const column of dataset.columns.filter(item => String(item.type) === 'DATE')) {
+        for (const row of dataset.rows) {
+            const value = String(row[column.name] ?? '').slice(0, 10);
+            if (/^\d{4}-\d{2}-\d{2}$/.test(value) && value > max) max = value;
+        }
+    }
+    return max || undefined;
+}
+
+function completeTimeSeries(sql: string, rows: Record<string, any>[], reply: { dimensions?: string[]; measures?: string[] }, timeContext: any, dataset?: Dataset): { rows: Record<string, any>[]; notes: string[] } {
     if (!rows.length) return { rows, notes: [] };
     const columns = Object.keys(rows[0]);
     const dims = (reply.dimensions || []).filter(name => columns.includes(name));
@@ -743,7 +757,7 @@ function completeTimeSeries(sql: string, rows: Record<string, any>[], reply: { d
     const filled = fillMonthlyGaps(rows, time, measures.length ? measures : columns.filter(name => name !== time && typeof rows[0][name] === 'number'), sql);
     const gap = missingMonthsNote(filled.missing, !/\b(AVG|MEDIAN|MIN|MAX|QUANTILE|STDDEV)\s*\(/i.test(sql));
     if (gap) notes.push(gap);
-    const partial = partialMonthNote(filled.rows, time, timeContext?.maxDate, sql);
+    const partial = partialMonthNote(filled.rows, time, dataset ? latestDate(dataset, timeContext) : timeContext?.maxDate, sql);
     if (partial) notes.push(partial);
     return { rows: filled.rows, notes };
 }
@@ -872,7 +886,7 @@ export async function rerunSavedAnswer(saved: SavedLeanAnswer, dataset: Dataset)
     const { model } = describeData(dataset);
     const execution = await executeSQLViaDuckDB(dataset.rows, safety.sql, model.timeContext as any, dataset.relatedTables);
     if (execution.error) throw new AISQLPipelineError('ai_sql_execution_failed', `The saved query could not run on the current data: ${execution.error}`);
-    const series = completeTimeSeries(safety.sql, execution.data || [], saved, model.timeContext);
+    const series = completeTimeSeries(safety.sql, execution.data || [], saved, model.timeContext, dataset);
     const cautions = [...await numberCautions(safety.sql, execution.data || [], saved.dimensions, dataset, model.timeContext, saved.question), ...series.notes];
     const result = buildLeanAnswer({
         question: saved.question, sql: safety.sql, rows: series.rows, reply: saved, model, dataset, started, repairAttempts: 0, tokens: 0, aiModel: 'none (re-run locally)', cautions,
