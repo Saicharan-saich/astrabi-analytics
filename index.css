@@ -5384,3 +5384,8 @@ body {
   .qi-chat-head img { display: none; }
   .qi-clean-head > :first-child { flex-basis: 100%; }
 }
+@media (max-width: 640px) {
+  /* The view wrapper's 12px plus each screen's own padding left 28–40px of margin. */
+  .qi-main-frame .qi-view.qi-view { padding-left: 0 !important; padding-right: 0 !important; }
+  .qi-theme-analyst .qi-dashboard-workspace > .max-w-\[1900px\] { border-left-width: 0 !important; border-right-width: 0 !important; border-radius: 0 !important; }
+}

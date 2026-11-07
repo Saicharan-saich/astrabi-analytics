@@ -44,7 +44,7 @@ async function overflowReport(page: Page) {
             offenders.push({ el: describe(el), right: Math.round(r.right), width: Math.round(r.width), text: (el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 50), parent: parent ? describe(parent) : '' });
         }
         // Where the left margin of the page title comes from.
-        const title = document.querySelector('.qi-main-frame h1, .qi-main-frame h2');
+        const title = Array.from(document.querySelectorAll('.qi-main-frame h1, .qi-main-frame h2')).find(el => (el as HTMLElement).offsetParent !== null);
         const gutter: string[] = [];
         for (let node = title as HTMLElement | null; node && node !== document.body; node = node.parentElement) {
             const st = getComputedStyle(node);
