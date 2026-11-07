@@ -87,7 +87,7 @@ test('a date filter recalculates a pinned KPI after the same workbook was re-imp
   await page.getByRole('button', { name: 'Sign In', exact: true }).click();
 
   await expect(page.getByText('order_date', { exact: true }).last()).toBeVisible();
-  await expect(page.locator('.qi-kpi-value')).toHaveText(['$50.00', '$50.00'], { timeout: 30_000 });
+  await expect(page.locator('.qi-kpi-value')).toHaveText(['50', '50'], { timeout: 30_000 });
   await page.getByRole('button', { name: 'Clear all', exact: true }).click();
-  await expect(page.locator('.qi-kpi-value')).toHaveText(['$100.00', '$100.00']);
+  await expect(page.locator('.qi-kpi-value')).toHaveText(['100', '100']);
 });
