@@ -5389,3 +5389,6 @@ body {
   .qi-main-frame .qi-view.qi-view { padding-left: 0 !important; padding-right: 0 !important; }
   .qi-theme-analyst .qi-dashboard-workspace > .max-w-\[1900px\] { border-left-width: 0 !important; border-right-width: 0 !important; border-radius: 0 !important; }
 }
+@media (max-width: 640px) {
+  :root:is(.light, .dark) .qi-dashboard-workspace > .max-w-\[1900px\] { padding: 1rem 1rem 6rem !important; }
+}
