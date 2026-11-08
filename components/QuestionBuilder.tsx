@@ -10,6 +10,8 @@ import { QuerySelect } from './QuerySelect';
 import { resolvePhysicalBuilderFields } from '../services/questionBuilderFieldGuard';
 import { questionBuilderColumns } from '../services/questionBuilderColumns';
 import { describeBuilderQuestion } from '../utils/builderAnswer';
+import { isPerRowName } from '../utils/numberMeaning';
+import { describeDatasetShape } from '../services/datasetShape';
 
 interface QuestionBuilderProps {
     dataset: Dataset;
@@ -468,7 +470,9 @@ export const QuestionBuilder: React.FC<QuestionBuilderProps> = ({
     const safeDefaultAggregation = (fieldName: string): string => {
         const normalized = fieldName.trim().toLowerCase();
         const measure = dataset.semanticModel?.measures.find(item => item.column.trim().toLowerCase() === normalized);
-        return measure?.aggregation && measure.aggregation !== 'COUNT_DISTINCT' ? measure.aggregation : 'SUM';
+        if (measure?.aggregation && measure.aggregation !== 'COUNT_DISTINCT') return measure.aggregation;
+        // Age, days waited, price, rating: a figure per row, so start with Average (Total stays available).
+        return isPerRowName(fieldName) || describeDatasetShape(dataset).perRowNumbers.includes(fieldName) ? 'AVG' : 'SUM';
     };
 
     useEffect(() => {

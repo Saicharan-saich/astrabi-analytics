@@ -257,6 +257,36 @@ describe('lean AI SQL — end to end with the AI and DuckDB stubbed', () => {
         expect(result.explanation).toBe('Added up price for each manufacturer.');
     });
 
+    it('lists several rates as bars and keeps the count off the % axis', async () => {
+        aiReplies({
+            action: 'answer', title: 'Appointments involving patients with these health conditions',
+            sql: 'SELECT ROUND(100.0 * COUNT_IF("hipertension") / COUNT(*), 1) AS hypertension_rate_pct, ROUND(100.0 * COUNT_IF("diabetes") / COUNT(*), 1) AS diabetes_rate_pct, ROUND(100.0 * COUNT_IF("alcoholism") / COUNT(*), 1) AS alcoholism_rate_pct, COUNT(*) AS appointments FROM "data"',
+            dimensions: [], measures: ['hypertension_rate_pct', 'diabetes_rate_pct', 'alcoholism_rate_pct', 'appointments'],
+        });
+        vi.mocked(executeSQLViaDuckDB).mockResolvedValue({
+            data: [{ hypertension_rate_pct: 19.7, diabetes_rate_pct: 7.2, alcoholism_rate_pct: 3, appointments: 106987 }], columns: [], error: null,
+        } as any);
+        const result = await runLeanAISQL('What percentage of appointments involve patients with hypertension, diabetes or alcoholism?', dataset);
+        vi.mocked(executeSQLViaDuckDB).mockReset();
+        const shown = JSON.stringify(result.chartData || result.rawData);
+        expect(shown).not.toContain('106987');
+        expect(shown).not.toMatch(/originalKey/i);
+        expect(result.rawData).toEqual([{ measure: 'Hypertension', share_pct: 19.7 }, { measure: 'Diabetes', share_pct: 7.2 }, { measure: 'Alcoholism', share_pct: 3 }]);
+        expect(result.chart.xKey).toBe('measure');
+        expect(result.chart.yKey).toBe('share_pct');
+        expect(result.narrative?.summary).toBe('Hypertension 19.7%, diabetes 7.2% and alcoholism 3% — out of 106,987 appointments.');
+        expect(JSON.stringify(result.narrative)).not.toMatch(/originalKey|Metric, Value/);
+    });
+
+    it('answers one rate with the count behind it as a single figure', async () => {
+        aiReplies({ action: 'answer', sql: 'SELECT ROUND(100.0 * COUNT_IF(NOT "showed_up") / COUNT(*), 1) AS no_show_rate_pct, COUNT(*) AS appointments FROM "data"', dimensions: [], measures: ['no_show_rate_pct', 'appointments'] });
+        vi.mocked(executeSQLViaDuckDB).mockResolvedValue({ data: [{ no_show_rate_pct: 20.2, appointments: 106987 }], columns: [], error: null } as any);
+        const result = await runLeanAISQL('What is the no-show rate?', dataset);
+        vi.mocked(executeSQLViaDuckDB).mockReset();
+        expect(result.rawData).toEqual([{ no_show_rate_pct: 20.2 }]);
+        expect(result.narrative?.summary).toBe('No show rate: 20.2% — out of 106,987 appointments.');
+    });
+
     it('repairs a failed query once, without sending values', async () => {
         aiReplies(
             { action: 'answer', sql: 'SELECT "make", SUM("price") AS total_price FROM "data" GROUP BY 1' },

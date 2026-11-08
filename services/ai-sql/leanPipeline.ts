@@ -867,6 +867,81 @@ async function numberCautions(sql: string, rows: Record<string, any>[], dimensio
     return notes;
 }
 
+/** "hypertension_rate_pct" → "Hypertension", "total_revenue" → "Total revenue". */
+function measureName(column: string): string {
+    const words = column.replace(/([a-z])([A-Z])/g, '$1 $2').split(/[_\s]+/).filter(Boolean);
+    while (words.length > 1 && /^(rate|pct|percent|percentage|share|ratio|proportion)$/i.test(words[words.length - 1])) words.pop();
+    const text = words.join(' ').toLowerCase();
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/** "no_show_rate_pct" → "No show rate", "average_age" → "Average age". */
+function singleName(column: string): string {
+    const text = column.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_\s]+(pct|percent|percentage)$/i, '').replace(/[_\s]+/g, ' ').trim().toLowerCase();
+    return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+/**
+ * A single row holding several measures and no grouping, turned into one row
+ * per measure so it reads as a list and charts as bars. When rates sit beside
+ * counts or amounts, only the rates are drawn (one % axis) and the rest are
+ * said in words ("out of 106,987 appointments").
+ */
+export function oneRowOfMeasures(rows: Record<string, any>[], hinted?: string[]): { rows: Record<string, any>[]; valueKey: string; summary: string; insights: string[]; single?: boolean } | null {
+    if (rows.length !== 1) return null;
+    const row = rows[0];
+    const numeric = Object.keys(row).filter(key => typeof row[key] === 'number' || (typeof row[key] === 'string' && row[key].trim() !== '' && Number.isFinite(Number(row[key])) && !ISO_DATE.test(row[key])));
+    const text = Object.keys(row).filter(key => !numeric.includes(key));
+    const measures = (hinted || []).filter(key => numeric.includes(key)).concat(numeric.filter(key => !(hinted || []).includes(key)));
+    if (measures.length < 2 || text.length) return null;
+    const rates = measures.filter(key => RATE_COLUMN.test(key));
+    // "average_age" beside "appointment_count": the count is how many rows it covers.
+    const COUNT = /(^|_)(count|counts|rows|records|number_of|n)($|_)/i;
+    const notCounts = measures.filter(key => !COUNT.test(key));
+    const shown = rates.length >= 1 ? rates : notCounts.length && notCounts.length < measures.length ? notCounts : measures;
+    if (shown.length < 2 && !(shown.length === 1 && measures.length > 1)) return null;
+    const context = measures.filter(key => !shown.includes(key));
+    const isRate = shown === rates && rates.length > 0;
+    const valueKey = isRate ? 'share_pct' : 'value';
+    const value = (key: string) => Number(row[key]);
+    const show = (key: string) => isRate
+        ? `${value(key).toLocaleString('en-GB', { maximumFractionDigits: 1 })}%`
+        : value(key).toLocaleString('en-GB', { maximumFractionDigits: 2 });
+    const parts = shown.map(key => `${measureName(key).toLowerCase()} ${show(key)}`);
+    parts[0] = parts[0].charAt(0).toUpperCase() + parts[0].slice(1);
+    const list = parts.length > 1 ? `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}` : parts[0];
+    // Counts read as "out of 658 appointments"; other figures are listed beside the answer.
+    const plural = (word: string) => /s$/.test(word) ? word : /[^aeiou]y$/.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`;
+    const countWords = (key: string) => {
+        const words = key.replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase().split(/[_\s]+/).filter(word => word && !/^(count|counts|number|of|n|total)$/.test(word));
+        if (!words.length) return 'rows';
+        words[words.length - 1] = plural(words[words.length - 1]);
+        return words.join(' ');
+    };
+    const out = context.filter(key => COUNT.test(key) || /(^|_)(appointments|orders|customers|patients|employees|rows|records|visits|tickets|cases|people)$/i.test(key))
+        .map(key => `${value(key).toLocaleString('en-GB', { maximumFractionDigits: 0 })} ${countWords(key)}`);
+    const beside = context.filter(key => !out.some(text => text.endsWith(countWords(key))) && !(COUNT.test(key) || /(^|_)(appointments|orders|customers|patients|employees|rows|records|visits|tickets|cases|people)$/i.test(key)))
+        .map(key => `${singleName(key).toLowerCase()} ${value(key).toLocaleString('en-GB', { maximumFractionDigits: 2 })}`);
+    const besideText = beside.length ? ` (${beside.join('; ')})` : '';
+    if (shown.length === 1) {
+        // One rate and the count behind it: the rate is the answer.
+        const [rate] = shown;
+        return {
+            rows: [{ [rate]: value(rate) }],
+            valueKey: rate,
+            single: true,
+            summary: `${singleName(rate)}: ${show(rate)}${out.length ? ` — ${isRate ? 'out of' : 'across'} ${out.join(' and ')}` : ''}${besideText}.`,
+            insights: out.length ? [`Worked out over ${out.join(' and ')}.`] : [],
+        };
+    }
+    return {
+        rows: shown.map(key => ({ measure: measureName(key), [valueKey]: value(key) })),
+        valueKey,
+        summary: `${list}${out.length ? ` — out of ${out.join(' and ')}` : ''}${besideText}.`,
+        insights: out.length ? [`Worked out over ${out.join(' and ')}.`] : [],
+    };
+}
+
 /** Chart, narrative and insights for an executed query — all local. */
 function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
     const { question, sql, reply: parsed, model, dataset, repairAttempts, tokens } = input;
@@ -874,10 +949,16 @@ function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
     const returned = relabelYesNo(input.rows.slice(0, 500), parsed.dimensions || []).rows;
     // "Highest and lowest X per group": one row per group, item names kept.
     const extremes = normaliseExtremes(returned, `${question} ${input.originalQuestion || ''}`);
-    const rows = extremes ? extremes.rows : returned;
+    // One row of several measures ("% with hypertension, % with diabetes, …,
+    // appointments"): one bar per measure of the same kind; a count beside
+    // rates is context, never drawn on the same % axis.
+    const unpivoted = extremes ? null : oneRowOfMeasures(returned, parsed.measures);
+    const rows = extremes ? extremes.rows : unpivoted ? unpivoted.rows : returned;
     const plan = extremes
         ? planFromResult(question, rows, { dimensions: [extremes.group], measures: extremes.roles.map(role => role.value) })
-        : planFromResult(question, rows, { dimensions: parsed.dimensions, measures: parsed.measures });
+        : unpivoted
+            ? planFromResult(question, rows, { dimensions: unpivoted.single ? [] : ['measure'], measures: [unpivoted.valueKey] })
+            : planFromResult(question, rows, { dimensions: parsed.dimensions, measures: parsed.measures });
     const profile = profileResult(rows, plan, model);
     // The measure the plan leads with (a rate before the count beside it) leads the chart and insights too.
     const lead = plan.metrics[0]?.field;
@@ -914,7 +995,7 @@ function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
     const cautions = input.cautions || (quick ? [quick] : []);
     const insights = [...cautions, ...(extremesText ? extremesText.insights : buildInsights(rows, profile, plan, currency))].slice(0, Math.max(4, cautions.length + 2));
     const narrative: ResultNarrative | undefined = narrativeBase
-        ? { ...narrativeBase, headline: parsed.title || narrativeBase.headline, insights, ...(cautions.length ? { cautions } : {}), ...(extremesText ? { summary: extremesText.summary } : {}) }
+        ? { ...narrativeBase, headline: parsed.title || narrativeBase.headline, insights: unpivoted ? [...cautions, ...unpivoted.insights] : insights, ...(cautions.length ? { cautions } : {}), ...(extremesText ? { summary: extremesText.summary } : {}), ...(unpivoted ? { summary: unpivoted.summary } : {}) }
         : undefined;
 
     const explanation = rows.length
