@@ -28,7 +28,7 @@ import { UserRole } from '../types';
 import { useAuthStore } from '../store/useAuthStore';
 import { useAppStore } from '../store/useAppStore';
 import { useTheme } from './ThemeProvider';
-import { runAISQLPipeline } from '../services/ai-sql';
+import { runCurrentAISQL } from '../services/benchmark/aiSqlAccuracy';
 import type { PrivacyMode } from '../services/ai-sql/privacyMode';
 import { benchmarkRunToCsv, benchmarkRunToJson } from '../services/benchmark/export';
 import { ensureDuckDBReady, executeSQLViaDuckDB, reloadIsolatedBenchmarkData, resetDuckDB } from '../services/duckdbEngine';
@@ -379,15 +379,8 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
           loadDataset: loadResearchBenchmarkDataset,
           reloadDataset: reloadIsolatedBenchmarkData,
           executeGoldSql: async (rows, sql, timeContext, relatedTables) => executeSQLViaDuckDB(rows, sql, timeContext, relatedTables),
-          runPipeline: async (question, dataset) => runAISQLPipeline(
-            question,
-            dataset,
-            undefined,
-            undefined,
-            undefined,
-            true,
-            { requestPurpose: 'benchmark', privacyModeOverride: runPrivacyMode },
-          ),
+          // The AI SQL screen's own pipeline, graded on its raw query result.
+          runPipeline: runCurrentAISQL,
         },
         {
           scope: runScope,
@@ -1066,7 +1059,7 @@ export const BenchmarkLabView: React.FC<BenchmarkLabViewProps> = ({ activeDatase
               <div className="mt-6 space-y-3">
                 {[
                   ['1', 'Fixture integrity', 'Gold SQL is executed against the embedded dataset and must reproduce the frozen output before AI SQL is scored.'],
-                  ['2', 'Production pipeline', 'The same runAISQLPipeline entry point used by the product receives one isolated question with cache bypass enabled and the run-scoped privacy mode selected by the administrator.'],
+                  ['2', 'Production pipeline', 'The same pipeline the AI SQL screen uses receives one isolated question, exactly as a user would type it; a clarifying question is answered with its first option. The AI sees column names and types only.'],
                   ['3', 'Local execution', 'Candidate SQL executes in DuckDB-WASM. BIRD gold SQL is rechecked locally; Spider 2.0 uses published result files. Private mode shares metadata, not database rows.'],
                   ['4', 'Value-set equivalence', 'Aliases, harmless column naming differences, row order, nulls, and numeric tolerance are normalized. Sorting never changes execution correctness.'],
                   ['5', 'Independent diagnostics', 'Matching values count as correct. Safety and SQL-validation warnings remain visible and continue to affect their own rates without overriding execution accuracy.'],

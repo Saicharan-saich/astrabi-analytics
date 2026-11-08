@@ -19,3 +19,8 @@ root.render(
     </MotionConfig>
   </React.StrictMode>
 );
+
+// AI SQL accuracy console (admin research tool): only loaded with ?qi-accuracy in the address.
+if (new URLSearchParams(window.location.search).has('qi-accuracy')) {
+  import('./services/benchmark/aiSqlAccuracy').then(module => module.installAccuracyConsole());
+}

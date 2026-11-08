@@ -8,7 +8,8 @@ export type BenchmarkSuiteId =
   | 'spider-dev-research'
   | 'bird-dev-research'
   | 'bird-dev-holdout'
-  | 'spider2-lite-holdout';
+  | 'spider2-lite-holdout'
+  | 'quickinsight-business';
 
 export type BenchmarkCorpusId = 'legacy-550' | 'holdout-550';
 

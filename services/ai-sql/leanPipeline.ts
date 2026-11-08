@@ -97,6 +97,8 @@ export interface LeanRunOptions {
      * for a follow-up. Never results, rows or values.
      */
     context?: ContextTurn[];
+    /** Admin accuracy runs: audited benchmark budget, never the user's daily allowance. */
+    requestPurpose?: 'benchmark';
 }
 
 /** What the model returns. Exported for tests. */
@@ -721,7 +723,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     const reply = await fetchWithFallback([
         { role: 'system', content: context.length ? `${LEAN_SYSTEM_PROMPT}${LEAN_CONTEXT_RULES}` : LEAN_SYSTEM_PROMPT },
         { role: 'user', content: userContent },
-    ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000 });
+    ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000, requestPurpose: options.requestPurpose });
     let tokens = Number(reply.data?.usage?.total_tokens) || 0;
     const parsed = parseLeanReply(reply.data?.choices?.[0]?.message?.content || '');
 
@@ -757,7 +759,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         const repaired = await fetchWithFallback([
             { role: 'system', content: `${LEAN_SYSTEM_PROMPT}\n\nThe query below failed in DuckDB. Return the same JSON shape with a corrected "sql". Keep the meaning of the question.` },
             { role: 'user', content: `DATA DESCRIPTION\n${schema}\n\nQUESTION\n${standalone}\n\nFAILED SQL\n${sql}\n\nDUCKDB ERROR (values removed)\n${scrubErrorForModel(execution.error)}` },
-        ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000 });
+        ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000, requestPurpose: options.requestPurpose });
         tokens += Number(repaired.data?.usage?.total_tokens) || 0;
         const fixed = parseLeanReply(repaired.data?.choices?.[0]?.message?.content || '');
         if (fixed.action === 'answer') {
