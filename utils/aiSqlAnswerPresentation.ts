@@ -7,6 +7,7 @@ import { AggregationType, AnalysisType, TimeGrain, type AnalysisResult, type For
 import type { AISQLPipelineResult } from '../services/ai-sql/types';
 import { aiSqlPresentationChart } from './chartSuggestions';
 import { percentScaleFromSql } from './sqlPercentScale';
+import { guardAnswer, type GuardProblem } from './answerGuard';
 
 export const AI_SQL_DEFAULT_FORMATTING: FormattingConfig = {
     colorMode: 'vibrant',
@@ -32,7 +33,15 @@ export const AI_SQL_DEFAULT_FORMATTING: FormattingConfig = {
 const CURRENCY_FORMAT: Record<string, FormattingConfig['numberFormat']> = { USD: 'currency_usd', GBP: 'currency_gbp', EUR: 'currency_eur' };
 const AXIS_FORMAT: Record<string, FormattingConfig['numberFormat']> = { percent: 'percent', currency_usd: 'currency_usd', compact: 'compact' };
 
-export function presentLeanAnswer(result: AISQLPipelineResult, questionLabel: string): { analysis: AnalysisResult; formatting: FormattingConfig } {
+export function presentLeanAnswer(result: AISQLPipelineResult, questionLabel: string): { analysis: AnalysisResult; formatting: FormattingConfig; problems: GuardProblem[] } {
+    // What is drawn must agree with the numbers (utils/answerGuard): repaired here, listed for tests and reports.
+    const drawn = presentUnguarded(result, questionLabel);
+    const guarded = guardAnswer(drawn);
+    if (guarded.problems.length && typeof console !== 'undefined') console.warn('[answer-guard]', guarded.problems);
+    return { analysis: guarded.analysis, formatting: guarded.formatting, problems: guarded.problems };
+}
+
+function presentUnguarded(result: AISQLPipelineResult, questionLabel: string): { analysis: AnalysisResult; formatting: FormattingConfig } {
     // Money in the file's own currency (from the SQL's source columns).
     const axisFormat = result.chart.currency && CURRENCY_FORMAT[result.chart.currency]
         && (!result.chart.leftAxisFormat || result.chart.leftAxisFormat === 'currency_usd' || result.chart.leftAxisFormat === 'compact')

@@ -38,6 +38,7 @@ import { formatSQL } from '../sqlFormatter';
 import { formatContextForPrompt, type ContextTurn } from './chatContext';
 import { averageCaution, groupedAverageMessage } from '../../utils/averageCheck';
 import { relabelYesNo } from './plainLabels';
+import { guardAnswer, valuesArePartsOfWhole } from '../../utils/answerGuard';
 import { averagedRatioNote, averageNotesFromValues, averageValuesQuery, fillMonthlyGaps, missingMonthsNote, partialMonthNote, perItemColumns, perItemSumNote, perLineAverageNote, summedBalanceNote } from './numberChecks';
 
 // ── Public types ─────────────────────────────────────────────────────
@@ -792,7 +793,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     return result;
 }
 
-interface LeanAnswerInput {
+export interface LeanAnswerInput {
     question: string;
     sql: string;
     rows: Record<string, any>[];
@@ -942,23 +943,14 @@ export function oneRowOfMeasures(rows: Record<string, any>[], hinted?: string[])
     };
 }
 
-/**
- * True when the values can be drawn as slices of one whole: shares that add up
- * to about 100%, or plain amounts (a pie of sales by region). Rates that add up
- * to anything else — overlapping conditions, each region's own return rate —
- * are not slices.
- */
-export function partsOfAWhole(rows: Record<string, any>[], key: string): boolean {
-    const values = rows.map(row => Number(row[key])).filter(Number.isFinite);
-    if (!values.length || values.some(value => value < 0)) return false;
-    if (!RATE_COLUMN.test(key)) return true;
-    const sum = values.reduce((total, value) => total + value, 0);
-    return Math.abs(sum - 100) <= 1.5 || Math.abs(sum - 1) <= 0.015;
-}
+/** Re-exported for tests: the shared rule lives in utils/answerGuard. */
+export const partsOfAWhole = valuesArePartsOfWhole;
 
 /** Chart, narrative and insights for an executed query — all local. */
-function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
+export function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
     const { question, sql, reply: parsed, model, dataset, repairAttempts, tokens } = input;
+    // SUM/AVG over a filter that matched nothing comes back as one row of blanks: that is "no rows matched".
+    if (input.rows.length === 1 && Object.values(input.rows[0]).every(value => value === null || value === undefined)) input = { ...input, rows: [] };
     // Yes/no groupings read as words ("Holiday" / "Not holiday"), never 0 and 1.
     const returned = relabelYesNo(input.rows.slice(0, 500), parsed.dimensions || []).rows;
     // "Highest and lowest X per group": one row per group, item names kept.
@@ -1013,9 +1005,14 @@ function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
     const quick = input.cautions ? null : averageCautionForSql(sql, dataset.rows, plan.dimensions.map(item => item.field));
     const cautions = input.cautions || (quick ? [quick] : []);
     const insights = [...cautions, ...(extremesText ? extremesText.insights : buildInsights(rows, profile, plan, currency))].slice(0, Math.max(4, cautions.length + 2));
-    const narrative: ResultNarrative | undefined = narrativeBase
+    const draftNarrative: ResultNarrative | undefined = narrativeBase
         ? { ...narrativeBase, headline: parsed.title || narrativeBase.headline, insights: unpivoted ? [...cautions, ...unpivoted.insights] : insights, ...(cautions.length ? { cautions } : {}), ...(extremesText ? { summary: extremesText.summary } : {}), ...(unpivoted ? { summary: unpivoted.summary } : {}) }
         : undefined;
+    // The words a person reads never carry internal names or NaN (utils/answerGuard).
+    const textCheck = draftNarrative ? guardAnswer({ analysis: { data: [], xKey: '', yKey: '' } as any, formatting: {} as any }, draftNarrative) : null;
+    const narrative: ResultNarrative | undefined = draftNarrative && textCheck
+        ? { ...draftNarrative, headline: textCheck.text.headline || draftNarrative.headline.replace(/_/g, ' '), summary: textCheck.text.summary || `Here ${rows.length === 1 ? 'is the result' : `are the ${rows.length.toLocaleString()} results`}.`, insights: textCheck.text.insights || [] }
+        : draftNarrative;
 
     const explanation = rows.length
         ? parsed.explanation || `Answered with one query on your data (${rows.length.toLocaleString()} row${rows.length === 1 ? '' : 's'}).`

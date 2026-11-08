@@ -81,6 +81,7 @@ import { percentScaleOf, percentScalesByKey, scaleForName, toPercentPoints } fro
 import type { ChartPointSelection } from '../utils/explore';
 import { useAppStore } from '../store/useAppStore';
 import { doughnutCenterPlugin, stackTotalsPlugin } from './charts/cleanChartPlugins';
+import { arcLegendMode, RATE_NAME } from '../utils/answerGuard';
 
 interface ChartVisualizationProps {
     data: any[];
@@ -1390,9 +1391,8 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // Separate rates (each region's return rate, % with each condition) are
         // not slices of one whole: no "Total" in the middle, no share of their sum.
         const arcValues: number[] = (chartData?.datasets?.[0]?.data || []).map((v: any) => Number(v) || 0);
-        const arcSum = arcValues.reduce((a, b) => a + b, 0);
-        const ratesNotParts = isPieChart && /(^|_)(rate|pct|percent|percentage|share|ratio)($|_)/i.test(String(yKey || ''))
-            && Math.abs(arcSum - 100) > 1.5 && Math.abs(arcSum - 1) > 0.015;
+        const arcMode = arcLegendMode(String(yKey || ''), arcValues);
+        const ratesNotParts = isPieChart && arcMode.labels === 'own-value';
         const plottedDatasetCount = (chartData?.datasets || []).filter((dataset: any) => !dataset.qiHelper).length;
         // Bridge waterfalls (total → changes → total): when the changes are small
         // next to the totals, start the value axis near the lowest level so the
@@ -1574,7 +1574,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                 return base.map((item: any, index: number) => ({
                                     ...item,
                                     text: ratesNotParts
-                                        ? `${item.text}  ${values[index].toLocaleString(undefined, { maximumFractionDigits: 1 })}%`
+                                        ? `${item.text}  ${RATE_NAME.test(String(yKey || '')) ? `${values[index].toLocaleString(undefined, { maximumFractionDigits: 1 })}%` : formatCompactLabel(values[index])}`
                                         : `${item.text}  ${Math.round((values[index] / total) * 100)}%`,
                                 }));
                             },
@@ -1984,8 +1984,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
 
                     const catName = dataLabels[index] || '';
                     // Separate rates show their own value, not a share of their sum.
-                    const ownRate = /(^|_)(rate|pct|percent|percentage|share|ratio)($|_)/i.test(String(yKey || '')) && Math.abs(total - 100) > 1.5 && Math.abs(total - 1) > 0.015;
-                    const labelText = ownRate ? `${catName}: ${Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 })}%` : `${catName}: ${pct.toFixed(1)}%`;
+                    const ownRate = arcLegendMode(String(yKey || ''), dataset.data.map((v: any) => Number(v) || 0)).labels === 'own-value';
+                    const ownText = RATE_NAME.test(String(yKey || '')) ? `${Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 })}%` : formatCompactLabel(Number(value));
+                    const labelText = ownRate ? `${catName}: ${ownText}` : `${catName}: ${pct.toFixed(1)}%`;
                     const side: 'left' | 'right' = outerX >= centerX ? 'right' : 'left';
 
                     labelInfos.push({ index, angle: midAngle, labelText, outerX, outerY, side, weight: pct });
