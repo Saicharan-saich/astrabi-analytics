@@ -96,3 +96,25 @@ Q = [
 ]
 # DuckDB-only gold (not portable to SQLite): frozen from pandas instead.
 DUCK_ONLY = {'e11': 'SELECT MEDIAN(salary) AS median_salary FROM data'}
+
+# ── The way people really type: typos, slang, shorthand ──
+Q += [
+('m01', 'retail', 'medium', 'Messy phrasing', 'whats our turnover', 'SELECT ROUND(SUM(revenue), 2) AS revenue FROM data'),
+('m02', 'retail', 'medium', 'Messy phrasing', 'reveneu by catagory pls', 'SELECT category, ROUND(SUM(revenue), 2) AS revenue FROM data GROUP BY category'),
+('m03', 'retail', 'medium', 'Messy phrasing', 'takings by region in 2025', "SELECT region, ROUND(SUM(revenue), 2) AS revenue FROM data WHERE order_date >= '2025-01-01' GROUP BY region"),
+('m04', 'retail', 'medium', 'Messy phrasing', 'rev per customer?', 'SELECT ROUND(SUM(revenue) / COUNT(DISTINCT customer_id), 2) AS revenue_per_customer FROM data'),
+('m05', 'retail', 'hard', 'Messy phrasing', 'how much did we lose on returned electronics in 2024', "SELECT ROUND(SUM(revenue), 2) AS returned_revenue FROM data WHERE category = 'Electronics' AND returned = 'Yes' AND order_date BETWEEN '2024-01-01' AND '2024-12-31'"),
+('m06', 'retail', 'medium', 'Messy phrasing', 'online vs in store orders this year', "SELECT channel, COUNT(DISTINCT order_id) AS orders FROM data WHERE order_date >= '2025-01-01' GROUP BY channel"),
+('m07', 'weekly', 'medium', 'Messy phrasing', 'how much did store 7 make in 2012', "SELECT ROUND(SUM(weekly_sales), 2) AS sales FROM data WHERE store = 7 AND date >= '2012-01-01'"),
+('m08', 'weekly', 'medium', 'Messy phrasing', 'avg sales per week, holiday vs normal', 'SELECT holiday_flag, ROUND(AVG(weekly_sales), 2) AS avg_weekly_sales FROM data GROUP BY holiday_flag'),
+('m09', 'weekly', 'medium', 'Messy phrasing', 'which store did worst in 2010', "SELECT store FROM data WHERE date BETWEEN '2010-01-01' AND '2010-12-31' GROUP BY store ORDER BY SUM(weekly_sales) ASC LIMIT 1"),
+('m10', 'appointments', 'medium', 'Messy phrasing', 'how many ppl didnt turn up', 'SELECT COUNT(*) AS missed FROM data WHERE NOT showed_up'),
+('m11', 'appointments', 'medium', 'Messy phrasing', 'no show % for under 18s', 'SELECT ROUND(100.0 * SUM(CASE WHEN showed_up THEN 0 ELSE 1 END) / COUNT(*), 2) AS no_show_rate_pct FROM data WHERE age < 18'),
+('m12', 'appointments', 'hard', 'Messy phrasing', 'top 3 neighbourhoods for missed appts', 'SELECT neighbourhood, COUNT(*) AS missed FROM data WHERE NOT showed_up GROUP BY neighbourhood ORDER BY COUNT(*) DESC LIMIT 3'),
+('m13', 'appointments', 'medium', 'Messy phrasing', 'diabetics no show rate', 'SELECT ROUND(100.0 * SUM(CASE WHEN showed_up THEN 0 ELSE 1 END) / COUNT(*), 2) AS no_show_rate_pct FROM data WHERE diabetes'),
+('m14', 'employees', 'medium', 'Messy phrasing', 'staff turnover rate in sales dept', "SELECT ROUND(100.0 * SUM(CASE WHEN attrition = 'Yes' THEN 1 ELSE 0 END) / COUNT(*), 2) AS attrition_rate_pct FROM data WHERE department = 'Sales'"),
+('m15', 'employees', 'medium', 'Messy phrasing', 'who earns the most in marketing', "SELECT employee_id, salary FROM data WHERE department = 'Marketing' ORDER BY salary DESC LIMIT 1"),
+('m16', 'employees', 'medium', 'Messy phrasing', '% women in engineering', "SELECT ROUND(100.0 * SUM(CASE WHEN gender = 'Female' THEN 1 ELSE 0 END) / COUNT(*), 2) AS female_pct FROM data WHERE department = 'Engineering'"),
+('m17', 'employees', 'easy', 'Messy phrasing', 'avg pay for level 3 staff', 'SELECT ROUND(AVG(salary), 2) AS avg_salary FROM data WHERE job_level = 3'),
+('m18', 'employees', 'medium', 'Messy phrasing', 'attrition among remote workers', "SELECT ROUND(100.0 * SUM(CASE WHEN attrition = 'Yes' THEN 1 ELSE 0 END) / COUNT(*), 2) AS attrition_rate_pct FROM data WHERE location = 'Remote'"),
+]

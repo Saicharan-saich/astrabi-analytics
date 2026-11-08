@@ -2781,6 +2781,542 @@ const CASES: BenchmarkCase[] = [
       "employees"
     ],
     "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m01",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:retail:m01",
+    "question": "whats our turnover",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/retail-d14026d08cc0.json.gz",
+    "datasetSha256": "d14026d08cc028978eb72d462337baf9718bbf25aa56452e921bfc2313fe33df",
+    "goldSql": "SELECT ROUND(SUM(revenue), 2) AS revenue FROM data",
+    "expectedRows": [
+      {
+        "revenue": 248377.0
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "retail"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m02",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:retail:m02",
+    "question": "reveneu by catagory pls",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/retail-d14026d08cc0.json.gz",
+    "datasetSha256": "d14026d08cc028978eb72d462337baf9718bbf25aa56452e921bfc2313fe33df",
+    "goldSql": "SELECT category, ROUND(SUM(revenue), 2) AS revenue FROM data GROUP BY category",
+    "expectedRows": [
+      {
+        "category": "Clothing",
+        "revenue": 66586.0
+      },
+      {
+        "category": "Electronics",
+        "revenue": 123368.0
+      },
+      {
+        "category": "Grocery",
+        "revenue": 5980.0
+      },
+      {
+        "category": "Home",
+        "revenue": 33445.0
+      },
+      {
+        "category": "Toys",
+        "revenue": 18998.0
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "retail"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m03",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:retail:m03",
+    "question": "takings by region in 2025",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/retail-d14026d08cc0.json.gz",
+    "datasetSha256": "d14026d08cc028978eb72d462337baf9718bbf25aa56452e921bfc2313fe33df",
+    "goldSql": "SELECT region, ROUND(SUM(revenue), 2) AS revenue FROM data WHERE order_date >= '2025-01-01' GROUP BY region",
+    "expectedRows": [
+      {
+        "region": "East",
+        "revenue": 22183.0
+      },
+      {
+        "region": "North",
+        "revenue": 19176.0
+      },
+      {
+        "region": "South",
+        "revenue": 22282.0
+      },
+      {
+        "region": "West",
+        "revenue": 19033.5
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "retail"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m04",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:retail:m04",
+    "question": "rev per customer?",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/retail-d14026d08cc0.json.gz",
+    "datasetSha256": "d14026d08cc028978eb72d462337baf9718bbf25aa56452e921bfc2313fe33df",
+    "goldSql": "SELECT ROUND(SUM(revenue) / COUNT(DISTINCT customer_id), 2) AS revenue_per_customer FROM data",
+    "expectedRows": [
+      {
+        "revenue_per_customer": 466.87
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "retail"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m05",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:retail:m05",
+    "question": "how much did we lose on returned electronics in 2024",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "hard",
+    "datasetRef": "/benchmarks/business-v1/datasets/retail-d14026d08cc0.json.gz",
+    "datasetSha256": "d14026d08cc028978eb72d462337baf9718bbf25aa56452e921bfc2313fe33df",
+    "goldSql": "SELECT ROUND(SUM(revenue), 2) AS returned_revenue FROM data WHERE category = 'Electronics' AND returned = 'Yes' AND order_date BETWEEN '2024-01-01' AND '2024-12-31'",
+    "expectedRows": [
+      {
+        "returned_revenue": 5250.0
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "retail"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m06",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:retail:m06",
+    "question": "online vs in store orders this year",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/retail-d14026d08cc0.json.gz",
+    "datasetSha256": "d14026d08cc028978eb72d462337baf9718bbf25aa56452e921bfc2313fe33df",
+    "goldSql": "SELECT channel, COUNT(DISTINCT order_id) AS orders FROM data WHERE order_date >= '2025-01-01' GROUP BY channel",
+    "expectedRows": [
+      {
+        "channel": "In-Store",
+        "orders": 277
+      },
+      {
+        "channel": "Online",
+        "orders": 197
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "retail"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m07",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:weekly:m07",
+    "question": "how much did store 7 make in 2012",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/weekly-0059558efb15.json.gz",
+    "datasetSha256": "0059558efb15283650295ada0191469b8028885326a4ad7dc4eeb6f1f0475dd6",
+    "goldSql": "SELECT ROUND(SUM(weekly_sales), 2) AS sales FROM data WHERE store = 7 AND date >= '2012-01-01'",
+    "expectedRows": [
+      {
+        "sales": 65138242.28
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "weekly"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m08",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:weekly:m08",
+    "question": "avg sales per week, holiday vs normal",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/weekly-0059558efb15.json.gz",
+    "datasetSha256": "0059558efb15283650295ada0191469b8028885326a4ad7dc4eeb6f1f0475dd6",
+    "goldSql": "SELECT holiday_flag, ROUND(AVG(weekly_sales), 2) AS avg_weekly_sales FROM data GROUP BY holiday_flag",
+    "expectedRows": [
+      {
+        "holiday_flag": 0,
+        "avg_weekly_sales": 1566101.37
+      },
+      {
+        "holiday_flag": 1,
+        "avg_weekly_sales": 1700538.89
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "weekly"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m09",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:weekly:m09",
+    "question": "which store did worst in 2010",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/weekly-0059558efb15.json.gz",
+    "datasetSha256": "0059558efb15283650295ada0191469b8028885326a4ad7dc4eeb6f1f0475dd6",
+    "goldSql": "SELECT store FROM data WHERE date BETWEEN '2010-01-01' AND '2010-12-31' GROUP BY store ORDER BY SUM(weekly_sales) ASC LIMIT 1",
+    "expectedRows": [
+      {
+        "store": 8
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "weekly"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m10",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:appointments:m10",
+    "question": "how many ppl didnt turn up",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/appointments-ac8240e379cb.json.gz",
+    "datasetSha256": "ac8240e379cb69321ceaea534d68aef1cad1a177b54cb5d376efc06ca6c7458a",
+    "goldSql": "SELECT COUNT(*) AS missed FROM data WHERE NOT showed_up",
+    "expectedRows": [
+      {
+        "missed": 658
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "appointments"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m11",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:appointments:m11",
+    "question": "no show % for under 18s",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/appointments-ac8240e379cb.json.gz",
+    "datasetSha256": "ac8240e379cb69321ceaea534d68aef1cad1a177b54cb5d376efc06ca6c7458a",
+    "goldSql": "SELECT ROUND(100.0 * SUM(CASE WHEN showed_up THEN 0 ELSE 1 END) / COUNT(*), 2) AS no_show_rate_pct FROM data WHERE age < 18",
+    "expectedRows": [
+      {
+        "no_show_rate_pct": 18.89
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "appointments"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m12",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:appointments:m12",
+    "question": "top 3 neighbourhoods for missed appts",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "hard",
+    "datasetRef": "/benchmarks/business-v1/datasets/appointments-ac8240e379cb.json.gz",
+    "datasetSha256": "ac8240e379cb69321ceaea534d68aef1cad1a177b54cb5d376efc06ca6c7458a",
+    "goldSql": "SELECT neighbourhood, COUNT(*) AS missed FROM data WHERE NOT showed_up GROUP BY neighbourhood ORDER BY COUNT(*) DESC LIMIT 3",
+    "expectedRows": [
+      {
+        "neighbourhood": "Santos Dumont",
+        "missed": 114
+      },
+      {
+        "neighbourhood": "Centro",
+        "missed": 88
+      },
+      {
+        "neighbourhood": "Maruípe",
+        "missed": 86
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "appointments"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m13",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:appointments:m13",
+    "question": "diabetics no show rate",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/appointments-ac8240e379cb.json.gz",
+    "datasetSha256": "ac8240e379cb69321ceaea534d68aef1cad1a177b54cb5d376efc06ca6c7458a",
+    "goldSql": "SELECT ROUND(100.0 * SUM(CASE WHEN showed_up THEN 0 ELSE 1 END) / COUNT(*), 2) AS no_show_rate_pct FROM data WHERE diabetes",
+    "expectedRows": [
+      {
+        "no_show_rate_pct": 15.33
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "appointments"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m14",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:employees:m14",
+    "question": "staff turnover rate in sales dept",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/employees-d3fefd69b3e1.json.gz",
+    "datasetSha256": "d3fefd69b3e1b8f5d1928ec8a6dec43e17e4884add8cfbde74ac608ecc1f2bc9",
+    "goldSql": "SELECT ROUND(100.0 * SUM(CASE WHEN attrition = 'Yes' THEN 1 ELSE 0 END) / COUNT(*), 2) AS attrition_rate_pct FROM data WHERE department = 'Sales'",
+    "expectedRows": [
+      {
+        "attrition_rate_pct": 12.28
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "employees"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m15",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:employees:m15",
+    "question": "who earns the most in marketing",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/employees-d3fefd69b3e1.json.gz",
+    "datasetSha256": "d3fefd69b3e1b8f5d1928ec8a6dec43e17e4884add8cfbde74ac608ecc1f2bc9",
+    "goldSql": "SELECT employee_id, salary FROM data WHERE department = 'Marketing' ORDER BY salary DESC LIMIT 1",
+    "expectedRows": [
+      {
+        "employee_id": "E00187",
+        "salary": 95500
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "employees"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m16",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:employees:m16",
+    "question": "% women in engineering",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/employees-d3fefd69b3e1.json.gz",
+    "datasetSha256": "d3fefd69b3e1b8f5d1928ec8a6dec43e17e4884add8cfbde74ac608ecc1f2bc9",
+    "goldSql": "SELECT ROUND(100.0 * SUM(CASE WHEN gender = 'Female' THEN 1 ELSE 0 END) / COUNT(*), 2) AS female_pct FROM data WHERE department = 'Engineering'",
+    "expectedRows": [
+      {
+        "female_pct": 52.38
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "employees"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m17",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:employees:m17",
+    "question": "avg pay for level 3 staff",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "easy",
+    "datasetRef": "/benchmarks/business-v1/datasets/employees-d3fefd69b3e1.json.gz",
+    "datasetSha256": "d3fefd69b3e1b8f5d1928ec8a6dec43e17e4884add8cfbde74ac608ecc1f2bc9",
+    "goldSql": "SELECT ROUND(AVG(salary), 2) AS avg_salary FROM data WHERE job_level = 3",
+    "expectedRows": [
+      {
+        "avg_salary": 68195.33
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "employees"
+    ],
+    "oracleQuality": "no_issue_found"
+  },
+  {
+    "id": "business-m18",
+    "suiteId": "quickinsight-business",
+    "sourceId": "quickinsight-business:employees:m18",
+    "question": "attrition among remote workers",
+    "context": null,
+    "category": "Messy phrasing",
+    "difficulty": "medium",
+    "datasetRef": "/benchmarks/business-v1/datasets/employees-d3fefd69b3e1.json.gz",
+    "datasetSha256": "d3fefd69b3e1b8f5d1928ec8a6dec43e17e4884add8cfbde74ac608ecc1f2bc9",
+    "goldSql": "SELECT ROUND(100.0 * SUM(CASE WHEN attrition = 'Yes' THEN 1 ELSE 0 END) / COUNT(*), 2) AS attrition_rate_pct FROM data WHERE location = 'Remote'",
+    "expectedRows": [
+      {
+        "attrition_rate_pct": 13.18
+      }
+    ],
+    "comparison": {
+      "orderMatters": false,
+      "absoluteTolerance": 0.01,
+      "relativeTolerance": 0.005
+    },
+    "tags": [
+      "business",
+      "employees"
+    ],
+    "oracleQuality": "no_issue_found"
   }
 ];
 
@@ -2789,8 +3325,8 @@ export const BUSINESS_BENCHMARK_SUITE: BenchmarkSuite = {
   name: 'QuickInsight business questions',
   shortName: 'Business',
   version: '1.0.0',
-  manifestSha256: '8aa9348a9e20ea2308b46944532e6d6f5e7a56893de138fd3439b80ccad0f406',
-  description: '85 plain-English business questions on retail orders, weekly store sales, appointments and HR data.',
+  manifestSha256: '3df7187b3add36aa81f2ea05c7b5fec778dcabb81ef1356cf9c06ac8581295a0',
+  description: '103 plain-English business questions on retail orders, weekly store sales, appointments and HR data.',
   methodology: 'Execution accuracy: the SQL the AI writes is run on the full cleaned dataset and its result compared with a frozen gold answer (order-insensitive, 0.5% / 0.01 tolerance).',
   accent: 'amber',
   evaluationClass: 'curated-compatibility',
