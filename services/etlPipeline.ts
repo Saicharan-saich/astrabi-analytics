@@ -26,7 +26,7 @@ import {
     detectPlaceholderValues, type NumberStyle,
 } from './etlHardening';
 import {
-    dedupeRows, removeTotalRows, unpivotPeriodColumns, addPeriodFromYearMonth,
+    dedupeRows, removeTotalRows, unpivotPeriodColumns, addPeriodFromYearMonth, foldReportSections, fillOrderLevelDetails,
     findRepeatedHeaderAmounts, allocateAcrossLines, findLineColumns, reconcileLineTotals,
 } from './etlMeasureIntegrity';
 
@@ -59,6 +59,8 @@ export interface ColumnProfileData {
     min?: number;
     max?: number;
     dateFormatCandidate: string | null;
+    /** Day-first reading for d/d/yyyy values in this column. */
+    slashDayFirst?: boolean;
     currencyDetected: boolean;
     percentageDetected: boolean;
     wordNumberRate: number;
@@ -76,6 +78,12 @@ export interface ColumnProfileData {
     unitNumberRate?: number;
     /** Share of values that are durations ("01:30:00"). */
     durationRate?: number;
+    /** "15:06" in a column named like a clock time (clock_in, start, time next to a date): a time of day, not a duration. */
+    timeOfDay?: boolean;
+    /** Filled cells read as sentences (free text). */
+    sentenceLike?: boolean;
+    /** Every value is a 2- or 3-letter code (country, currency). */
+    codeLength?: 2 | 3;
     /** 'points' when "12%" cells sit beside plain fractions (0.12) that must be scaled to match. */
     percentMode?: 'points' | null;
     /** Share of numeric cells written with a % sign ("12.5%"). */
@@ -155,6 +163,9 @@ const DATE_FORMATS: { id: string; regex: RegExp; parse: (m: RegExpMatchArray) =>
     { id: 'MM/DD/YYYY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/, parse: (m) => ({ y: +m[3], m: +m[1], d: +m[2] }) },
     // EU: 08-06-2023
     { id: 'DD/MM/YYYY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/, parse: (m) => ({ y: +m[3], m: +m[2], d: +m[1] }) },
+    // Dotted day-first (Germany, Switzerland, much of Europe): 07.05.2025, 7.5.25
+    { id: 'DD.MM.YYYY', regex: /^(\d{1,2})\.(\d{1,2})\.(\d{4})$/, parse: (m) => ({ y: +m[3], m: +m[2], d: +m[1] }) },
+    { id: 'DD.MM.YY', regex: /^(\d{1,2})\.(\d{1,2})\.(\d{2})$/, parse: (m) => ({ y: pivotTwoDigitYear(+m[3]), m: +m[2], d: +m[1] }) },
     // Short year: 06/08/23, 6/8/23
     { id: 'MM/DD/YY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{2})$/, parse: (m) => ({ y: pivotTwoDigitYear(+m[3]), m: +m[1], d: +m[2] }) },
     { id: 'DD/MM/YY', regex: /^(\d{1,2})[-/](\d{1,2})[-/](\d{2})$/, parse: (m) => ({ y: pivotTwoDigitYear(+m[3]), m: +m[2], d: +m[1] }) },
@@ -183,8 +194,35 @@ const MONTH_MAP: Record<string, number> = {
 // ID column name patterns — includes abbreviated forms like acid (account-id), brid (branch-id), tno (txn-no)
 /** Ordinary words that end like an ID: "paid", "void", "valid", "casino", "piano". */
 const NOT_ID_WORDS = /^(paid|unpaid|prepaid|raid|said|laid|maid|void|avoid|valid|invalid|rapid|humid|fluid|solid|timid|vivid|acid|arid|lucid|covid|squid|druid|lipid|hybrid|stupid|liquid|casino|piano|volcano|techno|mono|stereo|keno|domino|tornado|ammo|logo|promo|demo|memo|tempo|veto|hero|zero|euro|auto|photo|video|radio|ratio|audio|studio|portfolio|scenario|bingo|mango|cargo|lingo|jumbo|combo|turbo)$/i;
+/** Columns people type sentences into: kept exactly as written. */
+const FREE_TEXT_NAME = /(^|_)(comments?|notes?|feedback|remarks?|reviews?|review_text|message|messages|memo|free_text|verbatim|suggestions?|complaints?|what_could_we_improve|anything_else|other_comments)($|_)/i;
+/** Most filled cells read as sentences: several words and few repeats. */
+function looksLikeSentences(rows: Record<string, any>[], col: string): boolean {
+    const values = rows.map(r => r[col]).filter(v => typeof v === 'string' && v.trim() !== '') as string[];
+    if (values.length < 10) return false;
+    const words = values.reduce((sum, v) => sum + v.trim().split(/\s+/).length, 0) / values.length;
+    const distinct = new Set(values.map(v => v.trim().toLowerCase())).size / values.length;
+    return words >= 6 && distinct >= 0.6;
+}
+/** Every filled value is a code of this many letters ("GBP", "gb"). */
+function strValuesAreCodes(rows: Record<string, any>[], col: string, length: number): boolean {
+    const values = rows.map(r => r[col]).filter(v => typeof v === 'string' && v.trim() !== '') as string[];
+    return values.length > 0 && values.every(v => new RegExp(`^[A-Za-z]{${length}}$`).test(v.trim()));
+}
+
+/** Names of a clock time (when something happened), as opposed to how long it took. */
+const CLOCK_NAME = /(^|_)(clock_?in|clock_?out|clocked_?in|clocked_?out|time_?in|time_?out|start|start_?time|end|end_?time|starts|ends|opens?|closes?|opening|closing|arrival|arrived|departure|departed|check_?in|check_?out|shift_?start|shift_?end|slot|from|until|in|out)($|_)/i;
+const HOW_LONG_NAME = /(duration|elapsed|length|worked|spent|wait|waiting|hours|hrs|minutes|mins|seconds|secs|total|taken|lap|runtime|run_time|break|overtime|handle|talk|hold|response|resolution|turnaround|lead|average|avg|mean)/i;
+function isClockTimeName(name: string, siblings: string[]): boolean {
+    if (HOW_LONG_NAME.test(name)) return false;
+    if (CLOCK_NAME.test(name)) return true;
+    // A bare "time" beside a date column is when it happened (POS exports: Date, Time).
+    return /^(time|time_of_day|local_time|txn_time|transaction_time|order_time|sale_time)$/i.test(name)
+        && siblings.some(other => other !== name && /(^|_)(date|day)($|_)/i.test(other));
+}
+
 /** Small whole-number scales that are measured: rating 1–5, bedrooms, children, stars. */
-const SCALE_NAME = /(rating|score|stars?|satisfaction|nps|likert|rank|bedrooms?|bathrooms?|rooms?|children|kids|people|persons?|guests?|adults?|members?|items|visits|nights|floors?|seats?|doors?|cylinders?|dependents?|siblings?|parch|sibsp|attempts|calls|logins|tickets|purchases|orders|employees|staff|headcount)/i;
+const SCALE_NAME = /(recommend|likely|likelihood|reorder|level|threshold|capacity|rating|score|stars?|satisfaction|nps|likert|rank|bedrooms?|bathrooms?|rooms?|children|kids|people|persons?|guests?|adults?|members?|items|visits|nights|floors?|seats?|doors?|cylinders?|dependents?|siblings?|parch|sibsp|attempts|calls|logins|tickets|purchases|orders|employees|staff|headcount)/i;
 const ID_PATTERNS = /(?:^id$|_id$|^id_|order_?id|cust(?:omer)?_?id|product_?id|trans(?:action)?_?id|invoice_?id|sku|code$|_code$|_no$|_num$|number$|_key$|^pk_|^fk_|^.{1,4}id$|^.{1,4}no$|^.{1,4}cd$|^s_?no$|^t_?no$|^sr_?no$|^acc_?(?:id|no)$|^acct_?(?:id|no)$|^emp_?(?:id|no)$|^cust_?(?:id|no)$|^br_?(?:id|no)$)/i;
 
 // Metric name patterns — exact match for standalone names
@@ -226,11 +264,15 @@ function isNumericAttribute(p: ColumnProfileData): boolean {
  */
 export type RoleDecision = { type: ColumnType; note?: { label: string; message: string } };
 export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
-    const isMetricName = METRIC_NAME_EXACT.test(p.name) || METRIC_KEYWORDS.test(p.name);
+    const isMetricName = METRIC_NAME_EXACT.test(p.name) || METRIC_KEYWORDS.test(p.name) || STRONG_METRIC_NAME.test(p.name)
+        || METRIC_KEYWORDS.test(p.name.replace(/s($|_)/g, '$1'));
     const isDateName = DATE_NAME_PATTERNS.test(p.name);
     const effectiveNumericRate = p.numericParseRate + (p.wordNumberRate || 0) + (p.unitNumberRate || 0);
     const keySig = keySignalFor(p, isMetricName);
     // R0 — Durations ("01:30:00") are measures (minutes), not text.
+    if (p.timeOfDay) {
+        return { type: ColumnType.DIMENSION, note: { label: 'Time Of Day', message: `Column '${p.name}' holds clock times (when something happened), so it is kept as a time of day — not added up as a duration.` } };
+    }
     if ((p.durationRate || 0) >= 0.8) {
         return { type: ColumnType.METRIC, note: { label: 'Duration Detection', message: `Column '${p.name}' holds durations (h:mm:ss); converted to minutes so it can be summed and averaged.` } };
     }
@@ -270,6 +312,10 @@ export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
     if (keySig.isKey) return { type: ColumnType.ID, note: { label: 'Key Detection', message: `Column '${p.name}' classified as ID — ${keySig.reason}.` } };
     // R7 — Numeric: a business metric UNLESS it looks like a numeric attribute.
     if (effectiveNumericRate >= 0.7 && p.distinctCount >= 10 && !ID_PATTERNS.test(p.name)) {
+        // A 0–10 recommend score or a reorder level is measured: averaged, not a label.
+        if (SCALE_NAME.test(p.name) && p.min !== undefined && p.min >= 0) {
+            return { type: ColumnType.METRIC, note: { label: 'Scale Detection', message: `Column '${p.name}' is a number scale — averaged, not summed by default.` } };
+        }
         if (isNumericAttribute(p)) {
             return { type: ColumnType.DIMENSION, note: { label: 'Attribute Detection', message: `Column '${p.name}' reclassified as DIMENSION (numeric attribute) — range: ${p.min}–${p.max}, distinct: ${p.distinctCount}/${p.totalValues}` } };
         }
@@ -381,7 +427,11 @@ export function toTitleCase(s: string): string {
     }
     // Each part of a hyphenated or slashed word is a word of its own:
     // "Mercedes-Benz", "C-Class", "Stoke-on-Trent" keep their capitals.
-    return s.replace(/\w\S*/g, w => {
+    // Short joining words inside a name stay lower case ("Cost of Goods Sold",
+    // "Point of Sale"); the first word is always capitalised.
+    const JOIN = /^(of|and|the|for|or|with|from|per|vs)$/i;
+    return s.replace(/\w\S*/g, (w, offset: number) => {
+        if (offset > 0 && JOIN.test(w)) return w.toLowerCase();
         if (/\d/.test(w) || !/[-/]/.test(w)) return /\d/.test(w) ? w : part(w);
         // "MERCEDES-BENZ" is shouting, not acronyms: only 1–2 letter parts stay capitals.
         const shouting = w === w.toUpperCase();
@@ -457,6 +507,21 @@ function isValidDate(y: number, m: number, d: number): boolean {
 }
 
 /** Try parsing a single value as a date using a specific format ID */
+/**
+ * A date with a clock time after it ("07.05.2025 13:35", "02/01/2025 9:05 PM"):
+ * the date part, and the time as HH:MM[:SS] so hour and minute grains still work.
+ */
+function splitClockTime(s: string): { date: string; time: string } | null {
+    const m = s.match(/^(.*\d)[\sT,]+(\d{1,2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?\s*([AaPp]\.?[Mm]\.?)?$/);
+    if (!m) return null;
+    let hour = +m[2];
+    const pm = m[5] && /^p/i.test(m[5]);
+    if (m[5]) { if (hour > 12) return null; if (pm && hour < 12) hour += 12; if (!pm && hour === 12) hour = 0; }
+    if (hour > 23 || +m[3] > 59 || (m[4] !== undefined && +m[4] > 59)) return null;
+    const pad = (n: number | string) => String(n).padStart(2, '0');
+    return { date: m[1].trim(), time: `${pad(hour)}:${m[3]}${m[4] !== undefined ? `:${m[4]}` : ''}` };
+}
+
 function tryParseDateWithFormat(raw: any, formatId: string): string | null {
     if (raw === null || raw === undefined) return null;
     // JS Date object (from Excel parsing)
@@ -480,16 +545,18 @@ function tryParseDateWithFormat(raw: any, formatId: string): string | null {
         const datePart = s.substring(0, 10);
         const [y, m, d] = datePart.split('-').map(Number);
         // Preserve full datetime string (crucial for hour/minute grains)
-        return isValidDate(y, m, d) ? s.replace(' ', 'T').split('.')[0] : null;
+        return isValidDate(y, m, d) ? s.replace(' ', 'T').split('.')[0].replace(/\s*(Z|[+-]\d{2}:?\d{2})$/, '') : null;
     }
-    // Find matching format
+    // Find matching format (a clock time after the date is kept)
+    const clock = splitClockTime(s);
+    const body = clock ? clock.date : s;
     for (const fmt of DATE_FORMATS) {
         if (fmt.id !== formatId) continue;
-        const match = s.match(fmt.regex);
+        const match = body.match(fmt.regex);
         if (!match) continue;
         const parsed = fmt.parse(match);
         if (parsed && isValidDate(parsed.y, parsed.m, parsed.d)) {
-            return toISO(parsed.y, parsed.m, parsed.d);
+            return toISO(parsed.y, parsed.m, parsed.d) + (clock ? `T${clock.time}` : '');
         }
     }
     return null;
@@ -527,7 +594,7 @@ function tryParseDateAny(raw: any): { iso: string; formatId: string } | null {
         const datePart = s.substring(0, 10);
         const [y, m, d] = datePart.split('-').map(Number);
         // Preserve full datetime (crucial for hour/minute grains)
-        return isValidDate(y, m, d) ? { iso: s.replace(' ', 'T').split('.')[0], formatId: 'YYYY-MM-DD' } : null;
+        return isValidDate(y, m, d) ? { iso: s.replace(' ', 'T').split('.')[0].replace(/\s*(Z|[+-]\d{2}:?\d{2})$/, ''), formatId: 'YYYY-MM-DD' } : null;
     }
     // Try native JS Date parsing for long strings like "Tue Nov 08 2016 00:00:00 GMT..."
     //
@@ -551,12 +618,14 @@ function tryParseDateAny(raw: any): { iso: string; formatId: string } | null {
             }
         }
     }
+    const clock = splitClockTime(s);
+    const body = clock ? clock.date : s;
     for (const fmt of DATE_FORMATS) {
-        const match = s.match(fmt.regex);
+        const match = body.match(fmt.regex);
         if (!match) continue;
         const parsed = fmt.parse(match);
         if (parsed && isValidDate(parsed.y, parsed.m, parsed.d)) {
-            return { iso: toISO(parsed.y, parsed.m, parsed.d), formatId: fmt.id };
+            return { iso: toISO(parsed.y, parsed.m, parsed.d) + (clock ? `T${clock.time}` : ''), formatId: fmt.id };
         }
     }
     return null;
@@ -733,6 +802,22 @@ function layer1_structuralNormalization(
         }
     }
 
+    // ── 1e1b: Report layouts (profit and loss): headings → a section column ──
+    if (!opts.keepTotalRows) {
+        const r = foldReportSections(rows);
+        if (r) {
+            const before = rows.length;
+            rows = r.rows;
+            const calc = r.calculatedLabels;
+            logs.push(log('Report Layout', 1, 'applied',
+                `Read this as a report: the headings (${r.sections.slice(0, 4).join(', ')}${r.sections.length > 4 ? ', …' : ''}) became a 'section' column`
+                + (r.renamedTo ? `, the unnamed first column became '${r.renamedTo}'` : '')
+                + (calc.length ? `, and ${calc.length} calculated line(s) (${calc.slice(0, 3).join(', ')}) were removed — they are worked out from the lines above, so adding them in would count money twice` : '')
+                + `. ${before} rows → ${rows.length}.`,
+                { rowsBefore: before, rowsAfter: rows.length, affectedColumns: ['section', r.labelColumn], removedRowSamples: r.calculated.slice(0, 10), revert: { option: 'keepTotalRows', value: true, label: 'Keep the report as uploaded' } }));
+        }
+    }
+
     // ── 1e2: Total / subtotal rows from report exports ──
     {
         const t = removeTotalRows(rows);
@@ -762,8 +847,21 @@ function layer1_structuralNormalization(
             const before = rows.length;
             rows = u.rows;
             logs.push(log('Unpivot Period Columns', 1, 'applied',
-                `Reshaped ${u.periodColumns.length} period columns (${u.periodColumns.slice(0, 4).join(', ')}${u.periodColumns.length > 4 ? ', …' : ''}) into 'period'${u.dated ? ' (as dates)' : ''} and 'value' so time can be trended and totals summed once. ${before} rows → ${rows.length}.`,
+                `Reshaped ${u.periodColumns.length} period columns (${u.periodColumns.slice(0, 4).join(', ')}${u.periodColumns.length > 4 ? ', …' : ''}) into 'period'${u.dated ? ' (as dates)' : ''} and 'value' so time can be trended and totals summed once.`
+                + (u.totalColumns.length ? ` The ${u.totalColumns.map(c => `'${c}'`).join(', ')} column adds up the periods, so it was left out (it would repeat on every period).` : '')
+                + ` ${before} rows → ${rows.length}.`,
                 { rowsBefore: before, rowsAfter: rows.length, affectedColumns: [...u.periodColumns, 'period', 'value'], revert: { option: 'keepWideLayout', value: true, label: 'Keep the original layout' } }));
+        }
+    }
+
+    // ── 1e3b: Order details written only on an order's first line → filled down ──
+    {
+        const f = fillOrderLevelDetails(rows);
+        if (f) {
+            logs.push(log('Order Details Filled', 1, 'applied',
+                `Orders with several lines had their details (${f.filled.slice(0, 5).join(', ')}${f.filled.length > 5 ? ', …' : ''}) only on the first line of each '${f.key}'. They were copied to the order's other lines (${f.cells} cells) instead of being marked Unknown.`
+                + (f.firstLineAmounts.length ? ` Order amounts (${f.firstLineAmounts.slice(0, 4).join(', ')}) stay on the first line, so totals count each order once.` : ''),
+                { affectedColumns: f.filled, affectedRows: f.cells }));
         }
     }
 
@@ -907,12 +1005,13 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
         let integerCount = 0;
         let unitNumberCount = 0;
         let durationCount = 0;
+        let durationOver24h = false;
         const numberStyle = detectNumberStyle(nonNull);
         const percentValues: number[] = [];
         let plainFractions = 0;
 
         for (const v of nonNull) {
-            if (typeof v === 'string' && parseDurationMinutes(v) !== null) { durationCount++; continue; }
+            if (typeof v === 'string') { const mins = parseDurationMinutes(v); if (mins !== null) { durationCount++; if (mins >= 1440) durationOver24h = true; continue; } }
             const s = String(v);
             if (hasCurrencyMarker(v)) currencyDetected = true;
             if (s.includes('%')) percentageDetected = true;
@@ -990,7 +1089,7 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
         let hasMonthOver12 = false;
         for (const v of nonNull) {
             const s = String(v).trim();
-            const match = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})$/);
+            const match = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})(?:[\sT,]+\d{1,2}:\d{2}.*)?$/);
             if (match) {
                 const first = +match[1];
                 const second = +match[2];
@@ -1017,6 +1116,9 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
             if (dayFirst) { move('MM/DD/YYYY', 'DD/MM/YYYY'); move('MM/DD/YY', 'DD/MM/YY'); }
             else { move('DD/MM/YYYY', 'MM/DD/YYYY'); move('DD/MM/YY', 'MM/DD/YY'); }
         }
+        // How to read d/d/yyyy values when another format wins the count
+        // (a column mixing "01 Jan 2025", "2025-01-03" and "02/01/2025").
+        const slashDayFirst = hasDayOver12 && !hasMonthOver12 ? true : hasMonthOver12 && !hasDayOver12 ? false : dayFirst;
         // Pick format with most matches (for actual parsing later)
         let bestDateRate = 0;
         for (const [fmt, count] of Object.entries(formatCounts)) {
@@ -1053,6 +1155,7 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
             min: min === Infinity ? undefined : min,
             max: max === -Infinity ? undefined : max,
             dateFormatCandidate: bestDateFormat,
+            slashDayFirst,
             currencyDetected,
             percentageDetected,
             wordNumberRate: nonNull.length > 0 ? wordNumberCount / nonNull.length : 0,
@@ -1063,6 +1166,9 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
             numberStyle,
             unitNumberRate: nonNull.length > 0 ? unitNumberCount / nonNull.length : 0,
             durationRate: nonNull.length > 0 ? durationCount / nonNull.length : 0,
+            sentenceLike: looksLikeSentences(rows, col),
+            codeLength: strValuesAreCodes(rows, col, 3) ? 3 : strValuesAreCodes(rows, col, 2) ? 2 : undefined,
+            timeOfDay: nonNull.length > 0 && durationCount / nonNull.length >= 0.8 && !durationOver24h && isClockTimeName(col, keys),
             percentMode,
             percentCellRate: numericCount > 0 ? percentValues.length / numericCount : 0,
         };
@@ -1217,12 +1323,14 @@ function layer4_rulePlanner(
             if (p.wordNumberRate > 0) steps.push({ name: 'WORD_TO_NUMBER', fn: (v: any) => { if (typeof v !== 'string') return v; const n = wordToNumber(v); return n !== null ? n : v; } });
             const style = p.numberStyle || undefined;
             const seen = { units: new Map<string, number>(), approximate: 0, scaled: 0, durations: 0 };
+            const inHours = /(^|_)(hours?|hrs?)($|_)/i.test(p.name);
             steps.push({
                 name: `PARSE_NUMBER(${style === 'eu' ? 'European format' : style === 'us' ? 'US format' : 'locale-aware'})`,
                 fn: (v: any) => {
                     if (typeof v === 'string' && (p.durationRate || 0) >= 0.5) {
                         const minutes = parseDurationMinutes(v);
-                        if (minutes !== null) { seen.durations++; return Math.round(minutes * 100) / 100; }
+                        // A column named in hours ("hours_worked" 7:30) keeps hours: 7.5.
+                        if (minutes !== null) { seen.durations++; return inHours ? Math.round(minutes / 60 * 100) / 100 : Math.round(minutes * 100) / 100; }
                     }
                     let n = parseLocaleNumber(v, style);
                     if (n === null) {
@@ -1255,7 +1363,7 @@ function layer4_rulePlanner(
                     `Column '${column}': ${seen.scaled} value(s) written as fractions (0.12) were scaled to percent points (12) to match the cells written as "12%".`,
                     { affectedColumns: [column], affectedRows: seen.scaled }));
                 if (seen.durations > 0) out.push(log('Durations Converted', 5, 'applied',
-                    `Column '${column}': ${seen.durations} duration(s) (h:mm:ss) converted to minutes.`,
+                    `Column '${column}': ${seen.durations} duration(s) (h:mm:ss) converted to ${inHours ? 'hours' : 'minutes'}.`,
                     { affectedColumns: [column], affectedRows: seen.durations }));
                 return out;
             } };
@@ -1268,7 +1376,10 @@ function layer4_rulePlanner(
             continue;
         } else if (type === ColumnType.DATE) {
             const fmt = p.dateFormatCandidate || 'YYYY-MM-DD';
-            steps.push({ name: `PARSE_DATE(${fmt})`, fn: (v: any) => tryParseDateWithFormat(v, fmt) || tryParseDateAny(v)?.iso || null });
+            const slashOrder = p.slashDayFirst ? ['DD/MM/YYYY', 'DD/MM/YY'] : ['MM/DD/YYYY', 'MM/DD/YY'];
+            steps.push({ name: `PARSE_DATE(${fmt})`, fn: (v: any) => tryParseDateWithFormat(v, fmt)
+                || tryParseDateWithFormat(v, slashOrder[0]) || tryParseDateWithFormat(v, slashOrder[1])
+                || tryParseDateAny(v)?.iso || null });
         } else if (type === ColumnType.BOOLEAN) {
             // BOOLEAN is a semantic role, not permission to rewrite the
             // source's Yes/No, Y/N, True/False or native boolean values.
@@ -1281,10 +1392,22 @@ function layer4_rulePlanner(
                 plans.push({ column: p.name, type, steps });
                 continue;
             }
-            // Messy-cased columns (human-typed names like "waTtS") get aggressive
-            // normalization; clean/brand columns keep preservation-aware casing.
-            const titleFn = p.messyCasing ? forceTitleCase : toTitleCase;
-            steps.push({ name: p.messyCasing ? 'TITLE_CASE(normalize)' : 'TITLE_CASE', fn: (v: any) => typeof v === 'string' && v.trim() !== '' ? titleFn(v) : v });
+            // Free text (comments, notes, reviews) is left as written: no title
+            // case, and a blank stays blank rather than becoming "Unknown".
+            const freeText = FREE_TEXT_NAME.test(p.name) || Boolean(p.sentenceLike);
+            // Contact details are never re-cased or filled in.
+            const contact = /(^|_)(e_?mail|email_address|phone|mobile|tel|telephone|url|website|web_?site|link)($|_)/i.test(p.name);
+            // Currency and country codes are capitals ("gbp" → "GBP").
+            const isoCode = (/(^|_)(currency|currency_code|ccy)$/i.test(p.name) && p.codeLength === 3)
+                || (/(^|_)(country|country_code|iso_country|country_iso|card_issue_country)$/i.test(p.name) && p.codeLength === 2);
+            if (isoCode) {
+                steps.push({ name: 'UPPER_CASE(code)', fn: (v: any) => typeof v === 'string' && v.trim() !== '' ? v.trim().toUpperCase() : v });
+            } else if (!freeText && !contact) {
+                // Messy-cased columns (human-typed names like "waTtS") get aggressive
+                // normalization; clean/brand columns keep preservation-aware casing.
+                const titleFn = p.messyCasing ? forceTitleCase : toTitleCase;
+                steps.push({ name: p.messyCasing ? 'TITLE_CASE(normalize)' : 'TITLE_CASE', fn: (v: any) => typeof v === 'string' && v.trim() !== '' ? titleFn(v) : v });
+            }
             // Add synonym normalization step (case-insensitive column + value matching)
             steps.push({
                 name: 'SYNONYM_MAP', fn: (v: any) => {
@@ -1304,7 +1427,7 @@ function layer4_rulePlanner(
                     return v;
                 }
             });
-            steps.push({ name: 'IMPUTE_UNKNOWN', fn: (v: any) => (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) ? 'Unknown' : v });
+            if (!freeText && !contact) steps.push({ name: 'IMPUTE_UNKNOWN', fn: (v: any) => (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) ? 'Unknown' : v });
         } else if (type === ColumnType.ID) {
             // Cast IDs to clean integer strings (1.0 → "1", not "1.0")
             steps.push({

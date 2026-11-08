@@ -38,6 +38,8 @@ const RULES: Record<string, Rule> = {
     'Empty Row Removal': { kind: 'removed', title: (_l, n) => `Removed ${plural(n ?? 0, 'empty row')}` },
     'Repeated Header Rows': { kind: 'removed', title: (_l, n) => `Removed ${plural(n ?? 0, 'repeated header row')}` },
     'Total Row Removal': { kind: 'removed', title: (_l, n) => `Removed ${plural(n ?? 0, 'total row')}` },
+    'Order Details Filled': { kind: 'converted', title: (_l, n) => `Filled ${plural(n ?? 0, 'order detail')} from each order's first line` },
+    'Report Layout': { kind: 'converted', title: () => `Read as a report: headings became a 'section' column, calculated lines removed` },
     'Duplicate Row Removal': { kind: 'removed', title: (_l, n) => `Removed ${plural(n ?? 0, 'duplicate row')}` },
     'Empty Column Removal': { kind: 'removed', title: l => `Removed ${plural(l.affectedColumns?.length || 0, 'empty column')}` },
     'Duplicate Column Removal': { kind: 'removed', title: l => `Removed ${plural(l.affectedColumns?.length || 0, 'duplicate column')}` },
@@ -55,7 +57,7 @@ const RULES: Record<string, Rule> = {
     'Placeholder Dates Removed': { kind: 'converted', title: (l, n, c) => `Treated ${plural(n ?? 0, 'placeholder date')} in '${c}' as missing` },
     'Units Removed': { kind: 'converted', title: (_l, _n, c) => `Read numbers written with units in '${c}'` },
     'Percent Scale Standardized': { kind: 'converted', title: (_l, n, c) => `Put ${plural(n ?? 0, 'value')} in '${c}' on the same percent scale` },
-    'Durations Converted': { kind: 'converted', title: (_l, n, c) => `Converted ${plural(n ?? 0, 'duration')} in '${c}' to minutes` },
+    'Durations Converted': { kind: 'converted', title: (l, n, c) => `Converted ${plural(n ?? 0, 'duration')} in '${c}' to ${/to hours/.test(l.details) ? 'hours' : 'minutes'}` },
     'Category Canonicalization': { kind: 'converted', title: (_l, n, c) => `Merged spelling variants in '${c}' (${plural(n ?? 0, 'cell')})` },
 
     'Coercion Loss Flag': { kind: 'check', title: (_l, n, c) => `${plural(n ?? 0, 'value')} in '${c}' couldn't be read as numbers` },

@@ -1,0 +1,401 @@
+Date,Time,Time Zone,Category,Item,Qty,Price Point Name,SKU,Modifiers Applied,Gross Sales,Discounts,Net Sales,Tax,Transaction ID,Payment ID,Device Name,Notes,Details,Event Type,Location,Dining Option,Customer ID,Channel,Card Brand
+2025-02-11,15:06:00,Europe/London,Bakery,Latte,1,Regular,SKU116,,£6.50,£0.00,£6.50,£1.08,T00000,P00000,Counter iPad,,,Payment,High St,For Here,C056,Square Point of Sale,Mastercard
+2025-01-09,16:07:00,Europe/London,Coffee,Latte,1,Regular,SKU118,,£2.50,£0.00,£2.50,£0.42,T00001,P00001,Counter iPad,,,Payment,Station,For Here,C029,Square Point of Sale,Visa
+2025-03-13,16:19:00,Europe/London,Tea,Flat White,1,Regular,SKU103,,£4.00,£0.00,£4.00,£0.67,T00002,P00002,Counter iPad,,,Payment,High St,For Here,C071,Square Point of Sale,Cash
+2025-01-09,12:29:00,Europe/London,Tea,Chai,1,Regular,SKU111,,£3.20,£0.00,£3.20,£0.53,T00003,P00003,Counter iPad,,,Payment,Station,For Here,C024,Square Point of Sale,Cash
+2025-04-10,12:46:00,Europe/London,Bakery,Croissant,1,Regular,SKU119,,£2.50,£0.00,£2.50,£0.42,T00004,P00004,Counter iPad,,,Payment,High St,For Here,C054,Square Point of Sale,Visa
+2025-04-07,17:04:00,Europe/London,Tea,Croissant,2,Regular,SKU110,,£6.40,£0.00,£6.40,£1.07,T00005,P00005,Counter iPad,,,Payment,Station,For Here,C075,Square Point of Sale,Mastercard
+2025-01-09,07:46:00,Europe/London,Tea,Croissant,1,Regular,SKU118,,£4.00,£0.00,£4.00,£0.67,T00006,P00006,Counter iPad,,,Payment,Station,For Here,C050,Square Point of Sale,Cash
+2025-02-14,14:03:00,Europe/London,Coffee,Croissant,1,Regular,SKU104,,£6.50,£0.00,£6.50,£1.08,T00007,P00007,Counter iPad,,,Payment,High St,For Here,C064,Square Point of Sale,Visa
+2025-01-22,13:55:00,Europe/London,Tea,Croissant,3,Regular,SKU113,,£19.50,£0.00,£19.50,£3.25,T00008,P00008,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-30,10:00:00,Europe/London,Bakery,Flat White,1,Regular,SKU108,,£2.50,£0.00,£2.50,£0.42,T00009,P00009,Counter iPad,,,Payment,Station,For Here,C054,Square Point of Sale,Cash
+2025-02-17,16:41:00,Europe/London,Tea,Latte,2,Regular,SKU114,,£6.40,£0.00,£6.40,£1.07,T00010,P00010,Counter iPad,,,Payment,Station,For Here,C051,Square Point of Sale,Visa
+2025-03-03,14:10:00,Europe/London,Coffee,Croissant,3,Regular,SKU119,,£7.50,£0.00,£7.50,£1.25,T00011,P00011,Counter iPad,,,Payment,High St,For Here,C073,Square Point of Sale,Visa
+2025-03-10,10:39:00,Europe/London,Bakery,Flat White,1,Regular,SKU108,,£4.00,£0.00,£4.00,£0.67,T00012,P00012,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-16,14:19:00,Europe/London,Coffee,Flat White,1,Regular,SKU103,,£6.50,£0.00,£6.50,£1.08,T00013,P00013,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-04-17,12:09:00,Europe/London,Tea,Latte,1,Regular,SKU116,,£2.50,£0.00,£2.50,£0.42,T00014,P00014,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-03-31,10:34:00,Europe/London,Tea,Croissant,2,Regular,SKU107,,£8.00,£0.00,£8.00,£1.33,T00015,P00015,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-04-05,07:01:00,Europe/London,Bakery,Chai,1,Regular,SKU108,,£3.20,£0.00,£3.20,£0.53,T00016,P00016,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-02-27,14:12:00,Europe/London,Bakery,Flat White,2,Regular,SKU115,,£8.00,-£0.80,£7.20,£1.20,T00017,P00017,Counter iPad,,,Payment,High St,For Here,C084,Square Point of Sale,Mastercard
+2025-04-13,10:30:00,Europe/London,Coffee,Chai,1,Regular,SKU110,,£2.50,£0.00,£2.50,£0.42,T00018,P00018,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-02-20,09:10:00,Europe/London,Coffee,Latte,3,Regular,SKU104,,£19.50,£0.00,£19.50,£3.25,T00019,P00019,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-03-20,07:00:00,Europe/London,Tea,Latte,3,Regular,SKU116,,£12.00,£0.00,£12.00,£2.00,T00020,P00020,Counter iPad,,,Payment,High St,For Here,C025,Square Point of Sale,Visa
+2025-01-04,16:20:00,Europe/London,Bakery,Chai,2,Regular,SKU104,,£6.40,£0.00,£6.40,£1.07,T00021,P00021,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-04-25,09:34:00,Europe/London,Coffee,Latte,3,Regular,SKU114,,£19.50,£0.00,£19.50,£3.25,T00022,P00022,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-01-23,07:20:00,Europe/London,Tea,Chai,1,Regular,SKU103,,£6.50,£0.00,£6.50,£1.08,T00023,P00023,Counter iPad,,,Payment,High St,For Here,C036,Square Point of Sale,Visa
+2025-04-09,08:28:00,Europe/London,Bakery,Flat White,1,Regular,SKU108,,£6.50,£0.00,£6.50,£1.08,T00024,P00024,Counter iPad,,,Payment,Station,For Here,C062,Square Point of Sale,Cash
+2025-02-01,08:25:00,Europe/London,Bakery,Croissant,2,Regular,SKU102,,£6.40,£0.00,£6.40,£1.07,T00025,P00025,Counter iPad,,,Payment,High St,For Here,C028,Square Point of Sale,Cash
+2025-02-08,12:09:00,Europe/London,Bakery,Flat White,1,Regular,SKU114,,£3.20,£0.00,£3.20,£0.53,T00026,P00026,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-02-20,09:45:00,Europe/London,Bakery,Chai,3,Regular,SKU110,,£9.60,£0.00,£9.60,£1.60,T00027,P00027,Counter iPad,,,Payment,Station,For Here,C041,Square Point of Sale,Visa
+2025-04-03,18:01:00,Europe/London,Bakery,Croissant,2,Regular,SKU116,,£5.00,£0.00,£5.00,£0.83,T00028,P00028,Counter iPad,,,Payment,Station,For Here,C009,Square Point of Sale,Visa
+2025-04-28,09:17:00,Europe/London,Coffee,Chai,1,Regular,SKU108,,£2.50,-£0.25,£2.25,£0.38,T00029,P00029,Counter iPad,,,Payment,Station,For Here,C066,Square Point of Sale,Cash
+2025-03-05,09:27:00,Europe/London,Coffee,Croissant,2,Regular,SKU100,,£5.00,£0.00,£5.00,£0.83,T00030,P00030,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-03-19,07:21:00,Europe/London,Tea,Chai,1,Regular,SKU108,,£2.50,£0.00,£2.50,£0.42,T00031,P00031,Counter iPad,,,Payment,High St,For Here,C031,Square Point of Sale,Visa
+2025-01-21,17:19:00,Europe/London,Tea,Flat White,2,Regular,SKU109,,£5.00,£0.00,£5.00,£0.83,T00032,P00032,Counter iPad,,,Payment,Station,For Here,C023,Square Point of Sale,Mastercard
+2025-02-14,15:35:00,Europe/London,Coffee,Chai,-1,Regular,SKU107,,-£4.00,-£0.40,-£4.40,-£0.73,T00033,P00033,Counter iPad,,,Refund,Station,For Here,C084,Square Point of Sale,Mastercard
+2025-03-26,10:14:00,Europe/London,Bakery,Flat White,3,Regular,SKU104,,£19.50,£0.00,£19.50,£3.25,T00034,P00034,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-04-18,11:27:00,Europe/London,Coffee,Latte,1,Regular,SKU102,,£2.50,-£0.25,£2.25,£0.38,T00035,P00035,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-06,11:28:00,Europe/London,Coffee,Croissant,1,Regular,SKU111,,£4.00,-£0.40,£3.60,£0.60,T00036,P00036,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-11,12:11:00,Europe/London,Coffee,Croissant,1,Regular,SKU112,,£2.50,£0.00,£2.50,£0.42,T00037,P00037,Counter iPad,,,Payment,High St,For Here,C065,Square Point of Sale,Cash
+2025-01-26,09:25:00,Europe/London,Tea,Latte,1,Regular,SKU112,,£2.50,-£0.25,£2.25,£0.38,T00038,P00038,Counter iPad,,,Payment,High St,For Here,C081,Square Point of Sale,Visa
+2025-01-11,14:09:00,Europe/London,Bakery,Flat White,1,Regular,SKU101,,£6.50,£0.00,£6.50,£1.08,T00039,P00039,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-01-18,17:23:00,Europe/London,Coffee,Chai,1,Regular,SKU114,,£3.20,-£0.32,£2.88,£0.48,T00040,P00040,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-03-10,08:47:00,Europe/London,Tea,Latte,1,Regular,SKU116,,£6.50,£0.00,£6.50,£1.08,T00041,P00041,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-02-02,10:47:00,Europe/London,Tea,Chai,1,Regular,SKU115,,£4.00,£0.00,£4.00,£0.67,T00042,P00042,Counter iPad,,,Payment,Station,For Here,C088,Square Point of Sale,Mastercard
+2025-04-09,11:41:00,Europe/London,Tea,Croissant,1,Regular,SKU119,,£3.20,-£0.32,£2.88,£0.48,T00043,P00043,Counter iPad,,,Payment,High St,For Here,C008,Square Point of Sale,Mastercard
+2025-02-04,15:18:00,Europe/London,Bakery,Chai,1,Regular,SKU114,,£3.20,£0.00,£3.20,£0.53,T00044,P00044,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-01-26,14:04:00,Europe/London,Tea,Chai,-2,Regular,SKU108,,-£5.00,£0.00,-£5.00,-£0.83,T00045,P00045,Counter iPad,,,Refund,Station,For Here,C027,Square Point of Sale,Visa
+2025-03-16,12:08:00,Europe/London,Tea,Croissant,1,Regular,SKU103,,£3.20,£0.00,£3.20,£0.53,T00046,P00046,Counter iPad,,,Payment,Station,For Here,C063,Square Point of Sale,Mastercard
+2025-01-04,13:19:00,Europe/London,Tea,Flat White,1,Regular,SKU113,,£2.50,£0.00,£2.50,£0.42,T00047,P00047,Counter iPad,,,Payment,Station,For Here,C016,Square Point of Sale,Mastercard
+2025-01-01,10:45:00,Europe/London,Coffee,Croissant,2,Regular,SKU108,,£8.00,£0.00,£8.00,£1.33,T00048,P00048,Counter iPad,,,Payment,Station,For Here,C050,Square Point of Sale,Cash
+2025-01-10,11:06:00,Europe/London,Coffee,Croissant,2,Regular,SKU104,,£13.00,£0.00,£13.00,£2.17,T00049,P00049,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-03-07,13:56:00,Europe/London,Coffee,Chai,2,Regular,SKU117,,£6.40,£0.00,£6.40,£1.07,T00050,P00050,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-04-30,11:31:00,Europe/London,Coffee,Flat White,3,Regular,SKU105,,£19.50,£0.00,£19.50,£3.25,T00051,P00051,Counter iPad,,,Payment,Station,For Here,C037,Square Point of Sale,Mastercard
+2025-02-02,15:42:00,Europe/London,Bakery,Latte,2,Regular,SKU105,,£13.00,£0.00,£13.00,£2.17,T00052,P00052,Counter iPad,,,Payment,High St,For Here,C065,Square Point of Sale,Mastercard
+2025-03-12,14:27:00,Europe/London,Coffee,Flat White,1,Regular,SKU107,,£6.50,£0.00,£6.50,£1.08,T00053,P00053,Counter iPad,,,Payment,High St,For Here,C072,Square Point of Sale,Visa
+2025-02-10,07:47:00,Europe/London,Bakery,Chai,1,Regular,SKU113,,£4.00,£0.00,£4.00,£0.67,T00054,P00054,Counter iPad,,,Payment,High St,For Here,C044,Square Point of Sale,Visa
+2025-03-05,17:50:00,Europe/London,Coffee,Latte,2,Regular,SKU108,,£8.00,-£0.80,£7.20,£1.20,T00055,P00055,Counter iPad,,,Payment,High St,For Here,C083,Square Point of Sale,Mastercard
+2025-02-25,14:37:00,Europe/London,Bakery,Latte,2,Regular,SKU102,,£5.00,-£0.50,£4.50,£0.75,T00056,P00056,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-04-20,09:09:00,Europe/London,Tea,Latte,3,Regular,SKU114,,£19.50,£0.00,£19.50,£3.25,T00057,P00057,Counter iPad,,,Payment,High St,For Here,C006,Square Point of Sale,Visa
+2025-04-11,18:19:00,Europe/London,Coffee,Croissant,-1,Regular,SKU116,,-£3.20,£0.00,-£3.20,-£0.53,T00058,P00058,Counter iPad,,,Refund,Station,For Here,,Square Point of Sale,Visa
+2025-01-13,13:16:00,Europe/London,Coffee,Latte,1,Regular,SKU100,,£4.00,£0.00,£4.00,£0.67,T00059,P00059,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-02-10,07:26:00,Europe/London,Tea,Croissant,1,Regular,SKU101,,£6.50,£0.00,£6.50,£1.08,T00060,P00060,Counter iPad,,,Payment,High St,For Here,C087,Square Point of Sale,Cash
+2025-02-23,12:14:00,Europe/London,Bakery,Latte,1,Regular,SKU110,,£4.00,£0.00,£4.00,£0.67,T00061,P00061,Counter iPad,,,Payment,Station,For Here,C051,Square Point of Sale,Visa
+2025-01-01,11:49:00,Europe/London,Coffee,Flat White,2,Regular,SKU114,,£5.00,£0.00,£5.00,£0.83,T00062,P00062,Counter iPad,,,Payment,High St,For Here,C038,Square Point of Sale,Visa
+2025-03-21,17:03:00,Europe/London,Tea,Flat White,3,Regular,SKU112,,£9.60,£0.00,£9.60,£1.60,T00063,P00063,Counter iPad,,,Payment,High St,For Here,C077,Square Point of Sale,Visa
+2025-02-23,18:56:00,Europe/London,Bakery,Latte,1,Regular,SKU102,,£2.50,£0.00,£2.50,£0.42,T00064,P00064,Counter iPad,,,Payment,High St,For Here,C024,Square Point of Sale,Cash
+2025-04-30,12:21:00,Europe/London,Bakery,Flat White,3,Regular,SKU103,,£7.50,£0.00,£7.50,£1.25,T00065,P00065,Counter iPad,,,Payment,High St,For Here,C011,Square Point of Sale,Mastercard
+2025-02-23,11:52:00,Europe/London,Bakery,Latte,1,Regular,SKU101,,£3.20,£0.00,£3.20,£0.53,T00066,P00066,Counter iPad,,,Payment,Station,For Here,C070,Square Point of Sale,Mastercard
+2025-01-25,17:26:00,Europe/London,Coffee,Chai,2,Regular,SKU101,,£8.00,£0.00,£8.00,£1.33,T00067,P00067,Counter iPad,,,Payment,Station,For Here,C009,Square Point of Sale,Visa
+2025-02-02,11:21:00,Europe/London,Tea,Latte,1,Regular,SKU108,,£2.50,£0.00,£2.50,£0.42,T00068,P00068,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-01,18:29:00,Europe/London,Bakery,Croissant,1,Regular,SKU113,,£2.50,£0.00,£2.50,£0.42,T00069,P00069,Counter iPad,,,Payment,Station,For Here,C064,Square Point of Sale,Visa
+2025-01-02,12:29:00,Europe/London,Bakery,Latte,2,Regular,SKU116,,£6.40,£0.00,£6.40,£1.07,T00070,P00070,Counter iPad,,,Payment,High St,For Here,C021,Square Point of Sale,Visa
+2025-02-22,09:27:00,Europe/London,Coffee,Latte,1,Regular,SKU108,,£2.50,£0.00,£2.50,£0.42,T00071,P00071,Counter iPad,,,Payment,High St,For Here,C054,Square Point of Sale,Mastercard
+2025-04-01,16:57:00,Europe/London,Tea,Flat White,3,Regular,SKU117,,£9.60,£0.00,£9.60,£1.60,T00072,P00072,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-02-07,10:28:00,Europe/London,Coffee,Flat White,2,Regular,SKU107,,£8.00,£0.00,£8.00,£1.33,T00073,P00073,Counter iPad,,,Payment,High St,For Here,C075,Square Point of Sale,Visa
+2025-02-11,15:14:00,Europe/London,Tea,Latte,1,Regular,SKU114,,£6.50,£0.00,£6.50,£1.08,T00074,P00074,Counter iPad,,,Payment,High St,For Here,C061,Square Point of Sale,Visa
+2025-04-18,08:03:00,Europe/London,Coffee,Flat White,3,Regular,SKU102,,£12.00,-£1.20,£10.80,£1.80,T00075,P00075,Counter iPad,,,Payment,Station,For Here,C023,Square Point of Sale,Mastercard
+2025-03-19,16:22:00,Europe/London,Coffee,Latte,2,Regular,SKU111,,£5.00,-£0.50,£4.50,£0.75,T00076,P00076,Counter iPad,,,Payment,Station,For Here,C027,Square Point of Sale,Mastercard
+2025-01-05,12:11:00,Europe/London,Tea,Croissant,1,Regular,SKU102,,£2.50,£0.00,£2.50,£0.42,T00077,P00077,Counter iPad,,,Payment,High St,For Here,C064,Square Point of Sale,Cash
+2025-03-03,15:09:00,Europe/London,Tea,Latte,1,Regular,SKU105,,£6.50,-£0.65,£5.85,£0.97,T00078,P00078,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-02-06,16:56:00,Europe/London,Bakery,Chai,2,Regular,SKU113,,£13.00,£0.00,£13.00,£2.17,T00079,P00079,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-03-24,07:27:00,Europe/London,Coffee,Chai,1,Regular,SKU103,,£6.50,£0.00,£6.50,£1.08,T00080,P00080,Counter iPad,,,Payment,High St,For Here,C047,Square Point of Sale,Mastercard
+2025-04-09,17:51:00,Europe/London,Bakery,Latte,1,Regular,SKU118,,£3.20,-£0.32,£2.88,£0.48,T00081,P00081,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-01-19,08:06:00,Europe/London,Bakery,Chai,2,Regular,SKU106,,£8.00,£0.00,£8.00,£1.33,T00082,P00082,Counter iPad,,,Payment,Station,For Here,C006,Square Point of Sale,Mastercard
+2025-02-10,18:52:00,Europe/London,Coffee,Flat White,1,Regular,SKU119,,£6.50,-£0.65,£5.85,£0.97,T00083,P00083,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-04-17,15:10:00,Europe/London,Bakery,Croissant,3,Regular,SKU103,,£9.60,£0.00,£9.60,£1.60,T00084,P00084,Counter iPad,,,Payment,High St,For Here,C025,Square Point of Sale,Visa
+2025-04-24,15:54:00,Europe/London,Tea,Croissant,1,Regular,SKU113,,£4.00,-£0.40,£3.60,£0.60,T00085,P00085,Counter iPad,,,Payment,Station,For Here,C055,Square Point of Sale,Mastercard
+2025-03-26,07:39:00,Europe/London,Bakery,Chai,2,Regular,SKU107,,£13.00,£0.00,£13.00,£2.17,T00086,P00086,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-04-18,12:27:00,Europe/London,Bakery,Latte,1,Regular,SKU114,,£6.50,£0.00,£6.50,£1.08,T00087,P00087,Counter iPad,,,Payment,High St,For Here,C017,Square Point of Sale,Visa
+2025-04-29,13:41:00,Europe/London,Coffee,Latte,2,Regular,SKU102,,£5.00,-£0.50,£4.50,£0.75,T00088,P00088,Counter iPad,,,Payment,High St,For Here,C063,Square Point of Sale,Mastercard
+2025-04-14,11:10:00,Europe/London,Bakery,Croissant,1,Regular,SKU114,,£3.20,-£0.32,£2.88,£0.48,T00089,P00089,Counter iPad,,,Payment,High St,For Here,C062,Square Point of Sale,Visa
+2025-03-17,09:25:00,Europe/London,Coffee,Croissant,-2,Regular,SKU110,,-£6.40,£0.00,-£6.40,-£1.07,T00090,P00090,Counter iPad,,,Refund,Station,For Here,C034,Square Point of Sale,Visa
+2025-04-09,15:37:00,Europe/London,Tea,Latte,1,Regular,SKU108,,£4.00,£0.00,£4.00,£0.67,T00091,P00091,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-02-03,08:28:00,Europe/London,Coffee,Flat White,3,Regular,SKU119,,£12.00,£0.00,£12.00,£2.00,T00092,P00092,Counter iPad,,,Payment,High St,For Here,C067,Square Point of Sale,Mastercard
+2025-02-09,11:39:00,Europe/London,Tea,Chai,2,Regular,SKU113,,£5.00,£0.00,£5.00,£0.83,T00093,P00093,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-03-04,12:19:00,Europe/London,Coffee,Croissant,-1,Regular,SKU117,,-£2.50,-£0.25,-£2.75,-£0.46,T00094,P00094,Counter iPad,,,Refund,High St,For Here,C039,Square Point of Sale,Cash
+2025-01-18,09:00:00,Europe/London,Coffee,Flat White,1,Regular,SKU114,,£4.00,£0.00,£4.00,£0.67,T00095,P00095,Counter iPad,,,Payment,High St,For Here,C019,Square Point of Sale,Cash
+2025-04-11,07:41:00,Europe/London,Tea,Croissant,2,Regular,SKU119,,£13.00,£0.00,£13.00,£2.17,T00096,P00096,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-04-04,07:34:00,Europe/London,Coffee,Chai,-3,Regular,SKU105,,-£9.60,£0.00,-£9.60,-£1.60,T00097,P00097,Counter iPad,,,Refund,High St,For Here,C014,Square Point of Sale,Visa
+2025-03-20,17:32:00,Europe/London,Tea,Chai,1,Regular,SKU119,,£3.20,£0.00,£3.20,£0.53,T00098,P00098,Counter iPad,,,Payment,High St,For Here,C009,Square Point of Sale,Mastercard
+2025-03-22,13:47:00,Europe/London,Bakery,Latte,-1,Regular,SKU114,,-£6.50,£0.00,-£6.50,-£1.08,T00099,P00099,Counter iPad,,,Refund,High St,For Here,C014,Square Point of Sale,Mastercard
+2025-01-30,18:54:00,Europe/London,Bakery,Latte,1,Regular,SKU108,,£2.50,£0.00,£2.50,£0.42,T00100,P00100,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-03,09:16:00,Europe/London,Coffee,Flat White,2,Regular,SKU105,,£6.40,-£0.64,£5.76,£0.96,T00101,P00101,Counter iPad,,,Payment,Station,For Here,C050,Square Point of Sale,Mastercard
+2025-03-18,18:42:00,Europe/London,Tea,Chai,1,Regular,SKU115,,£6.50,£0.00,£6.50,£1.08,T00102,P00102,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-04-03,16:04:00,Europe/London,Tea,Flat White,1,Regular,SKU104,,£4.00,£0.00,£4.00,£0.67,T00103,P00103,Counter iPad,,,Payment,High St,For Here,C014,Square Point of Sale,Cash
+2025-04-29,07:02:00,Europe/London,Coffee,Latte,1,Regular,SKU102,,£4.00,£0.00,£4.00,£0.67,T00104,P00104,Counter iPad,,,Payment,High St,For Here,C076,Square Point of Sale,Mastercard
+2025-01-26,08:02:00,Europe/London,Coffee,Latte,1,Regular,SKU109,,£6.50,-£0.65,£5.85,£0.97,T00105,P00105,Counter iPad,,,Payment,Station,For Here,C013,Square Point of Sale,Cash
+2025-01-27,12:16:00,Europe/London,Bakery,Latte,2,Regular,SKU111,,£8.00,£0.00,£8.00,£1.33,T00106,P00106,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-03-06,13:01:00,Europe/London,Bakery,Latte,-3,Regular,SKU111,,-£12.00,£0.00,-£12.00,-£2.00,T00107,P00107,Counter iPad,,,Refund,Station,For Here,,Square Point of Sale,Cash
+2025-03-14,13:00:00,Europe/London,Tea,Flat White,1,Regular,SKU109,,£2.50,£0.00,£2.50,£0.42,T00108,P00108,Counter iPad,,,Payment,High St,For Here,C063,Square Point of Sale,Visa
+2025-03-04,15:16:00,Europe/London,Tea,Flat White,1,Regular,SKU109,,£6.50,£0.00,£6.50,£1.08,T00109,P00109,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-03-05,14:50:00,Europe/London,Tea,Latte,1,Regular,SKU110,,£2.50,£0.00,£2.50,£0.42,T00110,P00110,Counter iPad,,,Payment,Station,For Here,C051,Square Point of Sale,Cash
+2025-01-12,13:57:00,Europe/London,Tea,Flat White,3,Regular,SKU112,,£7.50,£0.00,£7.50,£1.25,T00111,P00111,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-03-10,14:42:00,Europe/London,Tea,Croissant,1,Regular,SKU105,,£4.00,£0.00,£4.00,£0.67,T00112,P00112,Counter iPad,,,Payment,Station,For Here,C033,Square Point of Sale,Cash
+2025-01-30,10:32:00,Europe/London,Coffee,Croissant,1,Regular,SKU109,,£4.00,£0.00,£4.00,£0.67,T00113,P00113,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-04-03,10:16:00,Europe/London,Tea,Latte,2,Regular,SKU105,,£8.00,£0.00,£8.00,£1.33,T00114,P00114,Counter iPad,,,Payment,High St,For Here,C020,Square Point of Sale,Visa
+2025-04-12,17:58:00,Europe/London,Coffee,Croissant,2,Regular,SKU106,,£8.00,£0.00,£8.00,£1.33,T00115,P00115,Counter iPad,,,Payment,Station,For Here,C002,Square Point of Sale,Mastercard
+2025-04-20,14:01:00,Europe/London,Coffee,Croissant,3,Regular,SKU119,,£9.60,£0.00,£9.60,£1.60,T00116,P00116,Counter iPad,,,Payment,Station,For Here,C032,Square Point of Sale,Mastercard
+2025-03-31,17:44:00,Europe/London,Tea,Flat White,3,Regular,SKU105,,£9.60,£0.00,£9.60,£1.60,T00117,P00117,Counter iPad,,,Payment,High St,For Here,C041,Square Point of Sale,Mastercard
+2025-03-22,18:40:00,Europe/London,Coffee,Croissant,1,Regular,SKU113,,£6.50,£0.00,£6.50,£1.08,T00118,P00118,Counter iPad,,,Payment,Station,For Here,C080,Square Point of Sale,Mastercard
+2025-03-08,14:58:00,Europe/London,Coffee,Latte,1,Regular,SKU108,,£4.00,£0.00,£4.00,£0.67,T00119,P00119,Counter iPad,,,Payment,High St,For Here,C026,Square Point of Sale,Cash
+2025-02-14,15:01:00,Europe/London,Tea,Croissant,1,Regular,SKU116,,£6.50,£0.00,£6.50,£1.08,T00120,P00120,Counter iPad,,,Payment,Station,For Here,C059,Square Point of Sale,Visa
+2025-03-29,18:39:00,Europe/London,Bakery,Latte,1,Regular,SKU108,,£6.50,£0.00,£6.50,£1.08,T00121,P00121,Counter iPad,,,Payment,Station,For Here,C008,Square Point of Sale,Visa
+2025-01-10,16:16:00,Europe/London,Coffee,Flat White,3,Regular,SKU109,,£19.50,£0.00,£19.50,£3.25,T00122,P00122,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-01-29,08:51:00,Europe/London,Tea,Flat White,3,Regular,SKU115,,£19.50,£0.00,£19.50,£3.25,T00123,P00123,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-02-15,17:08:00,Europe/London,Bakery,Croissant,3,Regular,SKU107,,£19.50,£0.00,£19.50,£3.25,T00124,P00124,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-02,11:22:00,Europe/London,Coffee,Croissant,3,Regular,SKU110,,£9.60,£0.00,£9.60,£1.60,T00125,P00125,Counter iPad,,,Payment,Station,For Here,C080,Square Point of Sale,Cash
+2025-01-11,07:05:00,Europe/London,Tea,Croissant,2,Regular,SKU104,,£6.40,£0.00,£6.40,£1.07,T00126,P00126,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-03-26,11:38:00,Europe/London,Coffee,Flat White,1,Regular,SKU107,,£3.20,£0.00,£3.20,£0.53,T00127,P00127,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-04-11,09:39:00,Europe/London,Tea,Latte,1,Regular,SKU117,,£3.20,£0.00,£3.20,£0.53,T00128,P00128,Counter iPad,,,Payment,Station,For Here,C089,Square Point of Sale,Visa
+2025-03-09,08:16:00,Europe/London,Bakery,Flat White,1,Regular,SKU104,,£6.50,£0.00,£6.50,£1.08,T00129,P00129,Counter iPad,,,Payment,Station,For Here,C008,Square Point of Sale,Mastercard
+2025-03-01,16:55:00,Europe/London,Tea,Latte,1,Regular,SKU105,,£6.50,£0.00,£6.50,£1.08,T00130,P00130,Counter iPad,,,Payment,Station,For Here,C073,Square Point of Sale,Mastercard
+2025-03-27,17:04:00,Europe/London,Coffee,Croissant,2,Regular,SKU100,,£13.00,£0.00,£13.00,£2.17,T00131,P00131,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-04-05,09:02:00,Europe/London,Coffee,Chai,2,Regular,SKU104,,£5.00,£0.00,£5.00,£0.83,T00132,P00132,Counter iPad,,,Payment,Station,For Here,C085,Square Point of Sale,Mastercard
+2025-02-13,11:35:00,Europe/London,Coffee,Croissant,3,Regular,SKU109,,£9.60,£0.00,£9.60,£1.60,T00133,P00133,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-02-12,08:21:00,Europe/London,Coffee,Croissant,2,Regular,SKU109,,£8.00,£0.00,£8.00,£1.33,T00134,P00134,Counter iPad,,,Payment,High St,For Here,C082,Square Point of Sale,Visa
+2025-04-11,15:36:00,Europe/London,Coffee,Chai,1,Regular,SKU109,,£6.50,£0.00,£6.50,£1.08,T00135,P00135,Counter iPad,,,Payment,High St,For Here,C025,Square Point of Sale,Mastercard
+2025-03-19,18:44:00,Europe/London,Tea,Latte,1,Regular,SKU106,,£6.50,£0.00,£6.50,£1.08,T00136,P00136,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-03-22,13:49:00,Europe/London,Coffee,Latte,1,Regular,SKU111,,£2.50,£0.00,£2.50,£0.42,T00137,P00137,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-04-01,07:27:00,Europe/London,Tea,Latte,-2,Regular,SKU115,,-£8.00,£0.00,-£8.00,-£1.33,T00138,P00138,Counter iPad,,,Refund,High St,For Here,,Square Point of Sale,Mastercard
+2025-03-15,16:37:00,Europe/London,Tea,Flat White,3,Regular,SKU115,,£19.50,-£1.95,£17.55,£2.93,T00139,P00139,Counter iPad,,,Payment,Station,For Here,C011,Square Point of Sale,Cash
+2025-03-02,07:43:00,Europe/London,Tea,Latte,1,Regular,SKU102,,£3.20,£0.00,£3.20,£0.53,T00140,P00140,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-03-02,18:47:00,Europe/London,Coffee,Latte,1,Regular,SKU111,,£4.00,£0.00,£4.00,£0.67,T00141,P00141,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-02-07,07:45:00,Europe/London,Coffee,Latte,3,Regular,SKU101,,£19.50,£0.00,£19.50,£3.25,T00142,P00142,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-04-15,09:55:00,Europe/London,Bakery,Latte,1,Regular,SKU110,,£6.50,£0.00,£6.50,£1.08,T00143,P00143,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-26,12:41:00,Europe/London,Coffee,Chai,3,Regular,SKU115,,£9.60,-£0.96,£8.64,£1.44,T00144,P00144,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-02-04,17:45:00,Europe/London,Tea,Croissant,2,Regular,SKU119,,£8.00,£0.00,£8.00,£1.33,T00145,P00145,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-04-17,13:43:00,Europe/London,Bakery,Flat White,2,Regular,SKU114,,£13.00,£0.00,£13.00,£2.17,T00146,P00146,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-02-03,07:18:00,Europe/London,Coffee,Flat White,2,Regular,SKU108,,£13.00,£0.00,£13.00,£2.17,T00147,P00147,Counter iPad,,,Payment,Station,For Here,C011,Square Point of Sale,Cash
+2025-03-12,10:19:00,Europe/London,Tea,Latte,3,Regular,SKU112,,£19.50,£0.00,£19.50,£3.25,T00148,P00148,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-03-17,12:49:00,Europe/London,Coffee,Flat White,1,Regular,SKU112,,£6.50,£0.00,£6.50,£1.08,T00149,P00149,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-11,09:51:00,Europe/London,Tea,Croissant,3,Regular,SKU111,,£9.60,£0.00,£9.60,£1.60,T00150,P00150,Counter iPad,,,Payment,Station,For Here,C067,Square Point of Sale,Visa
+2025-02-01,17:29:00,Europe/London,Coffee,Flat White,1,Regular,SKU110,,£6.50,£0.00,£6.50,£1.08,T00151,P00151,Counter iPad,,,Payment,High St,For Here,C067,Square Point of Sale,Cash
+2025-01-03,16:31:00,Europe/London,Tea,Flat White,1,Regular,SKU108,,£2.50,£0.00,£2.50,£0.42,T00152,P00152,Counter iPad,,,Payment,Station,For Here,C058,Square Point of Sale,Cash
+2025-04-15,09:24:00,Europe/London,Coffee,Latte,1,Regular,SKU101,,£4.00,£0.00,£4.00,£0.67,T00153,P00153,Counter iPad,,,Payment,High St,For Here,C059,Square Point of Sale,Mastercard
+2025-04-19,08:16:00,Europe/London,Bakery,Flat White,1,Regular,SKU102,,£6.50,£0.00,£6.50,£1.08,T00154,P00154,Counter iPad,,,Payment,Station,For Here,C021,Square Point of Sale,Mastercard
+2025-01-31,12:03:00,Europe/London,Tea,Latte,1,Regular,SKU101,,£3.20,-£0.32,£2.88,£0.48,T00155,P00155,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-04-05,07:12:00,Europe/London,Tea,Croissant,3,Regular,SKU118,,£7.50,-£0.75,£6.75,£1.12,T00156,P00156,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-03-02,14:24:00,Europe/London,Coffee,Chai,2,Regular,SKU107,,£8.00,£0.00,£8.00,£1.33,T00157,P00157,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-03-01,08:59:00,Europe/London,Tea,Croissant,1,Regular,SKU104,,£2.50,£0.00,£2.50,£0.42,T00158,P00158,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-04-18,10:30:00,Europe/London,Coffee,Croissant,1,Regular,SKU104,,£2.50,£0.00,£2.50,£0.42,T00159,P00159,Counter iPad,,,Payment,Station,For Here,C008,Square Point of Sale,Visa
+2025-04-02,13:26:00,Europe/London,Coffee,Flat White,3,Regular,SKU100,,£9.60,£0.00,£9.60,£1.60,T00160,P00160,Counter iPad,,,Payment,Station,For Here,C038,Square Point of Sale,Mastercard
+2025-04-13,14:07:00,Europe/London,Coffee,Latte,1,Regular,SKU106,,£4.00,£0.00,£4.00,£0.67,T00161,P00161,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-02-02,10:59:00,Europe/London,Coffee,Latte,1,Regular,SKU112,,£4.00,£0.00,£4.00,£0.67,T00162,P00162,Counter iPad,,,Payment,Station,For Here,C021,Square Point of Sale,Visa
+2025-04-17,15:21:00,Europe/London,Tea,Flat White,-2,Regular,SKU114,,-£6.40,£0.00,-£6.40,-£1.07,T00163,P00163,Counter iPad,,,Refund,High St,For Here,,Square Point of Sale,Cash
+2025-02-06,10:17:00,Europe/London,Tea,Flat White,1,Regular,SKU104,,£4.00,£0.00,£4.00,£0.67,T00164,P00164,Counter iPad,,,Payment,High St,For Here,C030,Square Point of Sale,Cash
+2025-01-23,18:31:00,Europe/London,Bakery,Flat White,1,Regular,SKU106,,£2.50,£0.00,£2.50,£0.42,T00165,P00165,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-03-22,18:33:00,Europe/London,Bakery,Latte,1,Regular,SKU116,,£4.00,£0.00,£4.00,£0.67,T00166,P00166,Counter iPad,,,Payment,Station,For Here,C082,Square Point of Sale,Mastercard
+2025-01-12,17:17:00,Europe/London,Coffee,Flat White,1,Regular,SKU118,,£6.50,£0.00,£6.50,£1.08,T00167,P00167,Counter iPad,,,Payment,Station,For Here,C048,Square Point of Sale,Cash
+2025-03-18,15:04:00,Europe/London,Coffee,Croissant,1,Regular,SKU107,,£4.00,£0.00,£4.00,£0.67,T00168,P00168,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-03-15,14:28:00,Europe/London,Tea,Latte,1,Regular,SKU116,,£4.00,£0.00,£4.00,£0.67,T00169,P00169,Counter iPad,,,Payment,High St,For Here,C012,Square Point of Sale,Visa
+2025-03-21,07:01:00,Europe/London,Coffee,Flat White,1,Regular,SKU108,,£3.20,-£0.32,£2.88,£0.48,T00170,P00170,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-03-15,08:45:00,Europe/London,Coffee,Latte,3,Regular,SKU108,,£9.60,£0.00,£9.60,£1.60,T00171,P00171,Counter iPad,,,Payment,High St,For Here,C075,Square Point of Sale,Cash
+2025-04-08,09:34:00,Europe/London,Tea,Flat White,2,Regular,SKU107,,£5.00,-£0.50,£4.50,£0.75,T00172,P00172,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-04-06,17:24:00,Europe/London,Tea,Chai,-3,Regular,SKU119,,-£9.60,£0.00,-£9.60,-£1.60,T00173,P00173,Counter iPad,,,Refund,High St,For Here,C007,Square Point of Sale,Mastercard
+2025-02-13,16:51:00,Europe/London,Bakery,Chai,3,Regular,SKU117,,£9.60,£0.00,£9.60,£1.60,T00174,P00174,Counter iPad,,,Payment,High St,For Here,C019,Square Point of Sale,Cash
+2025-04-30,07:23:00,Europe/London,Coffee,Flat White,2,Regular,SKU102,,£6.40,£0.00,£6.40,£1.07,T00175,P00175,Counter iPad,,,Payment,Station,For Here,C065,Square Point of Sale,Cash
+2025-01-03,14:40:00,Europe/London,Coffee,Latte,1,Regular,SKU101,,£3.20,£0.00,£3.20,£0.53,T00176,P00176,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-04,13:15:00,Europe/London,Coffee,Croissant,1,Regular,SKU103,,£2.50,£0.00,£2.50,£0.42,T00177,P00177,Counter iPad,,,Payment,Station,For Here,C022,Square Point of Sale,Visa
+2025-01-08,09:28:00,Europe/London,Coffee,Flat White,2,Regular,SKU109,,£5.00,£0.00,£5.00,£0.83,T00178,P00178,Counter iPad,,,Payment,Station,For Here,C036,Square Point of Sale,Visa
+2025-04-05,16:14:00,Europe/London,Tea,Chai,1,Regular,SKU106,,£4.00,£0.00,£4.00,£0.67,T00179,P00179,Counter iPad,,,Payment,Station,For Here,C071,Square Point of Sale,Mastercard
+2025-03-20,12:14:00,Europe/London,Coffee,Chai,-3,Regular,SKU118,,-£19.50,£0.00,-£19.50,-£3.25,T00180,P00180,Counter iPad,,,Refund,Station,For Here,C046,Square Point of Sale,Visa
+2025-04-21,11:56:00,Europe/London,Coffee,Croissant,1,Regular,SKU101,,£4.00,£0.00,£4.00,£0.67,T00181,P00181,Counter iPad,,,Payment,High St,For Here,C009,Square Point of Sale,Cash
+2025-04-22,14:22:00,Europe/London,Tea,Latte,2,Regular,SKU116,,£13.00,£0.00,£13.00,£2.17,T00182,P00182,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-04-05,17:12:00,Europe/London,Tea,Croissant,1,Regular,SKU116,,£6.50,£0.00,£6.50,£1.08,T00183,P00183,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-04-29,18:08:00,Europe/London,Bakery,Latte,3,Regular,SKU100,,£12.00,£0.00,£12.00,£2.00,T00184,P00184,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-01-16,13:54:00,Europe/London,Bakery,Latte,3,Regular,SKU112,,£19.50,£0.00,£19.50,£3.25,T00185,P00185,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-04-03,16:24:00,Europe/London,Tea,Croissant,2,Regular,SKU100,,£8.00,£0.00,£8.00,£1.33,T00186,P00186,Counter iPad,,,Payment,Station,For Here,C039,Square Point of Sale,Visa
+2025-03-10,10:05:00,Europe/London,Bakery,Croissant,2,Regular,SKU119,,£6.40,£0.00,£6.40,£1.07,T00187,P00187,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-02-24,14:19:00,Europe/London,Tea,Croissant,1,Regular,SKU117,,£2.50,-£0.25,£2.25,£0.38,T00188,P00188,Counter iPad,,,Payment,Station,For Here,C067,Square Point of Sale,Cash
+2025-03-29,17:22:00,Europe/London,Bakery,Latte,3,Regular,SKU102,,£19.50,£0.00,£19.50,£3.25,T00189,P00189,Counter iPad,,,Payment,High St,For Here,C048,Square Point of Sale,Cash
+2025-02-21,14:49:00,Europe/London,Tea,Croissant,1,Regular,SKU116,,£3.20,£0.00,£3.20,£0.53,T00190,P00190,Counter iPad,,,Payment,High St,For Here,C041,Square Point of Sale,Mastercard
+2025-01-10,18:21:00,Europe/London,Tea,Chai,2,Regular,SKU105,,£6.40,-£0.64,£5.76,£0.96,T00191,P00191,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-03-06,16:06:00,Europe/London,Bakery,Latte,1,Regular,SKU113,,£6.50,£0.00,£6.50,£1.08,T00192,P00192,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-04-01,07:42:00,Europe/London,Coffee,Flat White,1,Regular,SKU105,,£4.00,£0.00,£4.00,£0.67,T00193,P00193,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-04,09:33:00,Europe/London,Tea,Latte,1,Regular,SKU100,,£3.20,£0.00,£3.20,£0.53,T00194,P00194,Counter iPad,,,Payment,High St,For Here,C067,Square Point of Sale,Mastercard
+2025-04-16,07:43:00,Europe/London,Tea,Croissant,3,Regular,SKU104,,£19.50,£0.00,£19.50,£3.25,T00195,P00195,Counter iPad,,,Payment,High St,For Here,C022,Square Point of Sale,Visa
+2025-02-04,13:01:00,Europe/London,Coffee,Flat White,1,Regular,SKU112,,£2.50,£0.00,£2.50,£0.42,T00196,P00196,Counter iPad,,,Payment,High St,For Here,C080,Square Point of Sale,Visa
+2025-02-01,09:20:00,Europe/London,Coffee,Chai,1,Regular,SKU109,,£2.50,£0.00,£2.50,£0.42,T00197,P00197,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-09,13:19:00,Europe/London,Bakery,Chai,1,Regular,SKU100,,£6.50,£0.00,£6.50,£1.08,T00198,P00198,Counter iPad,,,Payment,High St,For Here,C022,Square Point of Sale,Mastercard
+2025-02-18,15:23:00,Europe/London,Coffee,Croissant,1,Regular,SKU117,,£2.50,£0.00,£2.50,£0.42,T00199,P00199,Counter iPad,,,Payment,Station,For Here,C084,Square Point of Sale,Visa
+2025-01-16,14:18:00,Europe/London,Bakery,Flat White,3,Regular,SKU113,,£12.00,£0.00,£12.00,£2.00,T00200,P00200,Counter iPad,,,Payment,High St,For Here,C004,Square Point of Sale,Mastercard
+2025-04-14,11:34:00,Europe/London,Coffee,Chai,1,Regular,SKU114,,£3.20,£0.00,£3.20,£0.53,T00201,P00201,Counter iPad,,,Payment,High St,For Here,C046,Square Point of Sale,Visa
+2025-04-03,11:30:00,Europe/London,Tea,Flat White,3,Regular,SKU107,,£19.50,£0.00,£19.50,£3.25,T00202,P00202,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-03,15:13:00,Europe/London,Coffee,Latte,3,Regular,SKU116,,£12.00,£0.00,£12.00,£2.00,T00203,P00203,Counter iPad,,,Payment,High St,For Here,C035,Square Point of Sale,Cash
+2025-04-09,11:00:00,Europe/London,Bakery,Latte,3,Regular,SKU105,,£7.50,£0.00,£7.50,£1.25,T00204,P00204,Counter iPad,,,Payment,High St,For Here,C085,Square Point of Sale,Visa
+2025-01-09,08:14:00,Europe/London,Bakery,Flat White,2,Regular,SKU112,,£8.00,£0.00,£8.00,£1.33,T00205,P00205,Counter iPad,,,Payment,Station,For Here,C060,Square Point of Sale,Cash
+2025-04-23,17:44:00,Europe/London,Bakery,Chai,1,Regular,SKU100,,£4.00,£0.00,£4.00,£0.67,T00206,P00206,Counter iPad,,,Payment,Station,For Here,C052,Square Point of Sale,Mastercard
+2025-04-26,16:46:00,Europe/London,Coffee,Latte,1,Regular,SKU112,,£3.20,£0.00,£3.20,£0.53,T00207,P00207,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-01-26,11:40:00,Europe/London,Tea,Flat White,-2,Regular,SKU118,,-£6.40,£0.00,-£6.40,-£1.07,T00208,P00208,Counter iPad,,,Refund,High St,For Here,C067,Square Point of Sale,Mastercard
+2025-04-29,17:18:00,Europe/London,Coffee,Latte,3,Regular,SKU107,,£12.00,£0.00,£12.00,£2.00,T00209,P00209,Counter iPad,,,Payment,High St,For Here,C041,Square Point of Sale,Visa
+2025-04-10,18:39:00,Europe/London,Coffee,Croissant,2,Regular,SKU116,,£5.00,£0.00,£5.00,£0.83,T00210,P00210,Counter iPad,,,Payment,High St,For Here,C055,Square Point of Sale,Mastercard
+2025-04-30,10:27:00,Europe/London,Tea,Flat White,2,Regular,SKU115,,£13.00,£0.00,£13.00,£2.17,T00211,P00211,Counter iPad,,,Payment,High St,For Here,C072,Square Point of Sale,Mastercard
+2025-01-23,07:10:00,Europe/London,Bakery,Croissant,1,Regular,SKU113,,£3.20,£0.00,£3.20,£0.53,T00212,P00212,Counter iPad,,,Payment,High St,For Here,C040,Square Point of Sale,Visa
+2025-01-18,15:44:00,Europe/London,Bakery,Flat White,3,Regular,SKU111,,£19.50,£0.00,£19.50,£3.25,T00213,P00213,Counter iPad,,,Payment,Station,For Here,C019,Square Point of Sale,Cash
+2025-03-14,13:48:00,Europe/London,Coffee,Flat White,1,Regular,SKU119,,£4.00,£0.00,£4.00,£0.67,T00214,P00214,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-04-17,14:13:00,Europe/London,Coffee,Latte,-1,Regular,SKU108,,-£2.50,£0.00,-£2.50,-£0.42,T00215,P00215,Counter iPad,,,Refund,Station,For Here,C040,Square Point of Sale,Mastercard
+2025-01-15,11:10:00,Europe/London,Tea,Latte,1,Regular,SKU101,,£4.00,£0.00,£4.00,£0.67,T00216,P00216,Counter iPad,,,Payment,High St,For Here,C063,Square Point of Sale,Visa
+2025-04-06,13:31:00,Europe/London,Coffee,Croissant,2,Regular,SKU100,,£8.00,-£0.80,£7.20,£1.20,T00217,P00217,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-06,07:49:00,Europe/London,Bakery,Flat White,2,Regular,SKU109,,£6.40,-£0.64,£5.76,£0.96,T00218,P00218,Counter iPad,,,Payment,Station,For Here,C082,Square Point of Sale,Cash
+2025-04-19,18:39:00,Europe/London,Bakery,Chai,1,Regular,SKU105,,£2.50,£0.00,£2.50,£0.42,T00219,P00219,Counter iPad,,,Payment,Station,For Here,C048,Square Point of Sale,Visa
+2025-03-12,16:51:00,Europe/London,Tea,Chai,2,Regular,SKU101,,£8.00,£0.00,£8.00,£1.33,T00220,P00220,Counter iPad,,,Payment,High St,For Here,C064,Square Point of Sale,Cash
+2025-01-21,09:28:00,Europe/London,Tea,Chai,2,Regular,SKU102,,£5.00,-£0.50,£4.50,£0.75,T00221,P00221,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-01-25,15:27:00,Europe/London,Coffee,Croissant,1,Regular,SKU102,,£4.00,-£0.40,£3.60,£0.60,T00222,P00222,Counter iPad,,,Payment,High St,For Here,C054,Square Point of Sale,Mastercard
+2025-01-09,18:10:00,Europe/London,Bakery,Croissant,3,Regular,SKU100,,£7.50,£0.00,£7.50,£1.25,T00223,P00223,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-14,14:27:00,Europe/London,Tea,Flat White,1,Regular,SKU112,,£6.50,-£0.65,£5.85,£0.97,T00224,P00224,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-04-03,12:30:00,Europe/London,Tea,Flat White,2,Regular,SKU109,,£8.00,£0.00,£8.00,£1.33,T00225,P00225,Counter iPad,,,Payment,Station,For Here,C082,Square Point of Sale,Visa
+2025-04-19,08:09:00,Europe/London,Tea,Croissant,1,Regular,SKU117,,£3.20,£0.00,£3.20,£0.53,T00226,P00226,Counter iPad,,,Payment,Station,For Here,C031,Square Point of Sale,Cash
+2025-02-26,10:35:00,Europe/London,Tea,Latte,3,Regular,SKU107,,£12.00,-£1.20,£10.80,£1.80,T00227,P00227,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-03-09,15:36:00,Europe/London,Tea,Latte,2,Regular,SKU116,,£13.00,£0.00,£13.00,£2.17,T00228,P00228,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-01-10,18:53:00,Europe/London,Coffee,Latte,3,Regular,SKU114,,£9.60,£0.00,£9.60,£1.60,T00229,P00229,Counter iPad,,,Payment,Station,For Here,C025,Square Point of Sale,Cash
+2025-03-02,13:15:00,Europe/London,Coffee,Croissant,1,Regular,SKU101,,£3.20,£0.00,£3.20,£0.53,T00230,P00230,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-02-28,08:39:00,Europe/London,Coffee,Latte,2,Regular,SKU111,,£5.00,£0.00,£5.00,£0.83,T00231,P00231,Counter iPad,,,Payment,High St,For Here,C044,Square Point of Sale,Cash
+2025-03-29,18:33:00,Europe/London,Bakery,Chai,1,Regular,SKU101,,£4.00,-£0.40,£3.60,£0.60,T00232,P00232,Counter iPad,,,Payment,Station,For Here,C071,Square Point of Sale,Mastercard
+2025-04-13,11:22:00,Europe/London,Coffee,Chai,1,Regular,SKU100,,£2.50,£0.00,£2.50,£0.42,T00233,P00233,Counter iPad,,,Payment,Station,For Here,C003,Square Point of Sale,Mastercard
+2025-01-15,11:55:00,Europe/London,Tea,Chai,1,Regular,SKU104,,£4.00,£0.00,£4.00,£0.67,T00234,P00234,Counter iPad,,,Payment,Station,For Here,C089,Square Point of Sale,Mastercard
+2025-02-26,15:30:00,Europe/London,Coffee,Latte,1,Regular,SKU102,,£2.50,£0.00,£2.50,£0.42,T00235,P00235,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-03-28,14:25:00,Europe/London,Coffee,Latte,3,Regular,SKU111,,£19.50,£0.00,£19.50,£3.25,T00236,P00236,Counter iPad,,,Payment,Station,For Here,C040,Square Point of Sale,Visa
+2025-03-17,14:21:00,Europe/London,Tea,Chai,1,Regular,SKU112,,£3.20,£0.00,£3.20,£0.53,T00237,P00237,Counter iPad,,,Payment,Station,For Here,C043,Square Point of Sale,Cash
+2025-03-03,16:02:00,Europe/London,Tea,Flat White,2,Regular,SKU104,,£6.40,-£0.64,£5.76,£0.96,T00238,P00238,Counter iPad,,,Payment,Station,For Here,C009,Square Point of Sale,Cash
+2025-02-03,15:57:00,Europe/London,Coffee,Flat White,-2,Regular,SKU113,,-£6.40,£0.00,-£6.40,-£1.07,T00239,P00239,Counter iPad,,,Refund,High St,For Here,C037,Square Point of Sale,Visa
+2025-04-22,18:23:00,Europe/London,Tea,Flat White,1,Regular,SKU111,,£2.50,£0.00,£2.50,£0.42,T00240,P00240,Counter iPad,,,Payment,Station,For Here,C044,Square Point of Sale,Cash
+2025-02-11,12:09:00,Europe/London,Coffee,Flat White,3,Regular,SKU100,,£12.00,£0.00,£12.00,£2.00,T00241,P00241,Counter iPad,,,Payment,Station,For Here,C051,Square Point of Sale,Cash
+2025-04-09,18:19:00,Europe/London,Bakery,Croissant,2,Regular,SKU102,,£6.40,£0.00,£6.40,£1.07,T00242,P00242,Counter iPad,,,Payment,High St,For Here,C011,Square Point of Sale,Cash
+2025-01-23,18:27:00,Europe/London,Tea,Latte,2,Regular,SKU115,,£8.00,£0.00,£8.00,£1.33,T00243,P00243,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-04-25,10:45:00,Europe/London,Coffee,Flat White,2,Regular,SKU101,,£5.00,£0.00,£5.00,£0.83,T00244,P00244,Counter iPad,,,Payment,Station,For Here,C078,Square Point of Sale,Mastercard
+2025-04-21,09:38:00,Europe/London,Coffee,Latte,1,Regular,SKU102,,£3.20,£0.00,£3.20,£0.53,T00245,P00245,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-01-25,10:20:00,Europe/London,Bakery,Latte,2,Regular,SKU115,,£5.00,£0.00,£5.00,£0.83,T00246,P00246,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-23,16:21:00,Europe/London,Bakery,Chai,1,Regular,SKU108,,£6.50,£0.00,£6.50,£1.08,T00247,P00247,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-04-29,18:53:00,Europe/London,Bakery,Flat White,2,Regular,SKU102,,£8.00,-£0.80,£7.20,£1.20,T00248,P00248,Counter iPad,,,Payment,High St,For Here,C019,Square Point of Sale,Cash
+2025-04-09,15:43:00,Europe/London,Tea,Flat White,1,Regular,SKU119,,£4.00,£0.00,£4.00,£0.67,T00249,P00249,Counter iPad,,,Payment,Station,For Here,C080,Square Point of Sale,Mastercard
+2025-04-15,15:45:00,Europe/London,Bakery,Croissant,3,Regular,SKU111,,£7.50,£0.00,£7.50,£1.25,T00250,P00250,Counter iPad,,,Payment,Station,For Here,C002,Square Point of Sale,Cash
+2025-03-02,13:48:00,Europe/London,Coffee,Latte,1,Regular,SKU119,,£4.00,£0.00,£4.00,£0.67,T00251,P00251,Counter iPad,,,Payment,High St,For Here,C070,Square Point of Sale,Cash
+2025-01-27,09:57:00,Europe/London,Coffee,Flat White,1,Regular,SKU116,,£4.00,£0.00,£4.00,£0.67,T00252,P00252,Counter iPad,,,Payment,High St,For Here,C032,Square Point of Sale,Mastercard
+2025-04-21,13:29:00,Europe/London,Coffee,Croissant,3,Regular,SKU100,,£9.60,£0.00,£9.60,£1.60,T00253,P00253,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-01-09,13:58:00,Europe/London,Bakery,Flat White,3,Regular,SKU100,,£12.00,-£1.20,£10.80,£1.80,T00254,P00254,Counter iPad,,,Payment,Station,For Here,C056,Square Point of Sale,Visa
+2025-01-30,11:19:00,Europe/London,Bakery,Flat White,2,Regular,SKU118,,£6.40,£0.00,£6.40,£1.07,T00255,P00255,Counter iPad,,,Payment,High St,For Here,C035,Square Point of Sale,Visa
+2025-04-16,10:10:00,Europe/London,Bakery,Chai,-2,Regular,SKU106,,-£8.00,-£0.80,-£8.80,-£1.47,T00256,P00256,Counter iPad,,,Refund,High St,For Here,,Square Point of Sale,Visa
+2025-04-19,09:27:00,Europe/London,Coffee,Croissant,2,Regular,SKU100,,£5.00,£0.00,£5.00,£0.83,T00257,P00257,Counter iPad,,,Payment,High St,For Here,C002,Square Point of Sale,Visa
+2025-04-27,09:29:00,Europe/London,Tea,Chai,2,Regular,SKU102,,£6.40,£0.00,£6.40,£1.07,T00258,P00258,Counter iPad,,,Payment,Station,For Here,C086,Square Point of Sale,Cash
+2025-02-20,17:44:00,Europe/London,Coffee,Latte,2,Regular,SKU104,,£5.00,£0.00,£5.00,£0.83,T00259,P00259,Counter iPad,,,Payment,High St,For Here,C014,Square Point of Sale,Cash
+2025-01-03,14:08:00,Europe/London,Tea,Chai,1,Regular,SKU100,,£4.00,-£0.40,£3.60,£0.60,T00260,P00260,Counter iPad,,,Payment,High St,For Here,C070,Square Point of Sale,Visa
+2025-03-23,08:22:00,Europe/London,Coffee,Flat White,1,Regular,SKU102,,£4.00,£0.00,£4.00,£0.67,T00261,P00261,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-02-03,07:26:00,Europe/London,Tea,Croissant,2,Regular,SKU108,,£5.00,£0.00,£5.00,£0.83,T00262,P00262,Counter iPad,,,Payment,High St,For Here,C006,Square Point of Sale,Cash
+2025-02-28,18:45:00,Europe/London,Bakery,Chai,2,Regular,SKU113,,£8.00,£0.00,£8.00,£1.33,T00263,P00263,Counter iPad,,,Payment,Station,For Here,C050,Square Point of Sale,Visa
+2025-02-19,17:00:00,Europe/London,Coffee,Croissant,3,Regular,SKU119,,£19.50,£0.00,£19.50,£3.25,T00264,P00264,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-03-26,18:03:00,Europe/London,Bakery,Croissant,1,Regular,SKU114,,£2.50,£0.00,£2.50,£0.42,T00265,P00265,Counter iPad,,,Payment,Station,For Here,C074,Square Point of Sale,Visa
+2025-03-02,10:52:00,Europe/London,Tea,Chai,3,Regular,SKU111,,£12.00,£0.00,£12.00,£2.00,T00266,P00266,Counter iPad,,,Payment,High St,For Here,C068,Square Point of Sale,Mastercard
+2025-03-20,10:59:00,Europe/London,Tea,Croissant,2,Regular,SKU108,,£5.00,£0.00,£5.00,£0.83,T00267,P00267,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-03-08,15:23:00,Europe/London,Tea,Flat White,3,Regular,SKU116,,£9.60,£0.00,£9.60,£1.60,T00268,P00268,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-03-28,17:52:00,Europe/London,Tea,Latte,1,Regular,SKU110,,£3.20,£0.00,£3.20,£0.53,T00269,P00269,Counter iPad,,,Payment,Station,For Here,C055,Square Point of Sale,Visa
+2025-02-22,17:51:00,Europe/London,Tea,Croissant,1,Regular,SKU114,,£4.00,£0.00,£4.00,£0.67,T00270,P00270,Counter iPad,,,Payment,High St,For Here,C038,Square Point of Sale,Mastercard
+2025-03-30,09:48:00,Europe/London,Tea,Flat White,1,Regular,SKU100,,£6.50,£0.00,£6.50,£1.08,T00271,P00271,Counter iPad,,,Payment,High St,For Here,C067,Square Point of Sale,Cash
+2025-01-31,15:12:00,Europe/London,Coffee,Croissant,2,Regular,SKU101,,£8.00,£0.00,£8.00,£1.33,T00272,P00272,Counter iPad,,,Payment,High St,For Here,C070,Square Point of Sale,Mastercard
+2025-04-28,08:33:00,Europe/London,Tea,Chai,2,Regular,SKU102,,£8.00,£0.00,£8.00,£1.33,T00273,P00273,Counter iPad,,,Payment,High St,For Here,C038,Square Point of Sale,Cash
+2025-04-10,07:45:00,Europe/London,Bakery,Chai,2,Regular,SKU113,,£5.00,£0.00,£5.00,£0.83,T00274,P00274,Counter iPad,,,Payment,Station,For Here,C050,Square Point of Sale,Cash
+2025-01-17,08:05:00,Europe/London,Bakery,Chai,1,Regular,SKU112,,£4.00,-£0.40,£3.60,£0.60,T00275,P00275,Counter iPad,,,Payment,Station,For Here,C083,Square Point of Sale,Visa
+2025-01-14,14:11:00,Europe/London,Coffee,Chai,3,Regular,SKU112,,£19.50,£0.00,£19.50,£3.25,T00276,P00276,Counter iPad,,,Payment,Station,For Here,C002,Square Point of Sale,Cash
+2025-01-30,11:35:00,Europe/London,Bakery,Chai,1,Regular,SKU114,,£6.50,£0.00,£6.50,£1.08,T00277,P00277,Counter iPad,,,Payment,High St,For Here,C010,Square Point of Sale,Cash
+2025-04-15,10:36:00,Europe/London,Bakery,Latte,1,Regular,SKU106,,£2.50,£0.00,£2.50,£0.42,T00278,P00278,Counter iPad,,,Payment,Station,For Here,C008,Square Point of Sale,Cash
+2025-03-30,17:09:00,Europe/London,Bakery,Croissant,3,Regular,SKU106,,£9.60,£0.00,£9.60,£1.60,T00279,P00279,Counter iPad,,,Payment,High St,For Here,C069,Square Point of Sale,Mastercard
+2025-03-08,11:35:00,Europe/London,Bakery,Chai,2,Regular,SKU101,,£5.00,£0.00,£5.00,£0.83,T00280,P00280,Counter iPad,,,Payment,Station,For Here,C049,Square Point of Sale,Mastercard
+2025-04-20,15:41:00,Europe/London,Bakery,Chai,2,Regular,SKU115,,£8.00,£0.00,£8.00,£1.33,T00281,P00281,Counter iPad,,,Payment,High St,For Here,C044,Square Point of Sale,Visa
+2025-02-28,16:52:00,Europe/London,Bakery,Latte,1,Regular,SKU108,,£4.00,-£0.40,£3.60,£0.60,T00282,P00282,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-01-26,10:56:00,Europe/London,Coffee,Latte,1,Regular,SKU105,,£6.50,£0.00,£6.50,£1.08,T00283,P00283,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-01-07,07:59:00,Europe/London,Tea,Flat White,1,Regular,SKU115,,£2.50,£0.00,£2.50,£0.42,T00284,P00284,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-04-06,18:13:00,Europe/London,Tea,Latte,2,Regular,SKU114,,£6.40,£0.00,£6.40,£1.07,T00285,P00285,Counter iPad,,,Payment,High St,For Here,C012,Square Point of Sale,Visa
+2025-02-23,13:09:00,Europe/London,Coffee,Flat White,1,Regular,SKU101,,£4.00,£0.00,£4.00,£0.67,T00286,P00286,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-04-08,11:58:00,Europe/London,Bakery,Croissant,1,Regular,SKU117,,£4.00,£0.00,£4.00,£0.67,T00287,P00287,Counter iPad,,,Payment,High St,For Here,C086,Square Point of Sale,Visa
+2025-02-20,10:41:00,Europe/London,Tea,Latte,1,Regular,SKU106,,£4.00,£0.00,£4.00,£0.67,T00288,P00288,Counter iPad,,,Payment,Station,For Here,C024,Square Point of Sale,Mastercard
+2025-02-12,17:59:00,Europe/London,Coffee,Latte,3,Regular,SKU109,,£7.50,-£0.75,£6.75,£1.12,T00289,P00289,Counter iPad,,,Payment,Station,For Here,C064,Square Point of Sale,Visa
+2025-01-26,15:48:00,Europe/London,Coffee,Flat White,3,Regular,SKU104,,£12.00,£0.00,£12.00,£2.00,T00290,P00290,Counter iPad,,,Payment,Station,For Here,C030,Square Point of Sale,Cash
+2025-04-29,07:22:00,Europe/London,Coffee,Flat White,2,Regular,SKU109,,£5.00,£0.00,£5.00,£0.83,T00291,P00291,Counter iPad,,,Payment,High St,For Here,C045,Square Point of Sale,Mastercard
+2025-03-03,11:51:00,Europe/London,Coffee,Chai,1,Regular,SKU103,,£4.00,£0.00,£4.00,£0.67,T00292,P00292,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-02-20,08:26:00,Europe/London,Tea,Flat White,3,Regular,SKU113,,£7.50,-£0.75,£6.75,£1.12,T00293,P00293,Counter iPad,,,Payment,Station,For Here,C085,Square Point of Sale,Cash
+2025-01-21,07:53:00,Europe/London,Tea,Chai,2,Regular,SKU109,,£6.40,£0.00,£6.40,£1.07,T00294,P00294,Counter iPad,,,Payment,High St,For Here,C014,Square Point of Sale,Visa
+2025-01-15,12:29:00,Europe/London,Coffee,Flat White,1,Regular,SKU118,,£6.50,£0.00,£6.50,£1.08,T00295,P00295,Counter iPad,,,Payment,High St,For Here,C047,Square Point of Sale,Visa
+2025-02-06,18:55:00,Europe/London,Tea,Flat White,3,Regular,SKU103,,£9.60,£0.00,£9.60,£1.60,T00296,P00296,Counter iPad,,,Payment,High St,For Here,C007,Square Point of Sale,Mastercard
+2025-04-12,11:01:00,Europe/London,Bakery,Chai,1,Regular,SKU119,,£3.20,-£0.32,£2.88,£0.48,T00297,P00297,Counter iPad,,,Payment,High St,For Here,C016,Square Point of Sale,Visa
+2025-03-26,15:45:00,Europe/London,Coffee,Flat White,1,Regular,SKU102,,£3.20,£0.00,£3.20,£0.53,T00298,P00298,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-01-28,14:37:00,Europe/London,Coffee,Latte,1,Regular,SKU110,,£4.00,£0.00,£4.00,£0.67,T00299,P00299,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-01-12,09:51:00,Europe/London,Bakery,Flat White,1,Regular,SKU106,,£3.20,£0.00,£3.20,£0.53,T00300,P00300,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-02-12,14:33:00,Europe/London,Bakery,Latte,1,Regular,SKU119,,£2.50,£0.00,£2.50,£0.42,T00301,P00301,Counter iPad,,,Payment,High St,For Here,C081,Square Point of Sale,Visa
+2025-04-19,12:37:00,Europe/London,Coffee,Chai,2,Regular,SKU115,,£13.00,-£1.30,£11.70,£1.95,T00302,P00302,Counter iPad,,,Payment,High St,For Here,C089,Square Point of Sale,Mastercard
+2025-04-26,16:10:00,Europe/London,Bakery,Chai,1,Regular,SKU116,,£6.50,£0.00,£6.50,£1.08,T00303,P00303,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-03-10,11:48:00,Europe/London,Coffee,Flat White,1,Regular,SKU106,,£2.50,£0.00,£2.50,£0.42,T00304,P00304,Counter iPad,,,Payment,Station,For Here,C064,Square Point of Sale,Cash
+2025-04-27,17:43:00,Europe/London,Bakery,Chai,1,Regular,SKU112,,£6.50,£0.00,£6.50,£1.08,T00305,P00305,Counter iPad,,,Payment,High St,For Here,C087,Square Point of Sale,Mastercard
+2025-03-26,07:07:00,Europe/London,Bakery,Chai,3,Regular,SKU113,,£12.00,-£1.20,£10.80,£1.80,T00306,P00306,Counter iPad,,,Payment,Station,For Here,C043,Square Point of Sale,Cash
+2025-01-28,07:18:00,Europe/London,Bakery,Latte,1,Regular,SKU108,,£4.00,£0.00,£4.00,£0.67,T00307,P00307,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-02-22,13:52:00,Europe/London,Coffee,Chai,1,Regular,SKU108,,£2.50,£0.00,£2.50,£0.42,T00308,P00308,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-22,13:19:00,Europe/London,Bakery,Croissant,1,Regular,SKU116,,£4.00,£0.00,£4.00,£0.67,T00309,P00309,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-02-20,10:29:00,Europe/London,Tea,Croissant,1,Regular,SKU111,,£2.50,£0.00,£2.50,£0.42,T00310,P00310,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-04-21,17:26:00,Europe/London,Coffee,Croissant,3,Regular,SKU114,,£9.60,£0.00,£9.60,£1.60,T00311,P00311,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-02-09,12:44:00,Europe/London,Coffee,Latte,3,Regular,SKU103,,£7.50,£0.00,£7.50,£1.25,T00312,P00312,Counter iPad,,,Payment,Station,For Here,C066,Square Point of Sale,Visa
+2025-04-04,07:59:00,Europe/London,Bakery,Flat White,3,Regular,SKU106,,£7.50,£0.00,£7.50,£1.25,T00313,P00313,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-04-06,13:35:00,Europe/London,Bakery,Latte,2,Regular,SKU112,,£6.40,£0.00,£6.40,£1.07,T00314,P00314,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-16,07:50:00,Europe/London,Tea,Croissant,2,Regular,SKU104,,£8.00,£0.00,£8.00,£1.33,T00315,P00315,Counter iPad,,,Payment,High St,For Here,C008,Square Point of Sale,Visa
+2025-02-09,13:49:00,Europe/London,Bakery,Flat White,1,Regular,SKU108,,£4.00,£0.00,£4.00,£0.67,T00316,P00316,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-26,12:25:00,Europe/London,Bakery,Chai,2,Regular,SKU115,,£13.00,£0.00,£13.00,£2.17,T00317,P00317,Counter iPad,,,Payment,Station,For Here,C080,Square Point of Sale,Mastercard
+2025-03-06,09:17:00,Europe/London,Tea,Chai,3,Regular,SKU117,,£9.60,£0.00,£9.60,£1.60,T00318,P00318,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-02-20,17:07:00,Europe/London,Bakery,Chai,2,Regular,SKU100,,£13.00,£0.00,£13.00,£2.17,T00319,P00319,Counter iPad,,,Payment,High St,For Here,C073,Square Point of Sale,Mastercard
+2025-02-15,15:06:00,Europe/London,Tea,Chai,2,Regular,SKU103,,£8.00,£0.00,£8.00,£1.33,T00320,P00320,Counter iPad,,,Payment,Station,For Here,C023,Square Point of Sale,Cash
+2025-03-23,18:53:00,Europe/London,Bakery,Chai,1,Regular,SKU112,,£6.50,£0.00,£6.50,£1.08,T00321,P00321,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-04-21,17:59:00,Europe/London,Bakery,Flat White,1,Regular,SKU106,,£3.20,£0.00,£3.20,£0.53,T00322,P00322,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-09,16:46:00,Europe/London,Bakery,Flat White,1,Regular,SKU104,,£3.20,£0.00,£3.20,£0.53,T00323,P00323,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-03-06,17:24:00,Europe/London,Bakery,Flat White,1,Regular,SKU112,,£4.00,£0.00,£4.00,£0.67,T00324,P00324,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-03-19,12:43:00,Europe/London,Tea,Latte,2,Regular,SKU111,,£6.40,£0.00,£6.40,£1.07,T00325,P00325,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-01-16,09:28:00,Europe/London,Bakery,Latte,2,Regular,SKU114,,£6.40,-£0.64,£5.76,£0.96,T00326,P00326,Counter iPad,,,Payment,High St,For Here,C060,Square Point of Sale,Visa
+2025-03-03,12:33:00,Europe/London,Tea,Flat White,1,Regular,SKU106,,£4.00,£0.00,£4.00,£0.67,T00327,P00327,Counter iPad,,,Payment,High St,For Here,C074,Square Point of Sale,Cash
+2025-04-02,15:17:00,Europe/London,Bakery,Croissant,-1,Regular,SKU102,,-£3.20,£0.00,-£3.20,-£0.53,T00328,P00328,Counter iPad,,,Refund,Station,For Here,,Square Point of Sale,Cash
+2025-01-15,10:42:00,Europe/London,Coffee,Croissant,3,Regular,SKU117,,£19.50,£0.00,£19.50,£3.25,T00329,P00329,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-10,18:39:00,Europe/London,Bakery,Flat White,3,Regular,SKU110,,£9.60,£0.00,£9.60,£1.60,T00330,P00330,Counter iPad,,,Payment,High St,For Here,C022,Square Point of Sale,Mastercard
+2025-04-08,14:49:00,Europe/London,Coffee,Flat White,1,Regular,SKU108,,£2.50,£0.00,£2.50,£0.42,T00331,P00331,Counter iPad,,,Payment,High St,For Here,C038,Square Point of Sale,Cash
+2025-04-11,07:53:00,Europe/London,Tea,Croissant,1,Regular,SKU117,,£2.50,-£0.25,£2.25,£0.38,T00332,P00332,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-03-22,09:44:00,Europe/London,Bakery,Chai,2,Regular,SKU100,,£8.00,£0.00,£8.00,£1.33,T00333,P00333,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-14,08:58:00,Europe/London,Bakery,Croissant,1,Regular,SKU115,,£4.00,£0.00,£4.00,£0.67,T00334,P00334,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-03-14,07:58:00,Europe/London,Coffee,Croissant,2,Regular,SKU116,,£13.00,£0.00,£13.00,£2.17,T00335,P00335,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-02-19,10:46:00,Europe/London,Tea,Chai,-1,Regular,SKU100,,-£6.50,-£0.65,-£7.15,-£1.19,T00336,P00336,Counter iPad,,,Refund,High St,For Here,,Square Point of Sale,Visa
+2025-03-01,08:54:00,Europe/London,Bakery,Croissant,1,Regular,SKU119,,£3.20,£0.00,£3.20,£0.53,T00337,P00337,Counter iPad,,,Payment,Station,For Here,C082,Square Point of Sale,Visa
+2025-01-01,08:06:00,Europe/London,Tea,Flat White,1,Regular,SKU106,,£3.20,£0.00,£3.20,£0.53,T00338,P00338,Counter iPad,,,Payment,Station,For Here,C075,Square Point of Sale,Cash
+2025-03-29,14:10:00,Europe/London,Bakery,Flat White,3,Regular,SKU115,,£7.50,£0.00,£7.50,£1.25,T00339,P00339,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-04-27,10:00:00,Europe/London,Bakery,Flat White,3,Regular,SKU101,,£19.50,-£1.95,£17.55,£2.93,T00340,P00340,Counter iPad,,,Payment,High St,For Here,C026,Square Point of Sale,Visa
+2025-01-05,10:49:00,Europe/London,Tea,Latte,3,Regular,SKU117,,£7.50,£0.00,£7.50,£1.25,T00341,P00341,Counter iPad,,,Payment,Station,For Here,C020,Square Point of Sale,Mastercard
+2025-01-03,08:11:00,Europe/London,Coffee,Flat White,3,Regular,SKU119,,£7.50,£0.00,£7.50,£1.25,T00342,P00342,Counter iPad,,,Payment,Station,For Here,C049,Square Point of Sale,Visa
+2025-01-10,16:50:00,Europe/London,Tea,Latte,1,Regular,SKU101,,£2.50,£0.00,£2.50,£0.42,T00343,P00343,Counter iPad,,,Payment,Station,For Here,C086,Square Point of Sale,Visa
+2025-03-13,14:13:00,Europe/London,Coffee,Flat White,1,Regular,SKU113,,£2.50,£0.00,£2.50,£0.42,T00344,P00344,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-03-11,08:05:00,Europe/London,Bakery,Croissant,2,Regular,SKU109,,£5.00,-£0.50,£4.50,£0.75,T00345,P00345,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-03-05,08:43:00,Europe/London,Tea,Flat White,2,Regular,SKU116,,£6.40,-£0.64,£5.76,£0.96,T00346,P00346,Counter iPad,,,Payment,Station,For Here,C053,Square Point of Sale,Cash
+2025-03-15,18:46:00,Europe/London,Coffee,Flat White,1,Regular,SKU113,,£2.50,£0.00,£2.50,£0.42,T00347,P00347,Counter iPad,,,Payment,High St,For Here,C038,Square Point of Sale,Mastercard
+2025-02-02,07:20:00,Europe/London,Bakery,Latte,1,Regular,SKU105,,£4.00,£0.00,£4.00,£0.67,T00348,P00348,Counter iPad,,,Payment,Station,For Here,C084,Square Point of Sale,Cash
+2025-04-30,13:34:00,Europe/London,Coffee,Croissant,3,Regular,SKU107,,£12.00,£0.00,£12.00,£2.00,T00349,P00349,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-01,08:02:00,Europe/London,Bakery,Chai,1,Regular,SKU110,,£4.00,£0.00,£4.00,£0.67,T00350,P00350,Counter iPad,,,Payment,Station,For Here,C016,Square Point of Sale,Mastercard
+2025-01-21,13:59:00,Europe/London,Tea,Latte,1,Regular,SKU106,,£2.50,£0.00,£2.50,£0.42,T00351,P00351,Counter iPad,,,Payment,High St,For Here,C002,Square Point of Sale,Cash
+2025-02-03,14:39:00,Europe/London,Tea,Flat White,3,Regular,SKU109,,£7.50,£0.00,£7.50,£1.25,T00352,P00352,Counter iPad,,,Payment,Station,For Here,C033,Square Point of Sale,Visa
+2025-01-12,18:37:00,Europe/London,Coffee,Latte,1,Regular,SKU119,,£4.00,£0.00,£4.00,£0.67,T00353,P00353,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-01-10,08:09:00,Europe/London,Tea,Latte,1,Regular,SKU115,,£2.50,£0.00,£2.50,£0.42,T00354,P00354,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-23,18:11:00,Europe/London,Bakery,Latte,1,Regular,SKU114,,£4.00,£0.00,£4.00,£0.67,T00355,P00355,Counter iPad,,,Payment,Station,For Here,C027,Square Point of Sale,Visa
+2025-02-19,17:21:00,Europe/London,Bakery,Latte,1,Regular,SKU106,,£2.50,£0.00,£2.50,£0.42,T00356,P00356,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-04-11,08:53:00,Europe/London,Coffee,Chai,2,Regular,SKU108,,£8.00,£0.00,£8.00,£1.33,T00357,P00357,Counter iPad,,,Payment,High St,For Here,C029,Square Point of Sale,Visa
+2025-01-09,12:23:00,Europe/London,Tea,Flat White,2,Regular,SKU104,,£5.00,£0.00,£5.00,£0.83,T00358,P00358,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-02-17,10:58:00,Europe/London,Coffee,Croissant,2,Regular,SKU112,,£6.40,£0.00,£6.40,£1.07,T00359,P00359,Counter iPad,,,Payment,High St,For Here,C025,Square Point of Sale,Visa
+2025-04-08,11:55:00,Europe/London,Coffee,Latte,3,Regular,SKU103,,£12.00,£0.00,£12.00,£2.00,T00360,P00360,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-02-06,14:35:00,Europe/London,Tea,Chai,1,Regular,SKU102,,£6.50,£0.00,£6.50,£1.08,T00361,P00361,Counter iPad,,,Payment,Station,For Here,C062,Square Point of Sale,Visa
+2025-04-27,08:17:00,Europe/London,Bakery,Chai,1,Regular,SKU115,,£6.50,£0.00,£6.50,£1.08,T00362,P00362,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-01-08,16:55:00,Europe/London,Bakery,Latte,1,Regular,SKU101,,£3.20,£0.00,£3.20,£0.53,T00363,P00363,Counter iPad,,,Payment,Station,For Here,C031,Square Point of Sale,Cash
+2025-01-22,14:59:00,Europe/London,Bakery,Flat White,2,Regular,SKU102,,£6.40,-£0.64,£5.76,£0.96,T00364,P00364,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-01-27,14:30:00,Europe/London,Bakery,Flat White,2,Regular,SKU116,,£8.00,-£0.80,£7.20,£1.20,T00365,P00365,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-04-26,17:14:00,Europe/London,Bakery,Flat White,-1,Regular,SKU111,,-£6.50,£0.00,-£6.50,-£1.08,T00366,P00366,Counter iPad,,,Refund,High St,For Here,C042,Square Point of Sale,Cash
+2025-01-06,14:57:00,Europe/London,Tea,Latte,-2,Regular,SKU114,,-£6.40,£0.00,-£6.40,-£1.07,T00367,P00367,Counter iPad,,,Refund,High St,For Here,,Square Point of Sale,Mastercard
+2025-02-26,10:04:00,Europe/London,Bakery,Latte,1,Regular,SKU105,,£3.20,£0.00,£3.20,£0.53,T00368,P00368,Counter iPad,,,Payment,High St,For Here,C062,Square Point of Sale,Visa
+2025-01-09,14:43:00,Europe/London,Coffee,Flat White,3,Regular,SKU106,,£12.00,£0.00,£12.00,£2.00,T00369,P00369,Counter iPad,,,Payment,Station,For Here,C059,Square Point of Sale,Mastercard
+2025-01-29,17:45:00,Europe/London,Coffee,Croissant,2,Regular,SKU105,,£5.00,£0.00,£5.00,£0.83,T00370,P00370,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-01-20,13:08:00,Europe/London,Bakery,Flat White,2,Regular,SKU117,,£13.00,£0.00,£13.00,£2.17,T00371,P00371,Counter iPad,,,Payment,High St,For Here,C054,Square Point of Sale,Visa
+2025-04-27,07:10:00,Europe/London,Coffee,Chai,1,Regular,SKU105,,£3.20,£0.00,£3.20,£0.53,T00372,P00372,Counter iPad,,,Payment,High St,For Here,C058,Square Point of Sale,Mastercard
+2025-02-02,18:26:00,Europe/London,Coffee,Latte,1,Regular,SKU113,,£3.20,£0.00,£3.20,£0.53,T00373,P00373,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-01-10,15:24:00,Europe/London,Bakery,Latte,2,Regular,SKU114,,£6.40,£0.00,£6.40,£1.07,T00374,P00374,Counter iPad,,,Payment,High St,For Here,C068,Square Point of Sale,Cash
+2025-03-29,11:36:00,Europe/London,Bakery,Flat White,2,Regular,SKU108,,£6.40,£0.00,£6.40,£1.07,T00375,P00375,Counter iPad,,,Payment,High St,For Here,C068,Square Point of Sale,Mastercard
+2025-03-28,17:20:00,Europe/London,Coffee,Chai,1,Regular,SKU115,,£2.50,£0.00,£2.50,£0.42,T00376,P00376,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-03-24,10:27:00,Europe/London,Coffee,Flat White,1,Regular,SKU117,,£6.50,£0.00,£6.50,£1.08,T00377,P00377,Counter iPad,,,Payment,Station,For Here,C018,Square Point of Sale,Cash
+2025-01-30,12:08:00,Europe/London,Coffee,Flat White,2,Regular,SKU108,,£8.00,£0.00,£8.00,£1.33,T00378,P00378,Counter iPad,,,Payment,High St,For Here,C018,Square Point of Sale,Mastercard
+2025-03-20,12:36:00,Europe/London,Tea,Croissant,3,Regular,SKU111,,£7.50,£0.00,£7.50,£1.25,T00379,P00379,Counter iPad,,,Payment,Station,For Here,C062,Square Point of Sale,Cash
+2025-01-03,11:53:00,Europe/London,Tea,Flat White,1,Regular,SKU107,,£6.50,£0.00,£6.50,£1.08,T00380,P00380,Counter iPad,,,Payment,High St,For Here,C039,Square Point of Sale,Cash
+2025-02-02,16:02:00,Europe/London,Coffee,Latte,1,Regular,SKU119,,£2.50,£0.00,£2.50,£0.42,T00381,P00381,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Mastercard
+2025-01-04,10:00:00,Europe/London,Coffee,Flat White,1,Regular,SKU105,,£2.50,£0.00,£2.50,£0.42,T00382,P00382,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Visa
+2025-01-03,10:09:00,Europe/London,Bakery,Croissant,1,Regular,SKU102,,£2.50,-£0.25,£2.25,£0.38,T00383,P00383,Counter iPad,,,Payment,Station,For Here,C054,Square Point of Sale,Cash
+2025-03-03,09:16:00,Europe/London,Coffee,Latte,2,Regular,SKU119,,£8.00,-£0.80,£7.20,£1.20,T00384,P00384,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Mastercard
+2025-01-17,16:59:00,Europe/London,Tea,Latte,2,Regular,SKU104,,£8.00,£0.00,£8.00,£1.33,T00385,P00385,Counter iPad,,,Payment,Station,For Here,C003,Square Point of Sale,Visa
+2025-02-09,10:50:00,Europe/London,Tea,Chai,1,Regular,SKU114,,£6.50,-£0.65,£5.85,£0.97,T00386,P00386,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-03-02,10:06:00,Europe/London,Tea,Chai,3,Regular,SKU107,,£9.60,-£0.96,£8.64,£1.44,T00387,P00387,Counter iPad,,,Payment,Station,For Here,C067,Square Point of Sale,Cash
+2025-02-12,15:18:00,Europe/London,Coffee,Chai,-1,Regular,SKU119,,-£2.50,£0.00,-£2.50,-£0.42,T00388,P00388,Counter iPad,,,Refund,High St,For Here,,Square Point of Sale,Visa
+2025-02-09,12:52:00,Europe/London,Tea,Croissant,2,Regular,SKU112,,£6.40,£0.00,£6.40,£1.07,T00389,P00389,Counter iPad,,,Payment,Station,For Here,C040,Square Point of Sale,Visa
+2025-04-10,10:09:00,Europe/London,Coffee,Flat White,2,Regular,SKU114,,£5.00,£0.00,£5.00,£0.83,T00390,P00390,Counter iPad,,,Payment,High St,For Here,C016,Square Point of Sale,Cash
+2025-04-02,08:42:00,Europe/London,Coffee,Chai,2,Regular,SKU113,,£13.00,£0.00,£13.00,£2.17,T00391,P00391,Counter iPad,,,Payment,Station,For Here,C086,Square Point of Sale,Cash
+2025-01-29,13:49:00,Europe/London,Tea,Croissant,3,Regular,SKU117,,£12.00,£0.00,£12.00,£2.00,T00392,P00392,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-04-30,17:59:00,Europe/London,Bakery,Flat White,2,Regular,SKU101,,£5.00,-£0.50,£4.50,£0.75,T00393,P00393,Counter iPad,,,Payment,High St,For Here,C088,Square Point of Sale,Cash
+2025-01-05,12:27:00,Europe/London,Tea,Latte,2,Regular,SKU104,,£5.00,£0.00,£5.00,£0.83,T00394,P00394,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-04-05,09:33:00,Europe/London,Coffee,Latte,1,Regular,SKU110,,£2.50,£0.00,£2.50,£0.42,T00395,P00395,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash
+2025-04-17,13:45:00,Europe/London,Bakery,Croissant,3,Regular,SKU103,,£9.60,£0.00,£9.60,£1.60,T00396,P00396,Counter iPad,,,Payment,High St,For Here,C071,Square Point of Sale,Visa
+2025-01-12,16:51:00,Europe/London,Bakery,Chai,2,Regular,SKU112,,£13.00,£0.00,£13.00,£2.17,T00397,P00397,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Visa
+2025-04-06,12:51:00,Europe/London,Coffee,Latte,1,Regular,SKU108,,£6.50,-£0.65,£5.85,£0.97,T00398,P00398,Counter iPad,,,Payment,Station,For Here,,Square Point of Sale,Cash
+2025-01-20,12:43:00,Europe/London,Coffee,Chai,2,Regular,SKU101,,£8.00,£0.00,£8.00,£1.33,T00399,P00399,Counter iPad,,,Payment,High St,For Here,,Square Point of Sale,Cash

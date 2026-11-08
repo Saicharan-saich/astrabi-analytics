@@ -1,0 +1,251 @@
+Response ID,Submitted at,How likely are you to recommend us? (0-10),Overall satisfaction,Would visit again,Age band,Comments
+R0000,2025-06-02 04:00,8,Dissatisfied,No,45-54,Queue too long
+R0001,2025-05-21 06:00,9,Satisfied,No,35-44,Too expensive
+R0002,2025-06-03 03:00,3,Satisfied,No,18-24,
+R0003,2025-05-17 06:00,5,Satisfied,Yes,55+,Queue too long
+R0004,2025-05-23 02:00,1,Very satisfied,Yes,35-44,Friendly staff
+R0005,2025-05-31 16:00,0,Satisfied,No,55+,
+R0006,2025-05-09 07:00,8,Dissatisfied,Yes,55+,Friendly staff
+R0007,2025-05-20 17:00,8,Neutral,No,45-54,Friendly staff
+R0008,2025-05-21 18:00,10,Dissatisfied,Yes,25-34,
+R0009,2025-05-17 06:00,9,Very satisfied,No,35-44,Too expensive
+R0010,2025-05-29 22:00,3,Neutral,No,55+,
+R0011,2025-05-12 22:00,3,Very dissatisfied,No,18-24,Too expensive
+R0012,2025-05-04 05:00,10,Dissatisfied,No,45-54,Friendly staff
+R0013,2025-05-17 15:00,7,Dissatisfied,No,45-54,Queue too long
+R0014,2025-05-16 15:00,5,Dissatisfied,No,25-34,
+R0015,2025-05-08 19:00,1,Very satisfied,No,25-34,Friendly staff
+R0016,2025-05-22 07:00,3,Neutral,Yes,55+,Too expensive
+R0017,2025-05-20 01:00,10,Dissatisfied,Yes,35-44,Too expensive
+R0018,2025-05-12 23:00,2,Very dissatisfied,Yes,35-44,Queue too long
+R0019,2025-05-26 16:00,5,Dissatisfied,No,25-34,
+R0020,2025-05-25 23:00,1,Very satisfied,No,55+,Friendly staff
+R0021,2025-05-01 08:00,8,Satisfied,No,35-44,Great coffee
+R0022,2025-05-18 10:00,9,Dissatisfied,Yes,55+,Great coffee
+R0023,2025-05-18 14:00,9,Dissatisfied,No,25-34,Queue too long
+R0024,2025-05-09 07:00,4,Very dissatisfied,Yes,18-24,Queue too long
+R0025,2025-05-12 10:00,5,Very satisfied,Yes,45-54,Queue too long
+R0026,2025-05-03 17:00,5,Very dissatisfied,No,35-44,Too expensive
+R0027,2025-05-07 09:00,4,Very dissatisfied,No,55+,Friendly staff
+R0028,2025-05-31 21:00,1,Dissatisfied,Yes,35-44,Queue too long
+R0029,2025-05-03 19:00,4,Dissatisfied,Yes,25-34,Friendly staff
+R0030,2025-05-18 11:00,0,Very dissatisfied,No,18-24,Friendly staff
+R0031,2025-05-25 22:00,5,Very satisfied,No,45-54,Queue too long
+R0032,2025-05-18 07:00,9,Very satisfied,No,35-44,Queue too long
+R0033,2025-05-19 11:00,6,Dissatisfied,Yes,35-44,Great coffee
+R0034,2025-05-28 16:00,7,Dissatisfied,No,18-24,Too expensive
+R0035,2025-05-26 10:00,3,Very dissatisfied,No,25-34,Great coffee
+R0036,2025-05-28 13:00,10,Dissatisfied,No,25-34,Too expensive
+R0037,2025-05-13 22:00,5,Neutral,No,45-54,Great coffee
+R0038,2025-06-01 01:00,7,Satisfied,Yes,45-54,Too expensive
+R0039,2025-05-09 08:00,4,Very satisfied,No,55+,
+R0040,2025-05-09 01:00,10,Very satisfied,No,45-54,Queue too long
+R0041,2025-05-22 03:00,4,Neutral,Yes,25-34,Friendly staff
+R0042,2025-05-16 10:00,1,Very satisfied,Yes,18-24,Too expensive
+R0043,2025-05-05 05:00,10,Satisfied,No,45-54,
+R0044,2025-05-27 01:00,5,Dissatisfied,Yes,45-54,
+R0045,2025-05-29 00:00,4,Satisfied,Yes,55+,Too expensive
+R0046,2025-05-01 16:00,3,Dissatisfied,No,25-34,
+R0047,2025-05-06 07:00,8,Very satisfied,Yes,25-34,Too expensive
+R0048,2025-05-31 13:00,9,Very dissatisfied,Yes,35-44,Great coffee
+R0049,2025-05-30 06:00,10,Satisfied,Yes,18-24,
+R0050,2025-05-06 19:00,2,Very satisfied,No,45-54,Queue too long
+R0051,2025-05-20 19:00,8,Very dissatisfied,No,35-44,
+R0052,2025-05-03 10:00,0,Dissatisfied,No,25-34,Friendly staff
+R0053,2025-05-07 23:00,1,Very satisfied,No,55+,
+R0054,2025-05-04 14:00,2,Satisfied,Yes,55+,Too expensive
+R0055,2025-05-05 22:00,5,Satisfied,Yes,55+,Friendly staff
+R0056,2025-05-06 15:00,6,Very dissatisfied,No,18-24,
+R0057,2025-05-11 21:00,3,Very satisfied,Yes,25-34,Queue too long
+R0058,2025-05-09 22:00,5,Dissatisfied,Yes,45-54,Too expensive
+R0059,2025-05-05 11:00,5,Neutral,No,25-34,Friendly staff
+R0060,2025-05-22 11:00,4,Very satisfied,Yes,35-44,
+R0061,2025-05-30 07:00,2,Very satisfied,Yes,35-44,Queue too long
+R0062,2025-06-02 20:00,6,Very dissatisfied,No,55+,Queue too long
+R0063,2025-05-05 12:00,6,Very satisfied,Yes,45-54,
+R0064,2025-05-30 08:00,6,Dissatisfied,Yes,18-24,Friendly staff
+R0065,2025-05-03 21:00,4,Very satisfied,Yes,35-44,Friendly staff
+R0066,2025-05-18 17:00,3,Satisfied,Yes,25-34,Friendly staff
+R0067,2025-05-26 21:00,8,Neutral,No,18-24,
+R0068,2025-05-29 08:00,4,Very dissatisfied,Yes,35-44,Great coffee
+R0069,2025-05-23 13:00,10,Very dissatisfied,No,25-34,
+R0070,2025-05-14 01:00,9,Neutral,No,45-54,Too expensive
+R0071,2025-05-22 11:00,7,Very dissatisfied,No,45-54,Too expensive
+R0072,2025-05-13 17:00,3,Very satisfied,Yes,25-34,
+R0073,2025-05-28 18:00,6,Very dissatisfied,Yes,35-44,Great coffee
+R0074,2025-05-17 12:00,0,Satisfied,Yes,45-54,Too expensive
+R0075,2025-05-23 20:00,1,Very satisfied,Yes,55+,
+R0076,2025-06-01 08:00,1,Neutral,Yes,45-54,
+R0077,2025-05-08 01:00,2,Neutral,No,55+,Friendly staff
+R0078,2025-05-30 16:00,10,Very dissatisfied,No,45-54,Great coffee
+R0079,2025-05-16 14:00,1,Dissatisfied,No,25-34,Too expensive
+R0080,2025-05-21 05:00,8,Very dissatisfied,No,18-24,Great coffee
+R0081,2025-05-19 14:00,1,Dissatisfied,Yes,25-34,Too expensive
+R0082,2025-05-24 10:00,6,Very satisfied,Yes,55+,Friendly staff
+R0083,2025-05-17 21:00,9,Dissatisfied,No,45-54,
+R0084,2025-05-26 03:00,7,Very satisfied,No,18-24,
+R0085,2025-05-27 10:00,7,Neutral,No,45-54,Friendly staff
+R0086,2025-05-03 05:00,6,Very dissatisfied,No,35-44,Great coffee
+R0087,2025-05-14 13:00,2,Very dissatisfied,No,35-44,Queue too long
+R0088,2025-05-23 05:00,8,Very satisfied,Yes,35-44,Too expensive
+R0089,2025-05-02 20:00,9,Dissatisfied,No,25-34,Friendly staff
+R0090,2025-06-02 04:00,0,Very satisfied,Yes,35-44,Friendly staff
+R0091,2025-05-08 23:00,8,Very satisfied,No,18-24,
+R0092,2025-05-15 07:00,1,Neutral,No,35-44,Queue too long
+R0093,2025-05-30 15:00,1,Dissatisfied,No,35-44,Great coffee
+R0094,2025-05-07 04:00,5,Very satisfied,Yes,35-44,Too expensive
+R0095,2025-05-20 16:00,1,Very satisfied,Yes,55+,Friendly staff
+R0096,2025-05-14 12:00,6,Very satisfied,No,45-54,Great coffee
+R0097,2025-06-02 13:00,10,Very satisfied,Yes,55+,
+R0098,2025-05-11 10:00,2,Neutral,No,55+,
+R0099,2025-06-01 09:00,10,Neutral,No,45-54,Queue too long
+R0100,2025-05-26 01:00,4,Satisfied,Yes,25-34,Great coffee
+R0101,2025-05-19 00:00,8,Dissatisfied,Yes,25-34,Queue too long
+R0102,2025-05-01 13:00,0,Very satisfied,No,45-54,Too expensive
+R0103,2025-05-30 04:00,10,Very dissatisfied,No,35-44,
+R0104,2025-06-03 00:00,2,Very satisfied,No,25-34,
+R0105,2025-05-26 10:00,2,Satisfied,No,45-54,
+R0106,2025-05-25 03:00,3,Satisfied,No,45-54,Friendly staff
+R0107,2025-05-12 20:00,5,Very satisfied,No,18-24,Queue too long
+R0108,2025-05-26 11:00,10,Very dissatisfied,Yes,45-54,Friendly staff
+R0109,2025-05-27 07:00,6,Satisfied,No,18-24,Too expensive
+R0110,2025-05-04 17:00,0,Neutral,No,25-34,Great coffee
+R0111,2025-05-03 17:00,6,Very dissatisfied,Yes,18-24,Great coffee
+R0112,2025-05-19 06:00,3,Very satisfied,Yes,25-34,
+R0113,2025-05-25 12:00,4,Dissatisfied,No,45-54,Friendly staff
+R0114,2025-05-08 08:00,6,Very satisfied,Yes,35-44,Queue too long
+R0115,2025-05-19 16:00,8,Dissatisfied,No,35-44,Too expensive
+R0116,2025-05-08 19:00,0,Dissatisfied,No,55+,
+R0117,2025-05-10 21:00,6,Satisfied,Yes,35-44,
+R0118,2025-05-08 19:00,2,Very dissatisfied,No,25-34,
+R0119,2025-05-24 15:00,8,Dissatisfied,No,25-34,Queue too long
+R0120,2025-05-03 13:00,5,Dissatisfied,Yes,55+,Queue too long
+R0121,2025-05-17 14:00,7,Neutral,Yes,35-44,Great coffee
+R0122,2025-05-18 00:00,5,Satisfied,No,18-24,Queue too long
+R0123,2025-05-21 06:00,1,Neutral,No,25-34,Friendly staff
+R0124,2025-05-12 11:00,8,Satisfied,No,45-54,Friendly staff
+R0125,2025-05-30 00:00,1,Neutral,Yes,35-44,Friendly staff
+R0126,2025-05-21 20:00,7,Satisfied,Yes,25-34,
+R0127,2025-06-01 22:00,6,Satisfied,No,55+,Too expensive
+R0128,2025-05-24 21:00,0,Neutral,No,55+,Too expensive
+R0129,2025-05-19 17:00,0,Very dissatisfied,Yes,25-34,
+R0130,2025-05-25 18:00,4,Very satisfied,No,45-54,Queue too long
+R0131,2025-05-19 18:00,2,Satisfied,Yes,18-24,Friendly staff
+R0132,2025-05-05 12:00,3,Very dissatisfied,No,18-24,Queue too long
+R0133,2025-06-01 16:00,7,Neutral,Yes,18-24,Too expensive
+R0134,2025-05-04 23:00,9,Neutral,No,18-24,Friendly staff
+R0135,2025-05-17 00:00,1,Satisfied,No,18-24,Great coffee
+R0136,2025-05-16 06:00,3,Neutral,No,45-54,
+R0137,2025-05-02 17:00,10,Dissatisfied,Yes,25-34,Friendly staff
+R0138,2025-05-29 12:00,5,Neutral,Yes,55+,Queue too long
+R0139,2025-05-15 18:00,10,Very satisfied,No,45-54,Queue too long
+R0140,2025-05-15 16:00,3,Very satisfied,No,35-44,Great coffee
+R0141,2025-05-20 21:00,8,Neutral,No,25-34,Friendly staff
+R0142,2025-05-24 03:00,7,Neutral,No,55+,Great coffee
+R0143,2025-05-25 04:00,6,Neutral,Yes,55+,
+R0144,2025-05-30 14:00,3,Dissatisfied,No,55+,Great coffee
+R0145,2025-05-06 23:00,1,Very dissatisfied,No,45-54,Great coffee
+R0146,2025-05-23 11:00,5,Neutral,Yes,18-24,Friendly staff
+R0147,2025-05-15 00:00,0,Satisfied,No,55+,Too expensive
+R0148,2025-05-13 17:00,0,Neutral,Yes,35-44,Too expensive
+R0149,2025-05-27 23:00,7,Satisfied,Yes,18-24,Friendly staff
+R0150,2025-05-18 01:00,4,Satisfied,No,35-44,Too expensive
+R0151,2025-05-29 18:00,6,Satisfied,Yes,18-24,Great coffee
+R0152,2025-05-01 13:00,7,Satisfied,No,45-54,Queue too long
+R0153,2025-05-02 06:00,1,Very dissatisfied,No,18-24,Friendly staff
+R0154,2025-05-14 17:00,7,Very dissatisfied,Yes,35-44,Great coffee
+R0155,2025-05-19 09:00,1,Neutral,Yes,45-54,Queue too long
+R0156,2025-05-10 22:00,3,Very dissatisfied,No,35-44,Friendly staff
+R0157,2025-05-08 03:00,0,Very satisfied,Yes,45-54,Too expensive
+R0158,2025-05-23 01:00,6,Very dissatisfied,Yes,55+,
+R0159,2025-05-16 00:00,5,Satisfied,No,55+,Great coffee
+R0160,2025-05-29 16:00,1,Satisfied,Yes,18-24,Great coffee
+R0161,2025-05-18 06:00,6,Satisfied,Yes,55+,Friendly staff
+R0162,2025-05-30 03:00,8,Satisfied,No,25-34,
+R0163,2025-05-31 00:00,2,Dissatisfied,Yes,55+,Queue too long
+R0164,2025-05-31 20:00,10,Very dissatisfied,Yes,35-44,Great coffee
+R0165,2025-05-31 17:00,8,Satisfied,Yes,18-24,Great coffee
+R0166,2025-05-18 10:00,7,Very dissatisfied,No,18-24,Great coffee
+R0167,2025-06-01 05:00,5,Neutral,Yes,25-34,Queue too long
+R0168,2025-05-06 06:00,9,Satisfied,Yes,25-34,Friendly staff
+R0169,2025-05-05 17:00,3,Very dissatisfied,Yes,25-34,
+R0170,2025-05-06 05:00,9,Very dissatisfied,Yes,35-44,Too expensive
+R0171,2025-05-19 07:00,0,Satisfied,Yes,35-44,Too expensive
+R0172,2025-05-03 14:00,7,Very satisfied,Yes,45-54,Queue too long
+R0173,2025-05-17 01:00,0,Dissatisfied,No,55+,Friendly staff
+R0174,2025-05-23 00:00,2,Satisfied,Yes,45-54,Friendly staff
+R0175,2025-05-13 05:00,4,Satisfied,Yes,25-34,Queue too long
+R0176,2025-05-18 22:00,10,Dissatisfied,No,35-44,Too expensive
+R0177,2025-05-18 10:00,5,Satisfied,Yes,35-44,Queue too long
+R0178,2025-05-13 12:00,2,Satisfied,Yes,45-54,Too expensive
+R0179,2025-06-01 14:00,8,Very satisfied,Yes,35-44,Too expensive
+R0180,2025-05-18 03:00,3,Very dissatisfied,No,45-54,Queue too long
+R0181,2025-05-14 11:00,2,Very satisfied,No,18-24,Too expensive
+R0182,2025-05-19 10:00,4,Dissatisfied,Yes,55+,Friendly staff
+R0183,2025-05-23 01:00,7,Dissatisfied,No,45-54,
+R0184,2025-05-14 01:00,8,Very satisfied,Yes,35-44,Great coffee
+R0185,2025-05-27 20:00,5,Satisfied,No,55+,Friendly staff
+R0186,2025-06-01 00:00,9,Very satisfied,No,25-34,Great coffee
+R0187,2025-05-14 11:00,5,Satisfied,No,18-24,Friendly staff
+R0188,2025-06-02 19:00,7,Very satisfied,No,25-34,
+R0189,2025-05-03 20:00,8,Dissatisfied,Yes,45-54,Too expensive
+R0190,2025-05-19 07:00,5,Dissatisfied,No,45-54,Queue too long
+R0191,2025-05-23 14:00,6,Neutral,Yes,45-54,Too expensive
+R0192,2025-05-02 00:00,5,Very satisfied,No,55+,Friendly staff
+R0193,2025-05-25 18:00,3,Satisfied,No,55+,Too expensive
+R0194,2025-05-23 07:00,1,Very satisfied,Yes,25-34,Queue too long
+R0195,2025-05-29 00:00,4,Neutral,Yes,18-24,Great coffee
+R0196,2025-05-23 08:00,9,Dissatisfied,No,35-44,Too expensive
+R0197,2025-05-08 19:00,8,Dissatisfied,No,18-24,Great coffee
+R0198,2025-05-10 20:00,10,Neutral,No,18-24,Queue too long
+R0199,2025-06-01 00:00,5,Very satisfied,Yes,25-34,Friendly staff
+R0200,2025-05-26 23:00,3,Neutral,Yes,25-34,Great coffee
+R0201,2025-05-01 13:00,8,Very satisfied,Yes,55+,Friendly staff
+R0202,2025-05-10 03:00,3,Dissatisfied,No,18-24,Too expensive
+R0203,2025-05-30 00:00,10,Dissatisfied,No,45-54,
+R0204,2025-05-10 19:00,8,Neutral,No,25-34,Too expensive
+R0205,2025-05-11 09:00,2,Satisfied,No,25-34,Queue too long
+R0206,2025-05-11 02:00,0,Very dissatisfied,No,55+,Great coffee
+R0207,2025-05-18 09:00,6,Neutral,No,45-54,Friendly staff
+R0208,2025-05-10 02:00,2,Very dissatisfied,Yes,35-44,Queue too long
+R0209,2025-06-02 15:00,4,Satisfied,No,45-54,Too expensive
+R0210,2025-05-10 10:00,2,Very dissatisfied,No,35-44,Friendly staff
+R0211,2025-05-10 20:00,3,Very dissatisfied,Yes,25-34,Friendly staff
+R0212,2025-05-28 18:00,8,Very satisfied,No,25-34,
+R0213,2025-05-10 09:00,8,Very satisfied,No,45-54,
+R0214,2025-05-06 22:00,10,Dissatisfied,Yes,25-34,Too expensive
+R0215,2025-05-19 15:00,7,Very dissatisfied,Yes,55+,Great coffee
+R0216,2025-05-14 15:00,7,Neutral,Yes,55+,
+R0217,2025-05-16 16:00,4,Satisfied,Yes,18-24,Friendly staff
+R0218,2025-05-19 11:00,10,Dissatisfied,Yes,25-34,Queue too long
+R0219,2025-05-10 18:00,3,Dissatisfied,No,25-34,
+R0220,2025-05-08 22:00,8,Satisfied,No,45-54,Queue too long
+R0221,2025-05-05 00:00,2,Neutral,Yes,35-44,Queue too long
+R0222,2025-05-03 13:00,10,Dissatisfied,No,25-34,Queue too long
+R0223,2025-05-12 09:00,3,Very satisfied,Yes,55+,Too expensive
+R0224,2025-06-01 01:00,8,Very dissatisfied,Yes,45-54,Queue too long
+R0225,2025-05-28 00:00,4,Dissatisfied,Yes,45-54,Queue too long
+R0226,2025-05-18 22:00,2,Satisfied,No,18-24,
+R0227,2025-05-31 06:00,10,Very satisfied,No,35-44,Friendly staff
+R0228,2025-05-11 13:00,10,Satisfied,Yes,35-44,Too expensive
+R0229,2025-05-25 23:00,10,Dissatisfied,No,55+,
+R0230,2025-05-14 00:00,10,Very satisfied,Yes,55+,
+R0231,2025-05-06 01:00,6,Satisfied,Yes,55+,Friendly staff
+R0232,2025-05-26 07:00,10,Neutral,No,55+,Friendly staff
+R0233,2025-05-05 22:00,1,Very satisfied,No,35-44,Too expensive
+R0234,2025-05-14 00:00,6,Dissatisfied,No,18-24,Friendly staff
+R0235,2025-05-25 21:00,8,Neutral,No,18-24,Too expensive
+R0236,2025-05-19 04:00,9,Very satisfied,No,25-34,Too expensive
+R0237,2025-05-02 01:00,6,Very satisfied,Yes,25-34,Too expensive
+R0238,2025-05-14 23:00,2,Neutral,Yes,45-54,
+R0239,2025-05-18 20:00,2,Dissatisfied,No,55+,Great coffee
+R0240,2025-05-09 14:00,0,Neutral,No,45-54,Too expensive
+R0241,2025-05-17 21:00,5,Neutral,No,35-44,Friendly staff
+R0242,2025-05-11 21:00,7,Neutral,Yes,25-34,Friendly staff
+R0243,2025-05-30 21:00,0,Neutral,Yes,18-24,Too expensive
+R0244,2025-05-23 13:00,5,Very satisfied,Yes,18-24,
+R0245,2025-05-02 22:00,5,Neutral,Yes,25-34,Friendly staff
+R0246,2025-05-21 06:00,1,Neutral,No,18-24,
+R0247,2025-05-03 10:00,9,Satisfied,No,35-44,Great coffee
+R0248,2025-05-26 07:00,1,Neutral,Yes,55+,Great coffee
+R0249,2025-05-17 16:00,7,Very satisfied,No,45-54,Queue too long

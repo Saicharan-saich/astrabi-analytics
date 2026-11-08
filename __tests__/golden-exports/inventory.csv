@@ -1,0 +1,121 @@
+SKU,Product,Category,Stock on hand,Reorder level,Unit cost,Supplier,Last counted
+SKU000,Oat Milk 1L 0,Dairy,135,50,£12.70,Local Roaster,16/03/2025
+SKU001,Latte Cups 1,Bakery,130,50,£8.28,Brakes,08/03/2025
+SKU002,Latte Cups 2,Packaging,174,20,£2.24,Bidfood,22/02/2025
+SKU003,Coffee Beans 1kg 3,Coffee,90,10,£8.89,Bidfood,01/03/2025
+SKU004,Oat Milk 1L 4,Coffee,95,50,£12.63,Bidfood,21/01/2025
+SKU005,Coffee Beans 1kg 5,Bakery,133,10,£14.49,Bidfood,30/03/2025
+SKU006,Oat Milk 1L 6,Bakery,153,20,£7.95,Bidfood,01/03/2025
+SKU007,Napkins 7,Bakery,128,20,£3.25,Bidfood,18/01/2025
+SKU008,Latte Cups 8,Packaging,51,20,£6.19,Brakes,27/03/2025
+SKU009,Napkins 9,Bakery,33,50,£11.79,Bidfood,29/01/2025
+SKU010,Oat Milk 1L 10,Coffee,175,10,£5.97,Brakes,27/01/2025
+SKU011,Coffee Beans 1kg 11,Coffee,63,50,£7.35,Brakes,25/03/2025
+SKU012,Latte Cups 12,Dairy,13,10,£5.17,Bidfood,23/03/2025
+SKU013,Oat Milk 1L 13,Packaging,197,10,£13.47,Local Roaster,21/01/2025
+SKU014,Oat Milk 1L 14,Dairy,61,10,£0.80,Local Roaster,11/01/2025
+SKU015,Oat Milk 1L 15,Dairy,44,10,£16.57,Brakes,06/02/2025
+SKU016,Oat Milk 1L 16,Packaging,40,50,£2.62,Bidfood,21/03/2025
+SKU017,Coffee Beans 1kg 17,Packaging,0,50,£5.24,Bidfood,06/01/2025
+SKU018,Latte Cups 18,Packaging,140,50,£2.36,Local Roaster,26/01/2025
+SKU019,Napkins 19,Coffee,176,10,£14.47,Local Roaster,15/01/2025
+SKU020,Oat Milk 1L 20,Dairy,185,10,£10.69,Local Roaster,02/02/2025
+SKU021,Oat Milk 1L 21,Packaging,50,20,£0.87,Local Roaster,16/02/2025
+SKU022,Napkins 22,Packaging,41,50,£6.57,Local Roaster,17/01/2025
+SKU023,Napkins 23,Bakery,196,20,£17.35,Brakes,12/03/2025
+SKU024,Napkins 24,Bakery,53,20,£14.55,Brakes,29/01/2025
+SKU025,Coffee Beans 1kg 25,Dairy,173,20,£4.12,Local Roaster,17/01/2025
+SKU026,Latte Cups 26,Dairy,190,10,£14.08,Bidfood,27/02/2025
+SKU027,Oat Milk 1L 27,Bakery,167,10,£6.29,Brakes,04/01/2025
+SKU028,Croissant (frozen) 28,Dairy,103,20,£11.97,Local Roaster,14/03/2025
+SKU029,Croissant (frozen) 29,Dairy,37,50,£10.34,Brakes,25/01/2025
+SKU030,Latte Cups 30,Coffee,180,50,£13.89,Local Roaster,02/02/2025
+SKU031,Napkins 31,Coffee,163,20,£16.38,Brakes,08/02/2025
+SKU032,Latte Cups 32,Packaging,160,20,£9.66,Brakes,06/02/2025
+SKU033,Napkins 33,Packaging,19,50,£10.69,Brakes,23/03/2025
+SKU034,Croissant (frozen) 34,Coffee,134,10,£14.51,Brakes,29/01/2025
+SKU035,Napkins 35,Dairy,181,20,£16.87,Local Roaster,24/01/2025
+SKU036,Napkins 36,Bakery,188,50,£14.14,Brakes,23/02/2025
+SKU037,Latte Cups 37,Packaging,29,10,£16.81,Brakes,15/01/2025
+SKU038,Coffee Beans 1kg 38,Coffee,134,10,£0.65,Brakes,25/01/2025
+SKU039,Oat Milk 1L 39,Bakery,10,10,£10.47,Local Roaster,17/02/2025
+SKU040,Latte Cups 40,Dairy,20,10,£10.65,Local Roaster,04/01/2025
+SKU041,Napkins 41,Packaging,61,50,£9.33,Bidfood,04/01/2025
+SKU042,Croissant (frozen) 42,Bakery,65,50,£7.92,Local Roaster,12/03/2025
+SKU043,Napkins 43,Packaging,144,20,£1.71,Bidfood,17/01/2025
+SKU044,Latte Cups 44,Bakery,129,50,£13.59,Bidfood,02/01/2025
+SKU045,Napkins 45,Packaging,182,50,£3.67,Local Roaster,30/01/2025
+SKU046,Latte Cups 46,Dairy,44,20,£6.40,Local Roaster,16/01/2025
+SKU047,Latte Cups 47,Packaging,25,20,£17.09,Local Roaster,09/01/2025
+SKU048,Croissant (frozen) 48,Bakery,7,10,£3.48,Local Roaster,24/03/2025
+SKU049,Coffee Beans 1kg 49,Coffee,38,10,£1.59,Local Roaster,20/02/2025
+SKU050,Croissant (frozen) 50,Bakery,45,50,£6.34,Brakes,02/02/2025
+SKU051,Oat Milk 1L 51,Coffee,192,50,£16.22,Bidfood,01/03/2025
+SKU052,Croissant (frozen) 52,Packaging,59,10,£10.30,Brakes,03/03/2025
+SKU053,Coffee Beans 1kg 53,Bakery,144,50,£16.17,Local Roaster,27/02/2025
+SKU054,Napkins 54,Dairy,1,50,£16.11,Brakes,06/01/2025
+SKU055,Napkins 55,Coffee,67,20,£13.27,Brakes,09/03/2025
+SKU056,Coffee Beans 1kg 56,Bakery,135,10,£9.52,Local Roaster,15/02/2025
+SKU057,Oat Milk 1L 57,Bakery,85,20,£11.26,Local Roaster,05/01/2025
+SKU058,Croissant (frozen) 58,Dairy,33,50,£8.32,Brakes,12/01/2025
+SKU059,Oat Milk 1L 59,Bakery,182,10,£15.38,Bidfood,08/01/2025
+SKU060,Croissant (frozen) 60,Coffee,58,50,£3.99,Local Roaster,11/02/2025
+SKU061,Latte Cups 61,Packaging,124,20,£6.06,Local Roaster,15/02/2025
+SKU062,Napkins 62,Bakery,85,10,£17.89,Bidfood,30/03/2025
+SKU063,Oat Milk 1L 63,Dairy,82,20,£6.57,Brakes,23/02/2025
+SKU064,Oat Milk 1L 64,Packaging,174,20,£2.18,Local Roaster,18/03/2025
+SKU065,Napkins 65,Bakery,18,10,£12.57,Bidfood,08/03/2025
+SKU066,Croissant (frozen) 66,Dairy,157,10,£7.90,Bidfood,03/03/2025
+SKU067,Coffee Beans 1kg 67,Dairy,35,20,£14.08,Bidfood,13/02/2025
+SKU068,Croissant (frozen) 68,Coffee,4,10,£1.67,Local Roaster,11/02/2025
+SKU069,Latte Cups 69,Dairy,172,50,£15.97,Brakes,07/01/2025
+SKU070,Napkins 70,Bakery,55,10,£2.28,Brakes,23/02/2025
+SKU071,Croissant (frozen) 71,Dairy,24,20,£2.50,Local Roaster,02/03/2025
+SKU072,Latte Cups 72,Dairy,114,10,£12.56,Brakes,08/02/2025
+SKU073,Napkins 73,Dairy,135,10,£5.73,Local Roaster,01/01/2025
+SKU074,Latte Cups 74,Bakery,27,10,£11.16,Brakes,25/02/2025
+SKU075,Latte Cups 75,Packaging,171,20,£17.27,Local Roaster,18/03/2025
+SKU076,Napkins 76,Coffee,88,10,£5.01,Bidfood,09/01/2025
+SKU077,Croissant (frozen) 77,Packaging,169,50,£17.08,Local Roaster,31/01/2025
+SKU078,Latte Cups 78,Coffee,56,10,£1.51,Local Roaster,07/02/2025
+SKU079,Napkins 79,Bakery,31,10,£10.11,Bidfood,27/02/2025
+SKU080,Coffee Beans 1kg 80,Coffee,91,50,£12.15,Local Roaster,25/02/2025
+SKU081,Coffee Beans 1kg 81,Bakery,181,20,£4.21,Bidfood,08/01/2025
+SKU082,Napkins 82,Coffee,196,50,£12.07,Brakes,02/01/2025
+SKU083,Oat Milk 1L 83,Coffee,198,10,£6.00,Brakes,11/02/2025
+SKU084,Oat Milk 1L 84,Bakery,33,20,£17.61,Local Roaster,18/02/2025
+SKU085,Croissant (frozen) 85,Dairy,134,50,£5.37,Brakes,22/03/2025
+SKU086,Croissant (frozen) 86,Packaging,101,20,£0.41,Brakes,03/01/2025
+SKU087,Oat Milk 1L 87,Coffee,133,10,£4.17,Local Roaster,02/03/2025
+SKU088,Latte Cups 88,Bakery,9,20,£17.33,Brakes,21/02/2025
+SKU089,Croissant (frozen) 89,Coffee,137,10,£15.15,Local Roaster,19/01/2025
+SKU090,Napkins 90,Packaging,39,10,£5.82,Bidfood,31/03/2025
+SKU091,Napkins 91,Packaging,134,10,£14.11,Brakes,11/02/2025
+SKU092,Croissant (frozen) 92,Packaging,183,20,£10.34,Local Roaster,10/02/2025
+SKU093,Napkins 93,Coffee,174,50,£16.27,Bidfood,21/01/2025
+SKU094,Croissant (frozen) 94,Bakery,97,20,£13.56,Bidfood,20/02/2025
+SKU095,Croissant (frozen) 95,Bakery,39,20,£17.61,Local Roaster,13/01/2025
+SKU096,Oat Milk 1L 96,Bakery,6,20,£7.00,Local Roaster,12/01/2025
+SKU097,Coffee Beans 1kg 97,Dairy,150,20,£5.78,Brakes,01/02/2025
+SKU098,Coffee Beans 1kg 98,Dairy,44,10,£8.78,Bidfood,14/03/2025
+SKU099,Coffee Beans 1kg 99,Coffee,132,10,£13.53,Local Roaster,27/03/2025
+SKU100,Latte Cups 100,Bakery,168,50,£8.76,Bidfood,19/02/2025
+SKU101,Coffee Beans 1kg 101,Packaging,58,20,£11.74,Brakes,05/03/2025
+SKU102,Oat Milk 1L 102,Bakery,150,20,£13.02,Bidfood,15/01/2025
+SKU103,Oat Milk 1L 103,Bakery,177,10,£11.33,Brakes,07/02/2025
+SKU104,Coffee Beans 1kg 104,Bakery,158,20,£8.60,Brakes,15/03/2025
+SKU105,Latte Cups 105,Coffee,150,10,£17.69,Brakes,16/02/2025
+SKU106,Oat Milk 1L 106,Bakery,43,50,£8.06,Bidfood,16/03/2025
+SKU107,Croissant (frozen) 107,Packaging,173,10,£0.44,Bidfood,09/02/2025
+SKU108,Napkins 108,Dairy,36,20,£4.24,Bidfood,29/03/2025
+SKU109,Latte Cups 109,Bakery,179,50,£16.86,Bidfood,20/03/2025
+SKU110,Oat Milk 1L 110,Packaging,72,10,£16.50,Brakes,31/03/2025
+SKU111,Latte Cups 111,Packaging,189,50,£5.38,Brakes,08/02/2025
+SKU112,Coffee Beans 1kg 112,Coffee,0,20,£13.22,Local Roaster,21/03/2025
+SKU113,Coffee Beans 1kg 113,Coffee,150,20,£4.08,Bidfood,16/02/2025
+SKU114,Oat Milk 1L 114,Dairy,183,20,£10.70,Bidfood,09/02/2025
+SKU115,Oat Milk 1L 115,Bakery,56,10,£7.27,Bidfood,16/02/2025
+SKU116,Coffee Beans 1kg 116,Dairy,186,50,£17.26,Brakes,01/01/2025
+SKU117,Coffee Beans 1kg 117,Coffee,90,10,£2.88,Brakes,09/02/2025
+SKU118,Napkins 118,Coffee,4,50,£6.54,Brakes,28/03/2025
+SKU119,Coffee Beans 1kg 119,Bakery,23,10,£14.98,Local Roaster,03/03/2025

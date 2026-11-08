@@ -201,7 +201,7 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
     } else {
         shape = {
             kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory,
-            label: 'Amounts and categories',
+            label: amounts.length ? 'Amounts and categories' : 'Scores and categories',
             summary: `${amounts.length ? `Amounts you can add up (${list(amounts, 3)})` : `Measured numbers (${list(perRowMetrics, 3)})`} and ${[...categories, ...yesNo].length === 1 ? 'a category' : 'categories'} to split them by (${list([...categories, ...yesNo.map(flagSubject)], 3)}).`,
             howMeasured: `QuickInsight ${amounts.length ? 'adds up and averages the amounts' : 'averages the numbers'}, split by the categories${dates.length ? ' and over time' : ''}${outcome ? `, and compares the share that ${outcomeWords}` : ''}.`,
         };

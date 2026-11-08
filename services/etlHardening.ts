@@ -504,7 +504,10 @@ export function isTotalLabel(raw: any): boolean {
         || /^(grand[\s-]*|sub[\s-]?)totals?\b/.test(s)
         || /^totals?\s+(for|of)\b/.test(s)
         || /\b(sub[\s-]?)?totals?$/.test(s) && s.split(/\s+/).length <= 5
-        || /^(sum|summe|totaal|totale|gesamt|overall)$/.test(s);
+        || /^(sum|summe|totaal|totale|gesamt|overall)$/.test(s)
+        // "Total Income", "Total Cost of Sales" — accounting report lines (removed only when
+        // they add up). "Total Gym Equipment" is a product, so only report words count.
+        || /^totals?\s+(other\s+|operating\s+|current\s+|fixed\s+|direct\s+|indirect\s+|administrative\s+|admin\s+|net\s+)?(income|revenues?|sales|turnover|expenses?|expenditure|costs?|cost\s+of\s+(sales|goods\s+sold|revenue)|cogs|overheads?|assets|liabilities|equity|payroll|wages|salaries|purchases|receipts|payments|debits|credits)$/.test(s);
 }
 
 /** Placeholder codes used for "unknown" in exports (9999, 999999, -1, -999). */

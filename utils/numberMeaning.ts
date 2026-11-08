@@ -22,7 +22,10 @@ const PER_ROW = new Set(['score', 'rating', 'ratings', 'age', 'temperature', 'te
     'speed', 'capacity', 'tenure', 'days', 'hours', 'minutes', 'seconds', 'diff', 'wait', 'lead', 'delay', 'gap', 'elapsed', 'cpi',
     'unemployment', 'inflation', 'interest', 'humidity', 'rainfall', 'pressure', 'glucose', 'cholesterol', 'bp', 'margin', 'engine',
     'horsepower', 'hp', 'rpm', 'year', 'years', 'stars', 'latitude', 'longitude', 'lat', 'lon', 'lng', 'balance', 'stock', 'inventory',
-    'headcount', 'population', 'density', 'altitude', 'elevation', 'bedrooms', 'bathrooms', 'rooms']);
+    'headcount', 'population', 'density', 'altitude', 'elevation', 'bedrooms', 'bathrooms', 'rooms',
+    // Marketing and retail ratios: already divided, never added up.
+    'ctr', 'cpc', 'cpm', 'cpa', 'cpl', 'roas', 'roi', 'cvr', 'aov', 'arpu', 'acos', 'ltv',
+    'reorder', 'threshold', 'recommend', 'likely', 'likelihood', 'nps']);
 
 /** A number that belongs to each row (average it, never add it up). */
 export function isPerRowName(name: string): boolean {

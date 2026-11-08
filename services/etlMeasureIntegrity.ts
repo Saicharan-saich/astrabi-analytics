@@ -105,6 +105,8 @@ export function removeTotalRows(rows: Row[]): TotalRowsResult {
         return present > 0 && n / present >= 0.8;
     });
     const close = (a: number, b: number) => Math.abs(a - b) <= Math.max(0.01, Math.abs(b) * 0.005);
+    // A "Total" line with no numbers left in it ("Total,,,") is an empty label: nothing to keep.
+    const emptyTotal = (row: Row) => columns.every(c => isBlank(row[c]) || (typeof row[c] === 'string' && isTotalLabel(row[c])));
 
     const removed: Row[] = [];
     const suspicious: Row[] = [];
@@ -112,6 +114,7 @@ export function removeTotalRows(rows: Row[]): TotalRowsResult {
     let blockStart = 0;
     for (let i = 0; i < rows.length; i++) {
         if (!isTotalRow[i]) continue;
+        if (emptyTotal(rows[i])) { keep[i] = false; removed.push(rows[i]); blockStart = i + 1; continue; }
         const block = rows.slice(blockStart, i).filter((_, k) => !isTotalRow[blockStart + k]);
         const everything = rows.filter((_, k) => !isTotalRow[k]);
         const matches = numericColumns.some(c => {
@@ -128,6 +131,65 @@ export function removeTotalRows(rows: Row[]): TotalRowsResult {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// Report layouts (profit and loss, balance sheet): section headings and
+// calculated lines
+// ─────────────────────────────────────────────────────────────────────
+
+/** Lines a report works out from the lines above it (never added to them). */
+const CALCULATED_LINE = /^(gross|net|operating)\s+(profit|income|loss|margin|earnings|surplus|deficit)\b|^net\s+(other|operating|ordinary)\s+income\b|^(profit|loss|earnings)\s+(before|after|for)\b|^ebitda?\b|^(total\s+)?net\s+(assets|worth)\b|^retained\s+earnings\s+for\b/i;
+
+export interface ReportSectionsResult {
+    rows: Row[];
+    labelColumn: string;
+    sections: string[];
+    /** Calculated lines removed (Gross Profit, Net Income …) and their labels. */
+    calculated: Row[];
+    calculatedLabels: string[];
+    /** The label column was unnamed in the file and is now called this. */
+    renamedTo?: string;
+}
+
+/**
+ * A report export lists its lines under headings ("Income", "Expenses") that
+ * carry no numbers, then totals and calculated lines (Gross Profit, Net
+ * Income). Recognised only when there are at least two headings and a total
+ * line: the headings become a `section` column, calculated lines are removed
+ * (they would double-count), and an unnamed label column is named `line_item`.
+ * Totals are left for removeTotalRows, which only removes those that add up.
+ */
+export function foldReportSections(rows: Row[]): ReportSectionsResult | null {
+    if (rows.length < 4) return null;
+    const columns = Object.keys(rows[0] || {});
+    if (columns.includes('section')) return null;
+    const labelColumn = columns.find(c => {
+        const filled = rows.filter(r => !isBlank(r[c]));
+        return filled.length >= rows.length * 0.8 && filled.filter(r => typeof r[c] === 'string' && num(r[c]) === null).length >= filled.length * 0.9;
+    });
+    if (!labelColumn) return null;
+    const others = columns.filter(c => c !== labelColumn);
+    const isHeading = (r: Row) => !isBlank(r[labelColumn]) && !isTotalLabel(String(r[labelColumn]).trim()) && others.every(c => isBlank(r[c]));
+    const headingRows = rows.filter(isHeading);
+    const hasTotal = rows.some(r => isTotalLabel(String(r[labelColumn] ?? '').trim()));
+    if (headingRows.length < 2 || !hasTotal) return null;
+    const out: Row[] = [];
+    const calculated: Row[] = [];
+    const calculatedLabels: string[] = [];
+    const sections: string[] = [];
+    let section: string | null = null;
+    const unnamed = /^(column_?\d+|unnamed.*|field_?\d+|_+)?$/i.test(labelColumn);
+    const name = unnamed ? 'line_item' : labelColumn;
+    for (const r of rows) {
+        if (isHeading(r)) { section = String(r[labelColumn]).trim(); sections.push(section); continue; }
+        const label = String(r[labelColumn] ?? '').trim();
+        if (CALCULATED_LINE.test(label)) { calculated.push(r); calculatedLabels.push(label); continue; }
+        const next: Row = { section };
+        for (const c of columns) next[c === labelColumn ? name : c] = c === labelColumn ? label : r[c];
+        out.push(next);
+    }
+    return { rows: out, labelColumn: name, sections, calculated, calculatedLabels, renamedTo: unnamed ? name : undefined };
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Wide tables (one column per month / quarter / year)
 // ─────────────────────────────────────────────────────────────────────
 
@@ -135,6 +197,8 @@ export interface UnpivotResult {
     rows: Row[];
     periodColumns: string[];
     dated: boolean;
+    /** Row-total columns ("Total", "YTD") left out: each is the sum of the period columns. */
+    totalColumns: string[];
 }
 
 /**
@@ -155,7 +219,20 @@ export function unpivotPeriodColumns(rows: Row[]): UnpivotResult | null {
     };
     const periodColumns = periods.filter(p => numericShare(p.column) >= 0.9);
     if (periodColumns.length < 3) return null;
-    const idColumns = columns.filter(c => !periodColumns.some(p => p.column === c));
+    // A "Total" / "YTD" column that adds up the period columns would repeat on every period row.
+    const totalColumns = columns.filter(c => {
+        if (periodColumns.some(p => p.column === c) || !/^(total|totals|sum|ytd|year_to_date|grand_total|full_year|row_total)$/i.test(c)) return false;
+        let checked = 0, adds = 0;
+        for (const r of rows) {
+            const v = num(r[c]);
+            if (v === null) continue;
+            checked++;
+            const sum = periodColumns.reduce((s, p) => s + (num(r[p.column]) ?? 0), 0);
+            if (Math.abs(v - sum) <= Math.max(0.011, Math.abs(sum) * 0.005)) adds++;
+        }
+        return checked > 0 && adds / checked >= 0.8;
+    });
+    const idColumns = columns.filter(c => !periodColumns.some(p => p.column === c) && !totalColumns.includes(c));
     // Already long data that merely has a "2023" metric column is not wide.
     if (idColumns.length === 0 && periodColumns.length < 3) return null;
     const dated = periodColumns.every(p => p.start !== '');
@@ -170,7 +247,7 @@ export function unpivotPeriodColumns(rows: Row[]): UnpivotResult | null {
             out.push(next);
         }
     }
-    return { rows: out, periodColumns: periodColumns.map(p => p.column), dated };
+    return { rows: out, periodColumns: periodColumns.map(p => p.column), dated, totalColumns };
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -220,7 +297,9 @@ const PER_UNIT_NAME = /(^|_)(unit|units|per|each|price|rate|pct|percent|ratio|av
  */
 export function findRepeatedHeaderAmounts(rows: Row[], keyColumns: string[], metricColumns: string[]): { column: string; key: string; groups: number }[] {
     const out: { column: string; key: string; groups: number }[] = [];
-    for (const key of keyColumns) {
+    // A product, customer or place code groups many separate orders: never an order key.
+    const notOrderKey = /(sku|product|item|barcode|upc|ean|gtin|variant|customer|cust|client|user|member|patient|account|employee|staff|store|location|branch|supplier|vendor|category)/i;
+    for (const key of keyColumns.filter(k => !notOrderKey.test(k))) {
         const groups = new Map<string, Row[]>();
         for (const r of rows) {
             if (isBlank(r[key])) continue;
@@ -253,6 +332,11 @@ export function findRepeatedHeaderAmounts(rows: Row[], keyColumns: string[], met
                 if (values.every(v => v === values[0]) && values[0] !== 0) constant++;
             }
             if (informative < 3 || constant / informative < 0.9) continue;
+            // A column that is mostly one value (a flat £3.95 delivery) looks constant in any grouping.
+            const counts = new Map<number, number>();
+            let filled = 0;
+            for (const r of rows) { const v = num(r[column]); if (v === null) continue; filled++; counts.set(v, (counts.get(v) || 0) + 1); }
+            if (filled && Math.max(...counts.values()) / filled >= 0.5) continue;
             // Different groups must carry different values, or it is just a constant column.
             const firstValues = new Set(multi.map(g => num(g[0][column])));
             if (firstValues.size < 2) continue;
@@ -261,6 +345,73 @@ export function findRepeatedHeaderAmounts(rows: Row[], keyColumns: string[], met
         if (out.length) break; // one key is enough evidence
     }
     return out;
+}
+
+export interface OrderDetailsFill {
+    key: string;
+    /** Text columns filled down from each order's first line. */
+    filled: string[];
+    /** Amount columns left on the first line only (so they are counted once). */
+    firstLineAmounts: string[];
+    cells: number;
+}
+
+/**
+ * Shopify-style exports write an order's details (email, status, currency,
+ * city) only on its first line; the other lines of the same order are blank.
+ * Those blanks are not "Unknown" — they are the same order. Text details are
+ * filled down within each order; amounts (subtotal, shipping, total) stay on
+ * the first line so a sum counts them once.
+ *
+ * Recognised only when a key column runs in consecutive blocks, at least three
+ * orders have more than one line, and a column is filled on ≥90% of first
+ * lines but blank on ≥95% of the other lines.
+ */
+export function fillOrderLevelDetails(rows: Row[]): OrderDetailsFill | null {
+    if (rows.length < 6) return null;
+    const columns = Object.keys(rows[0] || {});
+    for (const key of columns) {
+        // Consecutive runs, each value in one run only.
+        const firsts: number[] = [];
+        const seen = new Set<string>();
+        let ok = true, blanks = 0;
+        for (let i = 0; i < rows.length; i++) {
+            if (isBlank(rows[i][key])) { blanks++; ok = false; break; }
+            const k = String(rows[i][key]);
+            if (i > 0 && k === String(rows[i - 1][key])) continue;
+            if (seen.has(k)) { ok = false; break; }
+            seen.add(k);
+            firsts.push(i);
+        }
+        if (!ok || blanks || firsts.length === rows.length) continue;
+        const isFirst = new Array(rows.length).fill(false);
+        firsts.forEach(i => { isFirst[i] = true; });
+        const multi = firsts.filter((start, n) => (firsts[n + 1] ?? rows.length) - start > 1).length;
+        const continuation = rows.length - firsts.length;
+        if (multi < 3 || continuation < rows.length * 0.05) continue;
+        const filled: string[] = [];
+        const firstLineAmounts: string[] = [];
+        for (const c of columns) {
+            if (c === key) continue;
+            let firstFilled = 0, contBlank = 0;
+            rows.forEach((r, i) => {
+                if (isFirst[i]) { if (!isBlank(r[c])) firstFilled++; } else if (isBlank(r[c])) contBlank++;
+            });
+            if (firstFilled / firsts.length < 0.9 || contBlank / continuation < 0.95) continue;
+            const sample = firsts.map(i => rows[i][c]).filter(v => !isBlank(v));
+            const numeric = sample.filter(v => num(v) !== null).length >= sample.length * 0.9;
+            (numeric ? firstLineAmounts : filled).push(c);
+        }
+        if (!filled.length) continue;
+        let cells = 0;
+        let current: Row = rows[0];
+        rows.forEach((r, i) => {
+            if (isFirst[i]) { current = r; return; }
+            for (const c of filled) if (isBlank(r[c]) && !isBlank(current[c])) { r[c] = current[c]; cells++; }
+        });
+        return { key, filled, firstLineAmounts, cells };
+    }
+    return null;
 }
 
 /** Spread a repeated header amount evenly over its lines so sums count it once. */

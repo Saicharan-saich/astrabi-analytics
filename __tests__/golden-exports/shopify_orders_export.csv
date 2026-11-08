@@ -1,0 +1,252 @@
+Name,Email,Financial Status,Paid at,Fulfillment Status,Accepts Marketing,Currency,Subtotal,Shipping,Taxes,Total,Discount Code,Discount Amount,Created at,Lineitem quantity,Lineitem name,Lineitem price,Lineitem compare at price,Lineitem sku,Lineitem requires shipping,Lineitem taxable,Lineitem fulfillment status,Billing City,Billing Country
+#1001,c0@example.com,paid,2025-03-01 21:00:00 +0000,fulfilled,no,GBP,20.00,3.95,3.33,23.95,,0.00,2025-03-01 21:00:00 +0000,1,Print A4,8.00,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1001,,,,,,,,,,,,,2025-03-01 21:00:00 +0000,1,Print A4,12.00,,SKU-PRI,true,true,fulfilled,,
+#1002,c1@example.com,paid,2025-04-22 17:00:00 +0000,fulfilled,no,GBP,14.50,3.95,2.42,18.45,,0.00,2025-04-22 17:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1002,,,,,,,,,,,,,2025-04-22 17:00:00 +0000,1,Print A4,8.00,,SKU-PRI,true,true,fulfilled,,
+#1003,c2@example.com,paid,2025-04-24 23:00:00 +0000,fulfilled,yes,GBP,12.00,3.95,2.00,15.95,,0.00,2025-04-24 23:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1004,c3@example.com,paid,2025-04-02 11:00:00 +0000,fulfilled,yes,GBP,45.00,3.95,7.50,48.95,,0.00,2025-04-02 11:00:00 +0000,1,Notebook,15.00,,SKU-NOT,true,true,fulfilled,London,GB
+#1004,,,,,,,,,,,,,2025-04-02 11:00:00 +0000,2,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1005,c4@example.com,paid,2025-03-12 20:00:00 +0000,fulfilled,no,GBP,19.50,3.95,3.25,23.45,,0.00,2025-03-12 20:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1005,,,,,,,,,,,,,2025-03-12 20:00:00 +0000,2,Notebook,6.50,,SKU-NOT,true,true,fulfilled,,
+#1006,c5@example.com,paid,2025-03-06 11:00:00 +0000,fulfilled,no,GBP,8.00,3.95,1.33,11.95,,0.00,2025-03-06 11:00:00 +0000,1,Mug,8.00,,SKU-MUG,true,true,fulfilled,London,GB
+#1007,c6@example.com,paid,2025-04-01 13:00:00 +0000,fulfilled,yes,GBP,8.00,3.95,1.33,11.95,,0.00,2025-04-01 13:00:00 +0000,1,Mug,8.00,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1008,c7@example.com,paid,2025-03-27 13:00:00 +0000,fulfilled,no,GBP,51.50,3.95,8.58,55.45,,0.00,2025-03-27 13:00:00 +0000,1,Notebook,6.50,,SKU-NOT,true,true,fulfilled,Bristol,GB
+#1008,,,,,,,,,,,,,2025-03-27 13:00:00 +0000,1,Notebook,15.00,,SKU-NOT,true,true,fulfilled,,
+#1008,,,,,,,,,,,,,2025-03-27 13:00:00 +0000,2,Print A4,15.00,,SKU-PRI,true,true,fulfilled,,
+#1009,c8@example.com,paid,2025-04-11 07:00:00 +0000,fulfilled,yes,GBP,6.50,3.95,1.08,10.45,,0.00,2025-04-11 07:00:00 +0000,1,Notebook,6.50,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1010,c9@example.com,paid,2025-04-26 05:00:00 +0000,fulfilled,no,GBP,24.00,3.95,4.00,27.95,,0.00,2025-04-26 05:00:00 +0000,1,Mug,8.00,,SKU-MUG,true,true,fulfilled,London,GB
+#1010,,,,,,,,,,,,,2025-04-26 05:00:00 +0000,2,Notebook,8.00,,SKU-NOT,true,true,fulfilled,,
+#1011,c10@example.com,paid,2025-04-14 16:00:00 +0000,fulfilled,no,GBP,15.00,3.95,2.50,18.95,,0.00,2025-04-14 16:00:00 +0000,1,Print A4,15.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1012,c11@example.com,paid,2025-03-19 16:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-03-19 16:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,London,GB
+#1013,c12@example.com,paid,2025-03-18 05:00:00 +0000,fulfilled,no,GBP,52.00,3.95,8.67,55.95,,0.00,2025-03-18 05:00:00 +0000,1,Print A4,15.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1013,,,,,,,,,,,,,2025-03-18 05:00:00 +0000,2,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,,
+#1013,,,,,,,,,,,,,2025-03-18 05:00:00 +0000,2,Mug,12.00,,SKU-MUG,true,true,fulfilled,,
+#1014,c13@example.com,paid,2025-03-16 15:00:00 +0000,fulfilled,yes,GBP,16.00,3.95,2.67,19.95,,0.00,2025-03-16 15:00:00 +0000,2,Mug,8.00,,SKU-MUG,true,true,fulfilled,London,GB
+#1015,c14@example.com,paid,2025-04-13 02:00:00 +0000,fulfilled,no,GBP,24.00,3.95,4.00,27.95,,0.00,2025-04-13 02:00:00 +0000,2,Mug,12.00,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1016,c15@example.com,paid,2025-03-13 06:00:00 +0000,fulfilled,yes,GBP,6.50,3.95,1.08,10.45,,0.00,2025-03-13 06:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1017,c16@example.com,paid,2025-04-21 13:00:00 +0000,fulfilled,no,GBP,18.50,3.95,3.08,22.45,,0.00,2025-04-21 13:00:00 +0000,1,Print A4,12.00,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1017,,,,,,,,,,,,,2025-04-21 13:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,,
+#1018,c17@example.com,paid,2025-03-21 05:00:00 +0000,fulfilled,yes,GBP,24.00,3.95,4.00,27.95,,0.00,2025-03-21 05:00:00 +0000,2,Print A4,12.00,,SKU-PRI,true,true,fulfilled,London,GB
+#1019,c18@example.com,refunded,2025-04-19 23:00:00 +0000,fulfilled,no,GBP,13.00,3.95,2.17,16.95,,0.00,2025-04-19 23:00:00 +0000,2,Mug,6.50,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1020,c19@example.com,paid,2025-04-13 14:00:00 +0000,fulfilled,yes,GBP,26.50,3.95,4.42,30.45,,0.00,2025-04-13 14:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,London,GB
+#1020,,,,,,,,,,,,,2025-04-13 14:00:00 +0000,1,Notebook,8.00,,SKU-NOT,true,true,fulfilled,,
+#1020,,,,,,,,,,,,,2025-04-13 14:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,,
+#1021,c20@example.com,refunded,2025-04-04 20:00:00 +0000,fulfilled,no,GBP,18.50,3.95,3.08,22.45,,0.00,2025-04-04 20:00:00 +0000,1,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1021,,,,,,,,,,,,,2025-04-04 20:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,,
+#1022,c21@example.com,paid,2025-04-24 04:00:00 +0000,fulfilled,yes,GBP,6.50,3.95,1.08,10.45,,0.00,2025-04-24 04:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1023,c22@example.com,paid,2025-04-13 01:00:00 +0000,fulfilled,no,GBP,12.00,3.95,2.00,15.95,,0.00,2025-04-13 01:00:00 +0000,1,Print A4,12.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1024,c23@example.com,paid,2025-04-10 08:00:00 +0000,fulfilled,yes,GBP,38.00,3.95,6.33,41.95,,0.00,2025-04-10 08:00:00 +0000,2,Print A4,6.50,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1024,,,,,,,,,,,,,2025-04-10 08:00:00 +0000,2,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,,
+#1024,,,,,,,,,,,,,2025-04-10 08:00:00 +0000,1,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,,
+#1025,c24@example.com,paid,2025-04-04 10:00:00 +0000,fulfilled,yes,GBP,30.00,3.95,5.00,33.95,,0.00,2025-04-04 10:00:00 +0000,2,Mug,15.00,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1026,c25@example.com,paid,2025-04-25 01:00:00 +0000,fulfilled,no,GBP,59.00,3.95,9.83,62.95,,0.00,2025-04-25 01:00:00 +0000,2,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1026,,,,,,,,,,,,,2025-04-25 01:00:00 +0000,2,Mug,8.00,,SKU-MUG,true,true,fulfilled,,
+#1026,,,,,,,,,,,,,2025-04-25 01:00:00 +0000,2,Notebook,15.00,,SKU-NOT,true,true,fulfilled,,
+#1027,c26@example.com,refunded,2025-03-14 08:00:00 +0000,fulfilled,no,GBP,30.50,3.95,5.08,34.45,,0.00,2025-03-14 08:00:00 +0000,2,Mug,12.00,,SKU-MUG,true,true,fulfilled,London,GB
+#1027,,,,,,,,,,,,,2025-03-14 08:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,,
+#1028,c27@example.com,refunded,2025-03-14 08:00:00 +0000,fulfilled,yes,GBP,24.00,3.95,4.00,27.95,,0.00,2025-03-14 08:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1028,,,,,,,,,,,,,2025-03-14 08:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,,
+#1029,c28@example.com,paid,2025-04-12 07:00:00 +0000,fulfilled,yes,GBP,66.50,3.95,11.08,70.45,,0.00,2025-04-12 07:00:00 +0000,2,Print A4,15.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1029,,,,,,,,,,,,,2025-04-12 07:00:00 +0000,2,Mug,15.00,,SKU-MUG,true,true,fulfilled,,
+#1029,,,,,,,,,,,,,2025-04-12 07:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,,
+#1030,c29@example.com,paid,2025-03-02 10:00:00 +0000,fulfilled,yes,GBP,14.50,3.95,2.42,18.45,,0.00,2025-03-02 10:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1030,,,,,,,,,,,,,2025-03-02 10:00:00 +0000,1,Print A4,8.00,,SKU-PRI,true,true,fulfilled,,
+#1031,c30@example.com,paid,2025-04-02 04:00:00 +0000,fulfilled,yes,GBP,8.00,3.95,1.33,11.95,,0.00,2025-04-02 04:00:00 +0000,1,Mug,8.00,,SKU-MUG,true,true,fulfilled,London,GB
+#1032,c31@example.com,paid,2025-03-27 13:00:00 +0000,fulfilled,yes,GBP,12.00,3.95,2.00,15.95,,0.00,2025-03-27 13:00:00 +0000,1,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1033,c32@example.com,paid,2025-03-13 06:00:00 +0000,fulfilled,yes,GBP,12.00,3.95,2.00,15.95,,0.00,2025-03-13 06:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1034,c33@example.com,paid,2025-04-06 00:00:00 +0000,fulfilled,yes,GBP,47.00,3.95,7.83,50.95,,0.00,2025-04-06 00:00:00 +0000,2,Mug,12.00,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1034,,,,,,,,,,,,,2025-04-06 00:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1034,,,,,,,,,,,,,2025-04-06 00:00:00 +0000,1,Mug,8.00,,SKU-MUG,true,true,fulfilled,,
+#1035,c34@example.com,paid,2025-03-10 14:00:00 +0000,fulfilled,yes,GBP,12.00,3.95,2.00,15.95,,0.00,2025-03-10 14:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1036,c35@example.com,paid,2025-03-31 18:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-03-31 18:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1037,c36@example.com,paid,2025-04-11 05:00:00 +0000,fulfilled,no,GBP,12.00,3.95,2.00,15.95,,0.00,2025-04-11 05:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1038,c37@example.com,refunded,2025-04-08 00:00:00 +0000,fulfilled,yes,GBP,13.00,3.95,2.17,16.95,,0.00,2025-04-08 00:00:00 +0000,2,Mug,6.50,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1039,c38@example.com,paid,2025-04-21 06:00:00 +0000,fulfilled,no,GBP,13.00,3.95,2.17,16.95,,0.00,2025-04-21 06:00:00 +0000,2,Print A4,6.50,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1040,c39@example.com,paid,2025-04-12 09:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-04-12 09:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1041,c40@example.com,paid,2025-03-31 21:00:00 +0000,fulfilled,no,GBP,24.00,3.95,4.00,27.95,,0.00,2025-03-31 21:00:00 +0000,2,Notebook,12.00,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1042,c41@example.com,refunded,2025-04-10 22:00:00 +0000,fulfilled,no,GBP,30.00,3.95,5.00,33.95,,0.00,2025-04-10 22:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1042,,,,,,,,,,,,,2025-04-10 22:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1043,c42@example.com,paid,2025-03-28 03:00:00 +0000,fulfilled,no,GBP,30.00,3.95,5.00,33.95,,0.00,2025-03-28 03:00:00 +0000,1,Print A4,15.00,,SKU-PRI,true,true,fulfilled,London,GB
+#1043,,,,,,,,,,,,,2025-03-28 03:00:00 +0000,1,Notebook,15.00,,SKU-NOT,true,true,fulfilled,,
+#1044,c43@example.com,refunded,2025-04-06 12:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-04-06 12:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1045,c44@example.com,paid,2025-03-08 10:00:00 +0000,fulfilled,no,GBP,8.00,3.95,1.33,11.95,,0.00,2025-03-08 10:00:00 +0000,1,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1046,c45@example.com,paid,2025-04-07 16:00:00 +0000,fulfilled,yes,GBP,44.00,3.95,7.33,47.95,,0.00,2025-04-07 16:00:00 +0000,2,Print A4,8.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1046,,,,,,,,,,,,,2025-04-07 16:00:00 +0000,1,Notebook,15.00,,SKU-NOT,true,true,fulfilled,,
+#1046,,,,,,,,,,,,,2025-04-07 16:00:00 +0000,2,Mug,6.50,,SKU-MUG,true,true,fulfilled,,
+#1047,c46@example.com,paid,2025-03-24 17:00:00 +0000,fulfilled,no,GBP,39.00,3.95,6.50,42.95,,0.00,2025-03-24 17:00:00 +0000,2,Print A4,12.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1047,,,,,,,,,,,,,2025-03-24 17:00:00 +0000,1,Notebook,15.00,,SKU-NOT,true,true,fulfilled,,
+#1048,c47@example.com,paid,2025-03-11 02:00:00 +0000,fulfilled,no,GBP,70.00,3.95,11.67,73.95,,0.00,2025-03-11 02:00:00 +0000,2,Mug,12.00,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1048,,,,,,,,,,,,,2025-03-11 02:00:00 +0000,2,Print A4,8.00,,SKU-PRI,true,true,fulfilled,,
+#1048,,,,,,,,,,,,,2025-03-11 02:00:00 +0000,2,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1049,c48@example.com,paid,2025-04-07 22:00:00 +0000,fulfilled,no,GBP,8.00,3.95,1.33,11.95,,0.00,2025-04-07 22:00:00 +0000,1,Notebook,8.00,,SKU-NOT,true,true,fulfilled,London,GB
+#1050,c49@example.com,paid,2025-04-09 15:00:00 +0000,fulfilled,yes,GBP,16.00,3.95,2.67,19.95,,0.00,2025-04-09 15:00:00 +0000,2,Notebook,8.00,,SKU-NOT,true,true,fulfilled,Bristol,GB
+#1051,c50@example.com,paid,2025-03-12 15:00:00 +0000,fulfilled,yes,GBP,24.00,3.95,4.00,27.95,,0.00,2025-03-12 15:00:00 +0000,2,Mug,12.00,,SKU-MUG,true,true,fulfilled,London,GB
+#1052,c51@example.com,paid,2025-04-10 10:00:00 +0000,fulfilled,yes,GBP,15.00,3.95,2.50,18.95,,0.00,2025-04-10 10:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1053,c52@example.com,paid,2025-03-06 09:00:00 +0000,fulfilled,no,GBP,13.00,3.95,2.17,16.95,,0.00,2025-03-06 09:00:00 +0000,1,Notebook,6.50,,SKU-NOT,true,true,fulfilled,Bristol,GB
+#1053,,,,,,,,,,,,,2025-03-06 09:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,,
+#1054,c53@example.com,paid,2025-03-20 19:00:00 +0000,fulfilled,no,GBP,43.00,3.95,7.17,46.95,,0.00,2025-03-20 19:00:00 +0000,2,Notebook,6.50,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1054,,,,,,,,,,,,,2025-03-20 19:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1054,,,,,,,,,,,,,2025-03-20 19:00:00 +0000,1,Mug,15.00,,SKU-MUG,true,true,fulfilled,,
+#1055,c54@example.com,paid,2025-04-12 01:00:00 +0000,fulfilled,no,GBP,38.00,3.95,6.33,41.95,,0.00,2025-04-12 01:00:00 +0000,1,Print A4,15.00,,SKU-PRI,true,true,fulfilled,London,GB
+#1055,,,,,,,,,,,,,2025-04-12 01:00:00 +0000,1,Notebook,15.00,,SKU-NOT,true,true,fulfilled,,
+#1055,,,,,,,,,,,,,2025-04-12 01:00:00 +0000,1,Print A4,8.00,,SKU-PRI,true,true,fulfilled,,
+#1056,c55@example.com,paid,2025-04-19 16:00:00 +0000,fulfilled,no,GBP,42.00,3.95,7.00,45.95,,0.00,2025-04-19 16:00:00 +0000,1,Print A4,15.00,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1056,,,,,,,,,,,,,2025-04-19 16:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1056,,,,,,,,,,,,,2025-04-19 16:00:00 +0000,1,Print A4,12.00,,SKU-PRI,true,true,fulfilled,,
+#1057,c56@example.com,paid,2025-04-18 01:00:00 +0000,fulfilled,no,GBP,25.00,3.95,4.17,28.95,,0.00,2025-04-18 01:00:00 +0000,2,Print A4,6.50,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1057,,,,,,,,,,,,,2025-04-18 01:00:00 +0000,1,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,,
+#1058,c57@example.com,paid,2025-03-21 20:00:00 +0000,fulfilled,no,GBP,14.50,3.95,2.42,18.45,,0.00,2025-03-21 20:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,London,GB
+#1058,,,,,,,,,,,,,2025-03-21 20:00:00 +0000,1,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,,
+#1059,c58@example.com,paid,2025-04-27 02:00:00 +0000,fulfilled,no,GBP,15.00,3.95,2.50,18.95,,0.00,2025-04-27 02:00:00 +0000,1,Mug,15.00,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1060,c59@example.com,paid,2025-03-23 17:00:00 +0000,fulfilled,yes,GBP,6.50,3.95,1.08,10.45,,0.00,2025-03-23 17:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1061,c60@example.com,refunded,2025-04-13 23:00:00 +0000,fulfilled,no,GBP,30.00,3.95,5.00,33.95,,0.00,2025-04-13 23:00:00 +0000,2,Notebook,15.00,,SKU-NOT,true,true,fulfilled,London,GB
+#1062,c61@example.com,paid,2025-04-18 21:00:00 +0000,fulfilled,yes,GBP,12.00,3.95,2.00,15.95,,0.00,2025-04-18 21:00:00 +0000,1,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,London,GB
+#1063,c62@example.com,paid,2025-04-19 23:00:00 +0000,fulfilled,yes,GBP,22.50,3.95,3.75,26.45,,0.00,2025-04-19 23:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1063,,,,,,,,,,,,,2025-04-19 23:00:00 +0000,2,Mug,8.00,,SKU-MUG,true,true,fulfilled,,
+#1064,c63@example.com,paid,2025-04-13 21:00:00 +0000,fulfilled,no,GBP,14.50,3.95,2.42,18.45,,0.00,2025-04-13 21:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1064,,,,,,,,,,,,,2025-04-13 21:00:00 +0000,1,Mug,8.00,,SKU-MUG,true,true,fulfilled,,
+#1065,c64@example.com,paid,2025-03-14 17:00:00 +0000,fulfilled,yes,GBP,57.00,3.95,9.50,60.95,,0.00,2025-03-14 17:00:00 +0000,2,Print A4,15.00,,SKU-PRI,true,true,fulfilled,London,GB
+#1065,,,,,,,,,,,,,2025-03-14 17:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1065,,,,,,,,,,,,,2025-03-14 17:00:00 +0000,1,Print A4,12.00,,SKU-PRI,true,true,fulfilled,,
+#1066,c65@example.com,paid,2025-03-14 15:00:00 +0000,fulfilled,no,GBP,16.00,3.95,2.67,19.95,,0.00,2025-03-14 15:00:00 +0000,2,Print A4,8.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1067,c66@example.com,paid,2025-03-05 22:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-03-05 22:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,London,GB
+#1068,c67@example.com,refunded,2025-03-31 11:00:00 +0000,fulfilled,yes,GBP,8.00,3.95,1.33,11.95,,0.00,2025-03-31 11:00:00 +0000,1,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1069,c68@example.com,paid,2025-03-04 13:00:00 +0000,fulfilled,yes,GBP,36.00,3.95,6.00,39.95,,0.00,2025-03-04 13:00:00 +0000,1,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1069,,,,,,,,,,,,,2025-03-04 13:00:00 +0000,2,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,,
+#1069,,,,,,,,,,,,,2025-03-04 13:00:00 +0000,1,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,,
+#1070,c69@example.com,paid,2025-03-29 21:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-03-29 21:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1071,c70@example.com,paid,2025-03-14 04:00:00 +0000,fulfilled,no,GBP,15.00,3.95,2.50,18.95,,0.00,2025-03-14 04:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,London,GB
+#1072,c71@example.com,paid,2025-03-15 03:00:00 +0000,fulfilled,no,GBP,29.50,3.95,4.92,33.45,,0.00,2025-03-15 03:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1072,,,,,,,,,,,,,2025-03-15 03:00:00 +0000,1,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,,
+#1072,,,,,,,,,,,,,2025-03-15 03:00:00 +0000,1,Mug,15.00,,SKU-MUG,true,true,fulfilled,,
+#1073,c72@example.com,paid,2025-04-13 13:00:00 +0000,fulfilled,no,GBP,12.00,3.95,2.00,15.95,,0.00,2025-04-13 13:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,Bristol,GB
+#1074,c73@example.com,paid,2025-03-08 19:00:00 +0000,fulfilled,no,GBP,19.50,3.95,3.25,23.45,,0.00,2025-03-08 19:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1074,,,,,,,,,,,,,2025-03-08 19:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,,
+#1074,,,,,,,,,,,,,2025-03-08 19:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,,
+#1075,c74@example.com,paid,2025-03-22 04:00:00 +0000,fulfilled,yes,GBP,21.50,3.95,3.58,25.45,,0.00,2025-03-22 04:00:00 +0000,1,Print A4,15.00,,SKU-PRI,true,true,fulfilled,London,GB
+#1075,,,,,,,,,,,,,2025-03-22 04:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,,
+#1076,c75@example.com,paid,2025-03-05 20:00:00 +0000,fulfilled,yes,GBP,30.00,3.95,5.00,33.95,,0.00,2025-03-05 20:00:00 +0000,2,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1077,c76@example.com,paid,2025-03-22 14:00:00 +0000,fulfilled,yes,GBP,29.00,3.95,4.83,32.95,,0.00,2025-03-22 14:00:00 +0000,2,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1077,,,,,,,,,,,,,2025-03-22 14:00:00 +0000,1,Notebook,6.50,,SKU-NOT,true,true,fulfilled,,
+#1077,,,,,,,,,,,,,2025-03-22 14:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,,
+#1078,c77@example.com,paid,2025-04-26 07:00:00 +0000,fulfilled,no,GBP,24.00,3.95,4.00,27.95,,0.00,2025-04-26 07:00:00 +0000,2,Mug,12.00,,SKU-MUG,true,true,fulfilled,London,GB
+#1079,c78@example.com,refunded,2025-03-28 11:00:00 +0000,fulfilled,no,GBP,8.00,3.95,1.33,11.95,,0.00,2025-03-28 11:00:00 +0000,1,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1080,c79@example.com,paid,2025-03-15 13:00:00 +0000,fulfilled,yes,GBP,25.00,3.95,4.17,28.95,,0.00,2025-03-15 13:00:00 +0000,2,Print A4,6.50,,SKU-PRI,true,true,fulfilled,London,GB
+#1080,,,,,,,,,,,,,2025-03-15 13:00:00 +0000,1,Print A4,12.00,,SKU-PRI,true,true,fulfilled,,
+#1081,c80@example.com,paid,2025-04-16 09:00:00 +0000,fulfilled,no,GBP,24.00,3.95,4.00,27.95,,0.00,2025-04-16 09:00:00 +0000,2,Notebook,12.00,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1082,c81@example.com,paid,2025-03-10 19:00:00 +0000,fulfilled,yes,GBP,16.00,3.95,2.67,19.95,,0.00,2025-03-10 19:00:00 +0000,2,Notebook,8.00,,SKU-NOT,true,true,fulfilled,London,GB
+#1083,c82@example.com,paid,2025-03-08 04:00:00 +0000,fulfilled,yes,GBP,42.00,3.95,7.00,45.95,,0.00,2025-03-08 04:00:00 +0000,2,Print A4,15.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1083,,,,,,,,,,,,,2025-03-08 04:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,,
+#1084,c83@example.com,paid,2025-03-11 18:00:00 +0000,fulfilled,yes,GBP,60.00,3.95,10.00,63.95,,0.00,2025-03-11 18:00:00 +0000,2,Print A4,15.00,,SKU-PRI,true,true,fulfilled,London,GB
+#1084,,,,,,,,,,,,,2025-03-11 18:00:00 +0000,2,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1085,c84@example.com,paid,2025-04-06 16:00:00 +0000,fulfilled,yes,GBP,61.00,3.95,10.17,64.95,,0.00,2025-04-06 16:00:00 +0000,2,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1085,,,,,,,,,,,,,2025-04-06 16:00:00 +0000,1,Print A4,15.00,,SKU-PRI,true,true,fulfilled,,
+#1085,,,,,,,,,,,,,2025-04-06 16:00:00 +0000,2,Notebook,15.00,,SKU-NOT,true,true,fulfilled,,
+#1086,c85@example.com,paid,2025-04-16 10:00:00 +0000,fulfilled,no,GBP,54.00,3.95,9.00,57.95,,0.00,2025-04-16 10:00:00 +0000,1,Print A4,15.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1086,,,,,,,,,,,,,2025-04-16 10:00:00 +0000,1,Mug,15.00,,SKU-MUG,true,true,fulfilled,,
+#1086,,,,,,,,,,,,,2025-04-16 10:00:00 +0000,2,Print A4,12.00,,SKU-PRI,true,true,fulfilled,,
+#1087,c86@example.com,paid,2025-04-08 19:00:00 +0000,fulfilled,no,GBP,20.00,3.95,3.33,23.95,,0.00,2025-04-08 19:00:00 +0000,1,Print A4,8.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1087,,,,,,,,,,,,,2025-04-08 19:00:00 +0000,1,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,,
+#1088,c87@example.com,paid,2025-03-24 06:00:00 +0000,fulfilled,yes,GBP,15.00,3.95,2.50,18.95,,0.00,2025-03-24 06:00:00 +0000,1,Mug,15.00,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1089,c88@example.com,paid,2025-03-20 13:00:00 +0000,fulfilled,yes,GBP,27.00,3.95,4.50,30.95,,0.00,2025-03-20 13:00:00 +0000,1,Print A4,15.00,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1089,,,,,,,,,,,,,2025-03-20 13:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,,
+#1090,c89@example.com,paid,2025-03-04 16:00:00 +0000,fulfilled,no,GBP,45.00,3.95,7.50,48.95,,0.00,2025-03-04 16:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1090,,,,,,,,,,,,,2025-03-04 16:00:00 +0000,1,Notebook,15.00,,SKU-NOT,true,true,fulfilled,,
+#1090,,,,,,,,,,,,,2025-03-04 16:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1091,c90@example.com,paid,2025-03-06 04:00:00 +0000,fulfilled,yes,GBP,23.00,3.95,3.83,26.95,,0.00,2025-03-06 04:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1091,,,,,,,,,,,,,2025-03-06 04:00:00 +0000,1,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,,
+#1092,c91@example.com,paid,2025-03-10 12:00:00 +0000,fulfilled,no,GBP,13.00,3.95,2.17,16.95,,0.00,2025-03-10 12:00:00 +0000,2,Print A4,6.50,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1093,c92@example.com,paid,2025-04-03 10:00:00 +0000,fulfilled,no,GBP,12.00,3.95,2.00,15.95,,0.00,2025-04-03 10:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,London,GB
+#1094,c93@example.com,refunded,2025-03-29 09:00:00 +0000,fulfilled,no,GBP,28.00,3.95,4.67,31.95,,0.00,2025-03-29 09:00:00 +0000,2,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1094,,,,,,,,,,,,,2025-03-29 09:00:00 +0000,1,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,,
+#1095,c94@example.com,paid,2025-03-26 01:00:00 +0000,fulfilled,yes,GBP,24.00,3.95,4.00,27.95,,0.00,2025-03-26 01:00:00 +0000,2,Mug,12.00,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1096,c95@example.com,paid,2025-03-11 08:00:00 +0000,fulfilled,yes,GBP,36.50,3.95,6.08,40.45,,0.00,2025-03-11 08:00:00 +0000,2,Mug,15.00,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1096,,,,,,,,,,,,,2025-03-11 08:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,,
+#1097,c96@example.com,refunded,2025-03-31 23:00:00 +0000,fulfilled,yes,GBP,30.50,3.95,5.08,34.45,,0.00,2025-03-31 23:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1097,,,,,,,,,,,,,2025-03-31 23:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,,
+#1097,,,,,,,,,,,,,2025-03-31 23:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,,
+#1098,c97@example.com,paid,2025-04-14 08:00:00 +0000,fulfilled,no,GBP,15.00,3.95,2.50,18.95,,0.00,2025-04-14 08:00:00 +0000,1,Print A4,15.00,,SKU-PRI,true,true,fulfilled,London,GB
+#1099,c98@example.com,refunded,2025-04-26 14:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-04-26 14:00:00 +0000,1,Notebook,6.50,,SKU-NOT,true,true,fulfilled,Bristol,GB
+#1100,c99@example.com,paid,2025-04-16 19:00:00 +0000,fulfilled,yes,GBP,25.00,3.95,4.17,28.95,,0.00,2025-04-16 19:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,London,GB
+#1100,,,,,,,,,,,,,2025-04-16 19:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,,
+#1100,,,,,,,,,,,,,2025-04-16 19:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,,
+#1101,c100@example.com,paid,2025-04-01 11:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-04-01 11:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1102,c101@example.com,paid,2025-04-14 00:00:00 +0000,fulfilled,no,GBP,20.00,3.95,3.33,23.95,,0.00,2025-04-14 00:00:00 +0000,1,Print A4,12.00,,SKU-PRI,true,true,fulfilled,London,GB
+#1102,,,,,,,,,,,,,2025-04-14 00:00:00 +0000,1,Notebook,8.00,,SKU-NOT,true,true,fulfilled,,
+#1103,c102@example.com,refunded,2025-04-03 01:00:00 +0000,fulfilled,no,GBP,30.00,3.95,5.00,33.95,,0.00,2025-04-03 01:00:00 +0000,2,Print A4,15.00,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1104,c103@example.com,paid,2025-03-08 04:00:00 +0000,fulfilled,yes,GBP,20.00,3.95,3.33,23.95,,0.00,2025-03-08 04:00:00 +0000,1,Print A4,8.00,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1104,,,,,,,,,,,,,2025-03-08 04:00:00 +0000,1,Print A4,12.00,,SKU-PRI,true,true,fulfilled,,
+#1105,c104@example.com,paid,2025-03-31 19:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-03-31 19:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,London,GB
+#1106,c105@example.com,paid,2025-03-31 18:00:00 +0000,fulfilled,yes,GBP,29.50,3.95,4.92,33.45,,0.00,2025-03-31 18:00:00 +0000,1,Notebook,15.00,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1106,,,,,,,,,,,,,2025-03-31 18:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,,
+#1106,,,,,,,,,,,,,2025-03-31 18:00:00 +0000,1,Print A4,8.00,,SKU-PRI,true,true,fulfilled,,
+#1107,c106@example.com,paid,2025-04-27 15:00:00 +0000,fulfilled,no,GBP,53.00,3.95,8.83,56.95,,0.00,2025-04-27 15:00:00 +0000,2,Mug,6.50,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1107,,,,,,,,,,,,,2025-04-27 15:00:00 +0000,2,Notebook,12.00,,SKU-NOT,true,true,fulfilled,,
+#1107,,,,,,,,,,,,,2025-04-27 15:00:00 +0000,2,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,,
+#1108,c107@example.com,paid,2025-04-22 07:00:00 +0000,fulfilled,no,GBP,15.00,3.95,2.50,18.95,,0.00,2025-04-22 07:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1109,c108@example.com,paid,2025-04-22 14:00:00 +0000,fulfilled,no,GBP,66.00,3.95,11.00,69.95,,0.00,2025-04-22 14:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1109,,,,,,,,,,,,,2025-04-22 14:00:00 +0000,2,Print A4,15.00,,SKU-PRI,true,true,fulfilled,,
+#1109,,,,,,,,,,,,,2025-04-22 14:00:00 +0000,2,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,,
+#1110,c109@example.com,paid,2025-04-01 01:00:00 +0000,fulfilled,no,GBP,13.00,3.95,2.17,16.95,,0.00,2025-04-01 01:00:00 +0000,2,Notebook,6.50,,SKU-NOT,true,true,fulfilled,Bristol,GB
+#1111,c110@example.com,paid,2025-03-07 21:00:00 +0000,fulfilled,yes,GBP,12.00,3.95,2.00,15.95,,0.00,2025-03-07 21:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1112,c111@example.com,paid,2025-03-02 08:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-03-02 08:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,London,GB
+#1113,c112@example.com,paid,2025-03-27 19:00:00 +0000,fulfilled,yes,GBP,8.00,3.95,1.33,11.95,,0.00,2025-03-27 19:00:00 +0000,1,Print A4,8.00,,SKU-PRI,true,true,fulfilled,London,GB
+#1114,c113@example.com,paid,2025-04-23 06:00:00 +0000,fulfilled,no,GBP,8.00,3.95,1.33,11.95,,0.00,2025-04-23 06:00:00 +0000,1,Mug,8.00,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1115,c114@example.com,paid,2025-03-18 11:00:00 +0000,fulfilled,no,GBP,30.00,3.95,5.00,33.95,,0.00,2025-03-18 11:00:00 +0000,2,Notebook,15.00,,SKU-NOT,true,true,fulfilled,Bristol,GB
+#1116,c115@example.com,paid,2025-03-20 10:00:00 +0000,fulfilled,no,GBP,28.00,3.95,4.67,31.95,,0.00,2025-03-20 10:00:00 +0000,2,Print A4,8.00,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1116,,,,,,,,,,,,,2025-03-20 10:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,,
+#1117,c116@example.com,paid,2025-03-19 19:00:00 +0000,fulfilled,yes,GBP,30.00,3.95,5.00,33.95,,0.00,2025-03-19 19:00:00 +0000,2,Print A4,15.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1118,c117@example.com,paid,2025-04-03 19:00:00 +0000,fulfilled,no,GBP,18.50,3.95,3.08,22.45,,0.00,2025-04-03 19:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1118,,,,,,,,,,,,,2025-04-03 19:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,,
+#1119,c118@example.com,paid,2025-03-03 06:00:00 +0000,fulfilled,no,GBP,45.50,3.95,7.58,49.45,,0.00,2025-03-03 06:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,London,GB
+#1119,,,,,,,,,,,,,2025-03-03 06:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1119,,,,,,,,,,,,,2025-03-03 06:00:00 +0000,2,Notebook,12.00,,SKU-NOT,true,true,fulfilled,,
+#1120,c119@example.com,paid,2025-04-13 05:00:00 +0000,fulfilled,no,GBP,69.00,3.95,11.50,72.95,,0.00,2025-04-13 05:00:00 +0000,2,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1120,,,,,,,,,,,,,2025-04-13 05:00:00 +0000,2,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1120,,,,,,,,,,,,,2025-04-13 05:00:00 +0000,1,Mug,15.00,,SKU-MUG,true,true,fulfilled,,
+#1121,c120@example.com,paid,2025-04-02 03:00:00 +0000,fulfilled,no,GBP,30.00,3.95,5.00,33.95,,0.00,2025-04-02 03:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1121,,,,,,,,,,,,,2025-04-02 03:00:00 +0000,1,Mug,15.00,,SKU-MUG,true,true,fulfilled,,
+#1122,c121@example.com,paid,2025-03-15 12:00:00 +0000,fulfilled,no,GBP,16.00,3.95,2.67,19.95,,0.00,2025-03-15 12:00:00 +0000,2,Print A4,8.00,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1123,c122@example.com,paid,2025-03-17 03:00:00 +0000,fulfilled,yes,GBP,30.50,3.95,5.08,34.45,,0.00,2025-03-17 03:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,London,GB
+#1123,,,,,,,,,,,,,2025-03-17 03:00:00 +0000,1,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,,
+#1123,,,,,,,,,,,,,2025-03-17 03:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,,
+#1124,c123@example.com,paid,2025-03-14 18:00:00 +0000,fulfilled,no,GBP,12.00,3.95,2.00,15.95,,0.00,2025-03-14 18:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,London,GB
+#1125,c124@example.com,refunded,2025-03-18 00:00:00 +0000,fulfilled,yes,GBP,16.00,3.95,2.67,19.95,,0.00,2025-03-18 00:00:00 +0000,2,Notebook,8.00,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1126,c125@example.com,paid,2025-03-27 03:00:00 +0000,fulfilled,yes,GBP,24.00,3.95,4.00,27.95,,0.00,2025-03-27 03:00:00 +0000,2,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1127,c126@example.com,paid,2025-04-24 21:00:00 +0000,fulfilled,no,GBP,15.00,3.95,2.50,18.95,,0.00,2025-04-24 21:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1128,c127@example.com,paid,2025-03-06 02:00:00 +0000,fulfilled,yes,GBP,12.00,3.95,2.00,15.95,,0.00,2025-03-06 02:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1129,c128@example.com,paid,2025-03-23 10:00:00 +0000,fulfilled,yes,GBP,12.00,3.95,2.00,15.95,,0.00,2025-03-23 10:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1130,c129@example.com,paid,2025-04-01 16:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-04-01 16:00:00 +0000,1,Tote Bag,6.50,,SKU-TOT,true,true,fulfilled,London,GB
+#1131,c130@example.com,paid,2025-03-10 05:00:00 +0000,fulfilled,yes,GBP,18.50,3.95,3.08,22.45,,0.00,2025-03-10 05:00:00 +0000,1,Notebook,6.50,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1131,,,,,,,,,,,,,2025-03-10 05:00:00 +0000,1,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,,
+#1132,c131@example.com,paid,2025-04-25 14:00:00 +0000,fulfilled,no,GBP,41.00,3.95,6.83,44.95,,0.00,2025-04-25 14:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1132,,,,,,,,,,,,,2025-04-25 14:00:00 +0000,2,Notebook,8.00,,SKU-NOT,true,true,fulfilled,,
+#1132,,,,,,,,,,,,,2025-04-25 14:00:00 +0000,2,Notebook,6.50,,SKU-NOT,true,true,fulfilled,,
+#1133,c132@example.com,refunded,2025-03-16 04:00:00 +0000,fulfilled,no,GBP,18.50,3.95,3.08,22.45,,0.00,2025-03-16 04:00:00 +0000,1,Notebook,6.50,,SKU-NOT,true,true,fulfilled,Bristol,GB
+#1133,,,,,,,,,,,,,2025-03-16 04:00:00 +0000,1,Mug,12.00,,SKU-MUG,true,true,fulfilled,,
+#1134,c133@example.com,paid,2025-03-07 19:00:00 +0000,fulfilled,yes,GBP,6.50,3.95,1.08,10.45,,0.00,2025-03-07 19:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,Leeds,GB
+#1135,c134@example.com,paid,2025-03-17 10:00:00 +0000,fulfilled,no,GBP,12.00,3.95,2.00,15.95,,0.00,2025-03-17 10:00:00 +0000,1,Notebook,12.00,,SKU-NOT,true,true,fulfilled,Bristol,GB
+#1136,c135@example.com,paid,2025-03-13 04:00:00 +0000,fulfilled,yes,GBP,16.00,3.95,2.67,19.95,,0.00,2025-03-13 04:00:00 +0000,2,Notebook,8.00,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1137,c136@example.com,paid,2025-04-14 08:00:00 +0000,fulfilled,yes,GBP,31.00,3.95,5.17,34.95,,0.00,2025-04-14 08:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1137,,,,,,,,,,,,,2025-04-14 08:00:00 +0000,2,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,,
+#1138,c137@example.com,paid,2025-04-16 13:00:00 +0000,fulfilled,no,GBP,23.00,3.95,3.83,26.95,,0.00,2025-04-16 13:00:00 +0000,1,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1138,,,,,,,,,,,,,2025-04-16 13:00:00 +0000,1,Mug,15.00,,SKU-MUG,true,true,fulfilled,,
+#1139,c138@example.com,paid,2025-04-24 07:00:00 +0000,fulfilled,no,GBP,29.50,3.95,4.92,33.45,,0.00,2025-04-24 07:00:00 +0000,1,Notebook,8.00,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1139,,,,,,,,,,,,,2025-04-24 07:00:00 +0000,1,Notebook,15.00,,SKU-NOT,true,true,fulfilled,,
+#1139,,,,,,,,,,,,,2025-04-24 07:00:00 +0000,1,Notebook,6.50,,SKU-NOT,true,true,fulfilled,,
+#1140,c139@example.com,paid,2025-03-28 10:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-03-28 10:00:00 +0000,1,Notebook,6.50,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1141,c140@example.com,paid,2025-04-20 00:00:00 +0000,fulfilled,yes,GBP,6.50,3.95,1.08,10.45,,0.00,2025-04-20 00:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,Leeds,GB
+#1142,c141@example.com,paid,2025-03-31 20:00:00 +0000,fulfilled,no,GBP,27.00,3.95,4.50,30.95,,0.00,2025-03-31 20:00:00 +0000,1,Tote Bag,12.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1142,,,,,,,,,,,,,2025-03-31 20:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,,
+#1143,c142@example.com,paid,2025-03-03 21:00:00 +0000,fulfilled,no,GBP,30.00,3.95,5.00,33.95,,0.00,2025-03-03 21:00:00 +0000,2,Notebook,15.00,,SKU-NOT,true,true,fulfilled,London,GB
+#1144,c143@example.com,paid,2025-03-10 07:00:00 +0000,fulfilled,no,GBP,30.00,3.95,5.00,33.95,,0.00,2025-03-10 07:00:00 +0000,2,Notebook,15.00,,SKU-NOT,true,true,fulfilled,Leeds,GB
+#1145,c144@example.com,paid,2025-04-10 09:00:00 +0000,fulfilled,no,GBP,8.00,3.95,1.33,11.95,,0.00,2025-04-10 09:00:00 +0000,1,Mug,8.00,,SKU-MUG,true,true,fulfilled,Bristol,GB
+#1146,c145@example.com,paid,2025-03-08 17:00:00 +0000,fulfilled,no,GBP,8.00,3.95,1.33,11.95,,0.00,2025-03-08 17:00:00 +0000,1,Tote Bag,8.00,,SKU-TOT,true,true,fulfilled,Leeds,GB
+#1147,c146@example.com,paid,2025-03-22 11:00:00 +0000,fulfilled,yes,GBP,29.50,3.95,4.92,33.45,,0.00,2025-03-22 11:00:00 +0000,1,Tote Bag,15.00,,SKU-TOT,true,true,fulfilled,Bristol,GB
+#1147,,,,,,,,,,,,,2025-03-22 11:00:00 +0000,1,Mug,6.50,,SKU-MUG,true,true,fulfilled,,
+#1147,,,,,,,,,,,,,2025-03-22 11:00:00 +0000,1,Mug,8.00,,SKU-MUG,true,true,fulfilled,,
+#1148,c147@example.com,paid,2025-04-20 03:00:00 +0000,fulfilled,no,GBP,6.50,3.95,1.08,10.45,,0.00,2025-04-20 03:00:00 +0000,1,Print A4,6.50,,SKU-PRI,true,true,fulfilled,London,GB
+#1149,c148@example.com,paid,2025-04-08 22:00:00 +0000,fulfilled,no,GBP,38.00,3.95,6.33,41.95,,0.00,2025-04-08 22:00:00 +0000,2,Print A4,15.00,,SKU-PRI,true,true,fulfilled,London,GB
+#1149,,,,,,,,,,,,,2025-04-08 22:00:00 +0000,1,Print A4,8.00,,SKU-PRI,true,true,fulfilled,,
+#1150,c149@example.com,paid,2025-03-10 19:00:00 +0000,fulfilled,no,GBP,45.00,3.95,7.50,48.95,,0.00,2025-03-10 19:00:00 +0000,2,Print A4,15.00,,SKU-PRI,true,true,fulfilled,Bristol,GB
+#1150,,,,,,,,,,,,,2025-03-10 19:00:00 +0000,1,Print A4,15.00,,SKU-PRI,true,true,fulfilled,,
