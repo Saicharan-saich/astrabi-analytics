@@ -11,6 +11,7 @@
  *   - Same input → same output (100% deterministic)
  */
 
+import { isLabelName } from '../../utils/twoValues';
 import { SemanticType, FieldRole } from './types';
 import { ColumnType } from '../../types';
 
@@ -29,6 +30,12 @@ export interface ColumnStatProfile {
     dateParseRate: number;     // 0–1: fraction of values parseable as dates
     /** Whether date values contain time components (HH:MM:SS) — avoids storing raw data */
     hasTimeComponent: boolean;
+    /**
+     * Whether the values are a true/false pair (utils/twoValues). Two values
+     * alone are not enough: Male/Female, North/South are categories. When
+     * unknown, the column name decides.
+     */
+    yesNo?: boolean;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -93,9 +100,17 @@ export function runConstraintGates(profile: ColumnStatProfile): ConstraintResult
     const uniqueRatio = profile.totalRows > 0 ? profile.distinctCount / profile.totalRows : 0;
     const rangeSpan = profile.range ? profile.range.max - profile.range.min : undefined;
 
-    // ── GATE 1: Boolean Lock ────────────────────────────────────
-    // If exactly 2 unique values → force BOOLEAN
-    if (profile.distinctCount === 2 && profile.totalRows > 10) {
+    // ── GATE 1: Yes/no lock ─────────────────────────────────────
+    // A true/false pair (yes/no, y/n, 1/0) → BOOLEAN. Two values on their own
+    // are not enough: Male/Female, Urban/Rural, Pass/Fail are categories and
+    // keep their labels.
+    const twoLabels = profile.yesNo === false || (profile.yesNo === undefined && isLabelName(profile.name));
+    if (profile.distinctCount === 2 && profile.totalRows > 10 && twoLabels) {
+        allowedTypes = ['category', 'geography', 'ordinal', 'text'];
+        reasons.push('2 values that are labels, not yes/no → category');
+        return buildResult(profile, allowedTypes, 'category', 'dimension', 0.92, reasons, rangeSpan, uniqueRatio);
+    }
+    if ((profile.distinctCount === 2 || profile.yesNo === true) && profile.totalRows > 10 && profile.yesNo !== false) {
         const isNumericFlag = /(?:^|[_\s])(is_|has_|flag|status|active|returned|churned|converted|paid|completed)(?:[_\s]|$)/i.test(name);
         if (isNumericFlag && profile.isIntegerLike) {
             allowedTypes = ['boolean', 'quantity'];

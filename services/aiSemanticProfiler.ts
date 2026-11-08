@@ -59,7 +59,7 @@ TASKS:
 
 4. For EACH column, determine:
    - role: "METRIC", "DIMENSION", "DATE", "BOOLEAN", or "ID"
-     Use BOOLEAN for columns containing yes/no, true/false, 0/1, active/inactive values.
+     Use BOOLEAN only for yes/no flags (true/false, yes/no, Y/N, 0/1). A column with two labels such as Male/Female, Urban/Rural, Pass/Fail or Active/Inactive is a DIMENSION.
    - aggregation: "SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX", or "NONE"
    - format: "currency_usd", "currency_eur", "percent", "raw", "count", or "date_iso"
    - humanLabel: A clean, readable label (e.g., "Monthly Revenue" instead of "rev_monthly_v2")
@@ -103,7 +103,7 @@ ${profileText}
 
 For EACH column below, determine:
 - role: "METRIC", "DIMENSION", "DATE", "BOOLEAN", or "ID"
-  Use BOOLEAN for columns containing yes/no, true/false, 0/1, active/inactive values.
+  Use BOOLEAN only for yes/no flags (true/false, yes/no, Y/N, 0/1). A column with two labels such as Male/Female, Urban/Rural, Pass/Fail or Active/Inactive is a DIMENSION.
 - aggregation: "SUM", "AVG", "COUNT", "COUNT_DISTINCT", "MIN", "MAX", or "NONE"
 - format: "currency_usd", "currency_eur", "percent", "raw", "count", or "date_iso"
 - humanLabel: Clean readable label
@@ -243,6 +243,13 @@ export function reconcileRolesWithData(
         if (s.role === ColumnType.ID && detRole !== ColumnType.ID) {
             s.role = detRole;
             if (s.aggregation === 'SUM' || s.aggregation === 'AVG') s.aggregation = 'NONE';
+        }
+        // Yes/no is decided by the values (utils/twoValues), not the name: the
+        // AI may call Male/Female "BOOLEAN", or miss a 0/1 flag.
+        else if ((s.role === ColumnType.BOOLEAN) !== (detRole === ColumnType.BOOLEAN)
+            && (s.role === ColumnType.BOOLEAN || s.role === ColumnType.DIMENSION)) {
+            s.role = detRole;
+            if (detRole !== ColumnType.METRIC && (s.aggregation === 'SUM' || s.aggregation === 'AVG')) s.aggregation = 'NONE';
         }
         // AI → METRIC on a column the data says is a date/boolean/ID: a
         // non-numeric field cannot be a measure.

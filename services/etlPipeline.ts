@@ -13,6 +13,7 @@
  */
 
 import { localDateKey } from '../utils/dateKey';
+import { isLabelName, isYesNoValues } from '../utils/twoValues';
 import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, EtlOptions, PhysicalDataType, TimeContext } from '../types';
 import { generateDimDate } from './dimDateGenerator';
 import { convertMixedUnits, runQualityChecks } from './etlQualityChecks';
@@ -180,6 +181,10 @@ const MONTH_MAP: Record<string, number> = {
 // classifyColumnRole() below.
 
 // ID column name patterns — includes abbreviated forms like acid (account-id), brid (branch-id), tno (txn-no)
+/** Ordinary words that end like an ID: "paid", "void", "valid", "casino", "piano". */
+const NOT_ID_WORDS = /^(paid|unpaid|prepaid|raid|said|laid|maid|void|avoid|valid|invalid|rapid|humid|fluid|solid|timid|vivid|acid|arid|lucid|covid|squid|druid|lipid|hybrid|stupid|liquid|casino|piano|volcano|techno|mono|stereo|keno|domino|tornado|ammo|logo|promo|demo|memo|tempo|veto|hero|zero|euro|auto|photo|video|radio|ratio|audio|studio|portfolio|scenario|bingo|mango|cargo|lingo|jumbo|combo|turbo)$/i;
+/** Small whole-number scales that are measured: rating 1–5, bedrooms, children, stars. */
+const SCALE_NAME = /(rating|score|stars?|satisfaction|nps|likert|rank|bedrooms?|bathrooms?|rooms?|children|kids|people|persons?|guests?|adults?|members?|items|visits|nights|floors?|seats?|doors?|cylinders?|dependents?|siblings?|parch|sibsp|attempts|calls|logins|tickets|purchases|orders|employees|staff|headcount)/i;
 const ID_PATTERNS = /(?:^id$|_id$|^id_|order_?id|cust(?:omer)?_?id|product_?id|trans(?:action)?_?id|invoice_?id|sku|code$|_code$|_no$|_num$|number$|_key$|^pk_|^fk_|^.{1,4}id$|^.{1,4}no$|^.{1,4}cd$|^s_?no$|^t_?no$|^sr_?no$|^acc_?(?:id|no)$|^acct_?(?:id|no)$|^emp_?(?:id|no)$|^cust_?(?:id|no)$|^br_?(?:id|no)$)/i;
 
 // Metric name patterns — exact match for standalone names
@@ -231,7 +236,9 @@ export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
     }
 
     // R1 — ID by name pattern (order_id, sku, *_code …).
-    if (ID_PATTERNS.test(p.name)) return { type: ColumnType.ID };
+    // A coded category ("gender_code" 0/1, "region_no" 1–5) is a grouping, not a key.
+    if (ID_PATTERNS.test(p.name) && !NOT_ID_WORDS.test(p.name)
+        && !(isLabelName(p.name) && p.distinctCount <= 20 && p.totalValues > p.distinctCount * 5)) return { type: ColumnType.ID };
     // R1b — Leading-zero CODE (zip 01234, SKU 007): numeric-looking but the zeros
     // are significant, so it must be preserved as text and never summed. Strong
     // metric names (never a code) are exempt.
@@ -247,6 +254,10 @@ export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
     if (p.dateParseRate >= 0.5 && !(isMetricName && !isDateName && p.numericParseRate >= 0.7)) return { type: ColumnType.DATE };
     // R3 — Date by name (trust the column name when data is inconclusive).
     if (isDateName) return { type: ColumnType.DATE };
+    // R3b — Map coordinates: numbers, but a position, never added up or averaged as a measure.
+    if (/(^|[_\s.-])(lat|latitude|lon|lng|longitude)$/i.test(p.name) && p.numericParseRate >= 0.8) {
+        return { type: ColumnType.DIMENSION, note: { label: 'Coordinate Detection', message: `Column '${p.name}' holds map coordinates — kept as a position, not a measure.` } };
+    }
     // R4 — Metric by name + numeric data. MUST precede the boolean rule because
     // boolean tokens include '1'/'0', which would misclassify e.g. a "quantity"
     // column that happens to be mostly 1s as BOOLEAN.
@@ -264,8 +275,13 @@ export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
         }
         return { type: ColumnType.METRIC };
     }
-    // R8 — Low-cardinality numeric with almost no distinct values = an ID/code.
-    if (p.numericParseRate >= 0.9 && p.distinctCount < 10 && p.totalValues > 0 && p.distinctCount / p.totalValues < 0.05) return { type: ColumnType.ID };
+    // R8 — A small set of whole numbers repeated over and over: a scale that is
+    // averaged (rating 1–5, bedrooms, children), a year, or a numbered
+    // category (store 1–9, class 1–3) — never a key, since keys don't repeat.
+    if (p.numericParseRate >= 0.9 && p.distinctCount < 10 && p.totalValues > 0 && p.distinctCount / p.totalValues < 0.05) {
+        if (SCALE_NAME.test(p.name)) return { type: ColumnType.METRIC, note: { label: 'Scale Detection', message: `Column '${p.name}' is a small number scale — averaged, not summed by default.` } };
+        return { type: ColumnType.DIMENSION };
+    }
     // R9 — Default: dimension (categorical text or anything unclassified above).
     return { type: ColumnType.DIMENSION };
 }
@@ -1021,6 +1037,10 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
         // "F"/"M" (gender) or "N"/"S" (north/south) match only one side of a
         // yes/no pair, with other values beside them: a category, not yes/no.
         const oneSidedBoolean = !(sawTrue && sawFalse) && boolCount < nonNull.length;
+        // The one shared rule (utils/twoValues): true/false, yes/no, y/n, t/f
+        // or 0/1 — and not a coded category such as gender 0/1.
+        const exactYesNo = isYesNoValues(nonNull, col);
+        const messyYesNo = !oneSidedBoolean && sawTrue && sawFalse && !isLabelName(col) && nonNull.some(v => typeof v !== 'number');
 
         const profile: ColumnProfileData = {
             name: col,
@@ -1029,7 +1049,7 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
             totalValues: nonNull.length,
             numericParseRate: nonNull.length > 0 ? numericCount / nonNull.length : 0,
             dateParseRate,
-            booleanTokenRate: nonNull.length > 0 && !oneSidedBoolean ? boolCount / nonNull.length : 0,
+            booleanTokenRate: exactYesNo ? 1 : nonNull.length > 0 && messyYesNo ? boolCount / nonNull.length : 0,
             min: min === Infinity ? undefined : min,
             max: max === -Infinity ? undefined : max,
             dateFormatCandidate: bestDateFormat,

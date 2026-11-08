@@ -24,6 +24,7 @@ import { averageCaution } from '../utils/averageCheck';
 import { localDateKey } from '../utils/dateKey';
 import { flagSubject, isYesNoColumn, yesNoLabel } from './ai-sql/plainLabels';
 import { describeDatasetShape } from './datasetShape';
+import { isPerRowName } from '../utils/numberMeaning';
 import { buildRecordsStory } from './recordsStory';
 
 export type StoryKind = 'overview' | 'trend' | 'anomaly' | 'movers' | 'breakdown' | 'concentration' | 'margin' | 'contrast' | 'relationship' | 'quality';
@@ -97,10 +98,6 @@ const round = (value: number) => Math.round(value * 100) / 100;
 const ID_NAME = /(^|[_\s-])(id|uuid|guid|key|code|ref|reference|number|no|num|nr|sku|barcode|ean|isbn)$|^(id|uuid|guid)([_\s-]|$)|_id_/i;
 const FREE_TEXT = /(url|link|notes?|description|comment|comments|email|e-mail|phone|mobile|address|postcode|zip|remarks?|summary|message|text)$/i;
 const NOT_A_MEASURE = /(^|_)(lat|lon|lng|latitude|longitude|zip|postcode|phone|year|yr|month|week|day|hour|quarter)$/i;
-/** Per-row attributes (a car's price, a person's age): averaged, never added up. */
-const PER_ROW = /(^|_)(unit|per|avg|average|mean|median)(_|$)|(rate|ratio|pct|percent|percentage|%|score|rating|age|temperature|temp|probability|nps|satisfaction|margin_pct|margin_percent|index|level|price|size|weight|height|length|width|mileage|miles|km|distance|duration|speed|capacity|engine|tenure|days|hours|minutes|cpi|unemployment|inflation|interest|humidity|rainfall)/i;
-/** Amounts that add up across rows. */
-const ADDITIVE = /(revenue|sales|amount|quantity|qty|units|profit|cost|spend|value|total|count|income|turnover|orders|volume|gmv|fee|tax|earnings|budget|salary)/i;
 const MONEY = /(revenue|sales|price|cost|amount|profit|spend|income|value|turnover|margin|fee|pay|salary|budget|gmv|earnings|total)/i;
 const PROFIT = /(profit|margin|earnings|net_income|contribution)/i;
 const REVENUE = /(revenue|sales|turnover|amount|income|gmv)/i;
@@ -155,7 +152,7 @@ function profile(dataset: Dataset, rows: Record<string, any>[]) {
             continue;
         }
         // A yes/no column (holiday flag, is_member): a grouping of two, read as words.
-        if (isYesNoColumn(values) && distinctSample <= 2 && !idByName) {
+        if (isYesNoColumn(values, column.name) && distinctSample <= 2 && !idByName) {
             groupings.push({ name: column.name, label: flagSubject(column.name), distinct: distinctSample, yearLike: false, yesNo: true });
             continue;
         }
@@ -168,7 +165,7 @@ function profile(dataset: Dataset, rows: Record<string, any>[]) {
             const currency = (column as any).currency as string | undefined;
             const perRow = /(^|_)(unit|per|avg|average|mean|median)(_|$)/i.test(column.name);
             const avg = field?.additivity === 'non_additive' || field?.semanticType === 'percentage' || field?.semanticType === 'ratio'
-                || perRow || (!ADDITIVE.test(column.name) && PER_ROW.test(column.name));
+                || perRow || isPerRowName(column.name);
             measures.push({
                 name: column.name, label: human(column.name), agg: avg ? 'avg' : 'sum',
                 symbol: currency ? (SYMBOL[currency] || '') : '', numberFormat: (currency && NUMBER_FORMAT[currency]) || 'auto',

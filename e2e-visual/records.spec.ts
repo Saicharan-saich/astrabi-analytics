@@ -77,6 +77,13 @@ for (const theme of ['light', 'dark'] as const) {
         await kind.scrollIntoViewIfNeeded();
         await shoot(page, `80-records-workspace-${theme}`);
         await kind.screenshot({ path: path.join(OUT, `80-records-kind-${theme}.png`) });
+        // Two labels (F/M) are a category in words; true/false are yes/no.
+        const genderRow = page.locator('tr', { hasText: 'gender' }).first();
+        await expect(genderRow).toContainText('Dimension');
+        await expect(genderRow).toContainText('Female');
+        await expect(page.locator('tr', { hasText: 'showed_up' }).first()).toContainText('Yes/No');
+        await page.locator('tr', { hasText: 'neighbourhood' }).first().scrollIntoViewIfNeeded();
+        await shoot(page, `80-records-columns-${theme}`);
 
         // ── the story: counts and rates, no totals ──
         await go(page, /Data Story/);

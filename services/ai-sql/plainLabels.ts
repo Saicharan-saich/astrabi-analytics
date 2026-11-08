@@ -4,6 +4,8 @@
  * and column names without underscores.
  */
 
+import { isYesNoValues } from '../../utils/twoValues';
+
 const YES = new Set(['1', 'true', 'yes', 'y', 't']);
 const NO = new Set(['0', 'false', 'no', 'n', 'f']);
 
@@ -54,16 +56,13 @@ function noLabel(subject: string): string {
     return `Not ${subject}`;
 }
 
-/** True when every value is a yes/no (0/1, true/false, yes/no) and both appear or only one does. */
-export function isYesNoColumn(values: unknown[]): boolean {
-    const seen = new Set<string>();
-    for (const value of values) {
-        if (value === null || value === undefined || value === '') continue;
-        const key = String(value).trim().toLowerCase();
-        if (!YES.has(key) && !NO.has(key)) return false;
-        seen.add(YES.has(key) ? 'y' : 'n');
-    }
-    return seen.size > 0;
+/**
+ * True when the values are a real yes/no (true/false, yes/no, y/n, 1/0) — not
+ * a two-label category like Male/Female. Pass the column name: gender 0/1 is a
+ * coded category, and a lone "F" is only yes/no in a column named like a flag.
+ */
+export function isYesNoColumn(values: unknown[], name = ''): boolean {
+    return isYesNoValues(values, name);
 }
 
 /** "Holiday" for yes, "Not holiday" for no; "Showed up" / "Didn't show up". */
@@ -83,7 +82,7 @@ export const isYesValue = (value: unknown) => YES.has(String(value ?? '').trim()
 export function relabelYesNo(rows: Record<string, any>[], columns: string[]): { rows: Record<string, any>[]; relabelled: string[] } {
     const relabelled = columns.filter(column => rows.length > 0
         && Object.prototype.hasOwnProperty.call(rows[0], column)
-        && isYesNoColumn(rows.map(row => row[column])));
+        && isYesNoColumn(rows.map(row => row[column]), column));
     if (!relabelled.length) return { rows, relabelled };
     return {
         rows: rows.map(row => {

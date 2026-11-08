@@ -8,6 +8,7 @@
  * flag it.
  */
 
+import { isPerRowName } from '../utils/numberMeaning';
 import { isTotalLabel, parseLocaleNumber, periodFromHeader } from './etlHardening';
 
 type Row = Record<string, any>;
@@ -242,7 +243,8 @@ export function findRepeatedHeaderAmounts(rows: Row[], keyColumns: string[], met
         };
         if (!metricColumns.some(c => c !== key && variesWithin(c))) continue;
         for (const column of metricColumns) {
-            if (PER_UNIT_NAME.test(column) || column === key) continue;
+            // Per-row figures (a rating, an age, a price) are not order-level amounts.
+            if (PER_UNIT_NAME.test(column) || isPerRowName(column) || column === key) continue;
             let constant = 0, informative = 0;
             for (const g of multi) {
                 const values = g.map(r => num(r[column])).filter((v): v is number => v !== null);

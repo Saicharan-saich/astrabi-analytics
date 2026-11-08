@@ -13,6 +13,7 @@
  */
 import { ColumnType, type Dataset } from '../types';
 import { flagSubject, isYesNoColumn, yesNoLabel } from './ai-sql/plainLabels';
+import { isAdditiveName, isCoordinateName, isPerRowName } from '../utils/numberMeaning';
 
 export type DatasetKind = 'hybrid' | 'records' | 'measures';
 
@@ -50,9 +51,6 @@ export interface DatasetShape {
 const ID_NAME = /(^|[_\s.-])(id|uuid|guid|key|ref|reference|sku|barcode|ean|isbn)$|^(id|uuid|guid)([_\s.-]|$)|_id_|[a-z]Id$/;
 const FREE_TEXT = /(url|link|notes?|description|comment|comments|email|e-mail|phone|mobile|address|postcode|zip|remarks?|summary|message|text|name)$/i;
 const NOT_A_MEASURE = /(^|_)(lat|lon|lng|latitude|longitude|zip|postcode|phone|year|yr|month|week|day|hour|quarter)$/i;
-/** Numbers that belong to each row and are averaged, never added up. */
-const PER_ROW = /(^|_)(unit|per|avg|average|mean|median)(_|$)|(rate|ratio|pct|percent|percentage|score|rating|age|temperature|temp|probability|nps|satisfaction|index|level|price|size|weight|height|length|width|bmi|mileage|miles|distance|duration|speed|capacity|tenure|days|hours|minutes|diff|wait|lead|delay|gap|elapsed|cpi|unemployment|inflation|interest|humidity|rainfall|pressure|glucose|cholesterol|heart|bp)/i;
-const ADDITIVE = /(revenue|sales|amount|quantity|qty|units|profit|cost|spend|value|total|count|income|turnover|orders|volume|gmv|fee|tax|earnings|budget|salary|charges|claims?_amount|paid)/i;
 /** Numbered things that are names, not amounts: store 12, ward 4, grade 3. */
 const CODE_NAME = /(store|branch|shop|site|dept|department|zone|region|area|district|ward|room|class|grade|level|tier|group|team|cluster|segment|category|type|code|line|channel|plant|warehouse|route|terminal|gate|floor|bed|seat|unit|division|cohort|batch|version|stage|step|status|number|no|num|nr)$/i;
 const OUTCOME = /(show|showed|attend|no.?show|churn|convert|success|approved|default|cancel|return|readmi|surviv|died|death|dead|deceased|fraud|won|lost|pass|fail|complet|resolv|left|attrition|respon|click|purchas|outcome|target|label|result|bought|subscri|renew|enrol|admit|hired|accept|reject|late|on.?time|defect|spam|exited|exit|retained|stroke|disease|diagnos)/i;
@@ -104,6 +102,8 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
             dates.push(column.name);
             continue;
         }
+        // Map coordinates are positions: not an amount, not a grouping.
+        if (isCoordinateName(column.name)) continue;
         const distinct = new Set(values.map(String)).size;
         const numeric = values.every(isNumeric);
         const yearLike = numeric && values.every(value => { const n = Number(value); return Number.isInteger(n) && n >= 1900 && n <= 2100; });
@@ -111,13 +111,13 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
             ids.push({ name: column.name, unique: distinct >= values.length * 0.98 });
             continue;
         }
-        if (distinct <= 2 && isYesNoColumn(values) && (column.type !== ColumnType.METRIC || !ADDITIVE.test(column.name))) {
+        if (distinct <= 2 && isYesNoColumn(values, column.name) && (column.type !== ColumnType.METRIC || !isAdditiveName(column.name))) {
             yesNo.push(column.name);
             continue;
         }
         if (numeric && !yearLike && !NOT_A_MEASURE.test(column.name)) {
             if (column.type === ColumnType.METRIC) {
-                if (!ADDITIVE.test(column.name) && PER_ROW.test(column.name)) { perRowNumbers.push(column.name); perRowMetrics.push(column.name); }
+                if (isPerRowName(column.name)) { perRowNumbers.push(column.name); perRowMetrics.push(column.name); }
                 else amounts.push(column.name);
                 continue;
             }

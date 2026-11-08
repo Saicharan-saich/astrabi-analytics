@@ -11,6 +11,8 @@
  * PRIORITY: Hard Physics > User Feedback > Deterministic > AI
  */
 
+import { isYesNoValues } from '../../utils/twoValues';
+import { isCoordinateName } from '../../utils/numberMeaning';
 import { Dataset, ColumnType } from '../../types';
 import { classifyShape } from '../dataMasker';
 import {
@@ -26,7 +28,7 @@ import { runAIArbitration, AIClassificationRequest } from './aiArbitrator';
  * Bump this whenever the shape or classification rules of SemanticModel
  * change. Old IndexedDB snapshots will then be rebuilt automatically.
  */
-export const AI_SQL_SEMANTIC_SNAPSHOT_VERSION = 1;
+export const AI_SQL_SEMANTIC_SNAPSHOT_VERSION = 2; // 2: two labels (Male/Female) are categories, not yes/no
 
 function stableHash(input: string): string {
     let hash = 2166136261;
@@ -319,6 +321,8 @@ function buildColumnStatProfile(
     }
 
     const nonNullCount = sampleSize - nullCount;
+    // Yes/no or two labels — the one shared rule. Only the verdict is kept, no values.
+    const yesNo = isYesNoValues([...distinctValues], colName);
     const dateParseRate = nonNullCount > 0 ? dateParseCount / nonNullCount : 0;
     const isIntegerLike = numericValues.length > 0 && integerCount >= numericValues.length * 0.95;
 
@@ -340,6 +344,7 @@ function buildColumnStatProfile(
         isIntegerLike,
         dateParseRate,
         hasTimeComponent,
+        yesNo,
     };
 }
 
@@ -500,7 +505,8 @@ export function buildSemanticModel(dataset: Dataset): SemanticModel {
         if (arbResult.needsReview) arbitrationStats.needsReview++;
 
         // ── STEP 5: Build SemanticField with classification signals ──
-        const semanticType = arbResult.semanticType;
+        // Map coordinates are a place, whatever the numbers look like.
+        const semanticType = isCoordinateName(col.name) && col.type !== ColumnType.METRIC ? 'geography' : arbResult.semanticType;
         const role = arbResult.role;
         const defaultAgg = inferDefaultAgg(semanticType, role);
         const formatHint = deriveFormatHint(semanticType);

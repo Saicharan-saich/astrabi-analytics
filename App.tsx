@@ -47,6 +47,7 @@ import { ThemeProvider } from './components/ThemeProvider';
 import { OnboardingTour } from './components/OnboardingTour';
 import { DatasetSwitcher } from './components/DatasetSwitcher';
 import { saveDatasetToDB, loadAllDatasetsFromDB, deleteDatasetFromDB } from './services/datasetDB';
+import { repairTwoLabelColumns } from './utils/twoValues';
 import { repairLegacyProfitMarginDataset } from './services/legacyDerivedMetricMigration';
 import { buildRelationalCatalog, createSubjectDataset } from './services/relationalCatalog';
 import { inferDefaultAggregationForGrain } from './services/smartAggregation';
@@ -411,7 +412,9 @@ function App() {
         const regrained = reconcileStoredModelGrain(repairedMargin);
         // ...and before money columns recorded their currency (Price (£) → £).
         const columnsWithCurrency = withDetectedCurrencies(regrained.columns || [], regrained.rawRows || []);
-        const migrated = columnsWithCurrency !== regrained.columns ? { ...regrained, columns: columnsWithCurrency } : regrained;
+        // ...and before two labels (Male/Female) stopped being read as yes/no.
+        const columnsWithLabels = repairTwoLabelColumns(columnsWithCurrency, regrained.rows || []);
+        const migrated = columnsWithLabels !== regrained.columns ? { ...regrained, columns: columnsWithLabels } : regrained;
         if (migrated !== regrained) console.log(`[App] Recorded the currency of money columns for ${migrated.name}`);
         if (migrated !== repairedMargin) {
           console.log(`[App] Re-checked price aggregation against the row grain for ${migrated.name}`);
