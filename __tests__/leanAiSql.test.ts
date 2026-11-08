@@ -13,7 +13,7 @@ vi.mock('../services/duckdbEngine', async (importOriginal) => {
 import { fetchWithFallback } from '../services/ai-sql/modelConfig';
 import { executeSQLViaDuckDB } from '../services/duckdbEngine';
 import {
-    AISQLClarificationError, AISQLOverviewRequest, buildInsights, describeColumnsOnly, extremesNarrative, normaliseExtremes, parseLeanReply, periodLabel, planFromResult, rerunSavedAnswer, resultCurrency, runLeanAISQL, scrubErrorForModel,
+    AISQLClarificationError, AISQLOverviewRequest, buildInsights, partsOfAWhole, describeColumnsOnly, extremesNarrative, normaliseExtremes, parseLeanReply, periodLabel, planFromResult, rerunSavedAnswer, resultCurrency, runLeanAISQL, scrubErrorForModel,
 } from '../services/ai-sql/leanPipeline';
 import { profileResult } from '../services/ai-sql/resultProfiler';
 import { resolveAISQLSemanticModel } from '../services/ai-sql/semanticLayer';
@@ -276,6 +276,15 @@ describe('lean AI SQL — end to end with the AI and DuckDB stubbed', () => {
         expect(result.chart.yKey).toBe('share_pct');
         expect(result.narrative?.summary).toBe('Hypertension 19.7%, diabetes 7.2% and alcoholism 3% — out of 106,987 appointments.');
         expect(JSON.stringify(result.narrative)).not.toMatch(/originalKey|Metric, Value/);
+        // Overlapping rates are not slices of one whole: never a pie or donut.
+        expect(['pie', 'donut', 'doughnut']).not.toContain(result.chart.chartType);
+    });
+
+    it('draws a donut only for shares that make one whole', () => {
+        expect(partsOfAWhole([{ s: 20.4 }, { s: 7.4 }, { s: 3.1 }].map(r => ({ share_pct: r.s })), 'share_pct')).toBe(false);
+        expect(partsOfAWhole([{ share_pct: 60 }, { share_pct: 40 }], 'share_pct')).toBe(true);
+        expect(partsOfAWhole([{ revenue: 10 }, { revenue: 30 }], 'revenue')).toBe(true);
+        expect(partsOfAWhole([{ return_rate_pct: 6 }, { return_rate_pct: 9 }], 'return_rate_pct')).toBe(false);
     });
 
     it('answers one rate with the count behind it as a single figure', async () => {

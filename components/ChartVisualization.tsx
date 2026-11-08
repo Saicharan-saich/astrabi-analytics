@@ -1387,6 +1387,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         const isHorizontal = chartType === 'horizontalBar' || chartType === 'funnel';
         const isRadial = chartType === 'radar' || chartType === 'polarArea';
         const isArcLegend = isPieChart || chartType === 'polarArea';
+        // Separate rates (each region's return rate, % with each condition) are
+        // not slices of one whole: no "Total" in the middle, no share of their sum.
+        const arcValues: number[] = (chartData?.datasets?.[0]?.data || []).map((v: any) => Number(v) || 0);
+        const arcSum = arcValues.reduce((a, b) => a + b, 0);
+        const ratesNotParts = isPieChart && /(^|_)(rate|pct|percent|percentage|share|ratio)($|_)/i.test(String(yKey || ''))
+            && Math.abs(arcSum - 100) > 1.5 && Math.abs(arcSum - 1) > 0.015;
         const plottedDatasetCount = (chartData?.datasets || []).filter((dataset: any) => !dataset.qiHelper).length;
         // Bridge waterfalls (total → changes → total): when the changes are small
         // next to the totals, start the value axis near the lowest level so the
@@ -1488,7 +1494,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                         ? (gaugeInfo.basis === 'percent'
                             ? `${(gaugeInfo.max === 1 ? gaugeInfo.value * 100 : gaugeInfo.value).toFixed(gaugeInfo.max === 1 || gaugeInfo.value < 10 ? 1 : 0)}%`
                             : formatCompactLabel(gaugeInfo.value))
-                        : chartType === 'doughnut'
+                        : chartType === 'doughnut' && !ratesNotParts
                         ? (() => {
                             const total = (chartData?.datasets?.[0]?.data || []).reduce((a: number, v: any) => a + (Number(v) || 0), 0);
                             // Full figure (18,016) reads better than 18K until it gets long.
@@ -1564,9 +1570,12 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                                 const base = ChartJS.overrides.doughnut.plugins.legend.labels.generateLabels(chart);
                                 const values: number[] = (chart.data.datasets?.[0]?.data || []).map((v: any) => Number(v) || 0);
                                 const total = values.reduce((a, b) => a + b, 0) || 1;
+                                // Rates that are not parts of one whole show their own value, never a share of their sum.
                                 return base.map((item: any, index: number) => ({
                                     ...item,
-                                    text: `${item.text}  ${Math.round((values[index] / total) * 100)}%`,
+                                    text: ratesNotParts
+                                        ? `${item.text}  ${values[index].toLocaleString(undefined, { maximumFractionDigits: 1 })}%`
+                                        : `${item.text}  ${Math.round((values[index] / total) * 100)}%`,
                                 }));
                             },
                         } : {}),
@@ -1974,7 +1983,9 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                     const outerY = centerY + Math.sin(midAngle) * labelRadius;
 
                     const catName = dataLabels[index] || '';
-                    const labelText = `${catName}: ${pct.toFixed(1)}%`;
+                    // Separate rates show their own value, not a share of their sum.
+                    const ownRate = /(^|_)(rate|pct|percent|percentage|share|ratio)($|_)/i.test(String(yKey || '')) && Math.abs(total - 100) > 1.5 && Math.abs(total - 1) > 0.015;
+                    const labelText = ownRate ? `${catName}: ${Number(value).toLocaleString(undefined, { maximumFractionDigits: 1 })}%` : `${catName}: ${pct.toFixed(1)}%`;
                     const side: 'left' | 'right' = outerX >= centerX ? 'right' : 'left';
 
                     labelInfos.push({ index, angle: midAngle, labelText, outerX, outerY, side, weight: pct });
@@ -2190,7 +2201,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             }
             ctx.restore();
         }
-    }), []);
+    }), [yKey]);
 
     // Growth % badge — compact box at top-center of the chart canvas
     const growthLabelsPlugin = useMemo<any>(() => ({

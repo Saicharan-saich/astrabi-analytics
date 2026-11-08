@@ -942,6 +942,20 @@ export function oneRowOfMeasures(rows: Record<string, any>[], hinted?: string[])
     };
 }
 
+/**
+ * True when the values can be drawn as slices of one whole: shares that add up
+ * to about 100%, or plain amounts (a pie of sales by region). Rates that add up
+ * to anything else — overlapping conditions, each region's own return rate —
+ * are not slices.
+ */
+export function partsOfAWhole(rows: Record<string, any>[], key: string): boolean {
+    const values = rows.map(row => Number(row[key])).filter(Number.isFinite);
+    if (!values.length || values.some(value => value < 0)) return false;
+    if (!RATE_COLUMN.test(key)) return true;
+    const sum = values.reduce((total, value) => total + value, 0);
+    return Math.abs(sum - 100) <= 1.5 || Math.abs(sum - 1) <= 0.015;
+}
+
 /** Chart, narrative and insights for an executed query — all local. */
 function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
     const { question, sql, reply: parsed, model, dataset, repairAttempts, tokens } = input;
@@ -970,7 +984,12 @@ function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
         const itemColumns = new Set(extremes.roles.map(role => role.item));
         profile.dimensionColumns = profile.dimensionColumns.filter(column => !itemColumns.has(column));
     }
-    const chart: ChartRecommendation = recommendChart(profile, plan, model);
+    let chart: ChartRecommendation = recommendChart(profile, plan, model);
+    // A pie or donut means "parts of one whole". Rates that overlap (a patient
+    // with two conditions) or that don't add up to 100% are not parts: bars.
+    if (['donut', 'doughnut', 'pie'].includes(String(chart.chartType)) && !partsOfAWhole(rows, chart.yKey)) {
+        chart = { ...chart, chartType: rows.length > 6 ? 'horizontalBar' : 'bar', reason: `${chart.reason || ''} · values are not parts of one whole → bars`.trim() };
+    }
     const reshaped = reshapeData(rows, profile, chart, plan);
     const currency = resultCurrency(sql, profile.metricColumns[0] || plan.metrics[0]?.field, dataset.columns);
     if (currency) reshaped.chart = { ...reshaped.chart, currency };

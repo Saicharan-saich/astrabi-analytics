@@ -59,7 +59,12 @@ for (const theme of ['light', 'dark'] as const) {
                 return;
             }
             // A stand-in for the AI, writing the rate query the prompt teaches.
-            const reply = /sms/i.test(asked.split(/QUESTION|NEW MESSAGE/).pop() || '')
+            const latest = asked.split(/QUESTION|NEW MESSAGE/).pop() || '';
+            if (/hypertension/i.test(latest)) {
+                await route.fulfill(json({ choices: [{ message: { content: JSON.stringify({ action: 'answer', title: 'Appointments involving each listed condition', question: 'What percentage of appointments involve patients with hypertension, diabetes or a scholarship?', sql: 'SELECT ROUND(100.0 * COUNT_IF("hipertension") / NULLIF(COUNT(*), 0), 1) AS hypertension_rate_pct, ROUND(100.0 * COUNT_IF("diabetes") / NULLIF(COUNT(*), 0), 1) AS diabetes_rate_pct, ROUND(100.0 * COUNT_IF("scholarship") / NULLIF(COUNT(*), 0), 1) AS scholarship_rate_pct, COUNT(*) AS appointment_count FROM "data"', dimensions: [], measures: ['hypertension_rate_pct', 'diabetes_rate_pct', 'scholarship_rate_pct', 'appointment_count'], explanation: 'Worked out the share of appointments with each condition.' }) } }], usage: { total_tokens: 1300 } }));
+                return;
+            }
+            const reply = /sms/i.test(latest)
                 ? { action: 'answer', title: "% who didn't show up, with and without an SMS", question: "The % of appointments that didn't show up, with and without an SMS", sql: 'SELECT "sms_received", COUNT(*) AS appointments, ROUND(100.0 * COUNT_IF(NOT "showed_up") / COUNT(*), 1) AS no_show_rate_pct FROM "data" GROUP BY 1 ORDER BY 1', dimensions: ['sms_received'], measures: ['no_show_rate_pct', 'appointments'], explanation: "Counted appointments with and without an SMS and the share of each that didn't show up." }
                 : { action: 'answer', title: "% of appointments that didn't show up, by neighbourhood", question: "The % of appointments that didn't show up in each neighbourhood", sql: 'SELECT "neighbourhood", COUNT(*) AS appointments, ROUND(100.0 * COUNT_IF(NOT "showed_up") / COUNT(*), 1) AS no_show_rate_pct FROM "data" GROUP BY 1 HAVING COUNT(*) >= 30 ORDER BY no_show_rate_pct DESC', dimensions: ['neighbourhood'], measures: ['no_show_rate_pct', 'appointments'], explanation: "Counted appointments in each neighbourhood and the share that didn't show up, leaving out neighbourhoods with fewer than 30." };
             await route.fulfill(json({ choices: [{ message: { content: JSON.stringify(reply) } }], usage: { total_tokens: 1300 } }));
@@ -118,6 +123,13 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `84-records-ai-sql-sms-${theme}`);
         await expect(page.locator('.qi-chat-row').last()).toContainText('SMS received');
         await expect(page.locator('.qi-chat-row').last()).toContainText('points');
+
+        // Several separate rates: bars with their own values, never a donut of their sum.
+        await ask('What percentage of appointments involve patients with hypertension, diabetes or a scholarship?');
+        await shoot(page, `85-records-ai-sql-rates-${theme}`);
+        const last = page.locator('.qi-chat-row').last();
+        await expect(last).toContainText('— out of 6,000 appointments');
+        await expect(last).not.toContainText('Total');
 
         // What the AI was sent: the shape and the storage types, never a value.
         const planner = sent.find(text => text.includes('DATA DESCRIPTION')) || '';
