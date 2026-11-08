@@ -45,6 +45,8 @@ export interface AccuracyRunOptions {
     suite: 'business' | 'bird' | 'spider2';
     /** Sample size (spread across the suite). Default: all cases. */
     count?: number;
+    /** Only cases whose id matches (e.g. "-m" for the messy-phrasing set). */
+    only?: string;
     onCase?: (result: BenchmarkCaseResult, index: number, total: number) => void;
     shouldCancel?: () => boolean;
 }
@@ -54,7 +56,8 @@ export async function runAISQLAccuracy(options: AccuracyRunOptions): Promise<Ben
         ? BUSINESS_BENCHMARK_SUITE
         : AUDITED_HOLDOUT_BENCHMARK_SUITES.find(suite => suite.id === (options.suite === 'bird' ? 'bird-dev-holdout' : 'spider2-lite-holdout'));
     if (!source) throw new Error(`Unknown suite ${options.suite}`);
-    const suite = spread(source, options.count);
+    const filtered = options.only ? { ...source, cases: source.cases.filter(testCase => new RegExp(options.only!).test(testCase.id)) } : source;
+    const suite = spread(filtered, options.count);
     return runBenchmark([suite], {
         loadDataset: loadResearchBenchmarkDataset,
         reloadDataset: reloadIsolatedBenchmarkData,
@@ -87,7 +90,7 @@ export function installAccuracyConsole(): void {
         state,
         start(options: Omit<AccuracyRunOptions, 'onCase' | 'shouldCancel'>) {
             if (state.running) return 'already running';
-            Object.assign(state, { running: true, done: 0, total: 0, suite: `${options.suite}-${options.count || 'all'}`, results: [], run: undefined, error: undefined, cancel: false });
+            Object.assign(state, { running: true, done: 0, total: 0, suite: `${options.suite}-${options.only || ''}${options.count || 'all'}`, results: [], run: undefined, error: undefined, cancel: false });
             runAISQLAccuracy({
                 ...options,
                 shouldCancel: () => state.cancel,
