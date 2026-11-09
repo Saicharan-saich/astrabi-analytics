@@ -2,7 +2,7 @@ import { dateKeyOf } from '../utils/dateKey';
 import { CanonicalMapping, Dataset, DimDateRow, QuestionTemplate, QueryConfig } from "../types";
 import { buildQueryPlan, compileSQL, compileEnrichedSQL, executeQueryPlan, validatePlan, dimensionId } from './queryPlan';
 import type { EnrichedQuery, ComparisonConfig, TableCalculation } from './queryPlan';
-import { DateRange, pad, getISOWeek } from './dateHelpers';
+import { DateRange, pad, isoWeekLabel } from './dateHelpers';
 import { applyComparison } from './evaluation/comparisonEngine';
 import { executeViaDuckDB, isDuckDBReady, type DuckDBResult } from './duckdbEngine';
 import { round2 } from '../utils/numberSafety';
@@ -872,10 +872,7 @@ export const evaluateLocally = (dq: QuestionTemplate, rows: any[], mapping: Cano
                         const dy = d.getDate();
 
                         if (trendDim === 'day') return `${y}-${pad(m)}-${pad(dy)}`;
-                        if (trendDim === 'week') {
-                            const week = getISOWeek(d);
-                            return `${y}-W${pad(week)}`;
-                        }
+                        if (trendDim === 'week') return isoWeekLabel(d);
                         if (trendDim === 'month') return `${y}-${pad(m)}`;
                         if (trendDim === 'quarter') {
                             const q = Math.ceil(m / 3);

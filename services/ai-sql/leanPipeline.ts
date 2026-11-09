@@ -1030,6 +1030,7 @@ export function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
         engine: 'llm-sql',
         validation: { valid: true, checks: [{ name: 'Read-only query', status: 'pass', message: 'Only reads data; nothing can be changed.' }] },
         rawData: rows,
+        queryRows: input.rows.slice(0, 5000),
         chartData: reshaped.data,
         profile,
         chart: reshaped.chart,

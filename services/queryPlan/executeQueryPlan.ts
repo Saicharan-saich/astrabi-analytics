@@ -17,7 +17,7 @@ import {
     QueryPlan, Expression, Metric, Dimension, RowFilter, RangeFilter, DateFilter,
     GroupFilter, OrderBy, AggregationType, dimensionId, deriveResultSchema
 } from './types';
-import { pad, getISOWeek } from '../dateHelpers';
+import { pad, isoWeekLabel } from '../dateHelpers';
 import type { DimDateRow } from '../../types';
 
 // ── HELPERS ──────────────────────────────────────────────────────
@@ -102,10 +102,7 @@ function formatTimeBucket(dateStr: string, grain: string): string {
             return `${hr12} ${ampm}`;
         }
         case 'day': return `${y}-${pad(m)}-${pad(dy)}`;
-        case 'week': {
-            const week = getISOWeek(d);
-            return `${y}-W${pad(week)}`;
-        }
+        case 'week': return isoWeekLabel(d);
         case 'month': return `${y}-${pad(m)}`;
         case 'quarter': return `${y}-Q${Math.ceil(m / 3)}`;
         case 'year': return `${y}`;
@@ -389,7 +386,9 @@ export function executeQueryPlan(
                 dimValues[dim.alias] = val;
             } else {
                 const key = resolveColumnKey(row, dim.column);
-                val = String(row[key] || 'Unknown');
+                // 0 and false are values ("not a holiday week"), not missing.
+                const raw = row[key];
+                val = raw === null || raw === undefined || raw === '' ? 'Unknown' : String(raw);
                 dimValues[dim.column] = val;
             }
             keyParts.push(val);

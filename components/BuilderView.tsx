@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { QuestionBuilder } from './QuestionBuilder';
 import { QuerySelect } from './QuerySelect';
@@ -26,6 +26,9 @@ import {
     type ChartPointSelection, type DrillOption, type ExploreTarget,
 } from '../utils/explore';
 import { TransparencyPanel } from './TransparencyPanel';
+import { AnswerCheckStrip } from './AnswerCheckStrip';
+import { checkAnswer, type AnswerCheck } from '../services/answerCheck/answerCheck';
+import { describeDatasetShape } from '../services/datasetShape';
 
 import { AlertTriangle, Code, Play, Palette, X, Pin, CheckCircle2, Activity, TrendingUp, BarChart3, BarChart2, Download, Loader2, Eye, EyeOff, Table2, PanelTopClose, RotateCcw, RefreshCw, Zap, LayoutGrid, Layers, Calendar, Undo2, GripVertical, PanelLeftClose, PanelLeftOpen, Sparkles } from 'lucide-react';
 
@@ -101,6 +104,22 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
     });
 
     const [result, setResult] = useState<AnalysisResult | undefined>(undefined);
+    /** Every figure of the answer worked out again from the cleaned rows by a separate calculator. */
+    const [answerCheck, setAnswerCheck] = useState<AnswerCheck | 'pending' | undefined>(undefined);
+    useEffect(() => {
+        setAnswerCheck(undefined);
+        if (!result || result.error || !result.data?.length || !result.sql || !/^\s*(SELECT|WITH)\b/i.test(result.sql) || !dataset?.rows?.length) return;
+        setAnswerCheck('pending');
+        const timer = window.setTimeout(() => {
+            try {
+                setAnswerCheck(checkAnswer({ sql: result.sql, rows: result.data, data: dataset.rows, matchByName: true, recordWord: describeDatasetShape(dataset).recordWord }));
+            } catch (err) {
+                console.warn('[answer-check] could not run', err);
+                setAnswerCheck(undefined);
+            }
+        }, 60);
+        return () => window.clearTimeout(timer);
+    }, [result, dataset]);
     const [error, setError] = useState<string | null>(null);
     const [chartType, setChartType] = useState<any>(savedSession?.chartType || 'bar');
     // A chart the user picked is kept while they refine the same question
@@ -1102,6 +1121,7 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                             {describeBuilderFinding(result, formatting) && (
                                 <p className="qi-builder-headline-finding">{describeBuilderFinding(result, formatting)}</p>
                             )}
+                            <AnswerCheckStrip check={answerCheck} />
                             {quickStarts.length > 0 && (
                                 <div className="qi-builder-quickstarts" role="group" aria-label="Try a breakdown">
                                     <Sparkles className="w-3.5 h-3.5" aria-hidden />

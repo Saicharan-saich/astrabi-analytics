@@ -1085,12 +1085,16 @@ export const resolveMapping = (dataset: Dataset): CanonicalMapping => {
         return bestScore;
     };
 
+    const dateTypedColumns = new Set(dataset.columns.filter(c => c.type === ColumnType.DATE).map(c => c.name));
     // For each semantic role, find the best matching column
     Object.entries(heuristics).forEach(([role, synonyms]) => {
         let bestCol = '';
         let bestScore = 0;
 
         for (const col of columns) {
+            // A date role only goes to a column that holds dates: "date_diff"
+            // (a number of days) once won "order_date" on its name alone.
+            if ((role === 'order_date' || role === 'ship_date') && dateTypedColumns.size && !dateTypedColumns.has(col)) continue;
             // Skip columns already assigned to a higher-priority role
             // (revenue is highest priority for metrics)
             const score = scoreMatch(col, synonyms);
@@ -1116,6 +1120,9 @@ export const resolveMapping = (dataset: Dataset): CanonicalMapping => {
     });
 
     // ── POST-PROCESSING ──
+    // The dataset's own time anchor is the main date when it is a date column.
+    const anchor = dataset.timeContext?.anchorDateColumn;
+    if (anchor && columns.includes(anchor) && (!dateTypedColumns.size || dateTypedColumns.has(anchor))) fields['order_date'] = anchor;
     // If a _name role resolved to _id column, try to find a better match
     for (const role of Object.keys(fields)) {
         if (role.endsWith('_name') || role === 'customer_name' || role === 'product_name') {

@@ -538,6 +538,8 @@ export interface AISQLPipelineResult {
     validation: ValidationResult;
     /** Raw query result data */
     rawData: Record<string, any>[];
+    /** Exactly what the query returned, before any display relabelling (for the answer check). */
+    queryRows?: Record<string, any>[];
     /** Chart-ready (reshaped) data */
     chartData: Record<string, any>[];
     /** Result profile */

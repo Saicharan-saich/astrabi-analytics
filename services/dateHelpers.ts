@@ -16,6 +16,18 @@ export const getISOWeek = (date: Date): number => {
     return 1 + Math.ceil((firstThursday - target.valueOf()) / 604800000);
 };
 
+/**
+ * "2025-W01" for a date: the ISO week and the ISO week's own year. Late
+ * December can belong to week 1 of the next year (30 Dec 2024 is 2025-W01)
+ * and early January to the last week of the year before; pairing the
+ * calendar year with the ISO week mixed those days into the wrong week.
+ */
+export const isoWeekLabel = (date: Date): string => {
+    const thursday = new Date(date.valueOf());
+    thursday.setDate(thursday.getDate() - ((date.getDay() + 6) % 7) + 3);
+    return `${thursday.getFullYear()}-W${String(getISOWeek(date)).padStart(2, '0')}`;
+};
+
 export const excelDateToJSDate = (serial: number) => {
     // Excel base date is Dec 30, 1899. 
     const utc_days = Math.floor(serial - 25569);

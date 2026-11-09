@@ -5349,6 +5349,47 @@ body {
 .qi-chat-caution p { margin: 0; }
 .qi-chat-caution p + p { margin-top: 6px; }
 
+/* Answer check: every figure worked out again from the cleaned data */
+.qi-check {
+  margin: 10px 0 4px; padding: 9px 12px; border-radius: 10px; font-size: 13px; line-height: 1.5;
+  border: 1px solid var(--border-default); background: var(--bg-surface); color: var(--text-secondary);
+}
+.qi-check.is-pending, .qi-check.is-idle { display: flex; gap: 8px; align-items: center; color: var(--text-tertiary); }
+.qi-check-line { display: flex; gap: 8px; align-items: flex-start; }
+.qi-check-line p { margin: 0; flex: 1; min-width: 0; color: var(--text-primary); }
+.qi-check-line svg { margin-top: 2px; }
+.qi-check.is-verified { border-color: color-mix(in srgb, #16a34a 40%, var(--border-default)); background: color-mix(in srgb, #16a34a 6%, var(--bg-surface)); }
+.qi-check.is-verified .qi-check-line svg { color: #16a34a; }
+.qi-check.is-warning { border-color: rgba(217, 119, 6, 0.45); background: rgba(245, 158, 11, 0.08); }
+.qi-check.is-warning .qi-check-line svg { color: #d97706; }
+.qi-check.is-mismatch { border-color: rgba(220, 38, 38, 0.5); background: rgba(220, 38, 38, 0.07); }
+.qi-check.is-mismatch .qi-check-line svg { color: #dc2626; }
+.qi-check.is-partial .qi-check-line svg { color: var(--text-tertiary); }
+html.dark .qi-check.is-verified .qi-check-line svg { color: #4ade80; }
+html.dark .qi-check.is-warning .qi-check-line svg { color: #fbbf24; }
+html.dark .qi-check.is-mismatch .qi-check-line svg { color: #f87171; }
+.qi-check-toggle, .qi-check-run {
+  flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none;
+  font-size: 12.5px; font-weight: 600; color: var(--color-primary); cursor: pointer; white-space: nowrap;
+}
+.qi-check-toggle:hover, .qi-check-run:hover { text-decoration: underline; }
+.qi-check-toggle:focus-visible, .qi-check-run:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: 4px; }
+.qi-check-body { margin: 8px 0 0 24px; display: grid; gap: 6px; }
+.qi-check-body p { margin: 0; color: var(--text-secondary); }
+.qi-check-k { display: inline-block; min-width: 128px; margin-right: 8px; font-weight: 600; color: var(--text-primary); }
+.qi-check-foot { font-size: 12px; color: var(--text-tertiary) !important; }
+.qi-check-table { overflow-x: auto; border: 1px solid var(--border-default); border-radius: 8px; }
+.qi-check-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.qi-check-table th, .qi-check-table td { padding: 6px 10px; text-align: left; border-bottom: 1px solid var(--border-default); white-space: nowrap; }
+.qi-check-table th { font-weight: 600; color: var(--text-tertiary); background: var(--bg-app); }
+.qi-check-table tr:last-child td { border-bottom: 0; }
+@media (max-width: 640px) {
+  .qi-check-line { flex-wrap: wrap; }
+  .qi-check-toggle { margin-left: 24px; }
+  .qi-check-body { margin-left: 0; }
+  .qi-check-k { display: block; min-width: 0; margin: 0; }
+}
+
 /* ── Phones (≤ 640px) ─────────────────────────────────────────────────── */
 @media (max-width: 640px) {
   /* 16px page margins instead of 24–40px. */

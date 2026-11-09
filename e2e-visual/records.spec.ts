@@ -131,6 +131,16 @@ for (const theme of ['light', 'dark'] as const) {
         await expect(last).toContainText('— out of 6,000 appointments');
         await expect(last).not.toContainText('Total');
 
+        // The answer check: every figure worked out again from the cleaned data.
+        const check = last.locator('.qi-check');
+        await expect(check).toHaveClass(/is-verified/, { timeout: 15000 });
+        await expect(check).toContainText('All 4 figures match a fresh calculation');
+        await check.getByRole('button', { name: /How it was checked/ }).click();
+        await expect(check).toContainText('Based on all 6,000 appointments');
+        await expect(check).toContainText('the share of appointments where hipertension is yes');
+        await check.scrollIntoViewIfNeeded();
+        await shoot(page, `86-records-answer-check-${theme}`);
+
         // What the AI was sent: the shape and the storage types, never a value.
         const planner = sent.find(text => text.includes('DATA DESCRIPTION')) || '';
         expect(planner).toContain('DATA SHAPE: records with nothing to add up.');

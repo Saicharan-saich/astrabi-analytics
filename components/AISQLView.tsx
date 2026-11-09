@@ -19,6 +19,10 @@ import {
 } from '../services/ai-sql/chatStore';
 import { isDimensionOnlyResult } from '../services/ai-sql/resultPresentation';
 import { presentLeanAnswer } from '../utils/aiSqlAnswerPresentation';
+import { checkAnswer } from '../services/answerCheck/answerCheck';
+import { describeDatasetShape } from '../services/datasetShape';
+import { executeSQLViaDuckDB } from '../services/duckdbEngine';
+import { AnswerCheckStrip } from './AnswerCheckStrip';
 import { ChartVisualization } from './ChartVisualization';
 import { ExtremesTable } from './ExtremesTable';
 import { checkAiSqlLimit, formatResetTime } from '../services/aiSqlRateLimiter';
@@ -75,6 +79,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const [openSql, setOpenSql] = useState<Record<string, boolean>>({});
     const [copied, setCopied] = useState<string | null>(null);
     const [opening, setOpening] = useState<string | null>(null);
+    /** Answers whose figures are being worked out a second time. */
+    const [checking, setChecking] = useState<Record<string, boolean>>({});
     const activeRun = useRef<ActiveRun | null>(null);
     const pipelines = useRef(new Map<string, AISQLPipelineResult>());
     const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -123,6 +129,37 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
             turns: conversation.turns.map(turn => turn.id === turnId ? { ...turn, ...change } : turn),
         }));
     }, [updateConversation]);
+
+    /**
+     * The answer check: every figure worked out again from the cleaned rows by
+     * a separate calculator, after the answer is drawn (never delays it).
+     * Without the query's rows (an answer reopened from history) the query is
+     * run again locally first.
+     */
+    const runAnswerCheck = useCallback((conversationId: string, turnId: string, sql: string, rows?: Record<string, any>[]) => {
+        if (!dataset?.rows?.length || !sql) return;
+        setChecking(state => ({ ...state, [turnId]: true }));
+        window.setTimeout(async () => {
+            try {
+                let queryRows = rows;
+                if (!queryRows) {
+                    const tc = dataset.timeContext;
+                    const executed = await executeSQLViaDuckDB(dataset.rows, sql, tc ? { minDate: tc.minDate, maxDate: tc.maxDate, primaryDateColumn: tc.anchorDateColumn } : undefined, dataset.relatedTables);
+                    if (executed.error) return;
+                    queryRows = executed.data;
+                }
+                const check = checkAnswer({ sql, rows: queryRows, data: dataset.rows, recordWord: describeDatasetShape(dataset).recordWord });
+                updateConversation(conversationId, conversation => ({
+                    ...conversation,
+                    turns: conversation.turns.map(turn => turn.id === turnId && turn.answer ? { ...turn, answer: { ...turn.answer, check } } : turn),
+                }));
+            } catch (err) {
+                console.warn('[answer-check] could not run', err);
+            } finally {
+                setChecking(state => { const next = { ...state }; delete next[turnId]; return next; });
+            }
+        }, 60);
+    }, [dataset, updateConversation]);
 
     // Keep the newest message in view.
     const turnCount = active?.turns.length || 0;
@@ -285,6 +322,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
             };
             updateTurn(conversationId, assistantId, { status: 'done', progress: undefined, answer });
             updateConversation(conversationId, conversation => ({ ...conversation, tokens: conversation.tokens + tokens }));
+            runAnswerCheck(conversationId, assistantId, result.sql, result.queryRows || result.rawData);
         } catch (err: any) {
             if (run.cancelled) return;
             const message = String(err?.message || 'Something went wrong.');
@@ -324,7 +362,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
         } finally {
             if (activeRun.current === run) activeRun.current = null;
         }
-    }, [dataset, active, busy, memory, updateConversation, updateTurn, examples, incrementAiSqlUsage, currentUser, overviewAnswer]);
+    }, [dataset, active, busy, memory, updateConversation, updateTurn, examples, incrementAiSqlUsage, currentUser, overviewAnswer, runAnswerCheck]);
 
     const stop = () => {
         const run = activeRun.current;
@@ -627,6 +665,13 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                                     />
                                                 )}
                                             </div>
+                                            {!turn.answer.overview && turn.answer.sql && (
+                                                <AnswerCheckStrip
+                                                    check={turn.answer.check}
+                                                    running={Boolean(checking[turn.id])}
+                                                    onRun={() => runAnswerCheck(active.id, turn.id, turn.answer!.sql)}
+                                                />
+                                            )}
                                             {turn.answer.analysis.config?.pointLabelKeys && (
                                                 <ExtremesTable
                                                     rows={turn.answer.analysis.data || []}
