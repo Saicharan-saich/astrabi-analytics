@@ -1,5 +1,6 @@
 import { fillMonthlyGaps } from '../services/ai-sql/numberChecks';
 import React, { useMemo, useRef, useCallback, useState, useEffect } from 'react';
+import { seriesName } from '../utils/seriesName';
 // html2canvas is only needed when the user exports a chart to PNG — load it
 // lazily so it stays out of the initial bundle.
 import {
@@ -1350,7 +1351,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
             const isAreaType = visType === 'area';
 
             // Human-readable label: "discount" → "Discount", "unit_price" → "Unit Price"
-            const humanLabel = rawColName.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+            const humanLabel = seriesName(rawColName);
 
             datasets.push({
                 label: humanLabel,
@@ -1764,7 +1765,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                             ];
                             extraTooltipMetricKeys(dp, plottedLabels, metaKeys).forEach(k => {
                                 if (isCalcKey(k)) return;
-                                const humanName = k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                                const humanName = seriesName(k);
                                 lines.push(`  ● ${humanName}: ${formatForMetricName(dp[k], k)}`);
                             });
 

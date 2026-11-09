@@ -23,6 +23,7 @@ import { checkAnswer } from '../services/answerCheck/answerCheck';
 import { describeDatasetShape } from '../services/datasetShape';
 import { executeSQLViaDuckDB } from '../services/duckdbEngine';
 import { AnswerCheckStrip } from './AnswerCheckStrip';
+import { seriesName } from '../utils/seriesName';
 import { ChartVisualization } from './ChartVisualization';
 import { ExtremesTable } from './ExtremesTable';
 import { checkAiSqlLimit, formatResetTime } from '../services/aiSqlRateLimiter';
@@ -656,7 +657,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                                         yKey={turn.answer.analysis.yKey}
                                                         yLabel={turn.answer.analysis.yLabel}
                                                         config={turn.answer.analysis.config}
-                                                        seriesLabel={turn.answer.analysis.yKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                                                        seriesLabel={seriesName(turn.answer.analysis.yKey)}
                                                         chartType={(turn.answer.analysis.vis as any) || 'bar'}
                                                         onChartTypeChange={() => {}}
                                                         formatting={turn.answer.formatting}

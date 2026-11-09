@@ -1,4 +1,5 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
+import { seriesName } from '../utils/seriesName';
 import { ExtremesTable } from './ExtremesTable';
 import {
   ArrowLeft, Pin, Code, Table2, BarChart2, Palette, Activity, Sparkles,
@@ -539,7 +540,7 @@ export const VisualPreviewView: React.FC<VisualPreviewViewProps> = ({
               <ChartVisualization
                 data={activeResult.data} xKey={activeResult.xKey} yKey={activeResult.yKey} yLabel={activeResult.yLabel}
                 config={activeResult.config}
-                seriesLabel={activeResult.yKey.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}
+                seriesLabel={seriesName(activeResult.yKey)}
                 chartType={(drillDown ? ((({ kpiCard:'kpiCard', line:'line', bar:'bar', horizontalBar:'horizontalBar', groupedBar:'groupedBar', stackedBar:'stackedBar', area:'area', dualAxisCombo:'combo', multiLine:'line', donut:'doughnut', heatmap:'bar', table:'horizontalBar' } as Record<string,string>)[drillDown.pipeline.chart.chartType] || 'bar')) : chartType) as any}
                 onChartTypeChange={(type) => setChartType(type)}
                 formatting={localFormatting}
