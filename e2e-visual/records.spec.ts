@@ -94,6 +94,20 @@ for (const theme of ['light', 'dark'] as const) {
         await page.locator('tr', { hasText: 'neighbourhood' }).first().scrollIntoViewIfNeeded();
         await shoot(page, `80-records-columns-${theme}`);
 
+        // ── the briefing: the latest full week against a usual one ──
+        const brief = page.locator('.qi-brief:visible').first();
+        await expect(brief).toContainText('Your briefing');
+        await expect(brief).toContainText('appointments');
+        await expect(brief.locator('.qi-brief-figure').first()).toContainText('Appointments');
+        await brief.scrollIntoViewIfNeeded();
+        await brief.screenshot({ path: path.join(OUT, `80-records-briefing-${theme}.png`) });
+        const askAbout = brief.locator('.qi-brief-ask');
+        if (await askAbout.count()) {
+            await askAbout.first().click();
+            await expect(page.locator('textarea:visible').first()).not.toHaveValue('', { timeout: 10000 });
+            await shoot(page, `80-records-briefing-ask-${theme}`);
+        }
+
         // ── the story: counts and rates, no totals ──
         await go(page, /Data Story/);
         await page.locator('.qi-story-slide:visible').first().waitFor({ timeout: 30000 });

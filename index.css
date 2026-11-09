@@ -5470,3 +5470,42 @@ html.dark .qi-check.is-mismatch .qi-check-line svg { color: #f87171; }
 }
 .qi-kind-line svg { flex: none; margin-top: 3px; color: var(--color-primary); }
 .qi-kind-line strong { color: var(--text-primary); font-weight: 600; }
+
+/* Briefing: the latest full week against a usual one */
+.qi-brief { padding: 18px 20px; }
+.qi-brief.is-empty { display: flex; gap: 10px; align-items: center; padding: 12px 16px; color: var(--text-tertiary); font-size: 13px; }
+.qi-brief.is-empty p { margin: 0; }
+.qi-brief.is-empty strong { color: var(--text-secondary); font-weight: 600; }
+.qi-brief-head { display: flex; gap: 10px; align-items: center; }
+.qi-brief-icon { display: inline-flex; width: 30px; height: 30px; align-items: center; justify-content: center; border-radius: 8px; color: #d97706; background: rgba(245, 158, 11, 0.12); }
+.qi-brief-head h2 { margin: 0; font-size: 15px; font-weight: 700; color: var(--text-primary); }
+.qi-brief-period { margin: 1px 0 0; font-size: 12.5px; color: var(--text-tertiary); }
+.qi-brief-headline { margin: 12px 0 0; font-size: 15px; line-height: 1.55; color: var(--text-primary); }
+.qi-brief-stale { margin: 10px 0 0; padding: 8px 10px; border-radius: 8px; font-size: 12.5px; color: var(--text-secondary); background: var(--bg-app); border: 1px dashed var(--border-default); }
+.qi-brief-figures { margin: 14px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.qi-brief-figure { padding: 10px 12px; border-radius: 10px; border: 1px solid var(--border-default); background: var(--bg-app); min-width: 0; }
+.qi-brief-figure dt { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.qi-brief-value { margin: 2px 0 0; font-size: 20px; font-weight: 700; color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.qi-brief-change { margin: 2px 0 0; font-size: 12px; color: var(--text-tertiary); }
+.qi-brief-change.is-good { color: #15803d; }
+.qi-brief-change.is-bad { color: #b91c1c; }
+html.dark .qi-brief-change.is-good { color: #4ade80; }
+html.dark .qi-brief-change.is-bad { color: #f87171; }
+.qi-brief-findings { margin: 16px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.qi-brief-findings li { padding: 10px 12px 10px 14px; border-radius: 10px; border: 1px solid var(--border-default); border-left-width: 3px; }
+.qi-brief-findings li.is-bad { border-left-color: #dc2626; }
+.qi-brief-findings li.is-good { border-left-color: #16a34a; }
+.qi-brief-findings li.is-neutral { border-left-color: var(--border-strong); }
+.qi-brief-text { margin: 0; font-size: 13.5px; line-height: 1.5; color: var(--text-primary); }
+.qi-brief-check { margin: 4px 0 0; font-size: 12.5px; line-height: 1.5; color: var(--text-secondary); }
+.qi-brief-check span { font-weight: 600; margin-right: 6px; color: var(--text-primary); }
+.qi-brief-ask, .qi-brief-more { margin-top: 6px; display: inline-flex; align-items: center; gap: 4px; padding: 0; border: 0; background: none; font-size: 12.5px; font-weight: 600; color: var(--color-primary); cursor: pointer; }
+.qi-brief-ask:hover, .qi-brief-more:hover { text-decoration: underline; }
+.qi-brief-ask:focus-visible, .qi-brief-more:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: 4px; }
+.qi-brief-quiet { margin: 14px 0 0; font-size: 13px; color: var(--text-secondary); }
+.qi-brief-foot { margin: 14px 0 0; font-size: 12px; color: var(--text-tertiary); }
+@media (max-width: 640px) {
+  .qi-brief { padding: 14px; }
+  .qi-brief-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .qi-brief-value { font-size: 17px; }
+}

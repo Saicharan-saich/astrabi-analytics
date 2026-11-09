@@ -163,6 +163,10 @@ interface UIState {
     appFontBold: boolean;
     theme: 'dark' | 'light';
     hiddenTabs: string[];
+    /** A question handed to AI SQL from elsewhere (the briefing's "Ask about this"); not saved. */
+    pendingAiSqlQuestion: string | null;
+    askAiSql: (question: string) => void;
+    takePendingAiSqlQuestion: () => string | null;
     setActiveTab: (tab: Tab) => void;
     toggleSidebar: () => void;
     setSidebarOpen: (isOpen: boolean) => void;
@@ -329,6 +333,9 @@ export const useAppStore = create<AppStore>()(
             appFontBold: false,
             theme: 'light',
             hiddenTabs: [],
+            pendingAiSqlQuestion: null,
+            askAiSql: (question) => set({ pendingAiSqlQuestion: question, activeTab: Tab.AI_SQL }),
+            takePendingAiSqlQuestion: () => { const q = get().pendingAiSqlQuestion; if (q) set({ pendingAiSqlQuestion: null }); return q; },
             setActiveTab: (tab) => set({ activeTab: tab }),
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
             setSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),

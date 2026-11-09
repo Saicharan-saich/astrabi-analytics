@@ -3,12 +3,15 @@ import { Bell, Check, CheckCheck, ArrowRight, AlertTriangle, AlertCircle, Info, 
 import { useAlertStore } from '../store/useAlertStore';
 import { useTheme } from './ThemeProvider';
 import { Tab } from '../types';
+import { BRIEFING_RULE_ID } from '../services/weeklyBriefing';
 
 interface NotificationCenterProps {
   onNavigateToAlerts: () => void;
+  /** Opens the workspace where the briefing is shown. */
+  onOpenBriefing?: () => void;
 }
 
-export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNavigateToAlerts }) => {
+export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNavigateToAlerts, onOpenBriefing }) => {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [isOpen, setIsOpen] = useState(false);
@@ -148,6 +151,14 @@ export const NotificationCenter: React.FC<NotificationCenterProps> = ({ onNaviga
                           <span className={`text-[11px] ${isDark ? 'text-gray-600' : 'text-gray-400'}`}>
                             {timeAgo(evt.triggeredAt)}
                           </span>
+                          {evt.ruleId === BRIEFING_RULE_ID && onOpenBriefing && (
+                            <button
+                              onClick={() => { acknowledgeEvent(evt.id); setIsOpen(false); onOpenBriefing(); }}
+                              className={`text-[11px] font-semibold px-1.5 py-0.5 rounded transition-all ${isDark ? 'text-violet-300 hover:bg-violet-500/10' : 'text-violet-700 hover:bg-violet-50'}`}
+                            >
+                              Open briefing <ArrowRight className="w-3 h-3 inline ml-0.5" />
+                            </button>
+                          )}
                           {!evt.acknowledged && (
                             <button
                               onClick={() => acknowledgeEvent(evt.id)}

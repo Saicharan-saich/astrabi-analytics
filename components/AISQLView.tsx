@@ -23,6 +23,7 @@ import { checkAnswer } from '../services/answerCheck/answerCheck';
 import { describeDatasetShape } from '../services/datasetShape';
 import { executeSQLViaDuckDB } from '../services/duckdbEngine';
 import { AnswerCheckStrip } from './AnswerCheckStrip';
+import { useAppStore } from '../store/useAppStore';
 import { seriesName } from '../utils/seriesName';
 import { ChartVisualization } from './ChartVisualization';
 import { ExtremesTable } from './ExtremesTable';
@@ -161,6 +162,12 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
             }
         }, 60);
     }, [dataset, updateConversation]);
+
+    // A question handed over from elsewhere (the briefing's "Ask about this"): ready to send.
+    useEffect(() => {
+        const handed = useAppStore.getState().takePendingAiSqlQuestion();
+        if (handed) { setDraft(handed); requestAnimationFrame(() => inputRef.current?.focus()); }
+    }, []);
 
     // Keep the newest message in view.
     const turnCount = active?.turns.length || 0;

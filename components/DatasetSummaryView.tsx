@@ -4,6 +4,7 @@ import { Dataset, DatasetDomainProfile, ColumnType, ETLLog, EtlOptions } from '.
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { CleaningChangesPanel } from './CleaningChangesPanel';
 import { DataKindNote } from './DataKindNote';
+import { WeeklyBriefingCard } from './WeeklyBriefingCard';
 import { CleaningRulesPanel } from './CleaningRulesPanel';
 import { DataExplorerView } from './DataExplorerView';
 import { ETLView } from './ETLView';
@@ -37,6 +38,8 @@ interface DatasetSummaryViewProps {
     /** Apply the cleaning review's decisions in one re-run. */
     onApplyCleaningDecisions?: (nextOptions: EtlOptions, label: string) => void;
     etlRevertPending?: string | null;
+    /** Open AI SQL with a question ready (from the briefing). */
+    onAskAiSql?: (question: string) => void;
 }
 
 const viewFor = (section: DatasetWorkspaceSection): View =>
@@ -264,6 +267,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
     onEtlReclean,
     onApplyCleaningDecisions,
     etlRevertPending,
+    onAskAiSql,
 }) => {
     const [view, setView] = useState<View>(viewFor(initialSection));
     const [cleaningMode, setCleaningMode] = useState<CleaningMode>(initialSection === 'studio' ? 'fix' : 'log');
@@ -367,6 +371,8 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                 <div className="mt-6 space-y-5">
                     {view === 'overview' && facts && (
                         <>
+                            <WeeklyBriefingCard dataset={dataset} onAsk={onAskAiSql} />
+
                             <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} onReclean={onEtlReclean} />
 
                             <DataKindNote dataset={dataset} />

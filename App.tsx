@@ -61,6 +61,7 @@ import { UserInsightsView } from './components/UserInsightsView';
 import { QuickInsightsView } from './components/QuickInsightsView';
 import { NotificationCenter } from './components/NotificationCenter';
 import { useAlertStore } from './store/useAlertStore';
+import { buildBriefing, BRIEFING_RULE_ID } from './services/weeklyBriefing';
 import { evaluateAllAlerts } from './services/alertEngine';
 import { useActivityStore } from './store/useActivityStore';
 import { DataStoryView } from './components/DataStoryView';
@@ -367,6 +368,25 @@ function App() {
 
   // Alert evaluation on dataset load/refresh
   const alertStore = useAlertStore();
+
+  // A new full week (or month) in the data → a "your briefing is ready" notice in the bell.
+  // Worked out locally from the loaded dataset; one notice per dataset and period.
+  useEffect(() => {
+    if (!dataset?.rows?.length || isGuest) return;
+    const timer = window.setTimeout(() => {
+      try {
+        const briefing = buildBriefing(dataset);
+        if (briefing.status !== 'ready' || briefing.stale) return;
+        const id = `${BRIEFING_RULE_ID}:${dataset.id}:${briefing.periodKey}`;
+        if (useAlertStore.getState().events.some(event => event.id === id)) return;
+        useAlertStore.getState().addEvent({
+          id, ruleId: BRIEFING_RULE_ID, ruleName: `Your briefing · ${dataset.name}`, severity: 'info', triggeredAt: Date.now(),
+          currentValue: 0, message: `${briefing.periodLabel}: ${briefing.headline}`, acknowledged: false,
+        });
+      } catch (err) { console.warn('[briefing] notice skipped', err); }
+    }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [dataset, isGuest]);
   useEffect(() => {
     if (!dataset || !dataset.rows.length) return;
     const runAlerts = async () => {
@@ -966,6 +986,7 @@ function App() {
   const workspaceSection = WORKSPACE_SECTIONS[activeTab];
 
   const datasetWorkspaceProps = {
+    onAskAiSql: (question: string) => useAppStore.getState().askAiSql(question),
     mappingProfile: pendingProfile || dataset?.domainProfile || null,
     isAIProfiling,
     onApplyMapping: handleWorkspaceMappingApply,
@@ -1841,7 +1862,7 @@ function App() {
 
                 <div className="flex items-center gap-1 md:gap-1.5 shrink-0">
                   {/* Notification Center (Alert Bell) */}
-                  {!isGuest && <NotificationCenter onNavigateToAlerts={() => setActiveTab(Tab.ALERTS)} />}
+                  {!isGuest && <NotificationCenter onNavigateToAlerts={() => setActiveTab(Tab.ALERTS)} onOpenBriefing={() => setActiveTab(Tab.DATASET_SUMMARY)} />}
                   {/* Re-open Column Mapping — hide on mobile */}
                   {dataset?.domainProfile && (
                     <button
