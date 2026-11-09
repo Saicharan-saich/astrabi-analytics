@@ -466,8 +466,12 @@ export function buildBriefing(dataset: Dataset, today: Date = new Date()): Brief
     const from = showCount ? ` from ${Math.round(curCount).toLocaleString('en-GB')} ${curCount === 1 ? unit.word : units}` : '';
     const what = amount ? `${mainLabel} came to ${fmtMain(cur)}${from}` : `there were ${fmtMain(cur)} ${mainLabel}`;
     const vs = !usualValue ? '' : Math.abs(vsUsual) < 0.005 ? `level with ${usualWord}` : `${Math.round(Math.abs(vsUsual) * 100)}% ${cur >= usualValue ? 'above' : 'below'} ${usualWord}`;
+    // A big change that is still inside the data's own normal swing is said as such.
+    const avgWord = `the average ${grain}`;
     let headline = !unusual
-        ? `${capital(periodWord)}, ${what} — a normal ${grain}${vs ? ` (${vs})` : ''}.`
+        ? (Math.abs(vsUsual) < 0.1
+            ? `${capital(periodWord)}, ${what} — a normal ${grain}${vs ? ` (${vs})` : ''}.`
+            : `${capital(periodWord)}, ${what} — ${Math.round(Math.abs(vsUsual) * 100)}% ${cur >= usualValue ? 'above' : 'below'} ${avgWord}, but your ${grain}s often swing this much, so it isn't unusual on its own.`)
         : `${capital(periodWord)}, ${what} — ${vs}${explained ? `, mostly because of ${explained.key}` : ''}.`;
     if (unusual && prev && Math.abs(vsPrev) >= 0.05) headline += ` That is ${pctText(vsPrev)} ${cur >= prev ? 'up' : 'down'} on the ${grain} before.`;
 
