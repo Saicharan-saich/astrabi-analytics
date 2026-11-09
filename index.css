@@ -3079,9 +3079,9 @@ html.light .qi-nav-active-pill {
   --text-secondary: #596275;
   --text-tertiary: #8a92a3;
   --text-muted: #a2a9b7;
-  --border-default: #dde1e8;
-  --border-hover: #c9cfd9;
-  --border-strong: #c9cfd9;
+  --border-default: #cdd3dd;
+  --border-hover: #b4bcc9;
+  --border-strong: #b4bcc9;
   --color-primary: #3565e8;
   --color-primary-light: #6d95ff;
   --color-primary-dark: #2c55c8;
@@ -3091,7 +3091,7 @@ html.light .qi-nav-active-pill {
   --shadow-sm: 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-md: 0 2px 6px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.06);
   --shadow-lg: 0 12px 28px -12px rgba(16, 24, 40, 0.18);
-  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.06), 0 1px 3px rgba(16, 24, 40, 0.05);
+  --shadow-card: 0 1px 2px rgba(16, 24, 40, 0.08), 0 2px 6px rgba(16, 24, 40, 0.06);
   --radius-sm: 6px;
   --radius-md: 8px;
   --radius-lg: 10px;
@@ -3111,7 +3111,7 @@ html.light .qi-nav-active-pill {
   --muted-foreground: #596275;
   --accent: #eef3ff;
   --accent-foreground: #2c55c8;
-  --border: #dde1e8;
+  --border: #cdd3dd;
   --input: #cdd3dc;
   --ring: #3565e8;
   --chart-1: #6e6fb8;
@@ -3123,7 +3123,7 @@ html.light .qi-nav-active-pill {
   --sidebar-foreground: #333a48;
   --sidebar-primary: #3565e8;
   --sidebar-accent: #f1f3f6;
-  --sidebar-border: #dde1e8;
+  --sidebar-border: #cdd3dd;
   --radius: 0.625rem;
 }
 
