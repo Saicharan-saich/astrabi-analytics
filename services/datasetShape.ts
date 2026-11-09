@@ -237,6 +237,6 @@ export function shapeForModel(shape: DatasetShape, yesTest: (column: string) => 
     }
     // For every kind of data: the count behind each figure lets the app judge,
     // from the numbers themselves, which groups are too small to trust.
-    lines.push('Beside every rate or average worked out per group, also return the number of rows in that group (e.g. COUNT(*) AS rows). Keep small groups unless the user asks to drop them: the app marks figures based on too few rows.');
+    lines.push('Beside every rate or average worked out per group, also return how many records are in that group (e.g. COUNT(*) AS group_size). Keep small groups unless the user asks to drop them: the app marks figures based on too few records.');
     return lines.join('\n');
 }

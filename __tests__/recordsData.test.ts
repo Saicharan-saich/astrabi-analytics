@@ -116,7 +116,7 @@ describe('what the AI is told', () => {
         expect(text).toContain('DATA SHAPE: records with nothing to add up.');
         expect(text).toContain('COUNT_IF("showed_up")');
         expect(text).toContain('"date_diff" is the number of days from "scheduled_day" to "appointment_day"');
-        expect(text).toContain('also return the number of rows in that group');
+        expect(text).toContain('also return how many records are in that group');
         expect(text).not.toContain('HAVING COUNT(*) >= 30');
         for (const place of ['Penha', 'Dumont', 'Praia']) expect(text).not.toContain(place);
     });
