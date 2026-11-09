@@ -1,0 +1,152 @@
+{
+  "dashboard": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.max-w-[1900px].mx-auto.px-6.py-6 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "data-source": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 17,
+    "gutter": [
+      "div.max-w-5xl.w-full.relative.z-10 bl1px @16",
+      "div.flex.flex-col.items-center.justify-center pl16px @0"
+    ],
+    "offenders": []
+  },
+  "dataset-workspace": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.qi-ws-inner.max-w-[72rem].mx-auto.px-6 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "cleaning": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.qi-ws-inner.max-w-[72rem].mx-auto.px-6 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "data": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.qi-ws-inner.max-w-[72rem].mx-auto.px-6 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "derived-columns": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.px-6.py-4.border-b.shrink-0 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "question-builder": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": null,
+    "gutter": [],
+    "offenders": []
+  },
+  "ai-sql": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 56,
+    "gutter": [
+      "header.qi-chat-head pl16px @0"
+    ],
+    "offenders": []
+  },
+  "custom-questions": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.max-w-6xl.mx-auto.p-6.space-y-6 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "discover": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.max-w-6xl.mx-auto.w-full.px-4 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "smart-questions": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 80,
+    "gutter": [
+      "div.max-w-5xl.mx-auto.px-6.py-8 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "smart-insights": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 76,
+    "gutter": [
+      "div.max-w-7xl.mx-auto.p-6.space-y-6 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "challenge": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": null,
+    "gutter": [],
+    "offenders": []
+  },
+  "alerts": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 80,
+    "gutter": [
+      "div.max-w-6xl.mx-auto.px-6.py-8 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "schema": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.qi-ws-inner.max-w-[72rem].mx-auto.px-6 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "data-studio": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.qi-ws-inner.max-w-[72rem].mx-auto.px-6 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "navigation": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.max-w-[1900px].mx-auto.px-6.py-6 pl16px @0"
+    ],
+    "offenders": []
+  }
+}
