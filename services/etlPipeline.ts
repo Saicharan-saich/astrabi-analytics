@@ -12,6 +12,7 @@
  *   Post:    TimeContext + DimDate + Quality Score
  */
 
+import { suspectValues } from '../utils/plausibility';
 import { localDateKey } from '../utils/dateKey';
 import { isLabelName, isYesNoValues } from '../utils/twoValues';
 import { ColumnDefinition, ColumnType, DimDateRow, ETLLog, EtlOptions, PhysicalDataType, TimeContext } from '../types';
@@ -1840,6 +1841,16 @@ function layer5b_hardening(
     }
 
     // ── 2. FLAGS (surfaced for review; data is NOT changed) ──
+    // 2-. Values that cannot be right, by the column's meaning (hours in a day,
+    //     ages, percentages…) or by being wildly out of line with the column.
+    for (const c of columns.filter(c => c.type === ColumnType.METRIC || c.type === ColumnType.DIMENSION)) {
+        const found = suspectValues(valuesOf(c.name), c.name);
+        if (!found.length) continue;
+        const examples = [...new Set(found.map(f => f.value))].slice(0, 3).map(v => v.toLocaleString('en-GB'));
+        logs.push(log('Impossible Values', 6, 'info',
+            `Column '${c.name}': ${found.length} value(s) can't be right — ${examples.join(', ')} (${found[0].why}). Kept as they are, and every answer that uses them says so; correct or remove them in the file if you know the right value.`,
+            { affectedColumns: [c.name], affectedRows: found.length }));
+    }
     // 2a. Numeric outliers per metric — flagged, or handled as the user decided.
     const outlierDecisions = opts.outlierDecisions || {};
     /** The decisions without this column: what "undo" goes back to. */

@@ -36,6 +36,10 @@ export interface EvalResult {
     /** Rows of the table after WHERE (outer query), for coverage. */
     rowsUsed?: number;
     rowsTotal?: number;
+    /** For each result row: how many rows of the data stand behind it. */
+    rowsBehind: number[];
+    /** For each figure: how many rows of the data it was worked out from (0 = not a statistic). */
+    cellBase: number[][];
 }
 
 const DAY = 86_400_000;
@@ -252,6 +256,8 @@ interface Scope {
     row: Value[];
     group?: Value[][];
     win?: Map<Expr, Value>;
+    /** For window aggregates: how many data rows the window covered. */
+    winBase?: Map<Expr, number>;
     aliases?: Map<string, Expr>;
     outValues?: Map<string, Value>;
     /** Names being resolved through aliases (guards against loops). */
@@ -628,6 +634,26 @@ function evalAggregate(e: Extract<Expr, { k: 'func' }>, s: Scope, env: Env): Val
     throw new Unsupported(`aggregate ${name}`);
 }
 
+// ── How many rows of the data stand behind each value ──
+/** Rows produced by a CTE, subquery or UNION carry the number of data rows behind them; data rows count as one. */
+const behind = new WeakMap<Value[], number>();
+const rowsBehindOf = (row: Value[]) => behind.get(row) ?? 1;
+const scopeBehind = (sc: Scope) => (sc.group ? sc.group.reduce((total, row) => total + rowsBehindOf(row), 0) : rowsBehindOf(sc.row));
+/** How many data rows a figure was worked out from: the widest aggregate or window inside it. */
+function cellBase(e: Expr, sc: Scope): number {
+    switch (e.k) {
+        case 'func':
+            if (e.over) return sc.winBase?.get(e) ?? 0;
+            if (AGGREGATES.has(e.name)) return scopeBehind(sc);
+            return Math.max(0, ...e.args.map(a => cellBase(a, sc)));
+        case 'col': return behind.has(sc.row) ? rowsBehindOf(sc.row) : 0;
+        case 'unary': case 'isnull': case 'cast': return cellBase(e.e, sc);
+        case 'bin': return Math.max(cellBase(e.l, sc), cellBase(e.r, sc));
+        case 'case': return Math.max(0, ...(e.operand ? [cellBase(e.operand, sc)] : []), ...e.whens.map(w => Math.max(cellBase(w.when, sc), cellBase(w.then, sc))), ...(e.else ? [cellBase(e.else, sc)] : []));
+        default: return 0;
+    }
+}
+
 // ── Windows ──
 function computeWindow(node: Extract<Expr, { k: 'func' }>, scopes: Scope[], env: Env): void {
     const spec = node.over!;
@@ -694,15 +720,22 @@ function computeWindow(node: Extract<Expr, { k: 'func' }>, scopes: Scope[], env:
             memberScopes = scopes;
             try { return evalAggregate(proxy, { rel, row: rows[0], group: rows, aliases: base.aliases }, env); } finally { memberScopes = previous; }
         };
+        const setBase = (members: number[], targets: number[]) => {
+            const base = members.reduce((total, m) => total + scopeBehind(scopes[m]), 0);
+            for (const t of targets) (scopes[ordered[t]].winBase ||= new Map()).set(node, base);
+        };
         if (!spec.order.length) {
             const v = aggregateOver(ordered);
             ordered.forEach((_, n) => set(n, v));
+            setBase(ordered, ordered.map((_, n) => n));
         } else {
             let n = 0;
             while (n < ordered.length) {
                 const end = peerEnd[n];
                 const v = aggregateOver(ordered.slice(0, end + 1));
-                for (let m = n; m <= end; m++) set(m, v);
+                const targets: number[] = [];
+                for (let m = n; m <= end; m++) { set(m, v); targets.push(m); }
+                setBase(ordered.slice(0, end + 1), targets);
                 n = end + 1;
             }
         }
@@ -769,12 +802,12 @@ export function runQuery(q: Query, env: Env): EvalResult {
         pairs = pairs.slice(start, q.limit !== undefined ? start + q.limit : undefined);
     }
     env.tables = saved;
-    const result: EvalResult = { cols, rows: pairs.map(p => p.out), limitTie, tieSensitive: env.tieSensitive, rowsUsed: first.rowsUsed, rowsTotal: first.rowsTotal };
+    const result: EvalResult = { cols, rows: pairs.map(p => p.out), limitTie, tieSensitive: env.tieSensitive, rowsUsed: first.rowsUsed, rowsTotal: first.rowsTotal, rowsBehind: pairs.map(p => rowsBehindOf(p.out)), cellBase: pairs.map(p => p.base) };
     env.subCache.set(q, result);
     return result;
 }
 
-interface Pair { out: Value[]; scope?: Scope }
+interface Pair { out: Value[]; scope?: Scope; base: number[] }
 function dedupe(pairs: Pair[]): Pair[] {
     const seen = new Set<string>();
     return pairs.filter(p => { const k = p.out.map(keyOf).join('\u0001'); if (seen.has(k)) return false; seen.add(k); return true; });
@@ -863,9 +896,11 @@ function runSelect(sel: Select, env: Env, order: OrderItem[]): { cols: string[];
             out.push(v);
             if (item.alias) outValues.set(item.alias.toLowerCase(), v);
         }
-        return { out, scope: { ...sc, outValues: sc.group || anyAgg ? outValues : undefined } };
+        behind.set(out, scopeBehind(sc));
+        const base = sel.items.flatMap(item => (item.e.k === 'star' ? sc.row.map(() => 0) : [cellBase(item.e, sc)]));
+        return { out, base, scope: { ...sc, outValues: sc.group || anyAgg ? outValues : undefined } };
     });
-    if (sel.distinct) pairs = dedupe(pairs).map(p => ({ out: p.out, scope: undefined }));
+    if (sel.distinct) pairs = dedupe(pairs).map(p => ({ out: p.out, base: p.base, scope: undefined }));
     return { cols, pairs, rowsUsed, rowsTotal: rel.rows.length, aliasNames };
 }
 

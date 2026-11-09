@@ -5374,6 +5374,8 @@ html.dark .qi-check.is-mismatch .qi-check-line svg { color: #f87171; }
 }
 .qi-check-toggle:hover, .qi-check-run:hover { text-decoration: underline; }
 .qi-check-toggle:focus-visible, .qi-check-run:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; border-radius: 4px; }
+.qi-check-things { margin: 6px 0 0 24px; padding-left: 16px; list-style: disc; display: grid; gap: 4px; color: var(--text-primary); }
+.qi-check-things li::marker { color: #d97706; }
 .qi-check-body { margin: 8px 0 0 24px; display: grid; gap: 6px; }
 .qi-check-body p { margin: 0; color: var(--text-secondary); }
 .qi-check-k { display: inline-block; min-width: 128px; margin-right: 8px; font-weight: 600; color: var(--text-primary); }

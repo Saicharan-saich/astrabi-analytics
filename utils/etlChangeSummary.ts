@@ -67,6 +67,7 @@ const RULES: Record<string, Rule> = {
     'Line Total Mismatch Flag': { kind: 'check', title: l => `'${l.affectedColumns?.[0]}' doesn't always equal quantity × price` },
     'Revenue From Price × Quantity': { kind: 'check', title: () => 'Revenue is computed as quantity × unit price' },
     'Mixed Scale Flag': { kind: 'check', title: (_l, _n, c) => `'${c}' mixes 0–1 and 0–100 values` },
+    'Impossible Values': { kind: 'check', title: (_l, n, c) => `${plural(n ?? 0, 'value')} in '${c}' can't be right` },
     'Outlier Flag': { kind: 'check', title: (_l, n, c) => `${plural(n ?? 0, 'unusual value')} in '${c}'` },
     'Sign Anomaly Flag': { kind: 'check', title: (_l, n, c) => `${plural(n ?? 0, 'negative value')} in '${c}'` },
     'Range Anomaly Flag': { kind: 'check', title: (_l, n, c) => `${plural(n ?? 0, 'value')} out of range in '${c}'` },

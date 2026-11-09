@@ -18,6 +18,7 @@
 import { parseSQL, Unsupported, type Expr, type Query } from './sqlParser';
 import { evaluate, SqlDate, toNum, type EvalResult, type Value } from './sqlEval';
 import { RATE_NAME } from '../../utils/answerGuard';
+import { thingsToKnow } from './thingsToKnow';
 
 export type AnswerCheckStatus = 'verified' | 'warning' | 'mismatch' | 'partial';
 
@@ -38,6 +39,8 @@ export interface AnswerCheck {
     counted?: string;
     /** Other plain notes (top-N share, ties, ranges). */
     notes: string[];
+    /** What to weigh before acting on figures that are right: small groups, impossible values, catch-all labels. */
+    thingsToKnow: string[];
     /** Why the recompute could not run, when status is partial. */
     reason?: string;
     ms: number;
@@ -101,7 +104,8 @@ const isFigure = (v: Value) => typeof v === 'number';
 const show = (v: Value) => (v === null ? 'blank' : typeof v === 'number' ? fmt(v) : String(v));
 
 /** Compare what was shown with what was recomputed: every row of one must be a row of the other. */
-function compareRows(shown: Value[][], expected: EvalResult, full?: EvalResult): { checked: number; matched: number; differences: FigureDifference[]; rowCountNote?: string; zeroForBlank: number } {
+function compareRows(shown: Value[][], expected: EvalResult, full?: EvalResult): { checked: number; matched: number; differences: FigureDifference[]; rowCountNote?: string; zeroForBlank: number; matchIndex: number[] } {
+    const matchIndex: number[] = [];
     const cols = expected.cols;
     const differences: FigureDifference[] = [];
     let checked = 0, matched = 0, zeroForBlank = 0;
@@ -121,13 +125,15 @@ function compareRows(shown: Value[][], expected: EvalResult, full?: EvalResult):
         // An exact row first; then the row with the same labels; then the same position.
         let j = pool.findIndex((cand, i) => !used.has(i) && cand.every((v, c) => sameFigure(row[c], v) || blankAsZero(row[c], v)));
         if (j >= 0) zeroForBlank += pool[j].filter((v, c) => !sameFigure(row[c], v) && blankAsZero(row[c], v)).length;
-        if (j >= 0) { used.add(j); matched += figures; return; }
+        if (j >= 0) { used.add(j); matched += figures; matchIndex[n] = j; return; }
         j = textCols.some(Boolean) ? pool.findIndex((cand, i) => !used.has(i) && keyMatch(row, cand)) : (!used.has(n) && n < pool.length ? n : -1);
         if (j < 0) {
+            matchIndex[n] = -1;
             differences.push({ where: label(row), column: '', shown: 'this row', recomputed: 'no such row in a fresh calculation' });
             return;
         }
         used.add(j);
+        matchIndex[n] = j;
         row.forEach((v, c) => {
             if (!isFigure(v) && !isFigure(pool[j][c])) {
                 if (!sameFigure(v, pool[j][c])) differences.push({ where: label(row), column: words(cols[c]), shown: show(v), recomputed: show(pool[j][c]) });
@@ -140,7 +146,7 @@ function compareRows(shown: Value[][], expected: EvalResult, full?: EvalResult):
     });
     let rowCountNote: string | undefined;
     if (!full && shown.length !== expected.rows.length) rowCountNote = `The answer has ${plural(shown.length, 'row')}; a fresh calculation gives ${expected.rows.length.toLocaleString('en-GB')}.`;
-    return { checked, matched, differences, rowCountNote, zeroForBlank };
+    return { checked, matched, differences, rowCountNote, zeroForBlank, matchIndex };
 }
 
 // ── Reading the query for the plain checks ──
@@ -388,7 +394,7 @@ export function checkAnswer(input: AnswerCheckInput): AnswerCheck {
     const started = Date.now();
     const budgetMs = input.budgetMs ?? 4000;
     const notes: string[] = [];
-    const done = (c: Omit<AnswerCheck, 'ms'>): AnswerCheck => ({ ...c, ms: Date.now() - started });
+    const done = (c: Omit<AnswerCheck, 'ms' | 'thingsToKnow'> & { thingsToKnow?: string[] }): AnswerCheck => ({ ...c, thingsToKnow: c.thingsToKnow || [], ms: Date.now() - started });
     let q: Query;
     try { q = parseSQL(input.sql); }
     catch (err) {
@@ -414,7 +420,7 @@ export function checkAnswer(input: AnswerCheckInput): AnswerCheck {
     catch (err) {
         const reason = err instanceof Unsupported ? err.what : 'the fresh calculation failed';
         const headline = missing.length
-            ? `Check: no rows have ${missing[0].column} = "${missing[0].value}"${missing[0].suggestions.length ? ` — did you mean ${missing[0].suggestions.map(s => `"${s}"`).join(' or ')}?` : '.'}`
+            ? `Not recomputed, and no rows have ${missing[0].column} = "${missing[0].value}"${missing[0].suggestions.length ? ` — did you mean ${missing[0].suggestions.map(s => `"${s}"`).join(' or ')}?` : '.'}`
             : 'Partly checked: the filters and ranges look right, but this query uses a form the checker cannot recompute yet.';
         return done({ status: missing.length || notes.length ? 'warning' : 'partial', headline, figuresChecked: 0, figuresMatched: 0, differences: [], filterValues, notes, counted, reason });
     }
@@ -473,8 +479,16 @@ export function checkAnswer(input: AnswerCheckInput): AnswerCheck {
             figuresChecked: nFig, figuresMatched: compared.matched, differences: [], filterValues, coverage, counted, notes,
         });
     }
+    const things = thingsToKnow({ q, expected, pool: full || expected, matchIndex: compared.matchIndex, shown, data: input.data, recordWord: input.recordWord, budgetMs, otherTables: input.otherTables });
     if (notes.some(n => /cannot do/.test(n))) {
-        return done({ status: 'warning', headline: notes.find(n => /cannot do/.test(n))!, figuresChecked: nFig, figuresMatched: compared.matched, differences: [], filterValues, coverage, counted, notes });
+        return done({ status: 'warning', headline: notes.find(n => /cannot do/.test(n))!, figuresChecked: nFig, figuresMatched: compared.matched, differences: [], filterValues, coverage, counted, notes, thingsToKnow: things });
+    }
+    if (things.length) {
+        return done({
+            status: 'warning',
+            headline: `${nFig === 1 ? 'The figure matches' : `All ${nFig.toLocaleString('en-GB')} figures match`} a fresh calculation, but there ${things.length === 1 ? 'is 1 thing' : `are ${things.length} things`} to know before acting on ${nFig === 1 ? 'it' : 'them'}:`,
+            figuresChecked: nFig, figuresMatched: compared.matched, differences: [], filterValues, coverage, counted, notes, thingsToKnow: things,
+        });
     }
     return done({
         status: 'verified',

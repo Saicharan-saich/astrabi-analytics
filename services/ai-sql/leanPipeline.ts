@@ -38,6 +38,7 @@ import { formatSQL } from '../sqlFormatter';
 import { formatContextForPrompt, type ContextTurn } from './chatContext';
 import { averageCaution, groupedAverageMessage } from '../../utils/averageCheck';
 import { relabelYesNo } from './plainLabels';
+import { rateTooUncertain } from '../../utils/plausibility';
 import { guardAnswer, valuesArePartsOfWhole } from '../../utils/answerGuard';
 import { averagedRatioNote, averageNotesFromValues, averageValuesQuery, fillMonthlyGaps, missingMonthsNote, partialMonthNote, perItemColumns, perItemSumNote, perLineAverageNote, summedBalanceNote } from './numberChecks';
 
@@ -405,9 +406,11 @@ export function buildInsights(rows: Record<string, any>[], profile: ResultProfil
         if (leader && runner) insights.push(`${leader[dimension]} is highest at ${show(leader)}, ${(Number(leader[metric]) - Number(runner[metric])).toLocaleString('en-GB', { maximumFractionDigits: 1 })} ${unit ? 'points ' : ''}above ${runner[dimension]} (${show(runner)}).`);
         if (last && ranked.length >= 3) insights.push(`${last[dimension]} is lowest at ${show(last)}.`);
         const count = Object.keys(rows[0]).find(column => column !== metric && column !== dimension && /(count|appointments|rows|records|number|n_|total|patients|customers|orders|cases)/i.test(column) && rows.every(row => Number.isFinite(Number(row[column]))));
-        if (count && ranked.length >= 3) {
-            const small = ranked.filter(row => Number(row[count]) < 30);
-            if (small.length) insights.push(`${small.length} of these ${small.length === 1 ? 'is' : 'are'} based on fewer than 30 rows, so ${small.length === 1 ? 'its rate' : 'their rates'} can swing a lot by chance.`);
+        if (count && ranked.length >= 2) {
+            // Judged from each group's own size and rate (95% range wider than 30 points), not a fixed row count.
+            const scale = unit ? 100 : (ranked.some(row => Number(row[metric]) > 1) ? 100 : 1);
+            const small = ranked.filter(row => rateTooUncertain(Number(row[metric]) / scale, Number(row[count])));
+            if (small.length) insights.push(`${small.length === ranked.length ? 'All' : `${small.length} of`} these ${small.length === 1 ? 'is' : 'are'} based on too few rows to compare reliably, so ${small.length === 1 ? 'its rate' : 'their rates'} could be quite different with more data.`);
         }
         return insights.slice(0, 3);
     }

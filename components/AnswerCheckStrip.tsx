@@ -15,7 +15,7 @@ interface Props {
 }
 
 const ICON = { verified: ShieldCheck, warning: ShieldAlert, mismatch: ShieldAlert, partial: Shield } as const;
-const LABEL = { verified: 'Checked', warning: 'Check', mismatch: 'Check failed', partial: 'Partly checked' } as const;
+const LABEL = { verified: 'Checked', warning: 'Checked', mismatch: 'Check failed', partial: 'Partly checked' } as const;
 
 export function AnswerCheckStrip({ check, onRun, running }: Props) {
     const [open, setOpen] = useState(false);
@@ -42,13 +42,18 @@ export function AnswerCheckStrip({ check, onRun, running }: Props) {
         <div className={`qi-check is-${check.status}`} role={check.status === 'mismatch' ? 'alert' : 'status'}>
             <div className="qi-check-line">
                 <Icon className="h-4 w-4 shrink-0" aria-hidden />
-                <p><strong>{LABEL[check.status]}:</strong> {check.headline}</p>
+                <p><strong>{check.status === 'warning' && !check.figuresChecked ? 'Check' : LABEL[check.status]}:</strong> {check.headline}</p>
                 {hasDetail && (
                     <button type="button" className="qi-check-toggle" aria-expanded={open} onClick={() => setOpen(value => !value)}>
                         {open ? 'Hide' : 'How it was checked'} <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden />
                     </button>
                 )}
             </div>
+            {check.thingsToKnow?.length > 0 && (
+                <ul className="qi-check-things" aria-label="Things to know">
+                    {check.thingsToKnow.map(item => <li key={item}>{item}</li>)}
+                </ul>
+            )}
             {open && (
                 <div className="qi-check-body">
                     {check.counted && <p><span className="qi-check-k">What was counted</span>{check.counted}</p>}

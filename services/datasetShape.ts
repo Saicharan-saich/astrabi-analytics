@@ -235,6 +235,8 @@ export function shapeForModel(shape: DatasetShape, yesTest: (column: string) => 
         const no = yesNoLabel(shape.outcome, false).toLowerCase();
         lines.push(`The result being tracked looks like ${q(shape.outcome)} (yes = ${yes}, no = ${no}). "Rate", "how many", "why" and "most important" questions are usually about it; say which side you measured in the title (e.g. "% who ${no}").`);
     }
-    if (shape.kind === 'records' || shape.outcome) lines.push('When ranking groups by a rate or an average, leave out groups with fewer than 30 rows (HAVING COUNT(*) >= 30) and say so in the explanation.');
+    // For every kind of data: the count behind each figure lets the app judge,
+    // from the numbers themselves, which groups are too small to trust.
+    lines.push('Beside every rate or average worked out per group, also return the number of rows in that group (e.g. COUNT(*) AS rows). Keep small groups unless the user asks to drop them: the app marks figures based on too few rows.');
     return lines.join('\n');
 }

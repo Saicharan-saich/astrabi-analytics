@@ -19,6 +19,8 @@ import { evaluate, SqlDate } from '../services/answerCheck/sqlEval';
 import { BUSINESS_BENCHMARK_SUITE } from '../services/benchmark/businessFixtures.generated';
 import { runAnalysis, resolveMapping } from '../services/analysisEngine';
 import { isoWeekLabel } from '../services/dateHelpers';
+import { limitByMeaning, rateTooUncertain, suspectValues, wilsonInterval } from '../utils/plausibility';
+import { runETLPipeline } from '../services/etlPipeline';
 import { AggregationType, AnalysisType, ColumnType, TimeGrain, type Dataset, type QueryConfig } from '../types';
 
 const cache = new Map<string, any>();
@@ -171,5 +173,89 @@ describe('Question Builder answers', () => {
     it('takes the date from a date column, not a number called "date_diff"', () => {
         const ds = builderDataset(APPTS, ['age', 'date_diff'], ['scheduled_day', 'appointment_day'], 'appointment_day', '2016-06-08');
         expect(resolveMapping(ds).fields.order_date).toBe('appointment_day');
+    });
+});
+
+describe('things to know about figures that are right', () => {
+    // Shaped like a small clinical survey: 100 records, one season with only 4,
+    // one impossible sitting time, one unexpected answer in a yes/no column.
+    const rows: any[] = [];
+    const plan: [string, number, number][] = [['Spring', 37, 4], ['Summer', 4, 1], ['Fall', 31, 6], ['Winter', 28, 1]];
+    let i = 0;
+    for (const [season, n, altered] of plan) for (let k = 0; k < n; k++, i++) rows.push({
+        season, childish_diseases: i % 3 ? 'yes' : (i === 6 ? 'maybe' : 'no'),
+        hours_sitting_per_day: i === 50 ? 342 : (i * 7) % 16, diagnosis: k < altered ? 'Altered' : 'Normal',
+    });
+    const sql = `WITH g AS (
+        SELECT 'Season' AS factor, "season" AS category, "diagnosis" FROM "data"
+        UNION ALL SELECT 'Childish diseases', CASE WHEN LOWER("childish_diseases") = 'yes' THEN 'Yes' ELSE 'No' END, "diagnosis" FROM "data"
+        UNION ALL SELECT 'Sitting', CASE WHEN "hours_sitting_per_day" >= 8 THEN '8+ hours' ELSE 'Under 8 hours' END, "diagnosis" FROM "data"
+    ), c AS (SELECT factor, category, "diagnosis", COUNT(*) AS n FROM g GROUP BY 1, 2, 3)
+    SELECT factor, category, "diagnosis", n AS records, ROUND(100.0 * n / SUM(n) OVER (PARTITION BY factor, category), 1) AS rate_pct FROM c ORDER BY 1, 2, 3`;
+    const shown = () => {
+        const r = evaluate(parseSQL(sql), { data: rows });
+        return r.rows.map(row => Object.fromEntries(r.cols.map((c, k) => [c, row[k]])));
+    };
+
+    it('names the small group, the impossible value and what the catch-all swept in', () => {
+        const r = checkAnswer({ sql, rows: shown(), data: rows, recordWord: 'record' });
+        expect(r.status).toBe('warning');
+        expect(r.headline).toMatch(/figures match a fresh calculation, but there are 3 things to know/);
+        const text = r.thingsToKnow.join('\n');
+        expect(text).toMatch(/Season · Summer · Altered: 25% is worked out from 4 records, so the real figure could be anywhere from 4\.6% to 69\.9%/);
+        expect(text).not.toMatch(/Spring/); // 37 records: precise enough to compare
+        expect(text).toMatch(/342 in hours sitting per day \(a day has 24 hours\)\. Without it: Sitting · 8\+ hours/);
+        expect(text).toMatch(/"No" also counts "maybe" \(1\) of childish diseases/);
+    });
+
+    it('stays quiet on ordinary answers (every benchmark answer is plain "verified")', () => {
+        for (const id of ['business-w19', 'business-a09', 'business-e16', 'business-a06', 'business-m12']) {
+            const c = BUSINESS_BENCHMARK_SUITE.cases.find(x => x.id === id)!;
+            expect(checkAnswer({ sql: c.goldSql, rows: c.expectedRows as any, data: load(c.datasetRef).rows }).thingsToKnow).toEqual([]);
+        }
+    });
+});
+
+describe('values that cannot be right, for any column', () => {
+    it('reads limits from what a column means', () => {
+        expect(limitByMeaning('number_of_hours_spent_sitting_per_day')?.max).toBe(24);
+        expect(limitByMeaning('weekly_hours')?.max).toBe(168);
+        expect(limitByMeaning('patient_age')?.max).toBe(125);
+        expect(limitByMeaning('conversion_pct')?.max).toBe(100);
+        expect(limitByMeaning('growth_pct')).toBeNull();     // changes can pass 100%
+        expect(limitByMeaning('average_order_value')).toBeNull();
+        expect(limitByMeaning('years_at_company')).toBeNull();
+    });
+
+    it('applies a limit only when the column already fits it', () => {
+        const fractions = Array.from({ length: 40 }, (_, i) => i / 40);
+        expect(suspectValues(fractions, 'conversion_pct')).toEqual([]);
+        const ages = Array.from({ length: 40 }, (_, i) => 20 + i).concat([340]);
+        expect(suspectValues(ages, 'age').map(s => s.value)).toEqual([340]);
+        const daysOld = Array.from({ length: 40 }, (_, i) => i * 30); // "age" in days runs past 125: no limit
+        expect(suspectValues(daysOld, 'age')).toEqual([]);
+    });
+
+    it('finds a typo far out of line in any number column', () => {
+        const values = Array.from({ length: 60 }, (_, i) => 100 + (i % 20)).concat([99999]);
+        expect(suspectValues(values, 'basket_items').map(s => s.value)).toEqual([99999]);
+    });
+
+    it('a rate from few records has a wide range; from many, a narrow one', () => {
+        expect(rateTooUncertain(0.25, 4)).not.toBeNull();
+        expect(rateTooUncertain(0.108, 37)).toBeNull();
+        expect(rateTooUncertain(0.5, 1000)).toBeNull();
+        const r = wilsonInterval(0.25, 4);
+        expect(Math.round(r.low * 1000) / 10).toBe(4.6);
+        expect(Math.round(r.high * 1000) / 10).toBe(69.9);
+    });
+
+    it('the cleaner flags them for review and changes nothing', () => {
+        const data = Array.from({ length: 30 }, (_, i) => ({ id: i + 1, hours_sitting_per_day: i % 12, group: i % 2 ? 'A' : 'B' }));
+        data[5].hours_sitting_per_day = 342;
+        const result = runETLPipeline(data, 'survey.csv');
+        const log = result.logs.find(l => l.step === 'Impossible Values');
+        expect(log?.details).toMatch(/342.*a day has 24 hours/);
+        expect(result.rows.some(r => r.hours_sitting_per_day === 342)).toBe(true);
     });
 });
