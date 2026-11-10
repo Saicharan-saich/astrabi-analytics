@@ -157,6 +157,17 @@ export interface ColumnSemantic {
   description: string;
   semanticRole?: string;         // Canonical role: "primary_metric", "primary_dimension", "primary_date", etc.
   isHidden: boolean;             // Auto-hide junk/system columns
+  // ── The column's meaning, used for every question (services/columnDictionary) ──
+  /** Which way is good: more sales is better, more defects is worse. */
+  goodDirection?: 'higher' | 'lower' | 'neutral';
+  /** What a value below zero means ("spent more than budgeted"). */
+  negativeMeans?: string;
+  /** Everyday words people use for it ("over budget", "losses", "drop-offs"). */
+  aliases?: string[];
+  /** The unit: "£", "days", "minutes", "%", "units". */
+  unit?: string;
+  /** Who said so last: worked out by rules, written by the AI, or set by the user (wins). */
+  meaningSource?: 'rules' | 'ai' | 'user';
 }
 
 export interface MaskedColumnProfile {
@@ -184,6 +195,8 @@ export interface DatasetDomainProfile {
   grainEvidence?: string[];      // Privacy-safe reasons for the inferred grain
   themeColor?: string;           // Domain-specific accent color
   columnSemantics: Record<string, ColumnSemantic>;
+  /** Set once the column meanings (direction, words) have been written for this profile. */
+  meaningsVersion?: number;
   suggestedQuestionCategories?: string[];
   detectedAt: number;            // Timestamp
 }

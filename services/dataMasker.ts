@@ -240,6 +240,29 @@ function sampleEvenlySpaced<T>(arr: T[], n: number): T[] {
  * Convert masked profiles to a concise text block for the LLM prompt.
  * Contains ZERO raw data — only statistical metadata.
  */
+/** "whole numbers, can be below 0, up to thousands" — never a value. */
+export function numberShape(stats: { min: number; max: number; mean: number }): string {
+    const parts: string[] = [];
+    const whole = Number.isInteger(stats.min) && Number.isInteger(stats.max) && Number.isInteger(Math.round(stats.mean * 1000) / 1000);
+    parts.push(whole ? 'whole numbers' : 'decimals');
+    if (stats.min < 0) parts.push('some below 0');
+    const top = Math.max(Math.abs(stats.min), Math.abs(stats.max));
+    parts.push(stats.min >= 0 && stats.max <= 1 ? 'between 0 and 1'
+        : stats.min >= 0 && stats.max <= 5 ? 'small (up to 5)'
+            : stats.min >= 0 && stats.max <= 10 ? 'up to 10'
+                : stats.min >= 0 && stats.max <= 100 ? 'up to 100'
+                    : stats.min >= 1900 && stats.max <= 2100 && whole ? 'four-digit, like years'
+                        : top < 1_000 ? 'hundreds' : top < 100_000 ? 'thousands' : top < 10_000_000 ? 'hundreds of thousands to millions' : 'very large');
+    return parts.join(', ');
+}
+
+/** "spans about 14 months" — never the dates themselves. */
+export function dateSpan(range: { min: string; max: string }): string {
+    const days = (Date.parse(range.max) - Date.parse(range.min)) / 86_400_000;
+    if (!Number.isFinite(days)) return 'dates';
+    return days < 1 ? 'a single day' : days < 60 ? `spans about ${Math.round(days)} days` : days < 730 ? `spans about ${Math.round(days / 30.4)} months` : `spans about ${Math.round(days / 365.25)} years`;
+}
+
 export function profilesToPromptText(profiles: MaskedColumnProfile[]): string {
     const lines = profiles.map(p => {
         const parts: string[] = [
@@ -248,13 +271,11 @@ export function profilesToPromptText(profiles: MaskedColumnProfile[]): string {
             `Distinct: ${p.distinctCount}/${p.totalRows}`,
             `Nulls: ${(p.nullRate * 100).toFixed(1)}%`,
         ];
-        if (p.numericStats) {
-            parts.push(`Range: [${p.numericStats.min}, ${p.numericStats.max}]`);
-            parts.push(`Mean: ${p.numericStats.mean}`);
-        }
-        if (p.dateRange) {
-            parts.push(`Date Range: ${p.dateRange.min} → ${p.dateRange.max}`);
-        }
+        // Never a value from the data: no minimum, maximum, average or dates — only
+        // the shape of the numbers and how long the dates span, which is enough to
+        // tell an amount from a score, a rate or a year.
+        if (p.numericStats) parts.push(`Numbers: ${numberShape(p.numericStats)}`);
+        if (p.dateRange) parts.push(`Dates: ${dateSpan(p.dateRange)}`);
         if (p.patternHint) {
             parts.push(`Pattern: ${p.patternHint}`);
         }

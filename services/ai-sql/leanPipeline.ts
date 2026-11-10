@@ -28,7 +28,8 @@ import { AISQLPipelineError } from './pipelineError';
 import { resolveAISQLSemanticModel } from './semanticLayer';
 import { discoverJoinContext } from './joinEngine';
 import { duckTableName, queryTablesOf } from '../../utils/duckColumnType';
-import { readingTurnedAround, turnAroundRepair } from './readingCheck';
+import { judgedAgainstMeaning, readingTurnedAround, turnAroundRepair } from './readingCheck';
+import { dictionaryForPrompt, goodDirectionOf } from '../columnDictionary';
 import { discoverRelationships, detectCandidateKeys } from './relationshipDiscovery';
 import { fetchWithFallback, PLANNER_MODEL } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
@@ -111,7 +112,7 @@ export type LeanModelReply =
     | { action: 'clarify'; question: string; options: ClarificationOption[] }
     | { action: 'chat'; message: string; suggestions: string[] }
     | { action: 'overview' }
-    | { action: 'answer'; title?: string; sql: string; dimensions?: string[]; measures?: string[]; answer?: string; explanation?: string; question?: string; followUp?: boolean };
+    | { action: 'answer'; title?: string; sql: string; dimensions?: string[]; measures?: string[]; answer?: string; judgedBy?: { column: string; worse: 'higher' | 'lower' }; explanation?: string; question?: string; followUp?: boolean };
 
 // ── Prompt ───────────────────────────────────────────────────────────
 
@@ -154,11 +155,10 @@ STEP 2 — Otherwise answer (action "answer").
   - "last month" / "last year" = the full calendar month / year before L's
   - "the last 7 days" / "the last 30 days" = the 7 / 30 days ending on L; "the last 12 months" = from L - 12 months up to L
   - a named month or year without a year ("in October") = the latest one in the data
-- Losses, overspending and shortfalls ("which department is losing money", "over budget", "in the red", "missed target"): decide the direction from what the amounts are, then work it out yourself.
-  - Money spent (costs, expenses, a spending budget): a loss or overspend is actual ABOVE budget. Money earned (sales, revenue, income against a target): a shortfall is actual BELOW target. A profit or margin column: a loss is a value below 0.
-  - Compute it from the actual and budget (or target) columns, e.g. SUM("actual") - SUM("budget") AS overspend, and name it for what it means (overspend, shortfall, loss). Use a ready-made variance or difference column only when "How columns are worked out" gives its formula, and follow that formula's direction; never guess the sign of a variance from its name.
-  - Return every group with its budget, actual and the difference, the worst first, so the answer can also say when none is losing money. Never restate the question in the opposite direction (spending below budget is a saving, not a loss).
-  - When nothing says whether the amounts are money spent or money earned, ask (clarify) instead of guessing.
+- Judgement words ("losing money", "worst", "best", "problem", "struggling", "doing well", "slow", "over budget", "falling behind"): judge by the COLUMN MEANINGS, which say for each column whether higher is better or worse, what below 0 means and what people call it. The worst is the highest value of a column where higher is worse, or the lowest where higher is better; a question in someone's own words ("losses", "late deliveries") matches the column people call that.
+  - Work a difference out so it points the way the question asks (e.g. how far each group is worse than plan), following any formula under "How columns are worked out"; never guess a sign from a column name. Name the result for what it means (overspend, shortfall, late_orders), return every group worst first, and say what you judged by in "judged_by".
+  - In general business terms a loss is money spent above budget, or money earned below target, or a profit below 0; spending below budget is a saving, not a loss.
+  - When no column meaning says which way is better for what the question asks, ask (clarify) instead of guessing.
 - You do not know the values stored in text columns. Match text the user typed case-insensitively, e.g. LOWER("region") = LOWER('london'), or ILIKE '%term%' for partial names.
 - Highest and lowest (or best and worst, top and bottom) item per group or period, e.g. "month-wise highest and lowest sales for products": return ONE row per group with columns named like period, highest_product, highest_total_sales, lowest_product, lowest_total_sales (use QUALIFY/ROW_NUMBER or ARG_MAX/ARG_MIN). Always include the item's name, not just the number.
 - Listing records: return only the useful columns with LIMIT 200.
@@ -172,7 +172,7 @@ Plain words for the person reading (they are not technical):
 - Follow-up options in "clarify" are plain questions a person would ask.
 
 Return ONLY one JSON object, no prose:
-{"action":"answer","title":"short plain-English chart title","question":"the full question you answered, written so it makes sense on its own","sql":"SELECT ...","dimensions":["grouping output column"],"measures":["measure output column"],"answer":"the one measure output column that answers the question","explanation":"one sentence: what was calculated, including any assumption"}
+{"action":"answer","title":"short plain-English chart title","question":"the full question you answered, written so it makes sense on its own","sql":"SELECT ...","dimensions":["grouping output column"],"measures":["measure output column"],"answer":"the one measure output column that answers the question","judged_by":{"column":"the data column a judgement word was judged by (omit when the question has none)","worse":"higher|lower"},"explanation":"one sentence: what was calculated, including any assumption"}
 or
 {"action":"clarify","question":"short follow-up","options":[{"label":"Total revenue","question":"Top 10 products by total revenue"}]}
 or
@@ -235,6 +235,8 @@ export function parseLeanReply(content: string): LeanModelReply {
         dimensions: Array.isArray(raw.dimensions) ? raw.dimensions.map(String) : undefined,
         measures: Array.isArray(raw.measures) ? raw.measures.map(String) : undefined,
         answer: typeof raw.answer === 'string' && raw.answer.trim() ? raw.answer.trim() : undefined,
+        judgedBy: raw.judged_by && typeof raw.judged_by.column === 'string' && (raw.judged_by.worse === 'higher' || raw.judged_by.worse === 'lower')
+            ? { column: raw.judged_by.column.replace(/^"|"$/g, ''), worse: raw.judged_by.worse } : undefined,
         explanation: typeof raw.explanation === 'string' ? unsnake(raw.explanation.trim()).slice(0, 400) : undefined,
         question: typeof raw.question === 'string' && raw.question.trim() ? raw.question.trim().slice(0, 300) : undefined,
         followUp: typeof raw.follow_up === 'boolean' ? raw.follow_up : typeof raw.followUp === 'boolean' ? raw.followUp : undefined,
@@ -817,7 +819,11 @@ export function describeData(dataset: Dataset) {
         if (word) blankFills.set(column.name, word);
     }
     const extra: ColumnExtras = { ids: idNames, perRowNumbers: new Set(shape.perRowNumbers), yesNo, formats, blankFills, shape: shapeForModel(shape, yesTest), tablesText: describeSourceTables(dataset) };
-    return { model, schema: describeColumnsOnly(model, join, numericColumns, perItemColumns(dataset.columns, dataset.name), repeatingIds, extra) };
+    // What each column means and which way is good (the column dictionary): words only.
+    let meanings = '';
+    try { meanings = dictionaryForPrompt(dataset); } catch { meanings = ''; }
+    const columnsText = describeColumnsOnly(model, join, numericColumns, perItemColumns(dataset.columns, dataset.name), repeatingIds, extra);
+    return { model, schema: meanings ? `${columnsText}\n\n${meanings}` : columnsText };
 }
 
 export async function runLeanAISQL(question: string, dataset: Dataset, options: LeanRunOptions = {}): Promise<AISQLPipelineResult> {
@@ -857,7 +863,10 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     // ── 1b. Read the right way round? A loss question restated as spending below budget
     // (a saving) is asked again once, with the reason. Words only, no data.
     let readingCaution: string | null = null;
-    const turned = readingTurnedAround(question, parsed.question || parsed.title);
+    // The AI says what it judged by; the column dictionary says which way is good. Any data.
+    const againstMeaning = (reply: { judgedBy?: { column: string; worse: 'higher' | 'lower' } }) =>
+        reply.judgedBy ? judgedAgainstMeaning(reply.judgedBy, goodDirectionOf(dataset, reply.judgedBy.column)) : null;
+    const turned = againstMeaning(parsed) || readingTurnedAround(question, parsed.question || parsed.title);
     if (turned) {
         options.onProgress?.('Re-reading the question');
         const reread = await fetchWithFallback([
@@ -866,10 +875,12 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
         ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000, requestPurpose: options.requestPurpose });
         tokens += Number(reread.data?.usage?.total_tokens) || 0;
         const second = parseLeanReply(reread.data?.choices?.[0]?.message?.content || '');
-        if (second.action === 'answer' && !readingTurnedAround(question, second.question || second.title)) {
+        if (second.action === 'answer' && !againstMeaning(second) && !readingTurnedAround(question, second.question || second.title)) {
             Object.assign(parsed, second);
         } else {
-            readingCaution = `This answer may read your question the other way round: you asked about ${turned.asked}, and it shows ${turned.read}.`;
+            readingCaution = turned.asked.startsWith('the column meanings')
+                ? `This answer may read your question the other way round: it takes ${turned.read}, which goes against ${turned.asked}. Check the column's meaning in the Columns review.`
+                : `This answer may read your question the other way round: you asked about ${turned.asked}, and it shows ${turned.read}.`;
         }
     }
     // The standalone question is what later follow-ups and the repair use.

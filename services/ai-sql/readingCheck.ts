@@ -34,7 +34,24 @@ export function readingTurnedAround(question: string, reading: string | undefine
     return null;
 }
 
+/**
+ * The general check, for any data: the AI says which column it judged a
+ * judgement word by and which way it took as worse; the column dictionary
+ * (rules, the AI's own meanings, or the user's setting) says which way is
+ * good. If they disagree, the answer is turned around.
+ */
+export function judgedAgainstMeaning(judgedBy: { column: string; worse: 'higher' | 'lower' } | undefined, good: 'higher' | 'lower' | 'neutral' | undefined): TurnedAround | null {
+    if (!judgedBy || !good || good === 'neutral') return null;
+    const name = judgedBy.column.replace(/_/g, ' ');
+    const conflict = (good === 'higher' && judgedBy.worse === 'higher') || (good === 'lower' && judgedBy.worse === 'lower');
+    if (!conflict) return null;
+    return {
+        asked: `the column meanings, which say a higher ${name} is ${good === 'higher' ? 'better' : 'worse'}`,
+        read: `a ${judgedBy.worse} ${name} as worse`,
+    };
+}
+
 /** The instruction sent back to the AI when its reading is turned around. */
 export function turnAroundRepair(turned: TurnedAround, reading: string): string {
-    return `Your restatement of the question ("${reading}") is about ${turned.read}, but the person asked about ${turned.asked}. Answer the question the way it was asked. For money spent, a loss or overspend is actual above budget; for money earned, a shortfall is actual below target. Work the difference out from the actual and budget (or target) columns, follow any formula given under "How columns are worked out", name the result for what it means, and return every group with the worst first.`;
+    return `Your reading of the question ("${reading}") ${turned.asked.startsWith('the column meanings') ? `takes ${turned.read}` : `is about ${turned.read}`}, but that goes against ${turned.asked.startsWith('the column meanings') ? turned.asked : `what the person asked about: ${turned.asked}`}. Answer the question the way it was asked: judge by the COLUMN MEANINGS (which way is good, what below 0 means, what people call it), follow any formula under "How columns are worked out", name the result for what it means, return every group worst first, and fill "judged_by".`;
 }

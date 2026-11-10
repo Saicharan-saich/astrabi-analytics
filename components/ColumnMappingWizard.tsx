@@ -504,10 +504,28 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                     <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Display name</span>
                                                         <input type="text" value={sem.humanLabel} onChange={e => updateColumn(col.name, { humanLabel: e.target.value })} className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" />
                                                     </label>
-                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Description</span>
-                                                        <input type="text" value={sem.description} onChange={e => updateColumn(col.name, { description: e.target.value })} placeholder="What does this column represent?" className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" />
+                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">What it means</span>
+                                                        <input type="text" value={sem.description} onChange={e => updateColumn(col.name, { description: e.target.value, meaningSource: 'user' })} placeholder="What does this column hold?" className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" />
                                                     </label>
                                                 </div>
+                                                {/* The column's meaning, used for every question: which way is good, and what people call it. */}
+                                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
+                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Higher is</span>
+                                                        <select value={sem.goodDirection || ''} onChange={e => updateColumn(col.name, { goodDirection: (e.target.value || undefined) as ColumnSemantic['goodDirection'], meaningSource: 'user' })} className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" aria-label={`Is a higher ${col.name} better or worse`}>
+                                                            <option value="">Not set</option>
+                                                            <option value="higher">Better (like sales)</option>
+                                                            <option value="lower">Worse (like costs or complaints)</option>
+                                                            <option value="neutral">Neither</option>
+                                                        </select>
+                                                    </label>
+                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Below zero means</span>
+                                                        <input type="text" value={sem.negativeMeans || ''} onChange={e => updateColumn(col.name, { negativeMeans: e.target.value, meaningSource: 'user' })} placeholder="e.g. spent more than budgeted" className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" />
+                                                    </label>
+                                                    <label className="text-[12px]"><span className="qi-ws-muted block mb-1">People call it</span>
+                                                        <input type="text" value={(sem.aliases || []).join(', ')} onChange={e => updateColumn(col.name, { aliases: e.target.value.split(/,\s*/), meaningSource: 'user' })} placeholder="e.g. over budget, losses" className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" />
+                                                    </label>
+                                                </div>
+                                                <p className="qi-ws-muted text-[11.5px] mt-2">{sem.meaningSource === 'user' ? 'Set by you: used for every question and remembered for this kind of file.' : sem.meaningSource === 'ai' ? 'Written from the column names only (never your values). Correct anything that is wrong; your words are used from then on.' : 'Worked out from the column name and how it is calculated. Correct anything that is wrong.'}</p>
                                             </div>
                                         )}
                                     </div>

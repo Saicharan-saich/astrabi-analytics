@@ -52,6 +52,8 @@ import { saveDatasetToDB, loadAllDatasetsFromDB, deleteDatasetFromDB } from './s
 import { repairTwoLabelColumns } from './utils/twoValues';
 import { repairLegacyProfitMarginDataset } from './services/legacyDerivedMetricMigration';
 import { buildRelationalCatalog, createSubjectDataset } from './services/relationalCatalog';
+import { askColumnMeanings, blankProfile } from './services/columnDictionaryAI';
+import { applyDictionary, rememberMeanings } from './services/columnDictionary';
 import { inferDefaultAggregationForGrain } from './services/smartAggregation';
 import { DomainReviewModal } from './components/DomainReviewModal';
 import { SplashScreen } from './components/SplashScreen';
@@ -488,6 +490,26 @@ function App() {
       setSidebarOpen(false);
     }
   }, [isMobile, setSidebarOpen]);
+
+  // ── COLUMN MEANINGS (the dictionary used for every question) ──
+  // Written once per dataset by the AI from names, roles and formulas only;
+  // the user's own settings always win. Re-applied onto whatever profile the
+  // dataset has by the time the reply arrives, so nothing else is overwritten.
+  const meaningsRequested = useRef<string | null>(null);
+  useEffect(() => {
+    if (!dataset || isAIProfiling || dataset.domainProfile?.meaningsVersion) return;
+    const key = dataset.id;
+    if (meaningsRequested.current === key) return;
+    meaningsRequested.current = key;
+    askColumnMeanings(dataset).then(reply => {
+      if (!reply) return;
+      const current = useAppStore.getState().dataset;
+      if (!current || current.id !== key) return;
+      const updated = { ...current, domainProfile: applyDictionary(current.domainProfile || blankProfile(), reply, current) };
+      useAppStore.getState().setDataset(updated);
+      saveDatasetToDB(updated);
+    });
+  }, [dataset?.id, dataset?.domainProfile?.meaningsVersion, isAIProfiling]);
 
   // ── AUTO-SYNC pendingProfile to active dataset ──
   // When the user switches datasets or a new dataset is uploaded,
@@ -959,6 +981,8 @@ function App() {
     columnTypeOverrides: Record<string, ColumnType>,
   ) => {
     if (!dataset) return;
+    // What the user said a column means is remembered for the next upload of this kind of file.
+    rememberMeanings(dataset.columns.map(c => c.name), updatedProfile.columnSemantics);
     // Descriptive semantic changes are metadata-only. A role change must run
     // through ETL so the current values and DuckDB-facing types also change.
     let finalDataset: Dataset = {
