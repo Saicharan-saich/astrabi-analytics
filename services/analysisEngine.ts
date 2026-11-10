@@ -1751,9 +1751,49 @@ export const parseExcelMultiSheet = async (file: File): Promise<{ sheetCount: nu
     });
 };
 
-export const getSampleData = () => `order_id,order_date,product_name,quantity,revenue
-101,2025-02-20,Laptop,1,1200
-102,2025-02-20,Mouse,2,50`;
+/**
+ * The sample data: six months of a small café-and-shop's sales up to
+ * yesterday, laid out like a till export — two sites, a handful of products,
+ * card and cash, some returning customers — with the small mess real exports
+ * have ("N/A" for unknown, prices written "£3.40", inconsistent capitals) so
+ * the cleaning has something to show. Seeded, so every load has the same shape.
+ */
+export const getSampleData = (today: Date = new Date()): string => {
+    let seed = 20240607;
+    const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    const products = [
+        ['Coffee', 'Flat White', 3.4, 14], ['Coffee', 'Latte', 3.5, 12], ['Coffee', 'Americano', 2.9, 8], ['Tea', 'Chai Latte', 3.6, 4],
+        ['Food', 'Bacon Roll', 4.8, 6], ['Food', 'Ham & Cheese Toastie', 6.2, 5], ['Pastry', 'Croissant', 2.8, 8], ['Pastry', 'Cinnamon Bun', 3.4, 5],
+        ['Shop', 'Coffee Beans 250g', 8.5, 2], ['Shop', 'Reusable Cup', 12, 1],
+    ] as const;
+    const weights = products.map(p => p[3]);
+    const total = weights.reduce((a, b) => a + b, 0);
+    const choose = () => { let r = rnd() * total; for (const p of products) { r -= p[3]; if (r <= 0) return p; } return products[0]; };
+    const end = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - 1));
+    const lines = ['order_id,order_date,time,location,category,product_name,quantity,unit_price,revenue,payment,customer_id'];
+    let order = 1000;
+    for (let d = 182; d >= 0; d--) {
+        const day = new Date(end.getTime() - d * 86_400_000);
+        const iso = day.toISOString().slice(0, 10);
+        for (const location of ['High Street', 'Station']) {
+            if (location === 'High Street' && day.getUTCDay() === 0) continue; // closed on Sundays
+            const orders = 9 + Math.floor(rnd() * 8) + (day.getUTCDay() === 6 ? 6 : 0);
+            for (let o = 0; o < orders; o++) {
+                order++;
+                const time = `${String(7 + Math.floor(rnd() * 10)).padStart(2, '0')}:${String(Math.floor(rnd() * 60)).padStart(2, '0')}`;
+                const payment = rnd() < 0.02 ? 'N/A' : rnd() < 0.8 ? 'Card' : 'Cash';
+                const customer = rnd() < 0.4 ? `C${String(1 + Math.floor(rnd() * 180)).padStart(4, '0')}` : '';
+                for (let k = 0; k < (rnd() < 0.35 ? 2 : 1); k++) {
+                    const [category, product, price] = choose();
+                    const quantity = rnd() < 0.88 ? 1 : 2;
+                    const name = rnd() < 0.02 ? product.toLowerCase() : product;
+                    lines.push(`#${order},${iso},${time},${location},${category},"${name}",${quantity},£${price.toFixed(2)},£${(price * quantity).toFixed(2)},${payment},${customer}`);
+                }
+            }
+        }
+    }
+    return lines.join('\n');
+};
 
 export interface TableInfo {
     name: string;

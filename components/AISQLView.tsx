@@ -568,7 +568,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                         {!active?.turns.length && (
                             <div className={`qi-chat-empty ${welcome || !history.length ? 'is-welcome' : ''}`}>
                                 {welcome && (
-                                    <p className="qi-chat-ready" role="status"><CheckCircle2 className="h-4 w-4" aria-hidden /> {dataset.name.replace(/\.[^.]+$/, '')} is cleaned and ready</p>
+                                    <p className="qi-chat-ready" role="status"><CheckCircle2 className="h-4 w-4" aria-hidden /> {dataset.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ')} is cleaned and ready</p>
                                 )}
                                 <div className="qi-chat-empty-mark"><Sparkles className="h-6 w-6" aria-hidden /></div>
                                 {welcome || !history.length ? (
