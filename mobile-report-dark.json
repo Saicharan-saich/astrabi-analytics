@@ -1,0 +1,45 @@
+{
+  "dashboard": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.max-w-[1900px].mx-auto.px-6.py-6 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "dataset-workspace": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.qi-ws-inner.max-w-[72rem].mx-auto.px-6 pl16px @0"
+    ],
+    "offenders": []
+  },
+  "question-builder": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": null,
+    "gutter": [],
+    "offenders": []
+  },
+  "ai-sql": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 56,
+    "gutter": [
+      "header.qi-chat-head pl16px @0"
+    ],
+    "offenders": []
+  },
+  "navigation": {
+    "pageWidth": 390,
+    "viewport": 390,
+    "titleLeft": 16,
+    "gutter": [
+      "div.max-w-[1900px].mx-auto.px-6.py-6 pl16px @0"
+    ],
+    "offenders": []
+  }
+}
