@@ -65,7 +65,7 @@ export function AnswerCheckStrip({ check: given, onRun, running, readAs, reading
             )}
             {open && (
                 <div className="qi-check-body">
-                    {readAs && <p><span className="qi-check-k">Question answered</span>“{readAs}”. The check confirms the figures for this reading; if it is not what you meant, ask again in your own words.</p>}
+                    {readAs && <p><span className="qi-check-k">Question answered</span>“{readAs}”{/[.?!]$/.test(readAs.trim()) ? '' : '.'} The check confirms the figures for this reading; if it is not what you meant, ask again in your own words.</p>}
                     {check.counted && <p><span className="qi-check-k">What was counted</span>{check.counted}</p>}
                     {check.coverage && <p><span className="qi-check-k">Rows used</span>{check.coverage}</p>}
                     {check.figuresChecked > 0 && (
