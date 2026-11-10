@@ -65,6 +65,7 @@ describe('column meaning for the AI', () => {
         expect(gate('discount_amount', { distinct: 69, min: 0, max: 13.2, integer: false }).semanticType).toBe('currency');
         expect(gate('discount', { distinct: 4, min: 0, max: 20, integer: true }).semanticType).toBe('percentage');
         expect(gate('discount_rate', { distinct: 30, min: 0, max: 0.3, integer: false }).semanticType).toBe('percentage');
+        expect(gate('discount', { distinct: 50, min: 0, max: 0.49, integer: false }).semanticType).toBe('percentage');
     });
 
     it('a quantity that is only ever 1 or 2 is still added up', () => {

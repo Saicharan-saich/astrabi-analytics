@@ -242,8 +242,9 @@ function computeDeterministicGuess(
     // "discount_rate" is a percentage; "discount_amount", "tax_rate_amount" or a bare "discount" of
     // £1.58 is money. A bare discount counts as a percentage only when its values look like one
     // (whole numbers up to 100, a handful of them: 5, 10, 15, 20).
-    const discountPercent = /(?:^|[_\s])discounts?$/.test(name) && profile.isIntegerLike && profile.range !== undefined
-        && profile.range.min >= 0 && profile.range.max <= 100 && profile.distinctCount <= 20;
+    const discountPercent = /(?:^|[_\s])discounts?$/.test(name) && profile.range !== undefined && profile.range.min >= 0
+        && ((profile.isIntegerLike && profile.range.max <= 100 && profile.distinctCount <= 20)
+            || (!profile.isIntegerLike && profile.range.max <= 1)); // 0.15 = 15% off
     const percentByName = EXPLICIT_PERCENT_NAMES.test(name) || discountPercent
         || (PERCENTAGE_NAMES.test(name) && !/(?:^|[_\s])(amount|amt|value|price|cost|total|sum)(?:[_\s]|$)/.test(name));
     if (allowedTypes.includes('percentage') && profile.etlType === ColumnType.METRIC && percentByName) {
