@@ -398,12 +398,18 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     const explicitCurrency = activeNumberFormat === 'currency_usd' ? 'USD'
         : activeNumberFormat === 'currency_eur' ? 'EUR'
             : activeNumberFormat === 'currency_gbp' ? 'GBP' : undefined;
-    const primaryCurrency = explicitCurrency || currencyCodeFor(config?.metric) || 'USD';
-    const currencySymbol = (code: string) => {
+    // Only a currency the file actually states: an amount with no known currency gets no
+    // symbol (never "$" by default for someone working in pounds or euros).
+    const primaryCurrency: string | undefined = explicitCurrency || currencyCodeFor(config?.metric) || undefined;
+    const currencySymbol = (code?: string) => {
+        if (!code) return '';
         try {
-            return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).formatToParts(0).find(part => part.type === 'currency')?.value || '$';
-        } catch { return '$'; }
+            return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).formatToParts(0).find(part => part.type === 'currency')?.value || '';
+        } catch { return ''; }
     };
+    /** Intl money formatting when the currency is known; the same digits without a symbol when not. */
+    const moneyFormat = (code: string | undefined, options: Intl.NumberFormatOptions) =>
+        new Intl.NumberFormat('en-US', code ? { ...options, style: 'currency', currency: code } : { ...options, style: 'decimal' });
     const isCurrencyFormat = (format?: string) => format === 'currency' || format === 'currency_usd' || format === 'currency_eur' || format === 'currency_gbp';
     const { primaryPercentScale, percentScales } = useMemo(() => {
         const pointColumns = new Set((datasetColumns || []).filter(c => c.valueUnit === 'percent_points').map(c => c.name));
@@ -490,9 +496,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
                 case 'currency':
                 case 'currency_usd':
                 case 'currency_gbp':
-                    return new Intl.NumberFormat('en-US', {
-                        style: 'currency',
-                        currency: effectiveFormat === 'currency_usd' ? 'USD' : effectiveFormat === 'currency_gbp' ? 'GBP' : primaryCurrency,
+                    return moneyFormat(effectiveFormat === 'currency_usd' ? 'USD' : effectiveFormat === 'currency_gbp' ? 'GBP' : primaryCurrency, {
                         minimumFractionDigits: fractionDigits,
                         maximumFractionDigits: fractionDigits
                     }).format(value);
@@ -553,15 +557,13 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         // "Raw number" / "Full" means no K/M shortening on the bars either.
         const wantsFull = formatting?.numberFormat === 'raw' || formatting?.yAxisFormat === 'full';
         if (isCurrency && abs >= 1000 && !wantsFull) {
-            return new Intl.NumberFormat('en-US', {
-                style: 'currency', currency: primaryCurrency,
+            return moneyFormat(primaryCurrency, {
                 notation: 'compact', compactDisplay: 'short', minimumFractionDigits: 0, maximumFractionDigits: labelDecimals,
             }).format(value);
         }
         // Small money amounts: no ".00" on a whole number (£50, not £50.00).
         if (isCurrency && abs < 1000) {
-            return new Intl.NumberFormat('en-US', {
-                style: 'currency', currency: primaryCurrency,
+            return moneyFormat(primaryCurrency, {
                 minimumFractionDigits: formatting?.decimals ?? 0,
                 maximumFractionDigits: formatting?.decimals ?? (Number.isInteger(value) ? 0 : 2),
             }).format(value);
@@ -612,7 +614,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
         }
         try {
             switch (fmt) {
-                case 'currency': return new Intl.NumberFormat('en-US', { style: 'currency', currency: currencyCodeFor(metricName) || primaryCurrency, minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
+                case 'currency': return moneyFormat(currencyCodeFor(metricName) || primaryCurrency, { minimumFractionDigits: fd, maximumFractionDigits: fd }).format(value);
                 case 'percent': {
                     return toPercentPoints(value, scaleForName(percentScales, metricName, primaryPercentScale)).toFixed(fd) + '%';
                 }
@@ -626,8 +628,7 @@ export const ChartVisualization: React.FC<ChartVisualizationProps> = ({
     const formatCompactMetricLabel = (value: number, metricName: string): string => {
         const full = formatForMetricName(value, metricName);
         if (Math.abs(value) >= 1000 && /[$€£¥₹₩₫₽]/.test(full)) {
-            return new Intl.NumberFormat('en-US', {
-                style: 'currency', currency: currencyCodeFor(metricName) || primaryCurrency, notation: 'compact',
+            return moneyFormat(currencyCodeFor(metricName) || primaryCurrency, { notation: 'compact',
                 maximumFractionDigits: formatting?.decimals ?? 1,
             }).format(value);
         }

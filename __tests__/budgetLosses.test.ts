@@ -105,8 +105,47 @@ describe('the headline answers the question', () => {
             model: resolveAISQLSemanticModel(ds).model, dataset: ds, started: 0, repairAttempts: 0, tokens: 1, aiModel: 'test', cautions: [],
         });
         const words = `${result.narrative?.headline} ${result.narrative?.summary} ${(result.narrative?.insights || []).join(' ')}`;
-        expect(result.narrative?.summary).toBe('2 of 3 have an overspend: IT (190,000) and Operations (30,000). Marketing (-90,000) does not.');
+        // The gap is drawn on its own: no record count, no budget in millions beside thousands.
+        expect(result.chart.yKey).toBe('overspend');
+        expect(result.chart.secondaryYKeys || []).toEqual([]);
+        expect(result.narrative?.summary).toBe('IT is 190,000 over budget (16% of its budget) and Operations is 30,000 over budget (1% of its budget). Marketing is 90,000 under budget (3.6% of its budget). Across all 3, that is 130,000 over budget (2%).');
         expect(words).toMatch(/Marketing/);
-        expect(words).not.toMatch(/budget is \d|% higher|ahead of/i);
+        expect(words).not.toMatch(/budget is \d|% higher|ahead of|above 0/i);
+    });
+
+    it('says when an overspend is too small to be a real loss', () => {
+        const ds = budgetFile('budget-actual');
+        const small = [
+            { department: 'Operations', total_budgeted_amount: 2_920_000, total_actual_spending: 2_923_814, record_count: 126, overspend: 3_814 },
+            { department: 'Marketing', total_budgeted_amount: 2_470_000, total_actual_spending: 2_447_591, record_count: 126, overspend: -22_409 },
+        ];
+        const result = buildLeanAnswer({
+            question: 'Which departments are causing losses through spending above budget?', sql: 'SELECT 1', rows: small,
+            reply: { dimensions: ['department'], measures: ['total_budgeted_amount', 'total_actual_spending', 'record_count', 'overspend'], answer: 'overspend' },
+            model: resolveAISQLSemanticModel(ds).model, dataset: ds, started: 0, repairAttempts: 0, tokens: 1, aiModel: 'test', cautions: [],
+        });
+        expect(result.narrative?.summary).toBe('Operations is 3,814 over budget (0.1% of its budget), which is close to budget rather than a real overspend. Marketing is 22,409 under budget (0.9% of its budget). Together, that is 18,595 under budget (0.3%).');
+        expect(result.chart.secondaryYKeys || []).toEqual([]);
+    });
+});
+
+describe('filters carried over from the last answer', () => {
+    const earlier = `SELECT "department", SUM("budgeted_amount") AS b FROM "data" WHERE "department" IN ('Operations', 'Marketing') GROUP BY 1`;
+    const kept = `SELECT "department", SUM("actual_amount") - SUM("budgeted_amount") AS overspend FROM "data" WHERE "department" IN ('Operations', 'Marketing') GROUP BY 1`;
+    const all = `SELECT "department", SUM("actual_amount") - SUM("budgeted_amount") AS overspend FROM "data" GROUP BY 1`;
+
+    it('catches an earlier filter kept on a new, complete question', async () => {
+        const { carriedFilters, describeCarried } = await import('../services/ai-sql/carriedFilters');
+        const carried = carriedFilters('Which departments are causing losses through spending above budget?', kept, earlier);
+        expect(describeCarried(carried)).toBe('department is Operations or Marketing');
+        expect(carriedFilters('Which departments are causing losses through spending above budget?', all, earlier)).toEqual([]);
+    });
+
+    it('keeps it when the message points back or names the values', async () => {
+        const { carriedFilters } = await import('../services/ai-sql/carriedFilters');
+        expect(carriedFilters('What about their overspend?', kept, earlier)).toEqual([]);
+        expect(carriedFilters('Now show those two by overspend', kept, earlier)).toEqual([]);
+        expect(carriedFilters('Is Operations or Marketing over budget?', kept, earlier)).toEqual([]);
+        expect(carriedFilters(`Which region sells most?`, `SELECT * FROM "data" WHERE LOWER("region") = LOWER('North')`, `SELECT * FROM "data" WHERE "region" = 'North'`)).toHaveLength(1);
     });
 });

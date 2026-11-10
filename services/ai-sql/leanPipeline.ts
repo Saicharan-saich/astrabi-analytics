@@ -29,6 +29,7 @@ import { resolveAISQLSemanticModel } from './semanticLayer';
 import { discoverJoinContext } from './joinEngine';
 import { duckTableName, queryTablesOf } from '../../utils/duckColumnType';
 import { judgedAgainstMeaning, readingTurnedAround, turnAroundRepair } from './readingCheck';
+import { carriedFilters, carriedFilterRepair, describeCarried, keptFilters } from './carriedFilters';
 import { dictionaryForPrompt, goodDirectionOf } from '../columnDictionary';
 import { discoverRelationships, detectCandidateKeys } from './relationshipDiscovery';
 import { fetchWithFallback, PLANNER_MODEL } from './modelConfig';
@@ -185,6 +186,7 @@ CONVERSATION
 You also get EARLIER IN THIS CHAT: the previous questions and the SQL that answered them (no results).
 - If the new message builds on them ("now by month", "only 2024", "what about profit?", "show it as a pie", "top 5 only"), start from the most recent SQL and change only what the message asks.
 - If the new message is a different topic, ignore the earlier chat completely.
+- A complete new question (it says what to measure and how to group, like "Which departments are over budget?") looks at ALL the data: never carry the earlier query's filters into it. Keep earlier filters only when the message points back to them ("these", "those", "same", "now", "only", "what about…") or names them itself.
 - Always fill "question" with the complete standalone question you answered, and add "follow_up": true if you used the earlier chat, otherwise false.
 - If the user says something is missing or wrong in the last answer ("I can't see the product names"), fix the query so the answer includes it.
 - Asking a follow-up (action "clarify") follows the same rules as before; do not ask about anything the earlier chat already settles.`;
@@ -440,14 +442,9 @@ export function buildInsights(rows: Record<string, any>[], profile: ResultProfil
         }
         return insights.slice(0, 3);
     }
-    if (DIFFERENCE_MEASURE.test(metric)) {
-        // A gap between two figures: which side of zero each group is on, never "% ahead".
-        const above = ranked.filter(row => Number(row[metric]) > 0);
-        const last = ranked[ranked.length - 1];
-        if (leader) insights.push(`${leader[dimension]} is highest at ${formatNumber(Number(leader[metric]))}${last && last !== leader ? `; ${last[dimension]} is lowest at ${formatNumber(Number(last[metric]))}` : ''}.`);
-        insights.push(`${above.length} of ${ranked.length} ${above.length === 1 ? 'is' : 'are'} above 0 and ${ranked.length - above.length} at or below 0.`);
-        return insights.slice(0, 3);
-    }
+    // A gap between two figures (an overspend, a variance): the summary already says who is
+    // over and under and by how much; never "% ahead" or "1 of 2 is above 0".
+    if (DIFFERENCE_MEASURE.test(metric)) return insights;
     if (leader && runner && Number(runner[metric]) !== 0) {
         const gap = ((Number(leader[metric]) - Number(runner[metric])) / Math.abs(Number(runner[metric]))) * 100;
         insights.push(gap < 1
@@ -883,6 +880,27 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
                 : `This answer may read your question the other way round: you asked about ${turned.asked}, and it shows ${turned.read}.`;
         }
     }
+    // ── 1c. A filter carried over from the last answer into a new, complete question?
+    // ("Which departments…" answered for only the two departments compared before.)
+    const earlierSql = context.length ? context[context.length - 1].sql : undefined;
+    let carriedCaution: string | null = null;
+    const carried = carriedFilters(question, parsed.sql, earlierSql);
+    if (carried.length) {
+        options.onProgress?.('Looking at all your data');
+        const again = await fetchWithFallback([
+            { role: 'system', content: `${LEAN_SYSTEM_PROMPT}${LEAN_CONTEXT_RULES}` },
+            { role: 'user', content: `${userContent}\n\n${carriedFilterRepair(carried)}` },
+        ], { model: PLANNER_MODEL, temperature: 0, max_tokens: 1600, timeout: 45_000, requestPurpose: options.requestPurpose });
+        tokens += Number(again.data?.usage?.total_tokens) || 0;
+        const second = parseLeanReply(again.data?.choices?.[0]?.message?.content || '');
+        if (second.action === 'answer' && !carriedFilters(question, second.sql, earlierSql).length) Object.assign(parsed, second);
+        else carriedCaution = `Still limited to rows where ${describeCarried(carried)}, kept from your earlier question. Ask it again as a new chat to see every one.`;
+    }
+    // A follow-up that keeps an earlier filter says so on the answer: which rows it covers is never hidden.
+    if (!carriedCaution && earlierSql) {
+        const kept = keptFilters(parsed.sql, earlierSql);
+        if (kept.length) carriedCaution = `Kept from your earlier question: only rows where ${describeCarried(kept)}.`;
+    }
     // The standalone question is what later follow-ups and the repair use.
     const standalone = parsed.question || question;
 
@@ -919,7 +937,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
 
     options.onProgress?.('Checking the numbers');
     const series = completeTimeSeries(sql, execution.data || [], parsed, model.timeContext, dataset);
-    const cautions = [...(readingCaution ? [readingCaution] : []), ...await numberCautions(sql, execution.data || [], parsed.dimensions, dataset, model.timeContext, `${question} ${standalone}`), ...series.notes];
+    const cautions = [...(carriedCaution ? [carriedCaution] : []), ...(readingCaution ? [readingCaution] : []), ...await numberCautions(sql, execution.data || [], parsed.dimensions, dataset, model.timeContext, `${question} ${standalone}`), ...series.notes];
     options.onProgress?.('Choosing the chart');
     const result = buildLeanAnswer({
         question: standalone, sql, rows: series.rows, reply: parsed, model, dataset, started, repairAttempts, tokens, aiModel: reply.model, originalQuestion: question, cautions,
@@ -1123,6 +1141,19 @@ export function buildLeanAnswer(input: LeanAnswerInput): AISQLPipelineResult {
         chart = { ...chart, chartType: rows.length > 6 ? 'horizontalBar' : 'bar', reason: `${chart.reason || ''} · values are not parts of one whole → bars`.trim() };
     }
     const reshaped = reshapeData(rows, profile, chart, plan);
+    // What is drawn beside the answer: never a record count next to a figure that is not a
+    // count (it is how many rows a group covers, shown in the table), and a gap (an
+    // overspend, a shortfall, a variance) on its own — the budget and actual it comes from
+    // are millions beside thousands and stay in the table.
+    if (!extremes && lead) {
+        const COUNTISH = /(^|_)(count|counts|rows|records|group_size|size|n|number_of)($|_)/i;
+        const before = reshaped.chart.secondaryYKeys || [];
+        let after = before.filter(key => COUNTISH.test(lead) || !COUNTISH.test(key));
+        if (DIFFERENCE_MEASURE.test(lead)) after = [];
+        if (after.length !== before.length) {
+            reshaped.chart = { ...reshaped.chart, yKey: lead, secondaryYKeys: after, ...(after.length ? {} : { useDualAxis: false, chartType: ['line', 'multiLine', 'area'].includes(String(reshaped.chart.chartType)) ? 'line' : rows.length > 8 ? 'horizontalBar' : 'bar' }) };
+        }
+    }
     const currency = resultCurrency(sql, profile.metricColumns[0] || plan.metrics[0]?.field, dataset.columns);
     if (currency) reshaped.chart = { ...reshaped.chart, currency };
     if (extremes) {

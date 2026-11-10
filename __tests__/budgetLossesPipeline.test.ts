@@ -81,4 +81,21 @@ describe('a loss question read the other way round', () => {
         const result = await runLeanAISQL('Which department is giving me losses?', dataset);
         expect(result.narrative?.cautions?.[0]).toMatch(/^This answer may read your question the other way round/);
     });
+
+    it('looks at every department when a new question follows a comparison of two', async () => {
+        const earlier = { question: 'Compare the budget of Operations and Marketing', sql: `SELECT "department", SUM("budgeted_amount") AS total_budget FROM "data" WHERE "department" IN ('Operations', 'Marketing') GROUP BY 1` };
+        const keptFilter = { ...right, follow_up: true, sql: `SELECT "department", SUM("budgeted_amount") AS total_budget, SUM("actual_amount") AS total_actual, SUM("actual_amount") - SUM("budgeted_amount") AS overspend FROM "data" WHERE "department" IN ('Operations', 'Marketing') GROUP BY 1 ORDER BY overspend DESC` };
+        vi.mocked(fetchWithFallback).mockResolvedValueOnce(reply(keptFilter) as any).mockResolvedValueOnce(reply({ ...right, follow_up: false }) as any);
+        vi.mocked(executeSQLViaDuckDB).mockResolvedValue({ data: [
+            { department: 'IT', overspend: 10_920, total_budget: 121_000, total_actual: 131_920 },
+            { department: 'Marketing', overspend: -3_480, total_budget: 120_600, total_actual: 117_120 },
+            { department: 'Operations', overspend: -3_480, total_budget: 120_000, total_actual: 116_520 },
+        ], columns: [], error: null } as any);
+        const result = await runLeanAISQL('Which departments are causing losses through spending above budget?', dataset, { context: [earlier] } as any);
+        const calls = vi.mocked(fetchWithFallback).mock.calls;
+        expect(calls).toHaveLength(2);
+        expect(String(calls[1][0][1].content)).toMatch(/keeps a filter from the earlier answer \(only rows where department is Operations or Marketing\)/);
+        expect(result.sql).not.toMatch(/IN \('Operations'/);
+        expect(result.narrative?.summary).toMatch(/^IT is .+ over budget/);
+    });
 });

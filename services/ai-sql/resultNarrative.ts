@@ -378,12 +378,33 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
             const list = (rows: Record<string, any>[]) => rows.length <= 2 ? rows.map(show).join(' and ') : `${rows.slice(0, 3).map(show).join(', ')}${rows.length > 3 ? ` and ${rows.length - 3} more` : ''}`;
             const a = /^[aeiou]/i.test(label) ? 'an' : 'a';
             if (LOSS_NAME.test(metric)) {
+                // Over or under, by how much, and how much that is of the group's own plan —
+                // 3,814 on a 2.9M budget is on budget, not a loss.
+                const planKey = Object.keys(ranked[0]).find(key => key !== metric && /(budget|plan|target|forecast|quota|expected)/i.test(key) && Number.isFinite(Number(ranked[0][key])));
+                const planWord = !planKey ? 'plan' : /target/i.test(planKey) ? 'target' : /forecast/i.test(planKey) ? 'forecast' : /budget/i.test(planKey) ? 'budget' : 'plan';
+                const shortfall = /(shortfall|deficit|loss)/i.test(metric) && !/(overspend|over_budget)/i.test(metric);
+                const [overWord, underWord] = shortfall ? ['short of', 'ahead of'] : ['over', 'under'];
+                const amount = (row: Record<string, any>) => formatValue(Math.abs(Number(row[metric])), type);
+                const share = (row: Record<string, any>) => {
+                    const planned = planKey ? Math.abs(Number(row[planKey])) : 0;
+                    if (!planned) return null;
+                    return (Math.abs(Number(row[metric])) / planned) * 100;
+                };
+                const pct = (value: number | null) => value === null ? '' : ` (${value < 0.1 ? 'under 0.1' : value.toLocaleString('en-GB', { maximumFractionDigits: value < 10 ? 1 : 0 })}% of its ${planWord})`;
+                const side = (row: Record<string, any>, word: string) => `${groupName(row, dimension)} is ${amount(row)} ${word} ${planWord}${pct(share(row))}`;
+                const join = (parts: string[]) => parts.length <= 2 ? parts.join(' and ') : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
+                const total = ranked.reduce((sum, row) => sum + Number(row[metric]), 0);
+                const totalPlan = planKey ? ranked.reduce((sum, row) => sum + Math.abs(Number(row[planKey])), 0) : 0;
+                const totalLine = ranked.length > 1 && Math.abs(total) > 0
+                    ? ` ${ranked.length === 2 ? 'Together' : `Across all ${ranked.length}`}, that is ${formatValue(Math.abs(total), type)} ${total > 0 ? overWord : underWord} ${planWord}${totalPlan ? ` (${(Math.abs(total) / totalPlan * 100).toLocaleString('en-GB', { maximumFractionDigits: 1 })}%)` : ''}.`
+                    : '';
+                const small = above.length > 0 && above.every(row => { const v = share(row); return v !== null && v < 2; });
+                const overParts = above.slice(0, 4).map(row => side(row, overWord));
+                const underParts = atOrBelow.slice(0, 3).map(row => Number(row[metric]) === 0 ? `${groupName(row, dimension)} is exactly on ${planWord}` : side(row, underWord));
                 return {
                     version: 1, verifiedFrom: 'executed_result', kind: 'ranking',
-                    headline: above.length ? `${groupName(above[0], dimension)} has the largest ${label}` : `No ${word} has ${a} ${label}`,
-                    summary: above.length
-                        ? `${above.length === 1 ? `Only ${show(above[0])} has ${a} ${label}` : `${above.length} of ${ranked.length} have ${a} ${label}: ${list(above)}`}.${atOrBelow.length ? ` ${atOrBelow.length === 1 ? `${show(atOrBelow[0])} does not` : `The other ${atOrBelow.length} do not`}.` : ''}`
-                        : `None of the ${ranked.length} has ${a} ${label}; ${show(ranked[0])} comes closest.`,
+                    headline: !above.length ? `No ${word} is ${overWord} ${planWord}` : small ? `No ${word} is far ${overWord} ${planWord}` : `${groupName(above[0], dimension)} is furthest ${overWord} ${planWord}`,
+                    summary: `${above.length ? `${join(overParts)}${above.length > 4 ? ` and ${above.length - 4} more` : ''}${small ? `, which is close to ${planWord} rather than a real ${label}` : ''}.` : `None of the ${ranked.length} is ${overWord} ${planWord}.`}${underParts.length ? ` ${join(underParts)}${atOrBelow.length > 3 ? ` and ${atOrBelow.length - 3} more` : ''}.` : ''}${totalLine}`,
                 };
             }
             return {
