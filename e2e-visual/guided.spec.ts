@@ -60,6 +60,16 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `62-workbook-ready-${theme}`);
         await ready.getByRole('button', { name: 'Close' }).click();
 
+        // ── what each column means: editable, used for every question ──
+        await page.getByRole('tab', { name: 'Columns', exact: true }).click();
+        await page.getByLabel('Role of revenue', { exact: true }).waitFor({ timeout: 15000 });
+        await page.locator('p', { hasText: /^revenue$/ }).first().click();
+        const higher = page.getByLabel('Is a higher revenue better or worse', { exact: true });
+        await expect(higher).toBeVisible();
+        await expect(higher).toHaveValue('higher');
+        await higher.scrollIntoViewIfNeeded();
+        await shoot(page, `65-column-meaning-${theme}`);
+
         // ── an empty Question Builder explains itself ──
         await go(page, 'Question Builder');
         const start = page.locator('.qi-builder-start:visible');
