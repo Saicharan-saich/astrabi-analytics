@@ -100,15 +100,15 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `80-records-workspace-${theme}`);
         await kind.screenshot({ path: path.join(OUT, `80-records-kind-${theme}.png`) });
         // Two labels (F/M) are a category in words; true/false are yes/no.
+        // The column review waits under "Check the columns" (optional) instead of opening by itself.
         await page.getByRole('tab', { name: 'Columns', exact: true }).click();
-        const genderRow = page.locator('tr', { hasText: 'gender' }).first();
-        await expect(genderRow).toContainText('Dimension');
-        await expect(genderRow).toContainText('Female');
-        await expect(page.locator('tr', { hasText: 'showed_up' }).first()).toContainText('Yes/No');
-        await page.locator('tr', { hasText: 'neighbourhood' }).first().scrollIntoViewIfNeeded();
+        await expect(page.getByLabel('Role of gender', { exact: true })).toHaveValue('DIMENSION');
+        await expect(page.getByLabel('Role of showed_up', { exact: true })).toHaveValue('BOOLEAN');
+        await page.getByLabel('Role of neighbourhood', { exact: true }).scrollIntoViewIfNeeded();
         await shoot(page, `80-records-columns-${theme}`);
 
         // ── the briefing: the latest full week against a usual one ──
+        await page.getByRole('tab', { name: 'Overview', exact: true }).click();
         const brief = page.locator('.qi-brief:visible').first();
         await expect(brief).toContainText('Your briefing');
         await expect(brief).toContainText('appointments');
