@@ -71,7 +71,7 @@ describe('a loss question read the other way round', () => {
         expect(first).not.toMatch(/Operations|Marketing|10000/); // names of columns only, never values
         expect(String(calls[1][0][1].content)).toMatch(/saving, not a loss/);
         expect(result.sql).toContain('overspend');
-        expect(result.narrative?.summary).toMatch(/^Only IT \(.+\) has an overspend\./);
+        expect(result.narrative?.summary).toMatch(/^IT is 10,920 over budget \(9% of its budget\)\. Marketing is 3,480 under budget/);
         expect(result.narrative?.cautions || []).not.toContainEqual(expect.stringMatching(/other way round/));
     });
 
