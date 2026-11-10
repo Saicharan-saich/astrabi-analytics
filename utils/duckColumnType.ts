@@ -77,7 +77,8 @@ export function duckTableName(name: string): string {
 }
 
 /** The other tables a dataset can be queried with: all of a workbook's sheets or a store's tables. */
-export function queryTablesOf(dataset: { relatedTables?: { name: string; rows: Record<string, any>[] }[]; sourceTables?: { name: string; rows: Record<string, any>[] }[] }) {
+type SourceTable = { name: string; rows: Record<string, any>[]; columns?: string[] };
+export function queryTablesOf(dataset: { relatedTables?: SourceTable[]; sourceTables?: SourceTable[] }): SourceTable[] | undefined {
     const tables = dataset.relatedTables?.length ? dataset.relatedTables : dataset.sourceTables;
     return tables && tables.length > 1 ? tables : undefined;
 }

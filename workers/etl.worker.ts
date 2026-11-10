@@ -62,7 +62,7 @@ self.onmessage = async (e: MessageEvent) => {
                 catalog.schema.joinEdges = joinEdges || sourceSchema.joinEdges;
             }
             subjectTable = e.data.subjectTable || defaultSubjectTable(relatedTables, catalog) || relatedTables[0].name;
-            subject = materializeSubject(relatedTables, catalog, subjectTable);
+            subject = materializeSubject(relatedTables, catalog, subjectTable!);
             data = subject.rows;
         }
         const result: any = subject && catalog

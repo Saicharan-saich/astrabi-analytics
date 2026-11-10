@@ -1,5 +1,6 @@
 import type { AnalysisResult, ChartConfig, Dataset, FormattingConfig } from '../../types';
 import { executeSQLViaDuckDB } from '../duckdbEngine';
+import { queryTablesOf } from '../../utils/duckColumnType';
 import { reshapeData } from './dataReshaper';
 import { profileResult } from './resultProfiler';
 import { resolveAISQLSemanticModel } from './semanticLayer';
