@@ -77,8 +77,21 @@ for (const theme of ['light', 'dark'] as const) {
         // ── upload through the real file input ──
         await go(page, 'Data Source');
         await page.locator('input[type="file"][accept=".csv,.xlsx,.xls"]').setInputFiles({ name: 'healthcare_noshows.csv', mimeType: 'text/csv', buffer: Buffer.from(appointmentsCsv(), 'utf8') });
-        await expect(page.getByRole('heading', { name: 'Dataset Workspace' })).toBeVisible({ timeout: 90000 });
+        // ── ready: the pop-up, then AI SQL's welcome ──
+        const ready = page.getByRole('dialog', { name: /ready for analysis/ });
+        await ready.waitFor({ timeout: 90000 });
+        await expect(page.getByRole('heading', { name: 'Dataset Workspace' })).toBeVisible();
+        await expect(ready).toContainText('6,000 rows');
+        await expect(ready.getByRole('button', { name: 'View data changes' })).toBeVisible();
+        await shoot(page, `79-data-ready-${theme}`);
+        await ready.getByRole('button', { name: 'Continue to AI SQL' }).click();
+        await page.locator('.qi-chat-ready:visible').waitFor({ timeout: 10000 });
+        await expect(page.getByRole('heading', { name: 'Ask your data and start your business analysis journey' })).toBeVisible();
+        await expect(page.getByLabel('Ask a question about your data')).toBeFocused();
+        await shoot(page, `79-ai-sql-welcome-${theme}`);
+        await go(page, 'Dataset Workspace');
         await page.getByRole('tab', { name: 'Overview', exact: true }).click().catch(() => {});
+        await expect(page.getByRole('navigation', { name: 'What to do next' })).toBeVisible();
         const kind = page.locator('.qi-kind:visible').first();
         await kind.waitFor({ timeout: 20000 });
         await expect(kind).toContainText('Records — nothing to add up');
@@ -87,6 +100,7 @@ for (const theme of ['light', 'dark'] as const) {
         await shoot(page, `80-records-workspace-${theme}`);
         await kind.screenshot({ path: path.join(OUT, `80-records-kind-${theme}.png`) });
         // Two labels (F/M) are a category in words; true/false are yes/no.
+        await page.getByRole('tab', { name: 'Columns', exact: true }).click();
         const genderRow = page.locator('tr', { hasText: 'gender' }).first();
         await expect(genderRow).toContainText('Dimension');
         await expect(genderRow).toContainText('Female');

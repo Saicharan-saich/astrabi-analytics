@@ -14,7 +14,7 @@ import {
   Plus, Pencil, Copy, MoreHorizontal, Check, Loader2, Tag, Sparkles
 } from 'lucide-react';
 import { useAppStore } from '../store/useAppStore';
-import { AnalysisResult, Dataset, DashboardItem, RefreshSchedule } from '../types';
+import { AnalysisResult, Dataset, DashboardItem, RefreshSchedule, Tab } from '../types';
 import { DashboardFilter } from '../store/useAppStore';
 import { RefreshSchedulerDropdown } from './RefreshSchedulerDropdown';
 import { DashboardDateFilter } from './DashboardDateFilter';
@@ -1342,6 +1342,15 @@ export const Dashboard: React.FC<DashboardProps> = ({ dataset, onAddResult, onEd
                 >
                   <Sparkles className="w-4 h-4" />
                   {isBuildingDashboard ? 'Building…' : 'Create a starter dashboard'}
+                </button>
+              )}
+              {!dataset && (
+                <button
+                  type="button"
+                  onClick={() => useAppStore.getState().setActiveTab(Tab.UPLOAD)}
+                  className="inline-flex items-center gap-2 px-5 py-2.5 mb-7 rounded-xl text-sm font-semibold text-white bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-400 hover:to-indigo-500 shadow-lg shadow-indigo-500/25"
+                >
+                  <Sparkles className="w-4 h-4" /> Bring in your data to start
                 </button>
               )}
               <div className="flex items-center justify-center gap-5 text-xs text-gray-400 dark:text-gray-500">

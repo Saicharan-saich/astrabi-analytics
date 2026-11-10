@@ -1,3 +1,4 @@
+import { NoDataYet } from './NoDataYet';
 import React, { useEffect, useMemo, useState } from 'react';
 import {
     AlertTriangle, ArrowRight, CheckCircle2, Database, Info, LayoutDashboard, Loader2, Maximize2,
@@ -114,13 +115,7 @@ export const QuickInsightsView: React.FC<QuickInsightsViewProps> = ({
     if (!isActive) return <div className="qi-report h-full" />;
 
     if (!dataset) {
-        return (
-            <div className="flex flex-col items-center justify-center h-full gap-4 qi-report-muted">
-                <Database className="w-12 h-12" />
-                <h3 className="text-lg font-semibold qi-report-heading">No dataset loaded</h3>
-                <p className="text-sm">Upload a dataset to get an automatic analysis.</p>
-            </div>
-        );
+        return <NoDataYet title="Discover" purpose="An automatic read of your data: what changed, what stands out, and what drives it, in plain words." />;
     }
 
     const findings = report?.findings || [];

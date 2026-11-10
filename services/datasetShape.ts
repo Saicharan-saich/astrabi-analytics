@@ -15,6 +15,7 @@ import { ColumnType, type Dataset } from '../types';
 import { flagSubject, isYesNoColumn, yesNoLabel } from './ai-sql/plainLabels';
 import { isAdditiveName, isCoordinateName, isPerRowName } from '../utils/numberMeaning';
 import { findLineColumns } from './etlMeasureIntegrity';
+import { spokenName } from '../utils/spokenName';
 
 export type DatasetKind = 'hybrid' | 'records' | 'measures';
 
@@ -74,6 +75,8 @@ const ROW_WORD = /(appointment|visit|encounter|admission|case|claim|application|
 const ORDER_NUMBER = /^#\s?\d{2,}$|^[A-Z]{1,5}[-#/]?\d{3,}$/i;
 /** Columns that name the customer. */
 const CUSTOMER_KEY = /(^|_)(e_?mail|email_address|customer_email|buyer_email)$|^(customer|client|buyer|member|guest|patron|account|user)(_?(id|email|no|number|ref|key|code|name))?$/i;
+/** A looked-up column's own name: "order → Orders / email → Customers.city" → "city". */
+const leafName = (name: string) => name.includes(' → ') ? name.split('.').pop() || name : name;
 /** The word for one order from its key's name ("receipt_no" → receipt); a bare "name" or "number" is the order. */
 const keyWord = (name: string) => {
     const word = idWord(name);
@@ -103,7 +106,7 @@ const isBlank = (value: unknown) => value === null || value === undefined || (ty
 const isNumeric = (value: unknown) => typeof value === 'number'
     ? Number.isFinite(value)
     : typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value.trim()) && !/^-?0\d/.test(value.trim());
-const human = (name: string) => name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_.-]+/g, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+const human = (name: string) => spokenName(name);
 const plural = (word: string) => /(s|x|ch|sh)$/.test(word) ? `${word}es` : /[^aeiou]y$/.test(word) ? `${word.slice(0, -1)}ies` : `${word}s`;
 const list = (items: string[], max = 4, name: (item: string) => string = human) => {
     const shown = items.slice(0, max).map(name);
@@ -233,7 +236,7 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
         if (index >= 0) categories.splice(index, 1);
     }
     // Who the customer is: an email or customer ID that repeats.
-    const customerKeys = dataset.columns.map(c => c.name).filter(name => CUSTOMER_KEY.test(name) && name !== lineKey?.column && (() => {
+    const customerKeys = dataset.columns.map(c => c.name).filter(name => CUSTOMER_KEY.test(leafName(name)) && name !== lineKey?.column && (() => {
         const values = sample.map(row => row[name]).filter(value => !isBlank(value)).map(String);
         return values.length > 1 && new Set(values).size < values.length * 0.95;
     })());
@@ -251,7 +254,9 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
     const unique = ids.filter(id => id.unique);
     const rowId = unique.find(id => ROW_WORD.test(id.name))?.name || unique[0]?.name;
     const entityIds = ids.filter(id => !id.unique).map(id => id.name);
-    const outcome = [...yesNo].map((name, index) => ({ name, score: (OUTCOME.test(name) ? 10 : 0) + index / 100 }))
+    // A yes/no looked up from another table ("customer → Customers.accepts_marketing")
+    // describes that table, not the result this table tracks.
+    const outcome = [...yesNo].filter(name => !name.includes(' → ')).map((name, index) => ({ name, score: (OUTCOME.test(name) ? 10 : 0) + index / 100 }))
         .filter(item => item.score >= 10).sort((a, b) => b.score - a.score)[0]?.name;
     const recordWord = (rowId && idWord(rowId)) || 'row';
     const recordsWord = plural(recordWord);

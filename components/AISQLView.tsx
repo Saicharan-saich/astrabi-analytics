@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { NoDataYet } from './NoDataYet';
 import {
-    AlertTriangle, ArrowUp, Check, Code, Copy, CornerDownRight, History, Link2, Loader2, Lock, Maximize2,
-    MessageSquarePlus, PanelLeftClose, PanelLeftOpen, Pin, RotateCcw, ShieldCheck, Sparkles, Square, Trash2,
+    AlertTriangle, ArrowUp, BadgeCheck, Check, CheckCircle2, Code, Copy, CornerDownRight, History, Link2, Loader2, Lock, Maximize2,
+    MessageCircleQuestion, MessageSquarePlus, PanelLeftClose, PanelLeftOpen, Pin, RotateCcw, ShieldCheck, Sparkles, Square, Trash2,
 } from 'lucide-react';
 import { DataKindNote } from './DataKindNote';
 import type { AnalysisResult, Dataset, FormattingConfig } from '../types';
@@ -30,6 +31,8 @@ import { ExtremesTable } from './ExtremesTable';
 import { checkAiSqlLimit, formatResetTime } from '../services/aiSqlRateLimiter';
 import { useAuthStore } from '../store/useAuthStore';
 import { buildQuestionExamples } from '../services/ai-sql/scopeIntent';
+import { starterQuestions } from '../services/ai-sql/starterQuestions';
+import { tablesByDuckName, queryTablesOf } from '../utils/duckColumnType';
 
 interface AISQLViewProps {
     dataset: Dataset | null;
@@ -119,7 +122,17 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const active = conversations.find(conversation => conversation.id === activeId);
     const busy = Boolean(active?.turns.some(turn => turn.status === 'pending'));
     const answered = useMemo(() => answeredTurns(active), [active]);
-    const examples = useMemo(() => dataset ? buildQuestionExamples(dataset) : [], [dataset]);
+    const examples = useMemo(() => {
+        if (!dataset) return [];
+        const starters = starterQuestions(dataset);
+        return starters.length ? starters : buildQuestionExamples(dataset);
+    }, [dataset]);
+    // Opened from the "data is ready" pop-up: greet them and put the cursor in the box.
+    const welcomeFor = useAppStore(state => state.aiSqlWelcomeFor);
+    const welcome = Boolean(dataset && welcomeFor === dataset.id);
+    useEffect(() => {
+        if (welcome) requestAnimationFrame(() => inputRef.current?.focus());
+    }, [welcome]);
 
     const updateConversation = useCallback((id: string, change: (conversation: Conversation) => Conversation) => {
         setConversations(list => list.map(conversation => conversation.id === id ? change(conversation) : conversation));
@@ -146,11 +159,11 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 let queryRows = rows;
                 if (!queryRows) {
                     const tc = dataset.timeContext;
-                    const executed = await executeSQLViaDuckDB(dataset.rows, sql, tc ? { minDate: tc.minDate, maxDate: tc.maxDate, primaryDateColumn: tc.anchorDateColumn } : undefined, dataset.relatedTables);
+                    const executed = await executeSQLViaDuckDB(dataset.rows, sql, tc ? { minDate: tc.minDate, maxDate: tc.maxDate, primaryDateColumn: tc.anchorDateColumn } : undefined, queryTablesOf(dataset));
                     if (executed.error) return;
                     queryRows = executed.data;
                 }
-                const check = checkAnswer({ sql, rows: queryRows, data: dataset.rows, recordWord: describeDatasetShape(dataset).recordWord });
+                const check = checkAnswer({ sql, rows: queryRows, data: dataset.rows, tables: tablesByDuckName(dataset), recordWord: describeDatasetShape(dataset).recordWord });
                 updateConversation(conversationId, conversation => ({
                     ...conversation,
                     turns: conversation.turns.map(turn => turn.id === turnId && turn.answer ? { ...turn, answer: { ...turn.answer, check } } : turn),
@@ -202,6 +215,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     const send = useCallback(async (rawText: string, forced?: Route) => {
         const text = rawText.replace(/\s+$/g, '').trim();
         if (!text || !dataset || !active || busy) return;
+        if (useAppStore.getState().aiSqlWelcomeFor) useAppStore.getState().clearAiSqlWelcome();
         const conversationId = active.id;
         const hasAnswer = answeredTurns(active).length > 0;
         const decision = classifyTurn(text, hasAnswer, dataset);
@@ -458,13 +472,7 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
     };
 
     if (!dataset) {
-        return (
-            <div className="flex h-full flex-col items-center justify-center gap-4 text-slate-400">
-                <Sparkles className="h-16 w-16 text-slate-600" />
-                <h3 className="text-xl font-bold text-slate-300">No Dataset Loaded</h3>
-                <p className="text-sm text-slate-500">Please load a dataset to use AI SQL.</p>
-            </div>
-        );
+        return <NoDataYet title="AI SQL" purpose="Ask questions about your data in plain English and get a checked answer with a chart in seconds." />;
     }
 
     // Follow-up chips only right after a query answer (not after a reply in
@@ -558,11 +566,29 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                 <div ref={threadRef} className="qi-chat-thread" role="log" aria-live="polite" aria-label="Conversation">
                     <div className="qi-chat-thread-inner">
                         {!active?.turns.length && (
-                            <div className="qi-chat-empty">
+                            <div className={`qi-chat-empty ${welcome || !history.length ? 'is-welcome' : ''}`}>
+                                {welcome && (
+                                    <p className="qi-chat-ready" role="status"><CheckCircle2 className="h-4 w-4" aria-hidden /> {dataset.name.replace(/\.[^.]+$/, '')} is cleaned and ready</p>
+                                )}
                                 <div className="qi-chat-empty-mark"><Sparkles className="h-6 w-6" aria-hidden /></div>
-                                <h3>What would you like to know about {dataset.name.replace(/\.[^.]+$/, '')}?</h3>
-                                <p>Ask in plain English. The AI sees only your column names and types, writes one query, and the query runs here on your computer. Ask follow-ups like “now by month” — only the last question and its SQL are sent with them.</p>
+                                {welcome || !history.length ? (
+                                    <>
+                                        <h3>Ask your data and start your business analysis journey</h3>
+                                        <p>Type a question the way you would ask a colleague. You get the answer as a chart and a short explanation, and you can keep asking from there.</p>
+                                        <ol className="qi-chat-steps" aria-label="How AI SQL works">
+                                            <li><MessageCircleQuestion className="h-4 w-4" aria-hidden /><span><strong>Ask in your own words</strong>“{examples[0] || 'What were my total sales last month?'}”</span></li>
+                                            <li><ShieldCheck className="h-4 w-4" aria-hidden /><span><strong>Your rows stay here</strong>The AI sees only your column names and works out a query; it runs on this computer.</span></li>
+                                            <li><BadgeCheck className="h-4 w-4" aria-hidden /><span><strong>Every answer is checked</strong>Each figure is worked out a second way and you see whether it matched.</span></li>
+                                        </ol>
+                                    </>
+                                ) : (
+                                    <>
+                                        <h3>What would you like to know about {dataset.name.replace(/\.[^.]+$/, '')}?</h3>
+                                        <p>Ask in plain English. The AI sees only your column names and types, writes one query, and the query runs here on your computer. Ask follow-ups like “now by month”; only the last question and its SQL are sent with them.</p>
+                                    </>
+                                )}
                                 <DataKindNote dataset={dataset} compact />
+                                <p className="qi-chat-examples-label">Try one of these to start</p>
                                 <div className="qi-chat-examples">
                                     {examples.map(example => (
                                         <button key={example} type="button" onClick={() => void send(example, 'analysis')}>{example}</button>

@@ -64,3 +64,26 @@ export function duckLiteral(value: unknown, type: 'BOOLEAN' | 'DOUBLE' | 'VARCHA
     if (typeof v === 'number') return String(v);
     return `'${v.replace(/'/g, "''")}'`;
 }
+
+/**
+ * The name a source table (a sheet, a store table) has inside DuckDB. The
+ * prompt, the loader and the answer check all use this, so the AI writes a
+ * name that exists: "Line Items" → line_items. "data" and "dim_date" are taken.
+ */
+export function duckTableName(name: string): string {
+    const safe = name.replace(/[^a-zA-Z0-9_]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'table';
+    const start = /^[0-9]/.test(safe) ? `t_${safe}` : safe;
+    return start === 'data' || start === 'dim_date' ? `${start}_table` : start;
+}
+
+/** The other tables a dataset can be queried with: all of a workbook's sheets or a store's tables. */
+export function queryTablesOf(dataset: { relatedTables?: { name: string; rows: Record<string, any>[] }[]; sourceTables?: { name: string; rows: Record<string, any>[] }[] }) {
+    const tables = dataset.relatedTables?.length ? dataset.relatedTables : dataset.sourceTables;
+    return tables && tables.length > 1 ? tables : undefined;
+}
+
+/** The same tables by their DuckDB name, for the answer check. */
+export function tablesByDuckName(dataset: Parameters<typeof queryTablesOf>[0]): Record<string, Record<string, any>[]> | undefined {
+    const tables = queryTablesOf(dataset);
+    return tables ? Object.fromEntries(tables.map(t => [duckTableName(t.name), t.rows])) : undefined;
+}

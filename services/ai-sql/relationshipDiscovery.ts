@@ -71,16 +71,39 @@ export interface DiscoveryResult {
 
 /** Even a one-member dimension may have a legitimate identifier. */
 const MIN_KEY_DISTINCT = 1;
-/** Share of non-null child values that must exist in the parent key. */
-const MIN_COVERAGE = 1;
+/**
+ * Share of distinct child values that must exist in the parent key. A few
+ * missing references are normal in real exports (a product deleted from the
+ * catalogue, a guest who never made an account): those rows simply get blank
+ * details. Every accepted relationship also needs the names to agree, and
+ * missing references are counted in its evidence.
+ */
+const MIN_COVERAGE = 0.9;
+/** The same column name on both sides (email = email): a lookup that may legitimately have gaps. */
+const MIN_COVERAGE_SAME_NAME = 0.5;
 /** Executable inferred relationships require full-column validation. */
 const SAMPLE_LIMIT = Number.MAX_SAFE_INTEGER;
 
 const isBlank = (v: any) => v === null || v === undefined || (typeof v === 'string' && v.trim() === '');
 
 export function identifierColumn(name: string): boolean {
-    return (/(^|_)(id|key|code)$/i.test(name) || /[a-z](Id|ID|Key|Code)$/.test(name))
-        && !/(amount|price|revenue|value|percent|share|rank)/i.test(name);
+    return (/(^|_)(id|key|code|sku|handle|barcode|ean|upc|isbn|uuid|guid|ref|reference|no|number|num|email|e_mail|email_address)$/i.test(name)
+        || /^(sku|handle|barcode|email|uuid|guid)$/i.test(name)
+        || /[a-z](Id|ID|Key|Code|Sku|SKU|Ref|No)$/.test(name))
+        && !/(amount|price|revenue|value|percent|share|rank|phone|mobile)/i.test(name);
+}
+
+/**
+ * Values that read as identifiers whatever the column is called: order numbers
+ * (#1001, INV-204), product codes (TEE-01, SKU123) and email addresses. Shopify
+ * calls its order number "Name"; a line-items sheet calls the same thing "Order".
+ */
+export function identifierValues(values: string[]): boolean {
+    const sample = values.slice(0, 500);
+    if (sample.length < 3) return false;
+    const looks = sample.filter(v => /^#\s?\d{3,}$/.test(v) || /^[A-Z]{1,6}[-_/#]?\d{2,}[A-Z0-9-]*$/i.test(v) && /\d/.test(v) && /[A-Z]/i.test(v)
+        || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v)).length;
+    return looks >= sample.length * 0.95;
 }
 
 /** Compare by normalised string so 1 and "1" match across sheets. */
@@ -128,7 +151,7 @@ export function detectCandidateKeys(table: DiscoveryTable): CandidateKey[] {
         if (nullCount > 0) { isKey = false; reason = 'contains blanks, so it cannot identify every row'; }
         else if (distinct.size !== values.length) { isKey = false; reason = 'values repeat, so it is not unique'; }
         else if (distinct.size < MIN_KEY_DISTINCT) { isKey = false; reason = 'too few distinct values to be an identifier'; }
-        else if (!identifierColumn(col) && !(/date/i.test(table.name) && /^(date|date_key)$/i.test(col))) {
+        else if (!identifierColumn(col) && !identifierValues(values) && !(/date/i.test(table.name) && /^(date|date_key)$/i.test(col))) {
             isKey = false; reason = 'unique values alone do not establish identifier semantics';
         }
 
@@ -217,9 +240,9 @@ export function discoverRelationships(tables: DiscoveryTable[]): DiscoveryResult
     for (const child of usable) {
         const childCols = [...new Set(child.rows.flatMap(row => Object.keys(row)))];
         for (const childCol of childCols) {
-            if (!identifierColumn(childCol)) continue;
             const { values: childValues } = columnValues(child.rows, childCol);
             if (childValues.length === 0) continue;
+            if (!identifierColumn(childCol) && !identifierValues(childValues)) continue;
             const childDistinct = new Set(childValues);
             const childType = typeOf(childValues);
 
@@ -239,8 +262,10 @@ export function discoverRelationships(tables: DiscoveryTable[]): DiscoveryResult
                 let matched = 0;
                 for (const v of childDistinct) if (parent.values.has(v)) matched++;
                 const coverage = matched / childDistinct.size;
+                const sameName = childCol.toLowerCase() === parent.column.toLowerCase() && !/^(id|key|code)$/i.test(childCol);
+                const needed = sameName && !parent.dense ? MIN_COVERAGE_SAME_NAME : MIN_COVERAGE;
 
-                if (coverage < MIN_COVERAGE) {
+                if (coverage < needed) {
                     // Only report near-misses; unrelated columns would be noise.
                     if (coverage >= 0.4) {
                         rejected.push({
@@ -278,8 +303,10 @@ export function discoverRelationships(tables: DiscoveryTable[]): DiscoveryResult
                 // Role-prefixed identifiers (reporter_geo_id -> geo_id) are valid.
                 if (affinity === 0 && !roleMatch) continue;
                 const oneToOne = childDistinct.size === childValues.length;
+                const missingRows = coverage < 1 ? childValues.filter(v => !parent.values.has(v)).length : 0;
                 const evidence = [
                     `${Math.round(coverage * 100)}% of ${child.name}.${childCol} values found in ${parent.table}.${parent.column}`,
+                    ...(missingRows ? [`${missingRows} ${child.name} row${missingRows === 1 ? '' : 's'} refer to a ${parent.column} that is not in ${parent.table}; their ${parent.table} details are left blank`] : []),
                     `${parent.table}.${parent.column} is unique and non-null (a real key)`,
                     oneToOne ? 'child values are also unique — one-to-one' : 'child values repeat — many-to-one',
                 ];

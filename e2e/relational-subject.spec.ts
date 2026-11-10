@@ -33,6 +33,12 @@ test('multi-sheet subjects remain selectable across pages and reload', async ({ 
     });
     const selector = page.getByLabel('Analysis subject or source table');
     await expect(selector).toBeEnabled({ timeout: 30000 });
+    // The "ready" pop-up names the linked sheets; close it to carry on.
+    const ready = page.getByRole('dialog', { name: /ready for analysis/ });
+    await ready.waitFor({ timeout: 30000 });
+    await expect(ready).toContainText('sheets linked');
+    await page.keyboard.press('Escape');
+    await expect(ready).toBeHidden();
     await expect(selector.locator('optgroup[label="All source tables (standalone)"] option')).toHaveCount(3);
     await page.getByRole('button', { name: 'Question Builder', exact: true }).click();
     const service = JSON.stringify({ table: 'Fact_Service', standalone: false });

@@ -167,6 +167,16 @@ interface UIState {
     pendingAiSqlQuestion: string | null;
     askAiSql: (question: string) => void;
     takePendingAiSqlQuestion: () => string | null;
+    /** A dataset that has just finished cleaning: the "ready" pop-up shows for it. Not saved. */
+    dataReady: { datasetId: string; source: 'upload' | 'connector' | 'sample' } | null;
+    setDataReady: (ready: { datasetId: string; source: 'upload' | 'connector' | 'sample' } | null) => void;
+    /** AI SQL was opened from the "ready" pop-up for this dataset: it greets the user. Not saved. */
+    aiSqlWelcomeFor: string | null;
+    /** Bumped to ask the app to load the sample data (from any "no data yet" screen). Not saved. */
+    sampleRequest: number;
+    requestSampleData: () => void;
+    openAiSqlWelcome: (datasetId: string) => void;
+    clearAiSqlWelcome: () => void;
     setActiveTab: (tab: Tab) => void;
     toggleSidebar: () => void;
     setSidebarOpen: (isOpen: boolean) => void;
@@ -336,6 +346,13 @@ export const useAppStore = create<AppStore>()(
             pendingAiSqlQuestion: null,
             askAiSql: (question) => set({ pendingAiSqlQuestion: question, activeTab: Tab.AI_SQL }),
             takePendingAiSqlQuestion: () => { const q = get().pendingAiSqlQuestion; if (q) set({ pendingAiSqlQuestion: null }); return q; },
+            dataReady: null,
+            setDataReady: (ready) => set({ dataReady: ready }),
+            aiSqlWelcomeFor: null,
+            sampleRequest: 0,
+            requestSampleData: () => set(state => ({ sampleRequest: state.sampleRequest + 1 })),
+            openAiSqlWelcome: (datasetId) => set({ aiSqlWelcomeFor: datasetId, dataReady: null, activeTab: Tab.AI_SQL }),
+            clearAiSqlWelcome: () => set({ aiSqlWelcomeFor: null }),
             setActiveTab: (tab) => set({ activeTab: tab }),
             toggleSidebar: () => set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
             setSidebarOpen: (isOpen) => set({ isSidebarOpen: isOpen }),

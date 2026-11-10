@@ -16,7 +16,7 @@ const TOTAL = new Set(['total', 'sum', 'gross', 'net', 'cumulative']);
 const ADDITIVE = new Set(['revenue', 'revenues', 'sales', 'amount', 'amt', 'quantity', 'qty', 'units', 'profit', 'profits', 'cost', 'costs',
     'spend', 'spending', 'value', 'count', 'income', 'turnover', 'orders', 'volume', 'gmv', 'fee', 'fees', 'tax', 'taxes', 'earnings',
     'budget', 'salary', 'salaries', 'charges', 'paid', 'sold', 'payment', 'payments', 'expense', 'expenses', 'refund', 'refunds',
-    'discount', 'discounts', 'bookings', 'visits', 'clicks', 'impressions', 'sessions', 'calls', 'downloads', 'installs', 'tickets']);
+    'discount', 'discounts', 'shipping', 'postage', 'freight', 'subtotal', 'takings', 'tips', 'bookings', 'visits', 'clicks', 'impressions', 'sessions', 'calls', 'downloads', 'installs', 'tickets']);
 const PER_ROW = new Set(['score', 'rating', 'ratings', 'age', 'temperature', 'temp', 'probability', 'prob', 'nps', 'satisfaction',
     'index', 'level', 'price', 'size', 'weight', 'height', 'length', 'width', 'bmi', 'mileage', 'miles', 'km', 'distance', 'duration',
     'speed', 'capacity', 'tenure', 'days', 'hours', 'minutes', 'seconds', 'diff', 'wait', 'lead', 'delay', 'gap', 'elapsed', 'cpi',

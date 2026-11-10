@@ -51,6 +51,11 @@ test('adding a third grouping dimension automatically shows facet panels', async
         buffer: XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' }),
     });
     await expect(page.getByRole('heading', { name: 'Dataset Workspace' })).toBeVisible({ timeout: 30000 });
+    // The "ready" pop-up opens once cleaning finishes; close it to carry on.
+    const ready = page.getByRole('dialog', { name: /ready for analysis/ });
+    await ready.waitFor({ timeout: 30000 });
+    await page.keyboard.press('Escape');
+    await expect(ready).toBeHidden();
     await page.getByRole('button', { name: 'Question Builder', exact: true }).click();
 
     const splitter = page.getByRole('separator', { name: 'Resize Question Builder and visual result' });

@@ -188,8 +188,13 @@ export const UploadView: React.FC<UploadViewProps> = ({
                     )}
 
                     {error && (
-                        <div className="mt-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-300 text-sm text-center font-medium">
-                            {error}
+                        <div role="alert" className="mt-8 p-4 bg-red-500/10 border border-red-500/20 rounded-xl text-red-700 dark:text-red-300 text-sm text-center">
+                            <p className="font-semibold">{/unsupported file format/i.test(error) ? 'We can’t read that kind of file yet' : 'We couldn’t finish reading your data'}</p>
+                            <p className="mt-1">
+                                {/unsupported file format/i.test(error)
+                                    ? 'QuickInsight reads CSV and Excel files (.csv, .xlsx, .xls). Save the file in one of those formats and drop it in again.'
+                                    : `${error.replace(/\.$/, '')}. Try again, or save the file as a CSV first. You can also try the sample data to see how it works.`}
+                            </p>
                         </div>
                     )}
                 </div>

@@ -110,7 +110,7 @@ describe('honest limits', () => {
     });
 
     it('a query it cannot read is "partly checked", never called wrong', () => {
-        const sql = `SELECT d."region", SUM(d."revenue") AS r FROM "data" d JOIN "data" e ON d."order_id" = e."order_id" GROUP BY 1`;
+        const sql = `SELECT d."region", SUM(d."revenue") AS r FROM "data" d FULL OUTER JOIN "data" e ON d."order_id" = e."order_id" GROUP BY 1`;
         const r = checkAnswer({ sql, rows: [{ region: 'North', r: 1 }], data: retail });
         expect(r.status).toBe('partial');
         expect(r.reason).toBe('join');

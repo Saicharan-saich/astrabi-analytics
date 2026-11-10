@@ -22,7 +22,11 @@ export class SqlDate {
 }
 export type Value = number | string | boolean | null | SqlDate;
 
-export interface Relation { cols: string[]; rows: Value[][]; index: Map<string, number> }
+export interface Relation {
+    cols: string[]; rows: Value[][]; index: Map<string, number>;
+    /** After a join: the tables (by alias or name, lower case) whose rows now appear more than once. */
+    repeated?: Set<string>;
+}
 
 export interface EvalResult {
     cols: string[];
@@ -38,6 +42,8 @@ export interface EvalResult {
     rowsBehind: number[];
     /** For each figure: how many rows of the data it was worked out from (0 = not a statistic). */
     cellBase: number[][];
+    /** Amounts added up after a join that repeats their table's rows: "orders.total" summed once per order line. */
+    repeatedSums: { column: string; table: string; by: string }[];
 }
 
 const DAY = 86_400_000;
@@ -265,6 +271,7 @@ export interface Env {
     subCache: Map<Query, EvalResult>;
     /** Other uploaded tables (and dim_date): not worked out by the check. */
     otherTables: Set<string>;
+    repeatedSums: EvalResult['repeatedSums'];
 }
 
 export function containsAggregate(e: Expr | undefined): boolean {
@@ -306,7 +313,7 @@ function evalExpr(e: Expr, s: Scope, env: Env): Value {
         case 'interval': throw new Unsupported('interval on its own');
         case 'star': throw new Unsupported('* in an expression');
         case 'col': {
-            const i = s.rel.index.get(e.name.toLowerCase());
+            const i = (e.table ? s.rel.index.get(`${e.table.toLowerCase()}.${e.name.toLowerCase()}`) : undefined) ?? s.rel.index.get(e.name.toLowerCase());
             if (i !== undefined) return s.row[i];
             const key = e.name.toLowerCase();
             if (s.outValues?.has(key)) return s.outValues.get(key)!;
@@ -796,7 +803,7 @@ export function runQuery(q: Query, env: Env): EvalResult {
         pairs = pairs.slice(start, q.limit !== undefined ? start + q.limit : undefined);
     }
     env.tables = saved;
-    const result: EvalResult = { cols, rows: pairs.map(p => p.out), limitTie, tieSensitive: env.tieSensitive, rowsUsed: first.rowsUsed, rowsTotal: first.rowsTotal, rowsBehind: pairs.map(p => rowsBehindOf(p.out)), cellBase: pairs.map(p => p.base) };
+    const result: EvalResult = { cols, rows: pairs.map(p => p.out), limitTie, tieSensitive: env.tieSensitive, rowsUsed: first.rowsUsed, rowsTotal: first.rowsTotal, rowsBehind: pairs.map(p => rowsBehindOf(p.out)), cellBase: pairs.map(p => p.base), repeatedSums: env.repeatedSums };
     env.subCache.set(q, result);
     return result;
 }
@@ -809,6 +816,7 @@ function dedupe(pairs: Pair[]): Pair[] {
 
 function sourceRelation(from: TableRef | undefined, env: Env): Relation {
     if (!from) return makeRelation([], [[]]);
+    if (from.k === 'join') return joinRelation(from, env);
     if (from.k === 'sub') { const r = runQuery(from.q, env); return makeRelation(r.cols, r.rows); }
     const rel = env.tables.get(from.name.toLowerCase());
     if (rel) return rel;
@@ -816,6 +824,103 @@ function sourceRelation(from: TableRef | undefined, env: Env): Relation {
     // (the Builder writes FROM "<dataset name>"); other uploaded tables are not followed.
     if (env.tables.has('data') && !env.otherTables.has(from.name.toLowerCase())) return env.tables.get('data')!;
     throw new Unsupported(`table ${from.name}`);
+}
+
+/** A relation whose columns can also be named "<alias>.<column>". */
+function qualified(ref: TableRef, env: Env): Relation {
+    const rel = sourceRelation(ref, env);
+    if (ref.k === 'join') return rel;
+    const qualifier = (ref.alias || (ref.k === 'table' ? ref.name : '')).toLowerCase();
+    if (!qualifier) return rel;
+    const index = new Map(rel.index);
+    rel.cols.forEach((c, i) => { const k = `${qualifier}.${c.toLowerCase()}`; if (!index.has(k)) index.set(k, i); });
+    return { cols: rel.cols, rows: rel.rows, index };
+}
+
+/** The names a FROM item's columns can be qualified by. */
+function qualifiersOf(ref: TableRef): string[] {
+    if (ref.k === 'join') return [...qualifiersOf(ref.left), ...qualifiersOf(ref.right)];
+    const q = (ref.alias || (ref.k === 'table' ? ref.name : '')).toLowerCase();
+    return q ? [q] : [];
+}
+
+/** Which side of a join a column reference belongs to, if only one side has it. */
+function sideOf(e: Expr, left: Relation, right: Relation): 'left' | 'right' | null {
+    if (e.k !== 'col') return null;
+    const keys = e.table ? [`${e.table.toLowerCase()}.${e.name.toLowerCase()}`] : [e.name.toLowerCase()];
+    const inLeft = keys.some(k => left.index.has(k)), inRight = keys.some(k => right.index.has(k));
+    return inLeft && !inRight ? 'left' : inRight && !inLeft ? 'right' : null;
+}
+function conjuncts(e: Expr | undefined): Expr[] {
+    if (!e) return [];
+    return e.k === 'bin' && e.op === 'AND' ? [...conjuncts(e.l), ...conjuncts(e.r)] : [e];
+}
+
+/**
+ * [INNER] JOIN and LEFT JOIN, the DuckDB way: equal keys match (blank never
+ * matches blank), a LEFT JOIN keeps unmatched rows with blanks on the right.
+ */
+function joinRelation(ref: Extract<TableRef, { k: 'join' }>, env: Env): Relation {
+    const left = qualified(ref.left, env), right = qualified(ref.right, env);
+    const width = left.cols.length;
+    const cols = [...left.cols, ...right.cols];
+    const index = new Map(left.index);
+    for (const [k, i] of right.index) if (!index.has(k)) index.set(k, i + width);
+    const combined: Relation = { cols, rows: [], index };
+    // Equality pairs between the two sides (ON a.x = b.y AND …, or USING (x)).
+    const pairs: { l: Expr; r: Expr }[] = [];
+    let rest: Expr[] = [];
+    if (ref.using) for (const name of ref.using) pairs.push({ l: { k: 'col', name }, r: { k: 'col', name } });
+    for (const c of conjuncts(ref.on)) {
+        if (c.k === 'bin' && c.op === '=') {
+            const a = sideOf(c.l, left, right), b = sideOf(c.r, left, right);
+            if (a === 'left' && b === 'right') { pairs.push({ l: c.l, r: c.r }); continue; }
+            if (a === 'right' && b === 'left') { pairs.push({ l: c.r, r: c.l }); continue; }
+        }
+        rest.push(c);
+    }
+    const nullRight = right.cols.map(() => null as Value);
+    const keyFor = (exprs: Expr[], rel: Relation, row: Value[]) => {
+        const values = exprs.map(e => evalExpr(e, { rel, row }, env));
+        return values.some(v => v === null) ? null : values.map(keyOf).join('\u0001');
+    };
+    let byKey: Map<string, Value[][]> | null = null;
+    if (pairs.length) {
+        byKey = new Map();
+        for (const row of right.rows) {
+            tick(env);
+            const k = keyFor(pairs.map(p => p.r), right, row);
+            if (k === null) continue;
+            const list = byKey.get(k);
+            if (list) list.push(row); else byKey.set(k, [row]);
+        }
+    }
+    // Whose rows does the join repeat? A left row matching several right rows is
+    // repeated; a right row matched by several left rows is too.
+    let leftRepeats = false;
+    const rightUses = new Map<Value[], number>();
+    for (const lrow of left.rows) {
+        tick(env);
+        let candidates: Value[][];
+        if (byKey) { const k = keyFor(pairs.map(p => p.l), left, lrow); candidates = k === null ? [] : byKey.get(k) || []; }
+        else candidates = right.rows;
+        let matches = 0;
+        for (const rrow of candidates) {
+            tick(env);
+            const row = [...lrow, ...rrow];
+            if (rest.length && !rest.every(c => truthy(evalExpr(c, { rel: combined, row }, env)) === true)) continue;
+            matches++;
+            rightUses.set(rrow, (rightUses.get(rrow) || 0) + 1);
+            combined.rows.push(row);
+        }
+        if (matches > 1) leftRepeats = true;
+        if (!matches && ref.kind === 'left') combined.rows.push([...lrow, ...nullRight]);
+    }
+    const repeated = new Set<string>([...(left.repeated || []), ...(right.repeated || [])]);
+    if (leftRepeats) qualifiersOf(ref.left).forEach(q => repeated.add(q));
+    if ([...rightUses.values()].some(n => n > 1)) qualifiersOf(ref.right).forEach(q => repeated.add(q));
+    combined.repeated = repeated;
+    return combined;
 }
 
 function runSelect(sel: Select, env: Env, order: OrderItem[]): { cols: string[]; pairs: Pair[]; rowsUsed: number; rowsTotal: number; aliasNames: Set<string> } {
@@ -895,7 +1000,67 @@ function runSelect(sel: Select, env: Env, order: OrderItem[]): { cols: string[];
         return { out, base, scope: { ...sc, outValues: sc.group || anyAgg ? outValues : undefined } };
     });
     if (sel.distinct) pairs = dedupe(pairs).map(p => ({ out: p.out, base: p.base, scope: undefined }));
+    if (rel.repeated?.size) noteRepeatedSums(sel, rel, env);
     return { cols, pairs, rowsUsed, rowsTotal: rel.rows.length, aliasNames };
+}
+
+/** The table (alias) a column reference reads, in a joined relation. */
+function ownerOf(e: Extract<Expr, { k: 'col' }>, rel: Relation): string | null {
+    if (e.table) return e.table.toLowerCase();
+    const i = rel.index.get(e.name.toLowerCase());
+    if (i === undefined) return null;
+    for (const [key, at] of rel.index) if (at === i && key.includes('.')) return key.slice(0, key.lastIndexOf('.'));
+    return null;
+}
+/**
+ * SUM of a column whose table's rows the join repeats — an order's total
+ * added once per order line — counts those amounts more than once. A product
+ * with the line's own quantity (SUM(p.cost * l.qty)) is fine: one side is not repeated.
+ */
+function noteRepeatedSums(sel: Select, rel: Relation, env: Env): void {
+    const visit = (e: Expr | undefined): void => {
+        if (!e) return;
+        if (e.k === 'func' && !e.over && (e.name === 'SUM' || e.name === 'FSUM') && !e.distinct) {
+            const columns: Extract<Expr, { k: 'col' }>[] = [];
+            const collect = (x: Expr | undefined): void => {
+                if (!x) return;
+                if (x.k === 'col') { columns.push(x); return; }
+                if (x.k === 'func') { x.args.forEach(collect); return; }
+                if (x.k === 'bin') { collect(x.l); collect(x.r); return; }
+                if (x.k === 'unary' || x.k === 'cast' || x.k === 'isnull') { collect(x.e); return; }
+                if (x.k === 'case') { collect(x.operand); x.whens.forEach(w => { collect(w.when); collect(w.then); }); collect(x.else); }
+            };
+            e.args.forEach(collect);
+            const owners = columns.map(c => ownerOf(c, rel));
+            if (columns.length && owners.every(o => o !== null && rel.repeated!.has(o))) {
+                const others = [...new Set([...rel.index.keys()].filter(k => k.includes('.')).map(k => k.slice(0, k.lastIndexOf('.'))))].filter(q => !rel.repeated!.has(q));
+                const named = new Map<string, string>();
+                const walkRefs = (ref: TableRef | undefined): void => {
+                    if (!ref) return;
+                    if (ref.k === 'join') { walkRefs(ref.left); walkRefs(ref.right); return; }
+                    const label = ref.k === 'table' ? ref.name : (ref.alias || 'a subquery');
+                    named.set((ref.alias || (ref.k === 'table' ? ref.name : '')).toLowerCase(), label);
+                };
+                walkRefs(sel.from);
+                const nameOf = (q: string) => named.get(q) || q;
+                for (const [n, c] of columns.entries()) {
+                    const item = { column: c.name, table: nameOf(owners[n]!), by: others.length ? nameOf(others[0]) : 'the joined table' };
+                    if (!env.repeatedSums.some(r => r.column === item.column && r.table === item.table)) env.repeatedSums.push(item);
+                }
+            }
+            return;
+        }
+        switch (e.k) {
+            case 'func': e.args.forEach(visit); visit(e.filter); return;
+            case 'unary': case 'isnull': case 'cast': visit(e.e); return;
+            case 'bin': visit(e.l); visit(e.r); return;
+            case 'case': visit(e.operand); e.whens.forEach(w => { visit(w.when); visit(w.then); }); visit(e.else); return;
+            case 'between': visit(e.e); visit(e.lo); visit(e.hi); return;
+            case 'in': visit(e.e); (e.list || []).forEach(visit); return;
+        }
+    };
+    sel.items.forEach(item => visit(item.e));
+    visit(sel.having);
 }
 
 function containsWindow(e: Expr): boolean {
@@ -913,6 +1078,7 @@ export function evaluate(q: Query, tables: Record<string, Record<string, any>[]>
         tick: 0,
         tieSensitive: false,
         subCache: new Map(),
+        repeatedSums: [],
     };
     return runQuery(q, env);
 }

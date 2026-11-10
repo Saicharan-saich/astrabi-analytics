@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, Database, Download, Upload, Zap } from 'lucide-react';
-import { Dataset, DatasetDomainProfile, ColumnType, ETLLog, EtlOptions } from '../types';
+import { NoDataYet } from './NoDataYet';
+import { ChevronDown, ChevronRight, Columns3, Compass, Database, Download, MessageCircleQuestion, Upload, Zap } from 'lucide-react';
+import { useAppStore } from '../store/useAppStore';
+import { Dataset, DatasetDomainProfile, ColumnType, ETLLog, EtlOptions, Tab } from '../types';
 import { CleaningLogEntry } from '../services/dataCleaningEngine';
 import { CleaningChangesPanel } from './CleaningChangesPanel';
 import { DataKindNote } from './DataKindNote';
@@ -40,6 +42,8 @@ interface DatasetSummaryViewProps {
     etlRevertPending?: string | null;
     /** Open AI SQL with a question ready (from the briefing). */
     onAskAiSql?: (question: string) => void;
+    /** The column review has not been looked at yet (it is optional). */
+    mappingPending?: boolean;
 }
 
 const viewFor = (section: DatasetWorkspaceSection): View =>
@@ -268,6 +272,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
     onApplyCleaningDecisions,
     etlRevertPending,
     onAskAiSql,
+    mappingPending = false,
 }) => {
     const [view, setView] = useState<View>(viewFor(initialSection));
     const [cleaningMode, setCleaningMode] = useState<CleaningMode>(initialSection === 'studio' ? 'fix' : 'log');
@@ -298,13 +303,7 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
     }, [dataset, columnStats]);
 
     if (!dataset) {
-        return (
-            <div className="flex flex-col items-center justify-center h-full gap-3">
-                <Database className="qi-ws-muted w-12 h-12" />
-                <h3 className="qi-ws-strong text-lg font-semibold">No dataset loaded</h3>
-                <p className="qi-ws-muted text-sm">Load a dataset to see its summary.</p>
-            </div>
-        );
+        return <NoDataYet title="Dataset Workspace" purpose="See what your data holds, every change the cleaning made, and fix anything by hand." />;
     }
 
     const profile = mappingProfile || dataset.domainProfile;
@@ -371,6 +370,25 @@ export const DatasetSummaryView: React.FC<DatasetSummaryViewProps> = ({
                 <div className="mt-6 space-y-5">
                     {view === 'overview' && facts && (
                         <>
+                            <nav className="qi-next" aria-label="What to do next">
+                                <p className="qi-next-label">What would you like to do next?</p>
+                                <div className="qi-next-grid">
+                                    <button type="button" className="qi-next-item is-primary" onClick={() => useAppStore.getState().setActiveTab(Tab.AI_SQL)}>
+                                        <MessageCircleQuestion className="h-5 w-5" aria-hidden />
+                                        <span><strong>Ask a question</strong>Type it in plain English and get a checked answer.</span>
+                                    </button>
+                                    <button type="button" className="qi-next-item" onClick={() => useAppStore.getState().setActiveTab(Tab.QUICK_INSIGHTS)}>
+                                        <Compass className="h-5 w-5" aria-hidden />
+                                        <span><strong>See what stands out</strong>An automatic read of the data, ready to turn into a dashboard.</span>
+                                    </button>
+                                    <button type="button" className="qi-next-item" onClick={() => setView('columns')}>
+                                        <Columns3 className="h-5 w-5" aria-hidden />
+                                        <span><strong>Check the columns</strong>{mappingPending ? 'Optional: a quick look at what each column is makes answers sharper.' : 'See what each column is and change it if needed.'}</span>
+                                        {mappingPending && <em className="qi-next-tag">Suggested</em>}
+                                    </button>
+                                </div>
+                            </nav>
+
                             <WeeklyBriefingCard dataset={dataset} onAsk={onAskAiSql} />
 
                             <CleaningChangesPanel dataset={dataset} onRevert={onEtlRevert} pendingOption={etlRevertPending} onReclean={onEtlReclean} />

@@ -7,8 +7,9 @@
  * ordinals, aliases and ALL), HAVING, QUALIFY, ORDER BY, LIMIT/OFFSET,
  * UNION [ALL]; expressions, CASE, CAST/TRY_CAST/::, IN/BETWEEN/LIKE/ILIKE,
  * IS [NOT] NULL, scalar and IN subqueries, aggregates with DISTINCT and
- * FILTER (WHERE …), window functions with PARTITION BY / ORDER BY.
- * Anything else (joins, frames, EXISTS…) throws Unsupported — the check then
+ * FILTER (WHERE …), window functions with PARTITION BY / ORDER BY, and
+ * [INNER] JOIN / LEFT [OUTER] JOIN with ON or USING.
+ * Anything else (other joins, frames, EXISTS…) throws Unsupported — the check then
  * says it could only partly check the answer, never guesses.
  */
 
@@ -36,7 +37,8 @@ export type Expr =
 export interface WindowSpec { partition: Expr[]; order: OrderItem[] }
 export interface OrderItem { e: Expr; desc: boolean; nullsFirst?: boolean }
 export interface SelectItem { e: Expr; alias?: string }
-export type TableRef = { k: 'table'; name: string; alias?: string } | { k: 'sub'; q: Query; alias?: string };
+export type TableRef = { k: 'table'; name: string; alias?: string } | { k: 'sub'; q: Query; alias?: string }
+    | { k: 'join'; kind: 'inner' | 'left'; left: TableRef; right: TableRef; on?: Expr; using?: string[]; alias?: string };
 export interface Select {
     distinct: boolean;
     items: SelectItem[];
@@ -188,6 +190,23 @@ export function parseSQL(sql: string): Query {
         let from: TableRef | undefined;
         if (eatKw('FROM')) {
             from = tableRef();
+            for (;;) {
+                let kind: 'inner' | 'left' | null = null;
+                if (eatKw('JOIN')) kind = 'inner';
+                else if (isKw('INNER') && isKw('JOIN', 1)) { p += 2; kind = 'inner'; }
+                else if (isKw('LEFT') && isKw('JOIN', 1)) { p += 2; kind = 'left'; }
+                else if (isKw('LEFT') && isKw('OUTER', 1) && isKw('JOIN', 2)) { p += 3; kind = 'left'; }
+                if (!kind) break;
+                const right = tableRef();
+                if (eatKw('ON')) from = { k: 'join', kind, left: from, right, on: expr() };
+                else if (eatKw('USING')) {
+                    needOp('(');
+                    const using: string[] = [];
+                    do using.push(ident()); while (eatOp(','));
+                    needOp(')');
+                    from = { k: 'join', kind, left: from, right, using };
+                } else throw new Unsupported('join without ON');
+            }
             if (isOp(',') || isKw('JOIN') || isKw('LEFT') || isKw('RIGHT') || isKw('INNER') || isKw('FULL') || isKw('CROSS') || isKw('NATURAL') || isKw('ASOF') || isKw('POSITIONAL') || isKw('SEMI') || isKw('ANTI')) throw new Unsupported('join');
         }
         let where: Expr | undefined;

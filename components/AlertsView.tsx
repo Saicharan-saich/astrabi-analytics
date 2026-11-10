@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { NoDataYet } from './NoDataYet';
 import { Bell, Plus, Shield, Trash2, Copy, Pause, Play, Edit2, AlertTriangle, AlertCircle, Info, Clock, MoreVertical, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Dataset, AlertRule, AlertEvent } from '../types';
@@ -53,15 +54,7 @@ export const AlertsView: React.FC<AlertsViewProps> = ({ dataset }) => {
   };
 
   if (!dataset) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <Shield className={`w-12 h-12 mx-auto mb-3 ${isDark ? 'text-gray-700' : 'text-gray-300'}`} />
-          <h3 className={`text-lg font-bold mb-1 ${isDark ? 'text-white' : 'text-gray-900'}`}>No Dataset Loaded</h3>
-          <p className={`text-sm ${isDark ? 'text-gray-500' : 'text-gray-400'}`}>Upload or connect a dataset to set up monitoring rules.</p>
-        </div>
-      </div>
-    );
+    return <NoDataYet title="Alerts" purpose="Get told when something in your data moves past a line you set, like sales dropping below a target." />;
   }
 
   if (showWizard) {

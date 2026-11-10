@@ -27,6 +27,8 @@ import type {
 import { AISQLPipelineError } from './pipelineError';
 import { resolveAISQLSemanticModel } from './semanticLayer';
 import { discoverJoinContext } from './joinEngine';
+import { duckTableName, queryTablesOf } from '../../utils/duckColumnType';
+import { discoverRelationships, detectCandidateKeys } from './relationshipDiscovery';
 import { fetchWithFallback, PLANNER_MODEL } from './modelConfig';
 import { validateReadOnlySQL } from './sqlSafety';
 import { executeSQLViaDuckDB } from '../duckdbEngine';
@@ -630,6 +632,8 @@ interface ColumnExtras {
     formats?: Map<string, 'datetime' | 'clock'>;
     /** Category columns whose blanks the cleaner filled, and the word it used. */
     blankFills?: Map<string, 'Unknown' | 'None'>;
+    /** The other sheets or tables, how they link, and how to combine them (metadata only). */
+    tablesText?: string;
     /** The DATA SHAPE block (from datasetShape). */
     shape?: string;
 }
@@ -674,7 +678,8 @@ export function describeColumnsOnly(
         lines.push(`- ${sqlName(field.name)}: ${typeText}; ${stored === 'clock' ? 'time of day (when it happened)' : columnRole(field, perItem.has(field.name), repeatingIds.has(field.name), extra)}${fillText}`);
     }
     if (extra.shape) lines.push('', extra.shape);
-    if (join?.tables?.length) {
+    if (extra.tablesText) lines.push('', extra.tablesText);
+    else if (join?.tables?.length) {
         lines.push('', 'The data came from several tables. "data" holds the main table. Related tables:');
         for (const table of join.tables) {
             lines.push(`- ${sqlName(table.name)}: ${table.columns.map(column => `${column.name}${column.isPK ? ' [key]' : ''}`).join(', ')}`);
@@ -693,6 +698,49 @@ export function describeColumnsOnly(
 /** Stored as a number in the database (the same test the loader uses). */
 const storedNumber = (value: unknown) => typeof value === 'number'
     || (typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value.trim()) && !/^-?0\d/.test(value.trim()));
+
+/**
+ * The other sheets of a workbook (or tables of a store), for the AI: each
+ * table's name as DuckDB knows it, what one row is, its columns with their
+ * roles, and how the tables link. Names, roles and links only — never values.
+ */
+export function describeSourceTables(dataset: Dataset): string | undefined {
+    const tables = queryTablesOf(dataset);
+    if (!tables) return undefined;
+    const declared = dataset.relationalCatalog?.schema.joinEdges || dataset.sourceSchema?.joinEdges;
+    const edges = declared?.length
+        ? declared.map(e => ({ from: e.leftTable, fromColumns: e.leftColumns || [e.leftColumn], to: e.rightTable, toColumns: e.rightColumns || [e.rightColumn] }))
+        : discoverRelationships(tables).relationships.map(r => ({ from: r.fromTable, fromColumns: [r.fromColumn], to: r.toTable, toColumns: [r.toColumn] }));
+    const q = (name: string) => `"${name.replace(/"/g, '""')}"`;
+    const role = (table: (typeof tables)[number], column: string): string => {
+        const definition = (table as any).columnDefinitions?.find((c: any) => c.name === column);
+        const values = table.rows.slice(0, 200).map(r => r[column]).filter(v => v !== null && v !== undefined && v !== '');
+        if (definition?.type === ColumnType.DATE || values.some(v => v instanceof Date)) {
+            return values.some(v => typeof v === 'string' && /T\d{2}:\d{2}/.test(v)) ? 'date and time text, CAST AS TIMESTAMP' : "date text 'YYYY-MM-DD'";
+        }
+        if (definition?.type === ColumnType.METRIC || (values.length && values.every(v => typeof v === 'number'))) {
+            return perItemColumns([{ name: column, type: ColumnType.METRIC } as any], table.name).has(column) ? 'number per item: average it' : 'number';
+        }
+        if (definition?.type === ColumnType.BOOLEAN) return 'yes/no';
+        return 'text';
+    };
+    const lines = [`OTHER TABLES (the original ${dataset.subjectTable ? 'sheets' : 'tables'}, each queryable by the name shown):`];
+    for (const table of tables) {
+        const keys = detectCandidateKeys(table).filter(k => k.isKey).map(k => k.column);
+        const own = keys.find(k => edges.some(e => e.to === table.name && e.toColumns.includes(k))) || keys[0];
+        const columns = (table.columns?.length ? table.columns : Object.keys(table.rows[0] || {}));
+        lines.push(`- ${q(duckTableName(table.name))} (${own ? `one row per ${q(own)}` : 'several rows can share a value'}${table.name === dataset.subjectTable ? '; the same rows as "data" before its lookups' : ''}): ${columns.map(c => `${q(c)} ${role(table, c)}`).join(', ')}`);
+    }
+    if (edges.length) {
+        lines.push('How they link (many rows on the left to one row on the right):');
+        for (const e of edges) lines.push(`- ${q(duckTableName(e.from))}.${e.fromColumns.map(q).join(' + ')} = ${q(duckTableName(e.to))}.${e.toColumns.map(q).join(' + ')}`);
+    }
+    lines.push(dataset.subjectTable
+        ? `"data" is ${q(duckTableName(dataset.subjectTable))} with the details it points to already joined in (columns named "<reference> → <Table>.<column>"). Use "data" when it has what the question needs. Use the other tables for figures that belong to another table (an order's own total, a target, stock) or for things with no rows in "data" (customers who never ordered).`
+        : 'Use "data" when it has what the question needs; use the other tables for anything it lacks.');
+    lines.push("Combining tables: add up each table's amounts in its own table first (GROUP BY the key), then join those totals. Never SUM a column after joining it to a table that has several rows for each of its rows (an order joined to its many lines repeats the order's total on every line). Use LEFT JOIN to keep rows with no match.");
+    return lines.join('\n');
+}
 
 export function describeData(dataset: Dataset) {
     const { model } = resolveAISQLSemanticModel(dataset);
@@ -739,7 +787,7 @@ export function describeData(dataset: Dataset) {
         const word = values.includes('None') ? 'None' : values.includes('Unknown') ? 'Unknown' : null;
         if (word) blankFills.set(column.name, word);
     }
-    const extra: ColumnExtras = { ids: idNames, perRowNumbers: new Set(shape.perRowNumbers), yesNo, formats, blankFills, shape: shapeForModel(shape, yesTest) };
+    const extra: ColumnExtras = { ids: idNames, perRowNumbers: new Set(shape.perRowNumbers), yesNo, formats, blankFills, shape: shapeForModel(shape, yesTest), tablesText: describeSourceTables(dataset) };
     return { model, schema: describeColumnsOnly(model, join, numericColumns, perItemColumns(dataset.columns, dataset.name), repeatingIds, extra) };
 }
 
@@ -785,7 +833,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
     if (!safety.ok) throw new AISQLPipelineError('sql_validation_failed', `The AI wrote a query that is not read-only (${safety.reason}). Please try again.`);
     let sql = safety.sql;
     options.onProgress?.('Running it on your data');
-    let execution = await executeSQLViaDuckDB(dataset.rows, sql, model.timeContext as any, dataset.relatedTables);
+    let execution = await executeSQLViaDuckDB(dataset.rows, sql, model.timeContext as any, queryTablesOf(dataset));
     let repairAttempts = 0;
     if (execution.error) {
         repairAttempts = 1;
@@ -801,7 +849,7 @@ export async function runLeanAISQL(question: string, dataset: Dataset, options: 
             safety = validateReadOnlySQL(fixed.sql);
             if (safety.ok) {
                 sql = safety.sql;
-                execution = await executeSQLViaDuckDB(dataset.rows, sql, model.timeContext as any, dataset.relatedTables);
+                execution = await executeSQLViaDuckDB(dataset.rows, sql, model.timeContext as any, queryTablesOf(dataset));
                 if (!parsed.dimensions && fixed.dimensions) parsed.dimensions = fixed.dimensions;
                 if (!parsed.measures && fixed.measures) parsed.measures = fixed.measures;
             }
@@ -893,7 +941,7 @@ async function numberCautions(sql: string, rows: Record<string, any>[], dimensio
         const listQuery = averageValuesQuery(sql);
         if (listQuery && rows.length) {
             const dims = (dimensions || []).filter(name => Object.prototype.hasOwnProperty.call(rows[0], name));
-            const listed = await executeSQLViaDuckDB(dataset.rows, listQuery.sql, timeContext, dataset.relatedTables);
+            const listed = await executeSQLViaDuckDB(dataset.rows, listQuery.sql, timeContext, queryTablesOf(dataset));
             if (!listed.error && listed.data?.length) notes.push(...averageNotesFromValues(listed.data, rows.slice(0, 500), dims, listQuery.column));
         }
     } catch { /* the answer stands without the extra check */ }
@@ -1103,7 +1151,7 @@ export async function rerunSavedAnswer(saved: SavedLeanAnswer, dataset: Dataset)
     const safety = validateReadOnlySQL(saved.sql);
     if (!safety.ok) throw new AISQLPipelineError('sql_validation_failed', `The saved query is not read-only (${safety.reason}).`);
     const { model } = describeData(dataset);
-    const execution = await executeSQLViaDuckDB(dataset.rows, safety.sql, model.timeContext as any, dataset.relatedTables);
+    const execution = await executeSQLViaDuckDB(dataset.rows, safety.sql, model.timeContext as any, queryTablesOf(dataset));
     if (execution.error) throw new AISQLPipelineError('ai_sql_execution_failed', `The saved query could not run on the current data: ${execution.error}`);
     const series = completeTimeSeries(safety.sql, execution.data || [], saved, model.timeContext, dataset);
     const cautions = [...await numberCautions(safety.sql, execution.data || [], saved.dimensions, dataset, model.timeContext, saved.question), ...series.notes];

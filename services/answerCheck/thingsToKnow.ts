@@ -30,7 +30,8 @@ function selects(q: Query): Select[] {
         query.ctes.forEach(c => visit(c.q));
         for (const s of [query.body, ...query.unions.map(u => u.s)]) {
             out.push(s);
-            if (s.from?.k === 'sub') visit(s.from.q);
+            const fromQueries = (ref: Select['from']): void => { if (!ref) return; if (ref.k === 'sub') visit(ref.q); if (ref.k === 'join') { fromQueries(ref.left); fromQueries(ref.right); } };
+            fromQueries(s.from);
         }
     };
     visit(q);
@@ -73,6 +74,8 @@ export interface ThingsInput {
     recordWord?: string;
     budgetMs: number;
     otherTables?: string[];
+    /** The other tables the query may read, by name. */
+    tables?: Record<string, Record<string, any>[]>;
 }
 
 export function thingsToKnow(input: ThingsInput): string[] {
@@ -123,7 +126,7 @@ function smallGroups({ q, pool, matchIndex, shown, recordWord }: ThingsInput): s
 }
 
 // ── 2. Values that can't be right ──
-function impossibleValues({ q, pool, data, budgetMs, otherTables, shown, matchIndex }: ThingsInput): string[] {
+function impossibleValues({ q, pool, data, budgetMs, otherTables, tables, shown, matchIndex }: ThingsInput): string[] {
     if (!data.length) return [];
     const dataCols = new Map(Object.keys(data[0]).map(c => [c.toLowerCase(), c]));
     const used = new Set<string>();
@@ -135,7 +138,7 @@ function impossibleValues({ q, pool, data, budgetMs, otherTables, shown, matchIn
     if (!bad.size) return [];
     // Only the impossible cell is left out (as a blank); the rest of its row still counts everywhere else.
     const without = data.map((row, i) => { const b = bad.get(i); return b ? { ...row, [b.column]: null } : row; });
-    const again = evaluate(q, { data: without }, budgetMs, otherTables);
+    const again = evaluate(q, { ...tables, data: without }, budgetMs, otherTables);
     // Line the two results up by their labels and list the figures that move.
     const textCol = pool.cols.map((_, c) => shown.some(r => r[c] !== null && typeof r[c] !== 'number'));
     const key = (row: Value[]) => pool.cols.map((_, c) => (textCol[c] ? String(row[c]) : '')).join('\u0001');

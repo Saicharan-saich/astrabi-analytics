@@ -15,7 +15,7 @@
  * checked" with the reason; where DuckDB could legitimately pick either of two
  * tied rows the check accepts either. Nothing leaves the browser.
  */
-import { parseSQL, Unsupported, type Expr, type Query } from './sqlParser';
+import { parseSQL, Unsupported, type Expr, type Query, type Select } from './sqlParser';
 import { evaluate, SqlDate, toNum, type EvalResult, type Value } from './sqlEval';
 import { RATE_NAME } from '../../utils/answerGuard';
 import { thingsToKnow } from './thingsToKnow';
@@ -59,6 +59,8 @@ export interface AnswerCheckInput {
     matchByName?: boolean;
     /** Other uploaded tables: a query that reads them is only partly checked. */
     otherTables?: string[];
+    /** The other sheets or tables, by the name the query uses: a query that reads or joins them is checked too. */
+    tables?: Record<string, Record<string, any>[]>;
 }
 
 const words = (name: string) => name.replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
@@ -225,7 +227,8 @@ function checkFilterValues(q: Query, index: Map<string, ColumnInfo>): FilterValu
         for (const cte of query.ctes) visit(cte.q);
         for (const sel of [query.body, ...query.unions.map(u => u.s)]) {
             collectFilterValues(sel.where, found);
-            if (sel.from?.k === 'sub') visit(sel.from.q);
+            const fromQueries = (ref: Select['from']): void => { if (!ref) return; if (ref.k === 'sub') visit(ref.q); if (ref.k === 'join') { fromQueries(ref.left); fromQueries(ref.right); collectFilterValues(ref.on, found); } };
+            fromQueries(sel.from);
         }
     };
     visit(q);
@@ -416,7 +419,7 @@ export function checkAnswer(input: AnswerCheckInput): AnswerCheck {
     });
 
     let expected: EvalResult;
-    try { expected = evaluate(q, { data: input.data }, budgetMs, input.otherTables); }
+    try { expected = evaluate(q, { ...input.tables, data: input.data }, budgetMs, input.otherTables); }
     catch (err) {
         const reason = err instanceof Unsupported ? err.what : 'the fresh calculation failed';
         const headline = missing.length
@@ -430,7 +433,7 @@ export function checkAnswer(input: AnswerCheckInput): AnswerCheck {
     // A LIMIT through tied rows: every shown row must be a real row of the full answer.
     let full: EvalResult | undefined;
     if (expected.limitTie) {
-        try { full = evaluate({ ...q, limit: undefined, offset: undefined }, { data: input.data }, budgetMs, input.otherTables); notes.push('Some rows tie for the last place shown, so either could appear; each row shown was checked against the full list.'); }
+        try { full = evaluate({ ...q, limit: undefined, offset: undefined }, { ...input.tables, data: input.data }, budgetMs, input.otherTables); notes.push('Some rows tie for the last place shown, so either could appear; each row shown was checked against the full list.'); }
         catch { full = undefined; }
     }
     // The Builder's rows carry extra keys; read them by the query's column names.
@@ -479,7 +482,18 @@ export function checkAnswer(input: AnswerCheckInput): AnswerCheck {
             figuresChecked: nFig, figuresMatched: compared.matched, differences: [], filterValues, coverage, counted, notes,
         });
     }
-    const things = thingsToKnow({ q, expected, pool: full || expected, matchIndex: compared.matchIndex, shown, data: input.data, recordWord: input.recordWord, budgetMs, otherTables: input.otherTables });
+    // Added up after a join that repeats the rows it comes from: the figures
+    // reproduce, but some amounts are counted once per matching row.
+    if (expected.repeatedSums.length) {
+        const r = expected.repeatedSums[0];
+        return done({
+            status: 'warning',
+            headline: `Likely too high: ${words(r.column)} from ${words(r.table)} is added up after joining it to ${words(r.by)}, which repeats each row of ${words(r.table)} once for every matching row, so those amounts are counted more than once.`,
+            figuresChecked: nFig, figuresMatched: compared.matched, differences: [], filterValues, coverage, counted,
+            notes: [...notes, `Add up ${words(r.column)} in ${words(r.table)} on its own (one row each) and join the totals, or ask the question again.`],
+        });
+    }
+    const things = thingsToKnow({ q, expected, pool: full || expected, matchIndex: compared.matchIndex, shown, data: input.data, recordWord: input.recordWord, budgetMs, otherTables: input.otherTables, tables: input.tables });
     if (notes.some(n => /cannot do/.test(n))) {
         return done({ status: 'warning', headline: notes.find(n => /cannot do/.test(n))!, figuresChecked: nFig, figuresMatched: compared.matched, differences: [], filterValues, coverage, counted, notes, thingsToKnow: things });
     }

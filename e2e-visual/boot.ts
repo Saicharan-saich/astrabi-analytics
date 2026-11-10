@@ -9,7 +9,7 @@ fs.mkdirSync(OUT, { recursive: true });
 const user = { id: 'visual-user', email: 'visual@example.com', name: 'Alex Morgan', role: 'admin' };
 const token = 'header.' + Buffer.from(JSON.stringify({ userId: user.id })).toString('base64url') + '.signature';
 
-export async function boot(page: Page, theme: 'light' | 'dark', activeTab: string, options: { oldCleaning?: boolean } = {}) {
+export async function boot(page: Page, theme: 'light' | 'dark', activeTab: string, options: { oldCleaning?: boolean; noData?: boolean } = {}) {
     const dashboard = dashboardFixture();
     const second = secondDashboardFixture();
     const gallery = galleryDashboardFixture();
@@ -28,7 +28,7 @@ export async function boot(page: Page, theme: 'light' | 'dark', activeTab: strin
         }));
     }, { dashboard, second, gallery, userId: user.id, theme, activeTab });
     await page.goto('/');
-    await page.evaluate(async ({ userId, rows, oldCleaning }) => {
+    if (!options.noData) await page.evaluate(async ({ userId, rows, oldCleaning }) => {
         const db = await new Promise<IDBDatabase>((resolve, reject) => {
             const request = indexedDB.open('QuickInsight-datasets', 1);
             request.onupgradeneeded = () => request.result.createObjectStore('datasets', { keyPath: 'id' });

@@ -1,5 +1,5 @@
 import { runAutomatedETL, parseCSV, parseExcelMultiSheet } from '../services/analysisEngine';
-import { buildRelationalCatalog, materializeSubject, validateRelationship } from '../services/relationalCatalog';
+import { buildRelationalCatalog, defaultSubjectTable, materializeSubject, validateRelationship } from '../services/relationalCatalog';
 import { normalizeRelatedTables } from '../services/relationalNormalization';
 
 self.onmessage = async (e: MessageEvent) => {
@@ -61,7 +61,7 @@ self.onmessage = async (e: MessageEvent) => {
             if (isConnector && (joinEdges || sourceSchema?.joinEdges)) {
                 catalog.schema.joinEdges = joinEdges || sourceSchema.joinEdges;
             }
-            subjectTable = e.data.subjectTable || catalog.subjects.find(s => s.kind === 'fact')?.table || relatedTables[0].name;
+            subjectTable = e.data.subjectTable || defaultSubjectTable(relatedTables, catalog) || relatedTables[0].name;
             subject = materializeSubject(relatedTables, catalog, subjectTable);
             data = subject.rows;
         }

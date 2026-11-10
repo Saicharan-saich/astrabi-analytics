@@ -19,7 +19,7 @@ import * as duckdb from '@duckdb/duckdb-wasm';
 import { logger } from './logger';
 import { finiteOrNull } from '../utils/numberSafety';
 import { createSerializedAsyncQueue } from '../utils/serializedAsync';
-import { duckColumnType, duckLiteral } from '../utils/duckColumnType';
+import { duckColumnType, duckLiteral, duckTableName } from '../utils/duckColumnType';
 
 /**
  * Normalise a DuckDB DATE/TIMESTAMP value to a display-ready string.
@@ -649,13 +649,13 @@ async function loadRelatedTablesUnlocked(tables: { name: string; rows: any[] }[]
 
     const loaded: string[] = [];
     for (const t of tables) {
-        const safe = sanitizeTableName(t.name);
-        if (safe === 'data' || safe === 'dim_date') continue;   // never shadow these
+        // The same name the AI is told (a sheet called "Data" becomes data_table, never shadowing "data").
+        const safe = duckTableName(t.name);
         if (!t.rows?.length) continue;
         try {
             // Always enter the row-aware loader. A refreshed source table can
             // keep the same name while its values and physical types change.
-            await loadDataIntoTable(t.name, t.rows);
+            await loadDataIntoTable(safe, t.rows);
             loaded.push(safe);
         } catch (err) {
             logger.warn('[DuckDB]', `Could not load related table "${t.name}":`, err);

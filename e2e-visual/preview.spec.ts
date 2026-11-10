@@ -19,6 +19,26 @@ async function openExploreMenu(page: Page, canvas: ReturnType<Page['locator']>) 
 }
 
 for (const theme of ['light', 'dark'] as const) {
+    test(`first steps without data ${theme}`, async ({ page }) => {
+        test.setTimeout(120_000);
+        await page.setViewportSize({ width: 1440, height: 900 });
+        await boot(page, theme, 'AI_SQL', { noData: true });
+        const noData = page.getByRole('region', { name: /no data yet/ }).first();
+        await noData.waitFor({ timeout: 20000 });
+        await expect(noData).toContainText('AI SQL needs some data first');
+        await shoot(page, `05-no-data-ai-sql-${theme}`);
+        // From any empty screen, the sample data is one click away and ends in the "ready" pop-up.
+        await noData.getByRole('button', { name: 'Try it with sample data' }).click();
+        const ready = page.getByRole('dialog', { name: /ready for analysis/ });
+        await ready.waitFor({ timeout: 60000 });
+        await expect(ready).toContainText('What we did');
+        await shoot(page, `06-sample-ready-${theme}`);
+        await ready.getByRole('button', { name: 'View data changes' }).click();
+        await expect(ready).toBeHidden();
+        await expect(page.getByRole('tab', { name: 'Cleaning', exact: true })).toHaveAttribute('aria-selected', 'true');
+        await shoot(page, `07-sample-changes-${theme}`);
+    });
+
     test(`dashboard ${theme}`, async ({ page }) => {
         await page.setViewportSize({ width: 1440, height: 1700 });
         await boot(page, theme, 'DASHBOARD');

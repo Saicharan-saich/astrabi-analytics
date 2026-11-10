@@ -31,6 +31,8 @@ import { WorkbenchView } from './components/WorkbenchView';
 import { BuilderView } from './components/BuilderView';
 import { NLQView } from './components/NLQView';
 import { AISQLView } from './components/AISQLView';
+import { DataReadyDialog } from './components/DataReadyDialog';
+import { NoDataYet } from './components/NoDataYet';
 import { VisualPreviewView } from './components/VisualPreviewView';
 import { DerivedColumnsView } from './components/DerivedColumnsView';
 import { Dashboard } from './components/Dashboard';
@@ -236,7 +238,10 @@ function App() {
     setTheme,
     datasets,
     setActiveDatasetById,
-    removeDataset
+    removeDataset,
+    dataReady,
+    setDataReady,
+    openAiSqlWelcome,
   } = useAppStore();
 
   // Auth State
@@ -643,7 +648,8 @@ function App() {
             setDataset(profiled);
             saveDatasetToDB(profiled);
             setPendingProfile(profile);
-            setActiveTab(Tab.COLUMN_MAPPING);
+            setActiveTab(Tab.DATASET_SUMMARY);
+            setDataReady({ datasetId: newDataset.id, source: 'upload' });
             console.log(`[App] AI Profile: ${profile.domain} (${(profile.confidence * 100).toFixed(0)}% confidence)`);
           } else {
             // ── HEURISTIC DOMAIN FALLBACK (no AI required) ──
@@ -680,7 +686,8 @@ function App() {
             setDataset(profiled);
             saveDatasetToDB(profiled);
             setPendingProfile(fallbackProfile);
-            setActiveTab(Tab.COLUMN_MAPPING);
+            setActiveTab(Tab.DATASET_SUMMARY);
+            setDataReady({ datasetId: newDataset.id, source: 'upload' });
             console.log(`[App] Heuristic domain: ${heuristicDomain || 'Sales'}`);
           }
         }).catch(err => {
@@ -718,7 +725,8 @@ function App() {
           setDataset(profiled);
           saveDatasetToDB(profiled);
           setPendingProfile(fallbackProfile);
-          setActiveTab(Tab.COLUMN_MAPPING);
+          setActiveTab(Tab.DATASET_SUMMARY);
+          setDataReady({ datasetId: newDataset.id, source: 'upload' });
         });
       } else if (type === 'ERROR') {
         setError(error);
@@ -988,6 +996,7 @@ function App() {
   const datasetWorkspaceProps = {
     onAskAiSql: (question: string) => useAppStore.getState().askAiSql(question),
     mappingProfile: pendingProfile || dataset?.domainProfile || null,
+    mappingPending: Boolean(pendingProfile),
     isAIProfiling,
     onApplyMapping: handleWorkspaceMappingApply,
     onDismissMapping: () => setPendingProfile(null),
@@ -1063,16 +1072,24 @@ function App() {
         refreshAISQLSemanticSnapshot(sampleDs, 'sample upload ETL complete');
         setDataset(sampleDs);
         saveDatasetToDB(sampleDs);
-        // Open Column Mapping Wizard
+        // The column review stays available in Dataset Workspace → Columns.
         setPendingProfile(sampleProfile);
-        setActiveTab(Tab.COLUMN_MAPPING);
         setProcessing(false);
         worker.terminate();
+        setActiveTab(Tab.DATASET_SUMMARY);
+        setDataReady({ datasetId: sampleDs.id, source: 'sample' });
       }
     };
 
     worker.postMessage({ type: 'PROCESS_FILE', rawData: csvContent, fileName: 'sample_sales_data.csv' });
   };
+
+  // "Try it with sample data" from any screen that has no data yet.
+  const sampleRequest = useAppStore(state => state.sampleRequest);
+  useEffect(() => {
+    if (sampleRequest > 0) loadSampleData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sampleRequest]);
 
   const handleConnectorData = (rawData: any, name: string, sourceSchema?: any, liveInfo?: any) => {
     setProcessing(true);
@@ -1158,9 +1175,10 @@ function App() {
         }
 
         setPendingProfile(connProfile);
-        setActiveTab(Tab.COLUMN_MAPPING);
         setProcessing(false);
         worker.terminate();
+        setActiveTab(Tab.DATASET_SUMMARY);
+        setDataReady({ datasetId: connDs.id, source: 'connector' });
       }
     };
 
@@ -1483,14 +1501,17 @@ function App() {
   };
 
   const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const [toastAction, setToastAction] = useState<{ label: string; run: () => void } | null>(null);
   const [workbenchConfig, setWorkbenchConfig] = useState<any>(undefined);
   const [workbenchResult, setWorkbenchResult] = useState<AnalysisResult | undefined>(undefined);
   const [editingDashboardItemId, setEditingDashboardItemId] = useState<string | null>(null);
   const [editingDashboardItem, setEditingDashboardItem] = useState<DashboardItem | null>(null);
 
-  const showToast = (msg: string) => {
+  const showToast = (msg: string, action?: { label: string; run: () => void }) => {
     setToastMsg(msg);
-    setTimeout(() => setToastMsg(null), 3000);
+    setToastAction(action || null);
+    // A toast with a next step stays long enough to use it.
+    setTimeout(() => { setToastMsg(current => (current === msg ? null : current)); }, action ? 6000 : 3000);
   };
 
   const handlePin = (result: AnalysisResult, note?: string) => {
@@ -1673,7 +1694,7 @@ function App() {
                         onToggle={() => setSidebarOpen(false)}
                         onOpenUserManagement={() => { setShowUserMgmt(true); setSidebarOpen(false); }}
                         hasVisualResult={!!visualPreviewResult}
-                        onDataStory={() => { setDataStoryQuestion(undefined); setShowDataStory(true); setSidebarOpen(false); }}
+                        onDataStory={() => { setDataStoryQuestion(undefined); setSidebarOpen(false); if (!dataset) { setActiveTab(Tab.UPLOAD); showToast('Data Story tells the story of your data. Bring in a file or connect a source first.'); return; } setShowDataStory(true); }}
                         onOpenTabManager={() => { setShowTabManager(true); setSidebarOpen(false); }}
                       />
                     </motion.div>
@@ -1696,7 +1717,7 @@ function App() {
                       onToggle={() => toggleSidebar()}
                       onOpenUserManagement={() => setShowUserMgmt(true)}
                       hasVisualResult={!!visualPreviewResult}
-                      onDataStory={() => { setDataStoryQuestion(undefined); setShowDataStory(true); }}
+                      onDataStory={() => { setDataStoryQuestion(undefined); if (!dataset) { setActiveTab(Tab.UPLOAD); showToast('Data Story tells the story of your data. Bring in a file or connect a source first.'); return; } setShowDataStory(true); }}
                       onOpenTabManager={() => setShowTabManager(true)}
                     />
                   </motion.div>
@@ -1974,12 +1995,12 @@ function App() {
 
                           {/* Title */}
                           <h3 className={`text-lg font-bold mb-1 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                            {isProcessing ? 'Processing Dataset' : 'AI Profiling'}
+                            {isProcessing ? 'Getting your data ready' : 'Almost ready'}
                           </h3>
                           <p className={`text-sm mb-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
                             {isProcessing
-                              ? 'Running ETL pipeline — cleaning, classifying, and structuring your data...'
-                              : 'Analyzing column semantics, detecting domain, and building the decision model...'
+                              ? 'Reading your file and tidying the dates, numbers and categories. This happens on your computer.'
+                              : 'Working out what each column means, so questions about sales, dates or customers find the right columns.'
                             }
                           </p>
 
@@ -2003,15 +2024,15 @@ function App() {
                           <div className="w-full space-y-2">
                             {isProcessing ? (
                               <>
-                                <ProfilingStep label="Structural normalization" active done={false} theme={theme} />
-                                <ProfilingStep label="Column classification" active={false} done={false} theme={theme} />
-                                <ProfilingStep label="Data transformation" active={false} done={false} theme={theme} />
+                                <ProfilingStep label="Reading your file" active done={false} theme={theme} />
+                                <ProfilingStep label="Cleaning dates, numbers and categories" active={false} done={false} theme={theme} />
+                                <ProfilingStep label="Working out what each column means" active={false} done={false} theme={theme} />
                               </>
                             ) : (
                               <>
-                                <ProfilingStep label="ETL pipeline complete" active={false} done theme={theme} />
-                                <ProfilingStep label="Semantic domain detection" active done={false} theme={theme} />
-                                <ProfilingStep label="Building decision model" active={false} done={false} theme={theme} />
+                                <ProfilingStep label="Read and cleaned" active={false} done theme={theme} />
+                                <ProfilingStep label="Working out what each column means" active done={false} theme={theme} />
+                                <ProfilingStep label="Getting AI SQL ready" active={false} done={false} theme={theme} />
                               </>
                             )}
                           </div>
@@ -2118,6 +2139,7 @@ function App() {
                 </div>
 
                 <div className={`qi-view h-full w-full overflow-hidden ${activeTab === Tab.BUILDER ? '' : 'hidden'}`}>
+                  {!dataset && <NoDataYet title="Question Builder" purpose="Build a chart by picking what to measure and how to split it: no typing or formulas needed." />}
                   {dataset && (
                     <BuilderView
                       dataset={dataset}
@@ -2222,6 +2244,7 @@ function App() {
                 </div>
 
                 <div className={`qi-view h-full w-full ${activeTab === Tab.SMART_QUESTIONS ? '' : 'hidden'}`}>
+                  {!dataset && <NoDataYet title="Smart Insights" purpose="Ready-made questions about your data, picked for what it holds, each one click away." />}
                   {dataset && (
                     <SmartQuestionsView
                       dataset={dataset}
@@ -2242,6 +2265,17 @@ function App() {
             <div className={`qi-view h-full w-full ${activeTab === Tab.GAME ? '' : 'hidden'}`}>
               <GameView onNavigateToBuilder={() => setActiveTab(Tab.BUILDER)} />
             </div>
+
+            {/* Data ready: shown once an upload or a connection has been cleaned */}
+            {dataReady && dataset && dataset.id === dataReady.datasetId && (
+              <DataReadyDialog
+                dataset={dataset}
+                source={dataReady.source}
+                onViewChanges={() => { setDataReady(null); setActiveTab(Tab.ETL); }}
+                onContinue={() => openAiSqlWelcome(dataset.id)}
+                onClose={() => setDataReady(null)}
+              />
+            )}
 
             {/* Global Settings Modal */}
             <AnimatePresence>
@@ -2362,7 +2396,7 @@ function App() {
                 onClose={() => setPendingPinItem(null)}
                 onPinned={(dashboardName) => {
                   setPendingPinItem(null);
-                  showToast(`Pinned to "${dashboardName}"!`);
+                  showToast(`Pinned to "${dashboardName}"`, { label: 'View dashboard', run: () => setActiveTab(Tab.DASHBOARD) });
                 }}
               />
             )}
@@ -2378,7 +2412,16 @@ function App() {
                   <div className="p-1 bg-white/20 rounded-full">
                     <Zap className="w-4 h-4 text-white" fill="currentColor" />
                   </div>
-                  {toastMsg}
+                  <span role="status">{toastMsg}</span>
+                  {toastAction && (
+                    <button
+                      type="button"
+                      className="ml-1 rounded-lg bg-white/20 px-2.5 py-1 text-xs font-bold hover:bg-white/30"
+                      onClick={() => { toastAction.run(); setToastMsg(null); setToastAction(null); }}
+                    >
+                      {toastAction.label}
+                    </button>
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>

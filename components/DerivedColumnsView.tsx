@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { NoDataYet } from './NoDataYet';
 import { Search, Plus, Check, X, Trash2, Pencil, Calculator, BookOpen, ChevronDown, ChevronRight, AlertTriangle } from 'lucide-react';
 import { Dataset, ColumnType } from '../types';
 import { MetricTemplate, Industry, INDUSTRY_META, getTemplatesForDomain, searchTemplates, autoSuggestMappings, validateTemplateMappingGrain, ALL_TEMPLATES } from '../services/metricTemplates';
@@ -236,7 +237,7 @@ export const DerivedColumnsView: React.FC<Props> = ({ dataset, onDatasetUpdate }
     setApplied(prev => prev.filter(a => a.id !== colId));
   };
 
-  if (!dataset) return <div className="flex items-center justify-center h-full text-slate-400"><p>Load a dataset first.</p></div>;
+  if (!dataset) return <NoDataYet title="Derived Columns" purpose="Add your own columns, like profit = revenue − cost, without touching the original file." />;
 
   const mappingGrainError = mapping ? validateTemplateMappingGrain(mapping.template, mapping.columns) : null;
   const inputCls = `w-full px-2.5 py-2 rounded-lg border text-sm ${isDark ? 'bg-slate-700 border-white/10 text-white' : 'bg-gray-50 border-gray-200'}`;

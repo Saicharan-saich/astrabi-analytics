@@ -27,9 +27,6 @@ export function RelationshipEditor({ dataset }: { dataset: Dataset }) {
             const leftColumns = fromKeys.split(',').map(s => s.trim()).filter(Boolean);
             const rightColumns = toKeys.split(',').map(s => s.trim()).filter(Boolean);
             const edge: SourceJoinEdge = { leftTable: from, rightTable: to, leftColumn: leftColumns[0], rightColumn: rightColumns[0], leftColumns, rightColumns, type: 'fk', provenance: 'user' };
-            if (!remove && catalog.subjects.find(s => s.table === to)?.kind === 'fact') {
-                throw new Error('A fact table must be analyzed as a separate subject. Combining facts requires a compatible aggregation plan.');
-            }
             const validation = remove ? { unmatched: 0 } : validateRelationship(tables, edge);
             if (!from || !leftColumns.length) throw new Error('Choose a source table and its key columns.');
             const signature = JSON.stringify(leftColumns);

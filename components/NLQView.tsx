@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { NoDataYet } from './NoDataYet';
 import { MessageSquare, Play, RefreshCw, Search, CheckCircle2, AlertTriangle, BarChart2, Table, Code, Pin, Eye, EyeOff, Lightbulb, ArrowRight, Palette, Activity, X, RotateCcw } from 'lucide-react';
 import { Dataset, QueryConfig, AnalysisResult, AnalysisType, AggregationType, TimeGrain, ColumnType, FormattingConfig } from '../types';
 import { parseNLQ, NLQParseResult } from '../services/nlqParser';
@@ -298,13 +299,7 @@ export const NLQView: React.FC<NLQViewProps> = ({ dataset, onPin }) => {
     };
 
     if (!dataset) {
-        return (
-            <div className="flex flex-col items-center justify-center h-full text-slate-400 gap-4">
-                <MessageSquare className="w-16 h-16 text-slate-600" />
-                <h3 className="text-xl font-bold text-slate-300">No Dataset Loaded</h3>
-                <p className="text-sm text-slate-500">Please load a dataset to ask questions.</p>
-            </div>
-        );
+        return <NoDataYet title="Ask a question" purpose="Type a question about your data and get the answer as a chart." />;
     }
 
     return (

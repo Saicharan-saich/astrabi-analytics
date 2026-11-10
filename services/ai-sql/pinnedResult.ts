@@ -236,7 +236,7 @@ export async function refreshPinnedAISQLResult(
         sourceRows,
         refresh.sql,
         semanticModel.timeContext,
-        dataset.relatedTables,
+        queryTablesOf(dataset),
         dataset.rows,
     );
     if (execution.error) throw new Error(execution.error);

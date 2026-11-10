@@ -1,4 +1,5 @@
 import React from 'react';
+import { NoDataYet } from './NoDataYet';
 import { Workbench } from './Workbench';
 import { Dataset, AnalysisResult, FormattingConfig } from '../types';
 import { ArrowLeft, Save, X } from 'lucide-react';
@@ -24,11 +25,7 @@ export const WorkbenchView: React.FC<WorkbenchViewProps> = ({
     const isEditingDashboard = !!editingDashboardItemId;
 
     if (!dataset) {
-        return (
-            <div className="flex items-center justify-center h-full text-slate-400">
-                <p>Please load a dataset first.</p>
-            </div>
-        );
+        return <NoDataYet title="Workbench" purpose="Build and fine-tune charts from your data." />;
     }
 
     return (
