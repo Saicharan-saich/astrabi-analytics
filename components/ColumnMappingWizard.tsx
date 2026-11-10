@@ -3,6 +3,7 @@ import {
     CheckCircle2, Eye, EyeOff, AlertTriangle, RotateCcw, Search, ChevronDown, XCircle,
 } from 'lucide-react';
 import { DatasetDomainProfile, ColumnSemantic, ColumnType, ColumnDefinition } from '../types';
+import { nameDirection } from '../services/columnDictionary';
 import { inferDefaultAggregationForGrain } from '../services/smartAggregation';
 import { inferRowGrain } from '../services/rowGrainInference';
 
@@ -511,7 +512,7 @@ export const ColumnMappingWizard: React.FC<ColumnMappingWizardProps> = ({
                                                 {/* The column's meaning, used for every question: which way is good, and what people call it. */}
                                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-3">
                                                     <label className="text-[12px]"><span className="qi-ws-muted block mb-1">Higher is</span>
-                                                        <select value={sem.goodDirection || ''} onChange={e => updateColumn(col.name, { goodDirection: (e.target.value || undefined) as ColumnSemantic['goodDirection'], meaningSource: 'user' })} className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" aria-label={`Is a higher ${col.name} better or worse`}>
+                                                        <select value={sem.goodDirection || nameDirection(col.name, sem.role) || ''} onChange={e => updateColumn(col.name, { goodDirection: (e.target.value || undefined) as ColumnSemantic['goodDirection'], meaningSource: 'user' })} className="qi-ws-select w-full rounded-md px-2 py-1.5 text-[12.5px]" aria-label={`Is a higher ${col.name} better or worse`}>
                                                             <option value="">Not set</option>
                                                             <option value="higher">Better (like sales)</option>
                                                             <option value="lower">Worse (like costs or complaints)</option>

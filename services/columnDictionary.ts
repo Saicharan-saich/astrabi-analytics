@@ -50,17 +50,21 @@ const SNAPSHOT = /^(balance|stock|inventory|on_hand|headcount|level|levels|backl
 /** A plan set against what happened. */
 const PLAN = /^(budget|budgeted|plan|planned|target|targets|forecast|forecasted|goal|quota|expected|estimate|estimated)$/;
 
+/** Which way is good, from a column's name alone (undefined when the name does not say). */
+export function nameDirection(name: string, role: ColumnType): ColumnMeaning['good'] {
+    if (role !== ColumnType.METRIC && role !== ColumnType.BOOLEAN) return undefined;
+    if (hasToken(name, LESS_IS_BETTER)) return 'lower';
+    if (hasToken(name, MORE_IS_BETTER)) return 'higher';
+    if (hasToken(name, PLAN)) return 'neutral';
+    return undefined;
+}
+
 function ruleMeaning(name: string, role: ColumnType, inShape: { amounts: Set<string>; perRow: Set<string>; formula?: ColumnFormula; currency?: string }): ColumnMeaning {
     const combine: ColumnMeaning['combine'] = role === ColumnType.DATE ? 'date'
         : role === ColumnType.ID ? 'identifier'
             : role === ColumnType.METRIC ? (hasToken(name, SNAPSHOT) ? 'latest value' : inShape.perRow.has(name) ? 'average' : 'add up')
                 : role === ColumnType.BOOLEAN ? 'count' : 'group by';
-    let good: ColumnMeaning['good'];
-    if (role === ColumnType.METRIC || role === ColumnType.BOOLEAN) {
-        if (hasToken(name, LESS_IS_BETTER)) good = 'lower';
-        else if (hasToken(name, MORE_IS_BETTER)) good = 'higher';
-        else if (hasToken(name, PLAN)) good = 'neutral';
-    }
+    const good = nameDirection(name, role);
     const f = inShape.formula;
     return {
         column: name,
