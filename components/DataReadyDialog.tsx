@@ -4,7 +4,7 @@
  * start asking questions in AI SQL.
  */
 import { useEffect, useMemo, useRef } from 'react';
-import { ArrowRight, CheckCircle2, Eye, Link2, ShieldCheck, TriangleAlert, X } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Eye, Layers, Link2, ShieldCheck, TriangleAlert, X } from 'lucide-react';
 import type { Dataset } from '../types';
 import { summariseDataReady } from '../services/dataReadySummary';
 
@@ -64,6 +64,15 @@ export function DataReadyDialog({ dataset, source, onViewChanges, onContinue, on
                         <section aria-label="How the sheets were linked">
                             <h3><Link2 className="h-3.5 w-3.5" aria-hidden /> {summary.tables} {source === 'connector' ? 'tables' : 'sheets'} linked</h3>
                             <p className="qi-ready-links">{summary.links.join(' · ')}</p>
+                        </section>
+                    )}
+                    {(summary.combined.length > 0 || summary.setAside.length > 0) && (
+                        <section aria-label="How the sheets were read">
+                            <h3><Layers className="h-3.5 w-3.5" aria-hidden /> Your sheets</h3>
+                            <ul className="qi-ready-list">
+                                {summary.combined.map(line => <li key={line}>{line}.</li>)}
+                                {summary.setAside.length > 0 && <li>Kept for reference, not used for answers: {summary.setAside.join(', ')}.</li>}
+                            </ul>
                         </section>
                     )}
                     {summary.toCheck > 0 && (

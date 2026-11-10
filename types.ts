@@ -250,6 +250,12 @@ export interface RelatedTable {
   columns?: string[];
   /** Typed column contract for normalized source tables. */
   columnDefinitions?: ColumnDefinition[];
+  /**
+   * A workbook sheet that is not records: a summary made from the other
+   * sheets, written notes, or an exact copy. Kept for reference only — never
+   * linked, opened as the main view or offered to AI SQL.
+   */
+  sheetRole?: 'report' | 'notes' | 'copy';
 }
 
 export interface SourceSchema {

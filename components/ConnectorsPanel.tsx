@@ -5,6 +5,8 @@ import {
     GitMerge, ArrowRight, Table2, Columns3, Link2, Eye, Zap, Download, Radio
 } from 'lucide-react';
 import { Connector, Dataset, ConnectionMode, LiveConnectionInfo } from '../types';
+import { SOURCE_GUIDES, connectsDirectly } from '../services/sourceGuides';
+import { SourceGuideDialog } from './SourceGuideDialog';
 import {
     getMockConnectorData, getMockDatabaseSchema, connectToDatabase,
     fetchTableColumns, fetchForeignKeys, buildJoinStrategy, autoJoinDatasets,
@@ -13,19 +15,23 @@ import {
 
 interface ConnectorsPanelProps {
     onDataReady: (dataset: any, name: string, sourceSchema?: any, liveInfo?: LiveConnectionInfo) => void;
+    /** Upload a file exported from a source that cannot be connected directly yet. */
+    onFileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 const AVAILABLE_CONNECTORS: Connector[] = [
-    { id: 'shopify', name: 'Shopify', icon: 'shopping', status: 'disconnected' },
-    { id: 'woocommerce', name: 'WooCommerce', icon: 'shopping', status: 'disconnected' },
     { id: 'postgres', name: 'PostgreSQL', icon: 'db', status: 'disconnected' },
-    { id: 'mysql', name: 'MySQL', icon: 'db', status: 'disconnected' },
     { id: 'mssql', name: 'SQL Server', icon: 'db', status: 'disconnected' },
+    // No direct connection yet: these open a guide to export the data and upload the file.
+    { id: 'shopify', name: 'Shopify (upload an orders export)', icon: 'shopping', status: 'disconnected' },
+    { id: 'woocommerce', name: 'WooCommerce (upload an orders export)', icon: 'shopping', status: 'disconnected' },
+    { id: 'mysql', name: 'MySQL (upload an export)', icon: 'db', status: 'disconnected' },
 ];
 
 type ModalStep = 'credentials' | 'tables' | 'schema';
 
-export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady }) => {
+export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady, onFileUpload }) => {
+    const [guideId, setGuideId] = useState<string | null>(null);
     const [selectedConnectorId, setSelectedConnectorId] = useState<string>(AVAILABLE_CONNECTORS[0].id);
     const [configuringId, setConfiguringId] = useState<string | null>(null);
     const [step, setStep] = useState<ModalStep>('credentials');
@@ -46,6 +52,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
     const [connConfig, setConnConfig] = useState<{ host: string; port: string; database: string; username: string; ssl: boolean; password?: string } | null>(null);
 
     const handleConnect = () => {
+        if (!connectsDirectly(selectedConnectorId)) { setGuideId(selectedConnectorId); return; }
         setConfiguringId(selectedConnectorId);
         setStep('credentials');
         setUseWindowsAuth(false);
@@ -64,17 +71,9 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
 
         const active = AVAILABLE_CONNECTORS.find(c => c.id === configuringId);
 
-        // Simple connectors (Shopify, etc.) → skip schema browser
-        if (active?.icon === 'shopping') {
-            setTimeout(async () => {
-                const rows = await getMockConnectorData();
-                const name = `${active.name} Data`;
-                setIsLoading(false);
-                setConfiguringId(null);
-                onDataReady(rows, name);
-            }, 1500);
-            return;
-        }
+        // Sources without a direct connection never get here (they open the export guide),
+        // and nothing ever loads made-up rows as if they were the user's own.
+        if (!active || !connectsDirectly(active.id)) { setIsLoading(false); return; }
 
         // RDBMS — connect to database
         const formData = new FormData(e.target as HTMLFormElement);
@@ -250,7 +249,7 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
     };
 
     const activeConnector = AVAILABLE_CONNECTORS.find(c => c.id === configuringId);
-    const isRDBMS = activeConnector && ['postgres', 'mysql', 'mssql'].includes(activeConnector.id);
+    const isRDBMS = activeConnector && ['postgres', 'mssql'].includes(activeConnector.id);
 
     const getDataTypeIcon = (dt: string) => {
         const lower = dt.toLowerCase();
@@ -296,6 +295,11 @@ export const ConnectorsPanel: React.FC<ConnectorsPanelProps> = ({ onDataReady })
                     </div>
                 </div>
             </div>
+
+            {guideId && SOURCE_GUIDES[guideId] && (
+                <SourceGuideDialog guide={SOURCE_GUIDES[guideId]} onClose={() => setGuideId(null)}
+                    onFile={event => onFileUpload?.(event)} />
+            )}
 
             {/* CONFIGURATION MODAL */}
             {configuringId && activeConnector && (

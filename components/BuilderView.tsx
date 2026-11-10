@@ -1,3 +1,4 @@
+import { builderStarters } from '../services/builderStarters';
 import React, { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import ReactDOM from 'react-dom';
 import { QuestionBuilder } from './QuestionBuilder';
@@ -525,6 +526,19 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
         if (!lastRunConfig) return;
         const next = { ...lastRunConfig, dimension };
         if (dimension === 'month') { next.sort = 'oldest'; delete next.limit; }
+        setUndoRestoreConfig(next);
+        setBuilderResetVersion(version => version + 1);
+        setContentTab('visual');
+        void handleRun(next);
+    };
+
+    /** Starting points for an empty builder, from the data's shape. */
+    const starters = useMemo(() => {
+        try { return builderStarters(dataset); } catch { return []; }
+    }, [dataset]);
+
+    const runStarter = (config: Record<string, unknown>) => {
+        const next = { ...config };
         setUndoRestoreConfig(next);
         setBuilderResetVersion(version => version + 1);
         setContentTab('visual');
@@ -1102,13 +1116,26 @@ export const BuilderView: React.FC<BuilderViewProps> = ({ dataset, formatting, o
                 )}
 
                 {!result && !error && !isLoading && (
-                    <div className="flex flex-col items-center justify-center h-full text-slate-400">
-                        <Play className="w-12 h-12 mb-4 opacity-20" />
-                        <p className="text-lg font-medium">Build your question to see the results</p>
-                        <p className="text-sm mt-1 text-slate-300">Press <kbd className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-xs font-mono border border-slate-200">Ctrl+Enter</kbd> to run</p>
-
-
-                    </div>
+                    <section className="qi-builder-start" aria-labelledby="qi-builder-start-title">
+                        <span className="qi-builder-start-icon" aria-hidden><Play className="h-5 w-5" /></span>
+                        <h2 id="qi-builder-start-title">Build a chart in three clicks</h2>
+                        <p className="qi-builder-start-lead">No typing or formulas: pick from the lists on the left.</p>
+                        <ol className="qi-builder-start-steps">
+                            <li><span aria-hidden>1</span><div><strong>Show me</strong> what to measure, such as sales, and whether to add it up or average it.</div></li>
+                            <li><span aria-hidden>2</span><div><strong>by</strong> how to split it: by product, by month, or leave it as one total.</div></li>
+                            <li><span aria-hidden>3</span><div><strong>Run</strong> it with the <Play className="inline h-3.5 w-3.5 align-[-2px]" aria-label="play" /> button above (or Ctrl+Enter). You get a chart and a sentence saying what it shows.</div></li>
+                        </ol>
+                        {starters.length > 0 && (
+                            <>
+                                <p className="qi-builder-start-or">Or start from one of these, and change anything you like:</p>
+                                <div className="qi-builder-start-picks">
+                                    {starters.map(starter => (
+                                        <button key={starter.label} type="button" onClick={() => runStarter(starter.config)}>{starter.label}</button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
+                    </section>
                 )}
 
                 {result && !error && !isLoading && (

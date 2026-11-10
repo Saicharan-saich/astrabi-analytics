@@ -1,6 +1,7 @@
 import { runAutomatedETL, parseCSV, parseExcelMultiSheet } from '../services/analysisEngine';
 import { buildRelationalCatalog, defaultSubjectTable, materializeSubject, validateRelationship } from '../services/relationalCatalog';
 import { normalizeRelatedTables } from '../services/relationalNormalization';
+import { planWorkbookSheets, recordSheets } from '../services/workbookSheets';
 
 self.onmessage = async (e: MessageEvent) => {
     const { type, file, fileName, rawData, isConnector, columnTypeOverrides, sourceColumnTypeOverrides, sourceSchema, joinEdges, etlOptions } = e.data;
@@ -26,6 +27,20 @@ self.onmessage = async (e: MessageEvent) => {
             rows: table.rows.map(row => ({ ...row })),
             columns: table.columns ? [...table.columns] : undefined,
         }));
+        // A workbook's sheets: put one table split across sheets back together, and set
+        // summaries, notes and copies aside. When one sheet of records is left, it is cleaned
+        // like any single file (full cleaning, briefing), with the sheet decisions logged.
+        let sheetLogs: any[] = [];
+        if (relatedTables?.length && !isConnector) {
+            const plan = planWorkbookSheets(relatedTables);
+            sheetLogs = plan.logs;
+            relatedTables = plan.tables;
+            const records = recordSheets(relatedTables);
+            if (records.length === 1) {
+                data = records[0].rows;
+                relatedTables = undefined;
+            }
+        }
         const declaredEdges = joinEdges || sourceSchema?.joinEdges;
         if (relatedTables?.length && declaredEdges?.length) {
             // Validate declared keys before normalization. Cleaning must never
@@ -74,12 +89,14 @@ self.onmessage = async (e: MessageEvent) => {
                 })),
                 logs: [
                 { step: 'Relational subject', details: `Selected ${subjectTable}. ${catalog.subjects.length} source tables remain available in the subject selector.`, status: 'info', timestamp: Date.now() },
+                ...sheetLogs,
                 ...relationalLogs,
                 ],
                 timeContext: subject.timeContext,
                 dimDate: undefined,
               }
             : runAutomatedETL(data, fileName || file?.name || 'dataset', columnTypeOverrides, etlOptions);
+        if (!(subject && catalog) && sheetLogs.length) result.logs = [...sheetLogs, ...(result.logs || [])];
         if (subject && catalog) {
             Object.assign(result, { relationalCatalog: catalog, subjectTable, fieldLineage: subject.lineage, fieldOrigins: subject.origins, sourceSchema: catalog.schema, relatedTables, timeContext: subject.timeContext, dimDate: undefined });
         } else if (sourceSchema) Object.assign(result, { sourceSchema });

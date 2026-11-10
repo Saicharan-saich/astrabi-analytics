@@ -30,6 +30,7 @@ export function normalizeRelatedTables(
         })));
         return {
             name: table.name,
+            ...(table.sheetRole ? { sheetRole: table.sheetRole } : {}),
             rows: result.rows,
             columns: result.columns.map(column => column.name),
             columnDefinitions: result.columns,

@@ -1906,15 +1906,9 @@ export const fetchForeignKeys = async (connectionId: string): Promise<ForeignKey
 };
 
 export const getMockConnectorData = async (connectionId?: string, tables?: string[]): Promise<any> => {
-    // If no connectionId, return mock data for non-database connectors (Shopify, etc.)
-    if (!connectionId) {
-        return [
-            { order_id: 'ORD-001', order_date: '2025-01-15', total: 150.00, customer_id: 'CUST-101', status: 'shipped' },
-            { order_id: 'ORD-002', order_date: '2025-01-16', total: 250.50, customer_id: 'CUST-102', status: 'processing' },
-            { order_id: 'ORD-003', order_date: '2025-01-16', total: 45.00, customer_id: 'CUST-103', status: 'shipped' },
-            { order_id: 'ORD-004', order_date: '2025-01-17', total: 1200.00, customer_id: 'CUST-101', status: 'shipped' }
-        ];
-    }
+    // Without a live database connection there is nothing to read. Never return
+    // made-up rows: they would be shown as if they were the user's own data.
+    if (!connectionId) return {};
 
     // Real database query
     try {

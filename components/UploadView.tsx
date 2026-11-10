@@ -101,10 +101,10 @@ export const UploadView: React.FC<UploadViewProps> = ({
                                 <Database className="w-6 h-6 text-emerald-400" />
                             </div>
                             <h3 className="text-xl font-bold text-white dark:text-white mb-2">Connect a data source</h3>
-                            <p className="text-sm text-gray-400 mb-6 font-medium">Bring SQL Server or PostgreSQL data into the same governed analytics workspace.</p>
+                            <p className="text-sm text-gray-400 mb-6 font-medium">Connect a SQL Server or PostgreSQL database. On Shopify, WooCommerce or MySQL? Pick it and we'll show you how to bring your orders in a minute.</p>
 
                             <div className="flex-1 -mx-4">
-                                <ConnectorsPanel onDataReady={onConnectorLoad} />
+                                <ConnectorsPanel onDataReady={onConnectorLoad} onFileUpload={onFileUpload} />
                             </div>
                         </div>
 

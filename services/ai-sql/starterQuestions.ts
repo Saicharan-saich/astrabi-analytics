@@ -26,6 +26,26 @@ function phrase(amountName: string) {
     return { noun, units, sales: sales || units, was: plural ? 'were' : 'was', has: plural ? 'have' : 'has' };
 }
 
+/**
+ * The amount an owner means by "sales" and the groupings they ask about first,
+ * from the data's shape and column names (shared by AI SQL's first questions
+ * and Question Builder's one-click starts).
+ */
+export function mainAmountAndGroups(dataset: Dataset, shape = describeDatasetShape(dataset)): { amount?: string; groups: string[] } {
+    const money = new Set(dataset.columns.filter(c => c.currency).map(c => c.name));
+    const amounts = shape.amounts.filter(name => !NOT_MAIN.test(name));
+    const ranked = [...amounts].sort((a, b) => {
+        const rank = (name: string) => { const i = MAIN_AMOUNT.findIndex(p => p.test(name.toLowerCase())); return i < 0 ? (money.has(name) ? MAIN_AMOUNT.length : MAIN_AMOUNT.length + 1) : i; };
+        return rank(a) - rank(b);
+    });
+    const groups = [...shape.categories.filter(c => GOOD_GROUP.test(c)), ...shape.categories.filter(c => !GOOD_GROUP.test(c))]
+        .filter(c => !/(time|status|currency|zone|channel_id)$/i.test(c) || GOOD_GROUP.test(c));
+    return { amount: ranked[0] || shape.amounts[0], groups };
+}
+
+/** "net sales", "units sold", "sales" — how to say the amount. */
+export const amountWords = (name: string) => phrase(name).noun;
+
 export function starterQuestions(dataset: Dataset): string[] {
     if (!dataset.rows?.length) return [];
     let shape;

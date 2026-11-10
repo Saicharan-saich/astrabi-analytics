@@ -2,7 +2,7 @@ import { ColumnType, type Dataset, type RelatedTable, type SourceSchema, type So
 import { discoverRelationships, detectCandidateKeys } from './ai-sql/relationshipDiscovery';
 import { isAdditiveName, isPerRowName } from '../utils/numberMeaning';
 
-export interface SubjectArea { id: string; table: string; kind: 'fact' | 'dimension' | 'standalone' | 'metadata' }
+export interface SubjectArea { id: string; table: string; kind: 'fact' | 'dimension' | 'standalone' | 'metadata' | 'report' | 'notes' | 'copy' }
 export interface RelationalCatalog {
     version: 1;
     subjects: SubjectArea[];
@@ -62,8 +62,10 @@ const hasDate = (table: RelatedTable) => table.columnDefinitions?.some(c => c.ty
  *   standalone neither
  */
 export function buildRelationalCatalog(tables: RelatedTable[]): RelationalCatalog {
-    const discovery = discoverRelationships(tables);
+    // Summaries, notes and copies are not records: never linked or opened as the main view.
+    const discovery = discoverRelationships(tables.filter(t => !t.sheetRole));
     const subjects = tables.map(t => {
+        if (t.sheetRole) return { id: id(t.name), table: t.name, kind: t.sheetRole };
         const columns = sourceColumns(t);
         const outgoing = discovery.relationships.filter(r => r.fromTable === t.name).length;
         const incoming = discovery.relationships.filter(r => r.toTable === t.name).length;
@@ -144,7 +146,7 @@ export function materializeSubject(tables: RelatedTable[], catalog: RelationalCa
         for (const edge of catalog.schema.joinEdges.filter(e => e.leftTable === source)) {
             if (ancestors.includes(edge.rightTable)) continue;
             const targetKind = catalog.subjects.find(s => s.table === edge.rightTable)?.kind;
-            if (targetKind === 'metadata') continue;
+            if (targetKind === 'metadata' || targetKind === 'report' || targetKind === 'notes' || targetKind === 'copy') continue;
             const target = tables.find(t => t.name === edge.rightTable);
             if (!target) continue;
             const repeatedAmounts = new Set(targetKind === 'fact' ? additiveMeasures(target) : []);

@@ -735,6 +735,11 @@ export function describeSourceTables(dataset: Dataset): string | undefined {
         lines.push('How they link (many rows on the left to one row on the right):');
         for (const e of edges) lines.push(`- ${q(duckTableName(e.from))}.${e.fromColumns.map(q).join(' + ')} = ${q(duckTableName(e.to))}.${e.toColumns.map(q).join(' + ')}`);
     }
+    const aside = (dataset.sourceTables || dataset.relatedTables || []).filter(table => table.sheetRole);
+    if (aside.length) {
+        const why = { report: 'a summary made from the records', notes: 'written notes', copy: 'a copy of another sheet' } as const;
+        lines.push(`Not loaded (not records): ${aside.map(table => `${q(table.name)} (${why[table.sheetRole!]})`).join(', ')}. Work every figure out from the records above.`);
+    }
     lines.push(dataset.subjectTable
         ? `"data" is ${q(duckTableName(dataset.subjectTable))} with the details it points to already joined in (columns named "<reference> → <Table>.<column>"). Use "data" when it has what the question needs. Use the other tables for figures that belong to another table (an order's own total, a target, stock) or for things with no rows in "data" (customers who never ordered).`
         : 'Use "data" when it has what the question needs; use the other tables for anything it lacks.');

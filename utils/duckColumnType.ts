@@ -77,9 +77,11 @@ export function duckTableName(name: string): string {
 }
 
 /** The other tables a dataset can be queried with: all of a workbook's sheets or a store's tables. */
-type SourceTable = { name: string; rows: Record<string, any>[]; columns?: string[] };
+type SourceTable = { name: string; rows: Record<string, any>[]; columns?: string[]; sheetRole?: string };
 export function queryTablesOf(dataset: { relatedTables?: SourceTable[]; sourceTables?: SourceTable[] }): SourceTable[] | undefined {
-    const tables = dataset.relatedTables?.length ? dataset.relatedTables : dataset.sourceTables;
+    const all = dataset.relatedTables?.length ? dataset.relatedTables : dataset.sourceTables;
+    // A summary sheet, written notes or a copy is not records: answers never come from them.
+    const tables = all?.filter(table => !table.sheetRole);
     return tables && tables.length > 1 ? tables : undefined;
 }
 

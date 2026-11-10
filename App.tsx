@@ -1860,12 +1860,12 @@ function App() {
                         onChange={e => handleSubjectChange(e.target.value)}>
                         <option value="" disabled>Select a subject or source</option>
                         <optgroup label="Analysis subjects">
-                          {relationalCatalog.subjects.filter(s => s.kind !== 'metadata' && s.kind !== 'dimension').map(s => (
+                          {relationalCatalog.subjects.filter(s => s.kind === 'fact' || s.kind === 'standalone').map(s => (
                             <option key={s.id} value={JSON.stringify({ table: s.table, standalone: false })}>{s.table}</option>
                           ))}
                         </optgroup>
                         <optgroup label="All source tables (standalone)">
-                          {relationalCatalog.subjects.map(s => <option key={s.id} value={JSON.stringify({ table: s.table, standalone: true })}>{s.table}{s.kind === 'metadata' ? ' (metadata)' : ''}</option>)}
+                          {relationalCatalog.subjects.map(s => <option key={s.id} value={JSON.stringify({ table: s.table, standalone: true })}>{s.table}{s.kind === 'metadata' ? ' (metadata)' : s.kind === 'report' ? ' (summary sheet)' : s.kind === 'notes' ? ' (notes)' : s.kind === 'copy' ? ' (copy)' : ''}</option>)}
                         </optgroup>
                       </select>
                     </label>
