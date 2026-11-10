@@ -5,6 +5,7 @@
  */
 import * as duck from '@duckdb/duckdb-wasm/dist/duckdb-node-blocking.cjs';
 import path from 'path';
+import { duckColumnType, duckLiteral } from '../../utils/duckColumnType';
 import { fileURLToPath } from 'url';
 
 const DIST = path.join(
@@ -15,6 +16,8 @@ const DIST = path.join(
 export interface DuckHandle {
     query: (sql: string) => any[];
     loadTable: (name: string, rows: Record<string, any>[]) => void;
+    /** Load rows exactly as the app does (utils/duckColumnType): dates as text, blank text as NULL. */
+    loadTableLikeApp: (name: string, rows: Record<string, any>[]) => void;
     close: () => void;
 }
 
@@ -62,6 +65,17 @@ export async function createDuck(): Promise<DuckHandle> {
             };
             const values = rows.map(r => `(${cols.map(c => lit(r[c], colTypes[c])).join(', ')})`).join(', ');
             conn.query(`INSERT INTO "${name}" VALUES ${values}`);
+        },
+        loadTableLikeApp(name: string, rows: Record<string, any>[]) {
+            conn.query(`DROP TABLE IF EXISTS "${name}"`);
+            if (rows.length === 0) return;
+            const cols = Object.keys(rows[0]);
+            const types = cols.map(col => duckColumnType(rows, col));
+            conn.query(`CREATE TABLE "${name}" (${cols.map((c, i) => `"${c.replace(/"/g, '""')}" ${types[i]}`).join(', ')})`);
+            for (let start = 0; start < rows.length; start += 1000) {
+                const values = rows.slice(start, start + 1000).map(row => `(${cols.map((c, i) => duckLiteral(row[c], types[i])).join(', ')})`).join(', ');
+                conn.query(`INSERT INTO "${name}" VALUES ${values}`);
+            }
         },
         close() {
             try { conn.close(); } catch { /* ignore */ }

@@ -10,9 +10,7 @@
  * result says so, so the check never calls a legitimate answer wrong.
  */
 import { Unsupported, type Expr, type Query, type Select, type OrderItem, type TableRef } from './sqlParser';
-import { duckColumnType } from '../../utils/duckColumnType';
-import { isBooleanCell } from '../../utils/booleanCell';
-import { parseLocaleNumber } from '../etlHardening';
+import { duckColumnType, duckCellValue } from '../../utils/duckColumnType';
 
 /** A date or timestamp, held as UTC milliseconds. */
 export class SqlDate {
@@ -60,11 +58,7 @@ export function relationFromRows(rows: Record<string, any>[]): Relation {
         const src = rows[i];
         const row: Value[] = new Array(cols.length);
         for (let c = 0; c < cols.length; c++) {
-            const v = src[cols[c]];
-            if (v === null || v === undefined) { row[c] = null; continue; }
-            if (types[c] === 'BOOLEAN') row[c] = isBooleanCell(v) ? String(v).trim().toLowerCase() === 'true' : null;
-            else if (types[c] === 'DOUBLE') row[c] = typeof v === 'number' ? (Number.isFinite(v) ? v : null) : parseLocaleNumber(v);
-            else row[c] = String(v);
+            row[c] = duckCellValue(src[cols[c]], types[c]);
         }
         out[i] = row;
     }

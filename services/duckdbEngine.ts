@@ -18,10 +18,8 @@
 import * as duckdb from '@duckdb/duckdb-wasm';
 import { logger } from './logger';
 import { finiteOrNull } from '../utils/numberSafety';
-import { parseLocaleNumber } from './etlHardening';
 import { createSerializedAsyncQueue } from '../utils/serializedAsync';
-import { isBooleanCell } from '../utils/booleanCell';
-import { duckColumnType } from '../utils/duckColumnType';
+import { duckColumnType, duckLiteral } from '../utils/duckColumnType';
 
 /**
  * Normalise a DuckDB DATE/TIMESTAMP value to a display-ready string.
@@ -276,22 +274,9 @@ async function loadDataIntoTable(tableName: string, rows: any[], schemaRows: any
         for (let batchStart = 0; batchStart < rows.length; batchStart += BATCH_SIZE) {
             const batch = rows.slice(batchStart, batchStart + BATCH_SIZE);
             const valueRows = batch.map(row => {
-                const vals = columns.map(col => {
-                    const v = row[col];
-                    if (v === null || v === undefined) return 'NULL';
-                    const s = String(v).replace(/'/g, "''");
-                    // Quote per the COLUMN type, not the value: a text column keeps
-                    // codes/leading-zeros intact; a numeric column takes bare
-                    // numbers (or NULL if a stray value isn't numeric).
-                    if (colType.get(col) === 'BOOLEAN') {
-                        return isBooleanCell(v) ? (String(v).trim().toLowerCase() === 'true' ? 'TRUE' : 'FALSE') : 'NULL';
-                    }
-                    if (colType.get(col) === 'DOUBLE') {
-                        const parsed = parseLocaleNumber(v);
-                        return parsed !== null ? String(parsed) : 'NULL';
-                    }
-                    return `'${s}'`;
-                });
+                // One rule for every cell (utils/duckColumnType): blank text is NULL,
+                // numbers are parsed as the cleaner does, true/false as BOOLEAN.
+                const vals = columns.map(col => duckLiteral(row[col], (colType.get(col) || 'VARCHAR') as any));
                 return `(${vals.join(', ')})`;
             });
 

@@ -53,6 +53,7 @@ const STEP_LABELS: Record<string, { label: string; icon: string }> = {
     'TITLE_CASE(normalize)': { label: 'Normalize casing', icon: '🔤' },
     SYNONYM_MAP: { label: 'Normalize category names', icon: '🔄' },
     IMPUTE_UNKNOWN: { label: 'Fill blanks with "Unknown"', icon: '⬜' },
+    IMPUTE_NONE: { label: 'Fill blanks with "None" (there wasn\'t one)', icon: '⬜' },
     'PARSE_NUMBER(locale-aware)': { label: 'Convert to number', icon: '🔢' },
     PARSE_NUMBER: { label: 'Convert to number', icon: '🔢' },
     IMPUTE_NULL: { label: 'Handle missing values', icon: '⬜' },

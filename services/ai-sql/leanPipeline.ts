@@ -144,7 +144,13 @@ STEP 2 — Otherwise answer (action "answer").
   - Never SUM or AVG an identifier, and never SUM a yes/no column as if it were an amount.
 - Rankings ("top", "best", "highest"): ORDER BY the measure DESC with LIMIT 10 unless the user gave a number. For "which is the best X", still return the top 10 so the answer can be compared; the first row is the answer.
 - Changes over time: group by DATE_TRUNC('month', CAST(date_column AS DATE)) (or the grain asked for) AS period, ORDER BY period. Numeric year columns are compared as numbers.
-- Relative dates ("this year", "last month", "recent") are measured from the latest date in the data, never from today: use (SELECT MAX(CAST(date_column AS DATE)) FROM "data") in the query. Never use CURRENT_DATE or NOW().
+- Relative dates are measured from the latest date in the data, never from today: call it L = (SELECT MAX(CAST(date_column AS DATE)) FROM "data") and never use CURRENT_DATE or NOW(). Calendar periods, weeks starting Monday:
+  - "today" = L; "yesterday" = L - 1 day; a weekday name ("on Saturday") = the latest such day on or before L
+  - "this week" / "this month" / "this year" = from the start of L's week / month / year up to L
+  - "last week" = the full Monday-Sunday week before L's week: DATE_TRUNC('week', L) - INTERVAL 7 DAY up to DATE_TRUNC('week', L) - INTERVAL 1 DAY
+  - "last month" / "last year" = the full calendar month / year before L's
+  - "the last 7 days" / "the last 30 days" = the 7 / 30 days ending on L; "the last 12 months" = from L - 12 months up to L
+  - a named month or year without a year ("in October") = the latest one in the data
 - You do not know the values stored in text columns. Match text the user typed case-insensitively, e.g. LOWER("region") = LOWER('london'), or ILIKE '%term%' for partial names.
 - Highest and lowest (or best and worst, top and bottom) item per group or period, e.g. "month-wise highest and lowest sales for products": return ONE row per group with columns named like period, highest_product, highest_total_sales, lowest_product, lowest_total_sales (use QUALIFY/ROW_NUMBER or ARG_MAX/ARG_MIN). Always include the item's name, not just the number.
 - Listing records: return only the useful columns with LIMIT 200.
@@ -620,6 +626,10 @@ interface ColumnExtras {
     perRowNumbers?: Set<string>;
     /** yes/no columns and how they are stored in the database. */
     yesNo?: Map<string, 'boolean' | 'number' | 'text'>;
+    /** How a text column's values are written (a format, never a value): date and time, or a clock time. */
+    formats?: Map<string, 'datetime' | 'clock'>;
+    /** Category columns whose blanks the cleaner filled, and the word it used. */
+    blankFills?: Map<string, 'Unknown' | 'None'>;
     /** The DATA SHAPE block (from datasetShape). */
     shape?: string;
 }
@@ -655,7 +665,13 @@ export function describeColumnsOnly(
     for (const field of model.fields) {
         const yesNo = extra.yesNo?.get(field.name);
         const type = yesNo === 'boolean' ? 'BOOLEAN' : yesNo === 'text' ? 'TEXT' : columnType(field, numericColumns.has(field.name));
-        lines.push(`- ${sqlName(field.name)}: ${type}; ${columnRole(field, perItem.has(field.name), repeatingIds.has(field.name), extra)}`);
+        const stored = extra.formats?.get(field.name);
+        const typeText = stored === 'datetime' ? "TEXT date and time 'YYYY-MM-DDTHH:MM:SS' — use CAST(col AS TIMESTAMP); its day is CAST(CAST(col AS TIMESTAMP) AS DATE), its hour HOUR(CAST(col AS TIMESTAMP))"
+            : stored === 'clock' ? "TEXT clock time 'HH:MM' or 'HH:MM:SS' — the hour is CAST(SPLIT_PART(col, ':', 1) AS INTEGER)"
+                : type;
+        const fill = extra.blankFills?.get(field.name);
+        const fillText = fill ? `; a blank is stored as '${fill}'${fill === 'None' ? " (there wasn't one), so test for one with <> 'None'" : ", so leave it out with <> 'Unknown' when the question is about known values"}` : '';
+        lines.push(`- ${sqlName(field.name)}: ${typeText}; ${stored === 'clock' ? 'time of day (when it happened)' : columnRole(field, perItem.has(field.name), repeatingIds.has(field.name), extra)}${fillText}`);
     }
     if (extra.shape) lines.push('', extra.shape);
     if (join?.tables?.length) {
@@ -708,7 +724,22 @@ export function describeData(dataset: Dataset) {
         const how = yesNo.get(name);
         return how === 'number' ? `${sqlName(name)} = 1` : how === 'text' ? `LOWER(${sqlName(name)}) IN ('yes','y','true','t','1')` : sqlName(name);
     };
-    const extra: ColumnExtras = { ids: idNames, perRowNumbers: new Set(shape.perRowNumbers), yesNo, shape: shapeForModel(shape, yesTest) };
+    const formats = new Map<string, 'datetime' | 'clock'>();
+    for (const field of model.fields) {
+        const values = filled(field.name).slice(0, 500);
+        if (!values.length || values.some(value => typeof value !== 'string')) continue;
+        if (values.every(value => /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}/.test(value as string))) formats.set(field.name, 'datetime');
+        else if (values.every(value => /^\d{1,2}:\d{2}(:\d{2})?$/.test((value as string).trim()))) formats.set(field.name, 'clock');
+    }
+    // The cleaner writes 'Unknown' (or 'None' for a missing discount code, note or add-on)
+    // into blank category cells; the AI must know the word to leave them out.
+    const blankFills = new Map<string, 'Unknown' | 'None'>();
+    for (const column of dataset.columns.filter(c => c.type === ColumnType.DIMENSION)) {
+        const values = sample.map(row => row[column.name]);
+        const word = values.includes('None') ? 'None' : values.includes('Unknown') ? 'Unknown' : null;
+        if (word) blankFills.set(column.name, word);
+    }
+    const extra: ColumnExtras = { ids: idNames, perRowNumbers: new Set(shape.perRowNumbers), yesNo, formats, blankFills, shape: shapeForModel(shape, yesTest) };
     return { model, schema: describeColumnsOnly(model, join, numericColumns, perItemColumns(dataset.columns, dataset.name), repeatingIds, extra) };
 }
 

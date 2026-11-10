@@ -63,6 +63,8 @@ export interface ColumnProfileData {
     /** Day-first reading for d/d/yyyy values in this column. */
     slashDayFirst?: boolean;
     currencyDetected: boolean;
+    /** Share of filled values written as money: exactly two decimals ("79.00", "1,234.50"). */
+    moneyFormatRate?: number;
     percentageDetected: boolean;
     wordNumberRate: number;
     /** Fraction of numeric values that are whole integers (0–1). Key columns are integer-heavy. */
@@ -239,6 +241,24 @@ const DATE_NAME_PATTERNS = /^(date|sale_?date|order_?date|purchase_?date|created
 // never reclassified as a numeric attribute.
 const STRONG_METRIC_NAME = /(?:^|[_\s])(sales|revenue|profit|cost|price|amount|total|income|salary|wage|pay|compensation|expense|fee|charge|payment|spend|earning|bonus|commission|balance|budget|discount|tax|shipping|freight|margin|debt|credit|debit|turnover|premium|interest|deposit|refund|rent|royalty|stipend|funding|payout)(?:[_\s]|$)/i;
 
+/** Details an order or visit only sometimes has: a blank one means there wasn't one. */
+const OPTIONAL_DETAIL_NAME = /(^|_)(discount|discounts|coupon|coupons|promo|promotion|voucher|vouchers|referral|referrer|tag|tags|note|notes|gift|modifier|modifiers|addon|addons|add_on|add_ons|extra|extras|allergy|allergies|instruction|instructions|offer|campaign)(_|$)/i;
+
+/** Money written the way exports write it: two decimals, optional symbol, sign or brackets. */
+const MONEY_FORMAT = /^[-(]?\s*[£$€¥]?\s*-?\d+(?:[,.\s]\d{3})*[.,]\d{2}\)?$/;
+
+/**
+ * The name with joined and plural forms split out, so "subtotal", "grandtotal",
+ * "taxes" and "fees" read like "sub_total", "grand_total", "tax" and "fee".
+ */
+function metricNameForm(name: string): string {
+    return name.toLowerCase()
+        .replace(/(^|_)(sub|grand|net|gross)(?=total|sales|amount|price)/g, '$1$2_')
+        .split('_')
+        .map(t => t.length > 3 && /(x|s|ch|sh)es$/.test(t) ? t.slice(0, -2) : t.length > 3 && /[^s]s$/.test(t) ? t.slice(0, -1) : t)
+        .join('_');
+}
+
 /**
  * Distinguishes a numeric ATTRIBUTE (age, rating, score) from a business MEASURE.
  * Attributes have a bounded human-scale range, integer values, and/or low
@@ -247,7 +267,9 @@ const STRONG_METRIC_NAME = /(?:^|[_\s])(sales|revenue|profit|cost|price|amount|t
 function isNumericAttribute(p: ColumnProfileData): boolean {
     const pMin = p.min, pMax = p.max;
     if (pMin === undefined || pMax === undefined) return false;
-    if (STRONG_METRIC_NAME.test(p.name)) return false;
+    if (STRONG_METRIC_NAME.test(p.name) || STRONG_METRIC_NAME.test(metricNameForm(p.name))) return false;
+    // Written as money ("£4.80", "79.00"): an amount, however few distinct values it has.
+    if (p.currencyDetected || (p.moneyFormatRate ?? 0) >= 0.9) return false;
     const span = pMax - pMin;
     const maxVal = Math.max(Math.abs(pMin), Math.abs(pMax));
     const bounded = maxVal > 0 && maxVal <= 200 && span > 0 && span <= 200; // Signal 1
@@ -265,8 +287,9 @@ function isNumericAttribute(p: ColumnProfileData): boolean {
  */
 export type RoleDecision = { type: ColumnType; note?: { label: string; message: string } };
 export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
+    const nameForm = metricNameForm(p.name);
     const isMetricName = METRIC_NAME_EXACT.test(p.name) || METRIC_KEYWORDS.test(p.name) || STRONG_METRIC_NAME.test(p.name)
-        || METRIC_KEYWORDS.test(p.name.replace(/s($|_)/g, '$1'));
+        || METRIC_KEYWORDS.test(p.name.replace(/s($|_)/g, '$1')) || METRIC_NAME_EXACT.test(nameForm) || METRIC_KEYWORDS.test(nameForm);
     const isDateName = DATE_NAME_PATTERNS.test(p.name);
     const effectiveNumericRate = p.numericParseRate + (p.wordNumberRate || 0) + (p.unitNumberRate || 0);
     const keySig = keySignalFor(p, isMetricName);
@@ -281,7 +304,7 @@ export function classifyColumnRole(p: ColumnProfileData): RoleDecision {
     // R1 — ID by name pattern (order_id, sku, *_code …).
     // A coded category ("gender_code" 0/1, "region_no" 1–5) is a grouping, not a key.
     if (ID_PATTERNS.test(p.name) && !NOT_ID_WORDS.test(p.name)
-        && !(isLabelName(p.name) && p.distinctCount <= 20 && p.totalValues > p.distinctCount * 5)) return { type: ColumnType.ID };
+        && !((isLabelName(p.name) || /(^|_)(code|cd)$/i.test(p.name)) && p.distinctCount <= 20 && p.totalValues > p.distinctCount * 5)) return { type: ColumnType.ID };
     // R1b — Leading-zero CODE (zip 01234, SKU 007): numeric-looking but the zeros
     // are significant, so it must be preserved as text and never summed. Strong
     // metric names (never a code) are exempt.
@@ -1010,8 +1033,10 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
         const numberStyle = detectNumberStyle(nonNull);
         const percentValues: number[] = [];
         let plainFractions = 0;
+        let moneyFormatCount = 0;
 
         for (const v of nonNull) {
+            if (typeof v === 'string' && MONEY_FORMAT.test(v.trim())) moneyFormatCount++;
             if (typeof v === 'string') { const mins = parseDurationMinutes(v); if (mins !== null) { durationCount++; if (mins >= 1440) durationOver24h = true; continue; } }
             const s = String(v);
             if (hasCurrencyMarker(v)) currencyDetected = true;
@@ -1158,6 +1183,7 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
             dateFormatCandidate: bestDateFormat,
             slashDayFirst,
             currencyDetected,
+            moneyFormatRate: nonNull.length > 0 ? moneyFormatCount / nonNull.length : 0,
             percentageDetected,
             wordNumberRate: nonNull.length > 0 ? wordNumberCount / nonNull.length : 0,
             integerRate,
@@ -1428,7 +1454,9 @@ function layer4_rulePlanner(
                     return v;
                 }
             });
-            if (!freeText && !contact) steps.push({ name: 'IMPUTE_UNKNOWN', fn: (v: any) => (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) ? 'Unknown' : v });
+            // A blank discount code, gift note or add-on means there wasn't one, not that it is unknown.
+            const blankMeansNone = OPTIONAL_DETAIL_NAME.test(p.name);
+            if (!freeText && !contact) steps.push({ name: blankMeansNone ? 'IMPUTE_NONE' : 'IMPUTE_UNKNOWN', fn: (v: any) => (v === null || v === undefined || (typeof v === 'string' && v.trim() === '')) ? (blankMeansNone ? 'None' : 'Unknown') : v });
         } else if (type === ColumnType.ID) {
             // Cast IDs to clean integer strings (1.0 → "1", not "1.0")
             steps.push({

@@ -65,8 +65,10 @@ export interface ConstraintResult {
 // NAME PATTERN DICTIONARIES — Replaces greedy regexes with scoped matching
 // ═══════════════════════════════════════════════════════════════════
 
-const CURRENCY_NAMES = /(?:^|[_\s])(sales|revenue|price|cost|total_amount|amount|profit|shipping|tax|payment|spend|income|earning|fee|charge|balance|budget|salary|wage|pay|compensation|expense|bonus|commission|payout|premium|interest|deposit|refund|rent|royalty|stipend|funding|debt|credit|debit|turnover)(?:[_\s]|$)/i;
-const PERCENTAGE_NAMES = /(?:^|[_\s])(rate|pct|percent|ratio|margin_pct|discount_pct|growth_pct|share|proportion|discount)(?:[_\s]|$)/i;
+const CURRENCY_NAMES = /(?:^|[_\s])(sales|revenue|price|cost|total_amount|amount|profit|shipping|tax|taxes|payment|payments|spend|income|earning|earnings|fee|fees|charge|charges|balance|budget|salary|wage|pay|compensation|expense|bonus|commission|payout|premium|interest|deposit|refund|refunds|rent|royalty|stipend|funding|debt|credit|debit|turnover|takings|tip|tips|discounts?)(?:[_\s]|$)|^(sub_?|grand_?|order_?|line_?|invoice_?|basket_?|cart_?|net_?|gross_?)?total$|^subtotal/i;
+/** Named as a percentage outright. */
+const EXPLICIT_PERCENT_NAMES = /(?:^|[_\s])(pct|percent|percentage|margin_pct|discount_pct|growth_pct)(?:[_\s]|$)|%/i;
+const PERCENTAGE_NAMES = /(?:^|[_\s])(rate|pct|percent|ratio|margin_pct|discount_pct|growth_pct|share|proportion)(?:[_\s]|$)/i;
 const COUNT_NAMES = /(?:^|[_\s])(count|num|number_of|total_count|qty|quantity|units|items|orders|transactions)(?:[_\s]|$)/i;
 const GEO_NAMES = /(?:^|[_\s])(region|state|city|country|zip|postal|address|geo|territory|area|location)(?:[_\s]|$)/i;
 const ID_NAMES = /(?:^|[_\s])?(id|_id|key|code)$/i;
@@ -105,12 +107,18 @@ export function runConstraintGates(profile: ColumnStatProfile): ConstraintResult
     // are not enough: Male/Female, Urban/Rural, Pass/Fail are categories and
     // keep their labels.
     const twoLabels = profile.yesNo === false || (profile.yesNo === undefined && isLabelName(profile.name));
-    if (profile.distinctCount === 2 && profile.totalRows > 10 && twoLabels) {
+    // A quantity or an amount that happens to take two values (1 or 2 items, £5 or £10) is still
+    // added up: it is neither a pair of labels nor a yes/no.
+    const measuredTwoValues = profile.etlType === ColumnType.METRIC && profile.yesNo !== true
+        && (COUNT_NAMES.test(name) || STRONG_METRIC_NAMES.test(name) || CURRENCY_NAMES.test(name));
+    if (measuredTwoValues) {
+        // fall through to the gates below
+    } else if (profile.distinctCount === 2 && profile.totalRows > 10 && twoLabels) {
         allowedTypes = ['category', 'geography', 'ordinal', 'text'];
         reasons.push('2 values that are labels, not yes/no → category');
         return buildResult(profile, allowedTypes, 'category', 'dimension', 0.92, reasons, rangeSpan, uniqueRatio);
     }
-    if ((profile.distinctCount === 2 || profile.yesNo === true) && profile.totalRows > 10 && profile.yesNo !== false) {
+    if (!measuredTwoValues && (profile.distinctCount === 2 || profile.yesNo === true) && profile.totalRows > 10 && profile.yesNo !== false) {
         const isNumericFlag = /(?:^|[_\s])(is_|has_|flag|status|active|returned|churned|converted|paid|completed)(?:[_\s]|$)/i.test(name);
         if (isNumericFlag && profile.isIntegerLike) {
             allowedTypes = ['boolean', 'quantity'];
@@ -231,7 +239,14 @@ function computeDeterministicGuess(
     }
 
     // --- Percentage ---
-    if (allowedTypes.includes('percentage') && profile.etlType === ColumnType.METRIC && PERCENTAGE_NAMES.test(name)) {
+    // "discount_rate" is a percentage; "discount_amount", "tax_rate_amount" or a bare "discount" of
+    // £1.58 is money. A bare discount counts as a percentage only when its values look like one
+    // (whole numbers up to 100, a handful of them: 5, 10, 15, 20).
+    const discountPercent = /(?:^|[_\s])discounts?$/.test(name) && profile.isIntegerLike && profile.range !== undefined
+        && profile.range.min >= 0 && profile.range.max <= 100 && profile.distinctCount <= 20;
+    const percentByName = EXPLICIT_PERCENT_NAMES.test(name) || discountPercent
+        || (PERCENTAGE_NAMES.test(name) && !/(?:^|[_\s])(amount|amt|value|price|cost|total|sum)(?:[_\s]|$)/.test(name));
+    if (allowedTypes.includes('percentage') && profile.etlType === ColumnType.METRIC && percentByName) {
         let s = 0.8;
         if (profile.range && profile.range.max <= 100) s += 0.1;
         scores.push({ type: 'percentage', role: 'metric', score: Math.min(1, s), reason: `Percentage name pattern: "${name}"` });

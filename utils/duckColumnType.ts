@@ -41,3 +41,26 @@ export function duckColumnType(rows: Record<string, any>[], col: string): 'BOOLE
     if (!hasString && !hasDate && hasNumber && !hasBoolean) return 'DOUBLE';
     return 'VARCHAR';
 }
+
+/**
+ * One cell as it is stored in DuckDB, for the column's type — the one rule the
+ * app's loader and the answer check both follow. Empty text is a blank (NULL),
+ * so COUNT(DISTINCT customer_id) and "IS NULL" treat a missing customer as
+ * missing, not as a customer called "".
+ */
+export function duckCellValue(value: unknown, type: 'BOOLEAN' | 'DOUBLE' | 'VARCHAR'): boolean | number | string | null {
+    if (value === null || value === undefined) return null;
+    if (type === 'BOOLEAN') return isBooleanCell(value) ? String(value).trim().toLowerCase() === 'true' : null;
+    if (type === 'DOUBLE') return typeof value === 'number' ? (Number.isFinite(value) ? value : null) : parseLocaleNumber(value as any);
+    const text = String(value);
+    return text.trim() === '' ? null : text;
+}
+
+/** The same cell as a SQL literal for an INSERT. */
+export function duckLiteral(value: unknown, type: 'BOOLEAN' | 'DOUBLE' | 'VARCHAR'): string {
+    const v = duckCellValue(value, type);
+    if (v === null) return 'NULL';
+    if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+    if (typeof v === 'number') return String(v);
+    return `'${v.replace(/'/g, "''")}'`;
+}

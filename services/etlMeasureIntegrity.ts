@@ -397,9 +397,13 @@ export function fillOrderLevelDetails(rows: Row[]): OrderDetailsFill | null {
             rows.forEach((r, i) => {
                 if (isFirst[i]) { if (!isBlank(r[c])) firstFilled++; } else if (isBlank(r[c])) contBlank++;
             });
-            if (firstFilled / firsts.length < 0.9 || contBlank / continuation < 0.95) continue;
+            if (contBlank / continuation < 0.95) continue;
             const sample = firsts.map(i => rows[i][c]).filter(v => !isBlank(v));
             const numeric = sample.filter(v => num(v) !== null).length >= sample.length * 0.9;
+            // An order detail most orders have (email, status) — or one only some orders have
+            // (a discount code, a note) but never on a later line: both belong to the whole order.
+            const sparseOrderDetail = !numeric && firstFilled >= Math.max(3, firsts.length * 0.02) && contBlank === continuation;
+            if (firstFilled / firsts.length < 0.9 && !sparseOrderDetail) continue;
             (numeric ? firstLineAmounts : filled).push(c);
         }
         if (!filled.length) continue;

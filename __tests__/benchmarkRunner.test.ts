@@ -59,6 +59,29 @@ describe('benchmark runner', () => {
     expect(reloads).toBe(2);
   });
 
+  it('accepts another checked reading of the question, and checks that reading against its own gold SQL', async () => {
+    const testCase = {
+      ...firstCase,
+      goldSql: 'SELECT net',
+      expectedRows: [{ total: 100 }],
+      goldAlternatives: [{ reading: 'gross sales', goldSql: 'SELECT gross', expectedRows: [{ total: 120 }] }],
+    };
+    const gold = async (_rows: unknown, sql: string) => ({ data: sql === 'SELECT gross' ? [{ total: 120 }] : [{ total: 100 }] });
+    const answer = (value: number) => async () => ({
+      sql: 'SELECT SUM(x) AS total', rawData: [{ total: value }], validation: { valid: true }, displaySafety: { allowed: true },
+      executionTimeMs: 1, engine: 'llm-sql', confidence: { score: 90, level: 'high' }, repairAttempts: 0,
+      provenance: { strategy: 'hybrid-plan-llm-sql', model: 'test-model' }, tokenUsage: { prompt: 10, completion: 5, total: 15 },
+    });
+    const gross = await executeBenchmarkCase(testCase as any, dependencies({ executeGoldSql: gold as any, runPipeline: answer(120) as any }));
+    expect(gross.passed).toBe(true);
+    expect(gross.matchedReferenceSource).toBe('reading: gross sales');
+    const wrong = await executeBenchmarkCase(testCase as any, dependencies({ executeGoldSql: gold as any, runPipeline: answer(90) as any }));
+    expect(wrong.passed).toBe(false);
+    // A reading whose frozen answer no longer matches its SQL is a fixture error, not a score.
+    const broken = await executeBenchmarkCase(testCase as any, dependencies({ executeGoldSql: (async (_r: unknown, sql: string) => ({ data: sql === 'SELECT gross' ? [{ total: 999 }] : [{ total: 100 }] })) as any, runPipeline: answer(120) as any }));
+    expect(broken.status).toBe('fixture_error');
+  });
+
   it('records a fixture failure and does not run AI SQL when frozen gold diverges', async () => {
     let pipelineCalls = 0;
     const result = await executeBenchmarkCase(firstCase, dependencies({

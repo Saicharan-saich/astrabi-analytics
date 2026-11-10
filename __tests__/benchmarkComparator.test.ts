@@ -8,6 +8,13 @@ import {
 } from '../services/benchmark';
 
 describe('benchmark result comparator', () => {
+  it('treats the same day or month written differently as the same period', () => {
+    const expected = [{ month: '2026-07-01', total: 10 }, { month: '2026-08-01', total: 12 }];
+    expect(compareResultSets(expected, [{ period: '2026-07', total_sales: 10 }, { period: '2026-08', total_sales: 12 }], { orderMatters: false }).equal).toBe(true);
+    expect(compareResultSets(expected, [{ period: '2026-07-01 00:00:00', t: 10 }, { period: '2026-08-01T00:00:00', t: 12 }], { orderMatters: false }).equal).toBe(true);
+    expect(compareResultSets(expected, [{ period: '2026-07-02', t: 10 }, { period: '2026-08-01', t: 12 }], { orderMatters: false }).equal).toBe(false);
+  });
+
   it('normalizes common aggregate aliases and numeric representations', () => {
     const result = compareResultSets(
       [{ region: 'North', total_sales: 100.5 }],

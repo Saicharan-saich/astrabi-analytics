@@ -60,6 +60,19 @@ function normalizeScalar(value: unknown): unknown {
   }
 }
 
+/**
+ * The same day or month written differently is the same value: a DATE that
+ * DuckDB returns as "2026-07-01", "2026-07-01 00:00:00" or a month label
+ * "2026-07" (STRFTIME '%Y-%m') all name the period starting 1 July 2026.
+ */
+function periodText(value: string): string {
+  const text = value.trim();
+  const day = /^(\d{4}-\d{2}-\d{2})(?:[ T]00:00(?::00(?:\.0+)?)?(?:Z|[+-]00(?::?00)?)?)?$/.exec(text);
+  if (day) return day[1];
+  if (/^\d{4}-\d{2}$/.test(text)) return `${text}-01`;
+  return text.toLocaleLowerCase();
+}
+
 function typeFamily(value: unknown): 'number' | 'boolean' | 'string' | 'null' {
   value = normalizeScalar(value);
   if (value === null || value === undefined) return 'null';
@@ -75,7 +88,7 @@ function comparableValue(value: unknown): string {
   const family = typeFamily(value);
   if (family === 'number') return `number:${Number(value).toPrecision(12)}`;
   if (family === 'boolean') return `boolean:${Boolean(value) ? '1' : '0'}`;
-  return `string:${String(value).trim().toLocaleLowerCase()}`;
+  return `string:${periodText(String(value))}`;
 }
 
 /**
@@ -204,7 +217,7 @@ function valuesEqual(
   if (expectedType === 'boolean' && actualType === 'number') return Number(actual) === (expected ? 1 : 0);
   if (expectedType === 'number' && actualType === 'boolean') return Number(expected) === (actual ? 1 : 0);
 
-  return String(expected ?? '').trim().toLocaleLowerCase() === String(actual ?? '').trim().toLocaleLowerCase();
+  return periodText(String(expected ?? '')) === periodText(String(actual ?? ''));
 }
 
 function rowsEqual(

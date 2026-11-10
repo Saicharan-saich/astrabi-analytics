@@ -9,7 +9,8 @@ export type BenchmarkSuiteId =
   | 'bird-dev-research'
   | 'bird-dev-holdout'
   | 'spider2-lite-holdout'
-  | 'quickinsight-business';
+  | 'quickinsight-business'
+  | 'quickinsight-owner';
 
 export type BenchmarkCorpusId = 'legacy-550' | 'holdout-550';
 
@@ -93,6 +94,12 @@ export interface BenchmarkCase {
   referenceResult?: PublishedBenchmarkReference;
   goldSql: string;
   expectedRows: Record<string, unknown>[];
+  /**
+   * Other readings an owner could fairly mean ("sales" as takings after
+   * discounts or before). Each has its own gold SQL, re-run and checked like
+   * the main one; the answer passes if it matches any reading.
+   */
+  goldAlternatives?: Array<{ reading: string; goldSql: string; expectedRows: Record<string, unknown>[] }>;
   comparison: BenchmarkComparisonOptions;
   tags: string[];
   /** Independent corpus-quality audit. Cases that are not no_issue_found are

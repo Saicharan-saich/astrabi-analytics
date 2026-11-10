@@ -17,6 +17,7 @@ import type { Dataset } from '../../types';
 import { runBenchmark } from './runner';
 import { loadResearchBenchmarkDataset } from './researchDatasetLoader';
 import { BUSINESS_BENCHMARK_SUITE } from './businessFixtures.generated';
+import { OWNER_BENCHMARK_SUITE } from './ownerFixtures.generated';
 import { AUDITED_HOLDOUT_BENCHMARK_SUITES } from './holdoutQuality';
 import type { BenchmarkCaseResult, BenchmarkRun, BenchmarkSuite } from './types';
 
@@ -42,7 +43,8 @@ function spread(suite: BenchmarkSuite, count?: number): BenchmarkSuite {
 }
 
 export interface AccuracyRunOptions {
-    suite: 'business' | 'bird' | 'spider2';
+    /** owner: café, shop and online-shop exports with owner-worded questions. */
+    suite: 'owner' | 'business' | 'bird' | 'spider2';
     /** Sample size (spread across the suite). Default: all cases. */
     count?: number;
     /** Only cases whose id matches (e.g. "-m" for the messy-phrasing set). */
@@ -52,7 +54,9 @@ export interface AccuracyRunOptions {
 }
 
 export async function runAISQLAccuracy(options: AccuracyRunOptions): Promise<BenchmarkRun> {
-    const source = options.suite === 'business'
+    const source = options.suite === 'owner'
+        ? OWNER_BENCHMARK_SUITE
+        : options.suite === 'business'
         ? BUSINESS_BENCHMARK_SUITE
         : AUDITED_HOLDOUT_BENCHMARK_SUITES.find(suite => suite.id === (options.suite === 'bird' ? 'bird-dev-holdout' : 'spider2-lite-holdout'));
     if (!source) throw new Error(`Unknown suite ${options.suite}`);

@@ -225,6 +225,20 @@ export async function executeBenchmarkCase(
           { comparison: fixtureComparison, actualRows: goldExecution.data.slice(0, EVIDENCE_ROW_LIMIT) },
         );
       }
+      // Every other accepted reading is held to the same check.
+      for (const alternative of testCase.goldAlternatives || []) {
+        const run = await withStageTimeout(
+          () => dependencies.executeGoldSql(dataset.rows, alternative.goldSql, dataset.timeContext ? {
+            minDate: dataset.timeContext.minDate, maxDate: dataset.timeContext.maxDate, primaryDateColumn: dataset.timeContext.anchorDateColumn,
+          } : undefined, dataset.relatedTables),
+          localStageTimeoutMs,
+          'gold SQL execution',
+        );
+        const checked = run.error ? null : compareResultSets(alternative.expectedRows, run.data, { ...testCase.comparison, orderMatters: false, strictColumns: true });
+        if (!checked?.equal) {
+          return failureResult(testCase, 'fixture_error', `Frozen answer for the reading "${alternative.reading}" does not match its gold SQL: ${run.error || checked?.reason}`, startedAt, now());
+        }
+      }
     }
 
     // The AI pipeline shares one in-browser DuckDB connection. Reloading here
@@ -257,6 +271,7 @@ export async function executeBenchmarkCase(
     };
     let comparison;
     let matchedReference = testCase.referenceResult?.alternatives[0];
+    let alternativeMatched: NonNullable<BenchmarkCase['goldAlternatives']>[number] | undefined;
     try {
       if (testCase.referenceResult) {
         // Use only publisher-specified reference projections/alternatives. Do
@@ -270,13 +285,29 @@ export async function executeBenchmarkCase(
             break;
           }
         }
-      } else comparison = compareResultSetsAsUserAnswer(
-        testCase.expectedRows,
-        pipelineResult.rawData || [],
-        comparisonOptions,
-        pipelineResult.contractValidation?.requestedOutputFields,
-        { question: testCase.question, candidateSql: pipelineResult.sql || '' },
-      );
+      } else {
+        comparison = compareResultSetsAsUserAnswer(
+          testCase.expectedRows,
+          pipelineResult.rawData || [],
+          comparisonOptions,
+          pipelineResult.contractValidation?.requestedOutputFields,
+          { question: testCase.question, candidateSql: pipelineResult.sql || '' },
+        );
+        for (const alternative of comparison.equal ? [] : testCase.goldAlternatives || []) {
+          const checked = compareResultSetsAsUserAnswer(
+            alternative.expectedRows,
+            pipelineResult.rawData || [],
+            comparisonOptions,
+            pipelineResult.contractValidation?.requestedOutputFields,
+            { question: testCase.question, candidateSql: pipelineResult.sql || '' },
+          );
+          if (checked.equal) {
+            comparison = { ...checked, reason: `Matched the accepted reading "${alternative.reading}". ${checked.reason}` };
+            alternativeMatched = alternative;
+            break;
+          }
+        }
+      }
     } catch (comparisonError) {
       // Comparator/reporting defects must never erase an already-executed
       // candidate, its rows, model route, or token evidence. Preserve strict
@@ -304,9 +335,9 @@ export async function executeBenchmarkCase(
       pipelineLatencyMs: pipelineResult.executionTimeMs || 0,
       goldSql: testCase.goldSql,
       candidateSql: pipelineResult.sql || '',
-      expectedRows: (matchedReference?.rows || testCase.expectedRows).slice(0, EVIDENCE_ROW_LIMIT),
+      expectedRows: (matchedReference?.rows || alternativeMatched?.expectedRows || testCase.expectedRows).slice(0, EVIDENCE_ROW_LIMIT),
       referenceResult: testCase.referenceResult,
-      matchedReferenceSource: comparison.equal ? matchedReference?.source : undefined,
+      matchedReferenceSource: comparison.equal ? (matchedReference?.source || (alternativeMatched ? `reading: ${alternativeMatched.reading}` : undefined)) : undefined,
       actualRows: (pipelineResult.rawData || []).slice(0, EVIDENCE_ROW_LIMIT),
       comparison,
       engine: pipelineResult.engine,

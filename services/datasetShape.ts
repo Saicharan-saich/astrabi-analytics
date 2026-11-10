@@ -14,6 +14,7 @@
 import { ColumnType, type Dataset } from '../types';
 import { flagSubject, isYesNoColumn, yesNoLabel } from './ai-sql/plainLabels';
 import { isAdditiveName, isCoordinateName, isPerRowName } from '../utils/numberMeaning';
+import { findLineColumns } from './etlMeasureIntegrity';
 
 export type DatasetKind = 'hybrid' | 'records' | 'measures';
 
@@ -42,6 +43,19 @@ export interface DatasetShape {
     dayGaps: Record<string, { from: string; to: string }>;
     /** Tell the story by counting rows and comparing an outcome (no amounts to add up). */
     countStory: boolean;
+    /**
+     * Rows that are the lines of one order: consecutive rows share this column
+     * (Shopify's "Name" #1001, a receipt number, a transaction ID).
+     */
+    lineKey?: { column: string; word: string };
+    /** Order amounts filled on the first line of each order only (Shopify subtotal, shipping, total). */
+    firstRowAmounts: string[];
+    /** How to add up sales per line: a line amount, or price × quantity. */
+    lineSales?: string;
+    /** Columns that name the customer (an email, a customer ID) and repeat. */
+    customerKeys: string[];
+    /** Amounts with some negative rows: refunds, returns or corrections. */
+    signedAmounts: string[];
     /** What one row is, in words: "appointment". */
     recordWord: string;
     /** The same, plural: "appointments". */
@@ -55,6 +69,35 @@ const NOT_A_MEASURE = /(^|_)(lat|lon|lng|latitude|longitude|zip|postcode|phone|y
 const CODE_NAME = /(store|branch|shop|site|dept|department|zone|region|area|district|ward|room|class|grade|level|tier|group|team|cluster|segment|category|type|code|line|channel|plant|warehouse|route|terminal|gate|floor|bed|seat|unit|division|cohort|batch|version|stage|step|status|number|no|num|nr)$/i;
 const OUTCOME = /(show|showed|attend|no.?show|churn|convert|success|approved|default|cancel|return|readmi|surviv|died|death|dead|deceased|fraud|won|lost|pass|fail|complet|resolv|left|attrition|respon|click|purchas|outcome|target|label|result|bought|subscri|renew|enrol|admit|hired|accept|reject|late|on.?time|defect|spam|exited|exit|retained|stroke|disease|diagnos)/i;
 const ROW_WORD = /(appointment|visit|encounter|admission|case|claim|application|call|session|event|booking|order|invoice|transaction|ticket|enrol|registration|reservation|response|survey|record|loan|policy|trip|job|incident|request)/i;
+
+/** An order number as shops write it: #1001, INV-204, SO10023, R-55012. */
+const ORDER_NUMBER = /^#\s?\d{2,}$|^[A-Z]{1,5}[-#/]?\d{3,}$/i;
+/** Columns that name the customer. */
+const CUSTOMER_KEY = /(^|_)(e_?mail|email_address|customer_email|buyer_email)$|^(customer|client|buyer|member|guest|patron|account|user)(_?(id|email|no|number|ref|key|code|name))?$/i;
+/** The word for one order from its key's name ("receipt_no" → receipt); a bare "name" or "number" is the order. */
+const keyWord = (name: string) => {
+    const word = idWord(name);
+    return !word || /^(name|number|no|num|ref|reference|id|key|#)$/i.test(word) ? 'order' : word;
+};
+/** Where each run of a key starts, when rows come in runs (the lines of one order), else null. */
+function lineRuns(rows: Record<string, any>[], key: string): boolean[] | null {
+    if (rows.length < 6) return null;
+    const starts: boolean[] = new Array(rows.length).fill(false);
+    const seen = new Set<string>();
+    let runs = 0, multi = 0, runLength = 0;
+    for (let i = 0; i < rows.length; i++) {
+        const value = rows[i][key];
+        if (isBlank(value)) return null;
+        const text = String(value);
+        if (i > 0 && text === String(rows[i - 1][key])) { runLength++; continue; }
+        if (seen.has(text)) return null;
+        if (runLength > 1) multi++;
+        seen.add(text); starts[i] = true; runs++; runLength = 1;
+    }
+    if (runLength > 1) multi++;
+    const continuation = rows.length - runs;
+    return multi >= 3 && continuation >= rows.length * 0.05 && runs >= rows.length * 0.1 ? starts : null;
+}
 
 const isBlank = (value: unknown) => value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
 const isNumeric = (value: unknown) => typeof value === 'number'
@@ -154,6 +197,57 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
         }
     }
 
+    // Lines of one order: consecutive rows share a key, and each key value
+    // appears in one run only. Read from the rows in their file order.
+    const ordered = rows.slice(0, 20000);
+    const keyCandidates = dataset.columns.filter(c => !c.name.startsWith('__') && !dates.includes(c.name) && !amounts.includes(c.name) && !perRowNumbers.includes(c.name) && !yesNo.includes(c.name));
+    let lineKey: DatasetShape['lineKey'];
+    let lineStarts: boolean[] | null = null;
+    let bestScore = -1;
+    for (const column of keyCandidates) {
+        const starts = lineRuns(ordered, column.name);
+        if (!starts) continue;
+        const values = ordered.slice(0, 500).map(row => String(row[column.name] ?? ''));
+        const score = (column.type === ColumnType.ID ? 2 : 0) + (ROW_WORD.test(column.name) ? 2 : 0)
+            + (values.filter(v => ORDER_NUMBER.test(v.trim())).length >= values.length * 0.9 ? 2 : 0);
+        if (score > bestScore) { bestScore = score; lineStarts = starts; lineKey = { column: column.name, word: keyWord(column.name) }; }
+    }
+    const firstRowAmounts: string[] = [];
+    let lineSales: string | undefined;
+    if (lineKey && lineStarts) {
+        const starts = lineStarts;
+        const groupFirsts = starts.map((first, i) => first && i + 1 < starts.length && !starts[i + 1]);
+        for (const name of [...amounts, ...perRowNumbers]) {
+            let firsts = 0, firstFilled = 0, rest = 0, restBlank = 0;
+            ordered.forEach((row, i) => {
+                if (groupFirsts[i]) { firsts++; if (!isBlank(row[name])) firstFilled++; } else if (!starts[i]) { rest++; if (isBlank(row[name])) restBlank++; }
+            });
+            if (firsts >= 3 && rest > 0 && firstFilled >= firsts * 0.9 && restBlank >= rest * 0.95) firstRowAmounts.push(name);
+        }
+        const lineColumns = findLineColumns([...amounts, ...perRowNumbers].filter(name => !firstRowAmounts.includes(name)));
+        const q = (name: string) => `"${name.replace(/"/g, '""')}"`;
+        if (lineColumns.lineAmount) lineSales = `SUM(${q(lineColumns.lineAmount)})`;
+        else if (lineColumns.unitPrice && lineColumns.quantity) lineSales = `SUM(${q(lineColumns.unitPrice)} * ${q(lineColumns.quantity)})`;
+        if (!ids.some(id => id.name === lineKey!.column)) ids.push({ name: lineKey.column, unique: false });
+        const index = categories.indexOf(lineKey.column);
+        if (index >= 0) categories.splice(index, 1);
+    }
+    // Who the customer is: an email or customer ID that repeats.
+    const customerKeys = dataset.columns.map(c => c.name).filter(name => CUSTOMER_KEY.test(name) && name !== lineKey?.column && (() => {
+        const values = sample.map(row => row[name]).filter(value => !isBlank(value)).map(String);
+        return values.length > 1 && new Set(values).size < values.length * 0.95;
+    })());
+    for (const name of customerKeys) {
+        if (!ids.some(id => id.name === name)) ids.push({ name, unique: false });
+        const index = categories.indexOf(name);
+        if (index >= 0) categories.splice(index, 1);
+    }
+    const signedAmounts = amounts.filter(name => {
+        let negative = 0, filled = 0;
+        for (const row of sample) { const v = row[name]; if (isBlank(v)) continue; filled++; if (Number(v) < 0) negative++; }
+        return negative > 0 && negative < filled * 0.5;
+    });
+
     const unique = ids.filter(id => id.unique);
     const rowId = unique.find(id => ROW_WORD.test(id.name))?.name || unique[0]?.name;
     const entityIds = ids.filter(id => !id.unique).map(id => id.name);
@@ -185,7 +279,7 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
     let shape: DatasetShape;
     if (kind === 'records') {
         shape = {
-            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory,
+            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts,
             label: 'Records — nothing to add up',
             summary: `Each row is one ${recordWord}, described by ${describedText}. There are no amounts such as sales or cost.`,
             howMeasured: `QuickInsight measures it by counting ${recordsWord}${entity ? ` and distinct ${entity}` : ''}, and by the share of ${recordsWord} with each answer${outcome ? ` (for example the % that ${outcomeWords})` : ''}${perRowNumbers.length ? `; ${list(perRowNumbers, 2, numberName)} ${perRowNumbers.length === 1 ? 'is' : 'are'} averaged or put into ranges` : ''}.`,
@@ -193,14 +287,14 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
     } else if (kind === 'measures') {
         const numbers = [...amounts, ...perRowNumbers];
         shape = {
-            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory,
+            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts,
             label: 'Numbers only',
             summary: `Mostly numbers (${list(numbers)}), with nothing to group them by${dates.length ? ' except the date' : ''}.`,
             howMeasured: `QuickInsight looks at totals and averages${dates.length ? ', how they change over time' : ''}, their ranges, and which numbers move together.`,
         };
     } else {
         shape = {
-            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory,
+            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts,
             label: amounts.length ? 'Amounts and categories' : 'Scores and categories',
             summary: `${amounts.length ? `Amounts you can add up (${list(amounts, 3)})` : `Measured numbers (${list(perRowMetrics, 3)})`} and ${[...categories, ...yesNo].length === 1 ? 'a category' : 'categories'} to split them by (${list([...categories, ...yesNo.map(flagSubject)], 3)}).`,
             howMeasured: `QuickInsight ${amounts.length ? 'adds up and averages the amounts' : 'averages the numbers'}, split by the categories${dates.length ? ' and over time' : ''}${outcome ? `, and compares the share that ${outcomeWords}` : ''}.`,
@@ -218,7 +312,18 @@ export function shapeForModel(shape: DatasetShape, yesTest: (column: string) => 
     const q = (name: string) => `"${name.replace(/"/g, '""')}"`;
     const lines = [`DATA SHAPE: ${shape.kind === 'records' ? 'records with nothing to add up' : shape.kind === 'measures' ? 'numbers only' : 'amounts and categories'}.`];
     if (shape.rowId) lines.push(`Each row is one ${shape.recordWord} (${q(shape.rowId)} is different on every row).`);
-    if (shape.entityIds.length) lines.push(`${shape.entityIds.map(q).join(', ')} repeat${shape.entityIds.length === 1 ? 's' : ''}: one ${idWord(shape.entityIds[0])} can have several rows. Count them with COUNT(DISTINCT ...).`);
+    const lineKey = shape.lineKey;
+    if (lineKey) {
+        const order = lineKey.word;
+        lines.push(`${q(lineKey.column)} is the ${order} number: the lines of one ${order} are consecutive rows with the same ${q(lineKey.column)}. Count ${plural(order)} with COUNT(DISTINCT ${q(lineKey.column)}); a figure per ${order} divides by that count, not by the number of rows.`);
+        if (shape.firstRowAmounts.length) {
+            lines.push(`${shape.firstRowAmounts.map(q).join(', ')} ${shape.firstRowAmounts.length === 1 ? 'is an amount' : 'are amounts'} for the whole ${order}, filled on its first row only and blank on its other rows: SUM ${shape.firstRowAmounts.length === 1 ? 'it' : 'them'} as they are for ${order} totals (each ${order} counts once), and never split ${shape.firstRowAmounts.length === 1 ? 'it' : 'them'} by product or line item.${shape.lineSales ? ` Sales by product or line item: ${shape.lineSales}.` : ''}`);
+        }
+    }
+    const otherIds = shape.entityIds.filter(name => name !== lineKey?.column && !shape.customerKeys.includes(name));
+    if (otherIds.length) lines.push(`${otherIds.map(q).join(', ')} repeat${otherIds.length === 1 ? 's' : ''}: one ${idWord(otherIds[0])} can have several rows. Count them with COUNT(DISTINCT ...).`);
+    for (const name of shape.customerKeys) lines.push(`${q(name)} identifies the customer and repeats when they come back: count customers with COUNT(DISTINCT ${q(name)}) (blank = no customer recorded).`);
+    if (shape.signedAmounts.length) lines.push(`Some rows have a negative ${shape.signedAmounts.map(q).join(', ')} (refunds, returns or corrections). Plain SUM gives the figure after them; leave negative rows out only when the question asks for sales before refunds.`);
     if (shape.kind === 'records') {
         lines.push('There are no amounts: never SUM an ID, a yes/no or a category. Measure with:');
         lines.push(`- the number of ${shape.recordsWord}: COUNT(*)`);
