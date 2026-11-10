@@ -12,14 +12,19 @@ interface Props {
     /** Offered when there is no check yet (an answer reopened from history). */
     onRun?: () => void;
     running?: boolean;
+    /** The question as the AI read it: the figures are checked for this reading. */
+    readAs?: string;
+    /** Set when the reading may be the question turned around (a saving read as a loss). */
+    readingDoubt?: string;
 }
 
 const ICON = { verified: ShieldCheck, warning: ShieldAlert, mismatch: ShieldAlert, partial: Shield } as const;
-const LABEL = { verified: 'Checked', warning: 'Checked', mismatch: 'Check failed', partial: 'Partly checked' } as const;
+// "Figures checked": the check confirms the arithmetic, not that the question was read as meant.
+const LABEL = { verified: 'Figures checked', warning: 'Figures checked', mismatch: 'Check failed', partial: 'Partly checked' } as const;
 
-export function AnswerCheckStrip({ check, onRun, running }: Props) {
+export function AnswerCheckStrip({ check: given, onRun, running, readAs, readingDoubt }: Props) {
     const [open, setOpen] = useState(false);
-    if (check === 'pending' || running) {
+    if (given === 'pending' || running) {
         return (
             <div className="qi-check is-pending" role="status">
                 <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
@@ -27,7 +32,7 @@ export function AnswerCheckStrip({ check, onRun, running }: Props) {
             </div>
         );
     }
-    if (!check) {
+    if (!given) {
         return onRun ? (
             <div className="qi-check is-idle">
                 <Shield className="h-4 w-4" aria-hidden />
@@ -35,9 +40,13 @@ export function AnswerCheckStrip({ check, onRun, running }: Props) {
             </div>
         ) : null;
     }
+    // Right figures for a question read the wrong way round are not a green tick.
+    const check: AnswerCheck = readingDoubt && (given.status === 'verified' || given.status === 'warning')
+        ? { ...given, status: 'warning', headline: `${readingDoubt} The figures themselves are right for that reading.` }
+        : given;
     const Icon = ICON[check.status];
     const missing = check.filterValues.filter(f => f.matches === 0);
-    const hasDetail = Boolean(check.counted || check.coverage || check.notes.length || check.differences.length || missing.length || check.reason);
+    const hasDetail = Boolean(readAs || check.counted || check.coverage || check.notes.length || check.differences.length || missing.length || check.reason);
     return (
         <div className={`qi-check is-${check.status}`} role={check.status === 'mismatch' ? 'alert' : 'status'}>
             <div className="qi-check-line">
@@ -56,6 +65,7 @@ export function AnswerCheckStrip({ check, onRun, running }: Props) {
             )}
             {open && (
                 <div className="qi-check-body">
+                    {readAs && <p><span className="qi-check-k">Question answered</span>“{readAs}”. The check confirms the figures for this reading; if it is not what you meant, ask again in your own words.</p>}
                     {check.counted && <p><span className="qi-check-k">What was counted</span>{check.counted}</p>}
                     {check.coverage && <p><span className="qi-check-k">Rows used</span>{check.coverage}</p>}
                     {check.figuresChecked > 0 && (

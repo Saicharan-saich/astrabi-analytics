@@ -15,6 +15,7 @@ import { ColumnType, type Dataset } from '../types';
 import { flagSubject, isYesNoColumn, yesNoLabel } from './ai-sql/plainLabels';
 import { isAdditiveName, isCoordinateName, isPerRowName } from '../utils/numberMeaning';
 import { findLineColumns } from './etlMeasureIntegrity';
+import { findColumnFormulas, describeFormula, type ColumnFormula } from '../utils/columnFormulas';
 import { spokenName } from '../utils/spokenName';
 
 export type DatasetKind = 'hybrid' | 'records' | 'measures';
@@ -57,6 +58,8 @@ export interface DatasetShape {
     customerKeys: string[];
     /** Amounts with some negative rows: refunds, returns or corrections. */
     signedAmounts: string[];
+    /** How number columns are worked out from each other ("variance" = "budget" − "actual"). */
+    formulas: ColumnFormula[];
     /** What one row is, in words: "appointment". */
     recordWord: string;
     /** The same, plural: "appointments". */
@@ -70,6 +73,9 @@ const NOT_A_MEASURE = /(^|_)(lat|lon|lng|latitude|longitude|zip|postcode|phone|y
 const CODE_NAME = /(store|branch|shop|site|dept|department|zone|region|area|district|ward|room|class|grade|level|tier|group|team|cluster|segment|category|type|code|line|channel|plant|warehouse|route|terminal|gate|floor|bed|seat|unit|division|cohort|batch|version|stage|step|status|number|no|num|nr)$/i;
 const OUTCOME = /(show|showed|attend|no.?show|churn|convert|success|approved|default|cancel|return|readmi|surviv|died|death|dead|deceased|fraud|won|lost|pass|fail|complet|resolv|left|attrition|respon|click|purchas|outcome|target|label|result|bought|subscri|renew|enrol|admit|hired|accept|reject|late|on.?time|defect|spam|exited|exit|retained|stroke|disease|diagnos)/i;
 const ROW_WORD = /(appointment|visit|encounter|admission|case|claim|application|call|session|event|booking|order|invoice|transaction|ticket|enrol|registration|reservation|response|survey|record|loan|policy|trip|job|incident|request)/i;
+
+/** Columns that are negative by nature: a variance, a profit, a change, a balance. */
+const SIGNED_BY_NATURE = /(^|_)(variance|var|diff|difference|gap|delta|change|growth|profit|loss|balance|surplus|deficit|over|under|margin)(_|$)/i;
 
 /** An order number as shops write it: #1001, INV-204, SO10023, R-55012. */
 const ORDER_NUMBER = /^#\s?\d{2,}$|^[A-Z]{1,5}[-#/]?\d{3,}$/i;
@@ -245,7 +251,13 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
         const index = categories.indexOf(name);
         if (index >= 0) categories.splice(index, 1);
     }
+    // How number columns are worked out from each other, checked on the rows here.
+    let formulas: ColumnFormula[] = [];
+    try { formulas = findColumnFormulas(rows, [...amounts, ...perRowNumbers]); } catch { formulas = []; }
+    const naturallySigned = new Set(formulas.filter(f => f.kind === 'difference' || f.kind === 'change' || f.kind === 'change_percent' || f.kind === 'margin' || f.kind === 'margin_percent').map(f => f.result));
     const signedAmounts = amounts.filter(name => {
+        // A variance, a profit or a change is negative by nature, not because of refunds.
+        if (naturallySigned.has(name) || SIGNED_BY_NATURE.test(name)) return false;
         let negative = 0, filled = 0;
         for (const row of sample) { const v = row[name]; if (isBlank(v)) continue; filled++; if (Number(v) < 0) negative++; }
         return negative > 0 && negative < filled * 0.5;
@@ -284,7 +296,7 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
     let shape: DatasetShape;
     if (kind === 'records') {
         shape = {
-            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts,
+            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts, formulas,
             label: 'Records — nothing to add up',
             summary: `Each row is one ${recordWord}, described by ${describedText}. There are no amounts such as sales or cost.`,
             howMeasured: `QuickInsight measures it by counting ${recordsWord}${entity ? ` and distinct ${entity}` : ''}, and by the share of ${recordsWord} with each answer${outcome ? ` (for example the % that ${outcomeWords})` : ''}${perRowNumbers.length ? `; ${list(perRowNumbers, 2, numberName)} ${perRowNumbers.length === 1 ? 'is' : 'are'} averaged or put into ranges` : ''}.`,
@@ -292,14 +304,14 @@ export function describeDatasetShape(dataset: Pick<Dataset, 'rows' | 'columns'>)
     } else if (kind === 'measures') {
         const numbers = [...amounts, ...perRowNumbers];
         shape = {
-            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts,
+            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts, formulas,
             label: 'Numbers only',
             summary: `Mostly numbers (${list(numbers)}), with nothing to group them by${dates.length ? ' except the date' : ''}.`,
             howMeasured: `QuickInsight looks at totals and averages${dates.length ? ', how they change over time' : ''}, their ranges, and which numbers move together.`,
         };
     } else {
         shape = {
-            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts,
+            kind, amounts, perRowNumbers, yesNo, categories, dates, rowId, entityIds, outcome, recordWord, recordsWord, dayGaps, countStory, lineKey, firstRowAmounts, lineSales, customerKeys, signedAmounts, formulas,
             label: amounts.length ? 'Amounts and categories' : 'Scores and categories',
             summary: `${amounts.length ? `Amounts you can add up (${list(amounts, 3)})` : `Measured numbers (${list(perRowMetrics, 3)})`} and ${[...categories, ...yesNo].length === 1 ? 'a category' : 'categories'} to split them by (${list([...categories, ...yesNo.map(flagSubject)], 3)}).`,
             howMeasured: `QuickInsight ${amounts.length ? 'adds up and averages the amounts' : 'averages the numbers'}, split by the categories${dates.length ? ' and over time' : ''}${outcome ? `, and compares the share that ${outcomeWords}` : ''}.`,
@@ -328,6 +340,7 @@ export function shapeForModel(shape: DatasetShape, yesTest: (column: string) => 
     const otherIds = shape.entityIds.filter(name => name !== lineKey?.column && !shape.customerKeys.includes(name));
     if (otherIds.length) lines.push(`${otherIds.map(q).join(', ')} repeat${otherIds.length === 1 ? 's' : ''}: one ${idWord(otherIds[0])} can have several rows. Count them with COUNT(DISTINCT ...).`);
     for (const name of shape.customerKeys) lines.push(`${q(name)} identifies the customer and repeats when they come back: count customers with COUNT(DISTINCT ${q(name)}) (blank = no customer recorded).`);
+    if (shape.formulas?.length) lines.push(`How columns are worked out (checked on every row of this data): ${shape.formulas.map(describeFormula).join('; ')}. Use these to tell which way a difference goes.`);
     if (shape.signedAmounts.length) lines.push(`Some rows have a negative ${shape.signedAmounts.map(q).join(', ')} (refunds, returns or corrections). Plain SUM gives the figure after them; leave negative rows out only when the question asks for sales before refunds.`);
     if (shape.kind === 'records') {
         lines.push('There are no amounts: never SUM an ID, a yes/no or a category. Measure with:');

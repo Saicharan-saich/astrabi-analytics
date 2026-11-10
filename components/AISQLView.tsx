@@ -704,6 +704,8 @@ export const AISQLView: React.FC<AISQLViewProps> = ({ dataset, onPin, initialQue
                                                     check={turn.answer.check}
                                                     running={Boolean(checking[turn.id])}
                                                     onRun={() => runAnswerCheck(active.id, turn.id, turn.answer!.sql)}
+                                                    readAs={turn.answer.standaloneQuestion}
+                                                    readingDoubt={turn.answer.cautions?.find(item => /other way round/.test(item))}
                                                 />
                                             )}
                                             {turn.answer.analysis.config?.pointLabelKeys && (

@@ -27,6 +27,10 @@ interface ResultNarrativeInput {
 
 /** A rate or share column: "no_show_rate_pct", "share_of_total". Never added up. */
 const RATE_NAME = /(rate|pct|percent|percentage|share|ratio|proportion)/i;
+/** A gap between two figures. */
+const GAP_NAME = /(^|_)(overspend|overspending|underspend|shortfall|loss|losses|variance|difference|diff|gap|deficit|surplus|over_budget|under_budget|delta)($|_)/i;
+/** A gap where above zero is bad: money lost or over budget. */
+const LOSS_NAME = /(^|_)(overspend|overspending|shortfall|loss|losses|deficit|over_budget)($|_)/i;
 
 const SYMBOLS: Record<string, string> = { GBP: '£', USD: '$', EUR: '€', INR: '₹', JPY: '¥' };
 const DAY_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -363,6 +367,31 @@ export function buildResultNarrative(input: ResultNarrativeInput): ResultNarrati
         // Two groups (holiday vs not, online vs in store): say how far apart they are.
         const ranking = plan.intent === 'ranking' || /\b(?:top|highest|most|best|largest|leading)\b/i.test(input.question);
         const isRate = type === 'percentage' || RATE_NAME.test(metric);
+        // A gap between two figures (an overspend, a shortfall, a variance): say which groups
+        // are on which side of zero, never "X% higher" — a percentage of a gap means nothing.
+        if (GAP_NAME.test(metric) && ranked.length >= 2) {
+            const word = plainName(dimension);
+            const Label = label.charAt(0).toUpperCase() + label.slice(1);
+            const show = (row: Record<string, any>) => `${groupName(row, dimension)} (${formatValue(row[metric], type)})`;
+            const above = ranked.filter(row => Number(row[metric]) > 0);
+            const atOrBelow = ranked.filter(row => Number(row[metric]) <= 0);
+            const list = (rows: Record<string, any>[]) => rows.length <= 2 ? rows.map(show).join(' and ') : `${rows.slice(0, 3).map(show).join(', ')}${rows.length > 3 ? ` and ${rows.length - 3} more` : ''}`;
+            const a = /^[aeiou]/i.test(label) ? 'an' : 'a';
+            if (LOSS_NAME.test(metric)) {
+                return {
+                    version: 1, verifiedFrom: 'executed_result', kind: 'ranking',
+                    headline: above.length ? `${groupName(above[0], dimension)} has the largest ${label}` : `No ${word} has ${a} ${label}`,
+                    summary: above.length
+                        ? `${above.length === 1 ? `Only ${show(above[0])} has ${a} ${label}` : `${above.length} of ${ranked.length} have ${a} ${label}: ${list(above)}`}.${atOrBelow.length ? ` ${atOrBelow.length === 1 ? `${show(atOrBelow[0])} does not` : `The other ${atOrBelow.length} do not`}.` : ''}`
+                        : `None of the ${ranked.length} has ${a} ${label}; ${show(ranked[0])} comes closest.`,
+                };
+            }
+            return {
+                version: 1, verifiedFrom: 'executed_result', kind: 'ranking',
+                headline: `${Label}: highest for ${groupName(ranked[0], dimension)}`,
+                summary: `${Label} is highest for ${show(ranked[0])} and lowest for ${show(last)}. ${above.length} of ${ranked.length} ${above.length === 1 ? 'is' : 'are'} above 0 and ${atOrBelow.length} at or below 0.`,
+            };
+        }
         if (!ranking && ranked.length === 2 && isRate) {
             const gap = Number(leader[metric]) - Number(runner[metric]);
             const unit = type === 'percentage' ? ' points' : '';

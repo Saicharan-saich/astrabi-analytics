@@ -232,14 +232,14 @@ const ID_PATTERNS = /(?:^id$|_id$|^id_|order_?id|cust(?:omer)?_?id|product_?id|t
 const METRIC_NAME_EXACT = /^(quantity|qty|amount|amt|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|avg|average|num|number)$/i;
 
 // Metric keyword fragments — for compound names like txn_amount, total_sales, net_revenue
-const METRIC_KEYWORDS = /(?:^|[_\s])(amount|amt|qty|quantity|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|average|avg|number|num|charge|payment|spend|earning|payout|funding|debt|credit|debit|turnover|premium|commission|bonus|interest|deposit|withdrawal|refund|surcharge|tariff|fare|toll|rent|royalty|stipend|hours|hrs|minutes|mins|seconds|secs|days|duration|visits|clicks|impressions|views|sessions|calls|tickets|items|pieces|downloads|signups|installs|leads|conversions|kg|kgs|lbs|km|miles|distance)(?:[_\s]|$)/i;
+const METRIC_KEYWORDS = /(?:^|[_\s])(variance|surplus|deficit|overspend|underspend|actual|actuals|forecast|pct|percent|percentage|amount|amt|qty|quantity|price|cost|total|sum|count|revenue|sales|profit|discount|tax|fee|rate|score|weight|volume|height|width|length|balance|budget|salary|wage|income|expense|margin|stock|inventory|units|value|average|avg|number|num|charge|payment|spend|earning|payout|funding|debt|credit|debit|turnover|premium|commission|bonus|interest|deposit|withdrawal|refund|surcharge|tariff|fare|toll|rent|royalty|stipend|hours|hrs|minutes|mins|seconds|secs|days|duration|visits|clicks|impressions|views|sessions|calls|tickets|items|pieces|downloads|signups|installs|leads|conversions|kg|kgs|lbs|km|miles|distance)(?:[_\s]|$)/i;
 
 // Date name patterns (strong signal for date classification)
 const DATE_NAME_PATTERNS = /^(date|sale_?date|order_?date|purchase_?date|created_?at|updated_?at|ship_?date|delivery_?date|birth_?date|dob|start_?date|end_?date|due_?date|invoice_?date|payment_?date|registration_?date|timestamp|datetime|created|modified|posted|expired|effective)$/i;
 
 // Strong business-metric names — a numeric column with one of these is a measure,
 // never reclassified as a numeric attribute.
-const STRONG_METRIC_NAME = /(?:^|[_\s])(sales|revenue|profit|cost|price|amount|total|income|salary|wage|pay|compensation|expense|fee|charge|payment|spend|earning|bonus|commission|balance|budget|discount|tax|shipping|freight|margin|debt|credit|debit|turnover|premium|interest|deposit|refund|rent|royalty|stipend|funding|payout)(?:[_\s]|$)/i;
+const STRONG_METRIC_NAME = /(?:^|[_\s])(variance|surplus|deficit|overspend|underspend|actual|actuals|forecast|sales|revenue|profit|cost|price|amount|total|income|salary|wage|pay|compensation|expense|fee|charge|payment|spend|earning|bonus|commission|balance|budget|discount|tax|shipping|freight|margin|debt|credit|debit|turnover|premium|interest|deposit|refund|rent|royalty|stipend|funding|payout)(?:[_\s]|$)/i;
 
 /** Details an order or visit only sometimes has: a blank one means there wasn't one. */
 const OPTIONAL_DETAIL_NAME = /(^|_)(discount|discounts|coupon|coupons|promo|promotion|voucher|vouchers|referral|referrer|tag|tags|note|notes|gift|modifier|modifiers|addon|addons|add_on|add_ons|extra|extras|allergy|allergies|instruction|instructions|offer|campaign)(_|$)/i;
@@ -1240,11 +1240,13 @@ function layer3_columnProfiling(rows: Record<string, any>[], dayFirst = prefersD
  * (that's a category, handled elsewhere).
  */
 export function keySignalFor(
-    p: Pick<ColumnProfileData, 'distinctCount' | 'totalValues' | 'numericParseRate' | 'currencyDetected' | 'percentageDetected' | 'integerRate' | 'looksSequential'>,
+    p: Pick<ColumnProfileData, 'distinctCount' | 'totalValues' | 'numericParseRate' | 'currencyDetected' | 'percentageDetected' | 'integerRate' | 'looksSequential'> & { min?: number },
     isMetricName: boolean
 ): { isKey: boolean; reason: string } {
     // Never override a real measure: money/percent formatting or a metric name means "measure".
     if (isMetricName || p.currencyDetected || p.percentageDetected) return { isKey: false, reason: '' };
+    // Keys are never negative: a column with values below zero is an amount (a variance, a balance).
+    if (p.min !== undefined && p.min < 0) return { isKey: false, reason: '' };
     // Must be integer-heavy numeric data — keys don't have decimals.
     if (p.numericParseRate < 0.9 || (p.integerRate ?? 0) < 0.99) return { isKey: false, reason: '' };
 
@@ -1620,7 +1622,9 @@ export function normalizeHeaderName(header: string, index: number): string {
     // Insert underscore before camelCase boundaries: SaleDate → Sale_Date, OrderID → Order_ID
     const camelSplit = header.replace(/([a-z])([A-Z])/g, '$1_$2').replace(/([A-Z]+)([A-Z][a-z])/g, '$1_$2');
     // Deterministic name for a blank header, so a re-upload maps to the same column.
-    return camelSplit.trim().toLowerCase().replace(/[\s\W]+/g, '_').replace(/^_+|_+$/g, '') || `column_${index + 1}`;
+    // "Variance %" is a percentage and "Margin %" a different column from "Margin": keep the % as "pct".
+    const symbols = camelSplit.replace(/%/g, ' pct ');
+    return symbols.trim().toLowerCase().replace(/[\s\W]+/g, '_').replace(/^_+|_+$/g, '') || `column_${index + 1}`;
 }
 
 /**
