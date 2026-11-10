@@ -124,6 +124,16 @@ describe('the weekly briefing', () => {
         expect(buildBriefing(fewWeeks, TODAY).reason).toMatch(/at least three full weeks/);
     });
 
+    it('never names a label that changes with the calendar as a cause', () => {
+        // The sheet each month's rows came from moves with time itself.
+        const ds = cafe({ dropCafe: true });
+        ds.rows = ds.rows.map(r => ({ ...r, sheet: r.date.slice(0, 7) }));
+        ds.columns = [...ds.columns, { name: 'sheet', type: ColumnType.DIMENSION } as any];
+        const b = buildBriefing(ds, TODAY);
+        expect(b.findings.some(f => /\(sheet\)/.test(f.text))).toBe(false);
+        expect(b.findings[0].text).toMatch(/^Station \(location\)/);
+    });
+
     it('never gives advice that does not fit the column', () => {
         expect(categoryKind('location')).toBe('place');
         expect(categoryKind('lineitem_name')).toBe('offer');

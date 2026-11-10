@@ -333,13 +333,29 @@ export function buildBriefing(dataset: Dataset, today: Date = new Date()): Brief
         }
     }
 
+    // A label that changes with the calendar (the sheet a month's rows came from, a
+    // "quarter" or "season" column) moves with time itself, so it explains nothing.
+    const isPeriodLabel = (column: string) => {
+        const spans = new Map<string, { from: string; to: string }>();
+        for (const r of rows) {
+            if (isBlank(r[column]) || isBlank(r[dateCol])) continue;
+            const day = String(r[dateCol]).slice(0, 10);
+            const span = spans.get(String(r[column]));
+            if (!span) spans.set(String(r[column]), { from: day, to: day });
+            else { if (day < span.from) span.from = day; if (day > span.to) span.to = day; }
+        }
+        if (spans.size < 2) return false;
+        const ordered = [...spans.values()].sort((a, b) => a.from.localeCompare(b.from));
+        return ordered.every((span, i) => i === 0 || span.from > ordered[i - 1].to);
+    };
+
     // Columns to explain a change by: not the date, the outcome, the order ID,
     // statuses, clock times, or columns with too many values to read.
     const categories = shape.categories.filter(c => c !== dateCol && c !== outcome && c !== shape.outcome && c !== unit.id && categoryKind(c) !== 'status').filter(c => {
         const values = rows.slice(0, 2000).map(r => r[c]).filter(v => !isBlank(v)).map(String);
         if (values.length && values.filter(v => /^\d{1,2}:\d{2}(:\d{2})?$/.test(v.trim())).length >= values.length * 0.8) return false;
         const distinct = new Set(rows.map(r => r[c]).filter(v => !isBlank(v)).map(String)).size;
-        return distinct >= 2 && distinct <= 60;
+        return distinct >= 2 && distinct <= 60 && !isPeriodLabel(c);
     });
     const byCategory = (ps: Period[], col: string) => {
         const m = new Map<string, number>();
